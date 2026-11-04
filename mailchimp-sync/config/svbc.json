@@ -1,27 +1,31 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "donorsBoardId": null,
+    "donorsBoardId": 18437909781,
     "campaignsBoardId": null,
     "columns": {
-      "membershipStatus": "REPLACE_WITH_COLUMN_ID",
-      "membershipTier": "REPLACE_WITH_COLUMN_ID",
-      "memberSince": "REPLACE_WITH_COLUMN_ID",
-      "memberUntil": "REPLACE_WITH_COLUMN_ID",
-      "addr1": "REPLACE_WITH_COLUMN_ID",
-      "city": "REPLACE_WITH_COLUMN_ID",
-      "state": "REPLACE_WITH_COLUMN_ID",
-      "zip": "REPLACE_WITH_COLUMN_ID",
-      "email": "REPLACE_WITH_COLUMN_ID",
-      "totalGiven": "REPLACE_WITH_COLUMN_ID",
+      "membershipStatus": "color_mm8ng6nw",
+      "membershipTier": "color_mm8n5hh8",
+      "memberSince": "date_mm8nemca",
+      "memberUntil": "date_mm8n6xgb",
+      "addr1": "text_mm8n6sap",
+      "city": "text_mm8nzf3n",
+      "state": null,
+      "zip": "text_mm8nxcm4",
+      "email": "email_mm8nx6qg",
+      "totalGiven": "numeric_mm8n7g4",
       "mailchimpCampaigns": "REPLACE_WITH_COLUMN_ID",
-      "doNotSolicit": "REPLACE_WITH_COLUMN_ID",
-      "dnsReasonStatus": "REPLACE_WITH_COLUMN_ID"
+      "doNotSolicit": "boolean_mm8nf0wq",
+      "dnsReasonStatus": "color_mm8qfbce",
+      "nearby": null
     }
   },
   "mailchimp": {
-    "apiBaseUrl": "https://REPLACE_WITH_DC.api.mailchimp.com/3.0",
-    "audienceId": "REPLACE_WITH_AUDIENCE_ID",
+    "apiBaseUrl": "https://us9.api.mailchimp.com/3.0",
+    "audienceId": "eab542a5df",
+    "interestCategoryIds": [
+      "760af5e2a0"
+    ],
     "mergeFields": {
       "memberSince": "MEMBSINCE",
       "memberUntil": "MEMBUNTIL",
@@ -36,7 +40,8 @@
       "lifetimeMember": "lifetime-member",
       "hasDonated": "has-donated",
       "doNotSolicit": "do-not-solicit"
-    }
+    },
+    "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",

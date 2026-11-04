@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, EmployerSyncConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig, SponsorshipsConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -40,6 +40,16 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
     throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
   }
+  for (const key of ['sponsorshipCycle', 'inKindValue'] as const) {
+    if (columns[key] !== undefined && columns[key] !== null
+      && (typeof columns[key] !== 'string' || columns[key] === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.${key} must be a column id string, null, or omitted`);
+    }
+  }
+  const links = columns.sponsorshipPipelineLinks;
+  if (links !== undefined && (!Array.isArray(links) || links.some((l) => typeof l !== 'string' || l === ''))) {
+    throw new Error(`config: donationRollups.donationBoards[${index}].columns.sponsorshipPipelineLinks must be an array of column id strings or omitted`);
+  }
   let classification: ClassificationColumns | null = null;
   if (columns.classification !== undefined && columns.classification !== null) {
     if (typeof columns.classification !== 'object') {
@@ -51,8 +61,12 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
         throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.${key} must be a Monday column id string`);
       }
     }
+    if (cl.acknowledgmentTier !== undefined && (typeof cl.acknowledgmentTier !== 'string' || cl.acknowledgmentTier === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.acknowledgmentTier must be a Monday column id string or omitted`);
+    }
     classification = { fundingStream: cl.fundingStream as string, giftSize: cl.giftSize as string,
-      fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string };
+      fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string,
+      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}) };
   }
   return {
     boardId: b.boardId,
@@ -65,6 +79,9 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       termEnd: (columns.termEnd ?? null) as string | null,
       membershipType: (columns.membershipType ?? null) as string | null,
       actingForLink: (columns.actingForLink ?? null) as string | null,
+      ...(columns.sponsorshipCycle !== undefined ? { sponsorshipCycle: columns.sponsorshipCycle as string | null } : {}),
+      ...(columns.inKindValue !== undefined ? { inKindValue: columns.inKindValue as string | null } : {}),
+      ...(links !== undefined ? { sponsorshipPipelineLinks: links as string[] } : {}),
       classification,
     },
   };
@@ -98,6 +115,9 @@ function validateOwnerColumns(raw: unknown, boardId: string): OwnerColumns {
   }
   if (columns.donorLevel !== undefined && (typeof columns.donorLevel !== 'string' || columns.donorLevel === '')) {
     throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].donorLevel must be a Monday column id string or omitted`);
+  }
+  if (columns.hasActiveRecurringGift !== undefined && columns.hasActiveRecurringGift !== null) {
+    columnId(columns.hasActiveRecurringGift, `donationRollups.ownerColumnsByBoard["${boardId}"].hasActiveRecurringGift`);
   }
   const { membership: _raw, ...rest } = columns;
   return { ...(rest as unknown as OwnerColumns), ...(membership ? { membership } : {}) };
@@ -215,6 +235,127 @@ function validateVolunteerBoards(raw: unknown, membershipOn: boolean): Volunteer
   });
 }
 
+function validateRecurringGifts(raw: unknown): RecurringGiftsConfig | null {
+  if (raw === undefined || raw === null) return null;
+  const path = 'donationRollups.recurringGifts';
+  if (typeof raw !== 'object') throw new Error(`config: "${path}" must be an object or null`);
+  const v = raw as Record<string, unknown>;
+  if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+  const c = (typeof v.columns === 'object' && v.columns !== null ? v.columns : {}) as Record<string, unknown>;
+  if (typeof v.activeStatusLabel !== 'string' || v.activeStatusLabel === '') {
+    throw new Error(`config: ${path}.activeStatusLabel must be a non-empty label`);
+  }
+  return {
+    boardId: v.boardId,
+    columns: { donorLink: columnId(c.donorLink, `${path}.columns.donorLink`), status: columnId(c.status, `${path}.columns.status`) },
+    activeStatusLabel: v.activeStatusLabel,
+  };
+}
+
+const obj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+
+function validateSponsorships(raw: unknown, ownerBoardIds: string[]): SponsorshipsConfig | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('config: "donationRollups.sponsorships" must be an object or null');
+  const s = raw as Record<string, unknown>;
+  if (typeof s.organizationsBoardId !== 'number' || !ownerBoardIds.includes(String(s.organizationsBoardId))) {
+    throw new Error('config: "donationRollups.sponsorships.organizationsBoardId" must be a board id present in donationRollups.ownerColumnsByBoard');
+  }
+  for (const key of ['giftTypes', 'inKindGiftTypes'] as const) {
+    const v = s[key];
+    if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || x === '')) {
+      throw new Error(`config: "donationRollups.sponsorships.${key}" must be an array of non-empty strings`);
+    }
+  }
+  if (s.yearBasis !== 'calendar' && s.yearBasis !== 'fiscal') {
+    throw new Error('config: "donationRollups.sponsorships.yearBasis" must be "calendar" or "fiscal"');
+  }
+  if (typeof s.windowYears !== 'number' || !Number.isInteger(s.windowYears) || s.windowYears < 1) {
+    throw new Error('config: "donationRollups.sponsorships.windowYears" must be an integer >= 1');
+  }
+  const pb = s.pipelineBoards;
+  if (typeof pb !== 'object' || pb === null || Array.isArray(pb)
+    || Object.entries(pb).some(([k, v]) => k === '' || typeof v !== 'string' || v === '')) {
+    throw new Error('config: "donationRollups.sponsorships.pipelineBoards" must map pipeline board ids to non-empty event names');
+  }
+  return {
+    organizationsBoardId: s.organizationsBoardId,
+    giftTypes: s.giftTypes as string[],
+    inKindGiftTypes: s.inKindGiftTypes as string[],
+    yearBasis: s.yearBasis,
+    windowYears: s.windowYears,
+    pipelineBoards: { ...(pb as Record<string, string>) },
+  };
+}
+
+function validateRollCall(raw: unknown): RollCallConfig | null {
+  if (raw === undefined || raw === null) return null;
+  const path = 'donationRollups.rollCall';
+  if (typeof raw !== 'object') throw new Error(`config: "${path}" must be an object or null`);
+  const v = raw as Record<string, unknown>;
+  if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+  if (!Number.isInteger(v.firstFiscalYear)) throw new Error(`config: ${path}.firstFiscalYear must be an integer`);
+  const excludedGiftTypes = v.excludedGiftTypes === undefined ? ['Contracts'] : nonEmptyLabels(v.excludedGiftTypes, `${path}.excludedGiftTypes`);
+  const writesPerRun = v.writesPerRun === undefined ? 500 : v.writesPerRun;
+  if (typeof writesPerRun !== 'number' || !Number.isInteger(writesPerRun) || writesPerRun <= 0) {
+    throw new Error(`config: ${path}.writesPerRun must be a positive integer`);
+  }
+  const c = obj(v.columns);
+  const col = (k: string) => columnId(c[k], `${path}.columns.${k}`);
+  const d = obj(v.donations);
+  if (typeof d.boardId !== 'number') throw new Error(`config: ${path}.donations.boardId must be a number`);
+  const dc = obj(d.columns);
+  const dcol = (k: string) => columnId(dc[k], `${path}.donations.columns.${k}`);
+  const rawPeople = obj(v.people);
+  const boardIds = Object.keys(rawPeople);
+  if (boardIds.length === 0) throw new Error(`config: ${path}.people must have at least one board entry`);
+  const people: RollCallConfig['people'] = {};
+  for (const id of boardIds) {
+    const p = obj(rawPeople[id]);
+    const pcol = (k: string) => columnId(p[k], `${path}.people["${id}"].${k}`);
+    people[id] = {
+      householdId: pcol('householdId'), householdGreeting: pcol('householdGreeting'), householdEmail: pcol('householdEmail'),
+      doNotSolicit: pcol('doNotSolicit'), dontList: pcol('dontList'),
+    };
+  }
+  const o = obj(v.organizations);
+  if (typeof o.boardId !== 'number') throw new Error(`config: ${path}.organizations.boardId must be a number`);
+  const oc = obj(o.columns);
+  // Optional columns (spec §10): omitted means off, but present must be a column id.
+  const optional = (raw: unknown, at: string): string | undefined => (raw === undefined ? undefined : columnId(raw, at));
+  const householdName = optional(c.householdName, `${path}.columns.householdName`);
+  const inKindValue = optional(dc.inKindValue, `${path}.donations.columns.inKindValue`);
+  const recognitionFiscalYear = optional(dc.recognitionFiscalYear, `${path}.donations.columns.recognitionFiscalYear`);
+  return {
+    boardId: v.boardId,
+    firstFiscalYear: v.firstFiscalYear as number,
+    excludedGiftTypes,
+    writesPerRun,
+    columns: {
+      fiscalYear: col('fiscalYear'), tier: col('tier'), type: col('type'), listed: col('listed'), total: col('total'),
+      gifts: col('gifts'), people: col('people'), organization: col('organization'), reviewNote: col('reviewNote'), rowKey: col('rowKey'),
+      ...(householdName !== undefined ? { householdName } : {}),
+    },
+    donations: {
+      boardId: d.boardId,
+      columns: {
+        amount: dcol('amount'), date: dcol('date'), status: dcol('status'), fiscalYear: dcol('fiscalYear'), giftType: dcol('giftType'),
+        donorLink: dcol('donorLink'), matchedBy: dcol('matchedBy'), anonymous: dcol('anonymous'),
+        ...(inKindValue !== undefined ? { inKindValue } : {}),
+        ...(recognitionFiscalYear !== undefined ? { recognitionFiscalYear } : {}),
+      },
+    },
+    people,
+    organizations: {
+      boardId: o.boardId,
+      columns: {
+        recognitionName: columnId(oc.recognitionName, `${path}.organizations.columns.recognitionName`),
+        dontList: columnId(oc.dontList, `${path}.organizations.columns.dontList`),
+      },
+    },
+  };
+}
+
 function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean): HistoricalVolunteerBoardConfig[] {
   if (raw === undefined || raw === null) {
     if (membershipOn) throw new Error('config: "donationRollups.historicalVolunteerBoards" is required (may be []) when membership is configured');
@@ -285,6 +426,12 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const volunteerBoards = validateVolunteerBoards(dr.volunteerBoards, membership !== null);
   const historicalVolunteerBoards = validateHistoricalVolunteerBoards(dr.historicalVolunteerBoards, membership !== null);
   const donorLevel = validateDonorLevel(dr.donorLevel);
+  const recurringGifts = validateRecurringGifts(dr.recurringGifts);
+  const rollCall = validateRollCall(dr.rollCall);
+  const sponsorships = validateSponsorships(dr.sponsorships, boardIds);
+  if (recurringGifts !== null && !Object.values(ownerColumnsByBoard).some((o) => o.hasActiveRecurringGift)) {
+    throw new Error('config: at least one ownerColumnsByBoard entry must have "hasActiveRecurringGift" when donationRollups.recurringGifts is configured');
+  }
   if (membership !== null) {
     donationBoards.forEach((b, i) => {
       for (const key of OPTIONAL_TERM_COLUMNS) {
@@ -304,7 +451,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts, rollCall, sponsorships },
   };
 }
 
@@ -345,7 +492,33 @@ function validateAffiliations(raw: unknown, donationBoards: DonationBoardConfig[
       throw new Error(`config: donationBoards[${b.boardId}].columns.actingForLink is required when affiliations is set`);
     }
   }
-  return { boardId: a.boardId, columns: columns as unknown as AffiliationsConfig['columns'] };
+  const employerSync = validateEmployerSync(a.employerSync);
+  return { boardId: a.boardId, columns: columns as unknown as AffiliationsConfig['columns'], ...(employerSync ? { employerSync } : {}) };
+}
+
+function validateEmployerSync(raw: unknown): EmployerSyncConfig | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') throw new Error('config: "affiliations.employerSync" must be an object or null');
+  const e = raw as Record<string, unknown>;
+  if (typeof e.currentStatusLabel !== 'string' || e.currentStatusLabel === '') {
+    throw new Error('config: "affiliations.employerSync.currentStatusLabel" must be a status label string');
+  }
+  const columns = (e.columns ?? {}) as Record<string, unknown>;
+  for (const key of ['organizationLink', 'status', 'primary'] as const) {
+    if (typeof columns[key] !== 'string' || columns[key] === '') {
+      throw new Error(`config: "affiliations.employerSync.columns.${key}" must be a Monday column id string`);
+    }
+  }
+  const boards = (e.ownerColumnsByBoard ?? {}) as Record<string, Record<string, unknown>>;
+  if (Object.keys(boards).length === 0) throw new Error('config: "affiliations.employerSync.ownerColumnsByBoard" must name at least one board');
+  for (const [boardId, board] of Object.entries(boards)) {
+    for (const key of ['employerName', 'affiliationsLink'] as const) {
+      if (typeof board[key] !== 'string' || board[key] === '') {
+        throw new Error(`config: "affiliations.employerSync.ownerColumnsByBoard[${boardId}].${key}" must be a Monday column id string`);
+      }
+    }
+  }
+  return raw as EmployerSyncConfig;
 }
 
 function validateCustodian(raw: unknown): CustodianConfig {

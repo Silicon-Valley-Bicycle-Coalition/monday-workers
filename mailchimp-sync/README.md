@@ -40,16 +40,25 @@ Three independent flows — see the design doc for full sequence diagrams:
 
 1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
    Mailchimp contact update (merge fields: Member Since/Until, Tier, Status, Address, Total
-   Given; tags: active/lapsed/lifetime-member, has-donated). **Update only — never creates a
+   Given; tags: active/lapsed/lifetime-member, has-donated). A change to a column the sync doesn't
+   read (`donorColumnIds` in `src/monday/client.ts`) is skipped at the webhook, so a bulk write to
+   another People column, like the 2026-11-03 Location backfill, sends nothing to Mailchimp. **Update only — never creates a
    contact.** Mailchimp is the consent system of record, so a Donor whose address isn't already
    in the audience (they never opted in) is recorded as `skipped` and left out; the write is a
    `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
    cleaned contact stays that way. People join the audience only through Mailchimp's own
    signup forms or the cutover consent import. **One exception, one-way:** a reviewed Do Not
-   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below.
-2. **Campaign catalog reconciliation:** daily cron diffs Mailchimp's Interest Categories against a
-   D1-tracked set of Monday items on the Campaigns board — creates, renames, or archives as
-   needed. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
+   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below. **An Email
+   change moves the contact:** when staff change a Donor's Email column, the old address's
+   contact is renamed to the new one, so its consent and history follow the person — see
+   [Address changes made on Monday](#address-changes-made-on-monday).
+2. **Campaign catalog reconciliation:** daily cron diffs the interests in the Interest Categories
+   listed in `mailchimp.interestCategoryIds` against a D1-tracked set of Monday items on the
+   Campaigns board — creates, renames, or archives as needed. Other categories are ignored, and
+   so are their interests on the inbound side: SVBC's production audience holds five older,
+   hidden categories (57 interests, mostly Constant Contact lists from 2008–2014) that would
+   otherwise each become a Campaigns item. A configured id missing from the audience fails the
+   run instead of reading as "no interests", which would archive every item. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
    a reliability fallback.
 3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
@@ -195,7 +204,10 @@ Two steps, so a mis-clicked checkbox can't silently lose a subscriber:
    Mailchimp status to `unsubscribed` (`unsubscribeMember`: looks the member up first; an
    already-unsubscribed or cleaned address needs no write) and records it in the D1
    `dns_unsubscribes` table — email, Monday item, result, timestamp. That row is the audit trail,
-   and it stops later column changes on the same person from calling Mailchimp again.
+   and it stops later column changes on the same person from calling Mailchimp again. The
+   unsubscribe runs before the merge-field and tag update, so a permanent error in that update
+   can't skip it. An address not in the audience isn't logged, so if the person joins later
+   their next column change still unsubscribes them.
 
 Deliberate limits:
 * **Never resubscribes.** Unchecking the box, or moving the status off Confirmed, removes the
@@ -259,15 +271,32 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   `MEMBERUNTIL` (11 chars each) become `MEMBERSINC`/`MEMBERUNTI` if typed as-is, which then
   won't match `config/*.json`'s `mailchimp.mergeFields` and silently drops those two fields
   from every sync. Discovered provisioning the sandbox audience 2026-09-22; use the 9-char
-  tags above instead.
+  tags above instead. **Production: created 2026-10-30** through the API, with the sandbox
+  audience's types (dates `MM/DD/YYYY`, `TOTALGIVE` a number, all non-public).
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
-  independently.
+  independently, and put its id in `mailchimp.interestCategoryIds`. **Production (decided
+  2026-10-30):** Welcome Drip (`be943454d9`) and Renewal Reminders (`986d6c84bf`) were added to
+  the existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`, the
+  id in `config/svbc.json`); its Monthly e-Bulletin interest already covers Newsletter. Only
+  the listed categories are synced.
+* **Production starts outbound-only** (decided 2026-10-30): `campaignsBoardId` stays `null` and
+  the Mailchimp audience webhook isn't registered, so Monday → Mailchimp (merge fields, tags,
+  Do Not Solicit unsubscribes) runs and Mailchimp → Monday (the Campaigns connect column, the
+  inbound side's only job) doesn't. The nightly reconcile skips itself with one log line while
+  no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
+  People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
+  webhook.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
-  Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Recommended renewal cadence:
-  42/28/14 days before `MEMBUNTIL` (carried forward from the original `membership-reminders`
-  design).
+  Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
+  before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`
+  flow sends today (read 2026-10-26; the original `membership-reminders` design's 42/28/14 came
+  from workflow rules inactive since 2022). Like that flow, the renewal Journey must skip active
+  recurring donors and the members marked Renewal Opt Out in Salesforce (611 at the 2026-10-26
+  check), and neither is migrated. Leave those 611 out of the Renewal Reminders interest when you
+  seed it. Salesforce never sent welcome email #2 (a flow bug), so decide whether the welcome
+  Journey should.
 * Set up an audience webhook (Subscribes/Unsubscribes/Profile updates/Cleaned) pointed at this
   Worker's `/webhooks/mailchimp/audience`, with a secret in the URL, and leave Mailchimp's
   webhook "API" event source **unchecked** — otherwise this Worker's own writes back to Mailchimp
@@ -278,10 +307,27 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   `POST /lists/{id}/members/{hash}/tags` — explicit `active`/`inactive` per tag, touching only
   the tags this Worker manages (`managedTags`), so staff- or other-tool-applied tags are never
   disturbed.
+* **Nearby tags.** When `monday.columns.nearby` is set, each label in the People "Nearby"
+  dropdown (written by `nearby-search`) becomes a tag `mailchimp.nearbyTagPrefix` + label
+  (`"Near: Stevens Creek bikeway"`). Labels are 1-60 characters with no commas, so the column's
+  text splits exactly on `", "`. They are open-ended, so before `updateMember` the consumer reads
+  the member's current tags (`GET /lists/{id}/members/{hash}/tags?count=1000`) and treats every
+  one starting with the prefix as managed: a label removed on Monday is sent `inactive`, and the
+  prefix is reserved for this Worker (a staff-made `Near: ...` tag would be cleared too). The
+  read happens only when the column is configured, the Donor has an email and the update is
+  about to run. `nearby` is `null` in both configs until the column exists (set its id in
+  `config/svbc.json` / `config/sandbox.json` to turn this on). Any People column change fires
+  the Donors webhook, so editing Nearby flows through the normal outbound path.
+  **Limit:** only the People board is watched. People (Historical) items get Nearby labels
+  too but are not synced to Mailchimp until this Worker watches that board
+  (svbc-monday-workers#83).
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
-  (addr1/city/state/zip), Email — written by `salesforce-import`.
+  (addr1/city/zip, plus an optional State), Email — written by `salesforce-import`. With
+  `monday.columns.state` set to `null` (production People has no State column) the ADDRESS
+  merge field takes the state from the ZIP's first three digits (`src/consumer/zipState.ts`);
+  a ZIP that isn't a 5-digit US one leaves ADDRESS out, as any incomplete address does.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
 * Do Not Solicit (checkbox) and DNS Reason Status (status) — both built by `salesforce-import`'s
   `configure` step — with a **Confirmed** label added to DNS Reason Status next to OK / Missing.
@@ -299,6 +345,18 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   address, but this Worker doesn't rewrite the Donor's Email column — so until staff update it
   on Monday, the event records as `skipped` and later outbound updates for that Donor also skip
   (the old address is no longer in the audience).
+* <a id="address-changes-made-on-monday"></a>**Address changes made on Monday** move the
+  Mailchimp contact. The Donors webhook's `change_column_value` event carries the column's
+  `previousValue`; for the configured Email column only, the route queues that old address with
+  the Donor id, and the consumer renames the contact (`PATCH` with only `email_address`) before
+  its usual update. Its status — subscribed, unsubscribed, cleaned — and tags and history carry
+  over unchanged, so consent follows the person and nothing is ever created. No rename when the
+  new address is already a contact (two contacts are never merged; the new one is updated as
+  before), when the old address isn't one, or when only case or spacing changed. A permanent
+  Mailchimp refusal is logged and the update carries on by the new address, as before this
+  existed. Fixed 2026-11-02, after the cutover's Gate C check showed an edited address skipping
+  (svbc-monday-migration cutover log, Mon 9:31 am). Edits made before this deploy aren't
+  replayed: change the address in Mailchimp by hand.
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.
@@ -319,9 +377,10 @@ with a `-dlq`), and secrets. Local development against the sandbox uses `npm run
 reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
 configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
 are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`
-text column on 2026-09-18 (the migrated boards had none — the production People board will need
-one too before this Worker can send the ADDRESS merge field, which `src/consumer/mapDonor.ts`
-omits unless all four address parts are present); the sandbox "Mailchimp Campaigns (sandbox)"
+text column on 2026-09-18 (the migrated boards had none). Production never got one, and its
+`state` stayed `REPLACE_WITH_COLUMN_ID`: Monday silently ignores an unknown column id, so no
+production contact got an ADDRESS until 2026-11-02, when `state: null` and the ZIP lookup
+replaced it (config validation now rejects the placeholder for `state`); the sandbox "Mailchimp Campaigns (sandbox)"
 board and the People board's "Mailchimp Campaigns" connect column were created 2026-09-18 by the
 step 3 plan's Task 2.
 Staff prerequisites before the first sandbox deploy (the step 3 plan's Task 15): the sandbox
@@ -337,6 +396,41 @@ dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:mailchimp-sync` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
+## Deploying: the write switch
+
+Every Mailchimp write (`updateMember`, `unsubscribeMember`), every Monday write (the connect
+column, Campaigns-board create/rename/archive) and every D1 bookkeeping write a consumer or the
+daily reconcile cron makes is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`),
+read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
+namespaces exist):
+
+- `mailchimp-sync:writes` — `on` writes normally; `hold` writes nothing, keeps messages on the
+  queues (retrying at 1 minute doubling to an hour) and skips the reconcile cron; `off` runs the
+  consumers and the cron against recording proxies, logging one `"writeSwitch":"skipped"` line
+  per would-be write and acking. **A missing key means `off`**; a KV read error behaves like
+  hold. Inbound skip lines name the member by `<member HASH>`, never the address.
+- `mailchimp-sync:log` — `debug` adds redacted payloads to those lines.
+
+Both webhooks keep ingesting in every mode: under `off` the message is stamped dropped (so it is
+never written even if the switch is `on` by the time it is consumed) and its pending row is
+recorded `dropped`, as is any row a dry run consumes. Nothing re-enqueues pending rows
+automatically (the only replay path is the manual `scripts/redrive-dead-lettered.mjs`, which
+selects dead-lettered `failed` rows), so a `dropped` row is never revived. A message queued before
+this build has no stamp and is written under `on`. The dead-letter consumers and their Slack alert
+run in every mode. Both main queues now retry 100 times (1 minute doubling to an hour, raised to a
+Retry-After; about four days) before dead-lettering. Set the switch with the operator CLI at the
+repo root, never by hand — `writes hold`/`on` also pauses and resumes the queues:
+
+```sh
+node scripts/flags.mjs mailchimp-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
+
 ## Local development
 
 - `npm install` — install dependencies
@@ -344,12 +438,22 @@ dashboard refuses two connections on one root directory, fall back to the
 - `npm run typecheck` — type-check with no emit
 - `npm run dev` — run the Worker locally with `wrangler dev`
 - `npm run deploy` — deploy with `wrangler deploy`
-- `wrangler secret put MONDAY_API_TOKEN` / `MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
+- `wrangler secret put MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
   `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them). Neither webhook route works
   without its secret: both fail closed, 401ing every delivery (including the Monday challenge
   handshake) until the secret is set, rather than accepting unauthenticated requests.
   `SLACK_WEBHOOK_URL` is optional — dead-letter alerts, see [Dead letters](#dead-letters).
   Every secret is set again with `--env sandbox` for the sandbox deployment.
+- **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
+  bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff
+  Sync* OAuth app — production (`svbc-mailchimp-sync`) to `svbc-monday-auth`, sandbox (`--env
+  sandbox`) to `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per
+  request and re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the
+  cutover is under way (delete it once the binding works); with neither, building the Monday client
+  throws a config error naming both. Operator scripts (`scripts/*.mjs`) keep reading
+  `MONDAY_API_TOKEN` from the operator's shell. Local `wrangler dev` has no broker to call, so put a
+  `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 - `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
   `wrangler.jsonc`
 

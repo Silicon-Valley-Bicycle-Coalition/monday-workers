@@ -46,6 +46,7 @@ export interface MailchimpMemberInterests {
 }
 
 export type UpdateMemberResult = 'updated' | 'not-in-audience';
+export type RenameMemberResult = 'renamed' | 'target-exists' | 'not-in-audience';
 export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
 
 export interface MailchimpClient {
@@ -59,17 +60,46 @@ export interface MailchimpClient {
    */
   updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult>;
   /**
+   * Move an existing member from `oldEmail` to `newEmail` after staff change a Donor's address
+   * on Monday. Only `email_address` is sent, so the member's status (its consent), tags and
+   * history carry over unchanged. Never creates a member and never merges two: 'target-exists'
+   * (no write) when `newEmail` is already in the audience or is the same member, and
+   * 'not-in-audience' when `oldEmail` isn't.
+   */
+  renameMember(oldEmail: string, newEmail: string): Promise<RenameMemberResult>;
+  /**
    * Set an existing member to unsubscribed — the one status change this worker ever makes, and
    * only for a reviewed Do Not Solicit. One-way: nothing here resubscribes anyone. Returns
    * 'already-unsubscribed' (no write) for an unsubscribed or cleaned member, and
    * 'not-in-audience' (no write) for an address Mailchimp doesn't hold.
    */
   unsubscribeMember(email: string): Promise<UnsubscribeResult>;
+  /**
+   * The names of the tags currently on a member (up to 1000), [] for an address not in the
+   * audience. Read before updateMember so the Nearby tags it should deactivate can be named.
+   */
+  getMemberTagNames(email: string): Promise<string[]>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
-  listInterests(): Promise<MailchimpInterest[]>;
+  /**
+   * Every interest in the given categories. Throws if a category isn't in the audience: a
+   * mistyped id would otherwise read as "no interests", and the reconcile would archive every
+   * Campaigns item.
+   */
+  listInterests(categoryIds: readonly string[]): Promise<MailchimpInterest[]>;
 }
 
 let sinkLogged = false;
+
+// Per-request bound on every Mailchimp call (#73): the queues run at max_concurrency 1, so one hung
+// request would otherwise stall every message behind it. Matches the Monday client's
+// requestTimeoutMs. A timeout throws a plain TimeoutError, which the consumers retry.
+const REQUEST_TIMEOUT_MS = 20_000;
+
+// The audience marks City, County, First and Last Name required, and ~1,800 contacts (mostly
+// imported from Salesforce) have one blank. Mailchimp checks every required field on every member
+// PATCH, not just the ones sent, so without this each write to such a contact fails with a 400
+// "Your merge fields were invalid", whatever it changes. Nothing here can fill those fields in.
+const SKIP_MERGE_VALIDATION = '?skip_merge_validation=true';
 
 export class HttpMailchimpClient implements MailchimpClient {
   constructor(
@@ -82,6 +112,10 @@ export class HttpMailchimpClient implements MailchimpClient {
     // which doesn't care about `this`) — only surfaced provisioning the sandbox 2026-09-22.
     private fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {}
+
+  private request(url: string, init: RequestInit): Promise<Response> {
+    return this.fetchFn(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  }
 
   // Mailchimp Marketing API auth: HTTP Basic with any non-empty username and the API
   // key as the password (documented behavior, not a real credential pair).
@@ -100,8 +134,8 @@ export class HttpMailchimpClient implements MailchimpClient {
     // subscribed every Donor with an email on their first column change — including ones
     // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
     // member (subscribed, unsubscribed, cleaned…) is never sent, so never changed.
-    const response = await this.fetchFn(
-      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,
+    const response = await this.request(
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}${SKIP_MERGE_VALIDATION}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
@@ -123,7 +157,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       ...managed.filter((name) => !desired.includes(name)).map((name) => ({ name, status: 'inactive' as const })),
     ];
     if (tags.length === 0) return;
-    const response = await this.fetchFn(
+    const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}/tags`,
       {
         method: 'POST',
@@ -134,17 +168,36 @@ export class HttpMailchimpClient implements MailchimpClient {
     if (!response.ok) throw await httpError('syncTags', response);
   }
 
+  async renameMember(oldEmail: string, newEmail: string): Promise<RenameMemberResult> {
+    if (memberId(oldEmail) === memberId(newEmail)) return 'target-exists';
+    const membersUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members`;
+    // Look first: Mailchimp refuses to rename onto an address it already holds, and two members
+    // are never merged here — that address's own consent stays as it is.
+    const lookup = await this.request(`${membersUrl}/${memberId(newEmail)}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    if (lookup.ok) return 'target-exists';
+    if (lookup.status !== 404) throw await httpError('renameMember lookup', lookup);
+
+    const response = await this.request(`${membersUrl}/${memberId(oldEmail)}${SKIP_MERGE_VALIDATION}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+      body: JSON.stringify({ email_address: newEmail.trim() }),
+    });
+    if (response.status === 404) return 'not-in-audience';
+    if (response.ok) return 'renamed';
+    throw await httpError('renameMember', response);
+  }
+
   async unsubscribeMember(email: string): Promise<UnsubscribeResult> {
     const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}`;
     // Look first: Mailchimp refuses a status change on a cleaned address, and an unsubscribed
     // one needs no write.
-    const lookup = await this.fetchFn(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    const lookup = await this.request(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
     if (lookup.status === 404) return 'not-in-audience';
     if (!lookup.ok) throw await httpError('unsubscribeMember lookup', lookup);
     const { status } = (await lookup.json()) as { status: string };
     if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';
 
-    const response = await this.fetchFn(memberUrl, {
+    const response = await this.request(`${memberUrl}${SKIP_MERGE_VALIDATION}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
       body: JSON.stringify({ status: 'unsubscribed' }),
@@ -153,8 +206,20 @@ export class HttpMailchimpClient implements MailchimpClient {
     throw await httpError('unsubscribeMember', response);
   }
 
+  async getMemberTagNames(email: string): Promise<string[]> {
+    const response = await this.request(
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}/tags?count=1000`,
+      { headers: { Authorization: this.authHeader() } },
+    );
+    if (response.status === 404) return [];
+    // Like the other reads, any failure is retried rather than acked.
+    if (!response.ok) throw await httpError('getMemberTagNames', response, true);
+    const json = (await response.json()) as { tags?: { name: string }[] };
+    return (json.tags ?? []).map((tag) => tag.name);
+  }
+
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {
-    const response = await this.fetchFn(
+    const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}?fields=status,interests`,
       { headers: { Authorization: this.authHeader() } },
     );
@@ -164,17 +229,22 @@ export class HttpMailchimpClient implements MailchimpClient {
     return { status: json.status, interests: json.interests ?? {} };
   }
 
-  async listInterests(): Promise<MailchimpInterest[]> {
-    const categoriesResponse = await this.fetchFn(
+  async listInterests(categoryIds: readonly string[]): Promise<MailchimpInterest[]> {
+    const categoriesResponse = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories?count=100`,
       { headers: { Authorization: this.authHeader() } },
     );
     if (!categoriesResponse.ok) throw await httpError('listInterests', categoriesResponse, true);
     const categoriesJson = (await categoriesResponse.json()) as { categories: { id: string }[] };
+    const present = new Set(categoriesJson.categories.map((category) => category.id));
+    const missing = categoryIds.filter((id) => !present.has(id));
+    if (missing.length > 0) {
+      throw new Error(`mailchimp listInterests: interest categories not in the audience: ${missing.join(', ')} (check mailchimp.interestCategoryIds)`);
+    }
 
     const out: MailchimpInterest[] = [];
-    for (const category of categoriesJson.categories) {
-      const interestsResponse = await this.fetchFn(
+    for (const category of categoriesJson.categories.filter((c) => categoryIds.includes(c.id))) {
+      const interestsResponse = await this.request(
         `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories/${category.id}/interests?count=100`,
         { headers: { Authorization: this.authHeader() } },
       );

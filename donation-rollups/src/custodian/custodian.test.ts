@@ -1,13 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
 import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
-import { dutiesForDate, runDuty, RECONCILE_AFFILIATIONS_PER_RUN,
+import { D1RollCallCreditsStore } from '../db/rollCallCredits';
+import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN,
   type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
-import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
+import type { DonationRollupsConfig, RecomputeQueueMessage, SponsorshipsConfig } from '../types';
+import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 
 const OWNER_COLS = {
   giftLedgerJson: 'col_glj', lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
@@ -30,6 +33,7 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
       donorLevel: null,
       volunteerBoards: [],
       historicalVolunteerBoards: [],
+      recurringGifts: null, rollCall: null, sponsorships: null,
     },
   };
 }
@@ -78,6 +82,15 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     async pageRegistrations() { return { items: [], cursor: null }; },
     async pageHistoricalShifts() { return { items: [], cursor: null }; },
     async getItemsBoardIds() { return new Map(); },
+    async pageRecurringGifts() { return { items: [], cursor: null }; },
+    async pageDonationCredits() { return { items: [], cursor: null }; },
+    async getItemsState() { return new Map(); },
+    async listGroups() { return []; },
+    async createGroup() { return 'group'; },
+    async updateGroupTitle() {},
+    async createItemInGroup() { return 'item'; },
+    async moveItemToGroup() {},
+    async deleteItem() {},
   };
 }
 
@@ -86,7 +99,7 @@ function deps(state: FakeClientState, sent: RecomputeQueueMessage[], config = te
     gifts: new D1GiftsStore(env.DB),
     pending: new D1PendingStore(env.DB),
     volunteers: new D1VolunteerActivityStore(env.DB),
-    recomputes: new D1OwnerRecomputesStore(env.DB),
+    recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB),
     mondayClient: fakeClient(state),
     queue: { sendBatch: async (msgs) => { sent.push(...msgs); } },
     config,
@@ -118,17 +131,17 @@ describe('dutiesForDate', () => {
 
   it('takes its calendar from config: sweep on day 1 and archive on day 15 of the fiscal start month', () => {
     const april = { startMonth: 4, timeZone: 'America/Los_Angeles' };
-    expect(dutiesForDate(new Date('2026-04-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
-    expect(dutiesForDate(new Date('2026-04-15T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
-    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+    expect(dutiesForDate(new Date('2026-04-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
+    expect(dutiesForDate(new Date('2026-04-15T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'archive']);
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']);
   });
 
   it('reads "today" in the configured time zone, not UTC', () => {
     // 01:00 UTC July 1 is still June 30 in Pacific time; 01:00 UTC July 2 is July 1 there.
-    expect(dutiesForDate(new Date('2026-07-01T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership']);
-    expect(dutiesForDate(new Date('2026-07-02T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+    expect(dutiesForDate(new Date('2026-07-01T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']);
+    expect(dutiesForDate(new Date('2026-07-02T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
     // 01:00 UTC Tuesday 2026-08-04 is Monday evening in Pacific time.
-    expect(dutiesForDate(new Date('2026-08-04T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'capacity']);
+    expect(dutiesForDate(new Date('2026-08-04T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'capacity']);
   });
 
   it('membership runs nightly', () => {
@@ -137,10 +150,39 @@ describe('dutiesForDate', () => {
 
   it('reconciles daily, checks capacity Mondays, sweeps July 1, archives July 15', () => {
     // requeue (fix 5) rides every night with reconcile.
-    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership']); // a Wednesday
-    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'capacity']); // a Monday
-    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
-    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']); // a Wednesday
+    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'capacity']); // a Monday
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
+    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'archive']);
+  });
+
+  const SPON = (yearBasis: 'calendar' | 'fiscal'): SponsorshipsConfig =>
+    ({ organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: [], yearBasis, windowYears: 3, pipelineBoards: {} });
+  const NIGHTLY = ['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall'];
+
+  it('dutiesForDate runs sponsorships nightly when configured', () => {
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY, [], SPON('fiscal'))).toEqual([...NIGHTLY, 'sponsorships']);
+  });
+
+  it('re-runs sponsorships while its last report has remaining > 0 (once)', () => {
+    const lastRuns = [{ duty: 'sponsorships', report: { detail: { backfilled: 5000, remaining: 40 } } }];
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY, lastRuns, SPON('fiscal')).filter((d) => d === 'sponsorships')).toEqual(['sponsorships']);
+  });
+
+  it('adds sweep on January 1 when yearBasis is calendar', () => {
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY, [], SPON('calendar'))).toEqual([...NIGHTLY, 'sponsorships', 'sweep']);
+    // 2027-01-01T06:00Z is still Dec 31 in Los Angeles
+    expect(dutiesForDate(new Date('2027-01-01T06:00:00Z'), FY, [], SPON('calendar'))).toEqual([...NIGHTLY, 'sponsorships']);
+  });
+
+  it('does not double the sweep when January 1 is also the fiscal start', () => {
+    const jan = { startMonth: 1, timeZone: 'America/Los_Angeles' };
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), jan, [], SPON('calendar')).filter((d) => d === 'sweep')).toEqual(['sweep']);
+  });
+
+  it('does not add a January sweep for fiscal basis or when sponsorships is null', () => {
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY, [], SPON('fiscal'))).toEqual([...NIGHTLY, 'sponsorships']);
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY)).toEqual(NIGHTLY);
   });
 
   it('continues an incomplete sweep on subsequent days while its last run reports remaining > 0', async () => {
@@ -148,7 +190,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { enqueued: 3500, remaining: 900, cursor: 'o3500' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
   });
 
   it('does not re-run a sweep whose last run completed (remaining === 0)', async () => {
@@ -156,7 +198,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { enqueued: 900, remaining: 0, cursor: 'o4400' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']);
   });
 
   it('only the MOST RECENT run of a duty counts — an old incomplete run superseded by a complete one stays finished', async () => {
@@ -166,7 +208,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'archive', ranAt: '2026-07-16T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { remaining: 0 } } });
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']);
   });
 
   it('never doubles a duty its start date already scheduled', async () => {
@@ -174,7 +216,15 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-06-30T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { remaining: 10 } } });
     expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
+  });
+
+  it('keeps rollcall in the list, once, while its last run reports remaining > 0', async () => {
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'rollcall', ranAt: '2026-08-04T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'capped', detail: { rows: 900, applied: 500, remaining: 400 } } });
+    const duties = dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY, await gifts.lastRuns());
+    expect(duties.filter((d) => d === 'rollcall')).toEqual(['rollcall']);
   });
 
   it('archive continues daily until complete, and summaries materialize on the run that hits remaining 0', async () => {
@@ -192,7 +242,7 @@ describe('dutiesForDate', () => {
 
     // July 16: the daily cron sees the incomplete run and continues it.
     expect(dutiesForDate(new Date('2026-07-16T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'archive']);
     d.now = new Date('2026-08-02T00:00:00Z'); // a later ran_at, so lastRuns sees THIS run as most recent
     const second = await runDuty('archive', d);
     expect((second.detail as { remaining: number }).remaining).toBe(0);
@@ -200,7 +250,7 @@ describe('dutiesForDate', () => {
 
     // July 17: complete — archive drops back out of the schedule.
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall']);
   });
 });
 
@@ -565,7 +615,6 @@ describe('reconcile duty', () => {
     const report = await runDuty('reconcile', d);
     expect(report.ok).toBe(true); // a missing column is a skip, not a mismatch
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "b2"'));
-    warn.mockRestore();
   });
 
   it('skips legs 5/6 entirely when config.affiliations is not configured', async () => {
@@ -683,6 +732,14 @@ describe('requeue duty', () => {
     expect(state.updates).toHaveLength(1); // one alert
   });
 
+  it('re-sends a stuck affiliation with its kind', async () => {
+    await new D1PendingStore(env.DB).upsertPending({ donationItemId: 'aff-stuck', donationBoardId: '555', eventId: 'e',
+      receivedAt: '2026-07-29T00:00:00Z', kind: 'affiliation' });
+    const sent: RecomputeQueueMessage[] = [];
+    await runDuty('requeue', deps({ archived: [], updates: [] }, sent, testConfig({ alertItemId: null })));
+    expect(sent).toEqual([{ kind: 'affiliation', donationItemId: 'aff-stuck', donationBoardId: '555' }]);
+  });
+
   it('re-sends a stuck registration with kind: registration, and a donation with no kind key', async () => {
     await new D1PendingStore(env.DB).upsertPending({ donationItemId: 'reg-stuck', donationBoardId: '700', eventId: 'e',
       receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' });
@@ -703,5 +760,79 @@ describe('requeue duty', () => {
     expect(sent).toHaveLength(0);
     expect(report.ok).toBe(true);
     expect(state.updates).toHaveLength(0);
+  });
+});
+
+// The write switch (spec 2026-10-26) on the daily cron: the mode is read once per run (index.ts).
+describe('scheduled custodian run (write switch)', () => {
+  // Every console spy below is restored here, even when an assertion fails first.
+  afterEach(() => { vi.restoreAllMocks(); });
+  const gate = (mode: WriteMode): BatchSkipContext =>
+    ({ worker: 'donation-rollups', environment: 'production', mode, logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS });
+  // July 15 in Pacific time: the nightly duties plus the year-end archive run.
+  const JULY_15 = new Date('2026-07-15T16:00:00Z');
+
+  async function seed() {
+    await seedGift(env.DB, 'old1', { fy: 2015 }); // archivable
+    // A pending row stuck for two days — the requeue duty's work, and an ATTENTION report.
+    await env.DB.prepare(`INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, received_at, status, kind)
+      VALUES ('stuck1', '100', 'e1', '2026-07-13T00:00:00Z', 'queued', 'donation')`).run();
+  }
+
+  it.each([['hold'], ['unknown']] as const)('%s: runs no duty, reads nothing and records no run', async (mode) => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    const lastRuns = vi.spyOn(d.gifts, 'lastRuns');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await runScheduled(d, gate(mode));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`write mode is "${mode}"`));
+    expect(lastRuns).not.toHaveBeenCalled();
+    expect(state.archived).toEqual([]);
+    expect(state.updates).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(await d.gifts.lastRuns()).toEqual([]);
+  });
+
+  it('off: runs the duties against recording sinks — no archive, alert or enqueue, and no run recorded', async () => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    const recordRun = vi.spyOn(d.gifts, 'recordRun');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('off'));
+    const lines = log.mock.calls.map(([line]) => String(line));
+
+    expect(recordRun).not.toHaveBeenCalled();
+    expect(await d.gifts.lastRuns()).toEqual([]);
+    expect(state.archived).toEqual([]);
+    expect(state.updates).toEqual([]);
+    expect(sent).toEqual([]);
+    // Nothing in D1 moved: the gift is still active, no summaries materialized.
+    expect(await d.gifts.getArchivable(2026)).toEqual([{ mondayItemId: 'old1', fiscalYear: 2015 }]);
+    expect(await d.gifts.getAnnualSummaries()).toEqual([]);
+    // Each would-be write is a skip line; each duty still logs its report.
+    const skipped = lines.filter((l) => l.includes('"writeSwitch":"skipped"')).map((l) => JSON.parse(l) as { sink: string; operation: string });
+    expect(skipped.map((l) => `${l.sink}.${l.operation}`)).toEqual(expect.arrayContaining([
+      'Monday.archiveItem', 'RECOMPUTE_QUEUE.sendBatch', 'Monday.createUpdate',
+    ]));
+    expect(lines.some((l) => l.startsWith('custodian archive (dry run): ok'))).toBe(true);
+  });
+
+  it('on: runs and records every duty today owes', async () => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    expect(state.archived).toEqual(['old1']);
+    expect(sent.map((m) => m.donationItemId)).toEqual(['stuck1']);
+    expect((await d.gifts.lastRuns()).map((r) => r.duty).sort()).toEqual(
+      ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue', 'rollcall']);
   });
 });

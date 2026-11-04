@@ -1,4 +1,6 @@
 import type { Locale } from './i18n/locales';
+import type { WriteStamp } from './flags';
+import type { MondayTokenSource } from './monday/graphql';
 
 export interface MondayColumns {
   donorEmail: string;
@@ -24,6 +26,12 @@ export interface MondayColumns {
   volunteerDate: string;
   volunteerJob: string;
   volunteerStatus: string;
+  // DTD (Double the Donation) match columns — gated together by matchLinesEnabled: the first three
+  // live on the Donations board, donorDtdLink on the Donors board.
+  donationMatchesGift: string;
+  donationMatchStatus: string;
+  donationMatchedBy: string;
+  donorDtdLink: string;
 }
 
 // The three donor-facing communication preferences. Each maps to its own gated checkbox column
@@ -147,6 +155,25 @@ export interface FunraiseLinkUrls {
   renewMembershipUrl: string | null;
 }
 
+// "Get involved" dashboard links (transit-agency and city committee meetings, SVBC events,
+// volunteering). Public pages, not donor data, so production and sandbox may share them.
+export type GetInvolvedCategory = 'transit' | 'civic' | 'events' | 'volunteer';
+
+export interface GetInvolvedLink {
+  category: GetInvolvedCategory;
+  // A committee or agency name, shown untranslated. Omitted for events/volunteer links, which
+  // fall back to the category's translated link text.
+  label?: string;
+  url: string;
+  // Optional subscribable ICS feed (svbc-calendars' committees.bikesiliconvalley.org).
+  calendarUrl?: string;
+}
+
+export interface GetInvolvedConfig {
+  // Empty = the dashboard section is omitted.
+  links: GetInvolvedLink[];
+}
+
 export interface PledgeColumns {
   donorLink: string;
   pledgedAmount: string;
@@ -209,12 +236,18 @@ export interface Config {
     sessionTtlHours: number;
     portalBaseUrl: string;
   };
+  // Per-address login-email limits (issue #62), on top of the per-IP limiter. Only requests these
+  // let through are recorded in login_attempts, so a denied request never extends a lockout.
   rateLimit: {
+    // Minimum gap between two login emails to one address.
+    emailCooldownSeconds: number;
     emailWindowSeconds: number;
+    // Login emails allowed per address per emailWindowSeconds.
     emailMaxAttempts: number;
-    // How long login_attempts rows (every submitted email, donor or not) survive the daily
-    // purge. Only rows inside emailWindowSeconds are ever read, so this just needs to exceed
-    // that window (validated); the slack is for debugging abuse after the fact.
+    // Login emails allowed per address per rolling 24 hours.
+    emailDailyMax: number;
+    // How long login_attempts rows (hashed addresses, donor or not) survive the daily purge.
+    // The daily cap reads back 24 hours, so this must be at least that (validated).
     attemptRetentionHours: number;
   };
   taxLetter: TaxLetterConfig;
@@ -225,6 +258,7 @@ export interface Config {
   donations: DonationsConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
+  getInvolved: GetInvolvedConfig;
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
   impact: ImpactConfig;
@@ -240,6 +274,11 @@ export interface DonationRecord {
   date: string;
   amount: string;
   description: string;
+  // An employer's matching gift paired to this one (the latest, if several). Absent/null when
+  // unpaired or the feature is gated off.
+  match?: { date: string; amount: string; company: string } | null;
+  // The donor's own DTD link, set only on an unmatched gift whose Match Status is "Waiting for donor".
+  matchHintUrl?: string | null;
 }
 
 export interface MemberPortalData {
@@ -322,21 +361,28 @@ export interface PortalView {
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for
 // that module's own callers) to avoid an import cycle: submitChangeRequest.ts imports
 // MondayClient from monday/client.ts, which itself imports from this file.
-export interface ChangeQueueMessage {
+// `& WriteStamp`: a message enqueued under `off` stays a dry run (src/flags.ts).
+export interface ChangeQueueMessage extends WriteStamp {
   requestId: number;
 }
 
 // See the comment on ChangeQueueMessage above — same import-cycle avoidance.
-export interface LetterSendQueueMessage {
+export interface LetterSendQueueMessage extends WriteStamp {
   sendId: number;
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates the gitignored worker-configuration.d.ts from wrangler.jsonc —
 // a bare `tsc --noEmit` reads a missing or stale copy; see README "Development");
-// only secrets and narrowed queue message types are declared here.
-export interface Env extends Cloudflare.Env {
-  MONDAY_API_TOKEN: string;
+// only secrets, the MONDAY_AUTH binding (typed as the token source the generated Service stands
+// in for) and narrowed queue message types are declared here.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
+  // Monday access: the monday-auth broker's PortalToken entrypoint (read-only scope) for the
+  // portal, SyncToken for member-portal-writer (wrangler.jsonc / wrangler.writer.jsonc services).
+  // The fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   EMAIL: SendEmail;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
   LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;

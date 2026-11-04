@@ -44,7 +44,9 @@ describe('HttpMailchimpClient.updateMember', () => {
     expect(result).toBe('updated');
     expect(fetchFn).toHaveBeenCalledWith(
       // md5('donor@example.com') === 'b5abe4cfed3adc382b3292a791f6faa3'
-      'https://us1.api.mailchimp.com/3.0/lists/aud1/members/b5abe4cfed3adc382b3292a791f6faa3',
+      // skip_merge_validation: the audience's required fields (City, County, names) are blank on
+      // ~1,800 contacts, and Mailchimp refuses any PATCH to one of them without it.
+      'https://us1.api.mailchimp.com/3.0/lists/aud1/members/b5abe4cfed3adc382b3292a791f6faa3?skip_merge_validation=true',
       expect.objectContaining({
         method: 'PATCH',
         body: JSON.stringify({ merge_fields: { MTIER: 'Standard' } }),
@@ -122,6 +124,33 @@ describe('HttpMailchimpClient.updateMember', () => {
   });
 });
 
+describe('HttpMailchimpClient.getMemberTagNames', () => {
+  it('lists the member\'s tag names via the tags endpoint with count=1000', async () => {
+    const fetchFn = fakeFetch({ ok: true, json: async () => ({ tags: [{ id: 1, name: 'Near: Old' }, { id: 2, name: 'VIP' }], total_items: 2 }) });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    expect(await client.getMemberTagNames('a@b.com')).toEqual(['Near: Old', 'VIP']);
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toMatch(/\/lists\/aud1\/members\/[0-9a-f]{32}\/tags\?count=1000$/);
+    expect((init as RequestInit).method ?? 'GET').toBe('GET');
+  });
+
+  it('returns [] on a 404 (member not in the audience)', async () => {
+    const fetchFn = fakeFetch({ ok: false, status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+    expect(await client.getMemberTagNames('a@b.com')).toEqual([]);
+  });
+
+  it('throws the client\'s usual classified errors on other failures', async () => {
+    const server = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 503 }));
+    await expect(server.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+    const auth = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 401 }));
+    await expect(auth.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpAuthError);
+    const limited = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 429 }));
+    await expect(limited.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpRateLimitError);
+  });
+});
+
 describe('HttpMailchimpClient.getMemberInterests', () => {
   it('returns null on a 404 (contact not yet in the audience)', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 404 });
@@ -152,12 +181,31 @@ describe('HttpMailchimpClient.listInterests', () => {
       } as Response);
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
 
-    const interests = await client.listInterests();
+    const interests = await client.listInterests(['cat1']);
 
     expect(interests).toEqual([
       { categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' },
       { categoryId: 'cat1', interestId: 'int2', name: 'Welcome Drip' },
     ]);
+  });
+
+  it('reads only the configured categories', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ categories: [{ id: 'old' }, { id: 'cat1' }] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ interests: [{ id: 'int1', name: 'Newsletter' }] }) } as Response);
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    expect(await client.listInterests(['cat1'])).toEqual([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn.mock.calls[1]![0]).toContain('/interest-categories/cat1/interests');
+  });
+
+  it('throws when a configured category is not in the audience, rather than reading none', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ categories: [{ id: 'cat1' }] }) } as Response);
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    await expect(client.listInterests(['cat1', 'typo'])).rejects.toThrow('interest categories not in the audience: typo');
   });
 });
 
@@ -185,7 +233,7 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
 
     expect(fetchFn).toHaveBeenNthCalledWith(1, `${HASH_URL}?fields=status`, expect.anything());
     const [url, init] = fetchFn.mock.calls[1]!;
-    expect(url).toBe(HASH_URL);
+    expect(url).toBe(`${HASH_URL}?skip_merge_validation=true`);
     expect((init as RequestInit).method).toBe('PATCH');
     // Only the status — never merge fields or anything that could re-subscribe.
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ status: 'unsubscribed' });
@@ -227,6 +275,57 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
   });
 });
 
+describe('HttpMailchimpClient.renameMember', () => {
+  const BASE = 'https://us1.api.mailchimp.com/3.0/lists/aud1/members';
+  const OLD_URL = `${BASE}/ef903182f04f56f4e6ed568d13872f31`;
+  const NEW_URL = `${BASE}/15799ec368544c4559fafadc4d3e2a47`;
+
+  it('checks the new address is free, then PATCHes only email_address on the old member', async () => {
+    const fetchFn = sequenceFetch({ status: 404 }, { status: 200 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.renameMember('Old@B.com ', 'new@b.com')).resolves.toBe('renamed');
+
+    expect(fetchFn).toHaveBeenNthCalledWith(1, `${NEW_URL}?fields=status`, expect.anything());
+    const [url, init] = fetchFn.mock.calls[1]!;
+    expect(url).toBe(`${OLD_URL}?skip_merge_validation=true`);
+    expect((init as RequestInit).method).toBe('PATCH');
+    // Only the address: the member's status (its consent) is never sent, so never changed.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ email_address: 'new@b.com' });
+  });
+
+  it('returns target-exists without writing when the new address is already a member', async () => {
+    const fetchFn = sequenceFetch({ status: 200, json: { status: 'subscribed' } });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('old@b.com', 'new@b.com')).resolves.toBe('target-exists');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns not-in-audience when the old address is not a member (nothing to rename, nothing created)', async () => {
+    const fetchFn = sequenceFetch({ status: 404 }, { status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('old@b.com', 'new@b.com')).resolves.toBe('not-in-audience');
+  });
+
+  it('makes no request when the two addresses are the same member', async () => {
+    const fetchFn = vi.fn();
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('A@B.com', ' a@b.com')).resolves.toBe('target-exists');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('throws transient on 429/5xx and permanent on other 4xx from the PATCH', async () => {
+    const transient = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 404 }, { status: 503 }));
+    await expect(transient.renameMember('old@b.com', 'new@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+
+    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 404 }, { status: 400 }));
+    await expect(permanent.renameMember('old@b.com', 'new@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+});
+
 describe('HttpMailchimpClient auth failures', () => {
   function rejected(status: number) {
     return fakeFetch({ ok: false, status, text: async () => '{"title":"API Key Invalid"}' });
@@ -254,7 +353,7 @@ describe('HttpMailchimpClient auth failures', () => {
 
       const reads = new HttpMailchimpClient('https://x', 'k', 'aud', rejected(status));
       await expect(reads.getMemberInterests('a@b.com')).rejects.toBeInstanceOf(MailchimpAuthError);
-      await expect(reads.listInterests()).rejects.toBeInstanceOf(MailchimpAuthError);
+      await expect(reads.listInterests(['cat1'])).rejects.toBeInstanceOf(MailchimpAuthError);
     });
   }
 
@@ -290,7 +389,7 @@ describe('HttpMailchimpClient rate limiting', () => {
 
   it('classifies a 429 from listInterests and the unsubscribe lookup as rate-limited', async () => {
     const client = new HttpMailchimpClient('https://x', 'k', 'aud', rateLimited({ 'Retry-After': '5' }));
-    await expect(client.listInterests()).rejects.toBeInstanceOf(MailchimpRateLimitError);
+    await expect(client.listInterests(['cat1'])).rejects.toBeInstanceOf(MailchimpRateLimitError);
     await expect(client.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpRateLimitError);
   });
 
@@ -300,5 +399,27 @@ describe('HttpMailchimpClient rate limiting', () => {
     const err = await client.getMemberInterests('a@b.com').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(MailchimpTransientError);
     expect(err).not.toBeInstanceOf(MailchimpRateLimitError);
+  });
+});
+
+// #73: the queues run one message at a time, so a hung Mailchimp call must fail (and be retried)
+// rather than stall every message behind it.
+describe('HttpMailchimpClient request timeouts', () => {
+  it('passes every request a timeout signal, and a hung request rejects with TimeoutError', async () => {
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(1));
+    const fetchFn = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)))
+    );
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn as typeof fetch);
+
+    await expect(client.unsubscribeMember('a@b.com')).rejects.toMatchObject({ name: 'TimeoutError' });
+    await expect(client.getMemberInterests('a@b.com')).rejects.toMatchObject({ name: 'TimeoutError' });
+    await expect(client.listInterests(['cat-1'])).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    expect(timeoutSpy).toHaveBeenCalledTimes(3);
+    for (const [timeoutMs] of timeoutSpy.mock.calls) expect(timeoutMs).toBe(20_000);
+    timeoutSpy.mockRestore();
   });
 });

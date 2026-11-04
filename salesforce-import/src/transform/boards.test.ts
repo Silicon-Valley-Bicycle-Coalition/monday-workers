@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
+import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
   registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload,
   campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
 
@@ -16,6 +16,18 @@ describe('subscriptionToPayload', () => {
   });
   it('never re-materializes the Redacted subscription', () => {
     expect(subscriptionToPayload({ Id: 's2', Name: 'Redacted', ...prov })).toBeNull();
+  });
+});
+
+describe('activeRecurringDonors', () => {
+  it('collects the supporters of Active subscriptions, skipping Redacted ones', () => {
+    const s = activeRecurringDonors([
+      { Id: 's1', Name: 'Sub', funraise__Supporter__c: 'c1', funraise__Status__c: 'Active' },
+      { Id: 's2', Name: 'Sub', funraise__Supporter__c: 'c2', funraise__Status__c: 'Canceled' },
+      { Id: 's3', Name: 'Redacted', funraise__Supporter__c: 'c3', funraise__Status__c: 'Active' },
+      { Id: 's4', Name: 'Sub', funraise__Supporter__c: null, funraise__Status__c: 'Active' },
+    ]);
+    expect([...s]).toEqual(['c1']);
   });
 });
 
@@ -77,6 +89,7 @@ describe('registrationToPayload', () => {
 });
 
 describe('eventbriteEventToPayload', () => {
+  const CUTOVER = '2026-10-01';
   const venue = { eb4sf__Name__c: 'Stanford Stadium', eb4sf__City__c: 'Palo Alto',
     eb4sf__Localized_Address_Display__c: '625 Nelson Rd, Palo Alto, CA 94305' };
   const base = { Id: 'eb1', Name: '1999043957289', eb4sf__Event_Name__c: 'Bike Parking at Stanford Stadium',
@@ -85,7 +98,7 @@ describe('eventbriteEventToPayload', () => {
     eb4sf__Status__c: 'completed', eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition (bike parking)',
     eb4sf__Total_Tickets_Sold__c: 12, eb4sf__Eventbrite_Venue__r: venue, ...prov };
   it('lands on the events board with the Eventbrite id, venue and program columns', () => {
-    const p = eventbriteEventToPayload(base, { hasAttendees: true })!;
+    const p = eventbriteEventToPayload(base, CUTOVER, { hasAttendees: true })!;
     expect(p.board).toBe('events');
     expect(p.sfId).toBe('eb1');
     expect(p.name).toBe('Bike Parking at Stanford Stadium');
@@ -101,16 +114,43 @@ describe('eventbriteEventToPayload', () => {
     expect(p.columns['Program']).toEqual({ label: 'Bike Parking' });
     expect(p.columns['Event Status']).toEqual({ label: 'Completed' });
   });
-  it('maps every Eventbrite status onto the closed Event Status set', () => {
-    const status = (s: string) => eventbriteEventToPayload({ ...base, eb4sf__Status__c: s }, { hasAttendees: true })!
-      .columns['Event Status'];
-    expect(status('live')).toEqual({ label: 'Upcoming' });
-    expect(status('started')).toEqual({ label: 'Upcoming' });
-    expect(status('canceled')).toEqual({ label: 'Canceled' });
-    expect(status('draft')).toEqual({ label: 'Draft' });
+  describe('Event Status', () => {
+    const status = (s: string, start: string | null, end: string | null) => eventbriteEventToPayload(
+      { ...base, eb4sf__Status__c: s, eb4sf__Start__c: start, eb4sf__End__c: end }, CUTOVER, { hasAttendees: true },
+    )!.columns['Event Status'];
+    const FUTURE = '2026-11-08T18:00:00.000+0000';
+    const PAST = '2025-10-26T00:30:00.000+0000';
+
+    it('maps every Eventbrite status onto the closed set for an event still to come', () => {
+      expect(status('live', FUTURE, FUTURE)).toEqual({ label: 'Upcoming' });
+      expect(status('started', FUTURE, FUTURE)).toEqual({ label: 'Upcoming' });
+      expect(status('canceled', FUTURE, FUTURE)).toEqual({ label: 'Canceled' });
+      expect(status('draft', FUTURE, FUTURE)).toEqual({ label: 'Draft' });
+    });
+    it('marks an event that ended before cutover Completed, however Eventbrite left its status', () => {
+      expect(status('started', PAST, PAST)).toEqual({ label: 'Completed' });
+      expect(status('live', PAST, PAST)).toEqual({ label: 'Completed' });
+    });
+    it('keeps an event that started before cutover and is still running Upcoming', () => {
+      expect(status('started', PAST, FUTURE)).toEqual({ label: 'Upcoming' });
+    });
+    it('keeps an event ending on the cutover day itself Upcoming', () => {
+      expect(status('started', PAST, `${CUTOVER}T02:00:00.000+0000`)).toEqual({ label: 'Upcoming' });
+    });
+    it('falls back to the start date when an event has no end', () => {
+      expect(status('started', PAST, null)).toEqual({ label: 'Completed' });
+      expect(status('started', FUTURE, null)).toEqual({ label: 'Upcoming' });
+    });
+    it('leaves an event with no dates Upcoming, as the Funraise path does', () => {
+      expect(status('live', null, null)).toEqual({ label: 'Upcoming' });
+    });
+    it('does not turn a past canceled event or draft into Completed', () => {
+      expect(status('canceled', PAST, PAST)).toEqual({ label: 'Canceled' });
+      expect(status('draft', PAST, PAST)).toEqual({ label: 'Draft' });
+    });
   });
   it('maps the organizer account suffix onto Program, defaulting to Public', () => {
-    const program = (o: string) => eventbriteEventToPayload({ ...base, eb4sf__Organizer_Name__c: o }, { hasAttendees: true })!
+    const program = (o: string) => eventbriteEventToPayload({ ...base, eb4sf__Organizer_Name__c: o }, CUTOVER, { hasAttendees: true })!
       .columns['Program'];
     expect(program('Silicon Valley Bicycle Coalition')).toEqual({ label: 'Public' });
     expect(program('Silicon Valley Bicycle Coalition (volunteering)')).toEqual({ label: 'Volunteering' });
@@ -118,12 +158,12 @@ describe('eventbriteEventToPayload', () => {
     expect(program('Silicon Valley Bicycle Coalition (private)')).toEqual({ label: 'Private' });
   });
   it('drops unpublished drafts nobody registered for, keeps drafts with attendees', () => {
-    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, { hasAttendees: false })).toBeNull();
-    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, { hasAttendees: true })).not.toBeNull();
-    expect(eventbriteEventToPayload(base, { hasAttendees: false })).not.toBeNull();
+    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, CUTOVER, { hasAttendees: false })).toBeNull();
+    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, CUTOVER, { hasAttendees: true })).not.toBeNull();
+    expect(eventbriteEventToPayload(base, CUTOVER, { hasAttendees: false })).not.toBeNull();
   });
   it('tolerates a missing venue (online events)', () => {
-    const p = eventbriteEventToPayload({ ...base, eb4sf__Eventbrite_Venue__r: null }, { hasAttendees: true })!;
+    const p = eventbriteEventToPayload({ ...base, eb4sf__Eventbrite_Venue__r: null }, CUTOVER, { hasAttendees: true })!;
     expect(p.columns['Venue']).toBe('');
     expect(p.columns['City']).toBe('');
   });
@@ -194,6 +234,13 @@ describe('campaignToPayload', () => {
     expect(campaignToPayload({ Id: 'k1', Name: 'Old', IsActive: false, EndDate: '2012-01-01', ...prov }, since)).toBeNull();
     expect(campaignToPayload({ Id: 'k2', Name: 'Now', IsActive: true, ...prov }, since)).not.toBeNull();
     expect(campaignToPayload({ Id: 'k3', Name: 'Recent', IsActive: false, EndDate: '2023-01-01', ...prov }, since)).not.toBeNull();
+  });
+  it('keeps any campaign a migrated gift references, however old (decided 2026-10-26)', () => {
+    const referenced = new Set(['k1', 'k5']);
+    expect(campaignToPayload({ Id: 'k1', Name: 'Old', IsActive: false, EndDate: '2012-01-01', ...prov }, since, referenced)).not.toBeNull();
+    // No EndDate and inactive: dropped before, however recent — the Bike to the Future pages.
+    expect(campaignToPayload({ Id: 'k5', Name: 'Bike to the Future 2025', IsActive: false, ...prov }, since, referenced)).not.toBeNull();
+    expect(campaignToPayload({ Id: 'k6', Name: 'Unused', IsActive: false, ...prov }, since, referenced)).toBeNull();
   });
   it('sets Salesforce Owner from Campaign.Owner', () => {
     const p = campaignToPayload({ Id: 'k4', Name: 'Now', IsActive: true, Owner: { Name: 'Jessica Waite' }, ...prov }, since)!;

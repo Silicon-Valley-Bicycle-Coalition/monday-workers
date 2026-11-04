@@ -7,6 +7,7 @@
 // Usage: MONDAY_API_TOKEN=... node scripts/setup-classification-columns.mjs <donationsBoardId>
 
 import { MONDAY_API_VERSION } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 const boardId = process.argv[2];
@@ -14,7 +15,9 @@ if (!token || !/^\d+$/.test(boardId ?? '')) {
   console.error('usage: MONDAY_API_TOKEN=... node scripts/setup-classification-columns.mjs <donationsBoardId>');
   process.exit(1);
 }
-const labels = (list) => JSON.stringify({ labels: Object.fromEntries(list.map((l, i) => [i, l])) });
+// Keyed 0..4, 6..n: Monday shows label id 5's text for an EMPTY status cell, so a real label there
+// makes every unclassified gift read as that label (and classify's text diff then skips it).
+const labels = (list) => JSON.stringify({ labels: Object.fromEntries(list.map((l, i) => [i < 5 ? i : i + 1, l])) });
 const FIELDS = {
   fundingStream: { title: 'Funding Stream', defaults: labels(['Individual Giving', 'Membership', 'Sponsorships', 'Grants & Contracts', 'Matching Donations', 'Other Program Revenue']) },
   giftSize: { title: 'Gift Size', defaults: labels(['< $100', '$100–249', '$250–999', '$1k–4.9k', '$5k+']) },
@@ -34,7 +37,7 @@ async function graphql(query, variables) {
 }
 
 const { boards } = await graphql('query ($id: [ID!]) { boards(ids: $id) { columns { id title } } }', { id: [boardId] });
-const byTitle = new Map(boards[0].columns.map((c) => [c.title, c.id]));
+const byTitle = new Map(boards[0].columns.map((c) => [bareTitle(c.title), c.id]));
 const out = {};
 for (const [key, spec] of Object.entries(FIELDS)) {
   let id = byTitle.get(spec.title);

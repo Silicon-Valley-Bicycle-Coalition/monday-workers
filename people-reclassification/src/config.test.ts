@@ -8,8 +8,8 @@ describe('validateConfig', () => {
   it('accepts the shipped sandbox config and keeps the optional sources', () => {
     const cfg = validateConfig(sandbox);
     expect(cfg.window.years).toBe(7);
-    expect(cfg.boards.live.boardId).toBe(18431577220);
-    expect(cfg.eventRegistrations?.events.startColumn).toBe('Start');
+    expect(cfg.boards.live.boardId).toBe(18437342592);
+    expect(cfg.eventRegistrations?.events.startColumn).toBe('Date');
     expect(cfg.volunteers?.columns.date).toBe('Date');
     expect(cfg.alerts.itRequests).toBeNull();
   });

@@ -7,7 +7,8 @@ import {
 
 const row = (over: Partial<GiftHistoryRow>): GiftHistoryRow => ({
   mondayItemId: 'g1', donationBoardId: '100', amountCents: 5000, giftDateISO: '2020-01-15',
-  fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, archived: true, ...over,
+  fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, archived: true,
+  sponsorshipEvent: null, inKindValueCents: null, ...over,
 });
 
 // Enough rows to overflow any byte budget: each tuple serializes to ~50 bytes.
@@ -67,8 +68,8 @@ describe('buildGiftLedgerJson', () => {
 
   it('tuples carry the acting-for affiliation id as a sixth element ("" when personal)', () => {
     const rows = [
-      { mondayItemId: 'g1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: false, actingForItemId: null },
-      { mondayItemId: 'g2', donationBoardId: '1', amountCents: 50000, giftDateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', giftType: 'Sponsorship', archived: false, actingForItemId: 'af-1' },
+      { mondayItemId: 'g1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: false, actingForItemId: null, sponsorshipEvent: null, inKindValueCents: null },
+      { mondayItemId: 'g2', donationBoardId: '1', amountCents: 50000, giftDateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', giftType: 'Sponsorship', archived: false, actingForItemId: 'af-1', sponsorshipEvent: null, inKindValueCents: null },
     ];
     expect(JSON.parse(buildGiftLedgerJson(rows).json)).toEqual([
       ['g2', '2024-02-02', 50000, 'Sponsorship', 'Received', 'af-1'],

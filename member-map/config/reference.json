@@ -1,0 +1,12 @@
+{
+  "stateFips": "06",
+  "counties": [
+    { "name": "San Mateo", "fips": "081" },
+    { "name": "Santa Clara", "fips": "085" }
+  ],
+  "acsYear": 2024,
+  "tigerYear": 2024,
+  "minPopulation": 100,
+  "roadMtfcc": ["S1200", "S1400"],
+  "bikeClassWeights": { "1": 1, "2": 0.5, "3": 0.2, "4": 1 }
+}

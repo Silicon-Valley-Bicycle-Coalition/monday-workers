@@ -21,23 +21,31 @@ email with the feedback form link.
 2. A monday.com board automation ("Send a webhook") POSTs to
    `POST /webhook/bp-feedback?secret=<WEBHOOK_SECRET>` — monday's webhook action has no custom
    header field, only a URL, so the shared secret rides in the query string (the Worker also
-   accepts `X-Webhook-Secret` as a header, for any future caller that can set one) — with a body
-   shaped like:
+   accepts `X-Webhook-Secret` as a header, for any future caller that can set one). The Worker
+   reads only `itemId` from the body:
    ```json
-   {
-     "itemId": 13089808285,
-     "itemName": "Fall Festival — BP Request Form item name",
-     "eventName": "Fall Festival",
-     "organizerEmail": "organizer@example.org"
-   }
+   { "itemId": 13089808285 }
    ```
-   (`itemName` and `eventName` are usually the same text — monday exposes both because the
-   automation fills them from different sources; only `eventName` is used in the email copy.)
+   Whatever else the automation sends (`itemName`, `eventName`, `organizerEmail`) is ignored.
+   Before #66 the Worker trusted those fields, so anyone holding the URL secret could send
+   SVBC-branded mail to any address with any subject.
 3. Before monday sends real traffic, it verifies the URL by POSTing `{"challenge": "<token>"}`
    once and expecting that same body echoed back — the Worker handles this ahead of normal
    payload validation.
-4. The Worker validates the secret and payload, then sends the organizer an email with the
-   feedback form link via Cloudflare Email Sending.
+4. The Worker validates the secret and the item id. It then reads the item from Monday
+   (`config/*.json` `board`): the organizer's address from `Preferred Email Address For
+   Coordination` (`short_text3z8szxke`), and the event name from `Event Name`
+   (`short_textdqu5gf2d`), or the item name if that's blank. It refuses an item that isn't on the
+   configured board (404, nothing sent, nothing written back) and an item with no single valid
+   address (422, `Send Failed` written back when `sendStatus` is set). A failed Monday read
+   answers 502 so monday retries. Control characters in the event name are collapsed to a space
+   before it reaches the Subject.
+5. It sends the organizer an email with the feedback form link via Cloudflare Email Sending.
+
+The sandbox config uses the production board's column ids, on the assumption that the sandbox
+mirror was duplicated from the live board (monday keeps column ids on duplicate). Not verified:
+the tokens available when #66 was fixed couldn't see the sandbox board. If a sandbox send logs
+`bp-feedback-no-email` for an item that has an address, check the ids with `get_board_info`.
 
 No D1/queue here (unlike `funraise-sync`/`quickbooks-sync`) — a missed or duplicate reminder
 email is low-stakes compared to a dropped donation write, so a synchronous send-on-receipt is
@@ -76,6 +84,8 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
    status changes to something, send a webhook" (monday's natural-language automation-creation
    API could not resolve this action by name — two different phrasings both matched an unrelated
    *inbound* webhook trigger block instead. It only worked by building it directly in the UI).
+   Use the template: "Create from scratch" has no webhook action. The template first asks for an
+   account connection, which here means the webhook URL: choose "Use another account" and paste it.
    Trigger: `Post-Event Feedback` → `Ready to Send`. Webhook URL:
    `https://svbc-bp-feedback-notify.svbc-account.workers.dev/webhook/bp-feedback?secret=<the WEBHOOK_SECRET from step 1>`
    (there's no header field, hence the secret in the query string — see Data flow above). monday
@@ -100,7 +110,7 @@ to them — the webhook just gets a 500. To surface it, set `sendStatus` in `con
 }
 ```
 
-and set a `MONDAY_API_TOKEN` secret (see Secrets). After each send the Worker sets that status
+(it uses the same Monday access as the item read; see Secrets). After each send the Worker sets that status
 column to `sentLabel` or `failedLabel` via `change_simple_column_value` — in the background
 (`waitUntil`, 10-second timeout) after the webhook has been answered, so a slow Monday API can't
 push the response past monday's timeout and trigger a retry (a duplicate email). Add the `failedLabel`
@@ -124,22 +134,35 @@ wrangler secret put WEBHOOK_SECRET               # production
 wrangler secret put WEBHOOK_SECRET --env sandbox  # sandbox
 ```
 
-Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger an email send, so
-treat it like a password, not a config value.
+Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger a feedback email to
+the organizer on any BP Request Form item, so treat it like a password, not a config value.
 
-`MONDAY_API_TOKEN` is only needed once `sendStatus` is configured (see "Optional: write
-Sent/Failed back to the item"). Mint it from a dedicated integration user with access to only
-the BP Request Form board (root README, least-privilege tokens), per environment:
-
-```sh
-wrangler secret put MONDAY_API_TOKEN               # production
-wrangler secret put MONDAY_API_TOKEN --env sandbox  # sandbox
-```
+Monday access is required: every send reads the item from the board, and the same access does the
+optional status write-back (see "Optional: write Sent/Failed back to the item"). It comes from the
+`monday-auth` broker, not a stored token: both deployments bind `MONDAY_AUTH` (`wrangler.jsonc`
+`services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync* OAuth app — production to
+`svbc-monday-auth`, sandbox to `svbc-monday-auth-sandbox`. This Worker carries no transport copy, so
+`src/mondayApi.ts` has its own `tokenProviderFor`: it asks the broker per request and re-asks once
+on a 401, as the shared `graphql.ts` does. A `MONDAY_API_TOKEN` secret is only the fallback while
+the cutover is under way (delete it once the binding works); with neither, the Worker logs
+`bp-feedback-misconfigured`, answers 500 and sends nothing. Local `wrangler dev` has no broker to
+call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+`docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 Because monday's webhook action can only carry the secret in the URL (see Data flow above), it
 appears in this Worker's Cloudflare access logs (Logpush, `wrangler tail`) on every request.
 Restrict who can read those logs the same way you'd restrict who holds `WEBHOOK_SECRET` itself,
 and rotate the secret if that access ever widens.
+
+## Write switch
+
+The `FLAGS` KV key `bp-feedback-notify:writes` (`on` | `hold` | `off`; missing or unrecognized means
+`off`) gates the send. The challenge echo is always live. `off` logs a masked skip line and answers
+200 without sending or writing status back. `hold`, or a KV read error, answers **503**: this Worker
+has no queue, so Monday's own webhook retries are the only retry. Monday gives up after its retry
+window, so a feedback request fired mid-migration may need re-triggering by hand once the key is
+back to `on`. Set the key with `node scripts/flags.mjs`; `<worker>:log` = `debug` adds masked
+payloads to skip lines.
 
 ## Sandbox environment
 
@@ -152,8 +175,8 @@ holds the sandbox Organizer Feedback Form's real URL; `config/production.json`'s
 (`https://forms.monday.com/forms/4a5ce8f0e00550987dffbcf96280094e`, confirmed live 2026-09-20 —
 its questions and welcome/success copy are already organizer-specific; only the browser-tab title
 and some dead board columns are still cosmetically wrong, see `migration-plan.md`). That cosmetic
-cleanup doesn't block this Worker functionally, but production deploy is still gated on the two
-items in Open Questions below.
+cleanup doesn't block this Worker functionally, and production went live on 2026-11-03 (see Open
+questions below).
 
 **Confirmed working end-to-end as of 2026-09-21.** Sends to `sandbox@bikesiliconvalley.org` had
 initially failed with `destination address is not a verified address` — Cloudflare requires every
@@ -181,7 +204,7 @@ npm run dev           # wrangler dev — local Worker, no real email sends witho
                        # domain configured locally; see wrangler docs for local email testing
 npm run dev:sandbox
 npm run deploy:sandbox
-npm run deploy         # do not run until the Open Questions below are resolved
+npm run deploy         # production: live, and goes straight to real organizers
 ```
 
 ## Open questions
@@ -194,6 +217,9 @@ npm run deploy         # do not run until the Open Questions below are resolved
 - ~~Production `feedbackFormUrl` is a placeholder~~ — resolved (2026-09-20): points at the real
   live form now (see Sandbox environment section above for the URL and what's still cosmetically
   pending on the board itself).
-- To go live in production: follow the four steps in Monday automation setup above (deploy,
-  add the column, wire the webhook automation, hand off the manual "mark sent" step to staff).
-  Nobody's done this yet — it needs a human with write access to the live board.
+- ~~To go live in production~~ — done (2026-11-03): the Worker is deployed with
+  `bp-feedback-notify:writes` = `on`, the live board has the `Post-Event Feedback` column
+  (`color_mm8rtt99`), and the webhook automation is on, its handshake answered 200. Still open: no
+  real item has gone through it yet, so a production email is unconfirmed, and staff need telling
+  about the manual "mark sent" step (`sendStatus` is still `null`). Changing the board's structure
+  takes board ownership; the `+` column button is simply dead without it.

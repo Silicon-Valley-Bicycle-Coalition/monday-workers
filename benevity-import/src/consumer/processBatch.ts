@@ -9,9 +9,20 @@ import { isWithheld, resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
 import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
+import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { ingestUpload, type IngestDeps } from './ingestUpload';
 
-export interface BenevityQueueMessage {
-  transactionId: string;
+// Two kinds share the write queue: an uploaded report to fetch and parse (#74), sent by the upload
+// webhook, and a row to write, sent once the report is ingested (or by a staff Retry). The
+// optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were `off`
+// stays a dry run even if the mode is `on` by the time it is consumed.
+export type RowMessage = { transactionId: string } & WriteStamp;
+export type UploadMessage = { assetId: string } & WriteStamp;
+export type BenevityQueueMessage = RowMessage | UploadMessage;
+
+function isUploadMessage(body: BenevityQueueMessage): body is UploadMessage {
+  return 'assetId' in body;
 }
 
 export interface QueueMessageLike<T> {
@@ -22,25 +33,31 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Retry backoff (#34): an immediate retry let a Monday blip of a few seconds burn every attempt
-// and dead-letter the row. 60 s x 4^(attempt-1) gives 1, 4 and 16 minutes across wrangler.jsonc's
-// max_retries of 3, capped at Queues' 12-hour maximum delay. Same schedule as funraise-sync.
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
+export interface ProcessBatchDeps extends IngestDeps {
+  aliasStore: AliasStore;
 }
 
-export interface ProcessBatchDeps {
-  rowStore: RowStore;
-  disbursementStore: DisbursementStore;
-  aliasStore: AliasStore;
-  mondayClient: MondayClient;
-  config: BenevityImportConfig;
-  now: () => string;
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processBenevityQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeBenevityBatch(
+  messages: QueueMessageLike<BenevityQueueMessage>[],
+  deps: ProcessBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    const ctx = { ...gate, deliveryId: isUploadMessage(message.body) ? `asset:${message.body.assetId}` : message.body.transactionId };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+  }
 }
 
 export async function processBenevityQueueBatch(
@@ -48,6 +65,10 @@ export async function processBenevityQueueBatch(
   deps: ProcessBatchDeps
 ): Promise<void> {
   for (const message of messages) {
+    if (isUploadMessage(message.body)) {
+      await processUpload(message.body.assetId, message, deps);
+      continue;
+    }
     const { transactionId } = message.body;
     try {
       await processOne(transactionId, deps);
@@ -56,7 +77,8 @@ export async function processBenevityQueueBatch(
       const errMsg = errorMessage(err);
       console.error(`benevity consumer: failed to process "${transactionId}": ${errMsg}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
-      // retry+DLQ handles it — this is an unexpected/transient failure, not a business
+      // retry+DLQ handles it (once retries run out, src/consumer/deadLetters.ts puts it on the
+      // worklist) — this is an unexpected/transient failure, not a business
       // decision, so it must not read as 'needs-review' on the board. Recording it is
       // bookkeeping: a D1 error here must not take the retry decision down with it (the throw
       // would fail the whole batch and retry every message in it immediately).
@@ -67,6 +89,18 @@ export async function processBenevityQueueBatch(
       }
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
+  }
+}
+
+async function processUpload(assetId: string, message: QueueMessageLike<BenevityQueueMessage>, deps: ProcessBatchDeps): Promise<void> {
+  try {
+    await ingestUpload(assetId, deps);
+    message.ack();
+  } catch (err) {
+    // ingestUpload has already marked the upload 'error' if it got as far as recording it; the
+    // retry resumes the same asset from its first unfinished block.
+    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorMessage(err)}`);
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 

@@ -1,12 +1,19 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import worker, { routeQueueBatch, emailBindingFor } from './index';
-import type { ChangeRequestStore } from './db/changeRequests';
+import { parseJsonc } from '../test/jsonc';
+import wranglerText from '../wrangler.jsonc?raw';
+import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import type { LetterSendStore } from './db/letterSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
 import type { ChangeQueueMessage, Config, Env, LetterSendQueueMessage } from './types';
+import type { WriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
+
+const gate = (mode: WriteMode): BatchSkipContext => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
 
 // Full valid test Config shape, same fixture used in routes.test.ts / processBatch.test.ts /
 // processLetterSendBatch.test.ts.
@@ -14,7 +21,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -43,6 +50,7 @@ const config: Config = {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
   },
+  getInvolved: { links: [] },
   pledges: {
     boardId: null,
     columns: {
@@ -64,7 +72,7 @@ const config: Config = {
 };
 
 function makeMessage<T>(body: T) {
-  return { body, ack: vi.fn(), retry: vi.fn() };
+  return { body, attempts: 1, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeBatch<T>(queue: string, messages: { body: T; ack: () => void; retry: () => void }[]): MessageBatch<T> {
@@ -77,21 +85,9 @@ function fakeBatch<T>(queue: string, messages: { body: T; ack: () => void; retry
   } as unknown as MessageBatch<T>;
 }
 
-// getRequest/getById resolve null on both fakes below, which drives processChangeQueueBatch /
-// processLetterSendBatch down their "no row for this id" path — cheap to set up and, crucially,
-// never reaches deps.monday or deps.emailSender, so no real network call is at risk even though
-// routeQueueBatch is exercised for real (not mocked out).
-function fakeChangeStore(): ChangeRequestStore {
-  return {
-    createRequest: vi.fn(),
-    hasRecentDuplicate: vi.fn(),
-    findRecentByDedupeHash: vi.fn(),
-    getRequest: vi.fn().mockResolvedValue(null),
-    markWritten: vi.fn(),
-    purgeWrittenBefore: vi.fn(),
-  };
-}
-
+// getById resolves null, which drives processLetterSendBatch down its "no row for this id" path —
+// cheap to set up and never reaches deps.monday or deps.emailSender, so no real network call is
+// at risk even though routeQueueBatch is exercised for real (not mocked out).
 function fakeLetterStore(): LetterSendStore {
   return {
     findByDonorYear: vi.fn(),
@@ -156,130 +152,124 @@ describe('worker entry point', () => {
 // routeQueueBatch. It can't be exercised end-to-end here: it always runs validateConfig against
 // the real config/svbc.json, which ships with placeholder Monday column ids until an operator
 // fills them in (see config.ts) and would throw before any routing logic ran. routeQueueBatch is
-// exported specifically so the routing decision itself — which of the two source queues,
-// distinguished by batch.queue, hands off to which processor — is directly testable with faked
-// deps instead.
+// exported specifically so the routing decision itself is directly testable with faked deps.
+// The portal consumes only the letter-emails queue; change requests belong to
+// member-portal-writer (src/writer.ts, tested in writer.test.ts).
 describe('routeQueueBatch', () => {
-  it('routes a member-portal-change-requests batch to the change-request store, not the letter-send store', async () => {
-    const changeStore = fakeChangeStore();
-    const letterStore = fakeLetterStore();
-    const message = makeMessage<ChangeQueueMessage>({ requestId: 1 });
-    const batch = fakeBatch<ChangeQueueMessage>('member-portal-change-requests', [message]);
-
-    await routeQueueBatch(batch, {
-      changeStore,
-      letterStore,
-      monday: fakeMonday(),
-      tokenStore: fakeTokenStore(),
-      emailSender: fakeEmailSender(),
-      config,
-      now: () => new Date('2026-08-24T10:00:00.000Z'),
-    });
-
-    expect(changeStore.getRequest).toHaveBeenCalledWith(1);
-    expect(letterStore.getById).not.toHaveBeenCalled();
-    // No row for id 1 (fakeChangeStore resolves null) — processChangeQueueBatch treats a missing
-    // row as a bug worth surfacing via retry, not a silent ack. Confirms the real processor ran,
-    // not a no-op.
-    expect(message.retry).toHaveBeenCalled();
-    expect(message.ack).not.toHaveBeenCalled();
+  const deps = (mode: WriteMode = 'on') => ({
+    letterStore: fakeLetterStore(),
+    monday: fakeMonday(),
+    tokenStore: fakeTokenStore(),
+    emailSender: fakeEmailSender(),
+    config,
+    now: () => new Date('2026-08-24T10:00:00.000Z'),
+    gate: gate(mode),
   });
 
-  it('routes a member-portal-letter-emails batch to the letter-send store, not the change-request store', async () => {
-    const changeStore = fakeChangeStore();
-    const letterStore = fakeLetterStore();
+  it('routes a member-portal-letter-emails batch to the letter-send store', async () => {
+    const d = deps();
     const message = makeMessage<LetterSendQueueMessage>({ sendId: 1 });
-    const batch = fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails', [message]);
 
-    await routeQueueBatch(batch, {
-      changeStore,
-      letterStore,
-      monday: fakeMonday(),
-      tokenStore: fakeTokenStore(),
-      emailSender: fakeEmailSender(),
-      config,
-      now: () => new Date('2026-08-24T10:00:00.000Z'),
-    });
+    await routeQueueBatch(fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails', [message]), d);
 
-    expect(letterStore.getById).toHaveBeenCalledWith(1);
-    expect(changeStore.getRequest).not.toHaveBeenCalled();
+    expect(d.letterStore.getById).toHaveBeenCalledWith(1);
+    // No row for id 1 (fakeLetterStore resolves null) — surfaced via retry, not a silent ack.
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
   });
 
-  it('throws for an unrecognized queue name, invoking neither store', async () => {
-    const changeStore = fakeChangeStore();
-    const letterStore = fakeLetterStore();
-    const batch = fakeBatch<ChangeQueueMessage>('not-a-real-queue', []);
-
-    await expect(
-      routeQueueBatch(batch, {
-        changeStore,
-        letterStore,
-        monday: fakeMonday(),
-        tokenStore: fakeTokenStore(),
-        emailSender: fakeEmailSender(),
-        config,
-        now: () => new Date('2026-08-24T10:00:00.000Z'),
-      })
-    ).rejects.toThrow('unrecognized queue "not-a-real-queue"');
-    expect(changeStore.getRequest).not.toHaveBeenCalled();
-    expect(letterStore.getById).not.toHaveBeenCalled();
+  it('throws for an unrecognized queue name, invoking no store', async () => {
+    const d = deps();
+    await expect(routeQueueBatch(fakeBatch<LetterSendQueueMessage>('not-a-real-queue', []), d)).rejects.toThrow(
+      'unrecognized queue "not-a-real-queue"'
+    );
+    expect(d.letterStore.getById).not.toHaveBeenCalled();
   });
 
-  it('routes the sandbox-suffixed change-requests queue to the change-request store', async () => {
-    const changeStore = fakeChangeStore();
-    const letterStore = fakeLetterStore();
-    const message = makeMessage<ChangeQueueMessage>({ requestId: 7 });
-    const batch = fakeBatch<ChangeQueueMessage>('member-portal-change-requests-sandbox', [message]);
-
-    await routeQueueBatch(batch, {
-      changeStore,
-      letterStore,
-      monday: fakeMonday(),
-      tokenStore: fakeTokenStore(),
-      emailSender: fakeEmailSender(),
-      config,
-      now: () => new Date('2026-08-24T10:00:00.000Z'),
-    });
-
-    expect(changeStore.getRequest).toHaveBeenCalledWith(7);
-    expect(letterStore.getById).not.toHaveBeenCalled();
-  });
+  it.each(['member-portal-change-requests', 'member-portal-change-requests-sandbox'])(
+    'refuses a %s batch: the portal no longer consumes change requests',
+    async (queue) => {
+      const d = deps();
+      const message = makeMessage<ChangeQueueMessage>({ requestId: 1 });
+      await expect(
+        routeQueueBatch(fakeBatch<ChangeQueueMessage>(queue, [message]) as unknown as MessageBatch<LetterSendQueueMessage>, d)
+      ).rejects.toThrow(`unrecognized queue "${queue}"`);
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(d.monday.createChangeRequestItem).not.toHaveBeenCalled();
+    }
+  );
 
   it('routes the sandbox-suffixed letter-emails queue to the letter-send store', async () => {
-    const changeStore = fakeChangeStore();
-    const letterStore = fakeLetterStore();
+    const d = deps();
     const message = makeMessage<LetterSendQueueMessage>({ sendId: 7 });
-    const batch = fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails-sandbox', [message]);
 
-    await routeQueueBatch(batch, {
-      changeStore,
-      letterStore,
-      monday: fakeMonday(),
-      tokenStore: fakeTokenStore(),
-      emailSender: fakeEmailSender(),
-      config,
-      now: () => new Date('2026-08-24T10:00:00.000Z'),
-    });
+    await routeQueueBatch(fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails-sandbox', [message]), d);
 
-    expect(letterStore.getById).toHaveBeenCalledWith(7);
-    expect(changeStore.getRequest).not.toHaveBeenCalled();
+    expect(d.letterStore.getById).toHaveBeenCalledWith(7);
   });
 
   it('still rejects a dead-letter queue name, sandbox or not', async () => {
-    const batch = fakeBatch<ChangeQueueMessage>('member-portal-change-requests-sandbox-dlq', []);
     await expect(
-      routeQueueBatch(batch, {
-        changeStore: fakeChangeStore(),
-        letterStore: fakeLetterStore(),
-        monday: fakeMonday(),
-        tokenStore: fakeTokenStore(),
-        emailSender: fakeEmailSender(),
-        config,
-        now: () => new Date('2026-08-24T10:00:00.000Z'),
-      })
-    ).rejects.toThrow('unrecognized queue "member-portal-change-requests-sandbox-dlq"');
+      routeQueueBatch(fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails-sandbox-dlq', []), deps())
+    ).rejects.toThrow('unrecognized queue "member-portal-letter-emails-sandbox-dlq"');
+  });
+});
+
+describe('routeQueueBatch (write switch)', () => {
+  it('holds a letter-emails batch: retry at 60 s, no store read', async () => {
+    const letterStore = fakeLetterStore();
+    const message = makeMessage({ sendId: 1 });
+
+    await routeQueueBatch(fakeBatch('member-portal-letter-emails', [message]) as MessageBatch<LetterSendQueueMessage>, {
+      letterStore,
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender: fakeEmailSender(),
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('hold'),
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(letterStore.getById).not.toHaveBeenCalled();
+  });
+});
+
+describe('the portal never calls a Monday mutation', () => {
+  type Services = { binding: string; entrypoint: string }[];
+  const wrangler = parseJsonc(wranglerText) as {
+    queues: { consumers: { queue: string }[] };
+    services: Services;
+    env: { sandbox: { queues: { consumers: { queue: string }[] }; services: Services } };
+  };
+
+  it('has no change-requests consumer in either environment', () => {
+    for (const consumers of [wrangler.queues.consumers, wrangler.env.sandbox.queues.consumers]) {
+      expect(consumers.map((c) => c.queue).filter((q) => q.startsWith('member-portal-change-requests'))).toEqual([]);
+    }
+  });
+
+  it('binds the broker read-only (PortalToken) in both environments', () => {
+    expect(wrangler.services).toEqual([expect.objectContaining({ binding: 'MONDAY_AUTH', entrypoint: 'PortalToken' })]);
+    expect(wrangler.env.sandbox.services).toEqual([expect.objectContaining({ binding: 'MONDAY_AUTH', entrypoint: 'PortalToken' })]);
+  });
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items_page_by_column_values: { items: [] } } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const auth = { token: vi.fn().mockResolvedValue('brokered') };
+      // queue() and fetch() both run validateConfig against the placeholder production config, so
+      // drive the client the way they build it: tokenProviderFor(env) as the token argument.
+      const client = new HttpMondayClient('https://api.monday.test/v2', tokenProviderFor({ MONDAY_AUTH: auth }), {} as never, 1, 2, 3, config.donations);
+      await client.findChangeRequestItem({ boardId: 1, itemName: 'x' });
+      expect(auth.token).toHaveBeenCalled();
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

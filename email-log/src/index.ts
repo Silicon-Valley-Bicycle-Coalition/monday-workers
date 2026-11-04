@@ -1,6 +1,6 @@
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
-import { processLogBatch, type ConsumerDeps } from './consumer/processBatch';
+import { consumeLogBatch, type ConsumerDeps } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { D1LoggedMessageStore } from './db/loggedMessages';
 import { CloudflareReplySender } from './email/reply';
@@ -10,11 +10,23 @@ import { createConfigSelector, environmentOf } from './environment';
 import { handleEmail } from './inbound/handleEmail';
 import type { LogQueueMessage } from './inbound/extract';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
+import { readLogLevel, readWriteMode } from './flags';
+import { EMAIL_LOG_PII_KEYS, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts.
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
+
+const WORKER = 'email-log';
+
+// The write switch's mode and log level, read once per queue batch (never cached per isolate, so a
+// flip reaches the next batch within the KV edge cache's 30 s).
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: EMAIL_LOG_PII_KEYS };
+}
 
 // Queue names from wrangler.jsonc, matched exactly: the sandbox DLQ ("…-sandbox-dlq") doesn't end
 // in "-sandbox", so stripping a suffix can't route it.
@@ -42,6 +54,18 @@ function replyBinding(env: Env): SendEmail {
   return sandboxEmailBinding(env.EMAIL, env.SANDBOX_EMAIL_SINK);
 }
 
+/** The queue consumers' dependencies; exported so a test can reach the Monday client. */
+export function consumerDeps(env: Env): ConsumerDeps {
+  const config = configFor(env);
+  return {
+    config,
+    store: new D1LoggedMessageStore(env.DB),
+    monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+    reply: new CloudflareReplySender(replyBinding(env), config.mail.replyFrom),
+    now: () => new Date(),
+  };
+}
+
 export default {
   async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
     await handleEmail(message, {
@@ -49,21 +73,15 @@ export default {
       store: new D1LoggedMessageStore(env.DB),
       queue: env.WRITE_QUEUE,
       now: () => new Date(),
+      writeMode: () => readWriteMode(env, WORKER),
     });
   },
 
   // Both the write queue and its dead-letter queue are consumed here; wrangler.jsonc names them.
   async queue(batch: MessageBatch<LogQueueMessage>, env: Env): Promise<void> {
-    const config = configFor(env);
     const consumer = consumerFor(batch.queue);
-    const deps: ConsumerDeps = {
-      config,
-      store: new D1LoggedMessageStore(env.DB),
-      monday: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-      reply: new CloudflareReplySender(replyBinding(env), config.mail.replyFrom),
-      now: () => new Date(),
-    };
+    const deps = consumerDeps(env);
     if (consumer === 'dead-letter') await processDeadLetters([...batch.messages], deps);
-    else await processLogBatch([...batch.messages], deps);
+    else await consumeLogBatch([...batch.messages], deps, await skipContext(env));
   },
 };

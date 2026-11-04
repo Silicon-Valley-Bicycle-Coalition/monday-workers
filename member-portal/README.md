@@ -2,8 +2,13 @@
 
 **Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Not yet deployed to production — no version has been live. Code-complete through v8
-(the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
+**Status:** Production config filled 2026-11-02 (813261b: People, Donations, Organizations and
+Volunteers ids from the Donors & Contacts workspace, 18201685); this repo doesn't record a
+production deploy yet. Still placeholders in `config/svbc.json`, each a feature gate rather than a
+deploy blocker: `preferredLanguage`, the email/SMS opt-out columns, `changeRequests` (no
+production Change Requests board yet), `letterCron`, `eventRegistrations`, `pledges`,
+`taxLetter.benefitStatement` and `funraise.renewMembershipUrl`. Code-complete through v8 (the
+sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
 live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
 date-gated (see "v7 — Clean-start donation history"): hidden until 2027-01-01, and from then on
@@ -125,7 +130,13 @@ better-fit product. (Project Galileo makes Access available to SVBC for staff-fa
 as gating the sandbox hostnames; that doesn't change the donor-auth decision.)
 
 **Rate-limit login requests** (per email and per IP) to blunt abuse of the email-sending step —
-this is the one place this Worker can be used to spam an inbox if left unguarded.
+this is the one place this Worker can be used to spam an inbox if left unguarded. Per IP: the
+`LOGIN_RATE_LIMITER` binding. Per address (`rateLimit` in config, issue #62): at most one login
+email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSeconds` (900), and
+`emailDailyMax` (10) per rolling 24 hours. One atomic D1 statement checks and records
+(`src/db/loginAttempts.ts`), and only a request it lets through is recorded — so someone rotating
+IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
+stretch a lockout by retrying.
 
 ## Sending the email
 
@@ -146,6 +157,22 @@ A dedicated sending subdomain (`mail.bikesiliconvalley.org`) with its own SPF/DK
 kept separate from the main domain's mail flow, is standard practice for transactional email — see
 `DEPLOY.md` Phase 3 for the onboarding steps.
 
+**Read-only portal, separate writer.** Monday access comes from the `svbc-monday-auth` OAuth
+broker, not a stored token (`MONDAY_AUTH` service binding; `tokenProviderFor` in
+`src/monday/graphql.ts` falls back to a `MONDAY_API_TOKEN` secret only while that binding is
+absent). The portal binds the broker's **`PortalToken`** entrypoint (read scope) and never calls a
+Monday mutation: it enqueues change requests to `member-portal-change-requests` and does not
+consume that queue. **`svbc-member-portal-writer`** (`wrangler.writer.jsonc`, entry
+`src/writer.ts`; sandbox `svbc-member-portal-writer-sandbox`) is the sole consumer: it binds
+**`SyncToken`**, shares the portal's D1 database and `FLAGS` namespace (so the same write switch
+governs it), serves no traffic, and throws on any other queue. The portal keeps the letter-emails
+consumer, which only reads Monday. Deploy the portal first, then the writer
+(`npm run deploy:writer` / `deploy:writer:sandbox`): Cloudflare Queues allows one consumer
+Worker per queue, so the writer can't attach while the sandbox portal still consumes the queue.
+Change requests wait in the queue between the two deploys (see `DEPLOY.md` for the one-time
+sandbox detach);
+`config/split.test.ts` and `src/index.test.ts` pin the split.
+
 **Sandbox environment — inbound only, no outbound data.** `npm run deploy:sandbox` deploys
 `svbc-member-portal-sandbox` (`wrangler.jsonc` `env.sandbox`) against the CRM Sandbox boards
 (`config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var — see
@@ -159,7 +186,7 @@ production and sandbox configs are kept apart by `config/split.test.ts`, which f
 share a sink, a board id, or a column id (the id checks are latent until production boards exist
 and start biting at cutover). What the sandbox cannot exercise today, because the CRM Sandbox has
 no board or column for it: change requests (no Change Requests board, so the `CHANGE_QUEUE`
-consumer idles), volunteer history, event registrations, pledges, and the
+consumer idles in `svbc-member-portal-writer-sandbox`), volunteer history, event registrations, pledges, and the
 communication-preference checkboxes — each stays hidden by its own config gate. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
@@ -196,12 +223,24 @@ Routing destination). A live login-link request for a real sandbox People record
   token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
+* The emailed login link carries its token in the URL fragment
+  (`/auth/callback?lang=en#token=…`, issue #61): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
+  anyone with log access could otherwise redeem an unclicked link (a letter link lives a week).
+  `GET /auth/callback` stays inert — an inline script copies the token into the confirm form and
+  strips it from the address bar, without submitting, under a CSP that allows only that script by
+  hash; the `POST` consumes it. Without JavaScript the form posts no token and the donor sees the
+  invalid-link page. Links sent before #61 (`?token=…`) still work until they expire; drop that
+  branch in `routes.ts` once `auth.letterLinkTtlHours` has passed since the #61 deploy. Workers
+  Logs still hold other URL secrets (`/webhooks/monday/letters?secret=`, `/verify/<card token>`),
+  so keep log access (Workers observability, Logpush destinations) to the people who need it.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
-  `login_attempts` rows (every email anyone submits, donor or not) older than
-  `rateLimit.attemptRetentionHours` (24; validated to exceed the rate-limit window). Deletes are
-  batched and capped per run (`src/db/authRetention.ts`); indexes in migration `0005`.
+  `login_attempts` rows (one per login email allowed, donor or not, keyed by a SHA-256 of the
+  lowercased address since migration `0006`) older than `rateLimit.attemptRetentionHours` (24;
+  validated to cover the 24-hour daily cap). Deletes are batched and capped per run
+  (`src/db/authRetention.ts`); indexes in migrations `0005`/`0006`. The hash is unkeyed: it keeps
+  addresses out of D1 dumps, not out of reach of someone testing a known address.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
   v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
@@ -247,7 +286,8 @@ config-gated features:
   operator fills in the real wording.
 * **Change requests** (`GET`/`POST /:locale/portal/change-request`): a donor submits a new address,
   email, or phone; the Worker records it in D1 (dedupe window:
-  `changeRequests.dedupeWindowHours`) and a queue consumer creates an item on a staff-owned
+  `changeRequests.dedupeWindowHours`) and a queue consumer (the separate
+  `svbc-member-portal-writer` Worker, below) creates an item on a staff-owned
   Change Requests board (donor link, field, old value, new value, submitted-at). Staff apply
   approved changes to the Donors board by hand — the portal never writes donor records.
   **Gated on `changeRequests.boardId`** plus its column ids and the `donorAddress`/`donorPhone`
@@ -256,8 +296,8 @@ config-gated features:
 Operator setup for v2, in addition to the v1 steps: create the Change Requests board (five
 columns: connect-boards to Donors, three text, one date) and fill in
 `changeRequests.boardId`/`columns`; fill in `monday.columns.donorAddress` and
-`monday.columns.donorPhone`; grant the portal's integration user **write access to the Change
-Requests board only**; create the `member-portal-change-requests` queue and its
+`monday.columns.donorPhone`; grant the broker's Staff Sync (`SyncToken`) identity **write access to the Change
+Requests board** (the portal's own `PortalToken` is read-only); create the `member-portal-change-requests` queue and its
 `member-portal-change-requests-dlq` dead-letter queue before deploying; apply D1 migration
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.
@@ -520,17 +560,20 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
 * **Employer matching-gift lookup** (`GET /:locale/portal/matching-gifts`): always renders —
   generic "ask your HR team whether gifts are matched" guidance is useful with no vendor at
   all, plus SVBC's EIN once `taxLetter.ein` is signed off. **The embedded Double the Donation
-  employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
-  SVBC buys a DTD subscription, which it currently has not — the board item notes this was
-  "discussed, not prioritized"). This is the only portal page that may load third-party
-  JavaScript, so it deliberately renders **zero donor PII** and ships its own full
+  employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (SVBC subscribed to
+  DTD's Workplace Giving Platform – Standard, quoted 2026-07-07 for two years, and DTD confirmed
+  onboarding complete 2026-08-20; the public plugin key is set in `config/sandbox.json` and
+  `config/svbc.json`, `null` in `config/local.json`). This is the only portal page
+  that may load third-party JavaScript, so it deliberately renders **zero donor PII** and ships
+  its own full
   Content-Security-Policy in place of the app-wide baseline (see Security notes) — the
   load-bearing directive is `connect-src` excluding `'self'`, so
   a compromised widget script can't fetch sibling `/portal` pages (which carry the session
-  cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
-  shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
-  it couldn't be checked against a live DTD account — verify the widget under the CSP at the
-  same time. No Subresource Integrity hash on the DTD script by their design (mutable
+  cookie on same-origin requests) and exfiltrate donor data. Keep both properties. The embed
+  in `src/matchingGifts/matchingGiftViews.ts` matches DTD's "Standard Javascript Embed using
+  Shadow DOM Encapsulation" snippet as of 2026-11-03; the remaining operator step is verifying the
+  widget under the CSP on the sandbox deploy (search loads, a company search returns results, no
+  CSP violations in the console). No Subresource Integrity hash on the DTD script by their design (mutable
   unversioned URL); the PII-free page plus the CSP are the compensating controls.
 
 **Upgrading an existing deployment (forks included):** config validation requires the
@@ -543,10 +586,10 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
 
 1. Pledges: create the Pledges board, grant the portal's integration user **read** access to
    it, and fill in `pledges.boardId` and all five `pledges.columns` ids in `config/svbc.json`.
-2. Matching gifts: obtain a Double the Donation subscription, then set
-   `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
-   key — this value is served to every logged-in browser), after verifying the embed snippet
-   against DTD's current docs.
+2. Matching gifts: get the public plugin key from SVBC's Double the Donation account (development
+   staff hold it; a fork needs its own subscription), then set
+   `matchingGifts.doubleTheDonationPublicKey` to that **public** plugin key (never a private API
+   key — this value is served to every logged-in browser). Done for SVBC; a fork sets its own.
 ## v5 — Event registrations
 
 From the IT Requests board (["Member portal: event
@@ -698,6 +741,64 @@ before any real ones exist.
 **Upgrading an existing deployment (forks included):** config validation requires the `impact`
 stanza to *exist*. Copy `"impact": { "statementsByYear": {} }` from this repo's
 `config/svbc.json` before deploying v8 code over an older config; the feature then stays off.
+
+## v9 — Get involved links
+
+A "Get involved" section on the dashboard (`GET /:locale/portal`) links every member to the
+public meetings where South Bay bike decisions get made and to SVBC's own calendar, grouped as
+city bike/pedestrian committees, transit-agency committees (BART, Caltrain), SVBC events and
+volunteer opportunities. The list lives in `config/*.json`'s `getInvolved.links`, one entry per
+link: `category` (`civic`, `transit`, `events` or `volunteer`), the public meeting page `url`,
+an optional `calendarUrl`, and a `label`. Committee names are proper nouns and stay untranslated,
+so `civic` and `transit` links must have a `label`. An `events` or `volunteer` link without one
+gets translated link text instead. Every URL must be https.
+
+Each `calendarUrl` is the matching `svbc-calendars` ICS feed
+(`https://committees.bikesiliconvalley.org/calendars/<feed-id>.ics`), so adding a committee here
+usually means adding its source there too. The links are public pages, not donor data, so
+sandbox and local configs carry the same list. The section is the same for every member: the
+dashboard doesn't load a donor's address, so it isn't filtered by city. It costs no Monday read.
+
+**Upgrading an existing deployment (forks included):** config validation requires the
+`getInvolved` stanza to exist. `"getInvolved": { "links": [] }` keeps the section off.
+
+## Deploying: the write switch
+
+Every write the portal makes on a donor's behalf is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`; this Worker holds the canonical
+`src/flags.ts`, and its gating is `src/writeSwitch.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `member-portal:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
+  queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording
+  proxies, logging one `"writeSwitch":"skipped"` line per would-be Monday create or email and
+  acking. **A missing key means `off`**; a KV read error behaves like hold (queues not paused).
+- `member-portal:log` — `debug` adds redacted payloads to those lines (names, contact details,
+  old/new values and login links masked).
+
+| Path | `on` | `hold` | `off` | KV error |
+|---|---|---|---|---|
+| `POST /` (login link), both change-request POSTs, card regenerate | live | 503 "temporarily unavailable" page | 503 | 503 |
+| Every GET, `POST /auth/callback`, `POST /logout` | live | live | live | live |
+| `POST /webhooks/monday/letters` | live | live (row + message; the queue is paused) | skip line, 200, no `letter_sends` row | 503 (Monday retries) |
+| Letter cron | runs | skip line | skip line | skip line |
+| Retention purges (scheduled) | run | run | run | run |
+
+Under `off` neither the webhook nor the cron creates a `letter_sends` row: a `queued` row that is
+never sent would block that donor's letter for good, since the cron skips any donor with a row.
+A dry-run letter mints no magic-link token and changes no `letter_sends` row; a dry-run change
+request leaves its row `queued`. Nothing re-enqueues either automatically, so neither is written
+later unless staff click the letter button again or the donor re-submits. A message queued before
+this build has no stamp and is written under `on`. Both main queues retry 100 times (about four
+days) before dead-lettering. Set the switch with the operator CLI at the repo root, never by hand —
+`writes hold`/`on` also pauses and resumes the queues:
+
+```sh
+node scripts/flags.mjs member-portal writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or donors can't sign in.
 
 ## Resetting for new board ids
 

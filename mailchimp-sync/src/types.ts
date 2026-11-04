@@ -1,3 +1,6 @@
+import type { MondayTokenSource } from './monday/graphql';
+import type { WriteStamp } from './flags';
+
 export interface MailchimpMergeFieldsConfig {
   memberSince: string;
   memberUntil: string;
@@ -22,13 +25,17 @@ export interface MondayColumnsConfig {
   memberUntil: string;
   addr1: string;
   city: string;
-  state: string;
+  // null: no State column on the board; the ADDRESS merge field takes the state from the ZIP.
+  state: string | null;
   zip: string;
   email: string;
   totalGiven: string;
   mailchimpCampaigns: string;
   doNotSolicit: string; // checkbox
   dnsReasonStatus: string; // status: OK / Missing / Confirmed
+  // The People "Nearby" dropdown (written by nearby-search): each label becomes a Mailchimp tag.
+  // null = not synced (the column doesn't exist on this board yet).
+  nearby: string | null;
 }
 
 export interface Config {
@@ -43,6 +50,13 @@ export interface Config {
     audienceId: string;
     mergeFields: MailchimpMergeFieldsConfig;
     tags: MailchimpTagsConfig;
+    // Prepended to each Nearby label to make its Mailchimp tag ("Near: " + "Stevens Creek bikeway").
+    // Also how a removed label is recognized as ours to deactivate: managedTags() adds every
+    // tag the member holds that starts with it.
+    nearbyTagPrefix: string;
+    // The Interest Categories this Worker syncs to the Campaigns board. Every other category in
+    // the audience is ignored: production's holds decades of old lists (docs/39 §3).
+    interestCategoryIds: string[];
   };
   lifetimeTierValue: string;
   activeStatusValue: string;
@@ -55,7 +69,11 @@ export interface Env {
   DB: D1Database;
   OUTBOUND_QUEUE: Queue<OutboundSyncMessage>;
   INBOUND_QUEUE: Queue<InboundSyncMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;
@@ -64,21 +82,28 @@ export interface Env {
   SLACK_WEBHOOK_URL?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
+  // The write switch (src/flags.ts): holds `mailchimp-sync:writes` and `mailchimp-sync:log`.
+  FLAGS?: KVNamespace;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }
 
-export interface OutboundSyncMessage {
+export interface OutboundSyncMessage extends WriteStamp {
   donorItemId: string;
+  // Set only for a change to the Donor's Email column: the address it held before, so the
+  // consumer can move that Mailchimp member to the new one. Absent on messages queued before it
+  // existed and on redrives, which then update by the current address as before.
+  previousEmail?: string;
 }
 
-export interface InboundSyncMessage {
+export interface InboundSyncMessage extends WriteStamp {
   email: string;
 }
 
 // 'skipped' = processed to completion but no Monday write happened (e.g. no Donor
 // item matches the email) — distinct from 'written' so misses stay countable.
-export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
+// 'dropped' = ingested while writes were `off`: closed out so nothing can revive it as live work.
+export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed' | 'dropped';
 
 // One pending_outbound_syncs / pending_inbound_syncs row as the dead-letter consumer reads it
 // (src/consumer/deadLetters.ts) — the key column is left out because the caller already has it.
@@ -105,6 +130,8 @@ export interface DonorRecord {
   totalGiven: string;
   doNotSolicit: boolean;
   dnsReasonStatus: string;
+  // Labels from the Nearby dropdown; [] when unset or the column isn't configured.
+  nearby: string[];
 }
 
 export interface MailchimpInterest {

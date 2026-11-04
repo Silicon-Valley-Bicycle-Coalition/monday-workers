@@ -1,4 +1,4 @@
-import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 export interface MondayItem {
   id: string;
@@ -30,13 +30,15 @@ export interface MondayClient {
 // API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 // Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
-// backoff (1, 4, 16 minutes — consumer/processBatch.ts) takes over rather than holding a batch.
+// backoff (1 minute doubling to an hour — retryDelaySeconds in flags.ts) takes over rather than holding a batch.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options });
   }
 

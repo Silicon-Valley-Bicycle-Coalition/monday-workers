@@ -1,8 +1,7 @@
-import productionConfig from '../config/svbc.json';
-import sandboxConfig from '../config/sandbox.json';
-import { createConfigSelector, environmentOf, queueBaseName } from './environment';
+import { environmentOf, queueBaseName } from './environment';
+import { configFor } from './configFor';
 import { sandboxEmailBinding } from './email/sandboxBinding';
-import { validateConfig, pledgesEnabled } from './config';
+import { pledgesEnabled } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
@@ -10,15 +9,14 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { discountOrganizationsCache, withCachedDiscounts } from './monday/discountCache';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
-import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
 import { D1LetterSendStore } from './db/letterSends';
-import { processLetterSendBatch } from './letters/processLetterSendBatch';
+import { consumeLetterSendBatch } from './letters/processLetterSendBatch';
 import { runLetterCron } from './letters/runLetterCron';
-import type { Env, ChangeQueueMessage, LetterSendQueueMessage, Config } from './types';
-import type { ChangeRequestStore } from './db/changeRequests';
+import type { Env, LetterSendQueueMessage, Config } from './types';
 import type { LetterSendStore } from './db/letterSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
@@ -27,15 +25,8 @@ import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
 import { purgeExpiredAuthRows } from './auth/purgeExpiredAuth';
 import { D1AuthRetentionStore } from './db/authRetention';
 import { checkRequestRateLimit } from './requestRateLimit';
-
-// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
-// per isolate. Production's config/svbc.json still ships with placeholder ids until an operator
-// fills them in, so validation cannot run at import time — see validateConfig's placeholder check.
-const configFor = createConfigSelector<Config>({
-  production: productionConfig,
-  sandbox: sandboxConfig,
-  validate: validateConfig,
-});
+import { lazyGate, readGate, type BatchSkipContext } from './writeSwitch';
+import { logSkip } from './flags';
 
 // In the sandbox every email is redirected to the sink; in production the binding is used as
 // is. Exported for tests. The platform-side guard (the binding's allowed_destination_addresses
@@ -49,44 +40,41 @@ export function emailBindingFor(env: Env): SendEmail {
 }
 
 export interface QueueRouterDeps {
-  changeStore: ChangeRequestStore;
   letterStore: LetterSendStore;
   monday: MondayClient;
   tokenStore: MagicLinkTokenStore;
   emailSender: EmailSender;
   config: Config;
   now: () => Date;
+  // The write switch, read once for the batch (src/writeSwitch.ts).
+  gate: BatchSkipContext;
 }
 
-// Extracted from queue() below so the routing decision — which of the two source queues
-// (distinguished by batch.queue) hands off to which processor — can be exercised directly in
-// tests with faked-out deps, instead of only through the real entrypoint (which always runs
-// validateConfig against the real, placeholder-laden config/svbc.json and would throw before any
-// routing logic ran).
+// Extracted from queue() below so the routing decision can be exercised directly in tests with
+// faked-out deps, instead of only through the real entrypoint (which always runs validateConfig
+// against the real, placeholder-laden config/svbc.json and would throw before any routing logic
+// ran). The portal consumes only the letter-emails queue: change requests are written to Monday
+// by member-portal-writer (src/writer.ts), so the portal holds no Monday write credential. A
+// change-requests batch reaching here is a misconfiguration and throws like any unknown queue.
 export async function routeQueueBatch(
-  batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>,
+  batch: MessageBatch<LetterSendQueueMessage>,
   deps: QueueRouterDeps
 ): Promise<void> {
   const queueName = queueBaseName(batch.queue);
 
-  if (queueName === 'member-portal-change-requests') {
-    await processChangeQueueBatch([...(batch as MessageBatch<ChangeQueueMessage>).messages], {
-      store: deps.changeStore,
-      monday: deps.monday,
-      config: deps.config,
-    });
-    return;
-  }
-
   if (queueName === 'member-portal-letter-emails') {
-    await processLetterSendBatch([...(batch as MessageBatch<LetterSendQueueMessage>).messages], {
-      store: deps.letterStore,
-      monday: deps.monday,
-      tokenStore: deps.tokenStore,
-      emailSender: deps.emailSender,
-      config: deps.config,
-      now: deps.now,
-    });
+    await consumeLetterSendBatch(
+      [...batch.messages],
+      {
+        store: deps.letterStore,
+        monday: deps.monday,
+        tokenStore: deps.tokenStore,
+        emailSender: deps.emailSender,
+        config: deps.config,
+        now: deps.now,
+      },
+      deps.gate
+    );
     return;
   }
 
@@ -115,7 +103,7 @@ export default {
         monday: withCachedDiscounts(
           new HttpMondayClient(
             config.monday.apiUrl,
-            env.MONDAY_API_TOKEN,
+            tokenProviderFor(env),
             config.monday.columns,
             donorsBoardId,
             donationsBoardId,
@@ -150,20 +138,21 @@ export default {
         letterQueue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
         letterWebhookSecret: env.LETTER_WEBHOOK_SECRET,
         cardTokenStore: new D1CardTokenStore(env.DB),
+        writeGate: lazyGate(() => readGate(env)),
       });
       return app.fetch(request, env, ctx);
     });
   },
 
-  async queue(batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<LetterSendQueueMessage>, env: Env): Promise<void> {
     // Validated lazily and memoized per environment — see configFor above.
     const config = configFor(env);
-    // No pledges config passed (7th arg defaults to null): no queue consumer reads pledges, so
+    // No pledges config passed (7th arg defaults to null): the letter consumer reads no pledges, so
     // getPledgesForDonor throws on this client by design. If a future consumer needs pledges,
     // wire the config here the way fetch() does — don't debug the throw first.
     const monday = new HttpMondayClient(
       config.monday.apiUrl,
-      env.MONDAY_API_TOKEN,
+      tokenProviderFor(env),
       config.monday.columns,
       config.monday.donorsBoardId ?? 0,
       config.monday.donationsBoardId ?? 0,
@@ -176,7 +165,6 @@ export default {
     );
 
     await routeQueueBatch(batch, {
-      changeStore: new D1ChangeRequestStore(env.DB),
       letterStore: new D1LetterSendStore(env.DB),
       monday,
       tokenStore: new D1MagicLinkTokenStore(env.DB),
@@ -189,6 +177,7 @@ export default {
       ),
       config,
       now: () => new Date(),
+      gate: await readGate(env),
     });
   },
 
@@ -235,13 +224,15 @@ export default {
       );
     }
 
-    // Automatic January letter emails — gated entirely inside runLetterCron (letterCron config
-    // filled in, taxLetter signed off, and the Letter Settings board's Auto-send checkbox +
-    // start date), so on most days this is one cheap settings read and a no-op.
+    // Automatic January letter emails — gated entirely inside runLetterCron (the write switch on,
+    // letterCron config filled in, taxLetter signed off, and the Letter Settings board's Auto-send
+    // checkbox + start date), so on most days this is one cheap settings read and a no-op. The
+    // purges above are operational and run whatever the switch says.
+    const gate = await readGate(env);
     const cronResult = await runLetterCron({
       monday: new HttpMondayClient(
         config.monday.apiUrl,
-        env.MONDAY_API_TOKEN,
+        tokenProviderFor(env),
         config.monday.columns,
         config.monday.donorsBoardId ?? 0,
         config.monday.donationsBoardId ?? 0,
@@ -252,7 +243,11 @@ export default {
       queue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
       config,
       now: () => new Date(),
+      mode: gate.mode,
     });
+    if (cronResult.kind === 'skipped' && cronResult.reason === 'write-switch') {
+      logSkip({ ...gate, deliveryId: 'letter-cron' }, 'LetterQueue', 'runLetterCron', undefined);
+    }
     // 'skipped' is the everyday quiet path; 'error' already logged inside runLetterCron.
     if (cronResult.kind === 'ran') {
       console.log(

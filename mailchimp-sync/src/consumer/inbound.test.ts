@@ -13,9 +13,9 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
-    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
-  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
+  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
@@ -35,8 +35,9 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
 function fakeMailchimp(overrides: Partial<MailchimpClient> = {}): MailchimpClient {
   return {
     updateMember: vi.fn(),
-    unsubscribeMember: vi.fn(),
+    renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { int1: true, int2: false } }),
+    getMemberTagNames: vi.fn().mockResolvedValue([]),
     listInterests: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
@@ -127,6 +128,27 @@ describe('processInboundBatch', () => {
     expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-new']);
   });
 
+  it('leaves off an interest outside the configured categories instead of failing the message', async () => {
+    const message = fakeMessage('a@b.com');
+    const mondayClient = fakeMonday();
+    const campaignItemsStore = fakeCampaignItemsStore([
+      { interestId: 'int1', mondayItemId: 'campaign-1', name: 'Newsletter', archivedAt: null },
+    ]);
+    const mailchimpClient = fakeMailchimp({
+      // 'old-list' is in one of the audience's old categories, so listInterests never returns it.
+      getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { 'old-list': true, int1: true } }),
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
+    });
+    const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+
+    await processInboundBatch([message], { mondayClient, mailchimpClient, campaignItemsStore, pendingStore, config: CONFIG });
+
+    expect(mailchimpClient.listInterests).toHaveBeenCalledWith(['cat1']);
+    expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
+    expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-1']);
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('clears the connect column for an unsubscribed contact even though interests are still non-empty', async () => {
     const message = fakeMessage('unsub@b.com');
     const mondayClient = fakeMonday();
@@ -150,12 +172,13 @@ describe('processInboundBatch', () => {
   it('retries (does not ack) when an interest is still unresolvable after the one-shot reconcile', async () => {
     const message = fakeMessage('a@b.com');
     const mondayClient = fakeMonday();
-    // listInterests returns nothing matching, so reconcile can't create/track it either.
+    // A synced interest whose item another run has claimed but not yet recorded, so the
+    // reconcile can't track it either. (One outside the configured categories is left off.)
     const mailchimpClient = fakeMailchimp({
       getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { 'ghost-int': true } }),
-      listInterests: vi.fn().mockResolvedValue([]),
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'ghost-int', name: 'Ghost' }]),
     });
-    const campaignItemsStore = fakeCampaignItemsStore([]);
+    const campaignItemsStore = { ...fakeCampaignItemsStore([]), claim: vi.fn().mockResolvedValue(false) };
     const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processInboundBatch([message], {
@@ -250,8 +273,8 @@ describe('processInboundBatch', () => {
     }
 
     it('backs off exponentially by delivery attempt', async () => {
-      expect(await retryFor(new Error('x'), 2)).toHaveBeenCalledWith({ delaySeconds: 240 });
-      expect(await retryFor(new Error('x'), 3)).toHaveBeenCalledWith({ delaySeconds: 960 });
+      expect(await retryFor(new Error('x'), 2)).toHaveBeenCalledWith({ delaySeconds: 120 });
+      expect(await retryFor(new Error('x'), 3)).toHaveBeenCalledWith({ delaySeconds: 240 });
     });
 
     it("waits at least Monday's retry_in_seconds", async () => {
@@ -290,7 +313,7 @@ describe('processInboundBatch', () => {
     it('still retries with backoff when recording the failure in D1 throws', async () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
-      expect(await retryFor(new Error('monday down'), 2, pendingStore)).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(await retryFor(new Error('monday down'), 2, pendingStore)).toHaveBeenCalledWith({ delaySeconds: 120 });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
       errorSpy.mockRestore();
     });

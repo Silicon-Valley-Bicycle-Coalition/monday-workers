@@ -1,0 +1,2 @@
+# Unit tests for the page helpers live beside them but are not served.
+*.test.js

@@ -11,13 +11,13 @@ describe('D1AuthRetentionStore', () => {
   it('deletes login_attempts older than the cutoff and keeps newer ones', async () => {
     const store = new D1AuthRetentionStore(env.DB);
     for (const at of ['2026-08-20T00:00:00.000Z', '2026-08-21T00:00:00.000Z', '2026-08-22T12:00:00.000Z']) {
-      await env.DB.prepare('INSERT INTO login_attempts (email, attempted_at) VALUES (?1, ?2)').bind('purge-a@example.org', at).run();
+      await env.DB.prepare('INSERT INTO login_attempts (email_hash, attempted_at) VALUES (?1, ?2)').bind('purge-a', at).run();
     }
 
     const deleted = await store.purgeLoginAttemptsBefore('2026-08-22T00:00:00.000Z');
 
     expect(deleted).toBe(2);
-    expect(await count("SELECT COUNT(*) AS n FROM login_attempts WHERE email = 'purge-a@example.org'")).toBe(1);
+    expect(await count("SELECT COUNT(*) AS n FROM login_attempts WHERE email_hash = 'purge-a'")).toBe(1);
   });
 
   it('deletes only sessions whose expiry has passed', async () => {
@@ -56,11 +56,11 @@ describe('D1AuthRetentionStore', () => {
   it('deletes in bounded batches and stops at maxBatches', async () => {
     const store = new D1AuthRetentionStore(env.DB, { batchSize: 2, maxBatches: 2 });
     for (let i = 0; i < 5; i++) {
-      await env.DB.prepare('INSERT INTO login_attempts (email, attempted_at) VALUES (?1, ?2)').bind('purge-b@example.org', '2026-01-01T00:00:00.000Z').run();
+      await env.DB.prepare('INSERT INTO login_attempts (email_hash, attempted_at) VALUES (?1, ?2)').bind('purge-b', '2026-01-01T00:00:00.000Z').run();
     }
 
     expect(await store.purgeLoginAttemptsBefore('2026-08-22T00:00:00.000Z')).toBe(4);
-    expect(await count("SELECT COUNT(*) AS n FROM login_attempts WHERE email = 'purge-b@example.org'")).toBe(1);
+    expect(await count("SELECT COUNT(*) AS n FROM login_attempts WHERE email_hash = 'purge-b'")).toBe(1);
     expect(await store.purgeLoginAttemptsBefore('2026-08-22T00:00:00.000Z')).toBe(1);
   });
 });

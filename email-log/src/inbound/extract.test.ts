@@ -2,9 +2,11 @@ import PostalMime from 'postal-mime';
 import { describe, expect, it } from 'vitest';
 import { testConfig } from '../test/testConfig';
 import { extract } from './extract';
+import { messageIdHash } from './dedupe';
 import bccNew from '../../test/fixtures/gmail-bcc-new.eml?raw';
 import bccReply from '../../test/fixtures/gmail-bcc-reply.eml?raw';
 import forward from '../../test/fixtures/gmail-forward.eml?raw';
+import appleForward from '../../test/fixtures/apple-forward.eml?raw';
 import forwardOwn from '../../test/fixtures/gmail-forward-own-sent.eml?raw';
 import outlook from '../../test/fixtures/outlook-forward.eml?raw';
 import staffOnly from '../../test/fixtures/staff-only.eml?raw';
@@ -89,6 +91,40 @@ describe('extract', () => {
   it('strips stacked Fwd: prefixes but keeps Re:', async () => {
     const raw = forward.replace('Subject: Fwd: Trail closure', 'Subject: Fwd: FW: Re: Trail closure');
     expect((await logged(raw)).message.subject).toBe('Re: Trail closure');
+  });
+
+  it('apple forward: same counterparts, subject, block date and body as a Gmail forward', async () => {
+    const r = await logged(appleForward);
+    expect(r.message).toEqual({
+      kind: 'forward',
+      counterparts: ['jane@example.org', 'bob@example.com'],
+      subject: 'Trail closure',
+      dateISO: '2026-11-02T21:58:55.000Z',
+      body: 'Hello Dana,\nThe trail is closed.',
+      attachmentNames: [],
+    });
+    expect(r.dedupeSource).toEqual({
+      from: 'jane@example.org',
+      dateISO: '2026-11-02T21:58:55.000Z',
+      subject: 'Trail closure',
+    });
+  });
+
+  it('apple forward: two forwards of one message share a dedupe hash', async () => {
+    const second = appleForward
+      .replace('From: Dana Staff <dana@bikesiliconvalley.org>', 'From: Sam Staff <sam@bikesiliconvalley.org>')
+      .replace('Date: Mon, 2 Nov 2026 14:05:12 -0800', 'Date: Tue, 3 Nov 2026 09:30:00 -0800')
+      .replace('<apple-fwd-1@bikesiliconvalley.org>', '<apple-fwd-2@bikesiliconvalley.org>')
+      .replace('FYI, see below.', 'Logging this one too.');
+    const [a, b] = await Promise.all([logged(appleForward), logged(second)]);
+    expect(b.message.kind).toBe('forward');
+    expect(await messageIdHash(b.dedupeSource)).toBe(await messageIdHash(a.dedupeSource));
+  });
+
+  it('apple forward: an html-only message falls back to bcc (its block is not line-broken)', async () => {
+    const htmlOnlyApple = appleForward.replace(/--Apple-Mail=_A1B2C3\nContent-Transfer-Encoding: 7bit\nContent-Type: text\/plain;[\s\S]*?(?=--Apple-Mail=_A1B2C3\n)/, '');
+    const r = await logged(htmlOnlyApple);
+    expect(r.message.kind).toBe('bcc');
   });
 
   it('Fwd: subject with no parseable block falls back to bcc', async () => {

@@ -50,6 +50,10 @@ export const zhHans: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '我们暂时无法验证此卡片，请几分钟后再试。',
   'error.eventsLoadFailed': '目前无法加载您的活动报名记录。请几分钟后再试。',
   'error.generic': '出现问题，请重新登录。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '暂时无法使用',
+  'unavailable.heading': '暂时无法使用',
+  'unavailable.body': '我们正在更新系统，此功能暂时无法使用。请稍后再试。',
 
   // Portal
   'portal.heading': '您的捐赠者门户',
@@ -74,6 +78,15 @@ export const zhHans: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': '管理您的定期捐赠',
   'portal.renewMembershipLink': '续订会员资格',
   'portal.givingLinksNote': '这些链接将打开我们的安全支付服务商 Funraise。您在那里所做的更改将在我们的记录更新后显示在本门户中。',
+  'portal.getInvolvedHeading': '参与其中',
+  'portal.getInvolvedIntro': '在决定自行车和公共交通事务的会议上发声，并在 SVBC 活动中与其他会员相聚。',
+  'portal.getInvolvedTransit': '公共交通机构会议',
+  'portal.getInvolvedCivic': '市自行车与行人委员会',
+  'portal.getInvolvedEvents': 'SVBC 活动',
+  'portal.getInvolvedVolunteer': '志愿者机会',
+  'portal.getInvolvedEventsLink': '查看即将举行的 SVBC 活动',
+  'portal.getInvolvedVolunteerLink': '寻找志愿者班次',
+  'portal.addToCalendar': '添加到日历',
   'portal.discountsHeading': '自行车店折扣',
   'portal.taxDocumentsLink': '税务文件',
   'portal.eventsLink': '活动报名',
@@ -185,4 +198,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'letterReady.body': '您的 {{year}} 年捐赠信函现在可以在捐赠者门户中查看。',
   'letterReady.loginLink': '登录查看',
   'letterReady.expiry': '此链接很快会失效，且只能使用一次。',
+  'portal.matchedBy': '{{company}} 已于 {{date}} 配捐:{{amount}}',
+  'portal.startMatch': '您的雇主可能会为这笔捐款配捐',
 } satisfies Record<TranslationKey, string>;

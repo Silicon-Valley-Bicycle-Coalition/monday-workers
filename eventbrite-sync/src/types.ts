@@ -1,4 +1,5 @@
-import type { OrderQueueMessage } from './consumer/processBatch';
+import type { MondayTokenSource } from './monday/graphql';
+import type { WriteQueueMessage } from './consumer/processBatch';
 
 // Ledger statuses. 'received'/'queued' are the route's; the consumer ends a row at 'written'
 // (a Donations item exists for it), 'skipped' (not giving: unmapped status or a free order — see
@@ -25,9 +26,45 @@ export interface OrderRow {
   writtenAt: string | null;
 }
 
+// The attendee/event ledgers reuse the order statuses: received → queued → written | skipped | failed.
+export type LedgerStatus = OrderStatus;
+
+// One row per Eventbrite event this Worker has heard about. Ids, times and statuses only — no
+// payload, as with orders.
+export interface EventRow {
+  eventId: string;
+  mondayItemId: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  locationKey: string | null;
+  eventbriteStatus: string | null;
+  status: LedgerStatus;
+  lastAction: string;
+  error: string | null;
+  deliveries: number;
+  receivedAt: string;
+  writtenAt: string | null;
+}
+
+// One row per Eventbrite attendee. No name or email: the consumer re-fetches the attendee.
+export interface AttendeeRow {
+  attendeeId: string;
+  eventId: string;
+  mondayItemId: string | null;
+  matchedPersonItemId: string | null;
+  status: LedgerStatus;
+  lastAction: string;
+  error: string | null;
+  deliveries: number;
+  receivedAt: string;
+  writtenAt: string | null;
+}
+
 export interface MondayBoards {
   'donations:live': number | null;
   'people-live': number | null;
+  events: number | null;
+  'event-registrations': number | null;
 }
 
 export type AmountSource = 'gross' | 'base_price';
@@ -59,6 +96,9 @@ export interface EventbriteSyncConfig {
     // Which Eventbrite cost the Amount is: `gross` (what the buyer paid, fees and tax included —
     // SVBC's choice, spec decision 6) or `base_price` (organizer revenue net of Eventbrite fees).
     amountSource: AmountSource;
+    // The currency the Donations Amount column is in (ISO 4217, "USD"). An order whose cost is in
+    // any other currency is not written: it is recorded failed for a human, never as dollars.
+    currency: string;
     // A free order (amount 0) with no Donations item yet is not giving: mark it skipped. An
     // order already on the board is always updated regardless.
     skipFreeOrders: boolean;
@@ -77,14 +117,65 @@ export interface EventbriteSyncConfig {
     donorEmailColumn: string;
     donorLinkColumn: string;
   };
+  // The attendee/event feed: Eventbrite events → Events board, attendees → Event Registrations,
+  // and the class email send page (docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
+  attendeeSync: {
+    // Webhook actions the attendee/event route processes; anything else is acknowledged and ignored.
+    actions: string[];
+    // Eventbrite organizer id → Program label (Events board Program column). Unlisted = Public.
+    programByOrganizer: Record<string, string>;
+    // Programs whose attendees get Role = Volunteer.
+    volunteerPrograms: string[];
+    events: {
+      eventbriteIdColumn: string;
+      dateColumn: string;
+      endColumn: string;
+      venueColumn: string;
+      addressColumn: string;
+      cityColumn: string;
+      programColumn: string;
+      eventStatusColumn: string;
+      sourceColumn: string;
+      urlColumn: string;
+      // The Events board link column holding the class's send-page link.
+      sendLinkColumn: string;
+    };
+    registrations: {
+      attendeeIdColumn: string;
+      attendeeNameColumn: string;
+      attendeeEmailColumn: string;
+      firstNameColumn: string;
+      attendanceColumn: string;
+      sourceColumn: string;
+      roleColumn: string;
+      eventLinkColumn: string;
+      attendeeLinkColumn: string;
+      classDateColumn: string;
+      classDayColumn: string;
+      classLocationColumn: string;
+    };
+    // The class email send page. pageUrl is the page's https URL (null until deployed);
+    // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).
+    classEmails: {
+      pageUrl: string | null;
+      sandboxRecipient: string | null;
+    };
+    // People board email column used to match attendees to People.
+    peopleEmailColumn: string;
+  };
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
-// only secrets and the narrowed queue message type are declared here.
-export interface Env extends Cloudflare.Env {
-  WRITE_QUEUE: Queue<OrderQueueMessage>;
-  MONDAY_API_TOKEN: string;
+// only secrets, the narrowed queue message type, and MONDAY_AUTH are declared here. MONDAY_AUTH is
+// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
+  WRITE_QUEUE: Queue<WriteQueueMessage>;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   // Eventbrite private token (`wrangler secret put EVENTBRITE_PRIVATE_TOKEN`), sent as
   // `Authorization: Bearer` on every order fetch. Optional in the type because secrets aren't
   // declared in wrangler.jsonc; the consumer fails every message (retry, then DLQ) until it is set.
@@ -93,6 +184,10 @@ export interface Env extends Cloudflare.Env {
   // X-Webhook-Secret header (`wrangler secret put EVENTBRITE_WEBHOOK_SECRET`). The route fails
   // closed (401 on every delivery) until it is set.
   EVENTBRITE_WEBHOOK_SECRET?: string;
+  // Shared secret the class email send page presents in X-Class-Email-Secret (`wrangler secret put
+  // CLASS_EMAIL_SECRET`; the same value goes in the Apps Script's Script Properties). The
+  // /class-emails routes answer 401 to everything while it is unset.
+  CLASS_EMAIL_SECRET?: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }

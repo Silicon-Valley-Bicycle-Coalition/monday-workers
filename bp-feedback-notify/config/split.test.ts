@@ -29,6 +29,10 @@ describe('config split: sinks', () => {
     expect(sandbox.feedbackFormUrl).not.toBe(production.feedbackFormUrl);
   });
 
+  it('production and sandbox read items from different boards', () => {
+    expect(sandbox.board.boardId).not.toBe(production.board.boardId);
+  });
+
   it('status write-back never targets the same board from both environments', () => {
     const boardOf = (c: { sendStatus: unknown }) => (c.sendStatus as { boardId?: string } | null)?.boardId;
     // Latent until both are configured (both ship null).
@@ -56,5 +60,15 @@ describe('wrangler.jsonc env.sandbox', () => {
   it('never sets ENVIRONMENT at the top level — production must not load sandbox config', () => {
     expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
     expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
+  });
+});
+
+describe('wrangler.jsonc FLAGS binding', () => {
+  const flagsId = (w: Json) => ((w.kv_namespaces as { binding: string; id: string }[] | undefined) ?? []).find((n) => n.binding === 'FLAGS')?.id;
+
+  it('binds FLAGS in production and sandbox to different namespaces', () => {
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
   });
 });

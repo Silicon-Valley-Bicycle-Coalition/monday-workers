@@ -1,0 +1,37 @@
+{
+  "name": "member-map",
+  "version": "0.1.0",
+  "description": "Staff-only map of SVBC members over OpenStreetMap, with a gap score showing where membership is thin.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run && node --test scripts/*.test.mjs",
+    "dev": "wrangler dev --infer-origin-from-routes=false",
+    "dev:sandbox": "wrangler dev --env sandbox --infer-origin-from-routes=false",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "build:reference": "node scripts/build-reference.mjs",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@turf/bbox": "^7.2.0",
+    "@turf/boolean-point-in-polygon": "^7.2.0",
+    "hono": "^4.13.3",
+    "jose": "^6"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "@turf/turf": "^7.2.0",
+    "fflate": "^0.8",
+    "mapshaper": "^0.6",
+    "shapefile": "^0.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}

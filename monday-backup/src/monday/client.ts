@@ -9,7 +9,8 @@ import type {
   UpdateRecord,
   UpdateReply,
 } from '../types';
-import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
+import type { DailyUsage } from '../usage';
 
 const BOARDS_PAGE_SIZE = 50;
 // items_page allows up to 500, but each item now carries column values, typed connect/mirror
@@ -222,7 +223,9 @@ export type HttpMondayClientOptions = MondayGraphQLOptions;
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: HttpMondayClientOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: HttpMondayClientOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, options);
   }
 
@@ -428,5 +431,26 @@ export class HttpMondayClient implements MondayClient {
       for (const block of blocks) seen.add(block.id);
       yield blocks.map(toBlock);
     }
+  }
+
+  // The account's daily API limit and per-day usage (platform_api; works on Pro, not only
+  // Enterprise). Not part of MondayClient: the watchdog's usage check calls it, not the backup.
+  async getDailyUsage(): Promise<DailyUsage> {
+    const data = await this.graphql<{
+      platform_api: {
+        daily_limit: { total: number };
+        daily_analytics: { last_updated: string | null; by_day: { day: string; usage: number }[] };
+      };
+    }>(
+      `query {
+        platform_api {
+          daily_limit { total }
+          daily_analytics { last_updated by_day { day usage } }
+        }
+      }`,
+      {},
+    );
+    const { daily_limit, daily_analytics } = data.platform_api;
+    return { limit: daily_limit.total, lastUpdated: daily_analytics.last_updated, byDay: daily_analytics.by_day };
   }
 }

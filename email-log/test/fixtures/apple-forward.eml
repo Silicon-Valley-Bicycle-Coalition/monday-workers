@@ -1,0 +1,36 @@
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org header.s=google; spf=pass smtp.mailfrom=bikesiliconvalley.org
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: log@log.bikesiliconvalley.org
+Subject: Fwd: Trail closure
+Date: Mon, 2 Nov 2026 14:05:12 -0800
+Message-ID: <apple-fwd-1@bikesiliconvalley.org>
+Mime-Version: 1.0 (Mac OS X Mail 16.0 \(3826.200.121\))
+Content-Type: multipart/alternative; boundary="Apple-Mail=_A1B2C3"
+
+--Apple-Mail=_A1B2C3
+Content-Transfer-Encoding: 7bit
+Content-Type: text/plain;
+	charset=us-ascii;
+	format=flowed
+
+FYI, see below.
+
+> Begin forwarded message:
+> 
+> From: Jane Rider <Jane@Example.org>
+> Subject: Trail closure
+> Date: November 2, 2026 at 13:58:55 PST
+> To: Dana Staff <dana@bikesiliconvalley.org>
+> Cc: Bob <bob@example.com>, Sam <sam@bikesiliconvalley.org>
+> Reply-To: support@example.org
+> 
+> Hello Dana,
+> The trail is closed.
+
+--Apple-Mail=_A1B2C3
+Content-Transfer-Encoding: 7bit
+Content-Type: text/html;
+	charset=us-ascii
+
+<html><head><meta http-equiv="content-type" content="text/html; charset=us-ascii"></head><body style="overflow-wrap: break-word;">FYI, see below.<br id="lineBreakAtBeginningOfMessage"><div><br><blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline"><div style="margin: 0px;"><span style="font-family: -webkit-system-font;"><b>From: </b></span><span>Jane Rider &lt;Jane@Example.org&gt;<br></span></div><div style="margin: 0px;"><span><b>Subject: </b></span><span><b>Trail closure</b><br></span></div><div style="margin: 0px;"><span><b>Date: </b></span><span>November 2, 2026 at 13:58:55 PST<br></span></div><div style="margin: 0px;"><span><b>To: </b></span><span>Dana Staff &lt;dana@bikesiliconvalley.org&gt;<br></span></div><div style="margin: 0px;"><span><b>Cc: </b></span><span>Bob &lt;bob@example.com&gt;, Sam &lt;sam@bikesiliconvalley.org&gt;<br></span></div><div style="margin: 0px;"><span><b>Reply-To: </b></span><span>support@example.org<br></span></div><br><div><div>Hello Dana,</div><div>The trail is closed.</div></div></blockquote></div><br></body></html>
+--Apple-Mail=_A1B2C3--

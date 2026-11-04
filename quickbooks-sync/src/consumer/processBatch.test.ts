@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processSyncQueueBatch, retryDelaySeconds, TERMINAL_PREFIX, type QueueMessageLike } from './processBatch';
+import { consumeSyncBatch, processSyncQueueBatch, TERMINAL_PREFIX, type QueueMessageLike } from './processBatch';
 import { TerminalError } from '../errors';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
@@ -21,6 +21,7 @@ const config: QuickbooksSyncConfig = {
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName' },
     customerQbIdColumn: 'qb_id_col',
+    currency: 'USD',
   },
 };
 
@@ -353,6 +354,45 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       text_col: '1001',
       numeric_col: 250,
       connect_col: { item_ids: [111] },
+    });
+  });
+
+  describe('currency (#76)', () => {
+    async function syncInvoice(record: Record<string, unknown>) {
+      const qbEventStore = fakeQbEventStore({ getEvent: vi.fn().mockResolvedValue(qbEventRow({ entityType: 'invoice', qbId: 'inv-1' })) });
+      const mondayClient = fakeMondayClient({ createItem: vi.fn().mockResolvedValue({ id: 'inv-item-1' }) });
+      const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await processSyncQueueBatch([message], {
+          qbEventStore,
+          mondayEventStore: fakeMondayEventStore(),
+          mapStore: fakeMapStore(),
+          mondayClient,
+          quickBooksClient: fakeQuickBooksClient({ getEntity: vi.fn().mockResolvedValue(record) }),
+          config,
+        });
+      } finally {
+        error.mockRestore();
+      }
+      return { qbEventStore, mondayClient, message };
+    }
+
+    it('fails an invoice in another currency terminally, writing nothing to Monday', async () => {
+      const { qbEventStore, mondayClient, message } = await syncInvoice({ DocNumber: '1001', TotalAmt: 250, CurrencyRef: { value: 'CAD', name: 'Canadian Dollar' } });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+      expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: expect.stringMatching(new RegExp(`^${TERMINAL_PREFIX}QuickBooks invoice inv-1 is in CAD, not USD`)) });
+      expect(message.ack).toHaveBeenCalled();
+      expect(message.retry).not.toHaveBeenCalled();
+    });
+
+    it('writes a record in the home currency, or with no CurrencyRef at all', async () => {
+      for (const record of [{ DocNumber: '1001', TotalAmt: 250, CurrencyRef: { value: 'USD' } }, { DocNumber: '1001', TotalAmt: 250 }]) {
+        const { mondayClient, message } = await syncInvoice(record);
+        expect(mondayClient.createItem).toHaveBeenCalledWith(222, '1001', { text_col: '1001', numeric_col: 250 });
+        expect(message.ack).toHaveBeenCalled();
+      }
     });
   });
 
@@ -971,22 +1011,10 @@ describe('terminal failures', () => {
   });
 });
 
-// #33: retries were immediate, so a Monday or QuickBooks outage of a few seconds burned all three
-// attempts at once and dead-lettered the change. They now back off by attempt number.
+// #33: retries were immediate, so a Monday or QuickBooks outage of a few seconds burned all the
+// attempts at once and dead-lettered the change. They now back off by attempt number (the shared
+// schedule in src/flags.ts).
 describe('retry backoff', () => {
-  it("grows by attempt: 1 min, 4 min, 16 min, capped at Queues' 12 h maximum", () => {
-    expect(retryDelaySeconds(1)).toBe(60);
-    expect(retryDelaySeconds(2)).toBe(240);
-    expect(retryDelaySeconds(3)).toBe(960);
-    expect(retryDelaySeconds(20)).toBe(43200);
-  });
-
-  it('treats a missing or nonsensical attempt count as the first attempt', () => {
-    expect(retryDelaySeconds(undefined)).toBe(60);
-    expect(retryDelaySeconds(0)).toBe(60);
-    expect(retryDelaySeconds(Number.NaN)).toBe(60);
-  });
-
   it('retries a failed message with the delay for its attempt number', async () => {
     const mondayClient = fakeMondayClient({ createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) });
     const message = { ...fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' }), attempts: 2 };
@@ -1000,7 +1028,7 @@ describe('retry backoff', () => {
       config,
     });
 
-    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
   });
 
   it('still retries the message (with backoff) when recording the failure in D1 also fails', async () => {
@@ -1020,5 +1048,185 @@ describe('retry backoff', () => {
     });
 
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+  });
+});
+
+// The write switch (src/flags.ts, src/writeSwitch.ts): consumeSyncBatch decides per message
+// whether to write, dry-run (record sinks, drop store writes, ack) or retry untouched.
+describe('consumeSyncBatch — write switch', () => {
+  const gateFor = (mode: 'on' | 'hold' | 'off' | 'unknown') => ({
+    worker: 'quickbooks-sync',
+    environment: 'production',
+    mode,
+    logLevel: 'normal' as const,
+    piiKeys: ['name', 'email', 'phone', 'address'],
+  });
+
+  function depsWithSpies(overrides: { quickBooksClient?: QuickBooksClient; mondayClient?: MondayClient } = {}) {
+    return {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient: overrides.mondayClient ?? fakeMondayClient(),
+      quickBooksClient: overrides.quickBooksClient ?? fakeQuickBooksClient(),
+      config,
+    };
+  }
+
+  function expectNoWrites(deps: ReturnType<typeof depsWithSpies>) {
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(deps.quickBooksClient.createCustomer).not.toHaveBeenCalled();
+    expect(deps.qbEventStore.updateStatus).not.toHaveBeenCalled();
+    expect(deps.mondayEventStore.updateStatus).not.toHaveBeenCalled();
+    expect(deps.mondayEventStore.markCreateSent).not.toHaveBeenCalled();
+    expect(deps.mapStore.createMapping).not.toHaveBeenCalled();
+    expect(deps.mapStore.repointMapping).not.toHaveBeenCalled();
+  }
+
+  function skipLines(spy: { mock: { calls: unknown[][] } }): Record<string, unknown>[] {
+    return spy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes('"writeSwitch":"skipped"'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  it('off, qb-to-monday create: records the Monday create, writes nothing, acks', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = depsWithSpies();
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await consumeSyncBatch([message], deps, gateFor('off'));
+
+    expectNoWrites(deps);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(skipLines(log).map((l) => `${l.sink}.${l.operation}`)).toEqual(['Monday.createItem']);
+    vi.restoreAllMocks();
+  });
+
+  it('off, qb-to-monday update of a mapped record: records changeColumnValues, writes nothing', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = depsWithSpies();
+    deps.mapStore = fakeMapStore({
+      getByQbId: vi.fn().mockResolvedValue({ entityType: 'customer', qbId: 'qb-1', mondayItemId: '9', mondayBoardId: 111, createdAt: 'x' }),
+    });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await consumeSyncBatch([message], deps, gateFor('off'));
+
+    expectNoWrites(deps);
+    expect(message.ack).toHaveBeenCalled();
+    expect(skipLines(log).map((l) => `${l.sink}.${l.operation}`)).toEqual(['Monday.changeColumnValues']);
+    vi.restoreAllMocks();
+  });
+
+  it('off, monday-to-qb create: no QuickBooks create, no markCreateSent, no store writes, acks', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = depsWithSpies();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await consumeSyncBatch([message], deps, gateFor('off'));
+
+    expectNoWrites(deps);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    // The chain still runs on the placeholder Customer id: the QuickBooks create, then the
+    // Monday stamp of that id on the item — each a skip line, neither a real write.
+    expect(skipLines(log).map((l) => `${l.sink}.${l.operation}`)).toEqual(['QuickBooks.createCustomer', 'Monday.changeColumnValues']);
+    vi.restoreAllMocks();
+  });
+
+  it('still reads under off: getEntity and getItem pass through to the real clients', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = depsWithSpies();
+
+    await consumeSyncBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps, gateFor('off'));
+    await consumeSyncBatch([fakeMessage({ direction: 'monday-to-qb', eventId: '42' })], deps, gateFor('off'));
+
+    expect(deps.quickBooksClient.getEntity).toHaveBeenCalled();
+    expect(deps.mondayClient.getItem).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it("a message stamped 'dropped' stays a dry run even when the mode is now on", async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = depsWithSpies();
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1', writeStamp: 'dropped' });
+
+    await consumeSyncBatch([message], deps, gateFor('on'));
+
+    expectNoWrites(deps);
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('an unstamped legacy message (enqueued before the switch existed) writes under on', async () => {
+    const deps = depsWithSpies();
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await consumeSyncBatch([message], deps, gateFor('on'));
+
+    expect(deps.mondayClient.createItem).toHaveBeenCalled();
+    expect(deps.mapStore.createMapping).toHaveBeenCalled();
+    expect(deps.qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('on, monday-to-qb: still marks the create sent and creates the Customer', async () => {
+    const deps = depsWithSpies();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await consumeSyncBatch([message], deps, gateFor('on'));
+
+    expect(deps.mondayEventStore.markCreateSent).toHaveBeenCalledWith('42');
+    expect(deps.quickBooksClient.createCustomer).toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it.each(['hold', 'unknown'] as const)('%s: retries at 60 s without reading or writing anything', async (mode) => {
+    const deps = depsWithSpies();
+    const message = { ...fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' }), attempts: 1 };
+
+    await consumeSyncBatch([message], deps, gateFor(mode));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(deps.qbEventStore.getEvent).not.toHaveBeenCalled();
+    expectNoWrites(deps);
+  });
+
+  it('hold at attempt 8 backs off to the one-hour cap', async () => {
+    const message = { ...fakeMessage({ direction: 'monday-to-qb', eventId: '42' }), attempts: 8 };
+
+    await consumeSyncBatch([message], depsWithSpies(), gateFor('hold'));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+  });
+
+  it('a TerminalError under on is still recorded and acked, not retried', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = depsWithSpies({
+      quickBooksClient: fakeQuickBooksClient({ getEntity: vi.fn().mockRejectedValue(new TerminalError('Object Not Found')) }),
+    });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await consumeSyncBatch([message], deps, gateFor('on'));
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(deps.qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: `${TERMINAL_PREFIX}Object Not Found` });
+    vi.restoreAllMocks();
+  });
+
+  it('a retryable failure under on retries with the shared backoff (attempt 8: 3600 s)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = depsWithSpies({ mondayClient: fakeMondayClient({ createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) }) });
+    const message = { ...fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' }), attempts: 8 };
+
+    await consumeSyncBatch([message], deps, gateFor('on'));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+    vi.restoreAllMocks();
   });
 });

@@ -12,17 +12,22 @@
 //   MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
 //   MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 111 --workspace 222
 //
-// Exit 0: every active board the token reaches is in an allowed workspace. Exit 1: it reaches
-// boards outside them (listed by workspace). Exit 2: usage or API error. Read-only — two queries
+// Exit 0: every board the token reaches is in an allowed workspace. Exit 1: it reaches boards
+// outside them (listed by workspace). Archived and deleted (in trash, restorable) boards count:
+// they keep their items and stay readable, so they are reported, separately, rather than skipped
+// (#71). Exit 2: usage or API error. Read-only — two queries
 // (`me`, `workspaces`) and a paged `boards` listing; nothing is written and no item is read.
 
 import { fileURLToPath } from 'node:url';
+import { listBoards, summarizeScope } from './lib/token-scope.mjs';
 // The repo's single API-Version pin (#39), from the canonical transport.
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
 
 const API_URL = 'https://api.monday.com/v2';
-const PAGE_SIZE = 100;
-const MAX_PAGES = 100;
+
+// Re-exported so existing importers (and tests) keep working; the logic lives in lib/token-scope.mjs,
+// which the monday-auth Worker also imports (it cannot pull in this script's Node-only entry point).
+export { summarizeScope };
 
 export function parseArgs(argv) {
   const workspaces = [];
@@ -37,36 +42,6 @@ export function parseArgs(argv) {
   return { workspaces };
 }
 
-// Pure: `boards` is what the boards query returned ({ id, workspace_id, board_kind, permissions }).
-// `permissions: "everyone"` means any team member — this token's user included — can edit.
-export function summarizeScope(boards, allowedWorkspaceIds) {
-  const allowed = new Set(allowedWorkspaceIds.map(String));
-  const byWorkspace = new Map();
-  const byKind = {};
-  let inside = 0;
-  let editableByEveryone = 0;
-  for (const board of boards) {
-    const workspaceId = board.workspace_id === null || board.workspace_id === undefined ? '(none)' : String(board.workspace_id);
-    if (allowed.has(workspaceId)) {
-      inside++;
-      continue;
-    }
-    const everyone = board.permissions === 'everyone';
-    if (everyone) editableByEveryone++;
-    byKind[board.board_kind] = (byKind[board.board_kind] ?? 0) + 1;
-    const entry = byWorkspace.get(workspaceId) ?? { workspaceId, boards: 0, editableByEveryone: 0 };
-    entry.boards++;
-    if (everyone) entry.editableByEveryone++;
-    byWorkspace.set(workspaceId, entry);
-  }
-  const workspaces = [...byWorkspace.values()].sort((a, b) => b.boards - a.boards || a.workspaceId.localeCompare(b.workspaceId));
-  return {
-    total: boards.length,
-    inside,
-    outside: { boards: boards.length - inside, editableByEveryone, byKind, workspaces },
-  };
-}
-
 async function query(token, graphql) {
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -79,16 +54,6 @@ async function query(token, graphql) {
     throw new Error(`monday API: HTTP ${res.status}: ${JSON.stringify(body?.errors ?? body?.error_message ?? body).slice(0, 300)}`);
   }
   return body.data;
-}
-
-async function listBoards(token) {
-  const boards = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await query(token, `{ boards(limit: ${PAGE_SIZE}, page: ${page}, state: active) { id workspace_id board_kind permissions } }`);
-    boards.push(...data.boards);
-    if (data.boards.length < PAGE_SIZE) return boards;
-  }
-  throw new Error(`more than ${MAX_PAGES * PAGE_SIZE} boards; raise MAX_PAGES`);
 }
 
 async function main() {
@@ -107,7 +72,7 @@ async function main() {
     const data = await query(token, '{ me { id name } workspaces(limit: 500) { id name } }');
     who = data.me;
     names = new Map(data.workspaces.map((w) => [String(w.id), w.name]));
-    summary = summarizeScope(await listBoards(token), args.workspaces);
+    summary = summarizeScope(await listBoards((graphql) => query(token, graphql)), args.workspaces);
   } catch (err) {
     // Node reports a network failure as a bare "fetch failed"; the cause says why.
     console.error(err.cause ? `${err.message}: ${err.cause.message ?? err.cause}` : err.message);
@@ -116,15 +81,17 @@ async function main() {
 
   console.log(`Token user: ${who.name} (id ${who.id})`);
   console.log(`Allowed workspaces: ${args.workspaces.map((id) => `${id}${names.has(id) ? ` ${names.get(id)}` : ''}`).join(', ')}`);
-  console.log(`Active boards reachable: ${summary.total} — ${summary.inside} inside the allowed workspaces, ${summary.outside.boards} outside`);
+  console.log(`Boards reachable (any state): ${summary.total} — ${summary.inside} inside the allowed workspaces, ${summary.outside.boards} outside`);
   if (summary.outside.boards === 0) {
     console.log('OK: this token reaches nothing outside the allowed workspaces.');
     return 0;
   }
   const kinds = Object.entries(summary.outside.byKind).map(([kind, n]) => `${n} ${kind}`).join(', ');
-  console.log(`Outside: ${kinds}; ${summary.outside.editableByEveryone} editable by every team member`);
+  const states = Object.entries(summary.outside.byState).map(([state, n]) => `${n} ${state}`).join(', ');
+  console.log(`Outside: ${kinds}; ${states}; ${summary.outside.editableByEveryone} editable by every team member`);
   for (const w of summary.outside.workspaces) {
-    console.log(`  ${w.workspaceId.padEnd(10)} ${String(w.boards).padStart(4)} boards (${w.editableByEveryone} editable)  ${names.get(w.workspaceId) ?? ''}`);
+    const notActive = w.notActive > 0 ? `, ${w.notActive} archived/deleted` : '';
+    console.log(`  ${w.workspaceId.padEnd(10)} ${String(w.boards).padStart(4)} boards (${w.editableByEveryone} editable${notActive})  ${names.get(w.workspaceId) ?? ''}`);
   }
   console.log('FAIL: this token reaches boards outside the allowed workspaces.');
   return 1;

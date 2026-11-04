@@ -55,6 +55,10 @@ export const en = {
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.changeRequestLoadFailed': 'We could not load your contact details right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Temporarily Unavailable',
+  'unavailable.heading': 'Temporarily unavailable',
+  'unavailable.body': 'We’re updating our systems, so this isn’t available right now. Please try again in a little while.',
 
   // Portal
   'portal.heading': 'Your member portal',
@@ -79,6 +83,15 @@ export const en = {
   'portal.manageRecurringLink': 'Manage your recurring gift',
   'portal.renewMembershipLink': 'Renew your membership',
   'portal.givingLinksNote': 'These links open Funraise, our secure payment processor. Changes you make there appear in this portal after our records update.',
+  'portal.getInvolvedHeading': 'Get involved',
+  'portal.getInvolvedIntro': 'Speak up at the meetings where bike and transit decisions get made, and join fellow members at SVBC events.',
+  'portal.getInvolvedTransit': 'Transit agency meetings',
+  'portal.getInvolvedCivic': 'City bike and pedestrian committees',
+  'portal.getInvolvedEvents': 'SVBC events',
+  'portal.getInvolvedVolunteer': 'Volunteer opportunities',
+  'portal.getInvolvedEventsLink': 'See upcoming SVBC events',
+  'portal.getInvolvedVolunteerLink': 'Find a volunteer shift',
+  'portal.addToCalendar': 'Add to calendar',
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
   'portal.eventsLink': 'Event registrations',
@@ -191,4 +204,6 @@ export const en = {
   'letterReady.body': 'Your {{year}} giving letter is ready to view in your member portal.',
   'letterReady.loginLink': 'Log in to view it',
   'letterReady.expiry': 'This link expires soon and can only be used once.',
+  'portal.matchedBy': 'Matched by {{company}} on {{date}}: {{amount}}',
+  'portal.startMatch': 'Your employer may match this gift',
 } as const;

@@ -11,6 +11,7 @@
 //   MONDAY_API_TOKEN=... node scripts/setup-affiliation-columns.mjs <affiliationsBoardId> <peopleBoardId> [<peopleBoardId> ...]
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) {
@@ -56,7 +57,7 @@ async function getBoard(boardId) {
 }
 
 async function ensureColumn(boardId, boardName, byTitle, spec) {
-  const existing = byTitle.get(spec.title);
+  const existing = byTitle.get(bareTitle(spec.title));
   if (existing) return existing.id;
   const created = await graphql(
     `mutation ($board: ID!, $title: String!, $type: ColumnType!, $defaults: JSON) {
@@ -71,7 +72,7 @@ async function ensureColumn(boardId, boardName, byTitle, spec) {
 // this is the board-relation the rest of the model is built on, so a missing one means the
 // board isn't ready) the Person connect column.
 const affiliationsBoard = await getBoard(affiliationsBoardId);
-const affiliationsByTitle = new Map(affiliationsBoard.columns.map((c) => [c.title, c]));
+const affiliationsByTitle = new Map(affiliationsBoard.columns.map((c) => [bareTitle(c.title), c]));
 
 const affiliationColumns = {};
 for (const [field, spec] of Object.entries(AFFILIATION_FIELDS)) {
@@ -100,7 +101,7 @@ affiliationColumns.personLink = personColumn.id;
 const organizationalGivingByBoard = {};
 for (const boardId of peopleBoardIds) {
   const board = await getBoard(boardId);
-  const byTitle = new Map(board.columns.map((c) => [c.title, c]));
+  const byTitle = new Map(board.columns.map((c) => [bareTitle(c.title), c]));
   organizationalGivingByBoard[boardId] = await ensureColumn(boardId, board.name, byTitle, ORGANIZATIONAL_GIVING);
 }
 
@@ -114,7 +115,7 @@ try {
   const donationBoards = config.donationRollups?.donationBoards ?? [];
   for (const b of donationBoards) {
     const board = await getBoard(b.boardId);
-    const actingFor = board.columns.find((c) => c.title === 'Acting for');
+    const actingFor = board.columns.find((c) => bareTitle(c.title) === 'Acting for');
     if (actingFor) {
       actingForNote = { donationsBoardId: b.boardId, actingForColumnId: actingFor.id };
       break;

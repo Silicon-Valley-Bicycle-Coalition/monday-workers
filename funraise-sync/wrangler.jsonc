@@ -18,9 +18,10 @@
     "consumers": [
       {
         "queue": "funraise-sync-writes",
-        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
-        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
-        "max_retries": 3,
+        // The consumer backs each retry off by attempt — 1 minute doubling to an hour
+        // (retryDelaySeconds in src/flags.ts) — so 100 retries ride out about four days of
+        // Monday outage (or a write-switch `hold` the queue pause missed) before dead-lettering.
+        "max_retries": 100,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain.
         "max_concurrency": 1,
@@ -37,6 +38,10 @@
       }
     ]
   },
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP is
   // generous against real Funraise volume (a few hundred transactions a month) while blunting a
   // flood against the webhook route. The shared-secret check runs first in the route (before any
@@ -58,13 +63,18 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-funraise-sync-sandbox
   // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
   // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
   // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_API_TOKEN, FUNRAISE_WEBHOOK_SECRET, FUNRAISE_API_KEY for the subscriptions poll).
+  // (FUNRAISE_WEBHOOK_SECRET, FUNRAISE_API_KEY for the subscriptions poll). Monday access comes
+  // from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
@@ -82,7 +92,7 @@
         "consumers": [
           {
             "queue": "funraise-sync-writes-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "funraise-sync-writes-sandbox-dlq"
           },
@@ -94,6 +104,8 @@
           }
         ]
       },
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2032", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "triggers": {
@@ -103,7 +115,9 @@
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }
-      }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
     }
   }
 }

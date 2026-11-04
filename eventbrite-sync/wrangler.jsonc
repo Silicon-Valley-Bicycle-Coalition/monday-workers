@@ -8,9 +8,8 @@
     {
       "binding": "DB",
       "database_name": "svbc-eventbrite-sync",
-      // Not yet created. `wrangler d1 create svbc-eventbrite-sync` on the SVBC account and paste
-      // the id here (README "Deploy"); forks: create your own.
-      "database_id": "REPLACE_WITH_D1_ID",
+      // Created 2026-11-02 on the SVBC account (README "Deploy"); forks: create your own.
+      "database_id": "212c9b84-a5b7-4b01-a9f2-0558b0d54849",
       "migrations_dir": "migrations"
     }
   ],
@@ -19,9 +18,10 @@
     "consumers": [
       {
         "queue": "eventbrite-sync-writes",
-        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
-        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
-        "max_retries": 3,
+        // The consumer backs each retry off by attempt — 1 minute doubling to an hour
+        // (retryDelaySeconds in src/flags.ts) — so 100 retries ride out about four days of
+        // Monday outage (or a write-switch `hold` the queue pause missed) before dead-lettering.
+        "max_retries": 100,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (the backfill script is one).
         "max_concurrency": 1,
@@ -38,6 +38,13 @@
       }
     ]
   },
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // Fires hourly, but only the daily missed-order check (src/missedOrders/check.ts) runs: the hour
+  // it runs at is decided in code (isCheckHour), and every other hour returns at once.
+  "triggers": { "crons": ["0 * * * *"] },
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". 60/min/IP
   // is generous against real Eventbrite volume (tens of orders a day at a Summit peak) while
   // blunting a flood against the webhook route. The shared-secret check runs first in the route
@@ -50,22 +57,28 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-eventbrite-sync-sandbox
   // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
   // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
   // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_API_TOKEN, EVENTBRITE_PRIVATE_TOKEN, EVENTBRITE_WEBHOOK_SECRET).
+  // (EVENTBRITE_PRIVATE_TOKEN, EVENTBRITE_WEBHOOK_SECRET). Monday access comes from the MONDAY_AUTH
+  // binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
+      // Triggers are not inheritable either.
+      "triggers": { "crons": ["0 * * * *"] },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "svbc-eventbrite-sync-sandbox",
-          // Not yet created. `wrangler d1 create svbc-eventbrite-sync-sandbox` and paste the id.
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "database_id": "b105e491-c9ef-49c4-ae0b-fe846214aa2f",
           "migrations_dir": "migrations"
         }
       ],
@@ -74,7 +87,7 @@
         "consumers": [
           {
             "queue": "eventbrite-sync-writes-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "eventbrite-sync-writes-sandbox-dlq"
           },
@@ -86,12 +99,16 @@
           }
         ]
       },
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2072", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }
-      }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
     }
   }
 }

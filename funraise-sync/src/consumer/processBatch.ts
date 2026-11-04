@@ -10,6 +10,10 @@ import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
 import { toISODate } from '../util/isoDate';
 import { errorMessage } from '../util/errorMessage';
+import { isTerminalError } from '../errors';
+import { linkedItemId } from '../util/itemId';
+import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -21,22 +25,9 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Retry backoff (#25): immediate retries let a Monday outage of a few seconds burn every attempt
-// and dead-letter the gift. 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes across wrangler.jsonc's
-// max_retries of 3 — about 21 minutes of cover — and is capped at Queues' 12-hour maximum delay.
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
-}
-
-export interface FunraiseQueueMessage {
-  entityType: EntityType;
-  entityId: string;
-}
+// `writeStamp` (flags.ts): set by the route when the write switch was `off` at ingest. A body
+// enqueued before the switch existed has no such key and is live.
+export type FunraiseQueueMessage = { entityType: EntityType; entityId: string } & WriteStamp;
 
 export interface ProcessBatchDeps {
   eventStore: EventStore;
@@ -63,7 +54,34 @@ const EVENT_FIELD = 'fundraisingEvent';
 // funraiseTransactionLink), so a lookup by the bare id (matched against the link text) finds a
 // gift whichever writer created it.
 const FUNRAISE_TRANSACTION_URL = 'https://platform.funraise.io/transaction/';
+// On the events row's error for a failure that was acked instead of retried (src/errors.ts), so
+// it reads differently from one still being retried. The row stays 'failed', so
+// scripts/redrive-failed.mjs picks it up like any other.
+export const TERMINAL_PREFIX = 'not retried: ';
 
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processFunraiseQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeFunraiseBatch(
+  messages: QueueMessageLike<FunraiseQueueMessage>[],
+  deps: ProcessBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    const { entityType, entityId } = message.body;
+    const ctx = { ...gate, deliveryId: `${entityType}:${entityId}` };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processFunraiseQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+  }
+}
 
 export async function processFunraiseQueueBatch(
   messages: QueueMessageLike<FunraiseQueueMessage>[],
@@ -75,20 +93,31 @@ export async function processFunraiseQueueBatch(
       await processOne(entityType, entityId, deps);
       message.ack();
     } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}`);
+      const terminal = isTerminalError(err);
+      const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
+      console.error(
+        `funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}` +
+          (terminal ? ' — fix the cause, then re-drive with scripts/redrive-failed.mjs' : '')
+      );
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
+      let recorded = false;
       try {
         await deps.eventStore.updateStatusByEntity(entityType, entityId, 'failed', {
           error: errMsg,
         });
+        recorded = true;
       } catch (recordErr) {
         console.error(
           `funraise-sync consumer: could not record failure for ${entityType} "${entityId}": ${errorMessage(recordErr)}`
         );
       }
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
+      // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
+      // max_retries of 100 (about four days).
+      if (terminal && recorded) message.ack();
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
@@ -143,7 +172,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
 
   if (donorItemId) {
     columnValues[donorLinkColumn] = {
-      item_ids: [Number(donorItemId)],
+      item_ids: [linkedItemId(donorItemId)],
     };
   }
 
@@ -152,7 +181,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   if (recurringGiftLinkColumn) {
     const recurringGiftItemId = await resolveRecurringGiftItem(rawPayload, deps);
     if (recurringGiftItemId !== null) {
-      columnValues[recurringGiftLinkColumn] = { item_ids: [Number(recurringGiftItemId)] };
+      columnValues[recurringGiftLinkColumn] = { item_ids: [linkedItemId(recurringGiftItemId)] };
     }
   }
   if (entityIdColumn) {

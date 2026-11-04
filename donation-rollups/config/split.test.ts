@@ -38,7 +38,7 @@ const sandboxHistoricalBoards: HistoricalVolunteerBoardConfig[] = sandbox.donati
 
 describe('config split: board ids', () => {
   it('the sandbox Donations board is the CRM Sandbox one; production is a placeholder or a different board', () => {
-    expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18431577310);
+    expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18437342657);
     const sandboxBoards = new Set(sandbox.donationRollups.donationBoards.map((b) => b.boardId));
     for (const { boardId } of production.donationRollups.donationBoards) {
       expect(isPlaceholder(boardId) || !sandboxBoards.has(boardId), String(boardId)).toBe(true);
@@ -47,7 +47,7 @@ describe('config split: board ids', () => {
 
   it('owner boards are the three CRM Sandbox boards in sandbox; production shares none of them', () => {
     const sandboxOwners = Object.keys(sandbox.donationRollups.ownerColumnsByBoard).sort();
-    expect(sandboxOwners).toEqual(['18431577213', '18431577220', '18431577228']);
+    expect(sandboxOwners).toEqual(['18437342579', '18437342592', '18437342607']);
     for (const key of Object.keys(production.donationRollups.ownerColumnsByBoard)) {
       expect(isPlaceholder(key) || !sandboxOwners.includes(key), key).toBe(true);
     }
@@ -67,8 +67,8 @@ describe('config split: board ids', () => {
   });
 
   it('custodian ids are real in sandbox; production is a placeholder or a different id', () => {
-    expect(sandbox.custodian.workspaceId).toBe(17141226);
-    expect(sandbox.custodian.annualSummaryBoardId).toBe(18431966690);
+    expect(sandbox.custodian.workspaceId).toBe(18210301);
+    expect(sandbox.custodian.annualSummaryBoardId).toBe(18437530607);
     for (const key of ['workspaceId', 'alertItemId', 'annualSummaryBoardId'] as const) {
       const prod = production.custodian[key];
       expect(isPlaceholder(prod) || prod !== sandbox.custodian[key], key).toBe(true);
@@ -130,6 +130,21 @@ describe('wrangler.jsonc env.sandbox', () => {
     const prod = ((wrangler.queues as Json).consumers as Json[]).map((c) => [c.max_batch_size, c.max_retries, c.max_concurrency]);
     const sb = ((sandboxEnv.queues as Json).consumers as Json[]).map((c) => [c.max_batch_size, c.max_retries, c.max_concurrency]);
     expect(sb).toEqual(prod);
+  });
+
+  it('binds FLAGS to a different KV namespace than production', () => {
+    const flagsId = (scope: Json) => (scope.kv_namespaces as { binding: string; id: string }[] | undefined)?.find((ns) => ns.binding === 'FLAGS')?.id;
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
+  });
+
+  it('gives the recompute consumer about four days of retries (max_retries 100) in both environments; the DLQ consumer is unchanged', () => {
+    for (const queues of [wrangler.queues as Json, sandboxEnv.queues as Json]) {
+      const consumers = queues.consumers as { max_retries: number; dead_letter_queue?: string }[];
+      expect(consumers.find((c) => c.dead_letter_queue !== undefined)!.max_retries).toBe(100);
+      expect(consumers.find((c) => c.dead_letter_queue === undefined)!.max_retries).toBe(2);
+    }
   });
 
   it('has its own D1 database, never production’s', () => {

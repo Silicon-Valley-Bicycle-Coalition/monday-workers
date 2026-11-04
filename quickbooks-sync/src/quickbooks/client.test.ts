@@ -311,3 +311,56 @@ describe('HttpQuickBooksClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://sandbox-quickbooks.api.intuit.com/v3/company/realm-1/customer/1');
   });
 });
+
+// #73: a hung Intuit call must fail well inside the 30 s refresh lease, so the lease holder releases
+// it (or saves) before another refresher can take over and rotate the same refresh token again.
+describe('HttpQuickBooksClient request timeouts', () => {
+  function hangingFetch() {
+    const fetchMock = vi.fn(
+      (_url: string | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)))
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function fastTimeouts() {
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    return vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(1));
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('times out a hung token refresh below the lease TTL and releases the lease', async () => {
+    const timeoutSpy = fastTimeouts();
+    hangingFetch();
+    const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(expiredTokens) });
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', API_BASE, noSleep);
+
+    await expect(client.getEntity('customer', '1')).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    const [timeoutMs] = timeoutSpy.mock.calls[0]!;
+    expect(timeoutMs).toBeLessThan(30_000);
+    expect(tokenStore.releaseRefreshLease).toHaveBeenCalled();
+    expect(tokenStore.saveRefreshedTokens).not.toHaveBeenCalled();
+  });
+
+  it('times out a hung entity read', async () => {
+    fastTimeouts();
+    hangingFetch();
+    const client = new HttpQuickBooksClient(fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) }), 'id', 'secret', API_BASE, noSleep);
+
+    await expect(client.getEntity('invoice', '7')).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
+  it('times out a hung customer create', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fastTimeouts();
+    hangingFetch();
+    const client = new HttpQuickBooksClient(fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) }), 'id', 'secret', API_BASE, noSleep);
+
+    await expect(client.createCustomer({ DisplayName: 'A' }, 'req-1')).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+});

@@ -7,8 +7,11 @@ stages:
   - test
   - deploy
 
+# Pinned to a minor (not `node:22`) so a new image can't change the build unannounced (#58);
+# patch releases still flow in. 22.18+ is the floor: Workers' .mjs scripts and the copy checks
+# below rely on Node's built-in type stripping.
 default:
-  image: node:22
+  image: node:22.23
 
 # One job per Worker subdirectory — this repo has no root package.json, each
 # Worker is self-contained (see root README/CLAUDE.md). A job only runs when
@@ -40,8 +43,21 @@ default:
 # stays inert until that variable exists, so enabling it never risks a double
 # deploy alongside a working dashboard connection. account_id is already
 # baked into each Worker's wrangler.jsonc, so no other variable is needed.
+#
+# The token must be a Protected + Masked (+ Hidden) CI variable, scoped in
+# Cloudflare to Workers deploys on this account only (#58): Protected keeps it
+# out of merge-request pipelines, which run unprotected branch code, so an MR
+# can't echo it. If you environment-scope it to `sandbox`, check the first main
+# pipeline still runs the job: the `rules:` gate below must see the variable. The
+# `sandbox` environment lets a maintainer protect deploys in Settings > CI/CD >
+# Protected environments; resource_group stops two main pipelines deploying
+# the same Worker at once.
 .deploy_sandbox_job:
   stage: deploy
+  environment:
+    name: sandbox
+    deployment_tier: staging
+  resource_group: "sandbox-$WORKER_DIR"
   cache:
     key: "$WORKER_DIR"
     paths:
@@ -68,13 +84,56 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
       # must stay loadable without a TypeScript compile step.
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
       exit $status
+
+# geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search carries
+# a byte-identical copy (the Worker stays self-contained). Edit geo-filter's, then copy it over.
+geo-geometry-copies:
+  stage: test
+  rules:
+    - changes: ["*/src/geometry.ts", .gitlab-ci.yml]
+  script:
+    - cmp geo-filter/src/geometry.ts nearby-search/src/geometry.ts
+
+# The write switch (off/hold/on) lives in one module, member-portal/src/flags.ts. Every in-scope
+# Worker carries a byte-identical copy and the same FLAGS KV namespace ids; edit the canonical file,
+# then copy it over the others. --strict: a Worker without the module fails the job.
+worker-flags-copies:
+  stage: test
+  rules:
+    - changes:
+        - "*/src/flags.ts"
+        - "*/wrangler.jsonc"
+        - "*/wrangler.writer.jsonc"
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node scripts/check-worker-flags.mjs --strict
+    # Loaded through Node's strip-only type support, so it must not need a TypeScript compile step.
+    - node --input-type=module -e "await import('./member-portal/src/flags.ts')"
+
+# Each Worker reaches Monday through the monday-auth broker's MONDAY_AUTH service binding, and the
+# entrypoint it binds (PortalToken / SyncToken / ReadOnlyToken) sets its access. Production must
+# bind svbc-monday-auth and the sandbox env svbc-monday-auth-sandbox. The expected mapping is
+# EXPECTED in the script; it mirrors the design spec's apps table.
+monday-auth-bindings:
+  stage: test
+  rules:
+    - changes:
+        - monday-auth/**/*
+        - "*/wrangler*.jsonc"
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-monday-auth-bindings.test.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node scripts/check-monday-auth-bindings.mjs
 
 # Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
 # automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
@@ -87,9 +146,11 @@ log-safety:
         - scripts/**/*
         - .gitlab-ci.yml
   script:
-    - node --test "scripts/*.test.mjs"
+    - node --test "scripts/*.test.mjs" "scripts/lib/*.test.mjs"
     - node scripts/check-log-safety.mjs
 
+# Workers whose code imports scripts/lib/column-titles.mjs (read-only column markers) add
+# scripts/lib/** to their rules below, as monday-auth does for token-scope.mjs.
 benevity-import:
   extends: .worker_job
   variables:
@@ -104,6 +165,26 @@ donation-rollups:
   extends: .worker_job
   variables:
     WORKER_DIR: donation-rollups
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
+# Also runs the Worker's setup-columns script tests (node:test), which import scripts/lib.
+dtd-sync:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: dtd-sync
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run test:scripts
+    - npm run typecheck
 
 email-log:
   extends: .worker_job
@@ -119,6 +200,10 @@ member-portal:
   extends: .worker_job
   variables:
     WORKER_DIR: member-portal
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 funraise-sync:
   extends: .worker_job
@@ -131,31 +216,78 @@ geo-filter:
   extends: .worker_job
   variables:
     WORKER_DIR: geo-filter
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 mailchimp-sync:
   extends: .worker_job
   variables:
     WORKER_DIR: mailchimp-sync
 
+# The OAuth broker. Its rules add scripts/lib/**, which src/probe.ts imports
+# (../../scripts/lib/token-scope.mjs). No deploy-sandbox job on purpose: it is deployed by hand,
+# after its D1 migrations are applied (see monday-auth/README.md, "Deploying").
+monday-auth:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: monday-auth
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
 monday-backup:
   extends: .worker_job
   variables:
     WORKER_DIR: monday-backup
 
+nearby-search:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: nearby-search
+
 people-reclassification:
   extends: .worker_job
   variables:
     WORKER_DIR: people-reclassification
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
+member-map:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: member-map
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 quickbooks-sync:
   extends: .worker_job
   variables:
     WORKER_DIR: quickbooks-sync
 
+report-digests:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: report-digests
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
 salesforce-import:
   extends: .worker_job
   variables:
     WORKER_DIR: salesforce-import
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 svbc-calendars:
   extends: .worker_job
@@ -164,6 +296,8 @@ svbc-calendars:
 
 # svbc-calendars, salesforce-import and geo-filter have no `sandbox` Wrangler
 # environment (see root README/CLAUDE.md) and so have no deploy-sandbox job.
+# quickbooks-sync is postponed indefinitely (decided 2026-10-28): its tests still run above, but
+# it has no deploy-sandbox job, so a merge doesn't redeploy it.
 
 deploy-sandbox:benevity-import:
   extends: .deploy_sandbox_job
@@ -190,10 +324,36 @@ deploy-sandbox:eventbrite-sync:
   variables:
     WORKER_DIR: eventbrite-sync
 
+# Portal first, then the writer. Cloudflare Queues allows one consumer Worker per queue, and the
+# sandbox portal consumed member-portal-change-requests-sandbox until the consumer moved to
+# member-portal-writer, so the writer can't be published as its consumer while the portal still
+# is. Change requests simply wait in the queue between the two deploys. (wrangler deploy doesn't
+# detach a consumer dropped from the config, so the one-time detach is a manual step: see
+# member-portal/DEPLOY.md, "Sandbox environment". Production never had a portal consumer.)
 deploy-sandbox:member-portal:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: member-portal
+
+# The change-requests queue consumer, split out of member-portal (wrangler.writer.jsonc). Same
+# directory and cache as the portal; resource_group is distinct so the two jobs don't share a lock.
+# optional: when the portal deploy job doesn't exist in a pipeline, the writer still deploys. Its
+# needs then still include the member-portal test job, so a red test never deploys it (when the
+# portal job exists it waits on the whole test stage, and so does the writer through it).
+deploy-sandbox:member-portal-writer:
+  extends: .deploy_sandbox_job
+  resource_group: "sandbox-member-portal-writer"
+  needs:
+    - job: member-portal
+      optional: true
+    - job: deploy-sandbox:member-portal
+      optional: true
+  variables:
+    WORKER_DIR: member-portal
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npx wrangler deploy -c wrangler.writer.jsonc --env sandbox
 
 deploy-sandbox:funraise-sync:
   extends: .deploy_sandbox_job
@@ -210,12 +370,37 @@ deploy-sandbox:monday-backup:
   variables:
     WORKER_DIR: monday-backup
 
+deploy-sandbox:nearby-search:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: nearby-search
+
 deploy-sandbox:people-reclassification:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: people-reclassification
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
-deploy-sandbox:quickbooks-sync:
+deploy-sandbox:member-map:
   extends: .deploy_sandbox_job
   variables:
-    WORKER_DIR: quickbooks-sync
+    WORKER_DIR: member-map
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
+deploy-sandbox:report-digests:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: report-digests
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*

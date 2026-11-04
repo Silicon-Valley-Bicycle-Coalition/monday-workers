@@ -2,8 +2,10 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": null,
-      "people-live": null
+      "donations:live": 18437909794,
+      "people-live": 18437909781,
+      "events": 18437909790,
+      "event-registrations": 18437909792
     }
   },
   "eventbrite": {
@@ -12,22 +14,70 @@
     "actions": ["order.placed", "order.updated", "order.refunded"]
   },
   "eventbriteSync": {
-    "orderIdColumn": "REPLACE_WITH_COLUMN_ID",
-    "amountColumn": "REPLACE_WITH_COLUMN_ID",
-    "statusColumn": "REPLACE_WITH_COLUMN_ID",
-    "dateColumn": "REPLACE_WITH_COLUMN_ID",
+    "orderIdColumn": "text_mm8n459q",
+    "amountColumn": "numeric_mm8nsb7t",
+    "statusColumn": "color_mm8nspep",
+    "dateColumn": "date_mm8nty3x",
     "amountSource": "gross",
+    "currency": "USD",
     "skipFreeOrders": true,
     "statusLabelMap": {
       "placed": "Received",
       "refunded": "Refunded"
     },
     "itemNameTemplate": "{buyer} - {event}",
-    "thankYouSentColumn": "REPLACE_WITH_COLUMN_ID",
-    "giftTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "thankYouSentColumn": "boolean_mm8q7wrr",
+    "giftTypeColumn": "text_mm8nyftg",
     "giftTypeValue": "Event Ticket",
-    "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
-    "donorEmailColumn": "REPLACE_WITH_COLUMN_ID",
-    "donorLinkColumn": "REPLACE_WITH_COLUMN_ID"
+    "fiscalYearColumn": "text_mm8ngcfh",
+    "donorEmailColumn": "email_mm8nx6qg",
+    "donorLinkColumn": "board_relation_mm8n97wj"
+  },
+  "attendeeSync": {
+    "actions": [
+      "attendee.updated",
+      "attendee.checked_in",
+      "attendee.checked_out",
+      "event.created",
+      "event.published",
+      "event.updated",
+      "event.unpublished"
+    ],
+    "programByOrganizer": {},
+    "volunteerPrograms": [
+      "Volunteering"
+    ],
+    "events": {
+      "eventbriteIdColumn": "text_mm8nxfdj",
+      "dateColumn": "date_mm8nt4nf",
+      "endColumn": "date_mm8nnzvn",
+      "venueColumn": "text_mm8n1vra",
+      "addressColumn": "text_mm8nkrmw",
+      "cityColumn": "text_mm8n6e3e",
+      "programColumn": "color_mm8nqqdv",
+      "eventStatusColumn": "color_mm8n8y5v",
+      "sourceColumn": "color_mm8nbh4t",
+      "urlColumn": "link_mm8njbkh",
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
+    },
+    "registrations": {
+      "attendeeIdColumn": "text_mm8ng6d5",
+      "attendeeNameColumn": "text_mm8nwtqq",
+      "attendeeEmailColumn": "email_mm8npjmg",
+      "firstNameColumn": "text_mm8rrr6v",
+      "attendanceColumn": "color_mm8nkvhy",
+      "sourceColumn": "color_mm8nkkbc",
+      "roleColumn": "color_mm8n69m6",
+      "eventLinkColumn": "board_relation_mm8n8a86",
+      "attendeeLinkColumn": "board_relation_mm8nbcw7",
+      "classDateColumn": "date_mm8reqgs",
+      "classDayColumn": "text_mm8rh4f4",
+      "classLocationColumn": "text_mm8rpb9h"
+    },
+    "classEmails": {
+      "pageUrl": null,
+      "sandboxRecipient": null
+    },
+    "peopleEmailColumn": "email_mm8nx6qg"
   }
 }

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { QbEventStore } from '../../db/qbEvents';
+import { stampFor, type WriteMode } from '../../flags';
 import type { QueueMessage, SyncStatus } from '../../types';
 import { parseQbNotifications, verifyQbSignature } from './validate';
 
@@ -24,6 +25,9 @@ export interface QbWebhookDeps {
   // The realm (company) id of the connected QuickBooks company — the one the stored OAuth tokens
   // belong to — or null before the initial handshake. Read-only: never refreshes a token.
   connectedRealmId: () => Promise<string | null>;
+  // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
+  // in every mode; under `off` the message is stamped so the consumer dry-runs it.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // The webhook only records and enqueues (#33). It used to fetch the changed entity from
@@ -66,6 +70,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       return c.json({ ok: false }, 503);
     }
 
+    const stamp = stampFor(await deps.writeMode());
     let enqueueFailed = false;
     for (const notification of notifications) {
       if (notification.realmId !== realmId) {
@@ -101,7 +106,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       }
 
       try {
-        await deps.queue.send({ direction: 'qb-to-monday', eventId: notification.eventId });
+        await deps.queue.send({ direction: 'qb-to-monday', eventId: notification.eventId, ...stamp });
         await deps.qbEventStore.updateStatus(notification.eventId, 'queued');
       } catch (err) {
         // Keep going: the other notifications in this payload can still be enqueued, and the

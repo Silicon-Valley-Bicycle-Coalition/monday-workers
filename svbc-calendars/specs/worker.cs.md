@@ -45,7 +45,7 @@ Uses `caches.default` (Cloudflare Cache API), not `Cache-Control` from the brows
 
 ## CORS
 
-The `handleCORS` function sets `Access-Control-Allow-Origin` based on the request's `Origin` header. Origins in the `ALLOWED_ORIGINS` list (`bikesiliconvalley.org`, `localhost`) get an exact match header; all others get `*`.
+The `handleCORS` function sets `Access-Control-Allow-Origin: *` on every response. Every route is public, read-only data, and responses are edge-cached without `Vary: Origin`, so reflecting the request's `Origin` would serve one site's header to another (#72).
 
 ## Environment Bindings
 

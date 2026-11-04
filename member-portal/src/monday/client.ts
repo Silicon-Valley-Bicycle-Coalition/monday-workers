@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
-import { MondayGraphQL } from './graphql';
+import { MondayGraphQL, type TokenProvider } from './graphql';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
@@ -36,8 +36,10 @@ const MAX_ATTEMPTS = 1;
 interface MondayColumnValue {
   id: string;
   text: string | null;
+  value?: string | null; // raw JSON; requested only where noted
   checked?: boolean; // CheckboxValue fragment
   linked_item_ids?: string[]; // BoardRelationValue fragment
+  linked_items?: { name: string }[]; // BoardRelationValue fragment, only where noted
 }
 
 interface MondayItem {
@@ -48,6 +50,38 @@ interface MondayItem {
 
 function columnText(item: MondayItem, columnId: string): string {
   return (item.column_values ?? []).find((c) => c.id === columnId)?.text ?? '';
+}
+
+// The address on a donor's email column. An email column's value is {"email","text"} JSON, where
+// text is a display label that can differ from the address; a plain text column's value is a JSON
+// string. Falls back to the column's text when value is absent or unparseable.
+function columnEmail(item: MondayItem, columnId: string): string {
+  const column = (item.column_values ?? []).find((c) => c.id === columnId);
+  if (!column) return '';
+  try {
+    const parsed: unknown = column.value ? JSON.parse(column.value) : null;
+    if (typeof parsed === 'string') return parsed;
+    if (parsed !== null && typeof parsed === 'object' && typeof (parsed as { email?: unknown }).email === 'string') {
+      return (parsed as { email: string }).email;
+    }
+  } catch {
+    // fall through to text
+  }
+  return column.text ?? '';
+}
+
+// The https URL on a link column (value is {"url","text"} JSON), or null. Only https: this href
+// is rendered into the portal, so javascript:/http: and malformed values are dropped.
+function columnLinkUrl(item: MondayItem, columnId: string): string | null {
+  const raw = (item.column_values ?? []).find((c) => c.id === columnId)?.value;
+  if (!raw) return null;
+  try {
+    const url = (JSON.parse(raw) as { url?: unknown } | null)?.url;
+    if (typeof url !== 'string') return null;
+    return new URL(url).protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 // Monday checkbox columns render as text "v" when checked and "" (or an absent column_value)
@@ -103,7 +137,8 @@ export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'h
 export class HttpMondayClient implements MondayClient {
   constructor(
     apiUrl: string,
-    apiToken: string,
+    // A fixed token or a provider (tokenProviderFor in ./graphql) that fetches a fresh one per call.
+    apiToken: string | TokenProvider,
     private columns: MondayColumns,
     private donorsBoardId: number,
     private donationsBoardId: number,
@@ -150,10 +185,10 @@ export class HttpMondayClient implements MondayClient {
     // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
     // getMemberPortalData below: only request it once it's been configured with a real column id,
     // so the literal placeholder never ships to Monday's API.
-    const languageFragment =
-      this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID'
-        ? `column_values(ids: ["${this.columns.preferredLanguage}"]) { id text }`
-        : '';
+    const columnIds = [this.columns.donorEmail];
+    if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
+      columnIds.push(this.columns.preferredLanguage);
+    }
     const query = `
       query ($boardId: ID!, $email: CompareValue) {
         boards(ids: [$boardId]) {
@@ -163,7 +198,7 @@ export class HttpMondayClient implements MondayClient {
               rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
             }
           ) {
-            items { id name ${languageFragment} }
+            items { id name column_values(ids: ${JSON.stringify(columnIds)}) { id text value } }
           }
         }
       }
@@ -173,11 +208,17 @@ export class HttpMondayClient implements MondayClient {
       email,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    return items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      preferredLanguage: columnText(item, this.columns.preferredLanguage),
-    }));
+    // Monday's filter is not an exact-address match we can rely on (issue #62): keep only items
+    // whose address equals the submitted one, ignoring case and surrounding whitespace, so a login
+    // link never goes out for a donor record holding some other address.
+    const wanted = email.trim().toLowerCase();
+    return items
+      .filter((item) => columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        preferredLanguage: columnText(item, this.columns.preferredLanguage),
+      }));
   }
 
   async getMemberPortalData(donorItemId: string, options: { includeDonations?: boolean } = {}): Promise<MemberPortalData> {
@@ -191,6 +232,11 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.membershipExpiry !== 'REPLACE_WITH_COLUMN_ID') {
       donorColumnIds.push(this.columns.membershipExpiry);
     }
+    // The DTD link is only read when the whole match-line feature is on and donations are loaded.
+    const matchLines = this.matchLinesOn();
+    if (matchLines && options.includeDonations !== false) {
+      donorColumnIds.push(this.columns.donorDtdLink);
+    }
     const donorQuery = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
@@ -199,6 +245,7 @@ export class HttpMondayClient implements MondayClient {
           column_values(ids: ${JSON.stringify(donorColumnIds)}) {
             id
             text
+            value
           }
         }
       }
@@ -210,7 +257,7 @@ export class HttpMondayClient implements MondayClient {
     }
 
     const includeDonations = options.includeDonations ?? true;
-    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId) : [];
+    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId, matchLines ? columnLinkUrl(donorItem, this.columns.donorDtdLink) : null) : [];
     // With a history floor, the Lifetime Giving rollup would exceed the rows the donor can see,
     // so the total becomes the sum of the kept gifts. Without one, the rollup column is the
     // total, as before. Not loaded at all → '' rather than a misleading zero.
@@ -277,9 +324,13 @@ export class HttpMondayClient implements MondayClient {
     // Reading a board_relation column's linked_item_ids via the `... on BoardRelationValue`
     // fragment was verified in the same live check — the fragment shape itself was already
     // correct.
-    includeLinkedItemIds = false
+    includeLinkedItemIds = false,
+    // Also the linked items' names (DTD "Matched By"); implies linked ids.
+    includeLinkedItemNames = false
   ): Promise<MondayItem[]> {
-    const valueFields = includeLinkedItemIds ? '{ id text ... on BoardRelationValue { linked_item_ids } }' : '{ id text }';
+    const relationFields = includeLinkedItemNames ? 'linked_item_ids linked_items { name }' : 'linked_item_ids';
+    const valueFields =
+      includeLinkedItemIds || includeLinkedItemNames ? `{ id text ... on BoardRelationValue { ${relationFields} } }` : '{ id text }';
     const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) ${valueFields}`;
     const firstPageQuery = `
       query ($boardId: ID!, $donorItemId: CompareValue) {
@@ -303,18 +354,34 @@ export class HttpMondayClient implements MondayClient {
     return [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, `items { ${itemFields} }`))];
   }
 
-  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
+  // True once all four DTD match columns hold real ids (mirrors matchLinesEnabled in config.ts,
+  // which the client can't import a Config for); otherwise nothing match-related is requested.
+  private matchLinesOn(): boolean {
+    const c = this.columns;
+    return [c.donationMatchesGift, c.donationMatchStatus, c.donationMatchedBy, c.donorDtdLink].every(
+      (id) => id !== 'REPLACE_WITH_COLUMN_ID'
+    );
+  }
+
+  private async getDonationsForDonor(donorItemId: string, dtdUrl: string | null = null): Promise<DonationRecord[]> {
+    const matchLines = this.matchLinesOn();
+    const columnIds = [
+      this.columns.donationAmount,
+      this.columns.donationDate,
+      this.columns.donationDescription,
+      this.columns.donationStatus,
+    ];
+    if (matchLines) {
+      columnIds.push(this.columns.donationMatchesGift, this.columns.donationMatchStatus, this.columns.donationMatchedBy);
+    }
     const items = await this.fetchItemsLinkedToDonor(
       this.donationsBoardId,
       this.columns.donationDonorLink,
       donorItemId,
-      [
-        this.columns.donationAmount,
-        this.columns.donationDate,
-        this.columns.donationDescription,
-        this.columns.donationStatus,
-      ],
-      false
+      columnIds,
+      false,
+      false,
+      matchLines
     );
     // Only countable statuses (strict: an item with a blank/unknown status is dropped too —
     // for money that ends up on a tax letter, "not provably received" means "doesn't count").
@@ -322,14 +389,38 @@ export class HttpMondayClient implements MondayClient {
     // be on or after the floor, so it's dropped whenever one is set.
     const countable = new Set(this.donations.countableStatuses);
     const floor = this.donations.historyStartISO;
-    return items
+    const kept = items
       .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
-      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor)
-      .map((item) => ({
-        amount: columnText(item, this.columns.donationAmount),
-        date: columnText(item, this.columns.donationDate),
-        description: columnText(item, this.columns.donationDescription),
-      }));
+      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor);
+    const records = kept.map((item): DonationRecord => ({
+      amount: columnText(item, this.columns.donationAmount),
+      date: columnText(item, this.columns.donationDate),
+      description: columnText(item, this.columns.donationDescription),
+    }));
+    if (!matchLines) return records;
+
+    // The donor's Matching Donation rows are already in `kept` (linked to the employee as Donor).
+    // Each points at its original gift through Matches gift; attach the latest per gift, and only
+    // when that gift is in this donor's list. Match rows stay listed and counted as before.
+    const indexById = new Map(kept.map((item, i) => [item.id, i] as const));
+    const matchRowIndexes = new Set<number>();
+    kept.forEach((item, i) => {
+      const column = (item.column_values ?? []).find((c) => c.id === this.columns.donationMatchesGift);
+      const company = (item.column_values ?? []).find((c) => c.id === this.columns.donationMatchedBy)?.linked_items?.[0]?.name;
+      const giftId = column?.linked_item_ids?.[0];
+      if (giftId === undefined) return;
+      matchRowIndexes.add(i);
+      const target = indexById.get(giftId);
+      if (target === undefined || !company) return;
+      const record = records[target]!;
+      const candidate = { date: records[i]!.date, amount: records[i]!.amount, company };
+      if (!record.match || candidate.date > record.match.date) record.match = candidate;
+    });
+    records.forEach((record, i) => {
+      if (record.match || matchRowIndexes.has(i) || dtdUrl === null) return;
+      if (columnText(kept[i]!, this.columns.donationMatchStatus) === 'Waiting for donor') record.matchHintUrl = dtdUrl;
+    });
+    return records;
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {

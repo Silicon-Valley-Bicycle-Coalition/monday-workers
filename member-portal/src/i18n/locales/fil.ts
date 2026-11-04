@@ -50,6 +50,10 @@ export const fil: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'Hindi namin ma-verify ang card na ito sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.eventsLoadFailed': 'Hindi namin ma-load ang iyong mga pagpaparehistro sa event ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
   'error.generic': 'May naganap na problema. Pakisubukan mag-log in ulit.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Pansamantalang Hindi Available',
+  'unavailable.heading': 'Pansamantalang hindi available',
+  'unavailable.body': 'Ina-update namin ang aming mga system, kaya hindi ito available ngayon. Pakisubukang muli mamaya.',
 
   // Portal
   'portal.heading': 'Ang iyong member portal',
@@ -74,6 +78,15 @@ export const fil: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': 'Pamahalaan ang iyong regular na donasyon',
   'portal.renewMembershipLink': 'I-renew ang iyong membership',
   'portal.givingLinksNote': 'Bubuksan ng mga link na ito ang Funraise, ang aming secure na payment processor. Ang mga pagbabagong gagawin mo roon ay lalabas sa portal na ito kapag na-update na ang aming mga rekord.',
+  'portal.getInvolvedHeading': 'Makilahok',
+  'portal.getInvolvedIntro': 'Magsalita sa mga pulong kung saan pinagpapasyahan ang tungkol sa bisikleta at pampublikong transportasyon, at sumama sa kapwa miyembro sa mga event ng SVBC.',
+  'portal.getInvolvedTransit': 'Mga pulong ng ahensya ng transportasyon',
+  'portal.getInvolvedCivic': 'Mga komite ng lungsod para sa bisikleta at pedestrian',
+  'portal.getInvolvedEvents': 'Mga event ng SVBC',
+  'portal.getInvolvedVolunteer': 'Mga pagkakataong mag-volunteer',
+  'portal.getInvolvedEventsLink': 'Tingnan ang mga paparating na event ng SVBC',
+  'portal.getInvolvedVolunteerLink': 'Maghanap ng volunteer shift',
+  'portal.addToCalendar': 'Idagdag sa kalendaryo',
   'portal.discountsHeading': 'Mga diskwento sa bike shop',
   'portal.taxDocumentsLink': 'Mga dokumento sa buwis',
   'portal.eventsLink': 'Mga pagpaparehistro sa event',
@@ -185,4 +198,6 @@ export const fil: Record<TranslationKey, string> = {
   'letterReady.body': 'Handa nang tingnan ang iyong {{year}} giving letter sa member portal.',
   'letterReady.loginLink': 'Mag-log in para tingnan ito',
   'letterReady.expiry': 'Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
+  'portal.matchedBy': 'Tinumbasan ng {{company}} noong {{date}}: {{amount}}',
+  'portal.startMatch': 'Maaaring tumbasan ng iyong employer ang donasyong ito',
 } satisfies Record<TranslationKey, string>;

@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds,
+import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds, rosterContactIds,
+  soleContactAccountIds,
   type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
-import { setStaffMatcher } from './fields.js';
+import { setOwnerMatcher, setStaffMatcher } from './fields.js';
 import { BOARD_SPECS } from '../configure/spec.js';
 
 const emptyInc = (): InclusionInput => ({
@@ -37,6 +38,23 @@ describe('classifyContact', () => {
     inc.memberSummaries.set('c2', { status: 'Lapsed', tier: 'Member', sinceISO: '2001-01-01', untilISO: '2002-01-01' });
     expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-live');
     expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBe('people-historical');
+  });
+  it('includes rostered volunteers as live, with no gift or check-in', () => {
+    const inc = emptyInc(); inc.rosterIds = new Set(['c1']);
+    expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-live');
+    expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBeNull();
+  });
+});
+
+describe('rosterContactIds', () => {
+  const contacts = [{ Id: '003i000000AbCdEAAV' }, { Id: '003i000000XyZwQAAV' }];
+  it('resolves 15- and 18-character ids to the extract\'s 18-character Contact ids', () => {
+    expect(rosterContactIds('003i000000AbCdE\n003i000000XyZwQAAV\n', contacts))
+      .toEqual(new Set(['003i000000AbCdEAAV', '003i000000XyZwQAAV']));
+  });
+  it('skips blank lines, # comments and ids not in the extract', () => {
+    expect(rosterContactIds('# Volunteer Roster\n\n003i000000AbCdE  # Ada\n003i000000NoNeXAAV\n', contacts))
+      .toEqual(new Set(['003i000000AbCdEAAV']));
   });
 });
 
@@ -108,6 +126,60 @@ describe('contactToPayload', () => {
     expect('Household Email Consent' in p.columns).toBe(false);
     expect(p.columns['Household Primary']).toEqual({ checked: 'true' });
     expect(p.links).toContainEqual({ column: 'Affiliations', targetSfIds: ['af1', 'af2'] });
+  });
+
+  it('seeds Relationship Owner with the staff email only when the Account owner is on staff', () => {
+    setOwnerMatcher((n) => (n === 'Cherie Barnett' ? 'cherie@bikesiliconvalley.org' : null));
+    try {
+      const owned = contactToPayload({ Id: 'c16', FirstName: 'A', LastName: 'B',
+        Account: { Owner: { Name: 'Cherie Barnett' } } }, 'people-live', { consent: new Map() });
+      expect(owned.columns['Relationship Owner']).toBe('cherie@bikesiliconvalley.org');
+      const former = contactToPayload({ Id: 'c17', FirstName: 'A', LastName: 'B',
+        Account: { Owner: { Name: 'Gavin Powell' } } }, 'people-live', { consent: new Map() });
+      expect(former.columns['Relationship Owner']).toBe('');
+    } finally {
+      setOwnerMatcher(null);
+    }
+  });
+
+  it('carries Do Not Mail and its reason, and leaves both blank when unset', () => {
+    const p = contactToPayload({ Id: 'c12', FirstName: 'A', LastName: 'B', Do_Not_Mail__c: true,
+      Do_Not_Mail_Reason__c: 'Undeliverable' }, 'people-live', { consent: new Map() });
+    expect(p.columns['Do Not Mail']).toEqual({ checked: 'true' });
+    expect(p.columns['Do Not Mail Reason']).toBe('Undeliverable');
+    const q = contactToPayload({ Id: 'c13', FirstName: 'A', LastName: 'B' }, 'people-live', { consent: new Map() });
+    expect(q.columns['Do Not Mail']).toBeNull();
+    expect(q.columns['Do Not Mail Reason']).toBe('');
+  });
+
+  it('marks a deceased contact Do Not Solicit with reason Deceased, keeping any existing reason', () => {
+    const dead = contactToPayload({ Id: 'c14', FirstName: 'A', LastName: 'B', Deceased__c: true },
+      'people-historical', { consent: new Map() });
+    expect(dead.columns['Do Not Solicit']).toEqual({ checked: 'true' });
+    expect(dead.columns['Do Not Solicit Reason']).toBe('Deceased');
+    const npsp = contactToPayload({ Id: 'c15', FirstName: 'A', LastName: 'B', npsp__Deceased__c: true,
+      Account: { Do_Not_Solicit__c: true, Do_Not_Solicit_What__c: 'Mail' } }, 'people-live', { consent: new Map() });
+    expect(npsp.columns['Do Not Solicit Reason']).toBe('Deceased; Mail');
+  });
+
+  it('marks an NPSP Do Not Contact as both Do Not Solicit and Do Not Mail, joining any existing reason (#53)', () => {
+    const dnc = contactToPayload({ Id: 'c16', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: true },
+      'people-live', { consent: new Map() });
+    expect(dnc.columns['Do Not Solicit']).toEqual({ checked: 'true' });
+    expect(dnc.columns['Do Not Solicit Reason']).toBe('Do Not Contact (Salesforce)');
+    expect(dnc.columns['Do Not Mail']).toEqual({ checked: 'true' });
+    expect(dnc.columns['Do Not Mail Reason']).toBe('Do Not Contact (Salesforce)');
+    const both = contactToPayload({ Id: 'c17', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: true,
+      Deceased__c: true, Do_Not_Mail__c: true, Do_Not_Mail_Reason__c: 'Undeliverable',
+      Account: { Do_Not_Solicit__c: true, Do_Not_Solicit_What__c: 'Mail' } }, 'people-live', { consent: new Map() });
+    expect(both.columns['Do Not Solicit Reason']).toBe('Deceased; Do Not Contact (Salesforce); Mail');
+    expect(both.columns['Do Not Mail Reason']).toBe('Undeliverable; Do Not Contact (Salesforce)');
+    const none = contactToPayload({ Id: 'c18', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: false },
+      'people-live', { consent: new Map() });
+    expect(none.columns['Do Not Solicit']).toBeNull();
+    expect(none.columns['Do Not Mail']).toBeNull();
+    expect(none.columns['Do Not Solicit Reason']).toBe('');
+    expect(none.columns['Do Not Mail Reason']).toBe('');
   });
 
   it('prefers Employer__c over the empty 360MatchPro dtd__company__c for Employer Name', () => {
@@ -249,5 +321,72 @@ describe('personNamedAccountIds', () => {
   it('never matches on empty names', () => {
     const m = personNamedAccountIds([org('a1', '')], [contact('c1', '', '', 'a1')]);
     expect(m.size).toBe(0);
+  });
+
+  // A contact merge leaves the merged-away Contact's Account behind with no Contact, while its
+  // gifts' Primary Contact moves to the survivor (2026-10-26 production merge: David Erskine,
+  // Rose Mesterhazy). The gifts still say who the Account was.
+  const gift = (AccountId: string, npsp__Primary_Contact__c: string | null) =>
+    ({ AccountId, npsp__Primary_Contact__c });
+
+  it('folds a contact-less Account into the same-named Contact its gifts all name', () => {
+    const m = personNamedAccountIds([org('a1', 'David Erskine')],
+      [contact('c9', 'David', 'Erskine', 'a2')],
+      [gift('a1', 'c9'), gift('a1', 'c9'), gift('a1', null)]);
+    expect(m.get('a1')).toBe('c9');
+  });
+
+  it('accepts a nickname for a contact-less Account: same surname, same first initial', () => {
+    const contacts = [contact('c9', 'Rosie', 'Mesterhazy', 'a2'), contact('c8', 'Mary', 'Erskine', 'a3')];
+    expect(personNamedAccountIds([org('a1', 'Rose Mesterhazy')], contacts, [gift('a1', 'c9')]).get('a1')).toBe('c9');
+    expect(personNamedAccountIds([org('a1', 'David Erskine')], contacts, [gift('a1', 'c8')]).size).toBe(0);
+    expect(personNamedAccountIds([org('a1', 'Mesterhazy Design')], contacts, [gift('a1', 'c9')]).size).toBe(0);
+  });
+
+  it('never nickname-matches a firm name (live org: "Choulos, Choulos & Wyle")', () => {
+    const m = personNamedAccountIds([org('a1', 'Choulos, Choulos & Wyle')],
+      [contact('c1', 'Cynthia', 'Wyle', 'a2')], [gift('a1', 'c1')]);
+    expect(m.size).toBe(0);
+  });
+
+  it('leaves a contact-less Account alone when its gifts name someone else or several people', () => {
+    const contacts = [contact('c1', 'Wei', 'Lin', 'a9'), contact('c2', 'Jason', 'Lin', 'a9')];
+    expect(personNamedAccountIds([org('a1', 'Jason Lin')], contacts, [gift('a1', 'c1')]).size).toBe(0);
+    expect(personNamedAccountIds([org('a1', 'Jason Lin')], contacts,
+      [gift('a1', 'c1'), gift('a1', 'c2')]).size).toBe(0);
+  });
+
+  it('leaves a contact-less Account alone when its gifts name no extracted Contact', () => {
+    const m = personNamedAccountIds([org('a1', 'Nobody Here')], [], [gift('a1', 'c1'), gift('a1', null)]);
+    expect(m.size).toBe(0);
+  });
+});
+
+describe('soleContactAccountIds', () => {
+  // One-to-One Individual Accounts never become items, so a gift whose only donor is one would
+  // otherwise load with a dangling Donor link — 11,113 gifts in the 2026-10-09 rehearsal
+  // (monday-migration docs/24). Decided 2026-10-26: Donor is the Account's sole migrated Contact.
+  const ind = (Id: string) => ({ Id, Name: `${Id} Household`, npe01__SYSTEM_AccountType__c: 'One-to-One Individual' });
+  const contact = (Id: string, AccountId: string) => ({ Id, FirstName: 'F', LastName: Id, AccountId });
+
+  it('maps a One-to-One Account to its sole Contact when that Contact is migrated', () => {
+    const r = soleContactAccountIds([ind('a1')], [contact('c1', 'a1')], new Set(['c1']));
+    expect(r.alias).toEqual(new Map([['a1', 'c1']]));
+    expect(r.unresolved.size).toBe(0);
+  });
+
+  it('leaves the rest unresolved, with the reason staff review needs', () => {
+    const r = soleContactAccountIds([ind('a1'), ind('a2'), ind('a3')],
+      [contact('c1', 'a1'), contact('c2', 'a3'), contact('c3', 'a3')], new Set(['c2']));
+    expect(r.alias.size).toBe(0);
+    expect(r.unresolved).toEqual(new Map([
+      ['a1', 'sole contact not migrated'], ['a2', 'no contact'], ['a3', 'several contacts']]));
+  });
+
+  it('ignores Accounts that are not One-to-One Individual', () => {
+    const r = soleContactAccountIds([{ Id: 'a1', Name: 'Acme', npe01__SYSTEM_AccountType__c: null }],
+      [contact('c1', 'a1')], new Set(['c1']));
+    expect(r.alias.size).toBe(0);
+    expect(r.unresolved.size).toBe(0);
   });
 });

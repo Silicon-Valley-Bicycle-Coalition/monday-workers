@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SVBC Member Map</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+    integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+    crossorigin="anonymous" referrerpolicy="no-referrer">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+    integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Member map</h1>
+    <p id="status" class="status" role="status" aria-live="polite">Loading member data…</p>
+    <button id="panel-toggle" class="panel-toggle" type="button" aria-expanded="false" aria-controls="panel">Layers</button>
+  </header>
+
+  <main class="layout">
+    <div id="map" class="map" aria-label="Map of members and neighborhoods"></div>
+
+    <aside id="panel" class="panel">
+      <fieldset>
+        <legend>Shading</legend>
+        <label><input type="radio" name="shading" value="pop" checked> Population gap</label>
+        <label><input type="radio" name="shading" value="lead"> Warm-lead gap</label>
+        <label><input type="radio" name="shading" value="bike"> Bike lane density</label>
+        <label><input type="radio" name="shading" value="none"> None</label>
+      </fieldset>
+
+      <div class="legend" aria-live="polite">
+        <p id="legend-text"></p>
+        <ul id="legend-swatches" class="swatches">
+          <li><span class="swatch fill-1" aria-hidden="true"></span> Some gap</li>
+          <li><span class="swatch fill-2" aria-hidden="true"></span> Larger gap</li>
+          <li><span class="swatch fill-3" aria-hidden="true"></span> Largest gap</li>
+        </ul>
+      </div>
+
+      <fieldset>
+        <legend>Layers</legend>
+        <label><input type="checkbox" name="layer" value="epc" checked>
+          <span class="key key-epc" aria-hidden="true"></span> Equity Priority Communities</label>
+        <label><input type="checkbox" name="layer" value="members" checked>
+          <span class="key key-dot key-member" aria-hidden="true"></span> Members</label>
+        <label><input type="checkbox" name="layer" value="leads">
+          <span class="key key-dot key-lead" aria-hidden="true"></span> Warm leads (lapsed and never members)</label>
+        <label><input type="checkbox" name="layer" value="orgs">
+          <span class="key key-square key-org" aria-hidden="true"></span> Organizations</label>
+        <label><input type="checkbox" name="layer" value="lanes">
+          <span class="key key-line key-lane" aria-hidden="true"></span> Bike lanes</label>
+      </fieldset>
+
+      <ul id="lane-key" class="lane-key" hidden>
+        <li><span class="key key-line lane-1" aria-hidden="true"></span> Class I path</li>
+        <li><span class="key key-line lane-4" aria-hidden="true"></span> Class IV separated lane</li>
+        <li><span class="key key-line lane-2" aria-hidden="true"></span> Class II lane</li>
+        <li><span class="key key-line lane-3" aria-hidden="true"></span> Class III route</li>
+      </ul>
+    </aside>
+  </main>
+</body>
+</html>

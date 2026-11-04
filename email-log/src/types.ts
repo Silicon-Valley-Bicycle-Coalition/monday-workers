@@ -1,3 +1,4 @@
+import type { MondayTokenSource } from './monday/graphql';
 import type { LogQueueMessage } from './inbound/extract';
 export interface EmailLogConfig {
   monday: {
@@ -40,17 +41,25 @@ export interface EmailLogConfig {
     forwardTimeZone: string;
     replyFrom: { email: string; name: string };
   };
+  // The Emails & Activities custom activity ("Logged email") posted on each matched person; null
+  // turns the timeline entry off.
+  timeline: { customActivityId: string | null };
   capacity: { activitiesMaxItems: number; warnPct: number };
   alerts: { itRequests: { boardId: number; typeColumn: string; typeLabel: string; cooldownDays: number } | null };
 }
 
 // Bindings are generated into worker-configuration.d.ts by `wrangler types`; only the narrowed
-// queue message type and secrets/vars are declared here.
-export interface Env extends Cloudflare.Env {
+// queue message type, secrets/vars, and MONDAY_AUTH are declared here. MONDAY_AUTH is generated as an
+// untyped Service, so it is omitted and restated as the broker's RPC shape.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   DB: D1Database;
   WRITE_QUEUE: Queue<LogQueueMessage>;
   EMAIL: SendEmail;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
   SANDBOX_EMAIL_SINK?: string;

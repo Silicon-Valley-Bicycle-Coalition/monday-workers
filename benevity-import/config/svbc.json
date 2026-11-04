@@ -2,52 +2,52 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations": null,
-      "organizations": null,
-      "people": null,
-      "affiliations": null,
-      "benevityUploads": null
+      "donations": 18437909794,
+      "organizations": 18437909779,
+      "people": 18437909781,
+      "affiliations": 18437909787,
+      "benevityUploads": 18438204360
     }
   },
   "benevityImport": {
-    "minDisbursementDate": "2026-10-23",
+    "minDisbursementDate": "2026-10-30",
     "donationsColumns": {
-      "donor": "REPLACE_WITH_COLUMN_ID",
-      "matchedBy": "REPLACE_WITH_COLUMN_ID",
-      "amount": "REPLACE_WITH_COLUMN_ID",
-      "date": "REPLACE_WITH_COLUMN_ID",
-      "disbursementDate": "REPLACE_WITH_COLUMN_ID",
-      "fiscalYearEnding": "REPLACE_WITH_COLUMN_ID",
-      "status": "REPLACE_WITH_COLUMN_ID",
-      "giftType": "REPLACE_WITH_COLUMN_ID",
-      "anonymousDonor": "REPLACE_WITH_COLUMN_ID",
-      "transactionId": "REPLACE_WITH_COLUMN_ID"
+      "donor": "board_relation_mm8n97wj",
+      "matchedBy": "board_relation_mm8nkc1g",
+      "amount": "numeric_mm8nsb7t",
+      "date": "date_mm8nty3x",
+      "disbursementDate": "date_mm8rtv9y",
+      "fiscalYearEnding": "text_mm8ngcfh",
+      "status": "color_mm8nspep",
+      "giftType": "text_mm8nyftg",
+      "anonymousDonor": "boolean_mm8ng6gp",
+      "transactionId": "text_mm8nz4rk"
     },
     "organizationsNameColumn": "name",
     "peopleColumns": {
-      "personalEmail": "REPLACE_WITH_COLUMN_ID",
-      "householdEmail": "REPLACE_WITH_COLUMN_ID",
-      "employer": "REPLACE_WITH_COLUMN_ID"
+      "personalEmail": "email_mm8nx6qg",
+      "householdEmail": "email_mm8n2wzk",
+      "employer": "text_mm8nny92"
     },
     "affiliationsColumns": {
-      "person": "REPLACE_WITH_COLUMN_ID",
-      "organization": "REPLACE_WITH_COLUMN_ID",
-      "workEmail": "REPLACE_WITH_COLUMN_ID"
+      "person": "board_relation_mm8nb95b",
+      "organization": "board_relation_mm8nsa59",
+      "workEmail": "email_mm8ndy69"
     },
     "uploadsBoard": {
-      "fileColumn": "REPLACE_WITH_COLUMN_ID",
-      "worklistGroupId": "REPLACE_WITH_GROUP_ID",
+      "fileColumn": "file_mm8rz1v8",
+      "worklistGroupId": "group_mm8rbvjt",
       "worklistColumns": {
-        "reason": "REPLACE_WITH_COLUMN_ID",
+        "reason": "long_text_mm8rsdbm",
         "name": "name",
-        "email": "REPLACE_WITH_COLUMN_ID",
-        "company": "REPLACE_WITH_COLUMN_ID",
-        "amount": "REPLACE_WITH_COLUMN_ID",
-        "date": "REPLACE_WITH_COLUMN_ID"
+        "email": "email_mm8r700g",
+        "company": "text_mm8rd4m9",
+        "amount": "numeric_mm8r5tnw",
+        "date": "date_mm8r3agg"
       },
-      "worklistKeyColumn": "REPLACE_WITH_COLUMN_ID",
+      "worklistKeyColumn": "text_mm8rdf2q",
       "retry": {
-        "column": "REPLACE_WITH_COLUMN_ID",
+        "column": "color_mm8rfchp",
         "labels": { "needsReview": "Needs review", "retry": "Retry", "queued": "Queued", "done": "Done" }
       }
     },

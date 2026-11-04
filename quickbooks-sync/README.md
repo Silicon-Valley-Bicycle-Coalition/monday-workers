@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/quickbooks-sync.md`](../docs/uat/quickbooks-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
+**Status: postponed indefinitely (decided 2026-10-28).** SVBC isn't shipping this at migration.
+The sandbox write switch is `off` (production was never turned on) and CI no longer deploys the
+sandbox Worker on merge; nothing below is scheduled. Before resuming, re-read "Sandbox environment"
+and the deploy checklist history, then set `quickbooks-sync:writes` deliberately.
+
+**Status before postponement:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
 Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
 webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. The
 sandbox environment's Cloudflare side (D1, queues, `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`) is
@@ -10,7 +15,7 @@ provisioned and verified (2026-09-22), and the Intuit app-review question is res
 still not connected to a real QuickBooks company — that needs an Intuit developer account and app
 credentials, a staff/admin task (see "Sandbox environment" and "Open question" below), which
 hasn't happened yet.
-**Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
+**Priority:** Postponed indefinitely — nothing here affects Salesforce cutover readiness.
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
 
@@ -85,8 +90,8 @@ Update, Void, Emailed) sync as updates.
 
 ## Dead letters and redrive
 
-A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in
-`src/consumer/processBatch.ts`); after three retries the message lands in
+A consumer failure retries with backoff (1 minute doubling to an hour — `retryDelaySeconds` in
+`src/flags.ts`); after 100 retries (about four days) the message lands in
 `quickbooks-sync-writes-dlq` (`-sandbox-dlq` in the sandbox). The Worker consumes that queue too
 (`src/consumer/processDeadLetters.ts`): the row in `qb_events` / `monday_events` keeps
 `status = 'failed'` and its last error gains the prefix `dead-lettered after retries: `, and each
@@ -97,6 +102,13 @@ batch logs one `console.error`. Nothing is retried from there automatically.
 Found`), or a Monday item no longer exists / has no name / carries a QuickBooks Id already linked
 elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
 acks the message — no retries, no DLQ.
+
+**Foreign-currency records (#76)** are terminal too. Monday's amount columns hold the home
+currency (`config` `quickbooksSync.currency`, `"USD"`), so with multicurrency on, a QuickBooks
+→ Monday record whose `CurrencyRef` names any other currency (an invoice's `TotalAmt`/`Balance`, a
+customer's `Balance`) fails `not retried: QuickBooks invoice … is in CAD, not USD` before anything
+is written. Enter it in Monday by hand; a redrive fails the same way. A record with no
+`CurrencyRef` (Items) is taken as home currency.
 
 To find rows needing attention: `wrangler d1 execute <db> --remote --command "SELECT event_id,
 error FROM monday_events WHERE status = 'failed'"` (same for `qb_events`); the error says whether
@@ -165,8 +177,18 @@ instead of overwriting the new one.
 ## Secrets
 
 Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
-`wrangler.jsonc`'s comments: `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`,
-`QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET`.
+`wrangler.jsonc`'s comments: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`,
+`MONDAY_WEBHOOK_SECRET`.
+
+Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind
+`MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+OAuth app — production (`svbc-quickbooks-sync`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+`svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under
+way (delete it once the binding works); with neither, building the Monday client throws a config
+error naming both. Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the
+operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in
+`.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 Monday doesn't sign webhook payloads, so the Monday webhook is authenticated by
 `MONDAY_WEBHOOK_SECRET` embedded in the subscription URL (same pattern as `mailchimp-sync`, but
@@ -175,6 +197,15 @@ set). Register the webhook subscription on the Customers board as
 `https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>`, and **re-register the
 subscription whenever the secret rotates** — an existing subscription keeps the old URL and will
 be rejected.
+
+Monday can't send a custom header, so the secret has to ride in the URL, and that is an accepted
+trade-off: the full request URL, secret included, is recorded in this Worker's Workers Logs
+invocation records, readable by anyone with dashboard log access to it. Keep that access limited
+to people who could read the secret anyway, never log `c.req.url` here, and rotate the secret (new
+`wrangler secret put` + re-register the subscription) if logs are ever shared. See the root
+README's "Webhook secrets in the URL" for who holds log access. The Intuit route
+(`/webhooks/quickbooks`) doesn't have this exposure: Intuit signs each delivery with
+`QB_WEBHOOK_VERIFIER_TOKEN`, which never appears in a URL.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -255,6 +286,36 @@ whether or not they are listed in the QuickBooks app store."* Whoever sets up th
 account and app credentials (staff prerequisite, above) should budget for that questionnaire —
 it's a one-time step, not a lightweight skip, but also not the multi-week review this question
 was worried it might be.
+
+## Deploying: the write switch
+
+Every Monday write, QuickBooks Customer create and ledger update is gated by the shared write
+switch (spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`,
+a byte-identical copy of `member-portal/src/flags.ts`). It is read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `quickbooks-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
+  queue (retrying at 1 minute doubling to an hour); `off` writes nothing and logs one
+  `"writeSwitch":"skipped"` line per would-be write (Monday create / change, QuickBooks
+  `createCustomer`) and acks. **A missing key means `off`**, and a KV read error means hold.
+- `quickbooks-sync:log` — `debug` adds redacted payloads to those lines.
+
+Reads stay live in every mode, including QuickBooks `getEntity` (so the OAuth token refresh
+keeps working). Under `off` the consumer also drops its D1 bookkeeping — event status, the map
+(`qb_monday_map`), and `markCreateSent` — so no placeholder id survives the flip back to `on`.
+Set it with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes `quickbooks-sync-writes`:
+
+```sh
+node scripts/flags.mjs quickbooks-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. Both webhooks still record every delivery under any mode; one ingested
+while `off` is stamped and is never written, even if the switch is `on` by the time it's
+consumed. A message already queued before this build has no stamp and is written under `on`. The
+dead-letter consumer is D1 bookkeeping and runs in every mode.
 
 ## Development
 

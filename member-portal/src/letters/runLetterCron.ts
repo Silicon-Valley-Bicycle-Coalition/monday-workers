@@ -3,6 +3,8 @@ import type { LetterSendStore } from '../db/letterSends';
 import type { Config, LetterSendQueueMessage } from '../types';
 import { lettersEnabled, letterCronConfigured } from '../config';
 import { triggerLetterSend } from './triggerLetterSend';
+import { runDisposition, type WriteMode } from '../flags';
+import { stampedQueue } from '../writeSwitch';
 
 export type RunLetterCronResult =
   | {
@@ -13,7 +15,10 @@ export type RunLetterCronResult =
         | 'no-settings'
         | 'auto-send-off'
         | 'before-start-date'
-        | 'year-before-history-floor';
+        | 'year-before-history-floor'
+        // The write switch is not `on`. The cron only enqueues, so a dry run would show nothing a
+        // skip line doesn't, and a row created under `off` would block the donor for good.
+        | 'write-switch';
     }
   // A top-level Monday failure (settings read or donations sweep). Reported, never thrown — the
   // daily scheduled() invocation must not reject over a transient outage, and tomorrow's run is
@@ -35,6 +40,8 @@ export interface RunLetterCronDeps {
   queue: { send(message: LetterSendQueueMessage): Promise<void> };
   config: Config;
   now: () => Date;
+  // The write switch's mode, read once for this run.
+  mode: WriteMode;
 }
 
 // The automatic January letter-email run, called from the Worker's daily scheduled() handler.
@@ -45,6 +52,10 @@ export interface RunLetterCronDeps {
 // makes completed donors free, so each run only advances the not-yet-handled remainder
 // (self-healing for transient failures and for gifts entered after the first run).
 export async function runLetterCron(deps: RunLetterCronDeps): Promise<RunLetterCronResult> {
+  // `dry-run` and `skip` both mean "don't run": no Monday read, no letter_sends row, no message.
+  if (runDisposition(deps.mode) !== 'run') {
+    return { kind: 'skipped', reason: 'write-switch' };
+  }
   try {
     return await runLetterCronInner(deps);
   } catch (err) {
@@ -108,7 +119,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
       const result = await triggerLetterSend(donorItemId, {
         monday: deps.monday,
         store: deps.letterStore,
-        queue: deps.queue,
+        queue: stampedQueue(deps.queue, deps.mode),
         now: deps.now,
       });
       if (result.kind === 'queued') {

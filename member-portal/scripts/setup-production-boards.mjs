@@ -9,7 +9,11 @@
 //
 //   MONDAY_API_TOKEN=... node scripts/setup-production-boards.mjs \
 //     --org-board-id <organizationsBoardId> --donors-board-id <donorsBoardId> \
-//     --workspace <workspaceId> [--name "Change Requests"]
+//     --historical-board-id <peopleHistoricalBoardId> --workspace <workspaceId> [--name "Change Requests"]
+//
+// The Donor link connects to both People boards, like every connect column that points at people:
+// its two-way back-link then lands on both, and people-reclassification refuses to move items
+// while the two People boards disagree on columns.
 //
 // Idempotent: re-running skips an Organizations column whose title already exists, and refuses
 // to create a second same-named Change Requests board in the workspace (use --name to make a
@@ -21,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -37,10 +42,11 @@ function argValue(flag) {
 
 const orgBoardId = argValue('--org-board-id');
 const donorsBoardId = argValue('--donors-board-id');
+const historicalBoardId = argValue('--historical-board-id');
 const workspaceId = argValue('--workspace');
-if (!orgBoardId || !donorsBoardId || !workspaceId) {
+if (!orgBoardId || !donorsBoardId || !historicalBoardId || !workspaceId) {
   console.error(
-    'setup-production-boards: --org-board-id, --donors-board-id, and --workspace are all required'
+    'setup-production-boards: --org-board-id, --donors-board-id, --historical-board-id, and --workspace are all required'
   );
   process.exit(1);
 }
@@ -78,7 +84,7 @@ async function ensureColumnOn(boardId, title, columnType, description, columnSet
     `query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`,
     { boardId: [boardId] }
   );
-  const existing = (boardData.boards[0]?.columns ?? []).find((c) => c.title === title);
+  const existing = (boardData.boards[0]?.columns ?? []).find((c) => bareTitle(c.title) === title);
   if (existing) {
     console.error(`column "${title}" already exists (${existing.id}) on board ${boardId} — skipping`);
     return existing.id;
@@ -130,7 +136,11 @@ const donorLinkId = await createColumnOn(
   'Donor',
   'board_relation',
   'The donor who submitted this change request.',
-  { boardIds: [Number(donorsBoardId)], boardId: Number(donorsBoardId), allowCreateReflectionColumn: true }
+  {
+    boardIds: [Number(donorsBoardId), Number(historicalBoardId)],
+    boardId: Number(donorsBoardId),
+    allowCreateReflectionColumn: true,
+  }
 );
 const fieldId = await createColumnOn(changeRequestsBoardId, 'Field', 'text', 'Which field the donor wants changed (e.g. "Mailing address").');
 const oldValueId = await createColumnOn(changeRequestsBoardId, 'Old Value', 'text', 'The value on file when the request was submitted.');

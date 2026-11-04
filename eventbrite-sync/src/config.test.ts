@@ -96,6 +96,12 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow('amountSource');
   });
 
+  it.each([undefined, '', 'usd', 'US$', 840])('requires currency to be an ISO 4217 code (%s rejected)', (bad) => {
+    const cfg = valid();
+    cfg.eventbriteSync.currency = bad;
+    expect(() => validateConfig(cfg)).toThrow('currency');
+  });
+
   it('requires skipFreeOrders to be a boolean', () => {
     const cfg = valid();
     cfg.eventbriteSync.skipFreeOrders = 'yes';
@@ -114,5 +120,85 @@ describe('validateConfig', () => {
     const cfg = valid();
     cfg.eventbriteSync.itemNameTemplate = '';
     expect(() => validateConfig(cfg)).toThrow('itemNameTemplate');
+  });
+
+  describe('attendeeSync', () => {
+    it('requires registrations.attendanceColumn to be a column id string', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.registrations.attendanceColumn;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.registrations.attendanceColumn" must be a Monday column id string');
+    });
+
+    it('requires attendeeSync and peopleEmailColumn', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.peopleEmailColumn;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.peopleEmailColumn');
+      delete cfg.attendeeSync;
+      expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync"');
+    });
+
+    it('refuses a classEmails.pageUrl while sendLinkColumn is still the placeholder', () => {
+      const cfg = valid();
+      cfg.attendeeSync.events.sendLinkColumn = PLACEHOLDER_COLUMN_ID;
+      cfg.attendeeSync.classEmails.pageUrl = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.pageUrl = 'https://example.org/classes';
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.events.sendLinkColumn');
+    });
+
+    it('requires classEmails.pageUrl to be an https URL or null', () => {
+      const cfg = valid();
+      cfg.attendeeSync.classEmails.pageUrl = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.pageUrl = 'https://example.org/classes';
+      expect(() => validateConfig(cfg)).not.toThrow();
+      for (const bad of ['http://example.org/classes', 'example.org', '', 7, undefined]) {
+        cfg.attendeeSync.classEmails.pageUrl = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails.pageUrl');
+      }
+      delete cfg.attendeeSync.classEmails;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails');
+    });
+
+    it('requires classEmails.sandboxRecipient to be an address or null', () => {
+      const cfg = valid();
+      cfg.attendeeSync.classEmails.sandboxRecipient = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.sandboxRecipient = 'sandbox@bikesiliconvalley.org';
+      expect(() => validateConfig(cfg)).not.toThrow();
+      for (const bad of ['not an address', 'a@b', '', 7, undefined]) {
+        cfg.attendeeSync.classEmails.sandboxRecipient = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails.sandboxRecipient');
+      }
+    });
+
+    it('requires events.sendLinkColumn to be a column id string', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.events.sendLinkColumn;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.events.sendLinkColumn');
+    });
+
+    it('accepts null board ids for events and event-registrations, but requires the keys', () => {
+      const cfg = valid();
+      cfg.monday.boards['events'] = null;
+      cfg.monday.boards['event-registrations'] = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      delete cfg.monday.boards['events'];
+      expect(() => validateConfig(cfg)).toThrow('monday.boards.events');
+    });
+
+    it('requires well-formed actions, string-to-string programByOrganizer and string volunteerPrograms', () => {
+      const cfg = valid();
+      cfg.attendeeSync.actions = [];
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.actions');
+      cfg.attendeeSync.actions = ['attendee updated'];
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.actions');
+      cfg.attendeeSync.actions = ['attendee.updated'];
+      cfg.attendeeSync.programByOrganizer = { '123': 7 };
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.programByOrganizer');
+      cfg.attendeeSync.programByOrganizer = { '123': 'Volunteering' };
+      cfg.attendeeSync.volunteerPrograms = 'Volunteering';
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.volunteerPrograms');
+    });
   });
 });

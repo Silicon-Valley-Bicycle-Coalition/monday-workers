@@ -210,6 +210,9 @@ describe('runTransform', () => {
     await writeNdjson(dataPath('extract', 'registrations.ndjson'), [
       { Id: 'r-shared', funraise__Email__c: 'info@beta.example', ...prov },
     ]);
+    // The seed's gifts name donors this test's contacts drop (skipped-links would fail).
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
     expect(await runTransform(['--no-consent'])).toBe(0);
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const bySf = new Map(payloads.map((p) => [p.sfId, p]));
@@ -240,6 +243,9 @@ describe('runTransform', () => {
     // warning, and b@mystery.org falls back to normal (unknown-domain → household + review).
     await writeFile(dataPath('enrich', 'email-kinds.csv'),
       'email,kind,affiliationSfId\na@startup.io,work,af1\nb@mystery.org,work,af-nope\n');
+    // The seed's gifts name donors this test's contacts drop (skipped-links would fail).
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
     expect(await runTransform(['--no-consent'])).toBe(0);
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const bySf = new Map(payloads.map((p) => [p.sfId, p]));
@@ -404,6 +410,9 @@ describe('runTransform', () => {
       { Id: 'cnp1', Name: 'Old C&P Gift', CnP_PaaS__Contact__c: 'c4',
         CnP_PaaS__TransactionDate__c: '2015-05-01', CnP_PaaS__TotalCharged__c: 40, ...prov },
     ]);
+    // The seed's gifts name donors this test's contacts drop (skipped-links would fail).
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
     expect(await runTransform([])).toBe(0);
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const bySf = new Map(payloads.map((p) => [p.sfId, p]));
@@ -448,5 +457,62 @@ describe('runTransform', () => {
 
     const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
     expect(report.warnings.some((w) => w.includes('1 person-named account'))).toBe(true);
+  });
+
+  it('links One-to-One account gifts to the sole Person, lists the rest, and keeps referenced campaigns', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      { Id: 'c6', FirstName: 'Lone', LastName: 'Q', AccountId: 'a-ind2', ...prov }, // not migrated
+    ]);
+    await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
+      { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-ind2', Name: 'Lone Q Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
+      { Id: 'o1', Name: 'Membership 2026', Amount: 60, CloseDate: '2026-01-15', StageName: 'Posted',
+        RecordType: { Name: 'Membership' }, npsp__Primary_Contact__c: 'c1', AccountId: 'a-ind', ...prov },
+      // No Primary Contact: the donor falls through to the One-to-One Account.
+      { Id: 'o7', Name: 'Membership 2014', Amount: 35, CloseDate: '2014-03-01', StageName: 'Posted',
+        RecordType: { Name: 'Membership' }, npsp__Primary_Contact__c: null, AccountId: 'a-ind',
+        CampaignId: 'k-old', ...prov },
+      { Id: 'o8', Name: 'Membership 2014', Amount: 40, CloseDate: '2014-04-01', StageName: 'Posted',
+        RecordType: { Name: 'Membership' }, npsp__Primary_Contact__c: null, AccountId: 'a-ind2',
+        CampaignId: 'k-noend', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'campaigns.ndjson'), [
+      { Id: 'k-old', Name: 'Spring 2014', IsActive: false, EndDate: '2014-06-30', ...prov },
+      { Id: 'k-noend', Name: 'Bike to the Future 2025 homepage', IsActive: false, ...prov },
+      { Id: 'k-unused', Name: 'Never used', IsActive: false, EndDate: '2012-01-01', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'affiliations.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const bySf = new Map((await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'))).map((p) => [p.sfId, p]));
+
+    expect(bySf.get('o7')!.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
+    expect(bySf.get('c1')!.columns['Lifetime Giving']).toBe('95');      // 60 + the account gift's 35
+    expect(bySf.get('o8')!.links).not.toContainEqual(expect.objectContaining({ column: 'Donor' }));
+    expect(bySf.get('k-old')!.board).toBe('campaigns');
+    expect(bySf.get('k-noend')!.board).toBe('campaigns');
+    expect(bySf.get('k-unused')).toBeUndefined();
+
+    expect(readFileSync(dataPath('review', 'unlinked-person-account-gifts.csv'), 'utf8')).toBe(
+      'opportunitySfId,accountSfId,accountName,reason,amount,closeDate\n' +
+      'o8,a-ind2,Lone Q Household,sole contact not migrated,40,2014-04-01\n');
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.assertions.find((a) => a.name === 'skipped-links')!.violations).toEqual([]);
+    expect(report.warnings.some((w) => w.startsWith('donations: 1 gifts on One-to-One accounts linked to their sole Person; 1 left without a Donor'))).toBe(true);
+  });
+
+  it('fails the skipped-links assertion on a link whose target is not migrated', async () => {
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
+      { Id: 'o1', Name: 'Membership 2026', Amount: 60, CloseDate: '2026-01-15', StageName: 'Posted',
+        RecordType: { Name: 'Membership' }, npsp__Primary_Contact__c: 'c1', AccountId: 'a-ind',
+        CampaignId: 'k-missing', ...prov },   // not in campaigns.ndjson
+    ]);
+    expect(await runTransform(['--no-consent'])).toBe(1);
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.assertions.find((a) => a.name === 'skipped-links')!.violations)
+      .toEqual(['donations → Campaign: 1 links (first: o1 → k-missing)']);
   });
 });

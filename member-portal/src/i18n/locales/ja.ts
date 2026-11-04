@@ -50,6 +50,10 @@ export const ja: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '現在、この会員証を確認できませんでした。数分後に再度お試しください。',
   'error.eventsLoadFailed': '現在、イベント参加登録を読み込めません。数分後にもう一度お試しください。',
   'error.generic': 'エラーが発生しました。もう一度ログインしてください。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '一時的にご利用いただけません',
+  'unavailable.heading': '一時的にご利用いただけません',
+  'unavailable.body': 'システムを更新中のため、現在この機能はご利用いただけません。しばらくしてからもう一度お試しください。',
 
   // Portal
   'portal.heading': '寄付者ポータル',
@@ -74,6 +78,15 @@ export const ja: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': '定期寄付の管理',
   'portal.renewMembershipLink': '会員資格の更新',
   'portal.givingLinksNote': 'これらのリンクは、当団体の安全な決済代行サービスであるFunraiseを開きます。そこで行った変更は、記録の更新後にこのポータルに反映されます。',
+  'portal.getInvolvedHeading': '参加しよう',
+  'portal.getInvolvedIntro': '自転車や公共交通に関する決定が行われる会議で意見を伝え、SVBCのイベントで他の会員と交流しましょう。',
+  'portal.getInvolvedTransit': '交通機関の会議',
+  'portal.getInvolvedCivic': '市の自転車・歩行者委員会',
+  'portal.getInvolvedEvents': 'SVBCのイベント',
+  'portal.getInvolvedVolunteer': 'ボランティアの機会',
+  'portal.getInvolvedEventsLink': '今後のSVBCイベントを見る',
+  'portal.getInvolvedVolunteerLink': 'ボランティアのシフトを探す',
+  'portal.addToCalendar': 'カレンダーに追加',
   'portal.discountsHeading': '自転車店の割引',
   'portal.taxDocumentsLink': '税務書類',
   'portal.eventsLink': 'イベント参加登録',
@@ -185,4 +198,6 @@ export const ja: Record<TranslationKey, string> = {
   'letterReady.body': '{{year}}年の寄付証明レターを寄付者ポータルでご覧いただけます。',
   'letterReady.loginLink': 'ログインして確認する',
   'letterReady.expiry': 'このリンクは有効期限が短く、1回のみご利用いただけます。',
+  'portal.matchedBy': '{{company}}が{{date}}にマッチング:{{amount}}',
+  'portal.startMatch': '勤務先がこの寄付をマッチングしてくれる可能性があります',
 } satisfies Record<TranslationKey, string>;

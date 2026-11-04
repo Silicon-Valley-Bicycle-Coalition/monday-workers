@@ -2,14 +2,20 @@ import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
-import type { RegistrationRecord, HistoricalShiftRecord } from '../monday/client';
+import type { RollCallCreditsStore } from '../db/rollCallCredits';
+import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord, DonationCreditRecord, ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
-  HistoricalVolunteerBoardConfig } from '../types';
+  HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig, SponsorshipsConfig } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { runClassify } from './classify';
 import { runMembership, type MembershipDetail } from './membership';
+import { runRecurring } from './recurring';
+import { runRollCall } from './rollcall';
+import { runSponsorshipsBackfill } from './sponsorships';
 import { formatCents, parseAmountCents } from '../money';
+import { runDisposition } from '../flags';
+import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
 // keep the archive-in-place Donations board and its projections healthy. Each duty is pure
@@ -30,11 +36,28 @@ export interface CustodianMondayClient {
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
     opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
-  pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
-    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }>;
+  // requireBoard: throw when Monday returns no such board (deleted, or the token can't see it)
+  // rather than read it as empty.
+  pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null, opts?: { requireBoard?: boolean }):
+    Promise<{ items: ItemColumns[]; cursor: string | null }>;
   pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
   pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
   getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
+  pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null): Promise<{ items: RecurringGiftRecord[]; cursor: string | null }>;
+  // Throws when Monday returns no such board. fiscalYearStartMonth derives a blank Fiscal Year
+  // Ending from the Date, as getDonationsByIds does.
+  pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number):
+    Promise<{ items: DonationCreditRecord[]; cursor: string | null }>;
+  // A missing id is a deleted item.
+  getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>>;
+  // The Donor Roll Call board (the `rollcall` duty). createGroup and createItemInGroup aren't
+  // idempotent: one that may have committed throws AmbiguousWriteError.
+  listGroups(boardId: number): Promise<{ id: string; title: string }[]>;
+  createGroup(boardId: number, title: string): Promise<string>;
+  updateGroupTitle(boardId: number, groupId: string, title: string): Promise<void>;
+  createItemInGroup(boardId: number, groupId: string, name: string, columnValues: Record<string, unknown>): Promise<string>;
+  moveItemToGroup(itemId: string, groupId: string): Promise<void>;
+  deleteItem(itemId: string): Promise<void>;
 }
 
 export interface CustodianDeps {
@@ -42,6 +65,7 @@ export interface CustodianDeps {
   pending: PendingStore;
   volunteers: VolunteerActivityStore;
   recomputes: OwnerRecomputesStore;
+  rollCallCredits: RollCallCreditsStore;
   mondayClient: CustodianMondayClient;
   queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
   config: DonationRollupsConfig;
@@ -50,8 +74,9 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership'] as const;
-export interface DutyOptions { all?: boolean; since?: string }
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sponsorships'] as const;
+// force: rollcall only, past its mass-delete guard.
+export interface DutyOptions { all?: boolean; since?: string; force?: boolean }
 export type Duty = (typeof DUTIES)[number];
 
 // Cron schedule, decided by date so one daily trigger covers everything:
@@ -69,19 +94,46 @@ export type Duty = (typeof DUTIES)[number];
 // of the fiscal start month (SVBC: July 1 and July 15), read in the org's time zone.
 export function dutiesForDate(
   now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
+  sponsorships: SponsorshipsConfig | null = null,
 ): Duty[] {
   const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
-  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership']; // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries — all nightly
+  // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries; recurring: Has
+  // Active Recurring Gift; rollcall: the Donor Roll Call board — all nightly
+  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall'];
+  // sponsorships: backfills per-gift sponsorship facts; its January 1 sweep (calendar year
+  // basis only) rolls the Sponsorships section's window over to the new year.
+  if (sponsorships !== null) duties.push('sponsorships');
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
   if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
+  if (sponsorships?.yearBasis === 'calendar' && month === 1 && day === 1 && !duties.includes('sweep')) duties.push('sweep');
   if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
-  for (const duty of ['sweep', 'archive', 'classify'] as const) {
+  for (const duty of ['sweep', 'archive', 'classify', 'rollcall', 'sponsorships'] as const) {
     if (duties.includes(duty)) continue;
     const last = lastRuns.find((r) => r.duty === duty)?.report as
       { detail?: { remaining?: number } } | undefined;
     if ((last?.detail?.remaining ?? 0) > 0) duties.push(duty);
   }
   return duties;
+}
+
+// The daily cron (index.ts scheduled()). The write switch's mode, read once for the run, decides
+// whether today's duties run live (`on`), run against recording proxies (`off` — Monday writes,
+// queue sends and D1 bookkeeping, recordRun included, become skip lines, so no cursor moves), or
+// don't run at all (`hold`, `unknown` — one log line; a sliced duty continues on the first live
+// run, since nothing was recorded).
+export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext): Promise<void> {
+  const disposition = runDisposition(gate.mode);
+  if (disposition === 'skip') {
+    console.warn(`donation-rollups custodian: write mode is "${gate.mode}"; skipping today's duties, nothing recorded`);
+    return;
+  }
+  const now = deps.now ?? new Date();
+  const d = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  const label = disposition === 'dry-run' ? ' (dry run)' : '';
+  for (const duty of dutiesForDate(now, d.config.fiscalYear, await d.gifts.lastRuns(), d.config.donationRollups.sponsorships)) {
+    const report = await runDuty(duty, d);
+    console.log(`custodian ${duty}${label}: ${report.ok ? 'ok' : 'ATTENTION'} — ${report.summary}`);
+  }
 }
 
 export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions = {}): Promise<DutyReport> {
@@ -94,6 +146,9 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
       : duty === 'sweep' ? await runSweep(deps)
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
+      : duty === 'recurring' ? await runRecurring(deps)
+      : duty === 'sponsorships' ? await runSponsorshipsBackfill(deps, now)
+      : duty === 'rollcall' ? await runRollCall(deps, now, { force: opts.force ?? false })
       : duty === 'membership' ? await runMembership(deps, now, { all: opts.all ?? false, since: opts.since ?? null },
           ((await deps.gifts.lastRuns()).find((r) => r.duty === 'membership')?.report as { detail?: MembershipDetail } | undefined)?.detail ?? null)
       : await runReconcile(deps);
@@ -263,7 +318,7 @@ async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const slice = stuck.slice(0, REQUEUE_BATCHES_PER_RUN * 100);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
-      .map((r) => ({ ...(r.kind === 'registration' ? { kind: r.kind } : {}), donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
+      .map((r) => ({ ...(r.kind !== 'donation' ? { kind: r.kind } : {}), donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
   }
   const remaining = stuck.length - slice.length;
   if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0 } };

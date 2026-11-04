@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
+import { formatUsdText } from './money';
+import { formatShortDate } from './dates';
 import type { FunraiseLinkUrls, PortalView } from './types';
 import type { PortalCard } from './card/loadCardData';
 import { t } from './i18n/t';
@@ -627,6 +629,56 @@ describe('portalView tab structure', () => {
   });
 });
 
+describe('portalView get-involved links', () => {
+  const data: PortalView = {
+    donors: [],
+    discounts: [],
+    donationHistoryEnabled: true,
+    volunteerHistory: null,
+  };
+  const noFunraise = { manageRecurringUrl: null, renewMembershipUrl: null };
+
+  it('groups links by category with committee labels and calendar links', () => {
+    const html = portalView(data, 'en', {}, noFunraise, null, {}, [
+      { category: 'transit', label: 'BART Bicycle Advisory Task Force', url: 'https://bart.legistar.com/Calendar.aspx', calendarUrl: 'https://c.example.org/bart.ics' },
+      { category: 'civic', label: 'San José BPAC', url: 'https://sanjose.legistar.com/Calendar.aspx' },
+    ]);
+    expect(html).toContain(t('en', 'portal.getInvolvedHeading'));
+    expect(html).toContain(t('en', 'portal.getInvolvedTransit'));
+    expect(html).toContain(t('en', 'portal.getInvolvedCivic'));
+    expect(html).not.toContain(`<h3>${t('en', 'portal.getInvolvedEvents')}</h3>`);
+    expect(html).toContain('href="https://bart.legistar.com/Calendar.aspx"');
+    expect(html).toContain('href="https://c.example.org/bart.ics"');
+    expect(html).toContain('San José BPAC');
+    // Only the BART link has a feed.
+    expect(html.split(t('en', 'portal.addToCalendar')).length - 1).toBe(1);
+    // City committees come before transit agencies.
+    expect(html.indexOf(t('en', 'portal.getInvolvedCivic'))).toBeLessThan(html.indexOf(t('en', 'portal.getInvolvedTransit')));
+  });
+
+  it('uses translated link text for unlabeled events and volunteer links', () => {
+    const html = portalView(data, 'es', {}, noFunraise, null, {}, [
+      { category: 'events', url: 'https://www.eventbrite.com/o/1' },
+      { category: 'volunteer', url: 'https://example.org/volunteer' },
+    ]);
+    expect(html).toContain(t('es', 'portal.getInvolvedEventsLink'));
+    expect(html).toContain(t('es', 'portal.getInvolvedVolunteerLink'));
+  });
+
+  it('omits the section when no links are configured', () => {
+    const html = portalView(data, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'portal.getInvolvedHeading'));
+  });
+
+  it('escapes labels and URLs', () => {
+    const html = portalView(data, 'en', {}, noFunraise, null, {}, [
+      { category: 'civic', label: '<b>Council</b>', url: 'https://x.org/?a=1&b=2' },
+    ]);
+    expect(html).toContain('&lt;b&gt;Council&lt;/b&gt;');
+    expect(html).toContain('href="https://x.org/?a=1&amp;b=2"');
+  });
+});
+
 describe('portalView funraise deep links', () => {
   const data: PortalView = {
     donors: [
@@ -686,5 +738,64 @@ describe('portalView funraise deep links', () => {
       renewMembershipUrl: null,
     });
     expect(html).toContain(t('es', 'portal.manageRecurringLink'));
+  });
+});
+
+describe('portalView match lines', () => {
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+  const viewWith = (donation: PortalView['donors'][number]['donations'][number]): PortalView => ({
+    donors: [
+      {
+        id: 'donor-1',
+        name: 'Jane Donor',
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '100',
+        donations: [donation],
+        membershipExpiry: '',
+      },
+    ],
+    discounts: [],
+    donationHistoryEnabled: true,
+    volunteerHistory: null,
+  });
+  const base = { date: '2026-03-01', amount: '100', description: 'Annual gift' };
+
+  it('renders the matched-by line', () => {
+    const html = portalView(viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: 'Acme Corp' } }), 'en', {}, noFunraise);
+    expect(html).toContain(
+      t('en', 'portal.matchedBy', { company: 'Acme Corp', date: formatShortDate('2026-04-01'), amount: formatUsdText('100') })
+    );
+    expect(html).toContain('Matched by Acme Corp on');
+  });
+
+  it('renders the start-match link only when waiting for donor', () => {
+    const waiting = portalView(viewWith({ ...base, matchHintUrl: 'https://dtd.example/abc' }), 'en', {}, noFunraise);
+    expect(waiting).toContain('href="https://dtd.example/abc"');
+    expect(waiting).toContain(t('en', 'portal.startMatch'));
+    expect(waiting).toContain('rel="noopener"');
+    expect(waiting).toContain('target="_blank"');
+    const plain = portalView(viewWith(base), 'en', {}, noFunraise);
+    expect(plain).not.toContain(t('en', 'portal.startMatch'));
+    expect(plain).not.toContain('Matched by');
+  });
+
+  it('prefers the matched line over the link', () => {
+    const html = portalView(
+      viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: 'Acme Corp' }, matchHintUrl: 'https://dtd.example/abc' }),
+      'en', {}, noFunraise
+    );
+    expect(html).not.toContain(t('en', 'portal.startMatch'));
+  });
+
+  it('escapes company names', () => {
+    const html = portalView(viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: '<img src=x onerror=alert(1)>' } }), 'en', {}, noFunraise);
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x');
+  });
+
+  it('escapes the hint URL', () => {
+    const html = portalView(viewWith({ ...base, matchHintUrl: 'https://dtd.example/a"onmouseover="x' }), 'en', {}, noFunraise);
+    expect(html).not.toContain('"onmouseover=');
   });
 });

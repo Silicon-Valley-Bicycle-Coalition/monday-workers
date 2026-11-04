@@ -18,13 +18,23 @@
 //   ... --sandbox-user 12345678
 //
 // The token must belong to a user who can change the boards' kind (the board owner or an admin);
-// use the load's own user or an admin, not a Worker integration user.
+// use the load's own user or an admin, not a Worker integration user. Caveat (2026-11-02): with
+// the version fixed, Monday still answered USER_UNAUTHORIZED to an account admin's personal token,
+// even on a public board that same user had just created. So on SVBC's account `--apply` has not
+// yet succeeded; the production boards were made private in the Monday UI. If it fails that way,
+// change the kind in the UI and re-run the dry run to confirm every board reads private.
 //
 // Mutation (verified against the Monday GraphQL schema, 2026-10-09): `change_board_kind(board_id:
 // ID!, kind: BoardKindInput!)` with kind PUBLIC | PRIVATE | SHARE, returning { id board_kind }.
+// It exists only from API version 2026-10 (`BOARD_KIND_API_VERSION`); under the repo pin (2026-07)
+// Monday answers `Cannot query field "change_board_kind"`, so this one call overrides the pin.
 // `update_board` cannot do this — its `BoardAttributes` enum is only communication, description,
 // item_nickname and name. Changing a board to private leaves existing subscribers in place;
 // adding or removing subscribers is a separate step (this script only reports them).
+//
+// Boards are selected in every state, not just active: an archived board keeps its items and stays
+// readable, and a deleted one (in trash) comes back with its kind if restored, so either left public
+// is still exposed (#71). The report marks each non-active board's state.
 //
 // Exit 0: nothing wrong. Exit 1: the Sandbox Integration user is subscribed to a selected board,
 // or --apply left a board not private. Exit 2: usage or API error. Dry-run writes nothing; --apply
@@ -33,6 +43,8 @@
 import { fileURLToPath } from 'node:url';
 // The repo's single API-Version pin (#39), from the canonical transport.
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
+// The one call that needs a newer version than the pin (see the header); the reads stay on the pin.
+export const BOARD_KIND_API_VERSION = '2026-10';
 
 const API_URL = 'https://api.monday.com/v2';
 const PAGE_SIZE = 100;
@@ -105,6 +117,7 @@ export function buildPlan(boards, { boardIds = [], sandboxUser = null } = {}) {
       id: String(b.id),
       name: b.name,
       kind: b.board_kind,
+      state: b.state ?? 'active',
       action: b.board_kind === 'private' ? 'keep' : 'make-private',
       users,
       teams,
@@ -128,21 +141,21 @@ export function formatPlan(plan, { apply = false, applied = false, sandboxUser =
   lines.push(`${mode}: ${plan.entries.length} board(s) selected, ${plan.toChange} not private`);
   for (const e of plan.entries) {
     const verb = applied ? (e.kind === 'private' ? 'private' : `STILL ${e.kind}`) : e.action === 'keep' ? 'already private' : `${e.kind} -> private`;
-    lines.push(`  ${e.id.padEnd(12)} ${e.name}  [${verb}]`);
+    lines.push(`  ${e.id.padEnd(12)} ${e.name}  [${verb}${e.state === 'active' ? '' : `, ${e.state}`}]`);
     lines.push(`      users: ${e.users.length === 0 ? '(none)' : e.users.map(person).join(', ')}`);
     lines.push(`      teams: ${e.teams.length === 0 ? '(none)' : e.teams.map((t) => `${t.name} (${t.id})`).join(', ')}`);
     if (e.sandboxUserSubscribed) lines.push(`      !! Sandbox Integration user ${sandboxUser} is subscribed — remove them`);
   }
-  for (const id of plan.missing) lines.push(`  ${id.padEnd(12)} NOT FOUND in the workspace (wrong id, archived, or not visible to this token)`);
+  for (const id of plan.missing) lines.push(`  ${id.padEnd(12)} NOT FOUND in the workspace (wrong id, or not visible to this token)`);
   if (sandboxUser === null) lines.push('Sandbox Integration user check skipped: pass --sandbox-user <id> to enforce it.');
   if (!apply && !applied && plan.toChange > 0) lines.push('Re-run with --apply to change them. Nothing was changed.');
   return lines.join('\n');
 }
 
-async function query(token, graphql, variables) {
+async function query(token, graphql, variables, apiVersion = MONDAY_API_VERSION) {
   const res = await fetch(API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': MONDAY_API_VERSION },
+    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': apiVersion },
     body: JSON.stringify({ query: graphql, variables }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -159,8 +172,8 @@ async function listWorkspaceBoards(token, workspace) {
     const data = await query(
       token,
       `query ($ws: [ID!], $limit: Int, $page: Int) {
-         boards(workspace_ids: $ws, limit: $limit, page: $page, state: active) {
-           id name board_kind workspace_id
+         boards(workspace_ids: $ws, limit: $limit, page: $page, state: all) {
+           id name board_kind workspace_id state
            subscribers { id name is_guest }
            team_subscribers { id name }
          }
@@ -177,7 +190,8 @@ async function makePrivate(token, boardId) {
   const data = await query(
     token,
     'mutation ($id: ID!) { change_board_kind(board_id: $id, kind: PRIVATE) { id board_kind } }',
-    { id: boardId }
+    { id: boardId },
+    BOARD_KIND_API_VERSION
   );
   return data.change_board_kind;
 }

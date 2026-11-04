@@ -101,21 +101,24 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     expect(res.headers.get("Content-Type")).toBe("text/html;charset=UTF-8");
   });
 
+  it("GET /widget never writes an event's logo_url or url into innerHTML unfiltered", async () => {
+    const html = await (await call(req("/widget"))).text();
+    expect(html).not.toMatch(/\+ evt\.(logo_url|url) \+/);
+    expect(html).toContain("safeUrl(evt.logo_url)");
+    expect(html).toContain("safeUrl(evt.url)");
+    expect(html).toContain('/^https?:\\/\\//i.test(url) ? esc(url) : ""');
+  });
+
   it("OPTIONS returns 204 with CORS headers", async () => {
     const res = await call(req("/events", { method: "OPTIONS" }));
     expect(res.status).toBe(204);
     expect(res.headers.get("Access-Control-Allow-Methods")).toBe("GET, OPTIONS");
   });
 
-  it("allowed origin is reflected", async () => {
+  // Never reflect the Origin: responses land in caches.default with no Vary: Origin (#72).
+  it.each(["https://www.bikesiliconvalley.org", "https://evil.com"])("sends a wildcard ACAO for origin %s", async (origin) => {
     mockEventbrite();
-    const res = await call(req("/events", { origin: "https://www.bikesiliconvalley.org" }));
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://www.bikesiliconvalley.org");
-  });
-
-  it("disallowed origin gets wildcard", async () => {
-    mockEventbrite();
-    const res = await call(req("/events", { origin: "https://evil.com" }));
+    const res = await call(req("/events", { origin }));
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
 
@@ -269,19 +272,19 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
     expect(second.headers.get("X-Cache")).toBe("MISS");
   });
 
-  it("still returns 502 when every organizer fails, naming each one", async () => {
+  it("still returns 502 when every organizer fails, without upstream detail in the body", async () => {
     fetchSpy.mockImplementation(async () => new Response("Unauthorized", { status: 401, statusText: "Unauthorized" }));
     const res = await call(req("/events"));
     expect(res.status).toBe(502);
-    const data = await res.json<{ error: string; detail: string }>();
-    expect(data.error).toBe("Eventbrite API error");
-    for (const id of ["21763925459", "17135810858", "121346572357"]) expect(data.detail).toContain(`organizer ${id}`);
+    const data = await res.json();
+    expect(data).toEqual({ error: "Eventbrite API error" });
   });
 
   it("a single-organizer request still reports that organizer's failure as a 502", async () => {
     mockOneOrganizerGone("121346572357");
     const res = await call(req("/events?organizer=121346572357"));
     expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Eventbrite API error" });
   });
 });
 
@@ -337,6 +340,17 @@ describe("calendars", () => {
     expect(Object.keys(data)).toEqual(expect.arrayContaining(["santa-clara", "eventbrite-public-events"]));
   });
 
+  it("GET /status.json leaves out each source's raw lastError", async () => {
+    await env.CALENDAR_KV.put(
+      "status:santa-clara",
+      JSON.stringify({ consecutiveFailures: 2, lastError: "HTTP 500 from https://webapi.legistar.com/secret", lastSuccessAt: "2026-10-27T13:00:00.000Z" })
+    );
+    const res = await call(req("/status.json"));
+    const data = await res.json<Record<string, unknown>>();
+    expect(data["santa-clara"]).toEqual({ consecutiveFailures: 2, lastSuccessAt: "2026-10-27T13:00:00.000Z" });
+    expect(JSON.stringify(data)).not.toContain("legistar");
+  });
+
   it("GET /calendars/santa-clara.ics falls back to the KV last-known-good ICS when the live adapter fails, with X-Served-From: fallback", async () => {
     const seededIcs = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\nEND:VCALENDAR";
     await env.CALENDAR_KV.put("ics:santa-clara", seededIcs);
@@ -373,7 +387,7 @@ describe("error handling", () => {
     const res = await call(req("/status.json", { origin: "https://www.bikesiliconvalley.org" }));
 
     expect(res.status).toBe(500);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://www.bikesiliconvalley.org");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
     const data = await res.json<{ error: string }>();
     expect(data.error).toBe("Internal error");
   });

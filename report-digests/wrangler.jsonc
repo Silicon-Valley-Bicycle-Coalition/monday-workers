@@ -1,0 +1,72 @@
+{
+  "name": "svbc-report-digests",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "workers_dev": true,
+  // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
+  // member-portal — no new domain onboarding needed for this Worker.
+  // No allowed_destination_addresses here: recipients are Monday user ids resolved at send time, so
+  // listing them would put staff addresses in this public repo. Instead src/run.ts drops any address
+  // outside config `recipientDomains` (#70).
+  "send_email": [{ "name": "EMAIL" }],
+  // Write-switch flags (scripts/flags.mjs): every digest send is gated on `report-digests:writes`.
+  // The namespace is `FLAGS` (`sandbox-FLAGS` under env.sandbox); every in-scope Worker carries the
+  // same two ids, which scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". The only
+  // HTTP surface is the authenticated POST /digests/run operator route.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2091", "simple": { "limit": 60, "period": 60 } }],
+  // The largest digest (the fiscal year by gift size) pages one fiscal year of Donations, a few
+  // thousand items, through JSON.parse. Still far under Workers Paid's 30 s default.
+  "limits": { "cpu_ms": 500 },
+  // Hourly; src/schedule.ts sends each digest when the Pacific hour and day match its schedule in
+  // config, so daylight saving needs no second cron. A missed hour is not caught up — rerun a
+  // digest with POST /digests/run.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // Monday access: the monday-auth broker's Read-only app (ReadOnlyToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "ReadOnlyToken" }],
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-report-digests-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
+  // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code layer
+  // in src/email/sandboxBinding.ts rewrites recipients to the same address. Same convention as
+  // member-portal — see docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (DIGESTS_SECRET). Monday access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN
+  // secret.
+  "env": {
+    "sandbox": {
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "workers_dev": true,
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2092", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 500 },
+      "triggers": {
+        "crons": ["0 * * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "ReadOnlyToken" }]
+    }
+  }
+}

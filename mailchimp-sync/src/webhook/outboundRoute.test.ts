@@ -7,9 +7,9 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
-    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
-  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
+  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
@@ -35,7 +35,7 @@ describe('webhook secret', () => {
   it('rejects a request missing the secret with 401 and enqueues nothing', async () => {
     const send = vi.fn();
     const pendingStore = fakePendingStore();
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { event: { pulseId: 1 } }, '');
     expect(res.status).toBe(401);
     expect(send).not.toHaveBeenCalled();
@@ -44,7 +44,7 @@ describe('webhook secret', () => {
 
   it('rejects a request with the wrong secret with 401 and enqueues nothing', async () => {
     const send = vi.fn();
-    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { event: { pulseId: 1 } }, '?secret=wrong');
     expect(res.status).toBe(401);
     expect(send).not.toHaveBeenCalled();
@@ -59,6 +59,7 @@ describe('webhook secret', () => {
         pendingStore: fakePendingStore(),
         queue: { send },
         webhookSecret: missingSecret as unknown as string,
+        writeMode: async () => 'on',
         config: CONFIG,
       });
       const res = await post(app, { event: { pulseId: 1 } }, `?secret=${missingSecret ?? ''}`);
@@ -70,14 +71,14 @@ describe('webhook secret', () => {
   it('does not echo the challenge handshake without the correct secret', async () => {
     // The secret is part of the URL Monday registers, so the one-time challenge arrives
     // with it too — an unauthenticated challenge is an attacker probing the endpoint.
-    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { challenge: 'abc' }, '?secret=wrong');
     expect(res.status).toBe(401);
     expect(await res.text()).not.toContain('abc');
   });
 
   it('accepts the correct secret, including for the challenge handshake', async () => {
-    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { challenge: 'abc' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc' });
@@ -86,7 +87,7 @@ describe('webhook secret', () => {
 
 describe('POST /webhooks/monday/donors', () => {
   it('echoes the challenge verbatim during webhook-subscription verification', async () => {
-    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { challenge: 'abc123' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc123' });
@@ -95,7 +96,7 @@ describe('POST /webhooks/monday/donors', () => {
   it('upserts and enqueues a valid event, keyed on the donor item id', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
     const res = await post(app, { event: { pulseId: 555 } });
 
@@ -108,7 +109,7 @@ describe('POST /webhooks/monday/donors', () => {
   it('skips and does not enqueue a change_column_value event for the mailchimpCampaigns column (self-inflicted, avoids feedback loop)', async () => {
     const send = vi.fn();
     const pendingStore = fakePendingStore();
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
     const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1, columnId: 'mc' } });
 
@@ -118,10 +119,23 @@ describe('POST /webhooks/monday/donors', () => {
     expect(pendingStore.upsertPending).not.toHaveBeenCalled();
   });
 
-  it('still enqueues a change_column_value event for a different column', async () => {
+  it('skips a change to a column the sync never reads, such as a Location backfill', async () => {
+    const send = vi.fn();
+    const pendingStore = fakePendingStore();
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1, columnId: 'location_xyz' } });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true });
+    expect(send).not.toHaveBeenCalled();
+    expect(pendingStore.upsertPending).not.toHaveBeenCalled();
+  });
+
+  it('still enqueues a change_column_value event for a column the sync reads', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const pendingStore = fakePendingStore();
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
     const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1, columnId: 's' } });
 
@@ -129,10 +143,34 @@ describe('POST /webhooks/monday/donors', () => {
     expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
   });
 
+  it('carries the previous address when the Email column changed, so the consumer can rename the member', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'e', previousValue: { email: 'old@b.com', text: 'old@b.com' } } });
+
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555', previousEmail: 'old@b.com' });
+  });
+
+  it('does not carry a previous email-shaped value from any column but the configured Email column', async () => {
+    // e.g. a Household Email edit: renaming the member after it would move the wrong address.
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    // Household Email itself isn't read by the sync, so it's skipped outright; the guard still
+    // matters for any column the sync does read.
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'household', previousValue: { email: 'old@b.com' } } });
+    expect(await res.json()).toEqual({ ok: true, skipped: true });
+
+    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 's', previousValue: { email: 'old@b.com' } } });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
+  });
+
   it('still enqueues a create_pulse event (no columnId at all)', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const pendingStore = fakePendingStore();
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 555, boardId: 1 } });
 
@@ -142,7 +180,7 @@ describe('POST /webhooks/monday/donors', () => {
 
   it('rejects a malformed event body with 200 (no useful retry) and does not enqueue', async () => {
     const send = vi.fn();
-    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
     const res = await post(app, { event: {} });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: false });
@@ -152,7 +190,7 @@ describe('POST /webhooks/monday/donors', () => {
   it('returns 500 and marks failed when enqueue throws, so Monday redelivers', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockRejectedValue(new Error('queue down'));
-    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG });
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
     const res = await post(app, { event: { pulseId: 1 } });
 

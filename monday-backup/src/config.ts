@@ -32,9 +32,15 @@ export function validateConfig(raw: unknown): BackupConfig {
     throw new Error('config: workspaceIds entries must be non-empty strings');
   }
 
+  const apiUsageAlerts = cfg.apiUsageAlerts;
+  if (apiUsageAlerts !== undefined && typeof apiUsageAlerts !== 'boolean') {
+    throw new Error('config: apiUsageAlerts must be a boolean if present');
+  }
+
   return {
     destinationParentFolderId,
     excludeBoardIds: (excludeBoardIds as string[] | undefined) ?? [],
     workspaceIds: workspaceIds as string[] | undefined,
+    apiUsageAlerts: apiUsageAlerts ?? false,
   };
 }

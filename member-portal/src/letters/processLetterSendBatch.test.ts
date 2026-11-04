@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processLetterSendBatch } from './processLetterSendBatch';
+import { consumeLetterSendBatch, processLetterSendBatch } from './processLetterSendBatch';
+import type { WriteMode } from '../flags';
+import { MEMBER_PORTAL_PII_KEYS, type BatchSkipContext } from '../writeSwitch';
 import type { LetterSendStore, LetterSendRow } from '../db/letterSends';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
@@ -19,7 +21,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -48,6 +50,7 @@ const config: Config = {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
   },
+  getInvolved: { links: [] },
   pledges: {
     boardId: null,
     columns: {
@@ -133,7 +136,7 @@ describe('processLetterSendBatch', () => {
       expect.objectContaining({ to: 'jane@example.org', donorName: 'Jane Example', year: 2025 })
     );
     const sentEmailUrl = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!.loginUrl;
-    expect(sentEmailUrl).toContain('https://portal.example.org/auth/callback?token=');
+    expect(sentEmailUrl).toMatch(/^https:\/\/portal\.example\.org\/auth\/callback\?lang=[a-zA-Z-]+#token=[0-9a-f]{64}$/);
     expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
@@ -170,7 +173,7 @@ describe('processLetterSendBatch', () => {
       now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
-    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
     expect(message.ack).not.toHaveBeenCalled();
   });
 
@@ -431,7 +434,7 @@ describe('processLetterSendBatch', () => {
 
     const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(sent.locale).toBe('es');
-    expect(sent.loginUrl).toContain('&lang=es');
+    expect(sent.loginUrl).toContain('?lang=es#');
   });
 
   it('defaults to English when the preferred language is unset or unrecognized', async () => {
@@ -452,7 +455,7 @@ describe('processLetterSendBatch', () => {
 
     const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(sent.locale).toBe('en');
-    expect(sent.loginUrl).toContain('&lang=en');
+    expect(sent.loginUrl).toContain('?lang=en#');
   });
 
   it('picks the donor locale’s template, falling back to the default template', async () => {
@@ -503,5 +506,95 @@ describe('processLetterSendBatch', () => {
       now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('consumeLetterSendBatch (write switch)', () => {
+  const gate = (mode: WriteMode): BatchSkipContext => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
+  const now = () => new Date('2026-08-24T10:00:00.000Z');
+
+  it('under off sends no email, mints no token, changes no row, and acks', async () => {
+    const store = fakeStore(row);
+    const tokenStore = fakeTokenStore();
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('off'));
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(tokenStore.createToken).not.toHaveBeenCalled();
+    expect(store.claimForSending).not.toHaveBeenCalled();
+    expect(store.markSent).not.toHaveBeenCalled();
+    expect(store.releaseClaim).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    const skips = log.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((line) => line.writeSwitch === 'skipped');
+    // The email is the one recorded sink: the claim is stood in for, so the dry run reaches it.
+    expect(skips).toEqual([expect.objectContaining({ sink: 'Email', operation: 'sendLetterReadyEmail', deliveryId: 'letter-send:42' })]);
+    log.mockRestore();
+  });
+
+  it('under off with debug logging masks the address, name and login link', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await consumeLetterSendBatch([makeMessage(42)], { store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config, now }, { ...gate('off'), logLevel: 'debug', piiKeys: MEMBER_PORTAL_PII_KEYS });
+
+    const text = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(text).toContain('sendLetterReadyEmail');
+    expect(text).not.toContain('jane@example.org');
+    expect(text).not.toContain('Jane Example');
+    expect(text).not.toContain('token=');
+    log.mockRestore();
+  });
+
+  it('under off drops the deliberate skip too (letters not signed off)', async () => {
+    const store = fakeStore(row);
+    const unsignedConfig: Config = { ...config, taxLetter: { ...config.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
+    const message = makeMessage(42);
+
+    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: unsignedConfig, now }, gate('off'));
+
+    expect(store.markSkipped).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it.each<WriteMode>(['hold', 'unknown'])('under %s retries at 60 s without reading Monday', async (mode) => {
+    const store = fakeStore(row);
+    const monday = fakeMonday();
+    const message = makeMessage(42);
+
+    await consumeLetterSendBatch([message], { store, monday, tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: configWithLetterCron, now }, gate(mode));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(store.getById).not.toHaveBeenCalled();
+    expect(monday.getLetterSettings).not.toHaveBeenCalled();
+  });
+
+  it('sends an unstamped (pre-deploy) message under on', async () => {
+    const store = fakeStore(row);
+    const tokenStore = fakeTokenStore();
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+
+    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('on'));
+
+    expect(tokenStore.createToken).toHaveBeenCalledOnce();
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledOnce();
+    expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('dry-runs a message stamped dropped even under on', async () => {
+    const emailSender = fakeEmailSender();
+    const message = { ...makeMessage(42), body: { sendId: 42, writeStamp: 'dropped' as const } };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await consumeLetterSendBatch([message], { store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now }, gate('on'));
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

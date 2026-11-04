@@ -5,6 +5,8 @@ import type { QbEventStore } from '../db/qbEvents';
 import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns, mondayCellScalar } from '../mapping/fieldMap';
 import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
+import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import type { EntityType, MapEntry, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
 
 export interface QueueMessageLike<T> {
@@ -15,19 +17,6 @@ export interface QueueMessageLike<T> {
   timestamp?: Date;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
-}
-
-// Retry backoff (#33): immediate retries let a Monday or QuickBooks outage of a few seconds burn
-// every attempt and dead-letter the change. 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes across
-// wrangler.jsonc's max_retries of 3 — about 21 minutes of cover — capped at Queues' 12-hour
-// maximum delay. Same schedule as funraise-sync.
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface ConsumerDeps {
@@ -54,6 +43,29 @@ const BOARD_KEY_FOR_ENTITY: Record<EntityType, keyof MondayBoards> = {
   invoice: 'invoices',
   product: 'products',
 };
+
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processSyncQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeSyncBatch(
+  messages: QueueMessageLike<QueueMessage>[],
+  deps: ConsumerDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    const ctx = { ...gate, deliveryId: `${message.body.direction}:${message.body.eventId}` };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processSyncQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+  }
+}
 
 export async function processSyncQueueBatch(
   messages: QueueMessageLike<QueueMessage>[],
@@ -112,6 +124,15 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   // record as it currently stands, never an older snapshot over a newer one. A fetch failure
   // throws into the queue's retry/backoff/DLQ path like any other failure.
   const record = await deps.quickBooksClient.getEntity(event.entityType, event.qbId);
+  // A record's amounts (an invoice's TotalAmt and Balance, a customer's Balance) are in its
+  // CurrencyRef — with multicurrency on, possibly not the home currency the Monday columns hold
+  // (#76). Refuse it before anything is written. No CurrencyRef (Items have none) means home.
+  const currency = getPath(record, 'CurrencyRef.value');
+  if (typeof currency === 'string' && currency !== deps.config.quickbooksSync.currency) {
+    throw new TerminalError(
+      `QuickBooks ${event.entityType} ${event.qbId} is in ${currency}, not ${deps.config.quickbooksSync.currency} — its amounts would be written as ${deps.config.quickbooksSync.currency}; enter it in Monday by hand`
+    );
+  }
   const fetchedPayload = JSON.stringify(record);
   const columnValues = mapQbToMondayColumns(event.entityType, record, deps.config);
 

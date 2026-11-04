@@ -148,7 +148,7 @@ npm run typecheck
 validates and dedupes the incoming event into
 D1 (the idempotency store), then enqueues a message to a Cloudflare Queue producer. A separate
 queue consumer (the Worker's exported `queue()` handler) performs the actual Monday.com write.
-Queues retry automatically (3 attempts) on failure and route to a dead-letter queue once exhausted,
+Queues retry on failure with an outage-tolerant policy (below) and route to a dead-letter queue once exhausted,
 so a failed write becomes a visible, replayable backlog instead of a silently dropped donation.
 D1 status here means "ingested," not "written" — the queue is what makes the write durable.
 
@@ -170,9 +170,19 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
+**Read-only column markers: match titles with `bareTitle`.** Staff-facing column titles carry 🔒
+(a Worker writes it) or 📜 (Salesforce history, loaded once) so staff don't edit them, applied by
+`scripts/mark-read-only-columns.mjs`, whose `MARKED_COLUMNS` is the list. Code and config always
+name the *bare* title. Anything that finds a Monday column by title must compare through
+`bareTitle` from `scripts/lib/column-titles.mjs`, never `c.title === title`. Otherwise a marked
+column reads as missing, and an idempotent setup script creates a duplicate under the bare title.
+A Worker that imports the module adds `scripts/lib/**/*` to its CI job rules, as `monday-auth` does.
+When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run the script.
+
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
-`benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`; not `svbc-calendars`) carries a
+`benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`,
+`nearby-search`, `member-portal-writer`, `monday-auth`, `member-map`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
@@ -183,14 +193,50 @@ environment to another Worker, copy `member-portal`'s `environment.ts`, split te
 `env.sandbox` shape rather than re-deriving them. Design:
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Write switch (off / hold / on), per Worker, in the shared `FLAGS` KV namespace** (`<worker>:writes`;
+missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 13
+migration/integration Workers carry it — the eleven listed in the spec plus `report-digests` and
+`nearby-search`
+(`svbc-calendars` excluded; `member-map` carries no switch because it only reads Monday and never
+writes). `member-portal/src/flags.ts` is
+canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the CI
+job `worker-flags-copies` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
+FLAGS KV ids match across `wrangler.jsonc` files). Same rule as `graphql.ts`: edit the canonical
+file, copy it over the rest, never edit a copy; it must stay strip-only TypeScript (no enums,
+namespaces, constructor parameter properties). Operator CLI: `scripts/flags.mjs` (`<worker|all>
+writes on|hold|off`, `log debug|normal`, `status`, `retention`, all with `--env`). Reads are
+`cacheTtl: 30`, once per request/batch/cron run. Set `<worker>:writes on` **before** deploying a
+build that reads the switch, or a Worker that should write defaults to `off`. Namespaces: `FLAGS`
+and `sandbox-FLAGS` (created 2026-10-27). `status` reads queue paused/backlog from the Cloudflare
+API, since `wrangler queues info` prints neither. Runbook: `docs/runbooks/migration-hold.md`.
+
+- **Cursor invariant exception under `off`:** a cron-polled Worker's D1 cursor normally advances
+  only after a confirmed Monday write; under `off` a poller dry-runs and its cursor
+  **advances**, so what it would have written is skipped for good, deliberately; recompute and
+  maintenance crons compute and log but don't write. Under `hold`/`unknown` crons skip and cursors
+  stay put, so the first `on` run walks everything since the hold began. Work ingested under `off` is stamped
+  `dropped` on the queue message and stays a dry run if consumed after a flip to `on`; an
+  unstamped message (enqueued before the switch existed) is live. Dry-run chained writes persist no
+  placeholder ids. Leave `hold` with `on`; `hold` to `off` drops held messages.
+- **Outage retry policy (replaces the old 3-attempt default):** delay `min(60 x 2^(attempts-1),
+  3600)` s, raised to any longer hint (Retry-After, midnight for a daily limit; hinted case capped
+  at 43,200 s), `max_retries: 100` on main queues (~4 days), DLQ consumers unchanged; queue and DLQ
+  retention 14 days, set by `flags.mjs retention` rather than `wrangler.jsonc`. Retryable/terminal
+  classification stays per Worker.
+- `bp-feedback-notify` has no queue (503 under `hold`/`unknown`); `benevity-import` routes 503 under
+  `hold`/`unknown`; `monday-backup` skips the run unless `on`; `report-digests` dry-runs its sends
+  under `off` and skips the hour under `hold`/`unknown` (no catch-up; resend by hand).
+
 **One Monday GraphQL transport, copied, not shared (#35):** `monday-backup/src/monday/graphql.ts`
 is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, non-idempotent
 writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.ts` and tune it
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
-donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal,
-people-reclassification and quickbooks-sync;
+donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-map, member-portal,
+nearby-search, people-reclassification, quickbooks-sync and report-digests;
+`nearby-search` also carries a byte-identical copy of `geo-filter/src/geometry.ts` (the corridor and
+point logic), enforced by the `geo-geometry-copies` CI job; edit geo-filter's, then copy it over.
 salesforce-import deliberately keeps its own client (`src/load/monday.ts`) through the
 2026-10-09 cutover: it's the one every load rehearsal validated, its `gqlPartial()` (per-alias
 results from multi-create requests) has no transport equivalent, and `gqlLegacy()` must stay
@@ -205,13 +251,16 @@ calls mostly render a donor's page, where a multi-second backoff is worse than a
 donor can reload past. Everything the transport throws is a `MondayApiError` (`httpStatus`,
 `code`, `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 
-**Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
-per exposure class (the public-facing `member-portal` gets its own user with access to only the
-boards it reads), never a staff member's personal token — see the root README for why. A
-dedicated user is not by itself a scoped one (#18): any Monday team member can read and edit
-every Main board in every open workspace, so "only the boards it reads" holds only for private
-boards. Never describe a token as scoped without running
-`node scripts/check-monday-token-scope.mjs --workspace <id>` against it.
+**Monday API tokens are least-privilege by design:** Workers never hold a Monday token. One
+integration user (SVBC Integration; Sandbox Integration in the sandbox) authorizes three OAuth apps
+(Portal, Staff sync, Read-only, each environment with its own set), the `monday-auth` broker holds
+the tokens, and a Worker's service binding (`PortalToken`, `SyncToken`, `ReadOnlyToken`) picks its
+app. New Workers bind an entrypoint (CI checks it) instead of adding a `MONDAY_API_TOKEN` secret;
+never use a staff member's personal token. One user is not a scoped one (#18): any Monday team
+member can read and edit every Main board in every open workspace, so "only the boards it reads"
+holds only for private boards, and the internet-facing `member-portal`'s read-only token can read
+everything the user can see (accepted; see the root README). Never describe a token as scoped
+without running `node scripts/check-monday-token-scope.mjs --workspace <id>` against it.
 
 **`data/` directories** (e.g. in `salesforce-import`) hold real extracted donor PII pulled from
 Salesforce and are gitignored per-Worker. Never remove that ignore rule or commit real data.

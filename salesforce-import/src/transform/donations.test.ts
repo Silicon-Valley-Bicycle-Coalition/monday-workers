@@ -16,6 +16,18 @@ describe('opportunityToPayload', () => {
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
   });
 
+  it('drops a Donor that still resolves to a One-to-One Account instead of leaving it dangling', () => {
+    const gift = { ...base, npsp__Primary_Contact__c: null, AccountId: 'a-ind' };
+    const personAccountIds = new Set(['a-ind']);
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds }).links)
+      .not.toContainEqual(expect.objectContaining({ column: 'Donor' }));
+    // Unresolved, not anonymous — staff resolve it from the review file.
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds }).columns['Anonymous Donor']).toBeNull();
+    // …but the sole-contact alias, when there is one, wins.
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds,
+      donorAlias: new Map([['a-ind', 'c9']]) }).links).toContainEqual({ column: 'Donor', targetSfIds: ['c9'] });
+  });
+
   it('computes Fiscal Year Ending (July–June) from CloseDate', () => {
     const p = opportunityToPayload({ ...base, CloseDate: '2025-12-31' }, { termCols: new Map() });
     expect(p.columns['Fiscal Year Ending']).toBe('2026');
@@ -304,10 +316,16 @@ describe('audited Opportunity columns (docs/32)', () => {
     });
   });
 
+  it('carries Sponsorship Cycle, joining a multi-select with "; " (docs/35 §3.2)', () => {
+    const p = opportunityToPayload({ ...base, Sponsorship_Cycle__c: '2023-2024 BTWD;2024 Summit ' },
+      { termCols: new Map() });
+    expect(p.columns['Sponsorship Cycle']).toBe('2023-2024 BTWD; 2024 Summit');
+  });
+
   it('declares every audited column blank when Salesforce has nothing, so load still creates it', () => {
     const p = opportunityToPayload(base, { termCols: new Map() });
     for (const col of ['Fee Covered', 'Finance Class', 'Revenue Code', 'Payment Method', 'Check/Reference Number',
-      'In-Kind Value', 'In-Kind Category']) {
+      'In-Kind Value', 'In-Kind Category', 'Sponsorship Cycle']) {
       expect(p.columns[col], col).toBe('');
     }
   });

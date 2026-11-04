@@ -50,6 +50,10 @@ export const hi: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'हम अभी इस कार्ड को सत्यापित नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.eventsLoadFailed': 'हम अभी आपके इवेंट पंजीकरण लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से प्रयास करें।',
   'error.generic': 'कुछ गड़बड़ हो गई। कृपया फिर से लॉग इन करने की कोशिश करें।',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'अस्थायी रूप से उपलब्ध नहीं',
+  'unavailable.heading': 'अस्थायी रूप से उपलब्ध नहीं',
+  'unavailable.body': 'हम अपने सिस्टम अपडेट कर रहे हैं, इसलिए यह अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर से कोशिश करें।',
 
   // Portal
   'portal.heading': 'आपका डोनर पोर्टल',
@@ -74,6 +78,15 @@ export const hi: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': 'अपना नियमित दान प्रबंधित करें',
   'portal.renewMembershipLink': 'अपनी सदस्यता नवीनीकृत करें',
   'portal.givingLinksNote': 'ये लिंक Funraise खोलते हैं, जो हमारा सुरक्षित भुगतान प्रोसेसर है। वहां किए गए बदलाव हमारे रिकॉर्ड अपडेट होने के बाद इस पोर्टल में दिखाई देंगे।',
+  'portal.getInvolvedHeading': 'जुड़ें',
+  'portal.getInvolvedIntro': 'उन बैठकों में अपनी बात रखें जहाँ साइकिल और सार्वजनिक परिवहन से जुड़े फ़ैसले होते हैं, और SVBC इवेंट्स में साथी सदस्यों से मिलें।',
+  'portal.getInvolvedTransit': 'परिवहन एजेंसी की बैठकें',
+  'portal.getInvolvedCivic': 'शहर की साइकिल और पैदल यात्री समितियाँ',
+  'portal.getInvolvedEvents': 'SVBC इवेंट्स',
+  'portal.getInvolvedVolunteer': 'स्वयंसेवा के अवसर',
+  'portal.getInvolvedEventsLink': 'आगामी SVBC इवेंट्स देखें',
+  'portal.getInvolvedVolunteerLink': 'स्वयंसेवा शिफ़्ट खोजें',
+  'portal.addToCalendar': 'कैलेंडर में जोड़ें',
   'portal.discountsHeading': 'बाइक शॉप छूट',
   'portal.taxDocumentsLink': 'टैक्स दस्तावेज़',
   'portal.eventsLink': 'इवेंट पंजीकरण',
@@ -185,4 +198,6 @@ export const hi: Record<TranslationKey, string> = {
   'letterReady.body': 'आपका {{year}} का दान पत्र अब डोनर पोर्टल में देखने के लिए तैयार है।',
   'letterReady.loginLink': 'देखने के लिए लॉग इन करें',
   'letterReady.expiry': 'यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+  'portal.matchedBy': '{{company}} द्वारा {{date}} को मैच किया गया: {{amount}}',
+  'portal.startMatch': 'आपका नियोक्ता इस दान के बराबर राशि दे सकता है',
 } satisfies Record<TranslationKey, string>;

@@ -1,0 +1,54 @@
+{
+  "name": "svbc-monday-auth",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // The broker's /oauth/* routes are reached by a human in a browser (consent) and by Monday's
+  // redirect, so it needs a public URL. Consumer Workers call it over service bindings instead.
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-monday-auth",
+      "database_id": "bafa2bf8-25b7-4bcb-8631-a946e6fe7d94",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Proactive refresh, so a token never has to be refreshed on a consumer's request path.
+  "triggers": { "crons": ["*/30 * * * *"] },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "PROBE_ENABLED": "false",
+    // The SVBC Integration user (created 2026-10-30); consent by anyone else is refused.
+    "EXPECTED_USER_ID": "120827741",
+    "MONDAY_SUBDOMAIN": "bikesiliconvalley"
+  },
+  "observability": { "enabled": true, "issues": { "enabled": true } },
+
+  "env": {
+    "sandbox": {
+      "name": "svbc-monday-auth-sandbox",
+      "workers_dev": true,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-monday-auth-sandbox",
+          "database_id": "810908bd-9f8e-4a19-baf9-ff7d373f962d",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "triggers": { "crons": ["*/30 * * * *"] },
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        "PROBE_ENABLED": "true",
+        // Sandbox Integration
+        "EXPECTED_USER_ID": "117112617",
+        "MONDAY_SUBDOMAIN": "bikesiliconvalley"
+      },
+      "observability": { "enabled": true, "issues": { "enabled": true } }
+    }
+  }
+}

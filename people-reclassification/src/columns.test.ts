@@ -14,6 +14,10 @@ describe('columnIdByTitle', () => {
     expect(() => columnIdByTitle(columns, 'Member Until', 'People')).toThrow('People: no column titled "Member Until"');
     expect(() => columnIdByTitle(columns, 'Dup', 'People')).toThrow('2 columns titled "Dup"');
   });
+
+  it('finds a column whose Monday title carries a read-only marker by its bare title', () => {
+    expect(columnIdByTitle([col('date_1', '🔒 Last Gift Date', 'date')], 'Last Gift Date', 'People')).toBe('date_1');
+  });
 });
 
 describe('moveMapping', () => {
@@ -26,11 +30,27 @@ describe('moveMapping', () => {
     col('br_b', 'Organization', 'board_relation'),
   ];
 
-  it('maps every value-bearing column by title and type, leaves connect columns to Monday, and ignores valueless types', () => {
+  it('lists every source column but the name once, as Monday requires: same title and type, else null', () => {
+    // Probed against sandbox v4 on 2026-11-02: Monday rejects a mapping that omits any column, or
+    // that includes the name column ("Columns mapping is not in the expected format"); it accepts
+    // a null target. Formula columns can't be mapped, so they are always null.
     expect(moveMapping(live, historical)).toEqual({
-      mapping: [{ source: 'date_a', target: 'date_b' }, { source: 'color_a', target: 'color_b' }],
+      mapping: [
+        { source: 'date_a', target: 'date_b' }, { source: 'color_a', target: 'color_b' },
+        { source: 'br_a', target: 'br_b' }, { source: 'formula_a', target: null }, { source: 'mirror_a', target: null },
+      ],
       missing: [],
     });
+  });
+
+  it('maps a valueless column that does exist on the target rather than dropping it', () => {
+    expect(moveMapping([col('mirror_a', 'Org City', 'mirror')], [col('mirror_b', 'Org City', 'mirror')]).mapping)
+      .toEqual([{ source: 'mirror_a', target: 'mirror_b' }]);
+  });
+
+  it('pairs a column carrying a read-only marker with its unmarked twin, so a marker never blocks a move', () => {
+    expect(moveMapping([col('date_a', '🔒 Last Gift Date', 'date')], [col('date_b', 'Last Gift Date', 'date')]))
+      .toEqual({ mapping: [{ source: 'date_a', target: 'date_b' }], missing: [] });
   });
 
   it('reports a source column the target lacks, including a connect column, and a type mismatch', () => {

@@ -16,6 +16,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   "triggers": {
     // Daily at 09:00 UTC (1am/2am Pacific depending on DST) — after Monday's own nightly
     // processing settles, well before SVBC staff start their day. Adjust if a different
@@ -37,6 +41,10 @@
   "limits": { "cpu_ms": 300000, "subrequests": 50000 },
   "observability": { "enabled": true, "issues": { "enabled": true } },
 
+  // Monday access: the monday-auth broker's Read-only app (ReadOnlyToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "ReadOnlyToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-monday-backup-sandbox,
   // which snapshots every board its *sandbox* token can see (a user scoped to the CRM Sandbox
@@ -44,9 +52,11 @@
   // Slack channel. Rule: inbound data only, no outbound data — the Drive folder and Slack channel
   // are staff-only sinks, and config/split.test.ts fails if the two configs ever share the folder.
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
-  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN (the
-  // sandbox-workspace-scoped user), GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-  // (a service account shared only into the sandbox folder), SLACK_WEBHOOK_URL (#crm-sandbox).
+  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
+  // GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (a service account shared only
+  // into the sandbox folder), SLACK_WEBHOOK_URL (#crm-sandbox).
+  // Monday access comes from the MONDAY_AUTH binding (the sandbox broker, consented as the
+  // sandbox-workspace-scoped Sandbox Integration user), not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
@@ -60,11 +70,15 @@
           "migrations_dir": "migrations"
         }
       ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "triggers": {
         "crons": ["0 9 * * *", "30 * * * *"]
       },
       "limits": { "cpu_ms": 300000, "subrequests": 50000 },
-      "observability": { "enabled": true, "issues": { "enabled": true } }
+      "observability": { "enabled": true, "issues": { "enabled": true } },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "ReadOnlyToken" }]
     }
   }
 }

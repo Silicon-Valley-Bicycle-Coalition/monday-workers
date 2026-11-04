@@ -17,6 +17,13 @@ all:
   view is the last tab.
 - **Plumbing columns are hidden** in working views: Salesforce Debug, Salesforce Owner, Lat, Lng,
   Gift Ledger (JSON), the Funraise, Eventbrite, and Benevity IDs. They're still on the board.
+- **🔒 and 📜 mean don't edit.** A column titled 🔒 is filled in by an automation (Lifetime
+  Giving, Donor Level, Membership Status, Funding Stream, the Funraise ID, and so on). Change it
+  by hand and the next nightly or sync run puts the computed value back, or the link to the
+  outside system breaks. A column titled 📜 is history brought over from Salesforce once
+  (Salesforce ID, Windfall wealth data, Volunteers 2014–2020). Nothing updates it, and it stays as
+  the record of what Salesforce held. If a 🔒 or 📜 value looks wrong, report it rather than fixing
+  it in place. Columns without a marker are yours to edit.
 - **One colour language:** red means needs action, amber means coming due, grey means
   historical. (Shading is unconfirmed on screen; see the README's known gaps.)
 - **Worklists are named as tasks** ("Major gifts to thank", "Members expiring soon") and tagged
@@ -42,10 +49,16 @@ status right on the record instead of tracked separately.
 **Tabs:** **Donors** (opens here; grouped by Donor Level: Leadership, Major, Donor, blank) ·
 **Major donors** · **Donors to target** (Worklist: last gift $250 or more, most recent first) ·
 **Gave last year, not this year** (Worklist: the lapsed-donor call list) · **Appeal list**
-(donors with an email and no Do Not Solicit flag, grouped by level) · **Members** (everyone with
+(donors with an email and no Do Not Solicit flag, grouped by level) · **Postal appeal list**
+(donors with an address, a gift of $25 or more in the last five years, and neither Do Not Solicit
+nor Do Not Mail, leaving out anyone with an active recurring gift; deceased contacts carry Do Not
+Solicit) · **Board donor call list** (Worklist: gave in the last three months, has a phone, no Do
+Not Solicit; biggest last gift first) · **Gave last fiscal year (990)** (each donor's total for the
+last closed fiscal year) · **Donor portfolios** (grouped by Relationship Owner) · **Members** (everyone with
 a membership status, sorted by Member Until; amber within 60 days, red when lapsed) · **Active
 members** (the Board Elections export) · **By city** · **Stakeholders** · **By campaign** ·
-**Do Not Solicit** · **DNS reason missing** (Worklist, red).
+**Do Not Solicit** · **DNS reason missing** (Worklist, red) · **Renewals this month and next**
+(Worklist: Member Until this calendar month or next, red when lapsed; emailed on the 1st and 15th).
 
 **Try it:**
 
@@ -88,9 +101,11 @@ confirm** with nothing in it is a leftover from the load and will be removed.
 ## People (Historical)
 
 [People (Historical) (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577228),
-8,062 items, same shape as People: everyone with **no** activity since about 2019. A Monday board
-tops out at 10,000 items and SVBC has about 16,000 contacts, so the split is by recency, not
-importance. Nothing is lost.
+8,062 items, same shape as People: everyone with **no** activity since about 2019. The split is
+by recency, not importance, so People stays focused on people you're likely to work with. It
+was first made to fit a 10,000-item board limit; SVBC's real limit is 100,000. Nothing is lost.
+Each quarter, people with no activity in seven years move here, and anyone here who becomes
+active again moves back.
 
 **Tabs:** **People** (opens here, all grey) · **Active again** (Worklist: anyone here who has
 given or renewed since the split, and so belongs on People) · **Do Not Solicit** · **DNS reason
@@ -140,7 +155,8 @@ that a person should confirm or reject) · **Current** · **By organization**.
 2. On **By organization**, open a company you know. Are the right people listed with the right
    roles?
 3. Add an affiliation for your UAT test person: new item, set Person, Organization, Role, Primary.
-   Open the person's card and confirm it appears under Affiliations.
+   Open the person's card and confirm it appears under Affiliations, and that Employer Name now
+   shows the organization.
 
 ## Donations
 
@@ -152,7 +168,9 @@ previous fiscal year (July to June) active and everything older archived in plac
 **Tabs:** **Recent gifts** (opens here; grouped by Gift Fiscal Year, newest first) · **Revenue
 by funding stream** (Report; each group's footer sums Amount) · **By gift size** · **By fiscal
 quarter** · **Major gifts to thank** (Worklist, red) · **Unacknowledged** · **Membership
-payments** · **Matching gifts** · **Needs a donor** (Worklist) · **Failed and pending**.
+payments** · **Matching gifts** · **Needs a donor** (Worklist) · **Failed and pending** · **Gifts,
+last 7 days** · **Gifts, last 60 days** (largest first). These two, plus Needs a donor and By gift
+size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching
@@ -232,7 +250,8 @@ Salesforce. Ongoing Eventbrite check-ins flow to the live workspace's Event Part
 
 **Events tabs:** **Upcoming** (opens here) · **All events**. Calendar (by Date) and Kanban (by
 Program) views are still to be added by hand.
-**Registrations tabs:** **By event** (opens here; grouped by Event) · **Volunteers** ·
+**Registrations tabs:** **By event** (opens here; grouped by Event) · **Class roster** (who is
+registered right now for each upcoming class; needs the Eventbrite attendee feed) · **Volunteers** ·
 **Attended** · **Unlinked attendees** (Worklist: registrations with no People match) · **Needs
 review**.
 

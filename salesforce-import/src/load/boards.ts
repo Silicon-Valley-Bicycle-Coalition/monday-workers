@@ -2,7 +2,9 @@ import { existsSync } from 'node:fs';
 import type { Config } from '../config.js';
 import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
+import { statusLabelDefaults } from '../configure/labels.js';
 import { SF_ID_COLUMN } from './lookup.js';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 // 'Fiscal Year Ending' is deliberately 'text', not 'numbers': Monday renders every numbers
 // column with a thousands separator, so FY2025 displayed as "2,025" in the sandbox. A 4-digit
@@ -12,6 +14,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Personal Email': 'email', 'Household Email': 'email', 'Work Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
+  'Do Not Mail': 'checkbox', 'Do Not Mail Reason': 'text',
   'Personal Email Consent': 'status', 'Household Email Consent': 'status', 'Work Email Consent': 'status',
   'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Affiliation Role': 'text', 'Attribution': 'status',
   'Organizational Giving': 'numbers', 'Attributed Giving': 'numbers',
@@ -24,12 +27,14 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Benevity Transaction ID': 'text', 'Eventbrite Order ID': 'text',
   'Fee Covered': 'numbers', 'Finance Class': 'text', 'Revenue Code': 'text', 'Payment Method': 'text',
   'Check/Reference Number': 'text', 'In-Kind Value': 'numbers', 'In-Kind Category': 'text',
+  'Sponsorship Cycle': 'text',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
+  'Has Active Recurring Gift': 'checkbox',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
   'Next Payment': 'date', 'Designation': 'text', 'Company Match': 'checkbox', 'Match Employer': 'text',
   'Pledge Amount': 'numbers', 'Received Amount': 'numbers',
-  'Attendee Name': 'text', 'Attendee Email': 'text', 'Ticket Amount': 'numbers',
+  'Attendee Name': 'text', 'Attendee Email': 'email', 'Ticket Amount': 'numbers',
   'Deductible Amount': 'numbers', 'Ticket Type': 'text', 'Eventbrite Attendee ID': 'text',
   'Source': 'status', 'Attendance': 'status', 'Role': 'status', 'Event Status': 'status', 'Program': 'status',
   'Venue': 'text', 'Tickets Sold': 'numbers', 'Eventbrite ID': 'text', 'Eventbrite URL': 'link',
@@ -37,7 +42,11 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Type': 'text', 'Start': 'date', 'End': 'date', 'Active': 'checkbox',
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
-  'Employer Name': 'text', 'Salesforce Owner': 'text',
+  'Employer Name': 'text', 'Salesforce Owner': 'text', 'Relationship Owner': 'people',
+  // Windfall wealth screening on People (transform/windfall.ts).
+  'Windfall ID': 'text', 'Net Worth': 'numbers', 'Net Worth Low': 'numbers', 'Net Worth High': 'numbers',
+  'Net Worth Date': 'date', 'Philanthropic Giver': 'checkbox', 'Job Title': 'text', 'Windfall Company': 'text',
+  'LinkedIn': 'link', 'Windfall Priority': 'numbers', 'Windfall Profile': 'long_text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Matched By', 'Soft Credit', 'Recurring Gift',
   'Campaign', 'Attendee', 'Event', 'Payment', 'Volunteer', 'Person', 'Acting for', 'Affiliations']);
@@ -75,10 +84,10 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // code. Only the Donations board computes "Status" itself (StageName mapped to exactly
 // Received/Failed/Pending/Lost in transform/donations.ts), so that one is closed and scoped by
 // board key rather than title alone.
-const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Lost'];
+export const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Lost'];
 // The design spec adds a 'Draft' state for affiliations a later Worker proposes and staff have
 // not yet confirmed, alongside the two settled states.
-const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];
+export const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];
 
 function statusLabelsFor(key: string, title: string): string[] | undefined {
   if (title === 'Status' && key === 'donations') return DONATION_STATUS_LABELS;
@@ -96,7 +105,7 @@ const TRAILING_COLUMNS = new Set([...DEBUG_COLUMNS, SF_ID_COLUMN]);
 // 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
 export const CURRENCY_COLUMNS = new Set(['Lifetime Giving', 'Amount', 'Installment Amount',
   'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount',
-  'Organizational Giving', 'Attributed Giving']);
+  'Organizational Giving', 'Attributed Giving', 'Net Worth', 'Net Worth Low', 'Net Worth High']);
 const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
 
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
@@ -204,7 +213,7 @@ export async function ensureBoards(
     const res = await client.gql<{ boards: { columns: { id: string; title: string }[] }[] }>(
       `query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }`,
       { ids: [String(entry.boardId)] });
-    for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
+    for (const col of res.boards[0]?.columns ?? []) entry.columns[bareTitle(col.title)] = col.id;
 
     for (const [oldTitle, newTitle] of Object.entries(COLUMN_RENAMES[key] ?? {})) {
       const id = entry.columns[oldTitle];
@@ -238,7 +247,7 @@ export async function ensureBoards(
         defaults = CURRENCY_DEFAULTS;
       } else {
         const labels = statusLabelsFor(key, title);
-        if (labels) defaults = JSON.stringify({ labels: Object.fromEntries(labels.map((label, i) => [i, label])) });
+        if (labels) defaults = statusLabelDefaults(labels);
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(

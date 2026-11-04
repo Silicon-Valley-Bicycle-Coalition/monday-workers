@@ -16,7 +16,10 @@ export interface CronInput {
   todayISO: string;                 // the date in the config's time zone
   liveItemsCount: number;
   liveItemsLimit: number;
-  lastRun: RunRow | null;           // most recent run of any trigger, dry or live
+  // Most recent run of any trigger, dry or live, except an operator's HTTP dry-run preview or a
+  // single-person move: neither may stop a continuation or use up a quarterly or threshold pass.
+  // Cron dry runs (write switch off) do count, so an `off` quarter isn't re-run every day.
+  lastRun: RunRow | null;
   config: ReclassificationConfig;
 }
 

@@ -16,12 +16,14 @@
       "totalGiven": "numeric_mm79zsgp",
       "mailchimpCampaigns": "board_relation_mm7eg3jz",
       "doNotSolicit": "boolean_mm79xbdh",
-      "dnsReasonStatus": "color_mm7dc4z7"
+      "dnsReasonStatus": "color_mm7dc4z7",
+      "nearby": null
     }
   },
   "mailchimp": {
     "apiBaseUrl": "https://us9.api.mailchimp.com/3.0",
     "audienceId": "dfe12eec72",
+    "interestCategoryIds": ["5eb58384e1"],
     "mergeFields": {
       "memberSince": "MEMBSINCE",
       "memberUntil": "MEMBUNTIL",
@@ -36,7 +38,8 @@
       "lifetimeMember": "lifetime-member",
       "hasDonated": "has-donated",
       "doNotSolicit": "do-not-solicit"
-    }
+    },
+    "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",

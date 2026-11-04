@@ -1,6 +1,17 @@
 export interface MondayDonorEvent {
   donorItemId: string;
   columnId: string | undefined;
+  // The address an email column held before this change, when the event carries one. The one
+  // thing the consumer can't re-read later: by then the column holds only the new address.
+  previousEmail?: string;
+}
+
+// An email column's value is `{ email, text, changed_at }`; any other shape (a status label, a
+// cleared cell's null) has no address to carry.
+function emailOf(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const email = (value as Record<string, unknown>).email;
+  return typeof email === 'string' && email.trim() !== '' ? email.trim() : undefined;
 }
 
 // Monday's webhook payload for a subscribed event looks like:
@@ -25,5 +36,9 @@ export function validateMondayWebhookBody(body: unknown): MondayDonorEvent {
     throw new Error('webhook event has no pulseId');
   }
   const columnId = (event as Record<string, unknown>).columnId;
-  return { donorItemId: String(pulseId), columnId: typeof columnId === 'string' ? columnId : undefined };
+  return {
+    donorItemId: String(pulseId),
+    columnId: typeof columnId === 'string' ? columnId : undefined,
+    previousEmail: emailOf((event as Record<string, unknown>).previousValue),
+  };
 }

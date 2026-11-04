@@ -1,3 +1,5 @@
+import type { MondayTokenSource } from './monday/graphql';
+import type { WriteStamp } from './flags';
 export type EntityType = 'customer' | 'invoice' | 'product';
 export type SyncStatus = 'received' | 'fetched' | 'queued' | 'written' | 'failed';
 
@@ -74,19 +76,32 @@ export interface QuickbooksSyncConfig {
     // the item itself — the create-loop guard reads it. null until staff add the column; while
     // null, Monday -> QuickBooks Customer creates are refused (they can't be made loop-safe).
     customerQbIdColumn: string | null;
+    // The QuickBooks home currency (ISO 4217, "USD"), which the Monday amount columns are in. A
+    // record whose CurrencyRef names any other currency is not written (#76): its amounts are in
+    // that currency, so it fails terminally for a human instead of landing on Monday as dollars.
+    currency: string;
   };
 }
 
-export type QueueMessage =
+// The optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were
+// `off` stays a dry run even if the mode is `on` by the time it is consumed.
+export type QueueMessage = (
   | { direction: 'qb-to-monday'; eventId: string }
-  | { direction: 'monday-to-qb'; eventId: string };
+  | { direction: 'monday-to-qb'; eventId: string }
+) &
+  WriteStamp;
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
-// only secrets and narrowed queue message types are declared here.
-export interface Env extends Cloudflare.Env {
+// only secrets and narrowed queue message and binding types are declared here. MONDAY_AUTH is
+// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   SYNC_QUEUE: Queue<QueueMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   QB_CLIENT_ID: string;
   QB_CLIENT_SECRET: string;
   QB_WEBHOOK_VERIFIER_TOKEN: string;

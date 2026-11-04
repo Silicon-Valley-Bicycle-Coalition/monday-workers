@@ -5,7 +5,7 @@ import { D1Ledger } from './ledger';
 describe('D1Ledger', () => {
   let ledger: D1Ledger;
   beforeEach(async () => {
-    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs')]);
+    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs'), env.DB.prepare('DELETE FROM pass_lease')]);
     ledger = new D1Ledger(env.DB);
   });
 
@@ -27,6 +27,23 @@ describe('D1Ledger', () => {
     expect(runs[1]?.summary).toEqual({ remaining: 3 });
     expect(await ledger.lastRun({ dryRun: false })).toMatchObject({ runId: 'r1', status: 'ok' });
     expect(await ledger.lastRun({ trigger: 'threshold' })).toBeNull();
+  });
+
+  it('can skip operator previews (HTTP dry runs) but keeps cron dry runs and live HTTP runs', async () => {
+    await ledger.startRun({ runId: 'cron-dry', trigger: 'quarterly', dryRun: true, startedAt: '2026-10-01T10:00:00Z' });
+    await ledger.startRun({ runId: 'http-live', trigger: 'http', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });
+    await ledger.startRun({ runId: 'preview', trigger: 'http', dryRun: true, startedAt: '2026-10-03T10:00:00Z' });
+    expect(await ledger.lastRun()).toMatchObject({ runId: 'preview' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'http-live' });
+    await env.DB.prepare("DELETE FROM runs WHERE run_id = 'http-live'").run();
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'cron-dry' });
+  });
+
+  it('passesOnly also skips single-person moves, which must not stop a continuation or use up a pass', async () => {
+    await ledger.startRun({ runId: 'pass', trigger: 'quarterly', dryRun: false, startedAt: '2026-10-01T10:00:00Z' });
+    await ledger.startRun({ runId: 'one', trigger: 'single-move', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });
+    expect(await ledger.lastRun()).toMatchObject({ runId: 'one' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'pass' });
   });
 
   it('records moves, advances their status, and lists only the unsettled ones', async () => {
@@ -57,5 +74,17 @@ describe('D1Ledger', () => {
     await ledger.recordAlert('2', 'historical-capacity', '2026-11-01T10:00:00Z', null);
     expect(await ledger.lastAlertAt('2', 'historical-capacity')).toBe('2026-11-01T10:00:00Z');
     expect(await ledger.lastAlertAt('3', 'historical-capacity')).toBeNull();
+  });
+
+  it('leases one pass at a time: held until released or expired, and only its holder releases it', async () => {
+    expect(await ledger.acquireLease('a', '2026-10-09T17:00:00Z', '2026-10-09T17:30:00Z')).toBe(true);
+    expect(await ledger.acquireLease('b', '2026-10-09T17:10:00Z', '2026-10-09T17:40:00Z')).toBe(false);
+    await ledger.releaseLease('b');
+    expect(await ledger.acquireLease('b', '2026-10-09T17:10:00Z', '2026-10-09T17:40:00Z')).toBe(false);
+    expect(await ledger.acquireLease('b', '2026-10-09T17:30:00Z', '2026-10-09T18:00:00Z')).toBe(true);
+    await ledger.releaseLease('a');
+    expect(await ledger.acquireLease('c', '2026-10-09T17:31:00Z', '2026-10-09T18:01:00Z')).toBe(false);
+    await ledger.releaseLease('b');
+    expect(await ledger.acquireLease('c', '2026-10-09T17:31:00Z', '2026-10-09T18:01:00Z')).toBe(true);
   });
 });

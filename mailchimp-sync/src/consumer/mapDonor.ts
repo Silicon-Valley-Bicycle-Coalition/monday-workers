@@ -1,4 +1,5 @@
 import type { Config, DonorRecord } from '../types';
+import { stateFromZip } from './zipState';
 
 export function buildMergeFields(donor: DonorRecord, config: Config): Record<string, unknown> {
   const fields = config.mailchimp.mergeFields;
@@ -16,11 +17,13 @@ export function buildMergeFields(donor: DonorRecord, config: Config): Record<str
   // fields above). Only send it once all four components are present; omitting a merge
   // field from the payload entirely leaves it at its current Mailchimp value rather than
   // clearing it, same as every other field here that isn't explicitly zeroed out.
-  if (donor.addr1 !== '' && donor.city !== '' && donor.state !== '' && donor.zip !== '') {
+  // A State column wins; without one (production People) the ZIP gives the state.
+  const state = donor.state !== '' ? donor.state : stateFromZip(donor.zip);
+  if (donor.addr1 !== '' && donor.city !== '' && state !== '' && donor.zip !== '') {
     mergeFields[fields.address] = {
       addr1: donor.addr1,
       city: donor.city,
-      state: donor.state,
+      state,
       zip: donor.zip,
       country: 'US',
     };
@@ -37,9 +40,11 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.lifetimeMember);
   } else if (donor.membershipStatus === config.activeStatusValue) {
     out.push(tags.activeMember);
-  } else {
+  } else if (donor.membershipStatus !== '') {
     out.push(tags.lapsedMember);
   }
+  // A blank Membership Status is someone who has never been a member: no membership tag, so
+  // syncTags deactivates any of the three a contact still carries.
 
   const total = Number(donor.totalGiven);
   if (!Number.isNaN(total) && total > 0) {
@@ -53,13 +58,20 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.doNotSolicit);
   }
 
+  for (const label of donor.nearby) out.push(config.mailchimp.nearbyTagPrefix + label);
+
   return out;
 }
 
 // Every Mailchimp tag this worker owns — the only tags updateMember is allowed to
 // deactivate when buildTags no longer produces them. Must stay a superset of every
 // possible buildTags output; anything outside this set is left alone in Mailchimp.
-export function managedTags(config: Config): string[] {
+// Nearby tags are open-ended (one per label), so the member's current tags that start with the
+// Nearby prefix are owned too: that is how a label removed on Monday is deactivated. The prefix
+// is reserved for this worker; a staff-made tag with it would be cleared the same way.
+export function managedTags(config: Config, currentMemberTags: string[] = []): string[] {
   const tags = config.mailchimp.tags;
-  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit];
+  const prefix = config.mailchimp.nearbyTagPrefix;
+  const nearby = currentMemberTags.filter((name) => name.startsWith(prefix));
+  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit, ...nearby];
 }

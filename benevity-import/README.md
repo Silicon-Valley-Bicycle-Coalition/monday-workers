@@ -2,12 +2,16 @@
 
 **Staff UAT script:** [`docs/uat/benevity-import.md`](../docs/uat/benevity-import.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built (`feat/benevity-import`) — production not deployed; sandbox provisioned and
-verified end to end 2026-09-19, remapped to the `(sandbox v3)` boards and re-verified 2026-09-30
-(see "Sandbox environment" below); production D1 provisioned and
-sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,
-the two `salesforce-import` Donations-board columns it depends on (see Related changes
-elsewhere), and Monday webhook + integration-user token setup.
+**Status:** **Deployed to production 2026-11-02** (runbook step 6.5), `writes on`. That day the
+`Benevity Uploads` board (`18438204360`, Donors & Contacts; same subscribers as Donations plus
+SVBC Integration; groups Uploads / Review, Retry and Key columns as on the sandbox) and a
+`Benevity Disbursement Date` column on Donations (`date_mm8rtv9y`) were created; every other id in
+`config/svbc.json` was read by title from the live boards. `BENEVITY_WEBHOOK_SECRET` was rotated
+and both webhooks registered: `662183019` (file column `file_mm8rz1v8` →
+`/webhooks/monday/benevity-upload`) and `662183020` (Retry `color_mm8rfchp` →
+`/webhooks/monday/benevity-retry`). No report has been uploaded to production yet. Sandbox
+provisioned and verified end to end 2026-09-19, remapped to the `(sandbox v3)` boards and
+re-verified 2026-09-30 (see "Sandbox environment" below).
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.
@@ -46,15 +50,20 @@ Monday "Benevity Uploads" board — staff drop the file in a file column        
   │  Monday webhook on item create/file change
   ▼
 Cloudflare Worker (webhook handler)
-  │  1. fetch the asset via Monday's GraphQL API
+  │  record the upload in D1 `uploads` and enqueue one Queue message for it — no
+  │  fetch or parse inside the webhook request, so a large report can't time it out
+  ▼
+Cloudflare Queue → consumer Worker, per upload
+  │  1. fetch the asset via Monday's GraphQL API (refused, marked `error`, over 2 MB)
   │  2. split the file into one or more preamble+rows+footer blocks; parse each
   │     independently into D1 `disbursements`, validating its own header and its
   │     footer's reported total against the sum of its own rows
-  │  3. upsert each row into D1 `rows` keyed on Benevity Transaction ID — globally,
-  │     not per file or per block, so the same gift arriving in two different
-  │     bundles is still one row
+  │  3. upsert each block's rows into D1 `rows` keyed on Benevity Transaction ID —
+  │     one batched D1 call per block, and globally, not per file or per block, so
+  │     the same gift arriving in two different bundles is still one row
   │     (a re-upload of an overlapping file is a no-op for rows already written)
   │  4. enqueue one Cloudflare Queue message per row not yet written
+  │  a failed fetch or D1 call retries the message, resuming at the first unfinished block
   ▼
 Cloudflare Queue → consumer Worker, per row
   │  1. resolve the paying company → Organizations item (exact name, then config aliases)
@@ -62,7 +71,8 @@ Cloudflare Queue → consumer Worker, per row
   │  3. split the row: employee gift (if any) and company match (if any) → two Donations items
   │  4. write to Monday; stamp each item with the Transaction ID before marking the row done
   │  unresolved company or ambiguous person → write nothing, add a worklist item, mark
-  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here
+  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here, and
+  │  a gift that exhausts its retries lands on the worklist too (see Dead letters)
   ▼
 Donations board (+ Matched By → Organizations, Donor → People)
 Worklist: a group on the Benevity Uploads board, one item per row needing a human
@@ -232,7 +242,8 @@ reason gives its row count, donation-date range and gross total. Nothing is wron
 already keyed that disbursement into Salesforce — leave the item, or delete it. If it was
 **never** keyed into Salesforce, it is missing from the CRM: set Retry, and every row of it is
 imported like any other. Only do that when you're sure — the migrated history has no Transaction
-IDs, so importing a disbursement that *was* keyed double-counts it.
+IDs, so importing a disbursement that *was* keyed double-counts it. If only some of its rows
+were keyed, don't Retry (it imports every row): enter the missing gifts by hand.
 
 A Retry the Worker can't carry out puts the item back to **Needs review** with the reason in
 its Reason column instead of leaving it at Retry. The main case: a row's Benevity details are
@@ -243,6 +254,46 @@ Retry is safe to repeat: a row already written isn't re-run (the item just goes 
 duplicate Retry doesn't create duplicate Donations items. **Re-uploading the same report is not
 a retry** — rows and disbursements the Worker has already seen are skipped, so only new rows in
 the file are imported.
+
+## Dead letters
+
+A gift whose Monday write keeps failing is retried for about four days (`max_retries: 100`,
+backing off to an hour), then dead-lettered to `benevity-import-writes-dlq`
+(`benevity-import-writes-sandbox-dlq` in sandbox). This Worker consumes both (#60,
+`src/consumer/deadLetters.ts`), so a dead gift is never silently lost — which matters here more
+than elsewhere, because re-uploading the report is a no-op for a row already recorded. Each dead
+message:
+
+* marks its row `needs-review`, with `dead-lettered after retries: ` in front of the last error
+  the consumer recorded (never doubled) — in D1 first, so it's on record even while Monday is
+  the thing that's down;
+* raises a worklist item for it, reason **"Couldn't write this gift to Monday…"** with the last
+  error, at **Needs review** (a row replayed from the worklist that died again reuses its item).
+  Staff fix the cause and set **Retry**, exactly as for any other worklist item;
+* leaves a row that is no longer `ingested` (written, held for review, or skipped since the
+  message was sent) alone, and acks a body with no Transaction ID;
+* always acks. Only a D1 failure retries the dead message (60 s, at most `max_retries: 2`, no
+  further DLQ).
+
+Posting the worklist item is a Monday write, so it happens only while writes are `on`, and a
+failed post is logged rather than retried. The **daily cron** (after the `raw_row` purge, and
+only under `on`) posts the item for every dead-lettered row still missing one, 25 a run — so a
+gift that dead-letters during a Monday outage or a `hold` reaches the worklist once both are
+over. Each batch that marked anything logs **one** `console.error` naming the Transaction IDs.
+
+The same queue carries uploaded reports waiting to be ingested (#74), so a report can dead-letter
+too: its asset kept failing to fetch, or a block kept failing in D1. There is no row to mark or
+item to Retry, so the consumer marks the upload `error` (unless it has since finished) and logs a
+`console.error` naming the Monday asset. Rows from blocks it did finish are already queued on
+their own. Fix the cause, then upload the same file again: the new asset resumes from the
+disbursements and rows already recorded.
+
+To find dead-lettered rows directly:
+
+```sh
+npx wrangler d1 execute svbc-benevity-import --remote --command \
+  "SELECT transaction_id, worklist_item_id, error FROM rows WHERE error LIKE 'dead-lettered after retries: %'"
+```
 
 ## Idempotency and the migrated history
 
@@ -257,7 +308,7 @@ several disbursements:
   `Disbursement ID` is unique (migration `0002`, a partial index that exempts the empty id of a
   block whose header didn't parse): the same report re-uploaded as a new file, or bundled into a
   later download, finds its existing row — and its existing worklist item — instead of adding a
-  second one. The route looks a block up by (upload, position) first, so a retried upload
+  second one. The consumer looks a block up by (upload, position) first, so a retried upload
   resumes its own blocks, then by `Disbursement ID`, and inserts only on a miss. On
   parse, the sum of the block's own rows is checked against its own reported gross total; a
   mismatch marks the whole block `needs-review` rather than writing partial data from a block the
@@ -276,9 +327,14 @@ several disbursements:
   can't tell a Benevity row the import already carried from a new one. Config
   `benevityImport.minDisbursementDate` is the cutoff: a disbursement whose **Period Ending** is
   before it is skipped whole (its rows recorded `skipped`, nothing written), on the assumption
-  that staff keyed it into Salesforce and it was migrated. **Set it to the day after the Period
-  Ending of the last disbursement keyed into Salesforce** — confirm that at the data freeze; the
-  freeze date itself is only right if nothing was left unkeyed.
+  that staff keyed it into Salesforce and it was migrated. **Set it to the data freeze date.**
+  Staff can only key a disbursement that has already been paid out, so every disbursement keyed
+  before the freeze has a Period Ending before it, and none can be imported twice. Erring later
+  is the safe direction: a cutoff that is too late skips a disbursement nobody keyed, and that
+  shows up on the worklist (below) to be checked and retried; a cutoff that is too early imports
+  one that was keyed, and that double-count is silent. Expect one or two skipped disbursements
+  around the freeze; check each against the migrated Donations (Matched By, dates, amounts)
+  before setting Retry.
   The gate is deliberately *not* a row's Donation Date (#40): Benevity pays out weeks after the
   gift, so the first disbursement after the freeze is mostly rows dated before it, and none of
   those were ever keyed (staff key from the disbursement report, which didn't exist yet). Within
@@ -358,9 +414,15 @@ placeholders until cutover), validated at first request, none hardcoded:
 | Benevity Uploads board: worklist **Retry** status column (`uploadsBoard.retry`), labels `Needs review` / `Retry` / `Queued` / `Done` (all four must exist on the column; names configurable) | staff replay trigger — see Worklist; its own Monday webhook to `/webhooks/monday/benevity-retry`; `null` until provisioned (the route then ignores every event) |
 | Benevity Uploads board: worklist `Key` text column (`uploadsBoard.worklistKeyColumn`) | each worklist item's stable key — the row's Transaction ID, or `disbursement <id>` for a block — looked up before posting so a retried write adopts the item instead of posting a second one; `null` until provisioned (the lookup is then skipped) |
 
-Token: a dedicated staff-facing integration user with access to exactly these boards (see the
-least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,
-never a staff member's personal token.
+Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind
+`MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+OAuth app — production (`svbc-benevity-import`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+`svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under
+way (delete it once the binding works); with neither, building the Monday client throws a config
+error naming both. Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the
+operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in
+`.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -378,6 +440,14 @@ the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") 
 board 2026-10-19: Retry status column `color_mm89sfqw` (labels Needs review / Retry / Queued /
 Done), Key text column `text_mm892fps`, and the Retry webhook `655429553`; all three are wired
 into `config/sandbox.json`.
+
+Both routes authenticate with `?secret=<BENEVITY_WEBHOOK_SECRET>` because Monday can't send a
+custom header. That is an accepted trade-off: the full request URL, secret included, is recorded
+in this Worker's Workers Logs invocation records, readable by anyone with dashboard log access to
+it. Keep that access limited to people who could read the secret anyway, never log `c.req.url`
+here, and rotate the secret (new `wrangler secret put`, then delete and re-register **both**
+Monday webhooks with the new URL) if logs are ever shared. See the root README's "Webhook
+secrets in the URL" for who holds log access.
 
 Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
 both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
@@ -438,6 +508,57 @@ root directory `/benevity-import`, production branch `main`, and deploy command
 dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:benevity-import` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
+## Deploying: the write switch
+
+Every Monday write (worklist items and labels, Donations and the archive of a duplicate item) and
+every row-status write is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `benevity-import:writes` — `on` writes normally; `hold` writes nothing; `off` writes nothing
+  and logs one `"writeSwitch":"skipped"` line per would-be Monday write. **A missing key means
+  `off`**, and a KV read error means hold.
+- `benevity-import:log` — `debug` adds redacted payloads to those lines.
+
+Unlike the other migration Workers, **the retry route writes to Monday itself**, so the switch
+covers both webhook routes directly (the subscribe challenge is always echoed):
+
+- `hold`/`unknown`: `/webhooks/monday/benevity-upload` and `/webhooks/monday/benevity-retry` answer
+  **503** before any D1 or Monday call, so Monday redelivers once writes are back on.
+- `off`: the upload route still records the upload and enqueues it, stamped `dropped`. The retry
+  route logs a skip and returns 200 (the item stays at Retry).
+- Queue consumer, ingesting an upload under `off` (or one stamped `dropped`, even if the mode is
+  `on` by then): it still records disbursements and rows (so a re-upload isn't mistaken for new)
+  and enqueues each row, stamped `dropped`; its worklist `createItem` / label changes / archive are
+  logged, not made, and the worklist item id is not saved.
+- Queue consumer, writing a row: `off` (or a `dropped` stamp) logs the Monday
+  writes and skips `updateStatus` / `requeue*` / `claimWorklistItemId`; `hold` retries at 1 minute
+  doubling to an hour (`max_retries` is 100, about four days). A message queued before this
+  build has no stamp and is written under `on`. The daily `raw_row` purge is D1-only and runs in
+  every mode.
+- Dead-letter consumer: marks the row in D1 in every mode (a record of what happened, not a
+  Monday write); posts its worklist item only under `on`. The daily dead-letter sweep runs only
+  under `on`. See Dead letters.
+
+Set it with the operator CLI at the repo root, never by hand:
+
+```sh
+node scripts/flags.mjs benevity-import writes on --env sandbox     # or --env production
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
+
+**Reports uploaded while the switch was `off` are not written later by themselves** (spec: work
+ingested under `off` stays a dry run). Their rows sit in D1 at `ingested`, never sent again, and
+any block worklist item was never posted. To import one once writes are `on`, upload the same
+report file again — as a new file on the Uploads board, since a redelivery of the original asset
+is a no-op. The consumer finds the disbursement it already recorded, re-sends every row still at
+`ingested` (unstamped, so it is written), and posts the block's worklist item if it needs one; a
+held-back block is then released with Retry as usual. Retry alone can't do it: no worklist item
+exists to set. Covered by `src/integration.test.ts` ("re-uploading a report ingested under off").
 
 ## Related changes elsewhere
 

@@ -21,14 +21,15 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 
 export interface ColumnSpec {
   title: string;
-  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people';
+  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date' | 'link';
   labels?: string[]; // status/dropdown only, in display order
 }
 
 export interface FilterRule {
   columnTitle: string;
   // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | between | ... |
-  // within_the_next / within_the_last (relative date; compareValue ['DAYS' | 'MONTHS', n]).
+  // within_the_next / within_the_last (relative date; compareValue ['DAYS' | 'MONTHS', n]) |
+  // greater_than_or_equals with compareValue ['TODAY'] (a date column, today included).
   // Widgets only: labelValues may hold '@FY' / '@FY-1', and a date rule's compareValue may be
   // { fiscalYear: 'current' | 'previous' } (resolved at apply time from the clock, fiscal.ts).
   operator: string;
@@ -82,6 +83,35 @@ const SHARED_DESCRIPTIONS = {
     'DNS Reason Status flags a missing one.',
   'Do Not Solicit Reason': 'Why this record is not to be solicited. Required whenever Do Not Solicit is checked.',
 } as const;
+// People boards only — Organizations has no Do Not Mail.
+const POSTAL_DESCRIPTIONS = {
+  'Do Not Mail': 'Leave this person off postal mailings. Email consent is separate (the Consent columns).',
+  'Do Not Mail Reason': 'Opt out all mail, Undeliverable (the address needs fixing), or Do Not Contact (Salesforce).',
+} as const;
+// People boards only.
+const PORTFOLIO_DESCRIPTIONS = {
+  'Relationship Owner': 'The staff member who stewards this donor. Seeded at migration from the Salesforce owner ' +
+    'where that person is still on staff; set it by hand from then on.',
+  'Has Active Recurring Gift': 'Checked while this person has an Active item on Recurring Gifts. Set nightly by the ' +
+    'donation-rollups integration; edits are overwritten. The Postal appeal list leaves these donors out.',
+} as const;
+// People boards only. Windfall wealth screening, loaded once from Salesforce (monday-migration
+// docs/09); SVBC's subscription has ended, so nothing refreshes these.
+const WINDFALL_FROZEN = 'From Windfall wealth screening, frozen at migration — the subscription has ended and nothing updates it.';
+const WINDFALL_DESCRIPTIONS = {
+  'Net Worth': `Windfall's estimated net worth. ${WINDFALL_FROZEN}`,
+  'Net Worth Low': `Lower bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
+  'Net Worth High': `Upper bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
+  'Net Worth Date': `When Windfall last calculated Net Worth. ${WINDFALL_FROZEN}`,
+  'Philanthropic Giver': `Windfall found charitable giving elsewhere. ${WINDFALL_FROZEN}`,
+  'Job Title': `Windfall's employment match. ${WINDFALL_FROZEN} Structured employment lives on Affiliations.`,
+  'Windfall Company': `Windfall's employment match; may differ from Employer Name. ${WINDFALL_FROZEN}`,
+  'LinkedIn': `Windfall's LinkedIn match. ${WINDFALL_FROZEN}`,
+  'Windfall ID': `The person's record in Windfall. ${WINDFALL_FROZEN}`,
+  'Windfall Priority': "Salesforce's Windfall Priority Score at migration: 1, plus 50 if Net Worth tops $10M, " +
+    'plus gifts closed in the prior year. Frozen; for current giving use the rollup columns.',
+  'Windfall Profile': `Remaining Windfall detail (employment, giving focus, property and life-event flags). ${WINDFALL_FROZEN}`,
+} as const;
 const ROLLUP_DESCRIPTION = 'Computed automatically from Donations by the donation-rollups integration. Edits are overwritten.';
 const DONOR_LEVEL_DESCRIPTION = 'Leadership ($5,000+ lifetime), Major ($500+ lifetime or a single gift of $200+), or Donor. ' +
   ROLLUP_DESCRIPTION;
@@ -95,7 +125,7 @@ const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', lab
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
   'Funraise Event ID', 'Eventbrite ID', 'Eventbrite Attendee ID', 'Benevity Transaction ID',
-  'Eventbrite Order ID',
+  'Eventbrite Order ID', 'Windfall ID',
 ] as const;
 
 const dnsViews = (contactColumn: string): ViewSpec[] => [
@@ -110,21 +140,34 @@ const DNS_VIEWS = dnsViews('Personal Email');
 const ORG_DNS_VIEWS = dnsViews('Website');
 const NOT_DNS = { columnTitle: 'Do Not Solicit', operator: 'is_empty' } as const;
 
+// The status rule keeps Canceled and Draft out; the date rule drops a finished event even when its
+// status has gone stale. Date, not End: Funraise events never have an End, so an End rule would hide
+// them all, and Monday excludes a blank date from a comparison. A multi-day event therefore leaves
+// once it has started. Shared by the Events view and its Overview tile, so tile and tab agree.
+export const UPCOMING_EVENT: FilterRule[] = [
+  { columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] },
+  { columnTitle: 'Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+];
+
+// Both People boards get exactly these: people-reclassification moves items between them and
+// aborts a pass if either board has a column the other lacks (spec.test.ts enforces the match).
+const PEOPLE_COLUMNS: ColumnSpec[] = [
+  // Normally already created by load (transform seeds Elected Official — see people.ts); this
+  // entry only matters for a board loaded with no elected contact in the run.
+  { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
+  { title: 'Campaign', type: 'tags' },
+  DNS_COLUMN,
+];
+
 export const BOARD_SPECS: Record<string, BoardSpec> = {
   'people-live': {
     description: 'Individual donors, members, and other real-relationship contacts with activity ' +
       'since about 2019. A person is always a separate item from any organization they’re ' +
       `linked to (see Organizations and Affiliations). Process overview & how-to: ${DOC('46299435')}`,
     groupTitle: 'People',
-    columns: [
-      // Normally already created by load (transform seeds Elected Official — see people.ts); this
-      // entry only matters for a board loaded with no elected contact in the run.
-      { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
-      { title: 'Campaign', type: 'tags' },
-      DNS_COLUMN,
-    ],
+    columns: PEOPLE_COLUMNS,
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -142,7 +185,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Member Until': 'Current membership term. Each membership payment on Donations carries its own Term Start / Term End.',
       'Organization': 'Organizations this person is affiliated with. Tenure, role, and work ' +
         'email for each are on the Affiliations board.',
-      'Employer Name': 'Free text from Salesforce. Structured employment lives on Affiliations.',
+      'Employer Name': 'Starts as free text from Salesforce; set to the Organization when a current affiliation is added or changed. Structured employment lives on Affiliations.',
       'Stakeholder Type': 'Advocacy classification. City or Agency Staff and Elected Official ' +
         'link to their municipal organization via Organization.',
       'Campaign': 'Which outreach pushes this person was loaded or tagged into (replaces ' +
@@ -178,6 +221,35 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Personal Email', operator: 'is_not_empty' }, NOT_DNS] },
         groupBy: { columnTitle: 'Donor Level' } },
+      // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/35 §3.1): gave in the
+      // last five years, single gift of $25 or more, not already giving monthly or quarterly.
+      { name: 'Postal appeal list', tag: 'Report',
+        columns: ['Address', 'City', 'Zip', 'Last Gift Date', 'Largest Gift', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
+          { columnTitle: 'Address', operator: 'is_not_empty' },
+          { columnTitle: 'Largest Gift', operator: 'greater_than', compareValue: 24.99 },
+          { columnTitle: 'Last Gift Date', operator: 'within_the_last', compareValue: ['MONTHS', 60] },
+          NOT_DNS, { columnTitle: 'Do Not Mail', operator: 'is_empty' },
+          { columnTitle: 'Has Active Recurring Gift', operator: 'is_empty' }] },
+        groupBy: { columnTitle: 'Donor Level' } },
+      // Replaces the yearly Salesforce "Board Donor Call List" (docs/35 §3.4): recent donors to
+      // thank by phone. On People, not Donations, because Do Not Solicit and Phone live here.
+      // Salesforce filtered on the winter appeal campaign; run this once the appeal's gifts are in.
+      { name: 'Board donor call list', tag: 'Worklist',
+        columns: ['Phone', 'Last Gift Date', 'Last Gift Amount', 'Lifetime Giving', 'Membership Status', 'Relationship Owner'],
+        filter: { rules: [{ columnTitle: 'Last Gift Date', operator: 'within_the_last', compareValue: ['MONTHS', 3] },
+          { columnTitle: 'Phone', operator: 'is_not_empty' }, NOT_DNS] },
+        sort: [{ columnTitle: 'Last Gift Amount', direction: 'desc' }] },
+      // Replaces "Household Gifts for 990" (docs/35 §3.4): each donor's total for the last closed
+      // fiscal year, which the Last Year Amount rollup already sums.
+      { name: 'Gave last fiscal year (990)', tag: 'Report',
+        columns: ['Last Year Amount', 'Last Year Count', 'Address', 'City', 'Zip', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Last Year Amount', operator: 'greater_than', compareValue: 0 }] },
+        sort: [{ columnTitle: 'Last Year Amount', direction: 'desc' }] },
+      { name: 'Donor portfolios', tag: 'Reference',
+        columns: ['Relationship Owner', 'Donor Level', 'Lifetime Giving', 'Last Gift Date', 'Phone', 'Personal Email'],
+        filter: { rules: [{ columnTitle: 'Relationship Owner', operator: 'is_not_empty' }] },
+        groupBy: { columnTitle: 'Relationship Owner' }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
       { name: 'Members', tag: 'Report',
         columns: ['Personal Email', 'Membership Status', 'Membership Tier', 'Member Since', 'Member Until', 'City'],
         filter: { rules: [{ columnTitle: 'Membership Status', operator: 'is_not_empty' }] },
@@ -186,6 +258,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           { columnTitle: 'Member Until', operator: 'within_the_next', compareValue: ['DAYS', 60], color: 'amber' },
           { columnTitle: 'Membership Status', labelValues: ['Lapsed'], color: 'red' },
         ] },
+      // Emailed on the 1st and 15th by the report-digests Worker (monday-migration docs/35 §3.6).
+      { name: 'Renewals this month and next', tag: 'Worklist',
+        columns: ['Member Until', 'Membership Status', 'Membership Tier', 'Personal Email', 'Phone'],
+        filter: { rules: [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }] },
+        sort: [{ columnTitle: 'Member Until' }],
+        coloring: [{ columnTitle: 'Membership Status', labelValues: ['Lapsed'], color: 'red' }] },
       { name: 'Active members', tag: 'Reference',
         columns: ['Personal Email', 'Household Email', 'Membership Tier', 'Member Since', 'Member Until'],
         filter: { rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Name' }] },
@@ -193,6 +271,10 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'City' } },
       { name: 'Stakeholders', tag: 'Reference', columns: ['Stakeholder Type', 'Organization', 'City', 'Zip', 'Personal Email'],
         filter: { rules: [{ columnTitle: 'Stakeholder Type', operator: 'any_of', labelValues: ['City or Agency Staff', 'Elected Official'] }] } },
+      { name: 'Wealth screening', tag: 'Report',
+        columns: ['Net Worth', 'Philanthropic Giver', 'Job Title', 'Windfall Company', 'LinkedIn', 'Lifetime Giving', 'Donor Level'],
+        filter: { rules: [{ columnTitle: 'Net Worth', operator: 'is_not_empty' }, NOT_DNS] },
+        sort: [{ columnTitle: 'Net Worth', direction: 'desc' }] },
       { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
         filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
@@ -206,9 +288,9 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       "lost — search here when someone 'used to give' and isn't on People. Don't move items by " +
       `hand; a periodic pass will move people between the two boards. Process overview & how-to: ${DOC('46299435')}`,
     groupTitle: 'People',
-    columns: [DNS_COLUMN],
+    columns: PEOPLE_COLUMNS,
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -278,7 +360,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'stages to work. Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
         'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
-        'Pledge (historical), Sponsorship, Grant, Contract…',
+        'Pledge (historical), Sponsorship, Grants, Contracts…',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
         'Anonymous Donor is checked. For a gift an organization made through an affiliated ' +
         'person, the organization is the Donor and the person is in Acting for.',
@@ -303,7 +385,10 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'In-Kind Value': 'Retail value of donated goods or services. Amount can be blank or lower on in-kind gifts; ' +
         'this is the value Salesforce recorded.',
       'In-Kind Category': 'What kind of goods or services an in-kind gift was (Bicycle, Travel, Wine…).',
-      'Campaign': 'The Salesforce campaign the gift came in under, where known. Reference only.',
+      'Sponsorship Cycle': 'Which sponsorship cycle(s) a Salesforce sponsorship opportunity belonged to (e.g. 2024 Summit). ' +
+        'Migrated history; earlier cycles are in the sponsor-history export in the Drive archive.',
+      'Campaign': 'The appeal or Salesforce campaign the gift came in under. For an appeal gift, ' +
+        "pick the appeal's item on Campaigns.",
       'Recurring Gift': 'Set when this gift is one installment of a recurring pledge.',
       'Thank You Sent': 'Checked automatically for Funraise gifts (Funraise sends the receipt). ' +
         "For hand-entered gifts, check it yourself once you've acknowledged the donor.",
@@ -319,6 +404,14 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Recent gifts', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
         groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      // These two are emailed weekly by the report-digests Worker (monday-migration docs/35 §3.6);
+      // its 60-day email adds each donor's Windfall columns from People.
+      { name: 'Gifts, last 7 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
+        filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 7] }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Gifts, last 60 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
+        filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 60] }] },
+        sort: [{ columnTitle: 'Amount', direction: 'desc' }] },
       { name: 'Revenue by funding stream', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Fiscal Year', 'Gift Type'],
         groupBy: { columnTitle: 'Funding Stream' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'By gift size', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
@@ -371,16 +464,19 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
   },
 
   'campaigns': {
-    description: "Salesforce campaigns, kept so each migrated gift's Campaign link still " +
-      'resolves. Reference data — not where new outreach is tagged. Tag people for a new push ' +
-      'with the Campaign tags column on People instead.',
+    description: 'Salesforce campaigns, plus one item per appeal from go-live on (e.g. "2026 ' +
+      'Year-End Appeal"), created by whoever runs the appeal with Type set to Appeal. Gifts link ' +
+      "to their appeal through Donations' Campaign column. Bulk outreach lists (Bike to Work Day " +
+      'lists, recruitment pushes) use the Campaign tags column on People instead, not this board.',
     groupTitle: 'Campaigns',
     columnDescriptions: {
-      'Type': 'Salesforce campaign record type.',
-      'Active': "Salesforce's IsActive flag at migration.",
+      'Type': 'Appeal for an appeal created in Monday; otherwise the Salesforce campaign record type.',
+      'Active': "Salesforce's IsActive flag at migration. Not maintained, and blank on appeals.",
     },
     views: [
       { name: 'All Campaigns', tag: 'Reference', columns: ['Type', 'Start', 'End', 'Active'], sort: [{ columnTitle: 'End', direction: 'desc' }] },
+      { name: 'Appeals', tag: 'Reference', columns: ['Type', 'Start', 'End'],
+        filter: { rules: [{ columnTitle: 'Type', operator: 'contains_text', compareValue: 'Appeal' }] }, sort: [{ columnTitle: 'Start', direction: 'desc' }] },
       { name: 'Active', tag: 'Reference', columns: ['Type', 'Start', 'End'], filter: { rules: [{ columnTitle: 'Active', operator: 'is_not_empty' }] } },
     ],
     deleteStrayViews: ['Build Vibe view'],
@@ -391,7 +487,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       '(public, volunteering, bike parking, group rides, private). One item per event; who came ' +
       `is on Event Registrations. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Events',
+    // Written per Public event by eventbrite-sync once the send page is deployed.
+    columns: [{ title: 'Send class email', type: 'link' }],
     columnDescriptions: {
+      'Send class email': 'Opens the page that emails everyone registered for this class. Filled in by ' +
+        'the Eventbrite integration for Public classes.',
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
@@ -401,7 +501,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     },
     views: [
       { name: 'Upcoming', tag: 'Report', columns: ['Date', 'Program', 'Venue', 'City', 'Tickets Sold', 'Eventbrite URL'],
-        filter: { rules: [{ columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] }] }, sort: [{ columnTitle: 'Date' }] },
+        filter: { rules: UPCOMING_EVENT }, sort: [{ columnTitle: 'Date' }] },
       { name: 'All events', tag: 'Reference', columns: ['Date', 'Program', 'Event Status', 'Source', 'City'],
         groupBy: { columnTitle: 'Event Status' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
         coloring: [{ columnTitle: 'Event Status', labelValues: ['Completed', 'Canceled'], color: 'grey' }] },
@@ -415,7 +515,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       "gift (Payment). Eventbrite registrants who never checked in have no Attendee link — they " +
       `aren't People. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Registrations',
+    // Written per attendee by eventbrite-sync. The load leaves them blank, so migrated history
+    // has no Class Date and stays out of the Class roster view.
+    columns: [
+      { title: 'First Name', type: 'text' },
+      { title: 'Class Date', type: 'date' },
+      { title: 'Class Day', type: 'text' },
+      { title: 'Class Location', type: 'text' },
+    ],
     columnDescriptions: {
+      'Class Date': "The event's start date, from Eventbrite. Blank on registrations from before the Eventbrite integration.",
       'Attendee': "The registrant's People item, when they're a known person. Blank for " +
         'Eventbrite registrants who never became contacts; Attendee Name / Email keep what the platform had.',
       'Attendance': 'Registered, Attended, Canceled. No Show is never set by the import — staff ' +
@@ -427,6 +536,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     views: [
       { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
+      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
+        filter: { rules: [
+          { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
+          { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+        ] },
+        groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],

@@ -21,8 +21,8 @@ import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
-import { checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView } from './views';
-import { sha256Hex } from './crypto/hash';
+import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
+import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
   changeRequestsEnabled,
@@ -62,8 +62,10 @@ import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
-import { securityHeaders } from './securityHeaders';
+import { DEFAULT_CSP, securityHeaders } from './securityHeaders';
 import { errorText } from './logSafe';
+import { logSkip } from './flags';
+import { stampedQueue, type BatchSkipContext } from './writeSwitch';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -80,6 +82,9 @@ export interface AppDeps {
   letterQueue: { send(message: LetterSendQueueMessage): Promise<void> };
   letterWebhookSecret: string;
   cardTokenStore: CardTokenStore;
+  // The write switch for this request (src/writeSwitch.ts), read from KV at most once and only by
+  // a route that writes.
+  writeGate: () => Promise<BatchSkipContext>;
 }
 
 const SESSION_COOKIE = 'session';
@@ -122,6 +127,18 @@ function resolvePathLocale(c: Context): Locale {
 // a prefix: every authenticated route starts with a wildcard `:locale` segment, so a "/webhooks/"
 // prefix exemption also matched /webhooks/portal/change-request (issue #32 review).
 const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
+
+// A POST that writes, under any mode but `on`: a friendly page, 503 so nothing caches it.
+function unavailable(c: Context, locale: Locale, authenticated: boolean) {
+  return c.html(page(t(locale, 'title.unavailable') + ' — ' + t(locale, 'site.title'), unavailableView(locale, authenticated), locale, { authenticated }), 503);
+}
+
+// Hashed once per isolate: the input is a constant, so sharing it across requests is safe.
+let confirmLoginScriptHashPromise: Promise<string> | null = null;
+function confirmLoginScriptHash(): Promise<string> {
+  confirmLoginScriptHashPromise ??= sha256Base64(CONFIRM_LOGIN_SCRIPT).then((b64) => `sha256-${b64}`);
+  return confirmLoginScriptHashPromise;
+}
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
@@ -275,6 +292,8 @@ export function createApp(deps: AppDeps) {
 
   app.post('/', async (c) => {
     const locale = detectLocale(c);
+    // Every email gets the same page, so the enumeration guard below holds under the switch too.
+    if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, false);
     const body = await c.req.parseBody();
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     // A malformed email (fails the plausibility check) is treated exactly like an empty one —
@@ -334,12 +353,18 @@ export function createApp(deps: AppDeps) {
   // inbound email, often executing its JS. Consuming the single-use token on this GET burned it
   // before the donor ever clicked (issue #31), so the GET is inert: it renders a button that
   // POSTs the token back to the route below, and only that POST consumes it.
-  app.get('/auth/callback', (c) => {
+  //
+  // The token arrives in the URL fragment (issue #61: in the query string it reached Workers
+  // Logs, and a letter link lives up to 168 hours), so the server never sees it here; the page's
+  // script copies it into the form. A ?token= link is one sent before that change and still
+  // renders as before. Drop that branch once every such link has expired: letterLinkTtlHours
+  // after the #61 deploy.
+  app.get('/auth/callback', async (c) => {
     const langParam = c.req.query('lang');
     const lang = langParam !== undefined && isLocale(langParam) ? langParam : null;
     const locale = lang ?? detectLocale(c);
-    const token = c.req.query('token');
-    if (!token) {
+    const legacyToken = c.req.query('token');
+    if (legacyToken === '') {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
     }
 
@@ -350,11 +375,13 @@ export function createApp(deps: AppDeps) {
     // still letting the browser send a real Origin on this page's own same-origin POST, which the
     // CSRF check requires (older Safari sends no Sec-Fetch-Site to fall back on).
     c.header('Referrer-Policy', 'same-origin');
+    // The page holds a live token in its DOM, so the one script that may run on it is ours.
+    c.header('Content-Security-Policy', `${DEFAULT_CSP}; script-src '${await confirmLoginScriptHash()}'`);
     // No footer language picker here: it redirects to location.pathname only, which would drop
     // the token (and the token must never be copied into the /lang redirect URL). The page
     // already renders in the link's own `lang`.
     return c.html(
-      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(token, lang, locale), locale, {
+      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(legacyToken ?? null, lang, locale), locale, {
         languagePicker: false,
       })
     );
@@ -469,7 +496,7 @@ export function createApp(deps: AppDeps) {
     return c.html(
       page(
         t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
-        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact),
+        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact, deps.config.getInvolved.links),
         locale,
         { authenticated: true }
       )
@@ -616,6 +643,9 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
+    // Before the rate limiters and the dedupe lookup: no change_requests row, no message.
+    const { mode } = await deps.writeGate();
+    if (mode !== 'on') return unavailable(c, locale, true);
 
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
     // interfere. No enumeration concern here (the caller is already authenticated), so a plain
@@ -646,7 +676,7 @@ export function createApp(deps: AppDeps) {
     const result = await submitChangeRequest(donorItemIds, input, {
       monday: deps.monday,
       store: deps.changeStore,
-      queue: deps.changeQueue,
+      queue: stampedQueue(deps.changeQueue, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
@@ -662,6 +692,8 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
+    const { mode } = await deps.writeGate();
+    if (mode !== 'on') return unavailable(c, locale, true);
 
     // Same limiter keys as the free-text change-request POST above — the two forms share one
     // abuse budget since they feed the same staff queue.
@@ -694,7 +726,7 @@ export function createApp(deps: AppDeps) {
     const result = await submitPreferences(donorItemIds, input, {
       monday: deps.monday,
       store: deps.changeStore,
-      queue: deps.changeQueue,
+      queue: stampedQueue(deps.changeQueue, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
@@ -745,8 +777,7 @@ export function createApp(deps: AppDeps) {
     // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
     // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
     // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
-    // works under this policy alongside the embed-snippet check (matchingGiftViews.ts NOTE)
-    // before provisioning a key.
+    // works under this policy on the sandbox deploy (matchingGiftViews.ts header comment).
     c.header(
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
@@ -788,6 +819,8 @@ export function createApp(deps: AppDeps) {
     if (!donorItemIds.includes(donorItemId)) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale, { authenticated: true }), 404);
     }
+    // The card the dashboard already shows stays valid; only a new one waits for the switch.
+    if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, true);
 
     const now = deps.now().toISOString();
     try {
@@ -918,12 +951,25 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
+    // `off`: no letter_sends row — a 'queued' row that is never sent would block this donor's
+    // letter for good (the cron skips any donor with a row). `hold`: as normal; the queue is
+    // paused and sends once the switch is on. `unknown` (KV error): 503, so Monday retries.
+    const gate = await deps.writeGate();
+    if (gate.mode === 'unknown') {
+      console.error(`member-portal webhook: write switch unreadable; letter-send for donor "${event.donorItemId}" refused (503)`);
+      return c.json({ ok: false }, 503);
+    }
+    if (gate.mode === 'off') {
+      logSkip({ ...gate, deliveryId: `letter-webhook:${event.donorItemId}` }, 'LetterQueue', 'triggerLetterSend', [{ donorItemId: event.donorItemId }]);
+      return c.json({ ok: true, result: 'dropped' }, 200);
+    }
+
     let result;
     try {
       result = await triggerLetterSend(event.donorItemId, {
         monday: deps.monday,
         store: deps.letterSendStore,
-        queue: deps.letterQueue,
+        queue: stampedQueue(deps.letterQueue, gate.mode),
         now: deps.now,
       });
     } catch (err) {

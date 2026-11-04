@@ -11,27 +11,31 @@ import type {
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns, DonorLevelConfig,
 } from '../types';
 import { donorLevel } from '../rollups/donorLevel';
-import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
+import { computeRollup, currentFiscalYear, localDateParts, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
 } from '../projections/giftHistory';
-import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds, transientRetryDelaySeconds } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
+import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipGift,
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 import { formatCents } from '../money';
+import { buildSponsorshipsMarkdown } from '../projections/sponsorships';
 import { registrationQualifies } from '../membership/volunteer';
+import { employerNameFor } from '../affiliations/employer';
 
 export interface QueueMessageLike<T> {
   body: T;
   // When the message was sent (Cloudflare's Message.timestamp) — the dead-letter consumer
   // compares it against a pending row's written_at to spot stale dead messages.
   timestamp?: Date;
-  // Delivery attempt, 1 on first delivery (Cloudflare's Message.attempts) — drives the
-  // rate-limit backoff. Optional so test doubles needn't set it.
+  // Delivery attempt, 1 on first delivery (Cloudflare's Message.attempts) — drives the retry
+  // backoff. Optional so test doubles needn't set it.
   attempts?: number;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
@@ -57,14 +61,52 @@ export interface ProcessBatchDeps {
 // retries and land in the DLQ on every future delivery for the same owner.
 class NonRetryableError extends Error {}
 
+// Another recompute of the same owner holds its lease (migration 0010). Not a failure: the message
+// waits a short, fixed delay and re-reads Monday once the holder has written — often to find a
+// fresh enough fetch that it coalesces away.
+class OwnerBusyError extends Error {}
+const OWNER_BUSY_RETRY_SECONDS = 30;
+// Longer than any healthy recompute (seconds, or a minute or two of in-process Monday retries),
+// short enough that a holder that died mid-recompute only blocks its owner for a few retries.
+const OWNER_LEASE_TTL_MS = 5 * 60_000;
+
 // A first run after enabling the membership feature, or a widened eligibleGiftTypes, can leave
 // dozens of unstamped gifts on one owner; each stamp is one Monday mutation and the Free plan's
 // subrequest cap is 50 per invocation. The design converges (spec "Writes and idempotency"), so
 // stamp the first N per recompute and let the stamped gifts' own webhooks recompute and continue.
 const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
 
+// The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
+// message whether the recompute writes (`on`, unstamped), dry-runs against recording proxies
+// (`off`, or stamped dropped by the webhook), or waits on the queue (`hold`, `unknown`).
+export async function consumeRecomputeBatch(
+  messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext,
+): Promise<void> {
+  await runBatch(messages, (message) => {
+    const ctx = { ...gate, deliveryId: deliveryIdOf(message.body) };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') return null;
+    return disposition === 'write' ? { deps, dryRun: false } : { deps: dryRunConsumerDeps(deps, ctx), dryRun: true };
+  });
+}
+
+// The recompute itself, with the deps it is given — live, or a dry run's proxies.
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
+): Promise<void> {
+  await runBatch(messages, () => ({ deps, dryRun: false }));
+}
+
+function deliveryIdOf(body: RecomputeQueueMessage): string {
+  const owner = body.ownerItemId !== undefined ? `:owner:${body.ownerItemId}` : '';
+  return `${body.kind ?? 'donation'}:${body.donationItemId}${owner}`;
+}
+
+// depsFor returns null for a message the write switch holds on the queue.
+async function runBatch(
+  messages: QueueMessageLike<RecomputeQueueMessage>[],
+  depsFor: (message: QueueMessageLike<RecomputeQueueMessage>) => { deps: ProcessBatchDeps; dryRun: boolean } | null,
 ): Promise<void> {
   // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
   // every later message in this batch would fail the same way after spending Monday calls of
@@ -73,15 +115,35 @@ export async function processRecomputeBatch(
   // in the DLQ, where processDeadLetters marks it failed and it can be re-driven.
   let batchDelaySeconds: number | null = null;
   for (const message of messages) {
-    const { donationItemId, donationBoardId } = message.body;
+    const { donationItemId } = message.body;
     if (batchDelaySeconds !== null) {
       message.retry({ delaySeconds: batchDelaySeconds });
       continue;
     }
+    const chosen = depsFor(message);
+    if (chosen === null) {
+      // `hold` or an unreadable switch: not processed, not dropped — back on the queue at the
+      // shared backoff (1 minute doubling to an hour) until the mode is `on` or `off`.
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    const { deps, dryRun } = chosen;
     try {
+      // A dry-run delivery is closed out as 'dropped' (the one pending write a dry run makes —
+      // writeSwitch.ts dryRunPendingStore), so the nightly requeue can't re-send it as live work
+      // later. An owner-keyed message has no pending row of its own: its donationItemId is the
+      // gift whose own row tracks the message that fanned it out.
+      if (dryRun && message.body.ownerItemId === undefined) {
+        await deps.pendingStore.updateStatus(donationItemId, 'dropped');
+      }
       await processOne(message.body, deps);
       message.ack();
     } catch (err) {
+      if (err instanceof OwnerBusyError) {
+        console.log(`donation-rollups consumer: donation "${donationItemId}": ${err.message} — retrying in ${OWNER_BUSY_RETRY_SECONDS}s`);
+        message.retry({ delaySeconds: OWNER_BUSY_RETRY_SECONDS });
+        continue;
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups consumer: failed to process donation "${donationItemId}": ${errMsg}`);
       // This write is itself a D1 query. During a D1 outage it throws too — and until fix 4 that
@@ -92,26 +154,30 @@ export async function processRecomputeBatch(
       } catch (statusErr) {
         console.error(`donation-rollups consumer: could not record failed status for donation "${donationItemId}": ${statusErr instanceof Error ? statusErr.message : String(statusErr)}`);
       }
+      // The classification is unchanged; every delay is the shared retryDelaySeconds (1 minute
+      // doubling to an hour, across wrangler.jsonc's max_retries of 100), raised to a hint.
       if (err instanceof NonRetryableError) {
         message.ack();
       } else if (isD1QuotaError(err)) {
         // D1's daily limit resets at midnight UTC — the retry worth making is the one after it.
-        batchDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
+        batchDelaySeconds = retryDelaySeconds(message.attempts, secondsUntilMidnightUTC(deps.now ?? new Date()));
         console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${batchDelaySeconds}s (to midnight UTC)`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else if (err instanceof MondayRateLimitError) {
         // Issue #27: retrying straight back into an exhausted complexity budget just burns the
         // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt. The
         // daily call limit with no hint resets at midnight UTC — defer to it exactly as the D1
-        // quota does: capped at Queues' 12 h, so a reset up to 24 h away costs at most two of
-        // max_retries=3 (the capped retry fails fast on its first Monday call and defers again).
-        batchDelaySeconds = err.daily && err.retryInSeconds === undefined
+        // quota does. A hinted delay (midnight, or Monday's own) is capped at Queues' 12 h — a
+        // capped retry fails fast on its first Monday call and defers again; an unhinted one at
+        // the shared backoff's hour.
+        const hintSeconds = err.daily && err.retryInSeconds === undefined
           ? secondsUntilMidnightUTC(deps.now ?? new Date())
-          : rateLimitRetryDelaySeconds(err.retryInSeconds, message.attempts);
+          : err.retryInSeconds === undefined ? undefined : Math.ceil(err.retryInSeconds);
+        batchDelaySeconds = retryDelaySeconds(message.attempts, hintSeconds);
         console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else {
-        message.retry({ delaySeconds: transientRetryDelaySeconds(message.attempts) });
+        message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       }
     }
   }
@@ -127,9 +193,15 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
+  if (message.kind === 'affiliation') {
+    await processAffiliation(message, deps);
+    return;
+  }
+
   // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
   // unconditionally — its totals still include the gift until it does.
   if (message.ownerItemId !== undefined && message.ownerBoardId !== undefined) {
+    if (await ownerIsGone(deps, message.ownerItemId)) return;
     await recomputeOwner(deps, message.ownerItemId, message.ownerBoardId, donationItemId);
     return;
   }
@@ -167,7 +239,11 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 
   const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
   if (ownerBoardId === null) {
-    throw new Error(`owner item "${ownerItemId}" has no resolvable board (deleted between link and lookup?)`);
+    // The owner was deleted (getItemBoardId reads a trashed item as gone). Retrying can't bring it
+    // back, and a gift whose owner is gone counts for no one — the same as a cleared link.
+    await detachDonation(deps, donationItemId, 'owner deleted');
+    await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
+    return;
   }
 
   // Keep the reverse index current *before* reading it back — this donation's own
@@ -202,7 +278,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
-  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for. Queued *before* the
+  // blow the per-invocation subrequest budget max_batch_size is sized for. Queued *before* the
   // inline recompute: the link row already says the new owner, so if that recompute throws and
   // the retry finds the link unchanged, the previous owner would otherwise never be queued.
   if (link.previousOwner !== undefined) {
@@ -220,13 +296,17 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 // toward the owner D1 last linked it to. Drop the link, take the gift out of the ledger's totals
 // (soft — a restore or re-link brings it back on its next recompute), then recompute that owner
 // here: this message has no other recompute to do, so it costs no more than a normal one.
-async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, state: 'active' | 'deleted'): Promise<void> {
+async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, state: 'active' | 'deleted' | 'owner deleted'): Promise<void> {
   const link = await deps.linksStore.getLinkForDonation(donationItemId);
   const removed = await deps.giftsStore.markRemoved(donationItemId, new Date().toISOString());
   await deps.linksStore.deleteLink(donationItemId);
   const previous = link ?? (removed === null ? null : { ownerItemId: removed.ownerItemId, ownerBoardId: removed.ownerBoardId });
   if (previous === null) return; // never linked to anyone D1 knows — nothing to recompute
-  console.log(`donation-rollups consumer: donation "${donationItemId}" ${state === 'deleted' ? 'was deleted' : 'lost its Donor link'} — recomputing former owner ${previous.ownerItemId}`);
+  // Deleting a donor clears (or orphans) every gift's link at once: the former owner is gone, so
+  // there is nothing to rewrite.
+  if (await ownerIsGone(deps, previous.ownerItemId)) return;
+  const why = state === 'deleted' ? 'was deleted' : state === 'owner deleted' ? 'lost its deleted owner' : 'lost its Donor link';
+  console.log(`donation-rollups consumer: donation "${donationItemId}" ${why} — recomputing former owner ${previous.ownerItemId}`);
   const extraAffiliations = new Set<string>();
   if (removed?.actingForItemId) extraAffiliations.add(removed.actingForItemId);
   await recomputeOwner(deps, previous.ownerItemId, previous.ownerBoardId, donationItemId, extraAffiliations);
@@ -276,11 +356,54 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
   const recomputable = owners.filter((o) => config.donationRollups.ownerColumnsByBoard[o.ownerBoardId]?.membership !== undefined);
   const [first, ...rest] = recomputable;
   for (const o of rest) await enqueueOwnerRecompute(deps, message, o);
-  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+  // Only the attendee was just read live; an owner from a stored row may since have been deleted.
+  if (first !== undefined && (first.ownerItemId === reg?.attendeeItemId || !(await ownerIsGone(deps, first.ownerItemId)))) {
+    await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+  }
 
   await deps.pendingStore.updateStatus(registrationItemId, 'written', {
     ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
   });
+}
+
+// An Affiliations item changed: re-read the person's affiliations and bring Employer Name in line.
+// Reads Monday fresh every time, so a retry or a duplicate delivery lands on the same answer and
+// the write is skipped once the column already matches. A re-pointed Person keeps the old person's
+// Employer Name as it was, the same as a Former affiliation (affiliations/employer.ts).
+async function processAffiliation(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
+  const { donationItemId: affiliationItemId } = message;
+  const { mondayClient, pendingStore, config } = deps;
+  const affiliations = config.affiliations;
+  const sync = affiliations?.employerSync;
+  let owner: { ownerItemId: string; ownerBoard: string } | undefined;
+  if (affiliations && sync) {
+    const summary = await mondayClient.getAffiliationSummary(affiliationItemId, affiliations.columns.personLink);
+    const columns = summary?.personBoardId ? sync.ownerColumnsByBoard[summary.personBoardId] : undefined;
+    if (summary?.personItemId && summary.personBoardId) {
+      if (columns === undefined) {
+        console.warn(`donation-rollups consumer: no employerSync entry for board "${summary.personBoardId}" — Employer Name for "${summary.personItemId}" not written`);
+      } else {
+        owner = { ownerItemId: summary.personItemId, ownerBoard: summary.personBoardId };
+        const state = await mondayClient.getPersonEmployerState(summary.personItemId, columns);
+        if (state !== null) {
+          const ids = [...new Set([...state.affiliationItemIds, affiliationItemId])];
+          const employerName = employerNameFor(await mondayClient.getEmployerAffiliations(ids, sync.columns), affiliationItemId, sync.currentStatusLabel);
+          if (employerName !== null && employerName !== state.employerName) {
+            await mondayClient.changeColumnValues(Number(summary.personBoardId), summary.personItemId, { [columns.employerName]: employerName });
+          }
+        }
+      }
+    }
+  }
+  await pendingStore.updateStatus(affiliationItemId, 'written', { ...owner, writtenAt: new Date().toISOString() });
+}
+
+// An owner D1 remembers (a former owner, an owner-keyed message) may have been deleted on Monday
+// since. Its recompute could only fail on the write and retry toward the DLQ; skip it instead.
+async function ownerIsGone(deps: ProcessBatchDeps, ownerItemId: string): Promise<boolean> {
+  if ((await deps.mondayClient.getItemBoardId(ownerItemId)) !== null) return false;
+  console.log(`donation-rollups consumer: owner ${ownerItemId} was deleted on Monday — nothing to recompute`);
+  return true;
 }
 
 async function enqueueOwnerRecompute(
@@ -298,9 +421,41 @@ async function enqueueOwnerRecompute(
 // refresh, membership, gift-history projections, affiliations. triggeringDonationId feeds the
 // affiliation fan-out; extraAffiliations adds ones a detached gift was attributed to (it's no
 // longer among the fetched donations, so affectedAffiliations can't see it).
+//
+// Held under the owner's lease from before the read to after the write: two recomputes of one
+// owner running at once (max_concurrency > 1) could otherwise read, then write, out of order, and
+// the stale one would overwrite the fresh totals with nothing left to repair them.
 async function recomputeOwner(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
   extraAffiliations: Set<string> = new Set(),
+): Promise<void> {
+  const holder = crypto.randomUUID();
+  const now = Date.now();
+  const leased = await deps.recomputesStore.acquireLease(ownerItemId, holder,
+    new Date(now).toISOString(), new Date(now + OWNER_LEASE_TTL_MS).toISOString());
+  if (!leased) throw new OwnerBusyError(`owner ${ownerItemId} is being recomputed by another message`);
+  try {
+    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations);
+  } finally {
+    // A failed release leaves the lease to expire; it must not turn a good recompute into a retry.
+    try {
+      await deps.recomputesStore.releaseLease(ownerItemId, holder);
+    } catch (err) {
+      console.warn(`donation-rollups consumer: could not release the lease on owner ${ownerItemId} (it expires on its own): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+// The per-board read columns; the three sponsorship columns ride along only when the feature is on.
+function readColumns(columns: DonationBoardConfig['columns'], sponsorships: boolean): DonationBoardConfig['columns'] {
+  if (sponsorships) return columns;
+  const { sponsorshipCycle: _c, inKindValue: _v, sponsorshipPipelineLinks: _p, ...rest } = columns;
+  return rest as DonationBoardConfig['columns'];
+}
+
+async function recomputeOwnerLeased(
+  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
+  extraAffiliations: Set<string>,
 ): Promise<void> {
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
@@ -310,6 +465,7 @@ async function recomputeOwner(
   }
 
   const fetchedAt = new Date().toISOString();
+  const sponsorshipsCfg = config.donationRollups.sponsorships;
 
   // Monday has no supported filter for board_relation columns (confirmed 2026-08-24 —
   // items_page_by_column_values rejects it outright), so "every Donation this owner
@@ -319,8 +475,27 @@ async function recomputeOwner(
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns, config.fiscalYear.startMonth) })));
+    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, readColumns(b.columns, sponsorshipsCfg !== null), config.fiscalYear.startMonth) })));
   const donations = perBoard.flatMap((p) => p.items);
+
+  // Sponsorship facts (only when the feature is configured): the event a gift belongs to is its
+  // Sponsorship Cycle label, else the board + group of the pipeline item it links to. One lookup
+  // for every pipeline id this recompute read.
+  const eventByGift = new Map<string, string>();
+  if (sponsorshipsCfg !== null) {
+    const pipelineIds = [...new Set(donations.flatMap((d) => (d.archived || d.sponsorshipCycle ? [] : d.pipelineItemId ? [d.pipelineItemId] : [])))];
+    const placed = pipelineIds.length > 0 ? await mondayClient.getItemsBoardAndGroup(pipelineIds) : new Map<string, { boardId: string; groupTitle: string }>();
+    for (const d of donations) {
+      if (d.archived) continue;
+      let event = d.sponsorshipCycle ?? '';
+      if (event === '' && d.pipelineItemId) {
+        const at = placed.get(d.pipelineItemId);
+        const boardName = at ? sponsorshipsCfg.pipelineBoards[at.boardId] : undefined;
+        if (at && boardName !== undefined) event = `${boardName} ${at.groupTitle}`.trim();
+      }
+      eventByGift.set(d.id, event);
+    }
+  }
 
   // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
   // fetch overwrites it, so a gift that moved to a different affiliation still recomputes
@@ -342,6 +517,12 @@ async function recomputeOwner(
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
       termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
+      ...(sponsorshipsCfg !== null ? {
+        // archived: link columns read back empty (issue #26), so leave the stored event alone
+        sponsorshipEvent: d.archived ? undefined : (eventByGift.get(d.id) ?? ''),
+        // undefined (leave stored) when the board has no In-kind Value column
+        ...(d.inKindValueCents !== undefined ? { inKindValueCents: d.inKindValueCents ?? 0 } : {}),
+      } : {}),
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -411,14 +592,19 @@ async function recomputeOwner(
     }
   }
   try {
+    const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven);
+    const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
+      ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
+        localISODate(deps.now ?? new Date(), config.fiscalYear.timeZone))
+      : null;
     await mondayClient.setItemDescription(ownerItemId,
-      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
+      sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
-    // Gift Ledger JSON column, and set_item_description_content 500s outright on accounts
-    // where the item-description feature isn't enabled (observed live 2026-08-31 — even a
-    // trivial markdown fails). The rollups and JSON projection above already landed; don't
-    // burn queue retries over the optional rendering.
+    // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
+    // whose item view lacks the Item description widget (UI-only setup; with it, every item on
+    // the board writes, verified 2026-10-30). The rollups and JSON projection above already
+    // landed; don't burn queue retries over the optional rendering.
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
   }
 
@@ -433,6 +619,12 @@ async function recomputeOwner(
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
   await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
+}
+
+// YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).
+function localISODate(now: Date, timeZone: string): string {
+  const { year, month, day } = localDateParts(now, timeZone);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 async function planMembershipWrites(

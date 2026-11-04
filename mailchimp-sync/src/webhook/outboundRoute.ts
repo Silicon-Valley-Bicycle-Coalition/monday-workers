@@ -2,6 +2,9 @@ import { Hono } from 'hono';
 import type { PendingOutboundStore } from '../db/pendingOutbound';
 import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
+import { stampFor, type WriteMode } from '../flags';
+import { secretsMatch } from '../secret';
+import { donorColumnIds } from '../monday/client';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -18,6 +21,10 @@ export interface OutboundAppDeps {
   // consumer writes to config.monday.columns.mailchimpCampaigns on this same Donors board,
   // which would otherwise re-trigger this webhook and risk a feedback loop with Mailchimp.
   config: Config;
+  // The write switch (flags.ts readWriteMode), read once per delivery that gets enqueued. Ingest
+  // is never gated: under `off` the message is stamped dropped, so the consumer dry-runs it even if
+  // writes are back `on` by the time it is consumed.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // Ingest-and-enqueue only — resolving the Donor's current columns and writing to
@@ -30,7 +37,7 @@ export function createOutboundApp(deps: OutboundAppDeps) {
     // Auth first — even the one-time challenge handshake stays behind the secret, since the
     // secret is part of the URL Monday registers and so arrives with the challenge too. An
     // unauthenticated caller learns nothing and enqueues nothing.
-    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 
@@ -56,18 +63,24 @@ export function createOutboundApp(deps: OutboundAppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
-    // Self-inflicted event: the inbound consumer's own write to the mailchimpCampaigns
-    // connect-column just triggered this webhook. Not an error — skip without enqueueing to
-    // avoid an outbound→Mailchimp→inbound feedback loop.
-    if (donorEvent.columnId !== undefined && donorEvent.columnId === deps.config.monday.columns.mailchimpCampaigns) {
+    // A change to a column the sync doesn't read can't change what it would send: skip without
+    // enqueueing. That covers the inbound consumer's own write to the mailchimpCampaigns
+    // connect-column (an outbound→Mailchimp→inbound feedback loop otherwise), and bulk writes to
+    // unrelated columns, such as a Location backfill. Item creation carries no columnId and
+    // always enqueues.
+    if (donorEvent.columnId !== undefined && !donorColumnIds(deps.config.monday.columns).includes(donorEvent.columnId)) {
       return c.json({ ok: true, skipped: true }, 200);
     }
 
     await deps.pendingStore.upsertPending(donorEvent.donorItemId, new Date().toISOString());
 
+    // Only the configured Email column's old address: an email-shaped value from any other
+    // column (Household Email) must not move this Donor's Mailchimp member.
+    const previousEmail = donorEvent.columnId === deps.config.monday.columns.email ? donorEvent.previousEmail : undefined;
+    const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ donorItemId: donorEvent.donorItemId });
-      await deps.pendingStore.updateStatus(donorEvent.donorItemId, 'queued');
+      await deps.queue.send({ donorItemId: donorEvent.donorItemId, ...(previousEmail === undefined ? {} : { previousEmail }), ...stamp });
+      await deps.pendingStore.updateStatus(donorEvent.donorItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`mailchimp-sync outbound webhook: enqueue failed for donor "${donorEvent.donorItemId}": ${errMsg}`);

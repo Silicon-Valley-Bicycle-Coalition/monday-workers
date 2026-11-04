@@ -3,6 +3,11 @@ import { env as testEnv } from 'cloudflare:test';
 import worker from './index';
 import type { Env, InboundSyncMessage, OutboundSyncMessage } from './types';
 
+// A stand-in FLAGS namespace: `mailchimp-sync:writes` reads as `mode`.
+function flags(mode: string): KVNamespace {
+  return { get: vi.fn(async (key: string) => (key === 'mailchimp-sync:writes' ? mode : null)) } as unknown as KVNamespace;
+}
+
 function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: testEnv.DB,
@@ -15,6 +20,7 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     // Real local-simulated binding (see wrangler.jsonc's ratelimits) — never exceeded by these
     // tests' request volume.
     REQUEST_RATE_LIMITER: testEnv.REQUEST_RATE_LIMITER,
+    FLAGS: flags('on'),
     ...overrides,
   };
 }
@@ -117,6 +123,30 @@ describe('queue dispatch', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('holds an outbound message on the queue (retry at 60 s) while writes are on hold', async () => {
+    const env = fakeEnv({ FLAGS: flags('hold') });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const message = { ...fakeMessage<OutboundSyncMessage>({ donorItemId: '1' }), attempts: 1 };
+      const batch = { queue: 'mailchimp-sync-outbound', messages: [message] } as unknown as MessageBatch<unknown>;
+      await worker.queue(batch, env);
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('treats a missing FLAGS namespace as unknown: retries, never writes', async () => {
+    const env = fakeEnv({ FLAGS: undefined });
+    const message = { ...fakeMessage<InboundSyncMessage>({ email: 'a@b.com' }), attempts: 1 };
+    const batch = { queue: 'mailchimp-sync-inbound', messages: [message] } as unknown as MessageBatch<unknown>;
+    await worker.queue(batch, env);
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 
   it('throws on an unrecognized queue name instead of silently routing to inbound', async () => {
@@ -234,5 +264,28 @@ describe('request-time config selection', () => {
     await expect(worker.queue(emptyBatch('mailchimp-sync-inbound-sandbox-dlq'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
     // "-dlq-sandbox" is not a name this Worker declares — suffix order matters.
     await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-dlq-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).rejects.toThrow('unknown queue');
+  });
+});
+
+describe('Monday token from the monday-auth broker', () => {
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // "Item not found" — the outbound consumer's first Monday read is all this checks.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const auth = { token: vi.fn().mockResolvedValue('brokered') };
+      const env = fakeEnv({ MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth });
+      const message = fakeMessage<OutboundSyncMessage>({ donorItemId: '1' });
+
+      await worker.queue({ queue: 'mailchimp-sync-outbound', messages: [message] } as unknown as MessageBatch<unknown>, env);
+
+      expect(auth.token).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalled();
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

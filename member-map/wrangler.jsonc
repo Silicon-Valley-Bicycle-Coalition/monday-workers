@@ -1,0 +1,72 @@
+{
+  "name": "svbc-member-map",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // Staff-only: reachable only through the custom domain, which sits behind Cloudflare Access.
+  // The Worker verifies the Access JWT itself too. No ACCESS_DEV_BYPASS var belongs in this file
+  // (or any env block) — it lives only in the git-ignored .dev.vars.
+  "workers_dev": false,
+  "routes": [{ "pattern": "map.bikesiliconvalley.org", "custom_domain": true }],
+  // The Worker runs first so every asset request passes the Access check too.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  // Placeholder id until the operator runs `wrangler d1 create svbc-member-map`.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "svbc-member-map", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [{ "binding": "SNAPSHOTS", "bucket_name": "svbc-member-map" }],
+  // POST /api/refresh enqueues; this Worker's queue() runs the refresh (a queue consumer gets 15
+  // minutes, an HTTP waitUntil about 30 s). One refresh per batch, and no retries: a failed
+  // refresh waits for the next click or the weekly cron. Operator creates it (README Provisioning).
+  "queues": {
+    "producers": [{ "queue": "svbc-member-map-refresh", "binding": "REFRESH_QUEUE" }],
+    "consumers": [{ "queue": "svbc-member-map-refresh", "max_batch_size": 1, "max_retries": 0 }]
+  },
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits".
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2093", "simple": { "limit": 120, "period": 60 } }],
+  // The weekly snapshot reads every member and scores census tracts in one invocation.
+  "limits": { "cpu_ms": 300000 },
+  // Mondays 13:00 UTC.
+  "triggers": {
+    "crons": ["0 13 * * 1"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // Monday access: the monday-auth broker's Read-only app (ReadOnlyToken entrypoint). This Worker
+  // only reads Monday; the geocoded Lat/Lng cache lives in D1, not on the boards.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "ReadOnlyToken" }],
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` deploys svbc-member-map-sandbox against the CRM Sandbox
+  // boards (config/sandbox.json, selected by the ENVIRONMENT var). Inbound data only. Design:
+  // docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "workers_dev": false,
+      "routes": [{ "pattern": "map.sandbox.bikesiliconvalley.org", "custom_domain": true }],
+      "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "svbc-member-map-sandbox", "database_id": "fc87c3f0-e2b3-47dd-8b8d-7397a5021141", "migrations_dir": "migrations" }
+      ],
+      "r2_buckets": [{ "binding": "SNAPSHOTS", "bucket_name": "svbc-member-map-sandbox" }],
+      "queues": {
+        "producers": [{ "queue": "svbc-member-map-refresh-sandbox", "binding": "REFRESH_QUEUE" }],
+        "consumers": [{ "queue": "svbc-member-map-refresh-sandbox", "max_batch_size": 1, "max_retries": 0 }]
+      },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2094", "simple": { "limit": 120, "period": 60 } }],
+      "limits": { "cpu_ms": 300000 },
+      "triggers": {
+        "crons": ["0 13 * * 1"]
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "ReadOnlyToken" }]
+    }
+  }
+}

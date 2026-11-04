@@ -1,8 +1,8 @@
 // Retention deletes for the three auth tables (issue #31) — used only by the daily scheduled()
 // purge, so it's its own store rather than widening the request-path stores' interfaces.
 export interface AuthRetentionStore {
-  // login_attempts retains every submitted email (valid donor or not) — only needed inside the
-  // per-email rate-limit window.
+  // login_attempts holds a hashed address per login email allowed (valid donor or not) — only
+  // needed inside the per-address rate-limit look-back (24 hours, the daily cap).
   purgeLoginAttemptsBefore(cutoffISO: string): Promise<number>;
   purgeSessionsExpiredBefore(nowISO: string): Promise<number>;
   // Expired tokens only, used or not. A used-but-unexpired token is already inert (used_at set),

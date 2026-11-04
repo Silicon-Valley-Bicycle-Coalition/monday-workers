@@ -5,7 +5,8 @@
   "compatibility_date": "2026-08-01",
   "upload_source_maps": true,
   // Secrets (set with `wrangler secret put <NAME>`, never committed):
-  //   MONDAY_API_TOKEN         — Monday API token (dedicated integration user, least-privilege)
+  //   MONDAY_API_TOKEN         — fallback only while the OAuth cutover is under way: Monday access
+  //                              comes from the MONDAY_AUTH binding below (monday-auth broker)
   //   MAILCHIMP_API_KEY        — Mailchimp Marketing API key
   //   MONDAY_WEBHOOK_SECRET    — shared secret for the Monday webhook; the route fails closed
   //                              (401s everything) until it's set. Register the webhook as
@@ -16,6 +17,11 @@
   //                              https://<worker>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>
   //   SLACK_WEBHOOK_URL        — OPTIONAL Slack incoming-webhook URL: one alert per dead-letter
   //                              batch (#37, src/alert.ts). Unset = log only (Workers Logs).
+  // Write-switch flags (see ../scripts/flags.mjs): the shared KV namespace holding
+  // `mailchimp-sync:writes` (on | hold | off; missing = off) and `mailchimp-sync:log`. The
+  // namespace is `FLAGS` (`sandbox-FLAGS` under env.sandbox); every in-scope Worker carries the
+  // same two ids, which scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   "d1_databases": [
     {
       "binding": "DB",
@@ -32,13 +38,13 @@
     "consumers": [
       {
         "queue": "mailchimp-sync-outbound",
-        "max_retries": 3,
+        "max_retries": 100,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-outbound-dlq"
       },
       {
         "queue": "mailchimp-sync-inbound",
-        "max_retries": 3,
+        "max_retries": 100,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
       },
@@ -79,6 +85,10 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-mailchimp-sync-sandbox
   // against the CRM Sandbox People board and the *sandbox* Mailchimp audience named in
@@ -86,7 +96,7 @@
   // data — the sandbox may only upsert into the sandbox audience; config/split.test.ts fails if
   // the two configs ever share an audience id. Everything here is non-inheritable in Wrangler and
   // deliberately restated. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
-  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN,
+  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
   // MAILCHIMP_API_KEY (may be the same account key), MONDAY_WEBHOOK_SECRET, MAILCHIMP_WEBHOOK_SECRET,
   // and the optional SLACK_WEBHOOK_URL (point it at a sandbox channel, never production's).
   "env": {
@@ -100,6 +110,8 @@
           "migrations_dir": "migrations"
         }
       ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "queues": {
         "producers": [
           { "queue": "mailchimp-sync-outbound-sandbox", "binding": "OUTBOUND_QUEUE" },
@@ -108,13 +120,13 @@
         "consumers": [
           {
             "queue": "mailchimp-sync-outbound-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-outbound-sandbox-dlq"
           },
           {
             "queue": "mailchimp-sync-inbound-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
           },
@@ -141,7 +153,9 @@
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }
-      }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
     }
   }
 }

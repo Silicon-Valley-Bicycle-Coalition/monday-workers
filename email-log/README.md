@@ -2,9 +2,11 @@
 
 **Status:** Built (2026-10-20; design:
 [`docs/superpowers/specs/2026-10-19-email-log-design.md`](../docs/superpowers/specs/2026-10-19-email-log-design.md))
-— **not deployed anywhere yet.** Blocked on the Activities (Logged) board, D1 and queue
-provisioning, the Monday integration user and secret, Email Routing on
-`log.bikesiliconvalley.org`, and the live `Authentication-Results` check (see "Sandbox bring-up").
+— **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
+a staff BCC logged end to end); **production live 2026-11-03** (`svbc-email-log`,
+`log@log.bikesiliconvalley.org`, writes on; a staff BCC logged end to end, see "Production
+bring-up"). The sandbox still owes steps 6 to 10 (see "Sandbox bring-up"), and the staff note
+isn't written yet. The forgery check (step 5) is closed from Cloudflare's docs, not a live send.
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -37,10 +39,18 @@ email stays in email.
   forward the Worker couldn't parse), the reply says so and the item is `Needs Person`: open it
   and link the person by hand. You'll also hear back if the item couldn't be written after
   several tries.
+* **Where it shows:** on the Activities (Logged) board, in the person's **Activities (Logged)**
+  column, and as a `Logged email` entry on their **Emails & Activities** timeline.
 * A clean log is silent. Mail with no one outside SVBC on it (staff to staff) is dropped without
   a reply.
 
 If you BCC and also forward the same email, you may get two items; delete the extra one.
+
+**One standing exception to "significant touches only":** the Program Email Mail Merge Sheet BCCs
+this address on every email it sends as `learn@` (`scripts/apps-script/mail-merge.gs` in the
+migration repo, `docs/37`). The merge sends one message per recipient, so each gets its own item
+and timeline entry, and each recipient not on a People record gets its own `Needs Person` item and
+reply to `learn@`. The Worker treats these like any other BCC; nothing in it is specific to them.
 
 ## Data flow
 
@@ -49,7 +59,7 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
    Cloudflare Email Routing ──▶ email() handler
       1. too large (maxRawBytes) or unparseable → setReject
       2. authenticate the sender (staff From domain + DKIM aligned to it) → else setReject
-      3. classify: BCC vs Gmail-style forward; pick the counterpart addresses
+      3. classify: BCC vs Gmail/Apple Mail forward; pick the counterpart addresses
       4. no non-staff counterpart (plain BCC) → drop quietly
       5. claim the Message-ID hash in D1 (already there → stop quietly)
       6. enqueue the extracted fields ──▶ queue ──▶ consumer
@@ -65,11 +75,15 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
 * **BCC:** the staff member is the sender. Counterparts are To + Cc, minus staff-domain addresses
   and the logging address, lowercased and deduped. A colleague on Cc or the logging address in To
   is ignored; the message is still logged against the external recipients.
-* **Forward:** the subject starts with `Fwd:`/`FW:` and the body holds Gmail's
-  `---------- Forwarded message ---------` header block. The counterpart is the block's `From:`
-  plus its non-staff Cc's (if the forwarded message was one the staff member sent, the block's
-  To + Cc instead). The item takes the block's `Date:` (read in `mail.forwardTimeZone`), the
-  subject without `Fwd:`, and the forwarded message's text. Only Gmail's block is parsed.
+* **Forward:** the subject starts with `Fwd:`/`FW:` and the body holds a forward header block:
+  Gmail's `---------- Forwarded message ---------` or Apple Mail's (macOS, iOS)
+  `Begin forwarded message:`, whose block and forwarded text are usually `> `-quoted (the quoting
+  on the marker line is removed from what follows). The first block in the body wins. The
+  counterpart is the block's `From:` plus its non-staff Cc's (if the forwarded message was one
+  the staff member sent, the block's To + Cc instead). The item takes the block's `Date:`, the subject without `Fwd:`, and the
+  forwarded message's text. Gmail's `Date:` has no zone and is read in `mail.forwardTimeZone`;
+  Apple's names its own (`PST`, `PDT`, `GMT+2`, …), which wins, and only a zoneless one falls
+  back to `mail.forwardTimeZone`. Outlook's `From:`/`Sent:` block isn't parsed.
 * **Body:** `text/plain`, else HTML stripped to text. Quoted history is cut at Gmail's
   `On … wrote:` line. Truncated to `mail.bodyMaxChars` (1,900), ending `… [truncated]`.
 * **Dedupe:** D1 `logged_messages` is keyed on the SHA-256 of the Message-ID (a forward uses the
@@ -85,6 +99,15 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
   then `+N more`, and Notes as a whole is cut to 2,000 characters), Message Hash = the dedupe
   hash. Inline images the HTML shows in place (signature logos) aren't listed as attachments.
 * **If nothing matched, the item is still created**, with an empty Person link and `Needs Person`.
+* **The timeline entry** (one per matched person, when `timeline.customActivityId` is set): a
+  `Logged email` custom activity on the person's **Emails & Activities** timeline, so the email
+  shows where staff look for email, not only in the person's Activities (Logged) column. Title =
+  the item's name, summary = the body on one line (255 characters), content = the item's Notes,
+  timestamp = the email's date, URL = the Activity item. Best effort, after the item is logged: a
+  failure is logged with the item and person ids and isn't retried (a retry would adopt the item
+  without re-posting, and an entry can't be looked up to dedupe). The entry is a copy: fixing the
+  item's Person link later doesn't move it. Works on People and People (Historical) items alike
+  (checked in the sandbox 2026-11-03), though only People shows the Emails & Activities view.
 
 ## Matching
 
@@ -116,17 +139,25 @@ still unset until the board and live mail exist.
 | `activities.*Column` | column ids on Activities (Logged): activity type, date, status, owner, person, notes, message hash |
 | `activities.activityTypeLabel`, `doneLabel`, `needsPersonLabel` | status/label text written (`Email`, `Done`, `Needs Person`) |
 | `matching.*` | email column ids on People, People (Historical), and Affiliations (Work Email + Person link) |
+| `timeline.customActivityId` | the Emails & Activities custom activity posted on each matched person (`Logged email`, `79eba48d-…`, created 2026-11-03; one account, so both configs share it); `null` turns the entry off |
 | `mail.loggingAddress` | the address staff BCC; must not be on a staff domain |
 | `mail.staffDomains` | exact domain match; subdomains are not staff |
 | `mail.staffSenders` | optional allowlist of addresses; `[]` = the whole staff domain |
 | `mail.trustedAuthServId` | authserv-id of the `Authentication-Results` header to trust (see below) |
-| `mail.bodyMaxChars`, `maxRawBytes`, `forwardTimeZone` | body cut (200-1950), message size cap, zone for forwarded `Date:` lines |
+| `mail.bodyMaxChars`, `maxRawBytes`, `forwardTimeZone` | body cut (200-1950), message size cap, zone for forwarded `Date:` lines that carry none (Gmail's) |
 | `mail.replyFrom` | sender of replies (`noreply@mail.bikesiliconvalley.org`) |
 | `capacity.activitiesMaxItems`, `warnPct` | board ceiling and the percentage at which the consumer files a capacity alert |
 | `alerts.itRequests` | IT Requests board id, type column id, label, and `cooldownDays`; `null` disables alerts |
 
-* **Secret:** `MONDAY_API_TOKEN` only (`wrangler secret put MONDAY_API_TOKEN`, and again with
-  `--env sandbox`). Unset, every message fails and dead-letters.
+* **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
+  `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+  OAuth app — production (`svbc-email-log`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+  `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+  re-asks once on a 401. No secrets: a `MONDAY_API_TOKEN` secret is only the fallback while the
+  cutover is under way (delete it once the binding works). With neither, every message fails
+  (building the Monday client throws a config error naming both) and dead-letters. Local `wrangler
+  dev` has no broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 * **Vars:** `ENVIRONMENT` (`sandbox` in `env.sandbox`; unset = production) and `SANDBOX_EMAIL_SINK`
   (sandbox only). In the sandbox every reply goes to the sink address, and the `send_email`
   binding is locked to it at the platform (`allowed_destination_addresses`). A missing sink
@@ -138,8 +169,10 @@ still unset until the board and live mail exist.
 
 Standard Monday GraphQL through the canonical transport copy `src/monday/graphql.ts`
 (byte-identical to `monday-backup`'s; the `monday-graphql-copies` CI job enforces it). The Worker
-reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged)
-plus, if alerts are on, IT Requests. Use a dedicated integration user and run
+reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged),
+Emails & Activities timeline entries on matched People items (`create_timeline_item`, which needs a
+CRM seat; API-created entries don't fire "new timeline item" automations) and, if alerts are on, IT
+Requests. Use a dedicated integration user and run
 `node ../scripts/check-monday-token-scope.mjs --workspace <id>` before calling the token scoped.
 
 ## Prerequisites (board work nobody has done)
@@ -156,6 +189,12 @@ Copied from the spec. None of this is done in code.
 * People and People (Historical) show both boards: either their Activities connect/mirror column
   links to both, or a second one is added for Activities (Logged). Pick whichever Monday allows
   for a two-way connect column; the goal is that a person's item shows old and new activity.
+  *Done in production 2026-11-03:* Activities (Logged)'s Person column is two-way
+  (`allowCreateReflectionColumn`), which added an `Activities (Logged)` connect column to People
+  (`board_relation_mm8r6c2r`) and People (Historical) (`board_relation_mm8rp0gn`), back-filled
+  for existing items. Keep both titles identical: people-reclassification matches columns by
+  title and type, and aborts a pass when the two People boards disagree. (The sandbox board isn't
+  two-way yet.)
 * A dedicated Monday integration user for this Worker that can read People, People (Historical),
   Affiliations, and the users list, and write only Activities (Logged) (and IT Requests, if
   `alerts.itRequests` is set). Run `scripts/check-monday-token-scope.mjs` against it before
@@ -173,16 +212,17 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    ids in `activities.*` in `config/sandbox.json`. While any is a placeholder the consumer
    refuses to write and the message dead-letters. The consumer's log line on each attempt names
    the missing key (`config: activities.<key> is not configured`); the D1 row's error ends up as
-   `dead-lettered after retries`. Optionally set
+   `dead-lettered after retries`. A new board is private: subscribe the integration user
+   (Sandbox Integration in the sandbox, SVBC Integration in production) or every create fails
+   with `User unauthorized to perform action` and retries. Optionally set
    `alerts.itRequests` (board id, **column id** for `typeColumn`, label, `cooldownDays`).
 2. **D1 and queues.** `wrangler d1 create svbc-email-log-sandbox`, paste the id into
    `wrangler.jsonc` `env.sandbox.d1_databases[0].database_id`, then
    `npx wrangler d1 migrations apply svbc-email-log-sandbox --env sandbox --remote`. Create the
    queues `email-log-writes-sandbox` and `email-log-writes-sandbox-dlq`. (Production later:
    `svbc-email-log`, `email-log-writes`, `email-log-writes-dlq`.)
-3. **Token.** Create a dedicated Monday integration user, then
-   `wrangler secret put MONDAY_API_TOKEN --env sandbox`, and run
-   `node ../scripts/check-monday-token-scope.mjs --workspace <id>` with that token.
+3. **Monday access.** Confirm the sandbox broker's Staff Sync app is consented
+   (`svbc-monday-auth-sandbox`); the `MONDAY_AUTH` binding needs no secret here.
 4. **Email Routing.** Enable Email Routing on `log.bikesiliconvalley.org`. Confirm the Workspace
    MX records on the apex and the Email Sending records on `mail.` are untouched. Route
    `log-sandbox@log.bikesiliconvalley.org` to the Worker `svbc-email-log-sandbox`. Deploy with
@@ -192,6 +232,9 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    authserv-id only, never addresses, then remove the logging). Set `mail.trustedAuthServId` in
    `config/sandbox.json` and redeploy. **If there is no DKIM verdict in the header, stop and
    report back** (spec section 1); don't fall back to trusting From.
+   *Done 2026-11-02:* one header, authserv-id `mx.cloudflare.net`, with
+   `dkim=pass header.d=bikesiliconvalley.org` (Gmail's own verdict arrives separately as
+   `ARC-Authentication-Results`, which the parser ignores). Production uses the same id.
 
    **Then the forgery check.** From an outside (non-staff) account, send *unsigned* mail to the
    sandbox address with a staff `From:` and a forged
@@ -200,6 +243,24 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    making two, which the parser rejects. Confirm the message is rejected. **If Cloudflare does not
    add its own `Authentication-Results` header to unsigned mail, stop and report back before going
    live:** the parser's single-header rule is then forgeable.
+   *Closed from the docs 2026-11-03; no forged message was sent* (port 25 is blocked from the
+   machine this was done on). The evidence:
+   * Cloudflare's [email handler docs](https://developers.cloudflare.com/email-service/api/route-emails/email-handler/#authentication-results)
+     say Email Routing validates DMARC before invoking the Worker and prepends its own
+     `Authentication-Results` header from `mx.cloudflare.net`, warning that other such headers may
+     come from the sender. They don't single out unsigned mail, so "adds it to unsigned mail" is
+     read from that general statement. Only signed mail has been seen doing it here.
+   * Cloudflare's [postmaster docs](https://developers.cloudflare.com/email-service/reference/postmaster/#dmarc-enforcing)
+     say incoming mail failing the claimed sender's DMARC policy is rejected, and mail failing both
+     SPF and DKIM is rejected too. `bikesiliconvalley.org` publishes `p=reject; adkim=s; aspf=s`,
+     so unsigned mail with a staff `From:` from an unauthorized server shouldn't reach the Worker.
+   * `authenticate.test.ts` covers the Worker's half: two headers with the trusted id are rejected,
+     whichever comes first.
+
+   **Send the forged message after all if** that DMARC record is ever relaxed, or if Cloudflare's
+   documented behavior changes. Mail from a server the domain's SPF record authorizes can pass
+   DMARC on SPF alone, so for that sender only the prepended header stands between a forged header
+   and the parser.
 6. **Live check: email lookup case.** Does `items_page_by_column_values` on an email column
    ignore case? The Worker looks up lowercased addresses. If Monday's lookup is case-sensitive,
    record that here and open an issue: a person stored with a mixed-case address shows as
@@ -217,22 +278,93 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
     (dropped, no item), a message to an unmatched address (item with `Needs Person`, plus the
     reply to the sink), and a duplicate (the same message again makes no second item).
 
-Production follows after cutover: production boards and column ids in `config/svbc.json`, the
-production D1/queues/secret, Email Routing for `log@log.bikesiliconvalley.org`, then a one-paragraph
-staff note (significant touches only) in the staff guide.
+## Production bring-up
+
+Started 2026-11-03, post-cutover.
+
+1. **Config — done.** `config/svbc.json` points at the production boards: Activities (Logged)
+   18438042551, People 18437909781, People (Historical) 18437909784, Affiliations 18437909787,
+   with their column ids. Activities (Logged) already existed with the sandbox board's columns
+   (plus a `Topic` tag column the Worker doesn't write), Person connected to both People boards,
+   and SVBC Integration subscribed. `mail.trustedAuthServId` is `mx.cloudflare.net`, the id the
+   sandbox found in step 5. `alerts.itRequests` files to IT Requests (8846215481, Type
+   `status_11` = `IT Support`) with a one-day cooldown per alert kind.
+2. **D1 and queues — done.** D1 `svbc-email-log` (`5e2475bd-…`, migration 0001 applied) and the
+   queues `email-log-writes` and `email-log-writes-dlq`.
+3. **Monday access.** Nothing to set: `MONDAY_AUTH` binds `svbc-monday-auth`, whose Staff Sync app
+   is already consented for the other production Workers.
+4. **Write switch — done 2026-11-03:** `node scripts/flags.mjs email-log writes on --env production`
+   (run from the repo root). Missing means off, and an off Worker dry-runs every message.
+5. **Deploy — done 2026-11-03:** `cd email-log && npx wrangler deploy --env=""` (version
+   `4198adc6`).
+6. **Email Routing — done 2026-11-03:** on `log.bikesiliconvalley.org`, the rule
+   `log@log.bikesiliconvalley.org` → Worker `svbc-email-log` is active. The route can only be
+   created once the Worker exists, so it comes after the deploy.
+7. **Smoke test — done 2026-11-03.** One staff BCC to `log@` went through: D1 row `logged` 12 s
+   after receipt, and an Activities (Logged) item with Activity Type `Email`, Owner the sender and
+   the Message Hash set. The recipient was a personal address not on any People record, so the item
+   is `Needs Person` with the address in Notes, which is correct. A second BCC, to an address on
+   a People record, logged as `Done` with Person linked to that People item, so the matched path
+   works in production too.
+8. **Staff note:** one paragraph in the staff guide (significant touches only).
+
+The sandbox's steps 6 to 10 are still owed. They test the code, not the deployment, so they apply
+to production as they stand. The forgery check (step 5) is closed from Cloudflare's docs rather
+than a live send; see step 5 for the evidence and for when to send it after all.
 
 ## Failures and alerts
 
-* A failed consumer attempt retries after 1, 4 and 16 minutes, then goes to the dead-letter queue.
+* A failed consumer attempt retries on the shared backoff (1 minute doubling to an hour) up to 100
+  times, about four days, then goes to the dead-letter queue.
   The dead-letter consumer marks the row `failed`, tells the staff member to try again, and raises
   a `dead-letter` IT Requests item. Nothing is re-driven from the queue: the staff member
   re-sends.
 * Capacity: when Activities (Logged) holds `warnPct` percent of `activitiesMaxItems`, the
   consumer still writes and raises a `capacity` alert. A "Board has reached its max size" error
   raises `board-full`.
+  `activitiesMaxItems` is 100,000 in both configs: SVBC's Monday board limit, the `items_limit`
+  Monday reports (decided 2026-11-03; it was 10,000, which would have raised a false `capacity`
+  alert at 9,500 items).
 * Each alert kind has a per-kind cooldown (`alerts.itRequests.cooldownDays`), tracked in D1.
 * Logs carry an outcome and the first 12 hex chars of the hash as a correlation id, never an
   address, subject or body (`node ../scripts/check-log-safety.mjs`).
+
+## Deploying: the write switch
+
+Every Monday create (the Activity item and the IT Requests alerts), every staff reply
+(`sendUnmatched`, `sendNoAddress`, `sendNotLogged` from the main consumer) and every D1 write the
+consumer makes (`markLogged`, `recordError`, `recordAlert`) is gated by the shared write switch
+(spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`),
+read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
+namespaces exist):
+
+- `email-log:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the queue
+  (retrying at 1 minute doubling to an hour); `off` runs the consumer against recording proxies,
+  logging one `"writeSwitch":"skipped"` line per would-be write and acking. **A missing key means
+  `off`**; a KV read error behaves like hold.
+- `email-log:log` — `debug` adds redacted payloads to those lines (names, addresses and subjects
+  masked, body as a length).
+
+The inbound `email()` handler keeps authenticating, deduping and enqueuing in every mode (and
+`setReject` for oversize or unauthenticated mail stays live). Under `off` it stamps the message
+dropped, so it is never written even if the switch is `on` by the time it is consumed, and closes
+the ledger row out as `failed` (error `dropped: write switch off`) — `claim` re-opens only
+`failed` rows, so the staff member's re-send after the switch is on is logged instead of being
+swallowed as a duplicate. A dry run does the same for a message it consumes. Nothing re-enqueues
+ledger rows automatically (no cron), so a dropped row is never revived. A message queued before
+this build has no stamp and is written under `on`. The dead-letter consumer, its staff reply and
+its IT alert run in every mode. The main queue retries 100 times before dead-lettering. Set the
+switch with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes the queue:
+
+```sh
+node scripts/flags.mjs email-log writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
 
 ## Known limits and threat model
 
@@ -252,6 +384,11 @@ staff note (significant touches only) in the staff guide.
   counterparts, never dropped. That list is usually empty, so the result is a `Needs Person` item
   with no Person link, and the staff member gets the "no outside address was found" reply with
   the item link.
+  Gmail and Apple Mail blocks parse; Outlook's doesn't, nor does a forward sent as HTML only (the
+  block is read from `text/plain`, which both Gmail and Apple Mail always include; stripped HTML
+  runs Apple's header lines together). An Apple `Date:` with a zone abbreviation outside North
+  America (other than `GMT`/`UTC` or a `GMT±h` offset) leaves the item on the forward's own date,
+  and that date then feeds the dedupe hash, so two forwards of that message aren't caught.
 * **Create succeeded, D1 `markLogged` failed.** The retry finds the item by its Message Hash and
   adopts it; no reply to staff is sent for that message.
 * **A row can stay `queued`** if the isolate dies between claiming the hash and enqueueing. The
@@ -265,6 +402,15 @@ staff note (significant touches only) in the staff guide.
   it by hand.
 * A message BCC'd and then also forwarded may make two items (a forward has no shared key with the
   original). Staff delete the duplicate.
+* **Resolved 2026-11-03: keep the separate Activities (Logged) board.** Production already has it
+  (18438042551), staff-subscribed and connected to both People boards, so the Worker writes there.
+  The original question, kept for the record: **is a separate Activities (Logged) board still needed?** The design
+  (Constraints, Decision 1) sends go-forward logs to a new board because the imported Activities
+  board was "full" at a ~10,000-item ceiling. SVBC's real limit is 100,000 (decided 2026-11-03),
+  so the imported board (about 10,000 items) has room for years of significant-touch logging.
+  Writing to Activities itself would put all activity on one board. Keeping Activities (Logged)
+  keeps imported history apart from new entries. Nothing has changed yet: the Worker still
+  writes only `monday.boards.activities-logged`. SVBC to decide before production bring-up.
 
 ## Commands
 

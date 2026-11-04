@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMondayUsers, staffMatcher } from './staff.js';
+import { exactStaffMatcher, parseMondayUsers, staffMatcher } from './staff.js';
 
 const CSV = `﻿Name,Email,Created At,Title,Has Photo,Location,Phone,Mobile Phone,Joined at,Birthday,User Status,User Type,Invited By,Teams,Products,Last active
 Clarrissa Cabansagan,clarrissa@bikesiliconvalley.org,2024-11-05,,,,,,,,Activated,Admin,x,,wm,2026-08-23
@@ -36,5 +36,25 @@ describe('staffMatcher', () => {
   it('returns null for former staff and ambiguous names', () => {
     expect(match('Seth Goddard')).toBeNull();
     expect(match('SVBC Integration')).toBeNull();
+  });
+});
+
+describe('exactStaffMatcher', () => {
+  const match = exactStaffMatcher([
+    { name: 'Clarrissa Cabansagan', email: 'clarrissa@bikesiliconvalley.org' },
+    { name: 'deanna@bikesiliconvalley.org', email: 'deanna@bikesiliconvalley.org' },
+    { name: 'SVBC Integration', email: 'integration@bikesiliconvalley.org' },
+    { name: 'Sam Lee', email: 'sam1@bikesiliconvalley.org' },
+    { name: 'Sam Lee', email: 'sam2@bikesiliconvalley.org' },
+  ]);
+
+  it('matches exact names only, with no first-name fallback', () => {
+    expect(match('clarrissa  CABANSAGAN')).toBe('clarrissa@bikesiliconvalley.org');
+    expect(match('Deanna Chevas')).toBeNull();
+  });
+
+  it('never matches an integration user or an ambiguous name', () => {
+    expect(match('SVBC Integration')).toBeNull();
+    expect(match('Sam Lee')).toBeNull();
   });
 });

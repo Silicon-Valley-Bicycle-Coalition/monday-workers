@@ -51,7 +51,8 @@ export function testConfig(overrides: DeepPartial<EmailLogConfig> = {}): EmailLo
       forwardTimeZone: 'America/Los_Angeles',
       replyFrom: { email: 'noreply@mail.example.org', name: 'Monday Log' },
     },
-    capacity: { activitiesMaxItems: 10000, warnPct: 95 },
+    timeline: { customActivityId: null },
+    capacity: { activitiesMaxItems: 100000, warnPct: 95 },
     alerts: { itRequests: null },
   };
   return merge(base as unknown as Record<string, unknown>, overrides as Record<string, unknown>) as unknown as EmailLogConfig;

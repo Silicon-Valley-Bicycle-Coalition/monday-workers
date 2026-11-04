@@ -1,0 +1,85 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
+  },
+  "timeZone": "America/Los_Angeles",
+  "fromAddress": "noreply@mail.bikesiliconvalley.org",
+  "fromName": "SVBC Monday reports (sandbox)",
+  "logoUrl": "https://member.sandbox.bikesiliconvalley.org/email/logo.png",
+  "recipientDomains": [
+    "bikesiliconvalley.org"
+  ],
+  "boards": {
+    "donations": 18431577310,
+    "people": 18431577220
+  },
+  "digests": {
+    "unmatched-gifts": {
+      "schedule": {
+        "weekdays": [
+          1
+        ],
+        "hour": 13
+      },
+      "recipients": [
+        68302743
+      ],
+      "view": "Needs a donor",
+      "skipWhenEmpty": true
+    },
+    "renewals": {
+      "schedule": {
+        "monthDays": [
+          1,
+          15
+        ],
+        "hour": 9
+      },
+      "recipients": [
+        68302743
+      ],
+      "view": "Renewals this month and next"
+    },
+    "recent-gifts-wealth": {
+      "schedule": {
+        "weekdays": [
+          1
+        ],
+        "hour": 8
+      },
+      "recipients": [
+        68160704
+      ],
+      "view": "Gifts, last 60 days",
+      "days": 60,
+      "minAmount": 400
+    },
+    "fiscal-year-by-size": {
+      "schedule": {
+        "weekdays": [
+          1
+        ],
+        "hour": 8
+      },
+      "recipients": [
+        68160704,
+        68302747
+      ],
+      "view": "By gift size"
+    },
+    "last-week": {
+      "schedule": {
+        "weekdays": [
+          1
+        ],
+        "hour": 8
+      },
+      "recipients": [
+        68302743
+      ],
+      "view": "Gifts, last 7 days",
+      "days": 7
+    }
+  }
+}

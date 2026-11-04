@@ -3,6 +3,7 @@ import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken } from '../crypto/token';
+import { magicLinkUrl } from './magicLinkUrl';
 import { localeFromMondayLabel, type Locale } from '../i18n/locales';
 
 export interface RequestLoginDeps {
@@ -37,6 +38,6 @@ export async function requestLogin(email: string, localeHint: Locale, deps: Requ
     expiresAt,
   });
 
-  const loginUrl = `${deps.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
+  const loginUrl = magicLinkUrl(deps.portalBaseUrl, rawToken, locale);
   await deps.emailSender.sendLoginEmail({ to: email, loginUrl, locale });
 }

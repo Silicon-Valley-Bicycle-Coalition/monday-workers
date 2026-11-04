@@ -50,6 +50,10 @@ export const vi: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'Hiện chúng tôi không thể xác minh thẻ này. Vui lòng thử lại sau vài phút.',
   'error.eventsLoadFailed': 'Hiện không thể tải các đăng ký sự kiện của bạn. Vui lòng thử lại sau vài phút.',
   'error.generic': 'Đã xảy ra lỗi. Vui lòng thử đăng nhập lại.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Tạm Thời Không Khả Dụng',
+  'unavailable.heading': 'Tạm thời không khả dụng',
+  'unavailable.body': 'Chúng tôi đang cập nhật hệ thống nên chức năng này tạm thời chưa dùng được. Vui lòng thử lại sau ít phút.',
 
   // Portal
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
@@ -74,6 +78,15 @@ export const vi: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': 'Quản lý khoản quyên góp định kỳ',
   'portal.renewMembershipLink': 'Gia hạn tư cách thành viên',
   'portal.givingLinksNote': 'Các liên kết này sẽ mở Funraise, đơn vị xử lý thanh toán an toàn của chúng tôi. Những thay đổi bạn thực hiện ở đó sẽ hiển thị trong cổng thông tin này sau khi hồ sơ của chúng tôi được cập nhật.',
+  'portal.getInvolvedHeading': 'Tham gia',
+  'portal.getInvolvedIntro': 'Lên tiếng tại các cuộc họp nơi đưa ra quyết định về xe đạp và giao thông công cộng, và cùng các thành viên khác tham gia sự kiện của SVBC.',
+  'portal.getInvolvedTransit': 'Cuộc họp của cơ quan giao thông công cộng',
+  'portal.getInvolvedCivic': 'Ủy ban xe đạp và người đi bộ của thành phố',
+  'portal.getInvolvedEvents': 'Sự kiện của SVBC',
+  'portal.getInvolvedVolunteer': 'Cơ hội tình nguyện',
+  'portal.getInvolvedEventsLink': 'Xem các sự kiện sắp tới của SVBC',
+  'portal.getInvolvedVolunteerLink': 'Tìm ca tình nguyện',
+  'portal.addToCalendar': 'Thêm vào lịch',
   'portal.discountsHeading': 'Ưu đãi tại cửa hàng xe đạp',
   'portal.taxDocumentsLink': 'Tài liệu thuế',
   'portal.eventsLink': 'Đăng ký sự kiện',
@@ -185,4 +198,6 @@ export const vi: Record<TranslationKey, string> = {
   'letterReady.body': 'Thư ghi nhận đóng góp năm {{year}} của bạn đã sẵn sàng để xem trong cổng thông tin nhà tài trợ.',
   'letterReady.loginLink': 'Đăng nhập để xem',
   'letterReady.expiry': 'Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'portal.matchedBy': '{{company}} đã đóng góp đối ứng vào {{date}}: {{amount}}',
+  'portal.startMatch': 'Chủ lao động của bạn có thể đóng góp đối ứng cho khoản quyên góp này',
 } satisfies Record<TranslationKey, string>;

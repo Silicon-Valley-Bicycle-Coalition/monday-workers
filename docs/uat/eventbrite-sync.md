@@ -1,11 +1,12 @@
-# UAT script: Eventbrite ticket orders
+# UAT script: Eventbrite ticket orders and class emails
 
-**Status 2026-10-19: nothing to test yet.** The integration is built but not running anywhere.
-Before it can be switched on in the sandbox, the next sandbox load needs to create the
-**Eventbrite Order ID** column on the Donations board, someone needs to add the **Refunded**
-Status label there, create the sandbox D1 and queue, and set up its Eventbrite and Cloudflare
-credentials. This script
-will be updated when it is live.
+**Class emails: see the sections starting at "Class emails: try it".** Orders below are unchanged.
+
+**Status 2026-11-02: nothing to test yet for orders.** The sandbox copy has been deployed since
+2026-10-26, but it can't write a gift until the **Eventbrite Order ID** column exists on
+Donations (sandbox v3) and its id is in the sandbox config, and a refund can't be recorded until
+someone adds the **Refunded** Status label there. Production went live on 2026-11-02. This
+script will be updated when the sandbox can take an order.
 
 ## What it does
 
@@ -52,5 +53,89 @@ create Event Registrations items; that is a separate, later integration.
 
 ## Not testable yet
 
-Everything above. The Worker is code-complete but not deployed; see `eventbrite-sync/README.md`
-"Deploy" for what has to happen first.
+Everything above about orders: the sandbox copy is deployed but has no Eventbrite Order ID
+column to write to. See `eventbrite-sync/README.md` "Deploy".
+
+## Class emails: try it (sandbox)
+
+For the Bike Education coordinator. Everything here uses a test class and **staff email addresses
+only**; never register a real attendee. Each email is a Gmail draft you write. The **Send class
+email** link on the class's Events item opens a page that sends it from your Gmail as `learn@`. In
+the sandbox, every email goes to the sandbox address, whoever is on the list.
+
+1. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
+   should appear on Event Registrations with Attendance **Registered** and the class date, day and
+   location filled in.
+2. **Write a draft.** In Gmail, write the email From `learn@`, with `{{First Name}}` in the greeting
+   and mail merge off.
+3. **Send a reminder.** Before the class starts, click **Send class email** on the test class. Choose
+   **Reminder** and your draft, check From, subject and the list of people, then click **Send a test
+   to me**. Check the test in your inbox, then click **Send to 3 people**. The page shows the result,
+   and an update on the Events item gives the kind, sender and count.
+4. **Try to send it twice.** Reload the page. Reminder should show 3 sent already and nobody left.
+5. **Check in some.** In Eventbrite check in two of the three. Attendance should change to
+   **Attended** for those two. The third stays Registered.
+6. **After the class ends.** Open the page again. Thank-you should list the two who checked in.
+   Missed-you should say 1 person will get it and 2 checked in. Send both, testing each first. The
+   third person's Attendance becomes **No Show**, and the two who came get linked to People.
+7. **Nobody checked in.** Repeat with a second test class and check in nobody. After it ends,
+   Thank-you and Missed-you should both be refused, with no send button. A volunteer checked in
+   doesn't count.
+8. **Not confirmed.** Ask for help with this one: it needs a send cut off partway. Those people show
+   under **Not confirmed**. Releasing them right away should say they're too recent; after 10 minutes
+   it should release them, and an update on the item should say how many. A person listed as
+   **failed** can be released at any time.
+
+## Class emails: look at
+
+- Do the Thank-you and Missed-you emails read right, and are the bold, links and names correct?
+- A person who checks in only some of a group: the others get a missed-you (known, see below).
+- Is the warning clear when a Thank-you or Missed-you is for a class that ended more than 3 days ago?
+
+## Class emails: don't report these
+
+- Partial check-in sends a missed-you to anyone not checked in. Finish check-in before you send.
+- A hand-added registration (not through Eventbrite) isn't on the list.
+- A draft can only fill in `{{First Name}}`. Type each class's details into the draft.
+- Spanish class day and date appear in English.
+
+## Sandbox rehearsal, 2026-10-26
+
+History: this tested the hourly follow-up job and Sequences, since replaced by the send page. The
+feed findings still apply.
+
+Run 2026-10-27 (UTC) against the sandbox Worker (`svbc-eventbrite-sync-sandbox`, D1
+`svbc-eventbrite-sync-sandbox` with migrations 0001–0002) and the CRM Sandbox boards, which have no
+Sequences, so no attendee could be emailed.
+
+**Feed.** A real past class-sized event (a group ride that ended 2026-10-24 20:30 PDT, 126
+registrations) and its canceled twin were delivered as pointers (one event delivery each, then one
+attendee delivery per registration, with the shared secret in the header). Both events adopted their
+existing Events items; all registrations were written, and every checked-in attendee was linked to
+People. Posting faster than the rate limiter (60/min) got HTTP 429 and needed a resend at ~1/s; the
+backfill script's `--pause-ms` covers this.
+
+**Follow-ups.** With Class Type set and Follow-ups blank, the 03:00Z hourly run labelled 36
+registrations Thank-you and 38 Missed-you (Attendance set to No Show), set Follow-ups to Sent, and
+labelled no address twice. The 46 unlabelled Attended/Registered registrations all shared an
+address with a labelled one (family registrations); no address with a check-in got a missed-you.
+
+**Found and fixed during the rehearsal.**
+
+- Eventbrite reports a canceled, removed event as `deleted`; it was treated as due and shown as
+  Completed. Now only `live`, `started`, `ended` and `completed` events are due, and `deleted` shows
+  as Canceled (re-delivered: the twin now reads Canceled).
+- `getItems` read at most 25 items per call (Monday's default without `limit`); now 100.
+- Monday shows the label with **id 5** as the text of an empty status cell. The sandbox Class Type
+  and Follow-up Email columns had real labels at id 5, so every empty registration read as already
+  labelled (the first run wrote nothing and set Sent) and every event without a Class Type read as
+  "Bike Commuting (online)". Status cells are now read by stored value, and the setup checklist says
+  to keep id 5 free; the sandbox columns were recreated without it.
+
+**Sequences.** On a staff-only scratch board in the SVBC workspace (Sequences need a CRM workspace),
+two Sequences sending from a connected staff mailbox, each with its "When Follow-up Email changes to
+…, enroll" automation: setting each label enrolled the item (1/1 each). The emails send in the
+Sequence's 7 AM–5 PM Pacific window.
+
+**Not exercised live:** the Held path (no event in the window had zero check-ins; covered by unit
+tests) and a real Eventbrite webhook delivery (deliveries were posted directly).

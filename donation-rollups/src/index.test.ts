@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { env } from 'cloudflare:workers';
 import worker, { isDeadLetterBatch } from './index';
 
@@ -30,8 +30,10 @@ const SECRET = 'test-secret';
 
 function envFor(extra: Record<string, unknown>) {
   // The real D1 (migrations applied by test/apply-migrations.ts); a no-op queue so the route's
-  // enqueue succeeds without a real Queue binding; the webhook secret every request below presents.
-  return { ...env, RECOMPUTE_QUEUE: { send: async () => undefined }, MONDAY_WEBHOOK_SECRET: SECRET, ...extra } as unknown as import('./types').Env;
+  // enqueue succeeds without a real Queue binding; the webhook secret every request below presents;
+  // writes `on` (a FLAGS stand-in — the local KV has no key, which reads as `off`).
+  return { ...env, RECOMPUTE_QUEUE: { send: async () => undefined }, MONDAY_WEBHOOK_SECRET: SECRET,
+    FLAGS: { get: async () => 'on' }, ...extra } as unknown as import('./types').Env;
 }
 
 function donationsWebhook(pulseId: number, secret: string | null = SECRET) {
@@ -39,7 +41,7 @@ function donationsWebhook(pulseId: number, secret: string | null = SECRET) {
   return new Request(`http://worker.test/webhooks/monday/donations${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event: { type: 'create_pulse', pulseId, boardId: 18431577310 } }),
+    body: JSON.stringify({ event: { type: 'create_pulse', pulseId, boardId: 18437342657 } }),
   });
 }
 
@@ -53,11 +55,18 @@ describe('request-time config selection', () => {
     expect(row?.status).toBe('queued');
   });
 
+  it('with no write-switch key in the real FLAGS KV (reads as off), records the row dropped, not queued', async () => {
+    const res = await worker.fetch(donationsWebhook(910008), envFor({ ENVIRONMENT: 'sandbox', FLAGS: env.FLAGS }), ctx);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910008'`).first<{ status: string }>();
+    expect(row?.status).toBe('dropped');
+  });
+
   it('ignores the same event in production, whose config/svbc.json holds only the placeholder board', async () => {
     const res = await worker.fetch(donationsWebhook(910002), envFor({}), ctx);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, ignored: expect.stringContaining('18431577310') });
+    expect(await res.json()).toMatchObject({ ok: true, ignored: expect.stringContaining('18437342657') });
     const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910002'`).first();
     expect(row).toBeNull();
   });
@@ -121,5 +130,52 @@ describe('rate limiter exemption for verified Monday webhooks (issue #27)', () =
     const res = await worker.fetch(donationsWebhook(910007, null),
       envFor({ ENVIRONMENT: 'sandbox', MONDAY_WEBHOOK_SECRET: undefined, REQUEST_RATE_LIMITER: { limit } }), ctx);
     expect(res.status).toBe(429);
+  });
+});
+
+describe('custodian secret (issue #63)', () => {
+  const CUSTODIAN = 'custodian-secret';
+  const status = (headers: Record<string, string> = {}, query = '') =>
+    new Request(`http://worker.test/custodian/status${query}`, { headers });
+
+  it('authorizes /custodian/* with CUSTODIAN_SECRET as a Bearer token', async () => {
+    const res = await worker.fetch(status({ Authorization: `Bearer ${CUSTODIAN}` }),
+      envFor({ ENVIRONMENT: 'sandbox', CUSTODIAN_SECRET: CUSTODIAN }), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('no longer accepts the webhook secret, in the header or the URL', async () => {
+    const e = envFor({ ENVIRONMENT: 'sandbox', CUSTODIAN_SECRET: CUSTODIAN });
+    expect((await worker.fetch(status({ Authorization: `Bearer ${SECRET}` }), e, ctx)).status).toBe(401);
+    expect((await worker.fetch(status({}, `?secret=${SECRET}`), e, ctx)).status).toBe(401);
+  });
+
+  it('fails closed when CUSTODIAN_SECRET is unset, even with the webhook secret set', async () => {
+    const res = await worker.fetch(status({ Authorization: `Bearer ${SECRET}` }), envFor({ ENVIRONMENT: 'sandbox' }), ctx);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('Monday token from the monday-auth broker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // Any GraphQL body will do: the recompute's first Monday read is all this checks.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const message = {
+      body: { donationItemId: '910101', donationBoardId: '18437342657' },
+      attempts: 1, ack: vi.fn(), retry: vi.fn(),
+    };
+
+    await worker.queue({ queue: 'donation-rollups-recompute-sandbox', messages: [message] } as unknown as MessageBatch<import('./types').RecomputeQueueMessage>,
+      envFor({ ENVIRONMENT: 'sandbox', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth }));
+
+    expect(auth.token).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 });

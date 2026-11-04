@@ -48,3 +48,22 @@ export function staffMatcher(staff: MondayUser[]): (sfName: string) => string | 
     return emails.length === 1 ? emails[0]! : null;
   };
 }
+
+/**
+ * Exact normalized name → current-staff email, for Relationship Owner (monday-migration docs/35
+ * §3.5). Stricter than staffMatcher: a wrong owner assigns a donor to the wrong person, so no
+ * first-name fallback. Integration users are never owners, even with a Monday seat.
+ */
+export function exactStaffMatcher(staff: MondayUser[]): (sfName: string) => string | null {
+  const byName = new Map<string, string | null>();
+  for (const u of staff) {
+    const n = norm(u.name);
+    // Two staff with one name is ambiguous: neither gets matched.
+    byName.set(n, byName.has(n) ? null : u.email);
+  }
+  return (sfName: string) => {
+    const n = norm(sfName);
+    if (!n || /\bintegration\b/.test(n)) return null;
+    return byName.get(n) ?? null;
+  };
+}

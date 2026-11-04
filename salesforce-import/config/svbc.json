@@ -1,6 +1,6 @@
 {
   "salesforceOrg": "svbc",
-  "cutoverDateISO": "2026-10-23",
+  "cutoverDateISO": "2026-10-30",
   "peopleActiveSinceISO": "2019-01-01",
   "activitySliceSinceISO": "2024-08-01",
   "boardMaxItems": 9000,
@@ -13,11 +13,13 @@
     "sonic.net", "mindspring.com", "juno.com"
   ],
   "placeholderDonorSfIds": ["003i000001breKtAAI", "001i000001Esfc1AAB"],
+  "salesforceInstanceUrl": "https://svbc.my.salesforce.com",
   "load": { "batchSize": 1, "concurrency": 1, "inlineLinks": false, "recoveryLookupDelayMs": 3000 },
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "boardSuffix": " (sandbox v2)",
-    "workspaceId": 17141226,
+    "accountUrl": "https://bikesiliconvalley.monday.com",
+    "boardSuffix": "",
+    "workspaceId": 18201685,
     "boards": {
       "donations": null,
       "activities": null,

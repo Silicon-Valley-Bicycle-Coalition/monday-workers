@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processBenevityQueueBatch, retryDelaySeconds, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
+import { consumeBenevityBatch, processBenevityQueueBatch, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
 import type { RowStore, DonationRowRecord } from '../db/rows';
 import type { DisbursementStore } from '../db/disbursements';
 import type { AliasStore } from '../db/aliases';
+import type { UploadStore } from '../db/uploads';
 import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
 
@@ -63,13 +64,13 @@ function fakeRowRecord(parsed: ParsedRow, overrides: Partial<DonationRowRecord> 
   };
 }
 
-function message(transactionId: string, attempts?: number): QueueMessageLike<BenevityQueueMessage> {
-  return { body: { transactionId }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
+function message(transactionId: string, attempts?: number, writeStamp?: 'dropped'): QueueMessageLike<BenevityQueueMessage> {
+  return { body: { transactionId, ...(writeStamp ? { writeStamp } : {}) }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
   const rowStore: RowStore = {
-    upsertRow: vi.fn(),
+    upsertRows: vi.fn(),
     getRow: vi.fn(),
     getRowByWorklistItemId: vi.fn(),
     requeueRow: vi.fn(),
@@ -77,6 +78,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
+    listDeadLetteredWithoutWorklistItem: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
     findOrCreate: vi.fn(),
@@ -97,12 +99,21 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
   };
+  const uploadStore: UploadStore = {
+    createUpload: vi.fn(),
+    getUploadByAssetId: vi.fn().mockResolvedValue(null),
+    markParsed: vi.fn(),
+    markError: vi.fn(),
+  };
   return {
+    uploadStore,
     rowStore,
     disbursementStore,
     aliasStore,
     mondayClient: mondayClient as never,
     config: fakeConfig(),
+    queue: { sendBatch: vi.fn().mockResolvedValue(undefined) },
+    fetchCsv: vi.fn(),
     now: () => '2026-09-15T00:00:00Z',
     ...overrides,
   };
@@ -283,7 +294,7 @@ describe('processBenevityQueueBatch', () => {
     const msg = message('TXN001', 2);
     await processBenevityQueueBatch([msg], deps);
 
-    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
   });
 
   it('still retries (with backoff) when recording the failure in D1 also fails', async () => {
@@ -366,18 +377,188 @@ describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
   });
 });
 
-describe('retryDelaySeconds', () => {
-  it('grows 60 s x 4^(attempt-1), treating a missing or bad attempt count as the first', () => {
-    expect(retryDelaySeconds(undefined)).toBe(60);
-    expect(retryDelaySeconds(0)).toBe(60);
-    expect(retryDelaySeconds(Number.NaN)).toBe(60);
-    expect(retryDelaySeconds(1)).toBe(60);
-    expect(retryDelaySeconds(2)).toBe(240);
-    expect(retryDelaySeconds(3)).toBe(960);
+describe('consumeBenevityBatch — write switch', () => {
+  const gate = (mode: 'on' | 'hold' | 'off' | 'unknown') =>
+    ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;
+
+  // An anonymous donor, so the row resolves with no Person and writes both gifts.
+  const anonymous = () =>
+    fakeParsedRow({ donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor' });
+
+  function readyDeps(parsed = anonymous()) {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+    return deps;
+  }
+
+  const skipLines = (log: { mock: { calls: unknown[][] } }) =>
+    log.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>).filter((l) => l.writeSwitch === 'skipped');
+
+  it('under on writes, and an unstamped legacy message (enqueued before the switch) is live', async () => {
+    const deps = readyDeps();
+    const msg = message('TXN001'); // no writeStamp field at all
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(2);
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'written', expect.anything());
+    expect(msg.ack).toHaveBeenCalled();
   });
 
-  it('caps at the Queues maximum delay of 43200 s (12 h)', () => {
-    expect(retryDelaySeconds(6)).toBe(43200);
-    expect(retryDelaySeconds(50)).toBe(43200);
+  it('under off makes no real Monday write and no row-status write, logs each skip, and acks', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = readyDeps();
+    const msg = message('TXN001');
+    await consumeBenevityBatch([msg], deps, gate('off'));
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    expect(skipLines(log).map((l) => l.operation)).toEqual(['createItem', 'createItem']);
+    expect(msg.ack).toHaveBeenCalled();
+    expect(msg.retry).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('under off the worklist path logs the Monday write and leaves the row alone', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = readyDeps(fakeParsedRow({ currency: 'EUR' }));
+    const msg = message('TXN001');
+    await consumeBenevityBatch([msg], deps, gate('off'));
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    expect(skipLines(log).map((l) => l.operation)).toEqual(['createItem']);
+    expect(msg.ack).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('a message stamped dropped stays a dry run even once the mode is on', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = readyDeps();
+    const msg = message('TXN001', undefined, 'dropped');
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('a failure under off does not write the error back to the row', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = readyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await consumeBenevityBatch([message('TXN001')], deps, gate('off'));
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    log.mockRestore();
+    err.mockRestore();
+  });
+
+  it.each(['hold', 'unknown'] as const)('under %s retries at 60 s without reading the row or touching Monday', async (mode) => {
+    const deps = readyDeps();
+    const msg = message('TXN001', 1);
+    await consumeBenevityBatch([msg], deps, gate(mode));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(deps.rowStore.getRow).not.toHaveBeenCalled();
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+  });
+
+  it('retries on the shared backoff: attempt 8 waits 3600 s', async () => {
+    const deps = readyDeps();
+    const held = message('TXN001', 8);
+    await consumeBenevityBatch([held], deps, gate('hold'));
+    expect(held.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+
+    // And a real failure under on backs off the same way.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 down'));
+    const failed = message('TXN001', 8);
+    await consumeBenevityBatch([failed], deps, gate('on'));
+    expect(failed.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+    err.mockRestore();
   });
 });
+
+// Upload messages (#74): the webhook only records and enqueues a report; the consumer ingests it.
+// ingestUpload itself is covered in ingestUpload.test.ts — these cover the dispatch around it.
+describe('consumeBenevityBatch — upload messages', () => {
+  const gate = (mode: 'on' | 'off' | 'hold') =>
+    ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;
+
+  function uploadMessage(writeStamp?: 'dropped', attempts?: number): QueueMessageLike<BenevityQueueMessage> {
+    return { body: { assetId: 'a1', ...(writeStamp ? { writeStamp } : {}) }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
+  }
+
+  // An already-parsed upload: ingestUpload returns at once, so these tests see only the dispatch.
+  function parsedDeps() {
+    const deps = fakeDeps();
+    (deps.uploadStore.getUploadByAssetId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsed', blockCount: 1 });
+    return deps;
+  }
+
+  it('ingests the upload and acks, without treating it as a row', async () => {
+    const deps = parsedDeps();
+    const msg = uploadMessage();
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(deps.uploadStore.getUploadByAssetId).toHaveBeenCalledWith('a1');
+    expect(deps.rowStore.getRow).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalled();
+  });
+
+  it('retries on the shared backoff when ingesting fails, and leaves no row status behind', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.mondayClient.fetchAsset as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    const msg = uploadMessage(undefined, 3);
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('under hold retries without touching the upload', async () => {
+    const deps = parsedDeps();
+    const msg = uploadMessage(undefined, 1);
+    await consumeBenevityBatch([msg], deps, gate('hold'));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(deps.uploadStore.getUploadByAssetId).not.toHaveBeenCalled();
+  });
+
+  it('a dropped upload stays a dry run under on: its rows are stamped dropped and no worklist item is posted', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.uploadStore.createUpload as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsing', blockCount: 0 });
+    (deps.mondayClient.fetchAsset as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'a1', name: 'r.csv', publicUrl: 'https://files.monday.com/a1' });
+    (deps.fetchCsv as ReturnType<typeof vi.fn>).mockResolvedValue(REPORT);
+    (deps.disbursementStore.findOrCreate as ReturnType<typeof vi.fn>).mockImplementation(async (input) => ({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true }));
+    (deps.rowStore.upsertRows as ReturnType<typeof vi.fn>).mockResolvedValue(new Map([['TXN001', 'ingested']]));
+    const msg = uploadMessage('dropped');
+
+    await consumeBenevityBatch([msg], deps, gate('on'));
+
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001', writeStamp: 'dropped' }]);
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1); // still recorded as seen
+    expect(msg.ack).toHaveBeenCalled();
+    log.mockRestore();
+  });
+});
+
+const REPORT = [
+  'Donations Report,',
+  '"#---",',
+  'Charity Name,SVBC',
+  'Charity ID,123',
+  'Period Ending,Tue 16 Mar 2026 0:00:00',
+  'Currency,USD',
+  'Payment Method,EFT',
+  'Disbursement ID,ABC123',
+  'Note,',
+  '"#---",',
+  '',
+  'Company,Project,Donation Date,Donor First Name,Donor Last Name,Email,Address,City,State/Province,Postal Code,Activity,Comment,Transaction ID,Donation Frequency,Currency,Project Remote ID,Source,Reason,Total Donation to be Acknowledged,Match Amount,Cause Support Fee,Merchant Fee,Fee Comment',
+  '"Acme, Inc.",Project,2026-03-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,TXN001,One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,',
+  'Totals,,,,,,,,,,,,,,,,,,50.00,0.00,0.00,0.00',
+  'Total Donations (Gross),50.00',
+  'Check Fee,0.00',
+  'Net Total Payment,50.00',
+  '',
+].join('\n');

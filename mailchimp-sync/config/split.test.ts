@@ -45,6 +45,12 @@ describe('config split: the Mailchimp sink', () => {
     }
   });
 
+  it('the two configs never share an interest category', () => {
+    for (const id of sandbox.mailchimp.interestCategoryIds) {
+      expect(production.mailchimp.interestCategoryIds).not.toContain(id);
+    }
+  });
+
   it('merge fields and tags are the same in both — they name Mailchimp fields, not ids', () => {
     expect(sandbox.mailchimp.mergeFields).toEqual(production.mailchimp.mergeFields);
     expect(sandbox.mailchimp.tags).toEqual(production.mailchimp.tags);
@@ -61,11 +67,12 @@ describe('config split: Monday ids', () => {
   });
 
   it('no real sandbox column id appears in production', () => {
-    const sb = sandbox.monday.columns as Record<string, string>;
-    const prod = production.monday.columns as Record<string, string>;
+    const sb = sandbox.monday.columns as Record<string, string | null>;
+    const prod = production.monday.columns as Record<string, string | null>;
     let real = 0;
     for (const [key, id] of Object.entries(sb)) {
-      if (id === PLACEHOLDER) continue;
+      // A null id (nearby, until its column exists) is unset, not a shared id.
+      if (id === PLACEHOLDER || id === null) continue;
       real += 1;
       expect(prod[key], `monday.columns.${key}`).not.toBe(id);
     }
@@ -119,6 +126,14 @@ describe('wrangler.jsonc env.sandbox', () => {
       const other = envBlock === wrangler ? sandboxEnv : wrangler;
       for (const c of consumers) expect(consumersOf(other).map((o) => o.queue)).not.toContain(c.queue);
     }
+  });
+
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(prodKv.id).toBeTruthy();
+    expect(sbKv.id).toBeTruthy();
+    expect(sbKv.id).not.toBe(prodKv.id);
   });
 
   it('has its own D1 database, never production’s', () => {

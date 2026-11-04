@@ -1,3 +1,4 @@
+import type { UsageAlertStore } from '../usage';
 import type { WatchdogStore } from '../watchdog';
 
 export interface RunResult {
@@ -18,7 +19,7 @@ export interface SnapshotRunStore {
   recordRunFailure(runId: number, finishedAtUtc: string, errorMessage: string): Promise<number>;
 }
 
-export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore {
+export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, UsageAlertStore {
   constructor(private db: D1Database) {}
 
   async recordRunStart(startedAtUtc: string): Promise<number> {
@@ -114,5 +115,20 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore {
 
   async recordStaleAlert(nowUtc: string): Promise<void> {
     await this.db.prepare(`UPDATE run_alert_state SET last_stale_alert_at = ?1 WHERE id = 1`).bind(nowUtc).run();
+  }
+
+  async lastUsageAlert(): Promise<{ day: string; level: number } | null> {
+    const row = await this.db
+      .prepare(`SELECT last_usage_alert_day, last_usage_alert_level FROM run_alert_state WHERE id = 1`)
+      .first<{ last_usage_alert_day: string | null; last_usage_alert_level: number | null }>();
+    if (row?.last_usage_alert_day == null || row.last_usage_alert_level == null) return null;
+    return { day: row.last_usage_alert_day, level: row.last_usage_alert_level };
+  }
+
+  async recordUsageAlert(day: string, level: number): Promise<void> {
+    await this.db
+      .prepare(`UPDATE run_alert_state SET last_usage_alert_day = ?1, last_usage_alert_level = ?2 WHERE id = 1`)
+      .bind(day, level)
+      .run();
   }
 }

@@ -10,6 +10,46 @@ describe('BOARD_SPECS columns', () => {
     expect(col.labels).toEqual(STATUS_LABELS['Stakeholder Type']);
     expect(col.labels).toContain('Elected Official');
   });
+
+  it('the two People boards get the same columns, so people-reclassification can move between them', () => {
+    // A column on one People board but not the other makes every reclassification pass abort
+    // (it would drop that column's values). Campaign (tags) was live-only until 2026-11-02.
+    const cols = (key: string) => (BOARD_SPECS[key]!.columns ?? []).map((c) => `${c.title} (${c.type})`).sort();
+    expect(cols('people-historical')).toEqual(cols('people-live'));
+  });
+});
+
+describe('Event Registrations class roster', () => {
+  const spec = BOARD_SPECS['event-registrations']!;
+  const roster = spec.views!.find((v) => v.name === 'Class roster')!;
+
+  it('creates every per-attendee column eventbrite-sync writes that the load does not', () => {
+    expect(spec.columns).toEqual([
+      { title: 'First Name', type: 'text' },
+      { title: 'Class Date', type: 'date' },
+      { title: 'Class Day', type: 'text' },
+      { title: 'Class Location', type: 'text' },
+    ]);
+  });
+
+  it('lists only people still registered for a class that has not happened yet', () => {
+    expect(roster.filter!.rules).toEqual([
+      { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
+      { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+    ]);
+  });
+
+  it('groups by class, soonest first, with the fields staff need to reach someone', () => {
+    expect(roster.groupBy).toEqual({ columnTitle: 'Event' });
+    expect(roster.sort).toEqual([{ columnTitle: 'Class Date' }]);
+    expect(roster.columns).toEqual(expect.arrayContaining(['Attendee Name', 'Attendee Email', 'Class Date']));
+  });
+});
+
+describe('Events send link', () => {
+  it('has a Send class email link column, written by eventbrite-sync', () => {
+    expect(BOARD_SPECS['events']!.columns).toContainEqual({ title: 'Send class email', type: 'link' });
+  });
 });
 
 describe('BOARD_SPECS views', () => {
@@ -56,6 +96,37 @@ describe('BOARD_SPECS views', () => {
     expect(names('donations')).toEqual(expect.arrayContaining(
       ['Recent gifts', 'Revenue by funding stream', 'By gift size', 'By fiscal quarter', 'Major gifts to thank']));
   });
+
+  it('"Postal appeal list" needs an address and suppresses Do Not Solicit and Do Not Mail', () => {
+    const v = BOARD_SPECS['people-live']!.views!.find((x) => x.name === 'Postal appeal list')!;
+    const rules = v.filter!.rules.map((r) => `${r.columnTitle} ${r.operator}`);
+    expect(rules).toEqual(expect.arrayContaining(
+      ['Address is_not_empty', 'Do Not Solicit is_empty', 'Do Not Mail is_empty', 'Gift Count greater_than',
+        'Has Active Recurring Gift is_empty']));
+    expect(rules.some((r) => r.startsWith('Personal Email'))).toBe(false);
+  });
+});
+
+describe('report-triage views (docs/35 §3.4, §3.5)', () => {
+  const view = (name: string) => BOARD_SPECS['people-live']!.views!.find((x) => x.name === name)!;
+
+  it('the board donor call list needs a phone and suppresses Do Not Solicit', () => {
+    const rules = view('Board donor call list').filter!.rules.map((r) => `${r.columnTitle} ${r.operator}`);
+    expect(rules).toEqual(expect.arrayContaining(['Phone is_not_empty', 'Do Not Solicit is_empty',
+      'Last Gift Date within_the_last']));
+  });
+
+  it('the 990 view reads the last-fiscal-year rollup', () => {
+    expect(view('Gave last fiscal year (990)').filter!.rules[0]).toMatchObject(
+      { columnTitle: 'Last Year Amount', operator: 'greater_than' });
+  });
+
+  it('donor portfolios group by Relationship Owner, which both People boards describe', () => {
+    expect(view('Donor portfolios').groupBy).toEqual({ columnTitle: 'Relationship Owner' });
+    for (const b of ['people-live', 'people-historical']) {
+      expect(BOARD_SPECS[b]!.columnDescriptions!['Relationship Owner'], b).toBeTruthy();
+    }
+  });
 });
 
 describe('DASHBOARD_SPECS revenue filters', () => {
@@ -80,6 +151,13 @@ describe('DASHBOARD_SPECS revenue filters', () => {
 
 describe('final-review spec rulings', () => {
   const view = (b: string, n: string) => BOARD_SPECS[b]!.views!.find((v) => v.name === n)!;
+
+  it('"Upcoming" events need the Upcoming status and a Date of today or later, so a stale status drops out', () => {
+    expect(view('events', 'Upcoming').filter!.rules).toEqual([
+      { columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] },
+      { columnTitle: 'Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+    ]);
+  });
 
   it('"Gave last year, not this year" keys on This Year Count < 1 (rollups write 0.00, never blank)', () => {
     const rules = view('people-live', 'Gave last year, not this year').filter!.rules;
@@ -125,5 +203,23 @@ describe('withReceivedRule', () => {
     ]);
     expect(received(spans!)).toBe(0);
     expect(received(elsewhere!)).toBe(0);
+  });
+});
+
+describe('report-subscription views (docs/35 §3.6)', () => {
+  // report-digests links its emails to these views by name (its config/*.json "view" values), so a
+  // rename here must be made there too.
+  const view = (board: string, name: string) => BOARD_SPECS[board]!.views!.find((x) => x.name === name);
+
+  it('has every view the report-digests emails link to', () => {
+    for (const [board, name] of [['donations', 'Needs a donor'], ['donations', 'By gift size'], ['donations', 'Gifts, last 7 days'],
+      ['donations', 'Gifts, last 60 days'], ['people-live', 'Renewals this month and next']]) {
+      expect(view(board!, name!), `${board} / ${name}`).toBeDefined();
+    }
+  });
+
+  it('the renewals view spans this calendar month and next', () => {
+    expect(view('people-live', 'Renewals this month and next')!.filter!.rules).toEqual(
+      [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }]);
   });
 });

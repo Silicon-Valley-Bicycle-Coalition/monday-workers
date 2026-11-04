@@ -1,0 +1,25 @@
+# Slack app manifest for "SVBC Integration Alerts", the one app whose incoming webhooks every
+# Worker's SLACK_WEBHOOK_URL uses (monday-auth, monday-backup, mailchimp-sync; see SETUP.md
+# step 3). api.slack.com/apps → Create New App → From a manifest → paste this file.
+#
+# It holds no secrets: webhook URLs aren't part of the manifest. After installing, add one webhook
+# per channel (Incoming Webhooks → Add New Webhook to Workspace): #crm-sandbox for `--env sandbox`,
+# the production alerts channel for production.
+#
+# Slack's manifest check requires a bot user for any OAuth scope, incoming-webhook included
+# ("Oauth requires bot_user"), though the webhooks never use it.
+display_information:
+  name: SVBC Integration Alerts
+  description: "Alerts from SVBC's Cloudflare Workers (Monday OAuth broker, backups, Mailchimp sync)."
+features:
+  bot_user:
+    display_name: SVBC Integration Alerts
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - incoming-webhook
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

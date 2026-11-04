@@ -1,6 +1,7 @@
 import type { LegistarSourceConfig, NormalizedEvent } from '../types';
 import { zonedTimeToUtc } from '../util/zonedTime';
 import { toValidUrl } from '../util/toValidUrl';
+import { SOURCE_FETCH_TIMEOUT_MS } from '../util/fetchTimeout';
 
 interface LegistarEventRecord {
   EventId: number;
@@ -43,7 +44,7 @@ export async function fetchLegistarEvents(source: LegistarSourceConfig, now: Dat
   const filter = `EventBodyId eq ${source.bodyId} and EventDate ge datetime'${isoDate}'`;
   const url = `https://webapi.legistar.com/v1/${source.client}/events?${encodeURIComponent('$filter')}=${encodeURIComponent(filter)}`;
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
   if (!response.ok) {
     throw new Error(`legistar: ${source.client} events fetch failed: ${response.status} ${response.statusText}`);
   }

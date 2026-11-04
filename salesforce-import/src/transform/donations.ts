@@ -190,6 +190,10 @@ export interface DonorResolution {
   placeholderDonorSfIds?: ReadonlySet<string>;
   // Affiliation the Primary Contact acted for (transform/attribution.ts).
   actingFor?: string | null;
+  // One-to-One Individual Accounts, which never become items. A donor still resolving to one
+  // after donorAlias (no sole migrated Contact — people.ts soleContactAccountIds) gets no Donor
+  // link rather than a dangling one.
+  personAccountIds?: ReadonlySet<string>;
 }
 
 export interface OpportunityDeps extends DonorResolution {
@@ -220,13 +224,15 @@ export function giftDonorSfId(o: Record<string, unknown>, deps: DonorResolution)
     return accountId;
   }
   const raw = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? accountId, deps.donorAlias);
-  return raw && !deps.placeholderDonorSfIds?.has(raw) ? raw : null;
+  return raw && !deps.placeholderDonorSfIds?.has(raw) && !deps.personAccountIds?.has(raw) ? raw : null;
 }
 
 export function opportunityToPayload(o: Record<string, unknown>, deps: OpportunityDeps): ItemPayload {
   const orgAccountIds = deps.orgAccountIds ?? new Set<string>();
   const accountId = o['AccountId'] as string | null;
   const donorId = giftDonorSfId(o, deps);
+  // A donor dropped only because it is a One-to-One Account is unresolved, not anonymous.
+  const unresolvedPerson = !donorId && !!deps.personAccountIds && giftDonorSfId(o, { ...deps, personAccountIds: undefined }) !== null;
   const ticketOrder = isEventbriteTicketOrder(o, deps.eventbriteIntegrationUserName);
   const type = ticketOrder ? EVENT_TICKET_GIFT_TYPE : giftType(o);
   const attribution = attributionColumns(deps.actingFor ?? null);
@@ -253,7 +259,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Status': { label: ticketOrder ? 'Received' : giftStatus(o, deps.staleBeforeFY) },
       'Gift Type': type,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
-      'Anonymous Donor': donorId ? null : { checked: 'true' },
+      'Anonymous Donor': donorId || unresolvedPerson ? null : { checked: 'true' },
       // Salesforce never stored Benevity's transaction id, so this is blank on every migrated
       // gift; declared here so load creates the column for the benevity-import Worker to fill.
       'Benevity Transaction ID': '',
@@ -266,6 +272,8 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Check/Reference Number': text(o['Check_Reference_Number__c']),
       'In-Kind Value': o['Retail_Value__c'] != null ? String(o['Retail_Value__c']) : '',
       'In-Kind Category': text(o['In_Kind_Category__c']),
+      // A multi-select picklist (e.g. "2023-2024 BTWD;2024 Summit"), kept as readable text.
+      'Sponsorship Cycle': text(o['Sponsorship_Cycle__c']).split(';').map((v) => v.trim()).filter(Boolean).join('; '),
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...attribution.columns,
       ...salesforceDebug(o),
@@ -287,8 +295,10 @@ export function cnpOverlapCheck(
   return { duplicateTransactionIds, unique };
 }
 
-export function cnpToPayload(tx: Record<string, unknown>, donorAlias?: Map<string, string>): ItemPayload {
-  const donorId = resolveDonor(tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c'], donorAlias);
+export function cnpToPayload(tx: Record<string, unknown>, donorAlias?: Map<string, string>,
+  personAccountIds?: ReadonlySet<string>): ItemPayload {
+  const resolved = resolveDonor(tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c'], donorAlias);
+  const donorId = resolved && !personAccountIds?.has(resolved) ? resolved : null;
   return {
     board: 'donations',
     sfId: tx['Id'] as string,

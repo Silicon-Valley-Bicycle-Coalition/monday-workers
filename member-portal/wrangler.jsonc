@@ -16,6 +16,10 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   "ratelimits": [
     {
       "name": "LOGIN_RATE_LIMITER",
@@ -42,24 +46,23 @@
       { "queue": "member-portal-change-requests", "binding": "CHANGE_QUEUE" },
       { "queue": "member-portal-letter-emails", "binding": "LETTER_SEND_QUEUE" }
     ],
+    // Only the letter-emails consumer lives here. The change-requests consumer moved to
+    // member-portal-writer (wrangler.writer.jsonc): this Worker is read-only on Monday.
     "consumers": [
       {
-        "queue": "member-portal-change-requests",
-        "max_retries": 3,
-        // Single consumer at a time — Monday's per-token complexity budget punishes
-        // concurrent writers during a backlog drain.
-        "max_concurrency": 1,
-        "dead_letter_queue": "member-portal-change-requests-dlq"
-      },
-      {
         "queue": "member-portal-letter-emails",
-        "max_retries": 3,
+        "max_retries": 100,
         // Same reasoning as the change-requests consumer above.
         "max_concurrency": 1,
         "dead_letter_queue": "member-portal-letter-emails-dlq"
       }
     ]
   },
+  // Monday access: the monday-auth broker's PortalToken entrypoint (read-only scope), so this
+  // Worker can read boards but never write them; change requests are written by
+  // member-portal-writer with SyncToken. src/monday/graphql.ts tokenProviderFor prefers this
+  // binding over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "PortalToken" }],
   "triggers": {
     // Daily run: change_requests/card_tokens retention purges, plus the automatic January
     // letter-email check (runLetterCron — a no-op unless the Letter Settings board arms it;
@@ -78,7 +81,8 @@
   // layer in src/email/sandboxBinding.ts rewrites recipients to the same address. Everything
   // here is non-inheritable in Wrangler and deliberately restated: the sandbox shares nothing
   // with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
-  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (LETTER_WEBHOOK_SECRET). Monday access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": {
@@ -97,6 +101,8 @@
           "migrations_dir": "migrations"
         }
       ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [
         {
           "name": "LOGIN_RATE_LIMITER",
@@ -116,16 +122,11 @@
           { "queue": "member-portal-change-requests-sandbox", "binding": "CHANGE_QUEUE" },
           { "queue": "member-portal-letter-emails-sandbox", "binding": "LETTER_SEND_QUEUE" }
         ],
+        // Letter-emails only; the change-requests consumer is member-portal-writer-sandbox.
         "consumers": [
           {
-            "queue": "member-portal-change-requests-sandbox",
-            "max_retries": 3,
-            "max_concurrency": 1,
-            "dead_letter_queue": "member-portal-change-requests-sandbox-dlq"
-          },
-          {
             "queue": "member-portal-letter-emails-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "member-portal-letter-emails-sandbox-dlq"
           }
@@ -134,6 +135,8 @@
       "triggers": {
         "crons": ["0 9 * * *"]
       },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "PortalToken" }],
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }

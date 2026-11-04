@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/funraise-sync.md`](../docs/uat/funraise-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Production:** every
+id in `config/svbc.json` filled for the Donations, Recurring Gifts and People boards in workspace
+18201685 on 2026-11-01 (aa45bb1), and it created production's first Worker-written gifts on
+2026-11-02 (`donation-rollups/README.md`, "Acknowledgment Tier backstop"). This repo doesn't
+record when Funraise's webhook was repointed from the sandbox Worker to production (procedure: "Replaying one
+Worker's deliveries into another" below). The sandbox history follows. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
 `svbc-funraise-sync` is retired until cutover) — see "Deployed and verified". **Remapped to the
@@ -126,7 +131,15 @@ across every webhook-driven Worker in this plan.
   `https://api.funraise.io` by the subscriptions poller and the consumer's never-seen-subscription
   lookup only (read-only use; nothing here writes to Funraise). Rate limit 3,000 requests/month
   on the base plan — see "Recurring gifts and registrations" for the budget.
-* **Monday.com GraphQL API** — standard API token, same pattern as every other Worker here.
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments bind `MONDAY_AUTH`
+  (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync* OAuth app — production
+  (`svbc-funraise-sync`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to `svbc-monday-auth-sandbox`;
+  `src/monday/graphql.ts` `tokenProviderFor` asks it per request and re-asks once on a 401. A
+  `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under way (delete it once the
+  binding works); with neither, building the Monday client throws a config error naming both.
+  Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the operator's shell. Local
+  `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Donor matching
 
@@ -357,8 +370,8 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 ## Failures and the dead-letter queue (#25)
 
 A failed consumer run marks the `events` row `failed` with the error and retries the message
-with backoff — 1, 4, then 16 minutes (`retryDelaySeconds` in `src/consumer/processBatch.ts`).
-Once `max_retries` (3) is exhausted the message goes to `funraise-sync-writes-dlq`
+with backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/flags.ts`).
+Once `max_retries` (100, about four days) is exhausted the message goes to `funraise-sync-writes-dlq`
 (`…-sandbox-dlq` in the sandbox), which this Worker **also consumes**
 (`src/consumer/processDeadLetters.ts`, same shape as `donation-rollups`'): the row's error is
 prefixed `dead-lettered after retries: ` and each batch logs one `console.error` naming the
@@ -372,7 +385,15 @@ FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https:/
 FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox]
 ```
 
-It reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
+A failure no retry can fix (#75, `src/errors.ts`) skips the four days: a Monday 4xx, or a 200
+whose error code says Monday rejected the request itself (a column value it won't take, a
+column, board or item id that doesn't exist). The row is marked `failed` with the error prefixed
+`not retried: `, one `console.error` line names the transaction, and the message is acked. A
+rejected token (401/403), `UserUnauthorizedException` (also Monday's answer for a deleted
+board), rate limits and 5xx still retry, since fixing the secret or the config heals the whole
+backlog. The same re-drive picks up both kinds of `failed` row.
+
+`redrive-failed.mjs` reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
 as the envelope it arrived in (secret in the `X-Webhook-Secret` header); the route's
 duplicate-recovery path re-enqueues it, so the write happens on the normal path. Rows whose
 payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are listed for
@@ -462,10 +483,13 @@ It pages through the Donations board (`monday.boards["donations:live"]`, Funrais
 item. Archived items aren't returned by the API, so it shares adopt-before-create's blind spot —
 which is why the consumer flags old gifts instead of creating them.
 
-**Open (not decided):** which control pauses the Funraise → Salesforce sync after Gate C is not
-written down anywhere (svbc-monday-migration docs/23). Funraise's managed package has no
-documented off switch in this repo; someone with Funraise/Salesforce admin access has to name the
-control and the runbook has to say who flips it and when.
+**Pausing Funraise → Salesforce after Gate C:** Funraise's managed package has no off switch inside
+Salesforce (no custom setting, no scheduled job). Funraise's servers push each record over the
+Salesforce API through the `Funraise` connected app, on one staff user's OAuth token. Pause it in
+Salesforce Setup → Connected Apps OAuth Usage → `Funraise` → **Block** (Unblock reverses it), and
+disconnect later by revoking that token. Who flips it and when, and how to confirm the paused
+state, are in the private runbook (svbc-monday-migration `docs/23`, Salesforce after Gate C,
+step 4).
 
 ## Resetting for new board ids
 
@@ -661,6 +685,52 @@ the walk against the production Recurring Gifts board. Same lesson `donation-rol
 `docs/22` §5 of the private planning repo: bootstrap the D1 for the new board ids before
 anything writes.
 
+## Deploying: the write switch
+
+Every Monday write and ledger update is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`). It is read from the `FLAGS` KV namespace
+(`sandbox-FLAGS` under `--env sandbox`; ids in `wrangler.jsonc`):
+
+- `funraise-sync:writes` — `on` writes normally; `hold` writes nothing and keeps work queued (the
+  hourly poll skips without moving its cursor); `off` writes nothing and logs one
+  `"writeSwitch":"skipped"` line per would-be write (the poll still advances its cursor). **A
+  missing key means `off`**, and a KV read error means hold.
+- `funraise-sync:log` — `debug` adds redacted payloads to those lines.
+
+Set it with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes `funraise-sync-writes`:
+
+```sh
+node scripts/flags.mjs funraise-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. The webhook still records every delivery under any mode; one ingested while
+`off` is stamped and is never written, even if the switch is `on` by the time it's consumed. The
+daily raw-payload purge and the dead-letter consumer are D1 bookkeeping and run in every mode.
+
+**Rehearsed in the sandbox, 2026-10-27/28**, after `deploy:sandbox` of the switch build:
+
+1. **`hold`** (set 2026-10-27 19:10 UTC). Funraise's Test-button delivery and 10 real gifts that
+   arrived over the next 22 hours were each answered 200, recorded `queued` in D1, and held in the
+   paused queue; nothing reached Monday. `status` read the paused queue as `backlog 0 (no recent
+   sample)` the whole time — Queues analytics didn't sample it — so the D1 `queued` rows are the
+   way to see what a hold is holding.
+2. **`on`** (2026-10-28 ~17:47 UTC). After the 60 s cache wait the queue resumed and all 11 were
+   written in 37 s, oldest first, none failed; the 10 real gifts stay on the v3 boards.
+3. **`off`**. The Test button errored on Funraise's side that day, so a synthetic delivery
+   (transaction `-2`, posted with `X-Webhook-Secret`) stood in: answered 200, consumed 7 s later
+   as a dry run that matched the donor and logged one
+   `{"writeSwitch":"skipped","mode":"off","sink":"Donations","operation":"createItem"}` line; its
+   ledger row stayed `queued` with no Monday ids, and no item was created. Set back to `on` within
+   about two minutes; no real gift arrived meanwhile.
+
+Cleanup: the Test gift's donor and Donations items deleted (`state: deleted`) and the `-1`/`-2`
+ledger rows removed. `donation-rollups` held no rows for the gift, so there was nothing to remove
+there.
+
 ## Sandbox environment — inbound only, no outbound data
 
 This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
@@ -821,11 +891,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 
 ## Related, not yet in scope here
 
-* **Double the Donation / 360MatchPro** — a *third*, independent pipeline (Salesforce AppExchange
-  managed package, writes match data directly to Salesforce, doesn't ride on Funraise's
-  connection). Not this Worker's job to replicate yet — first the actual custom fields it created
-  need identifying (Pre-Migration Deliverables), then a decision on whether to build a companion
-  sync or fold match data into `salesforce-import` as a one-time carry-over.
+* **Double the Donation / 360MatchPro** — not a donation pipeline after all. SVBC subscribed in
+  July 2026 (onboarding complete 2026-08-20); its Salesforce package was installed 2026-07-21 and
+  holds zero records, and its job is to *prompt* donors to request employer matches, not to
+  record them — matched money arrives through Benevity (see `benevity-import`). Decided
+  2026-09-08: nothing of it migrates and this Worker doesn't replicate it. DTD integrates with
+  Funraise directly, which outlives Salesforce; its Salesforce integration ends at cutover. The
+  only code touching DTD is `member-portal`'s employer-search widget.
   [Double the Donation](https://doublethedonation.com/) ·
   [360MatchPro on Salesforce AppExchange](https://appexchange.salesforce.com/appxListingDetail?listingId=a0N3A00000FR4jnUAD).
 * **Streamlabs Charity** — possible fourth donation pipeline (stream-driven donations via a Twitch/

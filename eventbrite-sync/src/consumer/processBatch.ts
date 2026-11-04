@@ -1,12 +1,23 @@
 import type { OrderStore } from '../db/orders';
+import type { EventStore } from '../db/events';
+import type { AttendeeStore } from '../db/attendees';
+import type { QueueLike } from '../webhook/route';
+import type { BatchSender } from '../util/sendBatch';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
-import { MondayApiError } from '../monday/graphql';
+import { isItemGone } from '../monday/itemGone';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
+import { isTerminalError } from '../errors';
+import { linkedItemId } from '../util/itemId';
+import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { describeMessage, messageDeliveryId } from './messages';
+import { processEvent } from './processEvent';
+import { processAttendee } from './processAttendee';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -18,50 +29,99 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Retry backoff (funraise-sync #25, same numbers): 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes
-// across wrangler.jsonc's max_retries of 3 — about 21 minutes of cover for a Monday or Eventbrite
-// blip — capped at Queues' 12-hour maximum delay.
-const REQUIRED_WRITE_COLUMNS = ['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
+// On the ledger row's error for a failure that was acked instead of retried (src/errors.ts), so
+// it reads differently from one still being retried or dead-lettered.
+export const TERMINAL_PREFIX = 'not retried: ';
 
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+const REQUIRED_WRITE_COLUMNS =['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
 
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
-}
-
-export interface OrderQueueMessage {
+// `writeStamp` (flags.ts): set by the producer when the write switch was `off` at ingest. A body
+// enqueued before the switch existed has no such key and is live.
+export type OrderQueueMessage = {
+  // Absent on messages queued before event/attendee messages existed: no kind means order.
+  kind?: 'order';
   orderId: string;
   // The webhook action that enqueued it — informational; the consumer always re-fetches.
   action: string;
-}
+} & WriteStamp;
+
+export type EventQueueMessage = {
+  kind: 'event';
+  eventId: string;
+  action: string;
+} & WriteStamp;
+
+export type AttendeeQueueMessage = {
+  kind: 'attendee';
+  eventId: string;
+  attendeeId: string;
+  action: string;
+} & WriteStamp;
+
+export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
+
+export type ConsumerQueue = QueueLike & BatchSender<WriteQueueMessage>;
 
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
+  eventStore: EventStore;
+  attendeeStore: AttendeeStore;
+  // send: an attendee asking for its event. sendBatch: an event fanning out to its attendees.
+  queue: ConsumerQueue;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
 }
 
-export async function processOrderQueueBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processOrderQueueBatch, for every message kind. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
   for (const message of messages) {
-    const { orderId } = message.body;
+    const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx, message.body.kind ?? 'order'));
+  }
+}
+
+export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
+  for (const message of messages) {
+    const body = message.body;
+    const label = describeMessage(body);
     try {
-      await processOne(orderId, deps);
+      if (body.kind === 'event') await processEvent(body, deps);
+      else if (body.kind === 'attendee') await processAttendee(body, deps);
+      else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync consumer: failed to process order "${orderId}": ${errMsg}`);
+      const terminal = isTerminalError(err);
+      const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
+      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}${terminal ? ' — fix the cause, then re-drive with the backfill script' : ''}`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
+      let recorded = false;
       try {
-        await deps.orderStore.updateStatus(orderId, 'failed', { error: errMsg });
+        if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
+        else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
+        else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
+        recorded = true;
       } catch (recordErr) {
-        console.error(`eventbrite-sync consumer: could not record failure for order "${orderId}": ${errorMessage(recordErr)}`);
+        console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
       }
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
+      // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
+      // max_retries of 100 (about four days).
+      if (terminal && recorded) message.ack();
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
@@ -122,6 +182,11 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
     await orderStore.updateStatus(orderId, 'skipped', { ...definedFacts(mapping.facts), error: mapping.reason });
     return;
   }
+  if (mapping.outcome === 'review') {
+    console.warn(`eventbrite-sync consumer: order "${orderId}" not written: ${mapping.reason}`);
+    await orderStore.updateStatus(orderId, 'failed', { ...definedFacts(mapping.facts), error: mapping.reason });
+    return;
+  }
 
   // Donor: cached on the row after the first match so retries and later updates don't re-run
   // it. A match or create failure throws — retry, then DLQ — as in funraise-sync: a gift with
@@ -139,7 +204,7 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
 
   const columnValues = { ...mapping.columnValues };
   if (donorItemId !== null) {
-    columnValues[donorLinkColumn] = { item_ids: [Number(donorItemId)] };
+    columnValues[donorLinkColumn] = { item_ids: [linkedItemId(donorItemId)] };
   }
   const facts = definedFacts(mapping.facts);
   const writtenAt = new Date().toISOString();
@@ -165,14 +230,6 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, { ...columnValues, ...mapping.firstWriteValues });
   await orderStore.updateStatus(orderId, 'written', { ...facts, mondayItemId: item.id, writtenAt });
-}
-
-// Monday's answer to a write against an item that no longer exists. The exact code is not yet
-// confirmed against the live API (the code and message patterns below are Monday's documented
-// names), so a miss here just falls back to the ordinary retry-then-dead-letter path.
-function isItemGone(err: unknown): boolean {
-  if (!(err instanceof MondayApiError)) return false;
-  return /ItemNotFound|InvalidItemId/i.test(err.code ?? '') || /item.{0,20}not found|inactive item/i.test(err.message);
 }
 
 // The ledger's COALESCE keeps an old value on null, so only hand over facts that exist.

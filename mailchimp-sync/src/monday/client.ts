@@ -1,5 +1,5 @@
 import type { MondayColumnsConfig, DonorRecord } from '../types';
-import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 // The consumer's backoff reads Monday's code and retry hint off this (consumer/backoff.ts).
 export { AmbiguousWriteError, MondayApiError } from './graphql';
@@ -20,19 +20,35 @@ export interface MondayClient {
 // including a daily-limit error, which the transport never retries in-process.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
+// A dropdown column's text is its selected labels joined with ", ". Labels never contain commas
+// (nearby-search rejects them), so the split is exact.
+function splitDropdownLabels(text: string): string[] {
+  return text.split(', ').map((label) => label.trim()).filter((label) => label !== '');
+}
+
+// Every Donor column the outbound sync reads. outboundRoute.ts skips a column change outside this
+// list, so a bulk write to an unrelated column (a backfill) doesn't PATCH every Mailchimp contact.
+export function donorColumnIds(columns: MondayColumnsConfig): string[] {
+  return [
+    columns.email, columns.membershipStatus, columns.membershipTier,
+    columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
+    columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
+    ...(columns.state === null ? [] : [columns.state]),
+    ...(columns.nearby === null ? [] : [columns.nearby]),
+  ];
+}
+
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options });
   }
 
   async getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null> {
-    const columnIds = [
-      columns.email, columns.membershipStatus, columns.membershipTier,
-      columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
-      columns.state, columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
-    ];
+    const columnIds = donorColumnIds(columns);
     const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
       `query ($itemId: ID!, $columnIds: [String!]) {
         items(ids: [$itemId]) { id column_values(ids: $columnIds) { id text } }
@@ -52,12 +68,13 @@ export class HttpMondayClient implements MondayClient {
       memberUntil: byId.get(columns.memberUntil) ?? '',
       addr1: byId.get(columns.addr1) ?? '',
       city: byId.get(columns.city) ?? '',
-      state: byId.get(columns.state) ?? '',
+      state: columns.state === null ? '' : byId.get(columns.state) ?? '',
       zip: byId.get(columns.zip) ?? '',
       totalGiven: byId.get(columns.totalGiven) ?? '',
       // A checkbox column's text is "v" when checked and "" when not.
       doNotSolicit: (byId.get(columns.doNotSolicit) ?? '') !== '',
       dnsReasonStatus: byId.get(columns.dnsReasonStatus) ?? '',
+      nearby: columns.nearby === null ? [] : splitDropdownLabels(byId.get(columns.nearby) ?? ''),
     };
   }
 

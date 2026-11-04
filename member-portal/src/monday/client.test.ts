@@ -27,6 +27,10 @@ const columns: MondayColumns = {
   volunteerDate: 'vol_date_col',
   volunteerJob: 'vol_job_col',
   volunteerStatus: 'vol_status_col',
+  donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
+  donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
+  donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
+  donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
 };
 
 // Mirrors config donations.countableStatuses — the Donations-board status labels that count as
@@ -73,6 +77,11 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
 // Issue #31: with no timeout, a hung Monday request held a dashboard render or a queue consumer
 // indefinitely. Every request carries an AbortSignal.timeout, and a timeout surfaces as a
 // monday-prefixed error the callers already log/retry on.
+// An email column's column_value as findDonorsByEmail requests it.
+function emailValue(address: string) {
+  return { id: 'email_col', text: address, value: JSON.stringify({ email: address, text: address }) };
+}
+
 describe('HttpMondayClient request timeout', () => {
   it('passes an AbortSignal to every Monday fetch', async () => {
     const fetchFn = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
@@ -132,7 +141,16 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
   it('returns every matching donor item', async () => {
     const fetchMock = fetchReturning({
       data: {
-        boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Jane Also' }] } }],
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Jane', column_values: [emailValue('shared@example.org')] },
+                { id: '2', name: 'Jane Also', column_values: [emailValue('Shared@Example.org')] },
+              ],
+            },
+          },
+        ],
       },
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
@@ -174,7 +192,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         boards: [
           {
             items_page: {
-              items: [{ id: '1', name: 'Jane', column_values: [{ id: 'lang_col', text: 'Spanish' }] }],
+              items: [{ id: '1', name: 'Jane', column_values: [emailValue('jane@example.org'), { id: 'lang_col', text: 'Spanish' }] }],
             },
           },
         ],
@@ -195,7 +213,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          data: { boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }] } }] },
+          data: { boards: [{ items_page: { items: [{ id: '1', name: 'Jane', column_values: [emailValue('jane@example.org')] }] } }] },
         }),
       };
     });
@@ -207,6 +225,70 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     expect(captured).not.toBeNull();
     expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
     expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+  });
+
+  // Issue #62: whatever Monday's filter returns, only an exact (case-insensitive) address match
+  // may get a login link.
+  it('drops items whose address is not exactly the submitted one', async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Exact', column_values: [emailValue(' JANE@example.org ')] },
+                { id: '2', name: 'Superstring', column_values: [emailValue('mary.jane@example.org')] },
+                { id: '3', name: 'Other domain', column_values: [emailValue('jane@example.org.evil')] },
+                { id: '4', name: 'No email', column_values: [] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1']);
+  });
+
+  it("matches on an email column's address, not its display label", async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Labelled', column_values: [{ id: 'email_col', text: 'Jane (work)', value: JSON.stringify({ email: 'jane@example.org', text: 'Jane (work)' }) }] },
+                { id: '2', name: 'Label only', column_values: [{ id: 'email_col', text: 'jane@example.org', value: JSON.stringify({ email: 'other@example.org', text: 'jane@example.org' }) }] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1']);
+  });
+
+  it('reads a plain text column, and falls back to text when value is missing', async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Text column', column_values: [{ id: 'email_col', text: 'jane@example.org', value: '"jane@example.org"' }] },
+                { id: '2', name: 'No value', column_values: [{ id: 'email_col', text: 'jane@example.org' }] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1', '2']);
   });
 });
 
@@ -1709,5 +1791,150 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     expect(captured!.variables.from).toBe('2026-01-01');
     expect(captured!.variables.to).toBe('2026-12-31');
     expect(captured!.query).toContain('between');
+  });
+});
+
+describe('HttpMondayClient DTD match lines', () => {
+  const matchColumns: MondayColumns = {
+    ...columns,
+    donationMatchesGift: 'matches_col',
+    donationMatchStatus: 'match_status_col',
+    donationMatchedBy: 'matched_by_col',
+    donorDtdLink: 'dtd_col',
+  };
+  const dtdValue = (url: string) => ({ id: 'dtd_col', text: `Match - ${url}`, value: JSON.stringify({ url, text: 'Match' }) });
+  const donorResponse = (dtd?: ReturnType<typeof dtdValue>) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        items: [
+          {
+            id: 'donor-1',
+            name: 'Jane Donor',
+            column_values: [
+              { id: 'status_col', text: 'Active' },
+              { id: 'tier_col', text: 'Member' },
+              { id: 'donated_col', text: '500' },
+              ...(dtd ? [dtd] : []),
+            ],
+          },
+        ],
+      },
+    }),
+  });
+  const gift = (id: string, date: string, amount: string, extra: Record<string, unknown>[] = [], status = 'Received') => ({
+    id,
+    column_values: [
+      { id: 'amount_col', text: amount },
+      { id: 'date_col', text: date },
+      { id: 'desc_col', text: 'gift' },
+      { id: 'donation_status_col', text: status },
+      ...extra,
+    ],
+  });
+  const matchRow = (id: string, date: string, amount: string, giftId: string, company: string, status = 'Received') =>
+    gift(id, date, amount, [
+      { id: 'matches_col', text: 'orig', linked_item_ids: [giftId] },
+      { id: 'matched_by_col', text: company, linked_items: [{ name: company }] },
+    ], status);
+  const page = (items: unknown[]) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: { boards: [{ items_page: { cursor: null, items } }] } }),
+  });
+  function clientFor(cols: MondayColumns, items: unknown[], dtd?: ReturnType<typeof dtdValue>) {
+    const fetchMock = vi.fn().mockResolvedValueOnce(donorResponse(dtd)).mockResolvedValueOnce(page(items));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', cols, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    return { client, fetchMock };
+  }
+
+  it('attaches a paired match to its original gift', async () => {
+    const { client } = clientFor(matchColumns, [
+      gift('g-1', '2026-03-01', '100'),
+      matchRow('m-1', '2026-04-01', '100', 'g-1', 'Acme Corp'),
+    ]);
+    const data = await client.getMemberPortalData('donor-1');
+    const original = data.donations.find((d) => d.amount === '100' && d.date === '2026-03-01');
+    expect(original?.match).toEqual({ date: '2026-04-01', amount: '100', company: 'Acme Corp' });
+    expect(original?.matchHintUrl ?? null).toBeNull();
+  });
+
+  it('shows the latest match when two point at one gift', async () => {
+    const { client } = clientFor(matchColumns, [
+      gift('g-1', '2026-03-01', '100'),
+      matchRow('m-1', '2026-04-01', '50', 'g-1', 'Early Co'),
+      matchRow('m-2', '2026-05-01', '60', 'g-1', 'Late Co'),
+    ]);
+    const data = await client.getMemberPortalData('donor-1');
+    expect(data.donations[0]!.match).toEqual({ date: '2026-05-01', amount: '60', company: 'Late Co' });
+  });
+
+  it('ignores a match pointing at a gift that is not in the donor list', async () => {
+    const { client } = clientFor(matchColumns, [matchRow('m-1', '2026-04-01', '100', 'g-elsewhere', 'Acme Corp')]);
+    const data = await client.getMemberPortalData('donor-1');
+    expect(data.donations).toHaveLength(1);
+    expect(data.donations[0]!.match ?? null).toBeNull();
+  });
+
+  it('match rows still listed and counted', async () => {
+    // A history floor makes totalDonated the sum of kept rows, so the match row must be counted.
+    const fetchMock = vi.fn().mockResolvedValueOnce(donorResponse()).mockResolvedValueOnce(page([
+      gift('g-1', '2026-03-01', '100'),
+      matchRow('m-1', '2026-04-01', '100', 'g-1', 'Acme Corp'),
+    ]));
+    const floored = new HttpMondayClient('https://api.monday.com/v2', 'token', matchColumns, 999, 1, 2, { countableStatuses, historyStartISO: '2026-01-01' }, pledgesCfg, 3, fetchMock);
+    const data = await floored.getMemberPortalData('donor-1');
+    expect(data.donations.map((d) => d.amount)).toEqual(['100', '100']);
+    expect(data.totalDonated).toBe('200');
+  });
+
+  it('gives a waiting gift the donor DTD link, https only', async () => {
+    const { client } = clientFor(
+      matchColumns,
+      [
+        gift('g-1', '2026-03-01', '100', [{ id: 'match_status_col', text: 'Waiting for donor' }]),
+        gift('g-2', '2026-03-02', '20', [{ id: 'match_status_col', text: 'Waiting for donor (maybe)' }]),
+        gift('g-3', '2026-03-03', '30'),
+      ],
+      dtdValue('https://dtd.example/abc')
+    );
+    const data = await client.getMemberPortalData('donor-1');
+    expect(data.donations.map((d) => d.matchHintUrl ?? null)).toEqual(['https://dtd.example/abc', null, null]);
+  });
+
+  it('drops a non-https DTD link', async () => {
+    const { client } = clientFor(
+      matchColumns,
+      [gift('g-1', '2026-03-01', '100', [{ id: 'match_status_col', text: 'Waiting for donor' }])],
+      dtdValue('javascript:alert(1)')
+    );
+    const data = await client.getMemberPortalData('donor-1');
+    expect(data.donations[0]!.matchHintUrl ?? null).toBeNull();
+  });
+
+  it('feature off when any new column is a placeholder', async () => {
+    const off = { ...matchColumns, donorDtdLink: 'REPLACE_WITH_COLUMN_ID' };
+    const { client, fetchMock } = clientFor(off, [
+      gift('g-1', '2026-03-01', '100', [{ id: 'match_status_col', text: 'Waiting for donor' }]),
+      matchRow('m-1', '2026-04-01', '100', 'g-1', 'Acme Corp'),
+    ]);
+    const data = await client.getMemberPortalData('donor-1');
+    expect(data.donations).toHaveLength(2);
+    expect(data.donations.every((d) => (d.match ?? null) === null && (d.matchHintUrl ?? null) === null)).toBe(true);
+    for (const call of fetchMock.mock.calls) {
+      expect((call[1] as RequestInit).body as string).not.toContain('REPLACE_WITH_COLUMN_ID');
+      expect((call[1] as RequestInit).body as string).not.toContain('matches_col');
+    }
+  });
+
+  it('requests the match columns and linked item names when enabled', async () => {
+    const { client, fetchMock } = clientFor(matchColumns, []);
+    await client.getMemberPortalData('donor-1');
+    const donations = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string).query as string;
+    expect(donations).toContain('matches_col');
+    expect(donations).toContain('match_status_col');
+    expect(donations).toContain('matched_by_col');
+    expect(donations).toContain('linked_items');
   });
 });

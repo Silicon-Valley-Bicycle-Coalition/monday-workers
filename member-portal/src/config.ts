@@ -13,6 +13,7 @@ const REQUIRED_TOP_LEVEL = [
   'donations',
   'eventRegistrations',
   'funraise',
+  'getInvolved',
   'pledges',
   'matchingGifts',
   'impact',
@@ -60,6 +61,16 @@ const VOLUNTEER_COLUMNS: (keyof MondayColumns)[] = [
   'volunteerStatus',
 ];
 
+// MATCH_COLUMNS deliberately aren't merged into REQUIRED_COLUMNS: they only matter to the DTD
+// match-line feature, which is gated as a set (matchLinesEnabled), not deploy-blocking. Checked
+// for *presence* only, not placeholder-freedom — same treatment as VOLUNTEER_COLUMNS.
+const MATCH_COLUMNS: (keyof MondayColumns)[] = [
+  'donationMatchesGift',
+  'donationMatchStatus',
+  'donationMatchedBy',
+  'donorDtdLink',
+];
+
 // COMM_PREF_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: each column only matters to
 // the communication-preferences feature, which is gated per column (configuredPrefFields), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
@@ -83,7 +94,13 @@ const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'letterLinkTtlHours', 'sessio
 // January email days later still gets in (issue #31), short enough that a typo can't mint
 // month-long bearer credentials sitting in inboxes.
 const MAX_LETTER_LINK_TTL_HOURS = 168;
-const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts', 'attemptRetentionHours'] as const;
+const REQUIRED_RATE_LIMIT_KEYS = [
+  'emailCooldownSeconds',
+  'emailWindowSeconds',
+  'emailMaxAttempts',
+  'emailDailyMax',
+  'attemptRetentionHours',
+] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
   'orgLegalName',
   'ein',
@@ -108,6 +125,7 @@ const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumn
 const REQUIRED_EVENT_REGISTRATION_COLUMNS = ['attendeeLink', 'eventLink', 'attended'] as const;
 const REQUIRED_FUNRAISE_KEYS = ['manageRecurringUrl', 'renewMembershipUrl'] as const;
 const FUNRAISE_URL_PLACEHOLDER = 'REPLACE_WITH_FUNRAISE_URL';
+const GET_INVOLVED_CATEGORIES = ['transit', 'civic', 'events', 'volunteer'] as const;
 const REQUIRED_PLEDGES_KEYS = ['boardId', 'columns'] as const;
 const REQUIRED_PLEDGE_COLUMNS = ['donorLink', 'pledgedAmount', 'fulfilledAmount', 'status', 'dueDate'] as const;
 const REQUIRED_MATCHING_GIFTS_KEYS = ['doubleTheDonationPublicKey'] as const;
@@ -165,6 +183,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
+  requireKeys(columns, 'monday.columns', MATCH_COLUMNS);
   requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
 
   const email = requireObject(cfg, 'email');
@@ -187,11 +206,20 @@ export function validateConfig(raw: unknown): Config {
 
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);
-  // The daily purge deletes login_attempts older than this; any retention not beyond the
-  // per-email window would silently loosen the rate limit it exists to enforce.
-  const windowHours = typeof rateLimit.emailWindowSeconds === 'number' ? rateLimit.emailWindowSeconds / 3600 : 0;
-  if (typeof rateLimit.attemptRetentionHours !== 'number' || !(rateLimit.attemptRetentionHours > windowHours)) {
-    throw new Error('config: "rateLimit.attemptRetentionHours" must be a number of hours longer than rateLimit.emailWindowSeconds');
+  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const) {
+    const value = rateLimit[key];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`config: "rateLimit.${key}" must be a positive integer`);
+    }
+  }
+  // The daily purge deletes login_attempts older than this; anything shorter than the longest
+  // look-back (the 24-hour daily cap, or the window if longer) would silently loosen the limit
+  // it exists to enforce.
+  const lookbackHours = Math.max(24, (rateLimit.emailWindowSeconds as number) / 3600);
+  if (typeof rateLimit.attemptRetentionHours !== 'number' || !(rateLimit.attemptRetentionHours >= lookbackHours)) {
+    throw new Error(
+      'config: "rateLimit.attemptRetentionHours" must be a number of hours covering both 24 hours (the daily cap) and rateLimit.emailWindowSeconds'
+    );
   }
 
   const taxLetter = requireObject(cfg, 'taxLetter');
@@ -275,6 +303,37 @@ export function validateConfig(raw: unknown): Config {
       throw new Error(`config: "funraise.${key}" must be an https:// URL (or the placeholder "${FUNRAISE_URL_PLACEHOLDER}")`);
     }
   }
+
+  // Same reasoning as funraise: every URL here is rendered to donors, so a bad one fails at
+  // deploy. An empty list is the gate (no section), not an error.
+  const getInvolved = requireObject(cfg, 'getInvolved');
+  const links = getInvolved['links'];
+  if (!Array.isArray(links)) {
+    throw new Error('config: "getInvolved.links" must be a list');
+  }
+  links.forEach((link: unknown, i) => {
+    const path = `getInvolved.links[${i}]`;
+    if (typeof link !== 'object' || link === null) {
+      throw new Error(`config: "${path}" must be an object`);
+    }
+    const { category, label, url, calendarUrl } = link as Record<string, unknown>;
+    if (!GET_INVOLVED_CATEGORIES.includes(category as (typeof GET_INVOLVED_CATEGORIES)[number])) {
+      throw new Error(`config: "${path}.category" must be one of ${GET_INVOLVED_CATEGORIES.join(', ')}`);
+    }
+    if (label !== undefined && (typeof label !== 'string' || label.trim() === '')) {
+      throw new Error(`config: "${path}.label" must be a non-blank string when present`);
+    }
+    // transit/civic links have no translated fallback text, so they must name the committee.
+    if (label === undefined && (category === 'transit' || category === 'civic')) {
+      throw new Error(`config: "${path}.label" is required for ${category} links`);
+    }
+    if (typeof url !== 'string' || !url.startsWith('https://')) {
+      throw new Error(`config: "${path}.url" must be an https:// URL`);
+    }
+    if (calendarUrl !== undefined && (typeof calendarUrl !== 'string' || !calendarUrl.startsWith('https://'))) {
+      throw new Error(`config: "${path}.calendarUrl" must be an https:// URL when present`);
+    }
+  });
 
   // Both gated (pledgesEnabled / matchingGiftsSearchEnabled), not deploy-blocking — presence
   // checks only, same treatment as changeRequests' columns.
@@ -369,6 +428,12 @@ export function configuredPrefFields(config: Config): PrefField[] {
     const columnId = config.monday.columns[PREF_FIELD_COLUMNS[field]];
     return typeof columnId === 'string' && columnId !== PLACEHOLDER_COLUMN_VALUE;
   });
+}
+
+// All four DTD match columns must be real: one placeholder turns the whole feature off, so the
+// literal placeholder never reaches Monday.
+export function matchLinesEnabled(config: Config): boolean {
+  return MATCH_COLUMNS.every((key) => config.monday.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
 }
 
 export function cardEnabled(config: Config): boolean {

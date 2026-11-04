@@ -50,6 +50,10 @@ export const zhHant: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '我們目前無法驗證此卡片，請稍後幾分鐘再試。',
   'error.eventsLoadFailed': '目前無法載入您的活動報名記錄。請幾分鐘後再試。',
   'error.generic': '發生問題，請重新登入。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '暫時無法使用',
+  'unavailable.heading': '暫時無法使用',
+  'unavailable.body': '我們正在更新系統，此功能暫時無法使用。請稍後再試。',
 
   // Portal
   'portal.heading': '您的捐款者入口網站',
@@ -74,6 +78,15 @@ export const zhHant: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': '管理您的定期捐款',
   'portal.renewMembershipLink': '續訂會員資格',
   'portal.givingLinksNote': '這些連結將開啟我們的安全付款服務商 Funraise。您在那裡所做的變更將在我們的紀錄更新後顯示於本入口網站。',
+  'portal.getInvolvedHeading': '參與其中',
+  'portal.getInvolvedIntro': '在決定單車與大眾運輸事務的會議上發聲，並在 SVBC 活動中與其他會員相聚。',
+  'portal.getInvolvedTransit': '大眾運輸機構會議',
+  'portal.getInvolvedCivic': '市單車與行人委員會',
+  'portal.getInvolvedEvents': 'SVBC 活動',
+  'portal.getInvolvedVolunteer': '志工機會',
+  'portal.getInvolvedEventsLink': '查看即將舉行的 SVBC 活動',
+  'portal.getInvolvedVolunteerLink': '尋找志工班次',
+  'portal.addToCalendar': '加入行事曆',
   'portal.discountsHeading': '單車店優惠',
   'portal.taxDocumentsLink': '稅務文件',
   'portal.eventsLink': '活動報名',
@@ -185,4 +198,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'letterReady.body': '您的 {{year}} 年捐款信函現在可以在捐款者入口網站中查看。',
   'letterReady.loginLink': '登入查看',
   'letterReady.expiry': '此連結將於短時間內失效，且只能使用一次。',
+  'portal.matchedBy': '{{company}} 已於 {{date}} 配捐:{{amount}}',
+  'portal.startMatch': '您的雇主可能會為這筆捐款配捐',
 } satisfies Record<TranslationKey, string>;

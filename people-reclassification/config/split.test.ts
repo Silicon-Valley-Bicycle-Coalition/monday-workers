@@ -34,9 +34,9 @@ const boardIds = (cfg: BoardIdSources): number[] => [
 ];
 
 describe('config split: board ids', () => {
-  it('the sandbox boards are the CRM Sandbox v3 ones', () => {
-    expect(sandbox.boards.live.boardId).toBe(18431577220);
-    expect(sandbox.boards.historical.boardId).toBe(18431577228);
+  it('the sandbox boards are the CRM Sandbox v4 ones', () => {
+    expect(sandbox.boards.live.boardId).toBe(18437342592);
+    expect(sandbox.boards.historical.boardId).toBe(18437342607);
     expect(boardIds(sandbox).every((id) => id > 0)).toBe(true);
   });
 
@@ -54,12 +54,26 @@ describe('config split: board ids', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
   });
+
+  it('both use the 100,000-item board limit Monday reports for SVBC (decided 2026-11-03)', () => {
+    // 10,000 made the Historical warning, its IT Requests alert and the move headroom fire at a
+    // tenth of the real ceiling (production Historical was already at "80%" with 8,037 items).
+    expect(production.thresholds.itemsLimit).toBe(100_000);
+    expect(sandbox.thresholds.itemsLimit).toBe(100_000);
+  });
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
-  it('sets ENVIRONMENT only under env.sandbox, and DRY_RUN to "true" in both environments', () => {
-    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', DRY_RUN: 'true' });
-    expect(wrangler.vars).toEqual({ DRY_RUN: 'true' });
+  it('sets ENVIRONMENT only under env.sandbox, and carries no DRY_RUN in either environment', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
+    expect(wrangler.vars).toBeUndefined();
+    expect(wranglerText).not.toContain('DRY_RUN');
+  });
+
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(sbKv.id).not.toBe(prodKv.id);
   });
 
   it('has its own D1 database, never production’s', () => {

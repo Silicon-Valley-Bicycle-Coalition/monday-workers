@@ -1,3 +1,4 @@
+import type { MondayTokenSource } from './monday/graphql';
 import type { BenevityQueueMessage } from './consumer/processBatch';
 
 export interface MondayBoards {
@@ -93,10 +94,15 @@ export interface BenevityImportConfig {
 
 // Bindings (DB, queues) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
-// only secrets and narrowed queue message types are declared here.
-export interface Env extends Cloudflare.Env {
+// only secrets and narrowed queue message and binding types are declared here. MONDAY_AUTH is
+// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   WRITE_QUEUE: Queue<BenevityQueueMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   // Shared secret required as `?secret=...` on the registered Monday webhook URL
   // (`wrangler secret put BENEVITY_WEBHOOK_SECRET`). Optional in the type because secrets
   // aren't declared in wrangler.jsonc — the webhook route fails closed (401 on every

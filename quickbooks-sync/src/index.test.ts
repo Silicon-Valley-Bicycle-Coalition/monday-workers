@@ -1,6 +1,6 @@
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import worker from './index';
 
 const ctx = { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext;
@@ -32,7 +32,7 @@ describe('worker entry point', () => {
       body: JSON.stringify({ challenge: 'test' }),
     });
     const requestCtx = createExecutionContext();
-    const response = await worker.fetch(request, env, requestCtx);
+    const response = await worker.fetch(request, env as unknown as import('./types').Env, requestCtx);
     await waitOnExecutionContext(requestCtx);
 
     expect(response.status).toBe(200);
@@ -46,7 +46,7 @@ describe('worker entry point', () => {
       body: JSON.stringify({ challenge: 'test' }),
     });
     const requestCtx = createExecutionContext();
-    const response = await worker.fetch(request, env, requestCtx);
+    const response = await worker.fetch(request, env as unknown as import('./types').Env, requestCtx);
     await waitOnExecutionContext(requestCtx);
 
     expect(response.status).toBe(401);
@@ -58,5 +58,33 @@ describe('worker entry point', () => {
     expect(() =>
       worker.fetch(new Request('https://worker.example/health'), { ...env, ENVIRONMENT: 'staging' } as unknown as import('./types').Env, ctx)
     ).toThrow('ENVIRONMENT');
+  });
+});
+
+describe('Monday token from the monday-auth broker', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // A Monday -> QuickBooks create with no QuickBooks id yet: the consumer's first call is the
+    // Monday item re-read, which is all this checks ("not found" then fails it terminally).
+    await env.DB.prepare(
+      `INSERT INTO monday_events (event_id, monday_item_id, raw_payload, status, received_at)
+       VALUES ('evt-broker', '910101', '{}', 'received', '2026-10-30T00:00:00.000Z')`
+    ).run();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const message = { body: { direction: 'monday-to-qb', eventId: 'evt-broker' }, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue(
+      { queue: 'quickbooks-sync-writes-sandbox', messages: [message] } as unknown as MessageBatch<import('./types').QueueMessage>,
+      { ...env, ENVIRONMENT: 'sandbox', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth, FLAGS: { get: async () => 'on' } } as unknown as import('./types').Env
+    );
+
+    expect(auth.token).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 });

@@ -1,3 +1,6 @@
+import type { WriteStamp } from './flags';
+import type { MondayTokenSource } from './monday/graphql';
+
 // One entry per Donations *era* board — salesforce-import splits donation history across
 // several boards to stay under Monday's 10k-item ceiling (a "live" current-era board plus
 // several dated historical ones), and each is an independently created board with its own
@@ -19,13 +22,21 @@ export interface DonationBoardConfig {
     termEnd?: string | null;
     membershipType?: string | null;
     actingForLink: string | null;
+    // Sponsorship audit history (spec 2026-11-02): optional, null/omitted = not configured.
+    sponsorshipCycle?: string | null;
+    inKindValue?: string | null;
+    sponsorshipPipelineLinks?: string[]; // Donations-side reverse connect columns, one per pipeline board
     // The four chartable labels the custodian's classify duty writes (spec 2026-09-29 §10.1).
     // null = classification off for this board. The webhook ignores changes to these columns.
     classification: ClassificationColumns | null;
   };
 }
 
-export interface ClassificationColumns { fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string }
+export interface ClassificationColumns {
+  fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string;
+  // Optional: the Acknowledgment Tier status column, kept nightly as a backstop to its automations.
+  acknowledgmentTier?: string;
+}
 
 export interface CustodianConfig {
   // How many fiscal years of donations stay active (unarchived) on the Donations board —
@@ -51,6 +62,20 @@ export interface AffiliationsConfig {
     attributedGiftCount: string; // numbers
     lastAttributedGift: string;  // date
   };
+  // Keeps People's Employer Name on the current affiliation's organization. Absent = off, and the
+  // Affiliations board's webhooks (if any) are ignored as an unconfigured board.
+  employerSync?: EmployerSyncConfig;
+}
+
+export interface EmployerSyncConfig {
+  currentStatusLabel: string; // the Status label that means "works here now"
+  columns: {
+    organizationLink: string; // Affiliations board: connect → Organizations
+    status: string;           // status
+    primary: string;          // checkbox
+  };
+  // Keyed by real Monday board id, like ownerColumnsByBoard: every board Person can link to.
+  ownerColumnsByBoard: Record<string, { employerName: string; affiliationsLink: string }>;
 }
 
 // The org's fiscal year (issue #27): which month it starts in and which time zone "today" is
@@ -81,7 +106,46 @@ export interface DonationRollupsConfig {
     donorLevel: DonorLevelConfig | null;
     volunteerBoards: VolunteerBoardConfig[];
     historicalVolunteerBoards: HistoricalVolunteerBoardConfig[];
+    recurringGifts: RecurringGiftsConfig | null;
+    rollCall: RollCallConfig | null;
+    sponsorships: SponsorshipsConfig | null;
   };
+}
+
+// The Recurring Gifts board the nightly `recurring` duty reads to keep People's Has Active
+// Recurring Gift checkbox current (monday-migration docs/35 §3.1). Null = duty off.
+export interface RecurringGiftsConfig {
+  boardId: number;
+  columns: { donorLink: string; status: string };
+  activeStatusLabel: string;
+}
+
+// The Donor Roll Call board the nightly `rollcall` duty maintains: one row per donor per fiscal
+// year, derived from Donations. Null = duty off. `people` is keyed by People / People (Historical)
+// board id, each with its own column-id namespace.
+export interface RollCallConfig {
+  boardId: number;
+  firstFiscalYear: number;
+  excludedGiftTypes: string[];
+  writesPerRun: number;
+  columns: {
+    fiscalYear: string; tier: string; type: string; listed: string; total: string; gifts: string;
+    people: string; organization: string; reviewNote: string; rowKey: string;
+    // Optional (spec §10.2): the row's Recognition Name as a cell of its own. Absent = not written.
+    householdName?: string;
+  };
+  donations: {
+    boardId: number;
+    columns: {
+      amount: string; date: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string;
+      // Optional (spec §10.3): counted when Amount is blank. Absent = Amount only.
+      inKindValue?: string;
+      // Optional (spec §10.1): the staff-set year a gift is recognized in. Absent = every gift in its own year.
+      recognitionFiscalYear?: string;
+    };
+  };
+  people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string }>;
+  organizations: { boardId: number; columns: { recognitionName: string; dontList: string } };
 }
 
 export interface OwnerColumns {
@@ -102,6 +166,7 @@ export interface OwnerColumns {
   membership?: OwnerMembershipColumns;
   organizationalGiving?: string;   // People boards only — Organizations have no driven-giving concept.
   donorLevel?: string;             // status column; written only when donationRollups.donorLevel is set.
+  hasActiveRecurringGift?: string; // checkbox; People boards only, kept by the `recurring` duty.
 }
 
 // The eight membership columns on a People-type owner board. Absent on Organizations: an
@@ -154,9 +219,12 @@ export interface DonorLevelConfig {
   labels: { leadership: string; major: string; donor: string };
 }
 
-export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
+// 'dropped': consumed (or enqueued) under the write switch's `off` — a dry run, never to be
+// written later. Terminal like 'written', so the nightly requeue (listStuck) never picks it up;
+// a later delivery for the same item resets it to 'received' (upsertPending).
+export type PendingStatus = 'received' | 'queued' | 'written' | 'failed' | 'dropped';
 
-export type RecomputeKind = 'donation' | 'registration';
+export type RecomputeKind = 'donation' | 'registration' | 'affiliation';
 
 export interface PendingRow {
   donationItemId: string;
@@ -174,18 +242,29 @@ export interface PendingRow {
 export interface Env {
   DB: D1Database;
   RECOMPUTE_QUEUE: Queue<RecomputeQueueMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
+  CUSTODIAN_SECRET?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
+  // The write switch's KV namespace (src/flags.ts). Unbound reads as `unknown`: nothing writes.
+  FLAGS?: KVNamespace;
 }
 
-export interface RecomputeQueueMessage {
+// writeStamp (flags.ts): 'dropped' on a message the webhook enqueued while writes were `off`, so
+// the consumer dry-runs it whatever the mode is by then. Absent = live.
+export interface RecomputeQueueMessage extends WriteStamp {
   kind?: RecomputeKind;
   // donationItemId is the triggering item: a Donations item for kind 'donation' (the default), an
-  // Event Registrations item for kind 'registration'. The name predates registrations.
+  // Event Registrations item for kind 'registration', an Affiliations item for kind 'affiliation'.
+  // The name predates both.
   donationItemId: string;
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).
@@ -195,4 +274,15 @@ export interface RecomputeQueueMessage {
   // that left, kept for logs. Always recomputed — never coalesced away.
   ownerItemId?: string;
   ownerBoardId?: string;
+}
+
+// donationRollups.sponsorships — the Sponsorships section on Organizations items' descriptions.
+// Null = duty off.
+export interface SponsorshipsConfig {
+  organizationsBoardId: number;
+  giftTypes: string[];
+  inKindGiftTypes: string[];
+  yearBasis: 'calendar' | 'fiscal';
+  windowYears: number;              // integer >= 1
+  pipelineBoards: Record<string, string>; // pipeline board id -> event name, e.g. "18391037433": "BTWD"
 }

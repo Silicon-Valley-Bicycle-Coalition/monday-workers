@@ -4,6 +4,8 @@ import type {
   DonorVolunteerHistory,
   EventRegistrationRecord,
   FunraiseLinkUrls,
+  GetInvolvedCategory,
+  GetInvolvedLink,
   PortalView,
 } from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
@@ -502,15 +504,40 @@ export function checkEmailView(locale: Locale): string {
 // execute JS must not be able to complete the login. `lang` is only emitted when it's a
 // supported locale (the caller validates), so nothing attacker-shaped is reflected besides the
 // escaped token.
-export function confirmLoginView(token: string, lang: Locale | null, locale: Locale): string {
+// Issue #61: new links carry the token in the URL fragment, which the browser never sends, so
+// this copies it into the confirm form and drops it from the address bar and history. It only
+// fills the form, never submits it: mail scanners that run a page's JS would otherwise burn the
+// single-use token (issue #31). With no token in the fragment it swaps in the invalid-link copy.
+// Served under a CSP pinning this exact text by hash (routes.ts), so edit it freely but only here.
+export const CONFIRM_LOGIN_SCRIPT = `(function () {
+  var match = /(?:^#|&)token=([^&]+)/.exec(location.hash);
+  if (match) {
+    document.getElementById('confirm-token').value = match[1];
+    history.replaceState(null, '', location.pathname + location.search);
+  } else {
+    document.getElementById('confirm-login').hidden = true;
+    document.getElementById('confirm-invalid').hidden = false;
+  }
+})();`;
+
+// token is null for a fragment link (CONFIRM_LOGIN_SCRIPT fills it in), or the token from a
+// legacy ?token= link, sent before issue #61, which renders as before with no script.
+export function confirmLoginView(token: string | null, lang: Locale | null, locale: Locale): string {
   const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
-  return `
+  const form = `
     <h1>${escapeHtml(t(locale, 'confirmLogin.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'confirmLogin.body'))}</p>
     <form action="/auth/callback" method="post">
-      <input type="hidden" name="token" value="${escapeHtml(token)}" />${langField}
+      <input type="hidden" name="token" value="${escapeHtml(token ?? '')}"${token === null ? ' id="confirm-token"' : ''} />${langField}
       <button type="submit">${escapeHtml(t(locale, 'confirmLogin.submit'))}</button>
     </form>
+  `;
+  if (token !== null) return form;
+  // Without JS the form posts an empty token, which the POST answers with the invalid-link page.
+  return `
+    <div id="confirm-login">${form}</div>
+    <div id="confirm-invalid" hidden>${errorView('error.invalidLink', locale)}</div>
+    <script>${CONFIRM_LOGIN_SCRIPT}</script>
   `;
 }
 
@@ -522,14 +549,42 @@ export function errorView(messageKey: TranslationKey, locale: Locale): string {
   `;
 }
 
+// The write switch is off or held (src/writeSwitch.ts): a POST that would write renders this with
+// a 503. A signed-in donor gets a way back to the dashboard, which still works.
+export function unavailableView(locale: Locale, authenticated: boolean): string {
+  const back = authenticated ? `<p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>` : '';
+  return `
+    <h1>${escapeHtml(t(locale, 'unavailable.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'unavailable.body'))}</p>
+    ${back}
+  `;
+}
+
 function donationRow(donation: PortalView['donors'][number]['donations'][number], locale: Locale): string {
   return `
     <tr>
       <td>${escapeHtml(formatShortDate(donation.date))}</td>
       <td class="col-amount">${escapeHtml(formatUsdText(donation.amount))}</td>
-      <td>${escapeHtml(donation.description)}</td>
+      <td>${escapeHtml(donation.description)}${matchLine(donation, locale)}</td>
     </tr>
   `;
+}
+
+// Under the description: the paired employer match, or (for a gift still waiting on the donor) a
+// link to start one. Every interpolated value is escaped; the link opens the donor's own DTD page.
+function matchLine(donation: PortalView['donors'][number]['donations'][number], locale: Locale): string {
+  if (donation.match) {
+    const text = t(locale, 'portal.matchedBy', {
+      company: donation.match.company,
+      date: formatShortDate(donation.match.date),
+      amount: formatUsdText(donation.match.amount),
+    });
+    return `<div class="match-line">${escapeHtml(text)}</div>`;
+  }
+  if (donation.matchHintUrl) {
+    return `<div class="match-line"><a href="${escapeHtml(donation.matchHintUrl)}" target="_blank" rel="noopener">${escapeHtml(t(locale, 'portal.startMatch'))}</a></div>`;
+  }
+  return '';
 }
 
 // One tab of a donor's dashboard section. `label` is pre-translated (not a TranslationKey)
@@ -779,6 +834,42 @@ function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
   `;
 }
 
+// Category order and copy for getInvolvedSection. `fallbackLink` is the link text for a link
+// with no configured label (events/volunteer); config validation requires a label on the others.
+const GET_INVOLVED_GROUPS: { category: GetInvolvedCategory; heading: TranslationKey; fallbackLink?: TranslationKey }[] = [
+  { category: 'civic', heading: 'portal.getInvolvedCivic' },
+  { category: 'transit', heading: 'portal.getInvolvedTransit' },
+  { category: 'events', heading: 'portal.getInvolvedEvents', fallbackLink: 'portal.getInvolvedEventsLink' },
+  { category: 'volunteer', heading: 'portal.getInvolvedVolunteer', fallbackLink: 'portal.getInvolvedVolunteerLink' },
+];
+
+// Public meeting, event, and volunteer links from config's getInvolved.links — the same for
+// every donor. A category with no links is skipped; no links at all omits the section.
+function getInvolvedSection(links: GetInvolvedLink[], locale: Locale): string {
+  const groups = GET_INVOLVED_GROUPS.map(({ category, heading, fallbackLink }) => {
+    const rows = links
+      .filter((link) => link.category === category)
+      .map((link) => {
+        const text = link.label ?? (fallbackLink === undefined ? link.url : t(locale, fallbackLink));
+        const calendar =
+          link.calendarUrl === undefined
+            ? ''
+            : ` · <a href="${escapeHtml(link.calendarUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.addToCalendar'))}</a>`;
+        return `<li><a href="${escapeHtml(link.url)}" rel="noopener noreferrer">${escapeHtml(text)}</a>${calendar}</li>`;
+      })
+      .join('');
+    return rows === '' ? '' : `<h3>${escapeHtml(t(locale, heading))}</h3><ul>${rows}</ul>`;
+  }).join('');
+  if (groups === '') return '';
+  return `
+    <section>
+      <h2>${escapeHtml(t(locale, 'portal.getInvolvedHeading'))}</h2>
+      <p>${escapeHtml(t(locale, 'portal.getInvolvedIntro'))}</p>
+      ${groups}
+    </section>
+  `;
+}
+
 // Shown when some of a household's donor items failed to load (issue #31) — the page renders the
 // rest rather than failing, but must not silently look complete.
 export function someRecordsUnavailableNote(count: number, locale: Locale): string {
@@ -796,7 +887,8 @@ export function portalView(
   funraise: FunraiseLinkUrls,
   events: Record<string, EventRegistrationListing> | null = null,
   // Keyed by donor id, like cards — a donor without an entry has no impact summary to show.
-  impact: Record<string, DonorImpact> = {}
+  impact: Record<string, DonorImpact> = {},
+  getInvolved: GetInvolvedLink[] = []
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
@@ -813,6 +905,7 @@ export function portalView(
       </ul>
     </section>`
     }
+    ${getInvolvedSection(getInvolved, locale)}
     <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>

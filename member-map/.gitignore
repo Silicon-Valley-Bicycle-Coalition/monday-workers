@@ -1,0 +1,6 @@
+# build-reference.mjs download cache (public Census/MTC/San Jose data; re-downloadable)
+.cache/
+
+# The repo root ignores every data/ directory (salesforce-import PII). These are generated
+# public reference files, committed on purpose.
+!/public/data/

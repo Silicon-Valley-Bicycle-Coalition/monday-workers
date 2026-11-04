@@ -184,11 +184,33 @@ export interface RequestOptions {
   idempotent?: boolean;
 }
 
+// Yields the token to send. `rejected` is the token Monday just answered 401 to, so a broker can
+// mint a fresh one instead of handing the same dead token back.
+export type TokenProvider = (rejected?: string) => Promise<string>;
+
+// The shape of a consumer Worker's MONDAY_AUTH service binding.
+export interface MondayTokenSource {
+  token(rejected?: string): Promise<string>;
+}
+
+// The binding wins; the fixed MONDAY_API_TOKEN secret is the fallback during the OAuth cutover.
+// An empty MONDAY_API_TOKEN counts as unset, so it fails here instead of sending an empty
+// Authorization header.
+export function tokenProviderFor(env: { MONDAY_AUTH?: MondayTokenSource; MONDAY_API_TOKEN?: string }): TokenProvider {
+  const auth = env.MONDAY_AUTH;
+  if (auth !== undefined) return (rejected) => auth.token(rejected);
+  const fixed = env.MONDAY_API_TOKEN;
+  if (fixed !== undefined && fixed !== '') return async () => fixed;
+  throw new Error('monday auth: neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN is set');
+}
+
 export class MondayGraphQL {
   // Plain fields, not constructor parameter properties: this file must stay loadable by Node's
   // strip-only TypeScript support, which a Worker's .mjs scripts rely on to import it directly.
   private readonly apiUrl: string;
-  private readonly apiToken: string;
+  private readonly tokenFor: TokenProvider;
+  // Only a provider can mint a different token after a 401; a fixed string would just fail again.
+  private readonly refreshable: boolean;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxAttempts: number;
   private readonly requestTimeoutMs: number;
@@ -196,9 +218,10 @@ export class MondayGraphQL {
   private readonly apiVersion: string;
   private readonly fetchFn: typeof fetch;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.apiUrl = apiUrl;
-    this.apiToken = apiToken;
+    this.refreshable = typeof apiToken === 'function';
+    this.tokenFor = typeof apiToken === 'function' ? apiToken : async () => apiToken;
     this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.maxAttempts = options.maxAttempts ?? 5;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
@@ -221,8 +244,13 @@ export class MondayGraphQL {
       retryable(detail, details);
     };
 
+    // Set by a 401 on a refreshable token: the next pass re-runs the same attempt, with no wait and
+    // no attempt spent, and the token Monday rejected is handed to the provider. Once per request.
+    let rejectedToken: string | undefined;
+    let reAsked = false;
+
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
-      if (attempt > 0) {
+      if (attempt > 0 && rejectedToken === undefined) {
         const backoffMs = 2 ** attempt * 1000 + Math.random() * 500;
         const advisedWaitMs = (lastDetails.retryAfterSeconds ?? 0) * 1000;
         const waitMs = Math.max(backoffMs, Math.min(advisedWaitMs, MAX_ADVISED_WAIT_MS));
@@ -230,6 +258,8 @@ export class MondayGraphQL {
       }
       this.deadline.check(`monday API${lastError === '' ? '' : ` (last error: ${lastError})`}`);
 
+      const token = rejectedToken === undefined ? await this.tokenFor() : await this.tokenFor(rejectedToken);
+      rejectedToken = undefined;
       let response: Response;
       const timeoutMs = this.deadline.timeoutMs(this.requestTimeoutMs);
       try {
@@ -238,7 +268,7 @@ export class MondayGraphQL {
           headers: {
             'Content-Type': 'application/json',
             // Monday expects the bare token, no "Bearer " prefix.
-            Authorization: this.apiToken,
+            Authorization: token,
             'API-Version': this.apiVersion,
           },
           body: JSON.stringify({ query, variables }),
@@ -263,6 +293,12 @@ export class MondayGraphQL {
           : body.text;
         const detail = `HTTP ${response.status}${messages ? `: ${messages}` : ''}`;
         const details = errorDetails(response.status, body.json, header(response, 'Retry-After'));
+        if (response.status === 401 && this.refreshable && !reAsked) {
+          reAsked = true;
+          rejectedToken = token;
+          attempt--;
+          continue;
+        }
         if (response.status === 429 && !DAILY_LIMIT_CODE.test(details.code ?? '')) {
           retryable(detail, details);
           continue;

@@ -26,6 +26,19 @@ export function subscriptionToPayload(s: Record<string, unknown>): ItemPayload |
   };
 }
 
+// Contacts with an Active Funraise subscription: seeds People's Has Active Recurring Gift, which
+// donation-rollups keeps current from the Recurring Gifts board after cutover. Status and donor
+// are the same fields subscriptionToPayload maps to Status and the Donor link.
+export function activeRecurringDonors(subscriptions: Record<string, unknown>[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of subscriptions) {
+    if (s['Name'] === 'Redacted' || s['funraise__Status__c'] !== 'Active') continue;
+    const donor = s['funraise__Supporter__c'];
+    if (typeof donor === 'string' && donor) out.add(donor);
+  }
+  return out;
+}
+
 export function pledgeColumnsBySubscription(pledges: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
   const out = new Map<string, Record<string, unknown>>();
   for (const p of pledges) {
@@ -101,18 +114,22 @@ export function registrationToPayload(
 type Venue = { eb4sf__Name__c?: string; eb4sf__City__c?: string; eb4sf__Localized_Address_Display__c?: string } | null;
 
 export function eventbriteEventToPayload(
-  e: Record<string, unknown>, opts: { hasAttendees: boolean },
+  e: Record<string, unknown>, cutoverISO: string, opts: { hasAttendees: boolean },
 ): ItemPayload | null {
   const status = String(e['eb4sf__Status__c'] ?? '');
   // Unpublished drafts nobody registered for are Eventbrite-side scratch, not SVBC history.
   if (status === 'draft' && !opts.hasAttendees) return null;
   const venue = (e['eb4sf__Eventbrite_Venue__r'] ?? null) as Venue;
+  // `started` outlives the event: 84 of them in the 2026-11-02 org, every one already over, while
+  // `live` was only ever future. So anything still "open" that ended before cutover is Completed.
+  const lastDay = ((e['eb4sf__End__c'] ?? e['eb4sf__Start__c'] ?? '') as string).slice(0, 10);
+  const eventStatus = EVENTBRITE_EVENT_STATUS[status] ?? 'Completed';
   return {
     board: 'events', sfId: e['Id'] as string,
     name: (e['eb4sf__Event_Name__c'] as string) || (e['Name'] as string) || '(event)',
     columns: {
       'Source': label('Eventbrite'), 'Program': label(programFromOrganizer(e['eb4sf__Organizer_Name__c'])),
-      'Event Status': label(EVENTBRITE_EVENT_STATUS[status] ?? 'Completed'),
+      'Event Status': label(eventStatus === 'Upcoming' && lastDay && lastDay < cutoverISO ? 'Completed' : eventStatus),
       'Date': dateCol(e['eb4sf__Start__c'] as string), 'End': dateCol(e['eb4sf__End__c'] as string),
       'Venue': venue?.eb4sf__Name__c ?? '', 'City': venue?.eb4sf__City__c ?? '',
       'Address': venue?.eb4sf__Localized_Address_Display__c ?? '',
@@ -148,9 +165,14 @@ export function eventbriteAttendeeToPayload(
   };
 }
 
-export function campaignToPayload(c: Record<string, unknown>, keepSinceISO: string): ItemPayload | null {
+// Active, recently ended, or referenced by a migrated gift. The last was added 2026-10-26
+// (monday-migration docs/24): inactive campaigns with no EndDate — the Bike to the Future
+// homepages, peer-to-peer pages — were dropped however recent, leaving 3,752 Campaign links
+// dangling.
+export function campaignToPayload(c: Record<string, unknown>, keepSinceISO: string,
+  referenced: ReadonlySet<string> = new Set()): ItemPayload | null {
   const recent = typeof c['EndDate'] === 'string' && c['EndDate'] >= keepSinceISO;
-  if (c['IsActive'] !== true && !recent) return null;
+  if (c['IsActive'] !== true && !recent && !referenced.has(c['Id'] as string)) return null;
   return {
     board: 'campaigns', sfId: c['Id'] as string, name: (c['Name'] as string) ?? '(campaign)',
     columns: { 'Type': ((c['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,

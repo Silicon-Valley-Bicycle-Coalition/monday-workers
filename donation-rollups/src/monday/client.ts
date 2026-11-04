@@ -2,10 +2,11 @@ import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import { parseHours } from '../membership/volunteer';
 import type { BoardMembership } from '../membership/derive';
-import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig } from '../types';
+import type { EmployerAffiliation } from '../affiliations/employer';
+import type { EmployerSyncConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
-  type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
+  type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions, type TokenProvider,
 } from './graphql';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
@@ -28,6 +29,12 @@ export interface DonationRecord {
   // The Affiliation item this donation's Acting for column points at. undefined when the
   // board has no actingForLink configured; null when the column is configured but empty.
   actingForItemId?: string | null;
+  // Sponsorship facts; each undefined when its column isn't configured on the board.
+  sponsorshipCycle?: string | null; // trimmed text, null when blank
+  inKindValueCents?: number | null; // parseAmountCents of the cell, null when blank
+  pipelineItemId?: string | null; // first linked id across sponsorshipPipelineLinks, null when none
+  // The item is archived: its board_relation columns read back empty (issue #26), so link-derived facts are unreliable.
+  archived?: boolean;
 }
 
 export interface AffiliationSummary {
@@ -38,6 +45,14 @@ export interface AffiliationSummary {
 
 export type ItemState = 'active' | 'archived' | 'deleted';
 
+// One item's requested columns from pageItemsColumnsText: text ('' reads as null) and the raw
+// stored value JSON (null for an empty cell). The real client also fills the item's name, its
+// group and each connect column's linked item ids; they're optional so fakes needn't.
+export interface ItemColumns {
+  id: string; text: Map<string, string | null>; values: Map<string, string | null>;
+  name?: string; groupId?: string; linkedIds?: Map<string, string[]>;
+}
+
 export interface RegistrationRecord {
   id: string;
   // An item items(ids:) no longer returns at all is read as null, not 'deleted'.
@@ -47,6 +62,32 @@ export interface RegistrationRecord {
   attendanceLabel: string | null;
   roleLabel: string | null;
   hours: number | null;
+}
+
+export interface RecurringGiftRecord {
+  id: string;
+  statusLabel: string | null;
+  donorItemIds: string[];
+}
+
+export interface DonationCreditRecord {
+  id: string;
+  // From Fiscal Year Ending, else derived from the Date (as getDonationsByIds does); 0 when
+  // neither gives a year.
+  fiscalYear: number;
+  // null for a blank or unparseable Amount: it doesn't count, but the gift's credit (anonymous,
+  // Matched By) is still decided from its flags.
+  amountCents: number | null;
+  status: string | null;
+  giftType: string;
+  donorItemIds: string[];
+  matchedByItemIds: string[];
+  anonymous: boolean;
+  // null when blank, unparseable or not configured; counted only when Amount is blank (spec §10.3).
+  inKindValueCents: number | null;
+  // The Recognition Fiscal Year cell as typed, trimmed; '' when blank or not configured. Parsed by
+  // the rollcall duty (recognitionYear), which reports a value it can't read.
+  recognitionFiscalYear: string;
 }
 
 export interface HistoricalShiftRecord {
@@ -61,6 +102,7 @@ export type DonationReadColumns = {
   amount: string; date: string; fiscalYear: string | null; status: string;
   giftType?: string | null; termStart?: string | null; termEnd?: string | null; membershipType?: string | null;
   actingForLink?: string | null;
+  sponsorshipCycle?: string | null; inKindValue?: string | null; sponsorshipPipelineLinks?: string[];
 };
 
 export interface DonationRollupsMondayClient {
@@ -86,6 +128,8 @@ export interface DonationRollupsMondayClient {
     columns: DonationReadColumns,
     fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]>;
+  // Each item's board id and group title; an item Monday no longer returns is absent from the map.
+  getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>>;
   // The eight membership columns on a People-type owner, as label/date text — the membership
   // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
   // reads as all-null so a deleted owner degrades to "never a member", not a thrown recompute.
@@ -104,6 +148,11 @@ export interface DonationRollupsMondayClient {
   // needed since Person items can live on the Donor or Organization board) — null when the
   // Affiliation item itself has been deleted.
   getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null>;
+  // A person's Employer Name and Affiliations link. Null for a person in the trash or gone.
+  getPersonEmployerState(personItemId: string, columns: { employerName: string; affiliationsLink: string }):
+    Promise<{ employerName: string; affiliationItemIds: string[] } | null>;
+  // What decides Employer Name on each affiliation; items not active are left out.
+  getEmployerAffiliations(affiliationItemIds: string[], columns: EmployerSyncConfig['columns']): Promise<EmployerAffiliation[]>;
   // Rewrites an owner item's description with the markdown gift-history projection.
   setItemDescription(itemId: string, markdown: string): Promise<void>;
   // All items on one Donations board, each with its raw Donor-link value — used only
@@ -157,14 +206,44 @@ function rateLimitErrorFrom(err: unknown): MondayRateLimitError | null {
   return new MondayRateLimitError(err.message, retryInSeconds, err.code === 'DAILY_LIMIT_EXCEEDED', err);
 }
 
-interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
+interface ColumnValue { id: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
+
+// A status cell's label, or null when the cell is empty. Read status columns with this, never
+// by text alone: Monday returns label id 5's text for an EMPTY status cell, so a column with a
+// real label at id 5 reads every blank cell as that label (sandbox rehearsal 2026-10-27). The
+// stored value is null, or JSON without a numeric `index`, when the cell is empty.
+export function statusLabel(text: string | null | undefined, value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value.trim() === '') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { index?: unknown }).index !== 'number') return null;
+  return text === null || text === undefined || text.trim() === '' ? null : text;
+}
+
+// A checkbox cell's value is JSON like {"checked":"true"} (Monday returns the string or the
+// boolean), or null when never set.
+function checkboxChecked(value: string | null | undefined): boolean {
+  if (value === null || value === undefined || value.trim() === '') return false;
+  try {
+    const checked = (JSON.parse(value) as { checked?: unknown } | null)?.checked;
+    return checked === true || checked === 'true';
+  } catch {
+    return false;
+  }
+}
 
 export class HttpMondayClient implements DonationRollupsMondayClient {
   private readonly transports = new Map<string, MondayGraphQL>();
 
   constructor(
     private apiUrl: string,
-    private apiToken: string,
+    // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+    // MondayGraphQL, which re-asks a provider once on a 401.
+    private apiToken: string | TokenProvider,
     private options: MondayGraphQLOptions = {},
   ) {}
 
@@ -187,25 +266,33 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     }
   }
 
+  // items(ids:) keeps returning an item in Monday's trash, state 'deleted', board and columns
+  // intact — so both reads below check state, or a deleted gift keeps its owner and a deleted
+  // owner keeps being written to (each write failing, each message retrying toward the DLQ).
   async getItemBoardId(itemId: string): Promise<string | null> {
-    const data = await this.graphql<{ items: { board: { id: string } }[] }>(
-      `query ($itemId: ID!) { items(ids: [$itemId]) { board { id } } }`,
+    const data = await this.graphql<{ items: { state?: string | null; board: { id: string } }[] }>(
+      `query ($itemId: ID!) { items(ids: [$itemId]) { state board { id } } }`,
       { itemId },
     );
-    return data.items[0]?.board.id ?? null;
+    const item = data.items[0];
+    if (item === undefined || item.state === 'deleted') return null;
+    return item.board.id;
   }
 
   async getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null> {
     const data = await this.graphql<{
-      items: { column_values: { id: string; linked_item_ids?: string[] }[] }[];
+      items: { state?: string | null; column_values: { id: string; linked_item_ids?: string[] }[] }[];
     }>(
       `query ($itemId: ID!, $columnId: [String!]) {
         items(ids: [$itemId]) {
+          state
           column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids } }
         }
       }`,
       { itemId: donationItemId, columnId: [donorLinkColumnId] },
     );
+    // A deleted gift links to no one: the caller's empty-link path asks getDonationState and detaches it.
+    if (data.items[0]?.state === 'deleted') return null;
     const linked = data.items[0]?.column_values[0]?.linked_item_ids ?? [];
     return linked.length > 0 ? linked[0]! : null;
   }
@@ -233,7 +320,10 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       ...(columns.termStart ? [columns.termStart] : []),
       ...(columns.termEnd ? [columns.termEnd] : []),
       ...(columns.membershipType ? [columns.membershipType] : []),
-      ...(columns.actingForLink ? [columns.actingForLink] : [])];
+      ...(columns.actingForLink ? [columns.actingForLink] : []),
+      ...(columns.sponsorshipCycle ? [columns.sponsorshipCycle] : []),
+      ...(columns.inKindValue ? [columns.inKindValue] : []),
+      ...(columns.sponsorshipPipelineLinks ?? [])];
     const donations: DonationRecord[] = [];
     const optionalText = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined =>
       id ? (byId.get(id) || null) : undefined;
@@ -250,21 +340,25 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       // even when handed 100 ids (verified live 2026-08-31; it surfaced as 75% of owners
       // "missing" in reconciliation and would have silently under-rolled any donor with
       // more than 25 gifts on one board).
-      const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+      const data = await this.graphql<{ items: { id: string; state?: string | null; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+          items(ids: $ids, limit: 100) { id state column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } }
         }`,
         { ids: chunk, columnIds },
       );
       for (const item of data.items) {
+        // A trashed gift still reads its columns; returned here, refreshFacts would re-assert it
+        // (clearing removed_at) and it would keep counting toward its owner.
+        if (item.state === 'deleted') continue;
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
+        const statusCell = item.column_values.find((cv) => cv.id === columns.status);
         // A blank Amount must be treated as malformed like a blank Date — never as $0, which
         // would refresh the ledger's real (bootstrap-loaded) amount down to $0 on the next
         // recompute (refreshFacts would see a changed amount and write it). Parsed straight
         // to integer cents (issue #27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
         const amountCents = parseAmountCents(byId.get(columns.amount));
         const dateISO = byId.get(columns.date) ?? '';
-        const status = byId.get(columns.status) ?? '';
+        const status = statusLabel(statusCell?.text, statusCell?.value) ?? '';
         if (!dateISO || amountCents === null) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet, or the cell is blank — see fiscalYearFromDate in
@@ -280,28 +374,60 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const actingForItemId = columns.actingForLink
           ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)
           : undefined;
+        const optionalTrimmed = (id: string | null | undefined): string | null | undefined =>
+          id ? (byId.get(id)?.trim() || null) : undefined;
+        const pipelineItemId = columns.sponsorshipPipelineLinks?.length
+          ? (columns.sponsorshipPipelineLinks
+              .flatMap((id) => item.column_values.find((cv) => cv.id === id)?.linked_item_ids ?? [])[0] ?? null)
+          : undefined;
         donations.push({
           id: item.id, amountCents, dateISO, fiscalYear, status, giftType,
           termStart: optionalDate(byId, columns.termStart),
           termEnd: optionalDate(byId, columns.termEnd),
           membershipType: optionalText(byId, columns.membershipType),
           actingForItemId,
+          sponsorshipCycle: optionalTrimmed(columns.sponsorshipCycle),
+          inKindValueCents: columns.inKindValue ? parseAmountCents(byId.get(columns.inKindValue)) : undefined,
+          pipelineItemId,
+          archived: item.state === 'archived',
         });
       }
     }
     return donations;
   }
 
+  async getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>> {
+    const out = new Map<string, { boardId: string; groupTitle: string }>();
+    for (const chunk of chunksOf(itemIds, 100)) {
+      // limit: 100 — same silent-25 default as getDonationsByIds above.
+      const data = await this.graphql<{ items: { id: string; board: { id: string } | null; group: { title: string } | null }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id board { id } group { title } } }`,
+        { ids: chunk },
+      );
+      for (const item of data.items) {
+        if (item.board) out.set(item.id, { boardId: item.board.id, groupTitle: item.group?.title ?? '' });
+      }
+    }
+    return out;
+  }
+
   async getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns): Promise<BoardMembership> {
     const ids = [columns.status, columns.tier, columns.since, columns.until,
       columns.currentTermStart, columns.memberType, columns.lapseCount, columns.lastLapsed];
-    const cols = (await this.getItemsColumnsText([ownerItemId], ids)).get(ownerItemId);
-    const text = (id: string): string | null => cols?.get(id) ?? null;
+    const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+      `query ($ids: [ID!], $columnIds: [String!]) {
+        items(ids: $ids) { id column_values(ids: $columnIds) { id text value } }
+      }`,
+      { ids: [ownerItemId], columnIds: ids },
+    );
+    const byId = new Map((data.items[0]?.column_values ?? []).map((cv) => [cv.id, cv]));
+    const text = (id: string): string | null => byId.get(id)?.text || null;
+    const label = (id: string): string | null => statusLabel(byId.get(id)?.text, byId.get(id)?.value);
     const date = (id: string): string | null => text(id)?.slice(0, 10) ?? null;
     const count = text(columns.lapseCount);
     return {
-      statusLabel: text(columns.status), tierLabel: text(columns.tier), since: date(columns.since), until: date(columns.until),
-      currentTermStart: date(columns.currentTermStart), memberTypeLabel: text(columns.memberType),
+      statusLabel: label(columns.status), tierLabel: label(columns.tier), since: date(columns.since), until: date(columns.until),
+      currentTermStart: date(columns.currentTermStart), memberTypeLabel: label(columns.memberType),
       lapseCount: count === null || !/^\d+$/.test(count.trim()) ? null : Number(count.trim()),
       lastLapsed: date(columns.lastLapsed),
     };
@@ -312,9 +438,10 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
     const link = (id: string): string | null => byId.get(id)?.linked_item_ids?.[0] ?? null;
     const text = (id: string | null): string | null => (id ? (byId.get(id)?.text || null) : null);
+    const label = (id: string): string | null => statusLabel(byId.get(id)?.text, byId.get(id)?.value);
     const state: ItemState = item.state === 'archived' ? 'archived' : item.state === 'deleted' ? 'deleted' : 'active';
     return { id: item.id, state, attendeeItemId: link(c.attendee), eventItemId: link(c.event),
-      attendanceLabel: text(c.attendance), roleLabel: text(c.role), hours: parseHours(text(c.hours)) };
+      attendanceLabel: label(c.attendance), roleLabel: label(c.role), hours: parseHours(text(c.hours)) };
   }
 
   private registrationColumnIds(board: VolunteerBoardConfig): string[] {
@@ -325,7 +452,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   async getRegistration(itemId: string, board: VolunteerBoardConfig): Promise<RegistrationRecord | null> {
     const data = await this.graphql<{ items: { id: string; state: string | null; column_values: ColumnValue[] }[] }>(
       `query ($ids: [ID!], $columnIds: [String!]) {
-        items(ids: $ids) { id state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+        items(ids: $ids) { id state column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } }
       }`,
       { ids: [itemId], columnIds: this.registrationColumnIds(board) },
     );
@@ -343,7 +470,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id state column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [board.boardId], columnIds: this.registrationColumnIds(board), cursor },
@@ -359,7 +486,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status], cursor },
@@ -372,9 +499,88 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
         const text = (id: string): string | null => byId.get(id)?.text || null;
         return { id: item.id, volunteerItemId: byId.get(c.volunteer)?.linked_item_ids?.[0] ?? null,
-          dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)), statusLabel: text(c.status) };
+          dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)),
+          statusLabel: statusLabel(byId.get(c.status)?.text, byId.get(c.status)?.value) };
       }),
     };
+  }
+
+  async pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null) {
+    const c = board.columns;
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [board.boardId], columnIds: [c.donorLink, c.status], cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+        const status = byId.get(c.status);
+        return { id: item.id, statusLabel: statusLabel(status?.text, status?.value),
+          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [] };
+      }),
+    };
+  }
+
+  async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number) {
+    const c = cfg.columns;
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
+          ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])], cursor },
+      );
+    // The rollcall duty's only read of Donations: an empty read would resolve every stored
+    // credit through getItemsState, so a board Monday doesn't return is an error, not empty.
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) throw new Error(`monday API: Donations board ${cfg.boardId} not returned (deleted, or not visible to this token)`);
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+        const status = byId.get(c.status);
+        // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in
+        // getDonationsByIds — the ledger's year for the same gift, so the two never disagree.
+        const fyText = (byId.get(c.fiscalYear)?.text ?? '').trim();
+        const dateISO = (byId.get(c.date)?.text ?? '').trim();
+        const rawFY = fyText === '' ? NaN : Number(fyText);
+        const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
+        return { id: item.id,
+          fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
+          amountCents: parseAmountCents(byId.get(c.amount)?.text),
+          status: statusLabel(status?.text, status?.value),
+          giftType: (byId.get(c.giftType)?.text ?? '').trim(),
+          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],
+          matchedByItemIds: byId.get(c.matchedBy)?.linked_item_ids ?? [],
+          anonymous: checkboxChecked(byId.get(c.anonymous)?.value),
+          inKindValueCents: c.inKindValue ? parseAmountCents(byId.get(c.inKindValue)?.text) : null,
+          recognitionFiscalYear: c.recognitionFiscalYear ? (byId.get(c.recognitionFiscalYear)?.text ?? '').trim() : '' };
+      }),
+    };
+  }
+
+  async getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>> {
+    const out = new Map<string, 'active' | 'archived' | 'deleted'>();
+    for (const chunk of chunksOf(itemIds, 100)) {
+      // items(ids:) defaults to 25 without a limit.
+      const data = await this.graphql<{ items: { id: string; state: string }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id state } }`, { ids: chunk });
+      for (const item of data.items) {
+        if (item.state === 'active' || item.state === 'archived' || item.state === 'deleted') out.set(item.id, item.state);
+      }
+    }
+    return out;
   }
 
   async getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>> {
@@ -399,6 +605,43 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     const personItemId = item.column_values[0]?.linked_item_ids?.[0] ?? null;
     const personBoardId = personItemId === null ? null : await this.getItemBoardId(personItemId);
     return { name: item.name, personItemId, personBoardId };
+  }
+
+  async getPersonEmployerState(
+    personItemId: string, columns: { employerName: string; affiliationsLink: string },
+  ): Promise<{ employerName: string; affiliationItemIds: string[] } | null> {
+    const data = await this.graphql<{ items: { state: string; column_values: { id: string; text: string | null; linked_item_ids?: string[] }[] }[] }>(
+      `query ($itemId: ID!, $columnIds: [String!]) {
+        items(ids: [$itemId]) { state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+      }`,
+      { itemId: personItemId, columnIds: [columns.employerName, columns.affiliationsLink] },
+    );
+    const item = data.items[0];
+    if (item === undefined || item.state !== 'active') return null;
+    const cell = (id: string) => item.column_values.find((c) => c.id === id);
+    return { employerName: cell(columns.employerName)?.text ?? '', affiliationItemIds: cell(columns.affiliationsLink)?.linked_item_ids ?? [] };
+  }
+
+  async getEmployerAffiliations(affiliationItemIds: string[], columns: EmployerSyncConfig['columns']): Promise<EmployerAffiliation[]> {
+    const data = await this.graphql<{ items: { id: string; state: string; column_values: {
+      id: string; text: string | null; checked?: boolean | null; linked_items?: { name: string }[];
+    }[] }[] }>(
+      `query ($itemIds: [ID!], $limit: Int, $columnIds: [String!]) {
+        items(ids: $itemIds, limit: $limit) { id state column_values(ids: $columnIds) {
+          id text ... on CheckboxValue { checked } ... on BoardRelationValue { linked_items { name } }
+        } }
+      }`,
+      { itemIds: affiliationItemIds, limit: affiliationItemIds.length, columnIds: [columns.status, columns.primary, columns.organizationLink] },
+    );
+    return data.items.filter((item) => item.state === 'active').map((item) => {
+      const cell = (id: string) => item.column_values.find((c) => c.id === id);
+      return {
+        id: item.id,
+        statusLabel: cell(columns.status)?.text ?? null,
+        primary: cell(columns.primary)?.checked === true,
+        organizationName: cell(columns.organizationLink)?.linked_items?.[0]?.name ?? null,
+      };
+    });
   }
 
   async listDonationOwnerLinks(
@@ -434,25 +677,36 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return out;
   }
 
-  async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
-    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }> {
-    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+  // Each column's text and raw stored value (null for an empty cell); read status columns
+  // through statusLabel(text, value), not text alone.
+  async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null, opts: { requireBoard?: boolean } = {}):
+    Promise<{ items: ItemColumns[]; cursor: string | null }> {
+    const data: { boards: { items_page: { cursor: string | null;
+      items: { id: string; name: string; group: { id: string }; column_values: ColumnValue[] }[] } }[] } =
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id name group { id }
+              column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [boardId], columnIds, cursor },
       );
     const page = data.boards[0]?.items_page;
+    if (page === undefined && opts.requireBoard) throw new Error(`monday API: board ${boardId} not returned (deleted, or not visible to this token)`);
     if (page === undefined) return { items: [], cursor: null };
     return {
       cursor: page.cursor,
       items: page.items.map((item) => {
         const text = new Map<string, string | null>(columnIds.map((id) => [id, null]));
-        for (const cv of item.column_values) text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
-        return { id: item.id, text };
+        const values = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        const linkedIds = new Map<string, string[]>();
+        for (const cv of item.column_values) {
+          text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+          values.set(cv.id, cv.value ?? null);
+          if (cv.linked_item_ids !== undefined) linkedIds.set(cv.id, cv.linked_item_ids);
+        }
+        return { id: item.id, name: item.name, groupId: item.group?.id, text, values, linkedIds };
       }),
     };
   }
@@ -491,6 +745,72 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       { idempotent: false },
     );
     return data.create_item.id;
+  }
+
+  // --- Donor Roll Call board (the `rollcall` duty) ---
+
+  async listGroups(boardId: number): Promise<{ id: string; title: string }[]> {
+    const data = await this.graphql<{ boards: { groups: { id: string; title: string }[] }[] }>(
+      `query ($boardId: [ID!]) { boards(ids: $boardId) { groups { id title } } }`,
+      { boardId: [boardId] },
+    );
+    return data.boards[0]?.groups.map((g) => ({ id: g.id, title: g.title })) ?? [];
+  }
+
+  async createGroup(boardId: number, title: string): Promise<string> {
+    const data = await this.graphql<{ create_group: { id: string } }>(
+      `mutation ($boardId: ID!, $title: String!) { create_group(board_id: $boardId, group_name: $title) { id } }`,
+      { boardId: String(boardId), title },
+      MONDAY_API_VERSION,
+      // Not idempotent: a create that may have committed throws AmbiguousWriteError.
+      { idempotent: false },
+    );
+    return data.create_group.id;
+  }
+
+  async updateGroupTitle(boardId: number, groupId: string, title: string): Promise<void> {
+    await this.graphql<{ update_group: { id: string } }>(
+      `mutation ($boardId: ID!, $groupId: String!, $title: String!) {
+        update_group(board_id: $boardId, group_id: $groupId, group_attribute: title, new_value: $title) { id }
+      }`,
+      { boardId: String(boardId), groupId, title },
+    );
+  }
+
+  async createItemInGroup(boardId: number, groupId: string, name: string, columnValues: Record<string, unknown>): Promise<string> {
+    const data = await this.graphql<{ create_item: { id: string } }>(
+      `mutation ($boardId: ID!, $groupId: String!, $itemName: String!, $columnValues: JSON!) {
+        create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName, column_values: $columnValues) { id }
+      }`,
+      { boardId: String(boardId), groupId, itemName: name, columnValues: JSON.stringify(columnValues) },
+      MONDAY_API_VERSION,
+      // Not idempotent: a create that may have committed throws AmbiguousWriteError.
+      { idempotent: false },
+    );
+    return data.create_item.id;
+  }
+
+  async moveItemToGroup(itemId: string, groupId: string): Promise<void> {
+    await this.graphql<{ move_item_to_group: { id: string } }>(
+      `mutation ($itemId: ID!, $groupId: String!) { move_item_to_group(item_id: $itemId, group_id: $groupId) { id } }`,
+      { itemId, groupId },
+    );
+  }
+
+  // An item already gone counts as deleted: the transport retries a delete whose response was
+  // lost, and that retry finds nothing to delete. The codes are Monday's documented names (as in
+  // eventbrite-sync's isItemGone), not all confirmed live; a miss just throws as before.
+  async deleteItem(itemId: string): Promise<void> {
+    try {
+      await this.graphql<{ delete_item: { id: string } }>(
+        `mutation ($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
+        { itemId },
+      );
+    } catch (err) {
+      if (err instanceof MondayApiError && !(err instanceof AmbiguousWriteError)
+        && (/ItemNotFound|InvalidItemId|ResourceNotFound/i.test(err.code ?? '') || /item.{0,20}not found/i.test(err.message))) return;
+      throw err;
+    }
   }
 
   async archiveItem(itemId: string): Promise<void> {

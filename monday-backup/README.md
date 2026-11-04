@@ -2,15 +2,14 @@
 
 **Staff UAT script:** [`docs/uat/monday-backup.md`](../docs/uat/monday-backup.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
-`wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
-(`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the
-destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
-and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
-that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
-config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
+**Status:** **Production deployed 2026-11-03** from `main` (e4f0678, version `43d05351`): both
+crons, `writes on`, D1 migrations applied, `MONDAY_AUTH` bound to the `monday-auth` broker's
+Read-only app, a Google service account as a member (**Contributor**, not Content manager — see
+"Service account key" below) of the destination **Shared Drive**, and `config/backup.json`'s
+`destinationParentFolderId` set to it. **The first 09:00 UTC snapshot is still to be confirmed.**
+Requires **Workers Paid** (see Cloudflare config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
 paginated `Doc.blocks`) nor the restore mutations in `src/restore/api.ts` have been exercised
-against a live account yet — confirm them in Monday's API Explorer before the first real run.
+against a live account yet, so the first production run is their first real test.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
 [`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
 outstanding** (it needs the provisioned sandbox, issue #14).
@@ -78,12 +77,19 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
 
 ## APIs & auth
 
-* **Monday.com GraphQL API** — a read-only token from a **dedicated backup integration user**
-  with view access to every workspace, not a staff member's personal token. Follows the same
-  least-privilege principle `../README.md` already states for every other Worker here: a token
-  compromise should expose only what this Worker needs, not one person's full account access.
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
+  bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `ReadOnlyToken` entrypoint — the *SVBC
+  Read-only* OAuth app (read scopes only, no `boards:write`), consented as SVBC Integration with
+  view access to every workspace — production (`svbc-monday-backup`) to `svbc-monday-auth`, sandbox
+  (`--env sandbox`) to `svbc-monday-auth-sandbox` (Sandbox Integration). `src/monday/graphql.ts`
+  `tokenProviderFor` asks it per request and re-asks once on a 401, so a token refreshed mid-run
+  doesn't fail the backup. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is
+  under way (delete it once the binding works); with neither, building the Monday client throws a
+  config error naming both. The restore CLI (`scripts/restore.ts`) keeps reading `MONDAY_API_TOKEN`
+  from the operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN`
+  in `.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 * **Google Drive API** — a service account that is a **member of a Shared Drive** (role:
-  Content manager), not a personal OAuth grant tied to one staff member's account — a personal
+  **Contributor**), not a personal OAuth grant tied to one staff member's account — a personal
   grant breaks the day that person leaves or changes their password. It must be a Shared Drive,
   not a My Drive folder shared with the service account: [service accounts have no storage
   quota](https://developers.google.com/workspace/drive/api/guides/about-shareddrives), so uploads
@@ -91,6 +97,17 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   `supportsAllDrives=true` (and the folder lookup `includeItemsFromAllDrives=true&corpora=allDrives`);
   without those, Drive answers 404 for Shared Drive items. Snapshots count against the Shared
   Drive's (i.e. the Workspace's pooled) storage.
+
+  **Contributor, not Content manager (issue #67).** The token carries the full `drive` scope
+  (`ensureFolder` lists folders it didn't create), so the Shared Drive role is the real limit on
+  a leaked key. A Contributor can list, create folders and upload, which is all the Worker does,
+  but Drive refuses it any trash, move or delete; Content manager would let a leaked key trash
+  every snapshot. What a Contributor key *can* still do is edit: upload new revisions over
+  existing snapshot files or add junk files. Snapshots are dated folders written once and never
+  edited, so a Shared Drive manager should treat any snapshot file with more than one revision
+  as tampered with (Drive keeps the earlier revisions; restore one from the file's
+  **Manage versions**). If that residual risk ever matters more, the next step is a second
+  Shared Drive the account isn't a member of, filled by a copy it can't reach. Not built.
 
 ## Cloudflare config (fleet standard)
 
@@ -103,8 +120,9 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 * **Cron-only, no public surface.** No routes, and `workers_dev`/`preview_urls` stay `false` —
   nothing about a backup Worker should be reachable from the Internet at all; it only makes
   outbound calls.
-* **Workers Builds on first ship.** Connect the Worker in the dashboard with root directory
-  `/monday-backup`; after that, routine changes deploy by merging to `main`, and manual
+* **Workers Builds connected 2026-11-03** (root directory `/monday-backup`, branch `main`, watch
+  path `monday-backup/*`, preview builds off); no build has run yet, so the first merge touching
+  `monday-backup/src/` is what proves the watch path. Routine changes deploy by merging to `main`, and manual
   `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
   section for why hand-deploys are distrusted here).
 * **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50
@@ -123,6 +141,18 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and
   alerts if a run is stuck in `running` for over an hour (the runtime killed it — marked
   `abandoned` in D1) or if no snapshot has succeeded in 36 hours.
+* **Monday API daily usage.** The same hourly cron reads the account's API usage
+  (`platform_api { daily_limit daily_analytics }`; this works on Pro, not only Enterprise) and
+  alerts Slack once when today's calls pass **50%**, and again at **80%**, of the daily limit
+  (`src/usage.ts`, at most two alerts per UTC day, tracked in D1 by migration 0003). Monday caps
+  API calls per *account*, across every token: integration users, staff personal tokens, the
+  hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
+  cap may fail with `DAILY_LIMIT_EXCEEDED`. The limit read is `total`, so a purchased API add-on
+  raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
+  account-wide and the sandbox shares the production account, only the deployment whose config
+  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. When an alert
+  fires, `daily_analytics { by_user { user { name } usage } }` shows which user, and so which
+  Worker, is using the calls.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -132,8 +162,12 @@ access is the CRM Sandbox workspace, and the snapshot is the sandbox and nothing
 Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENVIRONMENT` var,
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
-Own D1, same daily cron, no public surface. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
-sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder, the
+Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
+because production already reports the shared account's API usage. Until production is
+deployed, set it to `true` in `config/backup.sandbox.json` if you want the usage alert from the
+sandbox instead; any token on the account can read the figure. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
+sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder
+(also as Contributor), the
 sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
@@ -152,6 +186,44 @@ or doc whose `workspaceId` isn't in the list, so a token that somehow gained bro
 wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
 in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
 behaviour.
+
+## Service account key
+
+The Worker signs its own Google tokens from `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, so that key is
+the one long-lived Drive credential. It never expires on its own; rotate it yearly, whenever
+someone who handled it leaves, and at once if it may have leaked. Production and sandbox use
+different service accounts, so rotate each separately (add `--env sandbox` for the sandbox).
+
+1. Google Cloud console → **IAM & Admin → Service accounts** → the backup account → **Keys** →
+   **Add key → Create new key** (JSON). The file downloads to your machine.
+2. Store its `private_key` value. Pasting it as it appears in the JSON, literal `\n`s and all,
+   is fine (`src/drive/jwt.ts` accepts both forms):
+
+   ```sh
+   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+   ```
+
+   `GOOGLE_SERVICE_ACCOUNT_EMAIL` stays the same: a new key, not a new account.
+3. Confirm the next nightly snapshot lands in Drive and no failure alert reaches Slack.
+4. Back on **Keys**, delete the old key. Then delete the downloaded JSON file; the Wrangler
+   secret is the only copy that should exist.
+
+**Suspected leak:** delete the old key *first* (step 4), then steps 1–3. A missed night is
+cheaper than a live leaked key, and the watchdog's 36-hour alert covers the gap. Afterwards a
+Shared Drive manager checks the drive's activity panel for files or revisions the Worker didn't
+write (see "Contributor, not Content manager" above), and confirms the account's role is still
+Contributor under **Manage members**.
+
+## Write switch
+
+The `FLAGS` KV key `monday-backup:writes` (`on` | `hold` | `off`; missing or unrecognized means
+`off`, a KV read error acts like `hold`) gates both crons, read once per run. Anything but `on`
+makes the nightly backup log one skip line and return, with no `snapshot_runs` row, so the watchdog
+does not count it as a failure. The watchdog always computes and keeps its D1 bookkeeping, but its
+Slack alerts are logged as skips unless the mode is `on` (and a suppressed stale-snapshot alert is
+not marked as sent, so it fires once the switch is on). After a long `off`/`hold`, expect the
+36-hour staleness alert on the first watchdog run after flipping to `on`, until the next backup
+succeeds. Set the key with `node scripts/flags.mjs`.
 
 ## Retention
 

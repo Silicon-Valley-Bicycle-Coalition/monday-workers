@@ -12,6 +12,10 @@ import type { LetterSendStore } from './db/letterSends';
 import type { CardTokenStore } from './db/cardTokens';
 import { SUPPORTED_LOCALES } from './i18n/locales';
 import { t } from './i18n/t';
+import type { WriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
+import { CONFIRM_LOGIN_SCRIPT } from './views';
+import { DEFAULT_CSP } from './securityHeaders';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -72,7 +76,7 @@ function inMemorySessionStore(): SessionStore {
 }
 
 function inMemoryAttemptStore(): LoginAttemptStore {
-  return { recordAttempt: vi.fn().mockResolvedValue(undefined), countRecentAttempts: vi.fn().mockResolvedValue(0) };
+  return { tryReserve: vi.fn().mockResolvedValue(true) };
 }
 
 // Mirrors Task 7's fakeStore in submitChangeRequest.test.ts: mock-based, not a real in-memory
@@ -190,7 +194,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -219,6 +223,7 @@ const config: Config = {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
   },
+  getInvolved: { links: [] },
   pledges: {
     boardId: 777,
     columns: {
@@ -262,12 +267,20 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     letterQueue: { send: vi.fn().mockResolvedValue(undefined) },
     letterWebhookSecret: 'shh',
     cardTokenStore: inMemoryCardTokenStore(),
+    writeGate: gateFor('on'),
     ...overrides,
   };
 }
 
+// The write switch's per-request gate (src/writeSwitch.ts). Every existing test runs live (`on`);
+// the 'write switch' block below covers the other modes.
+function gateFor(mode: WriteMode): () => Promise<BatchSkipContext> {
+  return async () => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
+}
+
+// Issue #61: the emailed link carries the token in its fragment.
 function extractToken(loginUrl: string): string {
-  return new URL(loginUrl).searchParams.get('token') as string;
+  return new URLSearchParams(new URL(loginUrl).hash.slice(1)).get('token') as string;
 }
 
 // The second half of the magic-link flow: what the "Continue to your portal" button on GET
@@ -532,8 +545,80 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain('&quot;&gt;&lt;script&gt;');
   });
 
-  it('shows the invalid-link page when the token is missing', async () => {
-    const res = await createApp(makeDeps()).request('/auth/callback');
+  it('shows the invalid-link page for an empty legacy ?token=', async () => {
+    const res = await createApp(makeDeps()).request('/auth/callback?token=');
+    expect(await res.text()).toContain('This link is invalid');
+  });
+});
+
+// Issue #61: the token in a ?token= query string reached Workers Logs (full request URLs). New
+// links put it in the fragment, which the browser never sends; the page's script copies it into
+// the form. The legacy ?token= tests above cover links already sitting in inboxes.
+describe('GET /auth/callback with the token in the fragment', () => {
+  async function fragmentPage(path = '/auth/callback?lang=en') {
+    const res = await createApp(makeDeps()).request(path, { redirect: 'manual' });
+    return { res, html: await res.text() };
+  }
+
+  it('emails links whose query string holds no token', async () => {
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' } });
+
+    const url = new URL(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl as string);
+    expect(url.search).toBe('?lang=en');
+    expect(url.hash).toMatch(/^#token=[0-9a-f]{64}$/);
+  });
+
+  it('renders the confirm form with an empty token for the script to fill, plus the hidden invalid-link copy', async () => {
+    const { res, html } = await fragmentPage();
+    expect(res.status).toBe(200);
+    expect(html).toContain('<input type="hidden" name="token" value="" id="confirm-token" />');
+    expect(html).toContain('<input type="hidden" name="lang" value="en" />');
+    expect(html).toContain('<div id="confirm-invalid" hidden>');
+    expect(html).toContain(t('en', 'error.invalidLink'));
+    expect(html).toContain(`<script>${CONFIRM_LOGIN_SCRIPT}</script>`);
+  });
+
+  // Same rule as the legacy page: scanners that execute JS must not be able to log in for the donor.
+  it('fills the form but never submits it', () => {
+    expect(CONFIRM_LOGIN_SCRIPT).not.toMatch(/submit|click|requestSubmit|fetch|XMLHttpRequest/);
+    expect(CONFIRM_LOGIN_SCRIPT).toContain('history.replaceState');
+  });
+
+  it('allows only its own script, pinned by hash, on top of the default CSP', async () => {
+    const { res } = await fragmentPage();
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(CONFIRM_LOGIN_SCRIPT));
+    const hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
+    expect(res.headers.get('content-security-policy')).toBe(`${DEFAULT_CSP}; script-src 'sha256-${hash}'`);
+  });
+
+  it('keeps the same no-store, noindex and same-origin Referrer-Policy as the legacy page', async () => {
+    const { res, html } = await fragmentPage();
+    expect(res.headers.get('referrer-policy')).toBe('same-origin');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
+    expect(html).not.toContain('action="/lang"');
+  });
+
+  it('logs the donor in with the token the script copied into the form', async () => {
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const loginUrl = new URL(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl as string);
+
+    // What the browser requests: the path and query only.
+    expect((await app.request(loginUrl.pathname + loginUrl.search)).status).toBe(200);
+    const res = await completeLogin(app, { token: extractToken(loginUrl.href) });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie')).toContain('session=');
+  });
+
+  it('answers a form posted with no token (JS off, or no fragment) with the invalid-link page', async () => {
+    const res = await completeLogin(createApp(makeDeps()), { token: '' });
     expect(await res.text()).toContain('This link is invalid');
   });
 });
@@ -713,6 +798,30 @@ describe('POST / rate limiting', () => {
 
     expect(res.status).toBe(200);
     expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+  });
+
+  // Issue #62: the per-address limiter (cooldown, window, daily cap) denies without sending or
+  // looking the donor up, and the page is the same generic one.
+  it('returns the generic response, sends nothing and skips Monday when the address has no room left', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const attemptStore = { tryReserve: vi.fn().mockResolvedValue(false) };
+    const app = createApp(makeDeps({ monday, emailSender, attemptStore }));
+
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(t('en', 'checkEmail.heading'));
+    expect(attemptStore.tryReserve).toHaveBeenCalledTimes(1);
+    expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -1978,8 +2087,8 @@ describe('GET /:locale/portal/matching-gifts', () => {
     const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('id="dd-company-name-search"');
-    expect(html).toContain('"dtd-public-key"');
+    expect(html).toContain('id="dd-shadow-container"');
+    expect(html).toContain('"dtd-public-key", { isolated: true }');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
     // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
@@ -2069,6 +2178,10 @@ describe('GET /:locale/portal volunteer history gate', () => {
       volunteerDate: 'vol_date_col',
       volunteerJob: 'vol_job_col',
       volunteerStatus: 'vol_status_col',
+      donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
+      donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
     } as never;
     const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
@@ -2695,5 +2808,201 @@ describe('security headers', () => {
     const res = await createApp(deps).request('/en/portal', { headers: { Cookie: 'session=x' } });
     expect(res.status).toBe(500);
     expectBaseline(res);
+  });
+});
+
+describe('write switch', () => {
+  const FORM = { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' };
+
+  function emailSender() {
+    return { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  // Logs in with the switch on, then hands back the same deps with the switch in `mode` — the
+  // session stays valid, as it would across a real flip.
+  async function loggedInUnder(mode: WriteMode, overrides: Partial<AppDeps> = {}) {
+    const sender = emailSender();
+    const deps = makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, ...overrides });
+    const cookie = await loginAndGetCookie(createApp(deps), sender, 'donor@example.org');
+    return { deps: { ...deps, writeGate: gateFor(mode) }, cookie, sender };
+  }
+
+  it.each<WriteMode>(['hold', 'off', 'unknown'])('POST / under %s renders the unavailable page with 503 and sends no email', async (mode) => {
+    const sender = emailSender();
+    const attemptStore = inMemoryAttemptStore();
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender: sender, attemptStore, writeGate: gateFor(mode) }));
+
+    const res = await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: FORM });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('en', 'unavailable.heading'));
+    expect(sender.sendLoginEmail).not.toHaveBeenCalled();
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
+  });
+
+  it('renders the unavailable page in the request locale', async () => {
+    const app = createApp(makeDeps({ writeGate: gateFor('off') }));
+    const res = await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...FORM, Cookie: 'lang=es' } });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('es', 'unavailable.heading'));
+  });
+
+  it('keeps every GET working under off: the dashboard still renders', async () => {
+    const { deps, cookie } = await loggedInUnder('off');
+    const res = await createApp(deps).request('/en/portal', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Donor donor-1');
+  });
+
+  it('keeps the login page and the change-request form working under hold', async () => {
+    const { deps, cookie } = await loggedInUnder('hold');
+    const app = createApp(deps);
+    expect((await app.request('/')).status).toBe(200);
+    expect((await app.request('/en/portal/change-request', { headers: { Cookie: cookie } })).status).toBe(200);
+  });
+
+  it.each<WriteMode>(['hold', 'off', 'unknown'])('POST change-request under %s is 503 and creates no row and no message', async (mode) => {
+    const changeStore = fakeChangeStore();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const { deps, cookie } = await loggedInUnder(mode, { changeStore, changeQueue });
+
+    const res = await createApp(deps).request('/en/portal/change-request', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }),
+      headers: { ...FORM, Cookie: cookie },
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('en', 'unavailable.heading'));
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeStore.findRecentByDedupeHash).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('POST change-request preferences under off is 503 and creates no row', async () => {
+    const changeStore = fakeChangeStore();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const { deps, cookie } = await loggedInUnder('off', { changeStore, changeQueue, config: prefsConfig(), monday: fakeMondayWithPrefs() });
+
+    const res = await createApp(deps).request('/en/portal/change-request/preferences', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'donor-1', emailOptOut: 'yes' }),
+      headers: { ...FORM, Cookie: cookie },
+    });
+
+    expect(res.status).toBe(503);
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('POST card regenerate under off is 503 and leaves the active token alone', async () => {
+    const cardTokenStore = inMemoryCardTokenStore();
+    const { deps, cookie } = await loggedInUnder('off', { cardTokenStore });
+    const app = createApp(deps);
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const before = await cardTokenStore.getActiveToken('donor-1');
+    expect(before).not.toBeNull();
+
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
+
+    expect(res.status).toBe(503);
+    expect(await cardTokenStore.getActiveToken('donor-1')).toBe(before);
+  });
+
+  it('POST /logout stays live under off', async () => {
+    const sessionStore = inMemorySessionStore();
+    const { deps, cookie } = await loggedInUnder('off', { sessionStore });
+    const app = createApp(deps);
+
+    const res = await app.request('/logout', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
+
+    expect(res.status).toBe(302);
+    expect((await app.request('/en/portal', { headers: { Cookie: cookie } })).headers.get('location')).toBe('/');
+  });
+
+  it('POST /auth/callback stays live under hold', async () => {
+    const sender = emailSender();
+    const deps = makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender });
+    const live = createApp(deps);
+    await live.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: FORM });
+    const token = extractToken(sender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+    const res = await completeLogin(createApp({ ...deps, writeGate: gateFor('hold') }), { token });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie')).toContain('session=');
+  });
+
+  describe('POST /webhooks/monday/letters', () => {
+    const EVENT = { event: { type: 'update_column_value', pulseId: 555, boardId: 1 } };
+
+    function mondayWithGift() {
+      const monday = fakeMonday({});
+      (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Champion', totalDonated: '$50.00',
+        donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+      });
+      return monday;
+    }
+
+    function post(mode: WriteMode, overrides: Partial<AppDeps>, body: unknown = EVENT) {
+      const app = createApp(makeDeps({ monday: mondayWithGift(), writeGate: gateFor(mode), ...overrides }));
+      return app.request('/webhooks/monday/letters?secret=shh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('under off logs a skip, returns 200 and creates no letter_sends row', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const res = await post('off', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, result: 'dropped' });
+      expect(letterSendStore.createQueued).not.toHaveBeenCalled();
+      expect(letterSendStore.findByDonorYear).not.toHaveBeenCalled();
+      expect(letterSendStore.requeue).not.toHaveBeenCalled();
+      expect(letterQueue.send).not.toHaveBeenCalled();
+      const skip = log.mock.calls.map((c) => String(c[0])).find((line) => line.includes('"writeSwitch":"skipped"'));
+      expect(skip).toBeDefined();
+      expect(JSON.parse(skip!)).toMatchObject({ worker: 'member-portal', mode: 'off', operation: 'triggerLetterSend' });
+      log.mockRestore();
+    });
+
+    it('under hold creates the row and enqueues as normal (the queue is paused)', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+
+      const res = await post('hold', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, result: 'queued' });
+      expect(letterSendStore.createQueued).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: '555', year: 2025 }));
+      expect(letterQueue.send).toHaveBeenCalledWith({ sendId: 42 });
+    });
+
+    it('under unknown returns 503 and creates no row', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+
+      const res = await post('unknown', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(503);
+      expect(letterSendStore.createQueued).not.toHaveBeenCalled();
+      expect(letterQueue.send).not.toHaveBeenCalled();
+    });
+
+    it('still checks the secret and echoes the challenge under off', async () => {
+      const app = createApp(makeDeps({ writeGate: gateFor('off') }));
+      const bad = await app.request('/webhooks/monday/letters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      expect(bad.status).toBe(401);
+      const res = await post('off', {}, { challenge: 'abc' });
+      expect(await res.json()).toEqual({ challenge: 'abc' });
+    });
   });
 });

@@ -4,6 +4,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
 import { D1PendingInboundStore } from './db/pendingInbound';
@@ -11,10 +12,14 @@ import { D1CampaignItemsStore } from './db/campaignItems';
 import { D1DnsUnsubscribeLog } from './db/dnsUnsubscribes';
 import { createOutboundApp } from './webhook/outboundRoute';
 import { createInboundApp } from './webhook/inboundRoute';
-import { processOutboundBatch } from './consumer/outbound';
-import { processInboundBatch } from './consumer/inbound';
+import { consumeOutboundBatch } from './consumer/outbound';
+import { consumeInboundBatch } from './consumer/inbound';
 import { processInboundDeadLetters, processOutboundDeadLetters } from './consumer/deadLetters';
 import { reconcileCampaigns } from './campaigns/reconcile';
+import { runScheduledReconcile } from './campaigns/scheduled';
+import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
+import { environmentOf } from './environment';
+import type { BatchSkipContext } from './writeSwitch';
 import { checkRequestRateLimit } from './rateLimit';
 import { sendAlert } from './alert';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
@@ -25,6 +30,15 @@ import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
 const DLQ_SUFFIX = '-dlq';
+const WORKER = 'mailchimp-sync';
+
+// The write switch's mode and log level, read once per queue batch or cron run (never cached per
+// isolate, so a flip reaches the next one within the KV edge cache's 30 s). Email is already in
+// the default PII keys.
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+}
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -44,11 +58,13 @@ export default {
         queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
         config,
+        writeMode: () => readWriteMode(env, WORKER),
       }));
       app.route('/', createInboundApp({
         pendingStore: new D1PendingInboundStore(env.DB),
         queue: { send: (message: InboundSyncMessage) => env.INBOUND_QUEUE.send(message).then(() => undefined) },
         webhookSecret: env.MAILCHIMP_WEBHOOK_SECRET,
+        writeMode: () => readWriteMode(env, WORKER),
       }));
       return app.fetch(request, env, ctx);
     });
@@ -75,28 +91,29 @@ export default {
       return;
     }
 
-    const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
+    const gate = await skipContext(env);
+    const mondayClient = new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env));
     const mailchimpClient = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
 
     if (!isDeadLetterQueue && queueName === 'mailchimp-sync-outbound') {
-      await processOutboundBatch(batch.messages as readonly Message<OutboundSyncMessage>[], {
+      await consumeOutboundBatch(batch.messages as readonly Message<OutboundSyncMessage>[], {
         pendingStore: new D1PendingOutboundStore(env.DB),
         mondayClient,
         mailchimpClient,
         config,
         dnsLog: new D1DnsUnsubscribeLog(env.DB),
-      });
+      }, gate);
       return;
     }
 
     if (!isDeadLetterQueue && queueName === 'mailchimp-sync-inbound') {
-      await processInboundBatch(batch.messages as readonly Message<InboundSyncMessage>[], {
+      await consumeInboundBatch(batch.messages as readonly Message<InboundSyncMessage>[], {
         pendingStore: new D1PendingInboundStore(env.DB),
         mondayClient,
         mailchimpClient,
         campaignItemsStore: new D1CampaignItemsStore(env.DB),
         config,
-      });
+      }, gate);
       return;
     }
 
@@ -108,13 +125,13 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const config = configFor(env);
     ctx.waitUntil(
-      reconcileCampaigns({
-        mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
-        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-        campaignItemsStore: new D1CampaignItemsStore(env.DB),
-        config,
-      })
-        .then((result) => console.log(`mailchimp-sync reconcile: created ${result.created}, renamed ${result.renamed}, archived ${result.archived}`))
+      skipContext(env)
+        .then((gate) => runScheduledReconcile(gate, {
+          mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
+          mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+          campaignItemsStore: new D1CampaignItemsStore(env.DB),
+          config,
+        }, reconcileCampaigns))
         .catch((err) => console.error(`mailchimp-sync reconcile: run failed: ${(err as Error).message}`)),
     );
   },

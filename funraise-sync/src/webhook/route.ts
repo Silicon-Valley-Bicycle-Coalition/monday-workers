@@ -5,6 +5,7 @@ import { validateEnvelope, extractEntityId } from './validate';
 import { stripDenylistedFields } from '../util/stripFields';
 import { errorMessage } from '../util/errorMessage';
 import type { FunraiseQueueMessage } from '../consumer/processBatch';
+import { stampFor, type WriteMode } from '../flags';
 
 const ENTITY_TYPE: EntityType = 'transaction';
 
@@ -50,6 +51,9 @@ export interface AppDeps {
   // unset (secret not yet provisioned), every delivery is rejected with 401 rather than
   // accepted blind — this endpoint writes to the live Donations board.
   webhookSecret: string | undefined;
+  // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
+  // in every mode; under `off` the message is stamped so the consumer dry-runs it.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // The handler only validates, ingests, and enqueues. Donor matching and the
@@ -113,7 +117,8 @@ export function createApp(deps: AppDeps) {
     }
 
     try {
-      await deps.queue.send({ entityType: ENTITY_TYPE, entityId });
+      const mode = await deps.writeMode();
+      await deps.queue.send({ entityType: ENTITY_TYPE, entityId, ...stampFor(mode) });
       await deps.eventStore.updateStatusByEntity(ENTITY_TYPE, entityId, 'queued');
     } catch (err) {
       const errMsg = errorMessage(err);

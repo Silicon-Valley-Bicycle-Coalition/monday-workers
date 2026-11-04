@@ -1,6 +1,6 @@
 import type { EventbriteSyncConfig } from './types';
 
-const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live'] as const;
+const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'] as const;
 
 // The placeholder config/svbc.json ships with, and config/sandbox.json's orderIdColumn carries
 // until the Eventbrite Order ID column exists (README "Prerequisite column"). Validation accepts
@@ -16,6 +16,16 @@ const NULLABLE_COLUMN_KEYS = {
   giftTypeColumn: 'the Gift Type stamp',
   fiscalYearColumn: 'the Fiscal Year Ending stamp',
 } as const;
+
+const ATTENDEE_EVENT_COLUMN_KEYS = [
+  'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
+] as const;
+const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
+  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
+  'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
+  'classLocationColumn',
+] as const;
 
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
 
@@ -82,6 +92,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
   if (!AMOUNT_SOURCES.includes(sync.amountSource as (typeof AMOUNT_SOURCES)[number])) {
     throw new Error(`config: "eventbriteSync.amountSource" must be one of ${AMOUNT_SOURCES.join(', ')}`);
   }
+  if (typeof sync.currency !== 'string' || !/^[A-Z]{3}$/.test(sync.currency)) {
+    throw new Error('config: "eventbriteSync.currency" must be the Donations board\'s ISO 4217 currency code, such as "USD"');
+  }
   if (typeof sync.skipFreeOrders !== 'boolean') {
     throw new Error('config: "eventbriteSync.skipFreeOrders" must be a boolean');
   }
@@ -93,5 +106,51 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
     throw new Error('config: "eventbriteSync.itemNameTemplate" must be a non-empty template such as "{buyer} - {event}"');
   }
 
+  validateAttendeeSync(cfg.attendeeSync);
+
   return cfg as unknown as EventbriteSyncConfig;
+}
+
+function requireColumns(group: unknown, path: string, keys: readonly string[]): void {
+  if (!isObject(group)) {
+    throw new Error(`config: missing required key "${path}"`);
+  }
+  for (const key of keys) {
+    if (!isNonEmptyString(group[key])) {
+      throw new Error(`config: "${path}.${key}" must be a Monday column id string`);
+    }
+  }
+}
+
+function validateAttendeeSync(raw: unknown): void {
+  if (!isObject(raw)) {
+    throw new Error('config: missing required key "attendeeSync"');
+  }
+  const a = raw;
+  if (!Array.isArray(a.actions) || a.actions.length === 0 || a.actions.some((x) => !/^[a-z_]+\.[a-z_]+$/.test(String(x)))) {
+    throw new Error('config: "attendeeSync.actions" must be a non-empty array of webhook actions such as "attendee.updated"');
+  }
+  if (!isObject(a.programByOrganizer) || Object.values(a.programByOrganizer).some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.programByOrganizer" must map Eventbrite organizer ids to Program labels');
+  }
+  if (!Array.isArray(a.volunteerPrograms) || a.volunteerPrograms.some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.volunteerPrograms" must be an array of Program labels');
+  }
+  requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
+  requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
+  requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
+  if (!isObject(a.classEmails)) {
+    throw new Error('config: missing required key "attendeeSync.classEmails"');
+  }
+  const { pageUrl, sandboxRecipient } = a.classEmails;
+  if (pageUrl !== null && !(typeof pageUrl === 'string' && /^https:\/\/[^\s/]+\S*$/.test(pageUrl))) {
+    throw new Error('config: "attendeeSync.classEmails.pageUrl" must be an https URL, or null until the page is deployed');
+  }
+  if (sandboxRecipient !== null && !(typeof sandboxRecipient === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sandboxRecipient))) {
+    throw new Error('config: "attendeeSync.classEmails.sandboxRecipient" must be an email address, or null');
+  }
+  // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
+  if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
+  }
 }

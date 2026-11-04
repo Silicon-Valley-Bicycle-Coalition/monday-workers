@@ -3,23 +3,23 @@
     "apiUrl": "https://api.monday.com/v2",
     "accountUrl": "https://bikesiliconvalley.monday.com",
     "boards": {
-      "activities-logged": null,
+      "activities-logged": 18438204391,
       "people-live": 18431577220,
       "people-historical": 18431577228,
       "affiliations": 18431577240
     }
   },
   "activities": {
-    "activityTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "activityTypeColumn": "color_mm8ryerm",
     "activityTypeLabel": "Email",
-    "dateColumn": "REPLACE_WITH_COLUMN_ID",
-    "statusColumn": "REPLACE_WITH_COLUMN_ID",
+    "dateColumn": "date_mm8rjmz9",
+    "statusColumn": "color_mm8rgzd2",
     "doneLabel": "Done",
     "needsPersonLabel": "Needs Person",
-    "ownerColumn": "REPLACE_WITH_COLUMN_ID",
-    "personColumn": "REPLACE_WITH_COLUMN_ID",
-    "notesColumn": "REPLACE_WITH_COLUMN_ID",
-    "messageHashColumn": "REPLACE_WITH_COLUMN_ID"
+    "ownerColumn": "multiple_person_mm8rjvwa",
+    "personColumn": "board_relation_mm8r914k",
+    "notesColumn": "long_text_mm8rnyk3",
+    "messageHashColumn": "text_mm8ry23v"
   },
   "matching": {
     "peopleEmailColumns": [
@@ -39,7 +39,7 @@
       "bikesiliconvalley.org"
     ],
     "staffSenders": [],
-    "trustedAuthServId": "REPLACE_WITH_AUTHSERV_ID",
+    "trustedAuthServId": "mx.cloudflare.net",
     "bodyMaxChars": 1900,
     "maxRawBytes": 10000000,
     "forwardTimeZone": "America/Los_Angeles",
@@ -48,8 +48,11 @@
       "name": "SVBC Monday Log"
     }
   },
+  "timeline": {
+    "customActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
+  },
   "capacity": {
-    "activitiesMaxItems": 10000,
+    "activitiesMaxItems": 100000,
     "warnPct": 95
   },
   "alerts": {

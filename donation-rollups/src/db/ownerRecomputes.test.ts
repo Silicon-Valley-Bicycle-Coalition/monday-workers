@@ -25,4 +25,19 @@ describe('D1OwnerRecomputesStore', () => {
     expect(since.has('ws-new')).toBe(true);
     expect(since.has('ws-old')).toBe(false);
   });
+
+  it('leases an owner to one recompute at a time; a released or expired lease can be taken again', async () => {
+    const store = new D1OwnerRecomputesStore(env.DB);
+    expect(await store.acquireLease('lease-o1', 'a', '2026-10-28T10:00:00.000Z', '2026-10-28T10:05:00.000Z')).toBe(true);
+    expect(await store.acquireLease('lease-o1', 'b', '2026-10-28T10:00:01.000Z', '2026-10-28T10:05:01.000Z')).toBe(false);
+    expect(await store.acquireLease('lease-o2', 'b', '2026-10-28T10:00:01.000Z', '2026-10-28T10:05:01.000Z')).toBe(true);
+
+    await store.releaseLease('lease-o1', 'someone-else'); // only the holder releases
+    expect(await store.acquireLease('lease-o1', 'b', '2026-10-28T10:00:02.000Z', '2026-10-28T10:05:02.000Z')).toBe(false);
+    await store.releaseLease('lease-o1', 'a');
+    expect(await store.acquireLease('lease-o1', 'b', '2026-10-28T10:00:03.000Z', '2026-10-28T10:05:03.000Z')).toBe(true);
+
+    // b crashed without releasing: after expiry the lease is free again.
+    expect(await store.acquireLease('lease-o1', 'c', '2026-10-28T10:05:04.000Z', '2026-10-28T10:10:04.000Z')).toBe(true);
+  });
 });

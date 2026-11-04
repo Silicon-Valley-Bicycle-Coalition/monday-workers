@@ -152,13 +152,25 @@ export async function runValidate(args: string[], deps: { client?: MondayClient 
     byCategory.get(cat)!.push(p);
   }
   const total = [...byCategory.values()].reduce((n, v) => n + v.length, 0);
+  // The reviewer (docs/16) opens each row in Monday and Salesforce and fills result/note, so the
+  // sheet carries both links and those two blank columns. archived marks donations the load
+  // archived by fiscal year: they don't show on the board's default view, only via the link.
   const rand = mulberry32(20260822);
-  const lines = ['category,board,sfId,mondayItemId,name'];
+  const boardIds = existsSync(dataPath('load', 'boards.json'))
+    ? await readJson<BoardMap>(dataPath('load', 'boards.json')) : {};
+  const mondayBase = cfg.monday.accountUrl?.replace(/\/$/, '');
+  const sfBase = cfg.salesforceInstanceUrl?.replace(/\/$/, '');
+  const cell = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const lines = ['category,board,sfId,mondayItemId,name,archived,mondayUrl,salesforceUrl,result,note'];
   for (const [cat, rows] of byCategory) {
     const target = Math.min(rows.length, Math.max(30, Math.round((rows.length / Math.max(total, 1)) * 300)));
     for (const p of sample(rows, target, rand)) {
-      lines.push([cat, p.board, p.sfId, ledger.itemId(p.sfId) ?? '',
-        `"${p.name.replace(/"/g, '""')}"`].join(','));
+      const itemId = ledger.itemId(p.sfId) ?? '';
+      const boardId = boardIds[p.board]?.boardId;
+      lines.push([cat, p.board, p.sfId, itemId, cell(p.name),
+        ledger.archivedDone(p.sfId) ? 'yes' : '',
+        mondayBase && boardId && itemId ? `${mondayBase}/boards/${boardId}/pulses/${itemId}` : '',
+        sfBase ? `${sfBase}/${p.sfId}` : '', '', ''].join(','));
     }
   }
   await writeJson(dataPath('validate', 'result.json'),

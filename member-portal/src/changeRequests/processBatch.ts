@@ -3,6 +3,8 @@ import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
 import { FIELD_LABELS, type ChangeQueueMessage } from './submitChangeRequest';
 import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
+import { logDebug, messageDisposition } from '../flags';
+import { dryRunChangeDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
@@ -10,22 +12,73 @@ export interface ProcessChangeBatchDeps {
   config: Config;
 }
 
+// The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
+// message whether it writes (`on`, unstamped — including messages enqueued before the switch
+// existed), dry-runs against recording proxies (`off`, or stamped dropped), or waits on the queue
+// (`hold`, `unknown`). A dry run leaves the row 'queued': nothing re-enqueues queued rows on its
+// own (the purge keeps them, and only the donor re-submitting the same change re-sends one).
+export async function consumeChangeQueueBatch(
+  messages: QueueMessageLike<ChangeQueueMessage>[],
+  deps: ProcessChangeBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    if (!hasValidShape(message.body)) {
+      rejectMalformed(message);
+      continue;
+    }
+    const disposition = messageDisposition(gate.mode, message.body);
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+    } else if (disposition === 'write') {
+      await handleMessage(message, deps);
+    } else {
+      const ctx = { ...gate, deliveryId: `change-request:${message.body.requestId}` };
+      logDebug(ctx, 'message', message.body);
+      await handleMessage(message, dryRunChangeDeps(deps, ctx));
+    }
+  }
+}
+
+// Every message live — the `write` path above, and the tests that predate the switch.
 export async function processChangeQueueBatch(
   messages: QueueMessageLike<ChangeQueueMessage>[],
   deps: ProcessChangeBatchDeps
 ): Promise<void> {
   for (const message of messages) {
-    try {
-      await processOne(message.body.requestId, deps);
-      message.ack();
-    } catch (err) {
-      console.error(
-        `member-portal consumer: failed to process change request ${message.body.requestId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+    if (!hasValidShape(message.body)) {
+      rejectMalformed(message);
+      continue;
     }
+    await handleMessage(message, deps);
+  }
+}
+
+// The queue body is all this consumer trusts before it reads D1, so it must be a positive integer
+// id. Anything else can never succeed: log it (no body contents — it is untrusted) and retry
+// rather than ack, so it exhausts its retries into the dead-letter queue instead of vanishing.
+function hasValidShape(body: unknown): body is ChangeQueueMessage {
+  if (typeof body !== 'object' || body === null) return false;
+  const id = (body as { requestId?: unknown }).requestId;
+  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0;
+}
+
+function rejectMalformed(message: QueueMessageLike<ChangeQueueMessage>): void {
+  console.error('member-portal consumer: malformed change-request message (requestId is not a positive integer); retrying, so it reaches the dead-letter queue after max_retries');
+  message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+}
+
+async function handleMessage(message: QueueMessageLike<ChangeQueueMessage>, deps: ProcessChangeBatchDeps): Promise<void> {
+  try {
+    await processOne(message.body.requestId, deps);
+    message.ack();
+  } catch (err) {
+    console.error(
+      `member-portal consumer: failed to process change request ${message.body.requestId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 

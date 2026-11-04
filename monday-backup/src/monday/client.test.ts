@@ -437,4 +437,24 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)['API-Version']).toBe('2026-07');
   });
+
+  it('reads the account daily limit and per-day usage from platform_api', async () => {
+    const fetchMock = mockFetchSequence([
+      {
+        data: {
+          platform_api: {
+            daily_limit: { total: 10_000 },
+            daily_analytics: { last_updated: '2026-10-27T18:57:20.555Z', by_day: [{ day: '2026-10-27', usage: 10_499 }] },
+          },
+        },
+      },
+    ]);
+    const usage = await new HttpMondayClient('https://api.monday.com/v2', 'token-123').getDailyUsage();
+    expect(usage).toEqual({
+      limit: 10_000,
+      lastUpdated: '2026-10-27T18:57:20.555Z',
+      byDay: [{ day: '2026-10-27', usage: 10_499 }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

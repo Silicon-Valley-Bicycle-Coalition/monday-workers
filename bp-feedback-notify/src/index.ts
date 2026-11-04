@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
-import { configFor, type EnvironmentBindings } from './environment';
+import { configFor, environmentOf, type EnvironmentBindings } from './environment';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webhook';
 import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
 import { writeSendStatus } from './sendStatus';
+import { readFeedbackItem } from './feedbackItem';
+import { tokenProviderFor, type MondayTokenSource, type TokenProvider } from './mondayApi';
 import { redactEmails } from './redactEmails';
+import { DEFAULT_PII_KEYS, logSkip, readLogLevel, readWriteMode, redactPayload } from './flags';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -14,11 +17,20 @@ export interface Env extends EnvironmentBindings {
   EMAIL: SendEmail;
   WEBHOOK_SECRET: string;
   SANDBOX_EMAIL_SINK?: string;
-  // Only needed when config.sendStatus is set — see src/sendStatus.ts.
+  // Monday access — reads the organizer's address and event name off the item
+  // (src/feedbackItem.ts), and writes the send status back when config.sendStatus is set
+  // (src/sendStatus.ts). The monday-auth broker's SyncToken entrypoint (wrangler.jsonc services);
+  // the fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way.
+  // tokenProviderFor (src/mondayApi.ts) prefers the binding.
+  MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
+  // Write-switch flags KV (src/flags.ts); a missing binding reads as mode `unknown`.
+  FLAGS?: KVNamespace;
 }
+
+const WORKER = 'bp-feedback-notify';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -70,8 +82,57 @@ app.post('/webhook/bp-feedback', async (c) => {
     throw error;
   }
 
+  // Challenge and auth are above; the write switch gates everything that sends. Read once.
+  const mode = await readWriteMode(c.env, WORKER);
+  if (mode === 'hold' || mode === 'unknown') {
+    // Nothing is queued here, so a 503 is the only way to keep the request alive: monday retries.
+    console.log(JSON.stringify({ event: 'bp-feedback-held', worker: WORKER, mode, itemId: payload.itemId }));
+    return c.text('writes are held', 503);
+  }
+  if (mode === 'off') {
+    const logLevel = await readLogLevel(c.env, WORKER);
+    logSkip(
+      { worker: WORKER, environment: environmentOf(c.env), mode, logLevel, deliveryId: String(payload.itemId), piiKeys: DEFAULT_PII_KEYS },
+      'Feedback email',
+      'sendFeedbackRequestEmail',
+      redactPayload(payload, DEFAULT_PII_KEYS),
+    );
+    return c.json({ sent: false, skipped: true, itemId: payload.itemId });
+  }
+
   const config = configFor(c.env, production, sandbox);
   const environment = c.env.ENVIRONMENT === 'sandbox' ? 'sandbox' : 'production';
+  const { itemId } = payload;
+  // An empty MONDAY_API_TOKEN counts as unset, as it always has here.
+  let token: TokenProvider;
+  try {
+    token = tokenProviderFor({ MONDAY_AUTH: c.env.MONDAY_AUTH, MONDAY_API_TOKEN: c.env.MONDAY_API_TOKEN || undefined });
+  } catch {
+    console.error(JSON.stringify({ event: 'bp-feedback-misconfigured', environment, itemId, reason: 'neither MONDAY_AUTH nor MONDAY_API_TOKEN is set' }));
+    return c.json({ sent: false, itemId }, 500);
+  }
+
+  // The recipient and event name come from the board, never the request body (#66).
+  let item;
+  try {
+    item = await readFeedbackItem(config.board, token, itemId);
+  } catch (error) {
+    // Transient or not, nothing was sent: a 502 lets monday retry.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({ event: 'bp-feedback-item-read-failed', environment, itemId, error: redactEmails(message, []) }));
+    return c.json({ sent: false, itemId }, 502);
+  }
+  if (item.kind === 'not-found' || item.kind === 'wrong-board') {
+    // Not an item on the configured board: send nothing and write nothing back to it.
+    console.error(JSON.stringify({ event: 'bp-feedback-item-refused', environment, itemId, reason: item.kind }));
+    return c.json({ sent: false, itemId }, 404);
+  }
+  if (item.kind === 'no-email') {
+    console.error(JSON.stringify({ event: 'bp-feedback-no-email', environment, itemId }));
+    c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, token, itemId, 'failed'));
+    return c.json({ sent: false, itemId }, 422);
+  }
+
   const binding =
     environment === 'sandbox'
       ? sandboxEmailBinding(c.env.EMAIL, requireSandboxSink(c.env))
@@ -80,25 +141,25 @@ app.post('/webhook/bp-feedback', async (c) => {
   const sender = new CloudflareEmailSender(binding, config.fromAddress, config.fromName, config.logoUrl);
   try {
     await sender.sendFeedbackRequestEmail({
-      to: payload.organizerEmail,
-      eventName: payload.eventName,
+      to: item.organizerEmail,
+      eventName: item.eventName,
       feedbackFormUrl: config.feedbackFormUrl,
     });
   } catch (error) {
     // Staff only ever look at the board, so a failed send is logged (Workers observability) and,
     // when configured, written back onto the item — otherwise it is invisible to them.
     const message = error instanceof Error ? error.message : String(error);
-    console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId: payload.itemId, error: redactEmails(message, [payload.organizerEmail]) }));
-    c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'failed'));
-    return c.json({ sent: false, itemId: payload.itemId }, 500);
+    console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId, error: redactEmails(message, [item.organizerEmail]) }));
+    c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, token, itemId, 'failed'));
+    return c.json({ sent: false, itemId }, 500);
   }
 
-  console.log(JSON.stringify({ event: 'bp-feedback-sent', environment, itemId: payload.itemId }));
+  console.log(JSON.stringify({ event: 'bp-feedback-sent', environment, itemId }));
   // Answer monday immediately and write the status back in the background: awaiting a slow
   // Monday API here could hold the webhook past monday's timeout, and a retried webhook would
   // email the organizer again.
-  c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'sent'));
-  return c.json({ sent: true, itemId: payload.itemId });
+  c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, token, itemId, 'sent'));
+  return c.json({ sent: true, itemId });
 });
 
 function requireSandboxSink(env: Env): string {

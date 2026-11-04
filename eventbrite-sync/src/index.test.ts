@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
-import { describe, it, expect } from 'vitest';
-import worker, { isDeadLetterBatch } from './index';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import worker, { isDeadLetterBatch, runScheduled } from './index';
 import type { Env } from './types';
+import type { checkMissedOrders } from './missedOrders/check';
 
 describe('isDeadLetterBatch', () => {
   it('recognizes the production and sandbox dead-letter queues', () => {
@@ -23,10 +24,10 @@ describe('scaffold', () => {
 });
 
 describe('worker entry point', () => {
-  it('exposes fetch and queue handlers, and no scheduled handler (nothing personal to purge)', () => {
+  it('exposes fetch, queue and scheduled handlers', () => {
     expect(typeof worker.fetch).toBe('function');
     expect(typeof worker.queue).toBe('function');
-    expect('scheduled' in worker).toBe(false);
+    expect(typeof worker.scheduled).toBe('function');
   });
 
   it('refuses an unknown ENVIRONMENT value synchronously instead of guessing a config', () => {
@@ -38,5 +39,118 @@ describe('worker entry point', () => {
   it('fails a write batch loudly when EVENTBRITE_PRIVATE_TOKEN is unset, so the gifts dead-letter with the cause', async () => {
     const batch = { queue: 'eventbrite-sync-writes', messages: [] } as unknown as MessageBatch<{ orderId: string; action: string }>;
     await expect(worker.queue(batch, { ...env, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env)).rejects.toThrow('EVENTBRITE_PRIVATE_TOKEN');
+  });
+});
+
+describe('class email routes', () => {
+  const ctx = {} as ExecutionContext;
+  const withSecret = { ...env, CLASS_EMAIL_SECRET: 'class-secret' } as unknown as Env;
+
+  it('answers 401 without the secret, and to everyone while it is unset', async () => {
+    expect((await worker.fetch(new Request('https://x.example/class-emails/e1'), withSecret, ctx)).status).toBe(401);
+    const unset = { ...env, CLASS_EMAIL_SECRET: undefined } as unknown as Env;
+    const res = await worker.fetch(new Request('https://x.example/class-emails/e1', { headers: { 'X-Class-Email-Secret': 'anything' } }), unset, ctx);
+    expect(res.status).toBe(401);
+  });
+
+  it('reaches the D1 ledger with the secret: an unknown class is a 404', async () => {
+    const res = await worker.fetch(new Request('https://x.example/class-emails/no-such-event', { headers: { 'X-Class-Email-Secret': 'class-secret' } }), withSecret, ctx);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('scheduled (daily missed-order check)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const offHour = { scheduledTime: Date.parse('2026-11-01T16:00:00Z'), cron: '0 * * * *' } as unknown as ScheduledController;
+  const checkTime = Date.parse('2026-11-02T15:00:00Z');
+  const checkController = { scheduledTime: checkTime, cron: '0 * * * *' } as unknown as ScheduledController;
+  const withToken = { ...env, EVENTBRITE_PRIVATE_TOKEN: 'eb-token' } as unknown as Env;
+  const flags = (get: () => Promise<string | null>) => ({ ...withToken, FLAGS: { get } }) as unknown as Env;
+  const quietCheck = () => vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 0, missing: [] });
+  function context() {
+    const waited: Promise<unknown>[] = [];
+    return { ctx: { waitUntil: (p: Promise<unknown>) => { waited.push(p); } } as unknown as ExecutionContext, waited };
+  }
+
+  it('runs only at the check hour', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const check = quietCheck();
+    const { ctx, waited } = context();
+    await runScheduled(offHour, withToken, ctx, check);
+    await Promise.all(waited);
+    expect(check).not.toHaveBeenCalled();
+
+    await runScheduled(checkController, withToken, ctx, check);
+    await Promise.all(waited);
+    expect(check.mock.calls[0]![0]).toEqual(new Date(checkTime));
+    expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
+  });
+
+  it('does not read the write switch outside the check hour', async () => {
+    const get = vi.fn().mockResolvedValue('on');
+    const { ctx } = context();
+    await runScheduled(offHour, flags(get), ctx, quietCheck());
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('logs missed orders as an error', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 3, missing: ['55'] });
+    const { ctx, waited } = context();
+    await runScheduled(checkController, withToken, ctx, check);
+    await Promise.all(waited);
+    expect(error.mock.calls[0]![0]).toContain('1 of 3 orders');
+  });
+
+  it('logs a check that throws and does not reject the waitUntil promise', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = vi.fn<typeof checkMissedOrders>().mockRejectedValue(new Error('HTTP 503'));
+    const { ctx, waited } = context();
+    await runScheduled(checkController, withToken, ctx, check);
+    await expect(Promise.all(waited)).resolves.toBeDefined();
+    expect(error).toHaveBeenCalledWith('eventbrite-sync missed orders: check failed: HTTP 503');
+  });
+
+  it('logs an unset EVENTBRITE_PRIVATE_TOKEN and does not run the check', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const check = vi.fn<typeof checkMissedOrders>();
+    const { ctx } = context();
+    await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, ctx, check);
+    expect(check).not.toHaveBeenCalled();
+    expect(error.mock.calls[0]![0]).toContain('EVENTBRITE_PRIVATE_TOKEN is not set');
+  });
+
+  // Write switch (spec 2026-10-26): read once per cron run; the check follows runDisposition.
+  describe('write switch', () => {
+    it.each(['on', 'off'] as const)('%s: runs the check (it only reads and logs, so a dry run is the live run)', async (mode) => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const check = quietCheck();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, flags(async () => mode), ctx, check);
+      await Promise.all(waited);
+      expect(check).toHaveBeenCalled();
+    });
+
+    const kvDown = async (): Promise<string | null> => {
+      throw new Error('KV down');
+    };
+    const holdKey = async (): Promise<string | null> => 'hold';
+    it.each([
+      ['hold', holdKey],
+      ['unknown', kvDown],
+    ] as const)('%s: skips the check with one line', async (mode, get) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const check = quietCheck();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, flags(get), ctx, check);
+      await Promise.all(waited);
+      expect(waited).toHaveLength(0);
+      expect(check).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the missed-order check`);
+    });
   });
 });

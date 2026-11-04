@@ -3,6 +3,8 @@ import type { PendingInboundStore } from '../db/pendingInbound';
 import { validateMailchimpWebhookBody } from './validateMailchimp';
 import type { InboundSyncMessage } from '../types';
 import { memberId, redactEmails } from '../logSafe';
+import { stampFor, type WriteMode } from '../flags';
+import { secretsMatch } from '../secret';
 
 export interface InboundQueueLike {
   send(message: InboundSyncMessage): Promise<void>;
@@ -15,6 +17,8 @@ export interface InboundAppDeps {
   // shared-secret-in-URL convention as the Monday side. Fails closed: an unset or
   // empty binding 401s every delivery rather than disabling the check.
   webhookSecret: string;
+  // See outboundRoute.ts: read once per enqueued delivery; `off` stamps the message dropped.
+  writeMode: () => Promise<WriteMode>;
 }
 
 export function createInboundApp(deps: InboundAppDeps) {
@@ -24,7 +28,7 @@ export function createInboundApp(deps: InboundAppDeps) {
   app.get('/webhooks/mailchimp/audience', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/mailchimp/audience', async (c) => {
-    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 
@@ -50,9 +54,10 @@ export function createInboundApp(deps: InboundAppDeps) {
 
     await deps.pendingStore.upsertPending(contactEvent.email, new Date().toISOString());
 
+    const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ email: contactEvent.email });
-      await deps.pendingStore.updateStatus(contactEvent.email, 'queued');
+      await deps.queue.send({ email: contactEvent.email, ...stamp });
+      await deps.pendingStore.updateStatus(contactEvent.email, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`mailchimp-sync inbound webhook: enqueue failed for member ${memberId(contactEvent.email)}: ${redactEmails(errMsg)}`);

@@ -1,0 +1,62 @@
+import { describe, it, expect, vi } from 'vitest';
+import { sandboxEmailBinding, SANDBOX_ORIGINAL_RECIPIENT_HEADER } from './sandboxBinding';
+
+const SINK = 'sandbox@bikesiliconvalley.org';
+
+function fakeInner() {
+  return { send: vi.fn().mockResolvedValue({ messageId: 'test-id' }) };
+}
+
+function digestMessage(overrides: Partial<EmailMessageBuilder> = {}): EmailMessageBuilder {
+  return {
+    to: 'staff@example.org',
+    from: { email: 'noreply@mail.bikesiliconvalley.org', name: 'SVBC Bike Valet' },
+    subject: "How did SVBC's Bike Valet do at Fall Festival?",
+    text: 'https://forms.monday.com/forms/abc123',
+    html: '<p><a href="https://forms.monday.com/forms/abc123">https://forms.monday.com/forms/abc123</a></p>',
+    ...overrides,
+  } as EmailMessageBuilder;
+}
+
+describe('sandboxEmailBinding', () => {
+  it('sends to the sink and never to the original recipient', async () => {
+    const inner = fakeInner();
+    await sandboxEmailBinding(inner, SINK).send(digestMessage());
+
+    expect(inner.send).toHaveBeenCalledTimes(1);
+    const sent = inner.send.mock.calls[0]![0] as EmailMessageBuilder;
+    expect(sent.to).toBe(SINK);
+    expect(JSON.stringify([sent.to, sent.cc, sent.bcc])).not.toContain('staff@example.org');
+  });
+
+  it('prefixes the subject and records the original recipient in a header', async () => {
+    const inner = fakeInner();
+    await sandboxEmailBinding(inner, SINK).send(digestMessage());
+
+    const sent = inner.send.mock.calls[0]![0] as EmailMessageBuilder;
+    expect(sent.subject).toBe("[sandbox → staff@example.org] How did SVBC's Bike Valet do at Fall Festival?");
+    expect(sent.headers?.[SANDBOX_ORIGINAL_RECIPIENT_HEADER]).toBe('staff@example.org');
+  });
+
+  it('logs one structured sandboxOutbound line per send, with a recipient count and no address', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await sandboxEmailBinding(fakeInner(), SINK).send(digestMessage());
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({
+        sandboxOutbound: 'email',
+        recipients: 1,
+        subject: "How did SVBC's Bike Valet do at Fall Festival?",
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('rejects a raw (non-builder) message rather than silently sending it unrewritten', async () => {
+    const inner = fakeInner();
+    const raw = { getRaw: () => new Uint8Array() } as unknown as EmailMessage;
+    await expect(sandboxEmailBinding(inner, SINK).send(raw)).rejects.toThrow(/raw EmailMessage sends are not supported/);
+    expect(inner.send).not.toHaveBeenCalled();
+  });
+});

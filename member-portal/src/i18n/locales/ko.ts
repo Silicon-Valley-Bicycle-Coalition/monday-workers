@@ -50,6 +50,10 @@ export const ko: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '지금은 이 카드를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.eventsLoadFailed': '지금은 이벤트 참가 신청 내역을 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'error.generic': '문제가 발생했습니다. 다시 로그인해 주세요.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '일시적으로 이용할 수 없음',
+  'unavailable.heading': '일시적으로 이용할 수 없습니다',
+  'unavailable.body': '시스템을 업데이트하고 있어 지금은 이 기능을 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
 
   // Portal
   'portal.heading': '기부자 포털',
@@ -74,6 +78,15 @@ export const ko: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': '정기 후원 관리',
   'portal.renewMembershipLink': '회원 자격 갱신',
   'portal.givingLinksNote': '이 링크는 당사의 안전한 결제 처리업체인 Funraise로 연결됩니다. 그곳에서 변경한 내용은 기록이 업데이트된 후 이 포털에 표시됩니다.',
+  'portal.getInvolvedHeading': '참여하기',
+  'portal.getInvolvedIntro': '자전거와 대중교통에 관한 결정이 내려지는 회의에서 목소리를 내고, SVBC 행사에서 다른 회원들과 함께하세요.',
+  'portal.getInvolvedTransit': '교통 기관 회의',
+  'portal.getInvolvedCivic': '시 자전거·보행자 위원회',
+  'portal.getInvolvedEvents': 'SVBC 행사',
+  'portal.getInvolvedVolunteer': '자원봉사 기회',
+  'portal.getInvolvedEventsLink': '예정된 SVBC 행사 보기',
+  'portal.getInvolvedVolunteerLink': '자원봉사 일정 찾기',
+  'portal.addToCalendar': '캘린더에 추가',
   'portal.discountsHeading': '자전거 매장 할인',
   'portal.taxDocumentsLink': '세금 서류',
   'portal.eventsLink': '이벤트 참가 신청',
@@ -185,4 +198,6 @@ export const ko: Record<TranslationKey, string> = {
   'letterReady.body': '{{year}}년 기부 확인서를 기부자 포털에서 확인하실 수 있습니다.',
   'letterReady.loginLink': '로그인하여 확인하기',
   'letterReady.expiry': '이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
+  'portal.matchedBy': '{{company}}에서 {{date}}에 매칭: {{amount}}',
+  'portal.startMatch': '고용주가 이 기부금을 매칭해 줄 수 있습니다',
 } satisfies Record<TranslationKey, string>;

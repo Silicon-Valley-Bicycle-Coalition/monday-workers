@@ -50,6 +50,10 @@ export const es: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'No pudimos verificar esta tarjeta en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.eventsLoadFailed': 'No pudimos cargar tus inscripciones a eventos en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.generic': 'Algo salió mal. Por favor intenta iniciar sesión de nuevo.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'No disponible por ahora',
+  'unavailable.heading': 'No disponible por ahora',
+  'unavailable.body': 'Estamos actualizando nuestros sistemas, así que esto no está disponible en este momento. Por favor intenta de nuevo en un rato.',
 
   // Portal
   'portal.heading': 'Tu portal de donante',
@@ -74,6 +78,15 @@ export const es: Record<TranslationKey, string> = {
   'portal.manageRecurringLink': 'Gestionar tu donación recurrente',
   'portal.renewMembershipLink': 'Renovar tu membresía',
   'portal.givingLinksNote': 'Estos enlaces abren Funraise, nuestro procesador de pagos seguro. Los cambios que hagas allí aparecerán en este portal cuando se actualicen nuestros registros.',
+  'portal.getInvolvedHeading': 'Participa',
+  'portal.getInvolvedIntro': 'Haz oír tu voz en las reuniones donde se deciden temas de bicicletas y transporte público, y únete a otros miembros en los eventos de SVBC.',
+  'portal.getInvolvedTransit': 'Reuniones de agencias de transporte público',
+  'portal.getInvolvedCivic': 'Comités municipales de bicicletas y peatones',
+  'portal.getInvolvedEvents': 'Eventos de SVBC',
+  'portal.getInvolvedVolunteer': 'Oportunidades de voluntariado',
+  'portal.getInvolvedEventsLink': 'Ver los próximos eventos de SVBC',
+  'portal.getInvolvedVolunteerLink': 'Buscar un turno de voluntariado',
+  'portal.addToCalendar': 'Añadir al calendario',
   'portal.discountsHeading': 'Descuentos en tiendas de bicicletas',
   'portal.taxDocumentsLink': 'Documentos fiscales',
   'portal.eventsLink': 'Inscripciones a eventos',
@@ -185,4 +198,6 @@ export const es: Record<TranslationKey, string> = {
   'letterReady.body': 'Tu carta de donaciones de {{year}} ya está disponible en el portal de donantes.',
   'letterReady.loginLink': 'Inicia sesión para verla',
   'letterReady.expiry': 'Este enlace caduca pronto y solo se puede usar una vez.',
+  'portal.matchedBy': 'Igualado por {{company}} el {{date}}: {{amount}}',
+  'portal.startMatch': 'Tu empleador podría igualar esta donación',
 } satisfies Record<TranslationKey, string>;

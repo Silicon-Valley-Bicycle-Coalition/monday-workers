@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import { processRecomputeBatch, rollupToColumnValues, affectedAffiliations, type ProcessBatchDeps } from './processBatch';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { processRecomputeBatch, consumeRecomputeBatch, rollupToColumnValues, affectedAffiliations, type ProcessBatchDeps } from './processBatch';
+import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
@@ -37,6 +39,7 @@ const config: DonationRollupsConfig = {
     donorLevel: null,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
+    recurringGifts: null, rollCall: null, sponsorships: null,
   },
 };
 
@@ -58,6 +61,7 @@ const membershipEnabled: DonationRollupsConfig = {
     membership: membershipConfig,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
+    recurringGifts: null, rollCall: null, sponsorships: null,
   },
 };
 
@@ -94,8 +98,11 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
   };
 }
 
-function fakeRecomputesStore(last: OwnerRecompute | null = null): OwnerRecomputesStore {
-  return { get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined), writtenSince: vi.fn().mockResolvedValue(new Set()) };
+function fakeRecomputesStore(last: OwnerRecompute | null = null, opts: { leaseFree?: boolean } = {}): OwnerRecomputesStore {
+  return {
+    get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined), writtenSince: vi.fn().mockResolvedValue(new Set()),
+    acquireLease: vi.fn().mockResolvedValue(opts.leaseFree ?? true), releaseLease: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 function fakeGiftsStore(): GiftsStore {
@@ -111,8 +118,11 @@ function fakeGiftsStore(): GiftsStore {
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),
+    countedGifts: vi.fn().mockResolvedValue([]),
     giftsMissingTermStart: vi.fn().mockResolvedValue([]),
     setTermStarts: vi.fn().mockResolvedValue(undefined),
+    giftsMissingSponsorshipFacts: vi.fn().mockResolvedValue([]),
+    setSponsorshipFacts: vi.fn().mockResolvedValue(undefined),
     ownersOnBoards: vi.fn().mockResolvedValue([]),
     ownersWithOneGift: vi.fn().mockResolvedValue([]),
     ownerTotals: vi.fn().mockResolvedValue(new Map()),
@@ -138,6 +148,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     getItemBoardId: vi.fn().mockResolvedValue('2'),
     getDonorLinkForDonation: vi.fn().mockResolvedValue('donor-1'),
     getDonationState: vi.fn().mockResolvedValue('active'),
+    getItemsBoardAndGroup: vi.fn().mockResolvedValue(new Map()),
     getDonationsByIds: vi.fn().mockResolvedValue([]),
     getOwnerMembership: vi.fn().mockResolvedValue({ statusLabel: null, tierLabel: null, since: null, until: null,
       currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null }),
@@ -151,9 +162,131 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     setItemDescription: vi.fn().mockResolvedValue(undefined),
     createUpdate: vi.fn().mockResolvedValue(undefined),
     getAffiliationSummary: vi.fn().mockResolvedValue(null),
+    getPersonEmployerState: vi.fn().mockResolvedValue(null),
+    getEmployerAffiliations: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
+
+const sponsorshipsCfg = { organizationsBoardId: 2, giftTypes: ['Sponsorship'], inKindGiftTypes: ['In-kind'], yearBasis: 'calendar' as const,
+  windowYears: 3, pipelineBoards: { '700': 'Bike Fest' } };
+const sponsorshipsConfig: DonationRollupsConfig = {
+  ...config,
+  donationRollups: {
+    ...config.donationRollups,
+    donationBoards: [{ boardId: 1, columns: { ...config.donationRollups.donationBoards[0]!.columns,
+      giftType: 'gt_1', sponsorshipCycle: 'sc_1', inKindValue: 'ikv_1', sponsorshipPipelineLinks: ['pl_1'] } }],
+    sponsorships: sponsorshipsCfg,
+  },
+};
+const sponsorHistory = (): GiftHistoryRow[] => [
+  { mondayItemId: 'dn1', donationBoardId: '1', amountCents: 250000, giftDateISO: '2026-05-01', fiscalYear: 2026,
+    status: 'Received', giftType: 'Sponsorship', actingForItemId: null, archived: false, sponsorshipEvent: 'Bike Fest 2026', inKindValueCents: null } as GiftHistoryRow,
+  { mondayItemId: 'dn2', donationBoardId: '1', amountCents: 0, giftDateISO: '2026-06-01', fiscalYear: 2026,
+    status: 'Received', giftType: 'In-kind', actingForItemId: null, archived: false, sponsorshipEvent: '', inKindValueCents: 30000 } as GiftHistoryRow,
+];
+const sponsorDonation = (extra: Partial<DonationRecord> = {}): DonationRecord => ({
+  id: 'dn1', amountCents: 250000, dateISO: '2026-05-01', fiscalYear: 2026, status: 'Received', giftType: 'Sponsorship', ...extra } as DonationRecord);
+async function runSponsor(cfg: DonationRollupsConfig, ownerBoard: string, history: GiftHistoryRow[], donations: DonationRecord[], clientOver: Partial<DonationRollupsMondayClient> = {}) {
+  const giftsStore = fakeGiftsStore();
+  (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
+  const setItemDescription = vi.fn().mockResolvedValue(undefined);
+  const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(ownerBoard), setItemDescription,
+    getDonationsByIds: vi.fn().mockResolvedValue(donations), ...clientOver });
+  await processRecomputeBatch([fakeMessage('dn1')],
+    { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: NOW });
+  return { giftsStore, setItemDescription, mondayClient };
+}
+
+describe('sponsorships section in the recompute path', () => {
+  it("an Organizations owner's description starts with ## Sponsorships then ## Gift History", async () => {
+    const { setItemDescription } = await runSponsor(sponsorshipsConfig, '2', sponsorHistory(), [sponsorDonation()]);
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(md.startsWith('## Sponsorships')).toBe(true);
+    expect(md.indexOf('## Gift History')).toBeGreaterThan(md.indexOf('## Sponsorships'));
+    expect(md).toContain('\n\n## Gift History');
+  });
+
+  it('the window year is the local date in the fiscal-year time zone, not UTC', async () => {
+    const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups,
+      sponsorships: { ...sponsorshipsCfg, windowYears: 7 } } };
+    const history = [{ ...sponsorHistory()[0]!, mondayItemId: 'old', giftDateISO: '2020-03-01', fiscalYear: 2020 } as GiftHistoryRow];
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
+    const setItemDescription = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue('2'), setItemDescription,
+      getDonationsByIds: vi.fn().mockResolvedValue([sponsorDonation()]) });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: new Date('2027-01-01T05:00:00Z') });
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(md).toContain('## Sponsorships');
+    expect(md).toContain('2020-03-01');
+  });
+
+  it('a People owner with an in-kind Received gift gets no Sponsorships section', async () => {
+    const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups, ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns } } };
+    const { setItemDescription } = await runSponsor(cfg, '3', sponsorHistory(), [sponsorDonation()]);
+    expect(setItemDescription.mock.calls[0]![1] as string).not.toContain('## Sponsorships');
+  });
+
+  it('event falls back to pipeline board name + group title when Sponsorship Cycle is blank', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '700', groupTitle: '2026' }]]));
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: 'p1', inKindValueCents: 0 })], { getItemsBoardAndGroup });
+    expect(getItemsBoardAndGroup).toHaveBeenCalledTimes(1);
+    expect(getItemsBoardAndGroup).toHaveBeenCalledWith(['p1']);
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Bike Fest 2026', inKindValueCents: 0 })], 'webhook', expect.any(String));
+  });
+
+  it('a non-empty Sponsorship Cycle wins over the pipeline link', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '700', groupTitle: '2026' }]]));
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala 2026', pipelineItemId: 'p1', inKindValueCents: 12300 })], { getItemsBoardAndGroup });
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Gala 2026', inKindValueCents: 12300 })], 'webhook', expect.any(String));
+  });
+
+  it('an unmapped pipeline board or missing item resolves to an empty event, and no pipeline ids means no lookup', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '999', groupTitle: '2026' }]]));
+    const a = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: 'p1' })], { getItemsBoardAndGroup });
+    expect(a.giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ sponsorshipEvent: '' })], 'webhook', expect.any(String));
+    const none = vi.fn().mockResolvedValue(new Map());
+    await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: null })], { getItemsBoardAndGroup: none });
+    expect(none).not.toHaveBeenCalled();
+  });
+
+  it('refreshFacts receives sponsorshipEvent and inKindValueCents for configured boards; getDonationsByIds gets the new columns', async () => {
+    const { giftsStore, mondayClient } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala', inKindValueCents: 500 })]);
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Gala', inKindValueCents: 500 })], 'webhook', expect.any(String));
+    expect((mondayClient.getDonationsByIds as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toMatchObject(
+      { sponsorshipCycle: 'sc_1', inKindValue: 'ikv_1', sponsorshipPipelineLinks: ['pl_1'] });
+  });
+
+  it('an archived gift with blank cycle and no link does not send sponsorshipEvent to refreshFacts', async () => {
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: null, archived: true })]);
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+  });
+
+  it('an archived gift with a Sponsorship Cycle also leaves the stored event untouched', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map());
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala', pipelineItemId: 'p1', archived: true })], { getItemsBoardAndGroup });
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+    expect(getItemsBoardAndGroup).not.toHaveBeenCalled();
+  });
+
+  it('with sponsorships null the description is exactly the gift history and the facts carry no sponsorship fields', async () => {
+    const { buildGiftHistoryMarkdown } = await import('../projections/giftHistory');
+    const hist = sponsorHistory();
+    const { setItemDescription, giftsStore, mondayClient } = await runSponsor(config, '2', hist, [sponsorDonation()]);
+    expect(setItemDescription).toHaveBeenCalledWith('donor-1', buildGiftHistoryMarkdown(hist, config.monday.accountUrl, undefined));
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+    expect(fact.inKindValueCents).toBeUndefined();
+    expect((mondayClient.getDonationsByIds as ReturnType<typeof vi.fn>).mock.calls[0]![1]).not.toHaveProperty('sponsorshipCycle');
+  });
+});
 
 // Enough ledger rows that the JSON projection blows past the ~60KB write budget.
 const oversizedHistory = Array.from({ length: 2_000 }, (_, i) => ({
@@ -491,12 +624,50 @@ describe('processRecomputeBatch', () => {
     expect(message.ack).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn4', 'failed', { error: 'monday API: HTTP 500' });
   });
+
+  it('holds the owner lease across the recompute and releases it after the write', async () => {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const recomputesStore = fakeRecomputesStore();
+    const message = fakeMessage('dn5');
+    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues }), config });
+
+    expect(recomputesStore.acquireLease).toHaveBeenCalledWith('donor-1', expect.any(String), expect.any(String), expect.any(String));
+    const holder = (recomputesStore.acquireLease as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(recomputesStore.releaseLease).toHaveBeenCalledWith('donor-1', holder);
+    expect(changeColumnValues).toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('waits (retries without a failure) while another recompute of the same owner holds the lease', async () => {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const getDonationsByIds = vi.fn().mockResolvedValue([]);
+    const pendingStore = fakePendingStore();
+    const recomputesStore = fakeRecomputesStore(null, { leaseFree: false });
+    const message = fakeMessage('dn6');
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues, getDonationsByIds }), config });
+
+    expect(getDonationsByIds).not.toHaveBeenCalled();
+    expect(changeColumnValues).not.toHaveBeenCalled();
+    expect(recomputesStore.releaseLease).not.toHaveBeenCalled();
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: expect.any(Number) });
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dn6', 'failed', expect.anything());
+  });
+
+  it('releases the lease when the recompute fails', async () => {
+    const recomputesStore = fakeRecomputesStore();
+    const message = fakeMessage('dn7');
+    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) }), config });
+
+    expect(recomputesStore.releaseLease).toHaveBeenCalledWith('donor-1', expect.any(String));
+    expect(message.retry).toHaveBeenCalled();
+  });
 });
 
 const BLANK_BOARD: BoardMembership = { statusLabel: null, tierLabel: null, since: null, until: null, currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null };
 const ledgerGift = (over: Partial<GiftHistoryRow> = {}): GiftHistoryRow => ({
   mondayItemId: 'dn1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2026-11-05', fiscalYear: 2027,
-  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, ...over });
+  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, sponsorshipEvent: null, inKindValueCents: null, ...over });
 
 describe('membership step (spec 2026-10-09 — full-history fold)', () => {
   function deps(over: {
@@ -975,7 +1146,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-3', expect.anything());
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "3"'));
-    warn.mockRestore();
 
     const gone = setup({ monday: { getAffiliationSummary: vi.fn().mockResolvedValue(null) } });
     const message = fakeMessage('dn1');
@@ -1014,7 +1184,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500.00' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
-    warn.mockRestore();
   });
 
   it('gift-history description gains a "Driven for organizations" section when the owner drives affiliated giving', async () => {
@@ -1056,7 +1225,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
     // write — it still lands, just without the "Driven for organizations" section.
     expect(mondayClient.setItemDescription).toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('driven-for-organizations skipped'));
-    warn.mockRestore();
   });
 
   it('a phase-2 Monday failure retries the message (owner write is idempotent)', async () => {
@@ -1157,6 +1325,56 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
     expect(linksStore.getLinksForOwner).toHaveBeenCalledWith('donor-old');
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-old', expect.anything());
     expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dnMoved', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+});
+
+// A deleted Donor or Organization: its gifts' recomputes target an owner that no longer exists.
+// getItemBoardId reads it as gone (null); nothing can be written to it, so every such message
+// must finish rather than retry toward the DLQ.
+describe('a deleted owner', () => {
+  const deps = (mondayClient: DonationRollupsMondayClient, over: { linksStore?: DonationLinksStore; giftsStore?: GiftsStore;
+    pendingStore?: PendingStore } = {}): ProcessBatchDeps => ({
+    pendingStore: over.pendingStore ?? fakePendingStore(), linksStore: over.linksStore ?? fakeLinksStore(),
+    giftsStore: over.giftsStore ?? fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+    recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(),
+    mondayClient, config, now: new Date('2026-01-01'),
+  });
+
+  it('a gift still linked to it is detached and acked, with no write to the deleted owner', async () => {
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const linksStore = fakeLinksStore({ getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }) });
+    const giftsStore = fakeGiftsStore();
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dnOrphan');
+    await processRecomputeBatch([message], deps(mondayClient, { linksStore, giftsStore, pendingStore }));
+    expect(giftsStore.markRemoved).toHaveBeenCalledWith('dnOrphan', expect.any(String));
+    expect(linksStore.deleteLink).toHaveBeenCalledWith('dnOrphan');
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnOrphan', 'written', expect.anything());
+  });
+
+  it('a gift whose link was cleared by the deletion is detached without recomputing the deleted owner', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
+      getDonationState: vi.fn().mockResolvedValue('active'), getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const linksStore = fakeLinksStore({ getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }) });
+    const message = fakeMessage('dnCleared');
+    await processRecomputeBatch([message], deps(mondayClient, { linksStore }));
+    expect(linksStore.deleteLink).toHaveBeenCalledWith('dnCleared');
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('an owner-keyed message for it is acked without a write', async () => {
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const message = { body: { donationItemId: 'dnMoved', donationBoardId: '1', ownerItemId: 'donor-old', ownerBoardId: '3' },
+      ack: vi.fn(), retry: vi.fn() };
+    await processRecomputeBatch([message], deps(mondayClient));
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
   });
 });
@@ -1263,5 +1481,246 @@ describe('registration messages (kind: registration)', () => {
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'failed', expect.objectContaining({ error: expect.stringContaining('volunteerBoards') }));
+  });
+});
+
+// The write switch (spec 2026-10-26): the mode is read once per batch (index.ts) and decides per
+// message whether the recompute writes, dry-runs against recording proxies, or waits on the queue.
+describe('write switch (consumeRecomputeBatch)', () => {
+  // Every console spy below is restored here, even when an assertion fails first.
+  afterEach(() => { vi.restoreAllMocks(); });
+  const gate = (mode: WriteMode): BatchSkipContext =>
+    ({ worker: 'donation-rollups', environment: 'production', mode, logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS });
+
+  // A donation that moved here from another owner: a live run re-points its link, enqueues the
+  // owner it left, refreshes the ledger, writes the owner and records the recompute — every kind
+  // of write this consumer makes, so a dry run has every one of them to drop.
+  function setup(over: { now?: Date; linksStore?: DonationLinksStore } = {}) {
+    const pendingStore = fakePendingStore();
+    const linksStore = over.linksStore ?? fakeLinksStore({
+      upsertLink: vi.fn().mockResolvedValue({ changed: true, updatedAt: '2026-01-01T00:00:00Z', previousOwner: { ownerItemId: 'donor-0', ownerBoardId: '3' } }),
+      getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-0', ownerBoardId: '3' }),
+    });
+    const giftsStore = fakeGiftsStore();
+    const recomputesStore = fakeRecomputesStore();
+    const affiliationsStore = fakeAffiliationsStore();
+    const volunteerStore = fakeVolunteerStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue([{ id: 'dn1', amountCents: 5000, dateISO: '2026-01-15', fiscalYear: 2026, status: 'Received' }]),
+    });
+    const deps: ProcessBatchDeps = { pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore,
+      mondayClient, config: configWithAlert, queue, now: over.now ?? new Date('2026-01-01') };
+    return { deps, pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore, queue, mondayClient };
+  }
+
+  // A dry run's one pending write: closing its own row out as 'dropped' (never 'written' or
+  // 'failed'), so the nightly requeue can't re-send it live.
+  function expectOnlyDropped(s: ReturnType<typeof setup>, id: string) {
+    expect(vi.mocked(s.pendingStore.updateStatus).mock.calls).toEqual([[id, 'dropped', undefined]]);
+  }
+
+  function expectNoWrites(s: ReturnType<typeof setup>) {
+    expect(s.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(s.mondayClient.setItemDescription).not.toHaveBeenCalled();
+    expect(s.mondayClient.createUpdate).not.toHaveBeenCalled();
+    expect(s.queue.send).not.toHaveBeenCalled();
+    for (const fn of [s.pendingStore.upsertPending, s.linksStore.upsertLink, s.linksStore.deleteLink,
+      s.linksStore.bulkUpsert, s.giftsStore.refreshFacts, s.giftsStore.markRemoved, s.recomputesStore.record,
+      s.affiliationsStore.upsert, s.volunteerStore.upsert, s.volunteerStore.markRemoved]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  }
+
+  it('off: recomputes with no Monday write, no store write and no fan-out enqueue, logs what it skipped, and acks', async () => {
+    const s = setup();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const message = fakeMessage('dn1');
+    await consumeRecomputeBatch([message], s.deps, gate('off'));
+
+    expectNoWrites(s);
+    expectOnlyDropped(s, 'dn1');
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    // It still read the way a live run would.
+    expect(s.mondayClient.getDonationsByIds).toHaveBeenCalled();
+    const skipped = log.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('"writeSwitch":"skipped"'))
+      .map((line) => JSON.parse(line) as { sink: string; operation: string; deliveryId: string });
+    expect(skipped.map((l) => `${l.sink}.${l.operation}`)).toEqual(expect.arrayContaining([
+      'RECOMPUTE_QUEUE.send', 'Monday.changeColumnValues', 'Monday.setItemDescription',
+    ]));
+    expect(skipped[0]!.deliveryId).toBe('donation:dn1');
+  });
+
+  it('a message stamped dropped dry-runs even under on', async () => {
+    const s = setup();
+    const message = { ...fakeMessage('dn1'), body: { donationItemId: 'dn1', donationBoardId: '1', writeStamp: 'dropped' as const } };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([message], s.deps, gate('on'));
+    expectNoWrites(s);
+    expectOnlyDropped(s, 'dn1');
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it.each([['hold'], ['unknown']] as const)('%s: leaves the message on the queue at the shared backoff, touching nothing', async (mode) => {
+    const s = setup();
+    const message = fakeMessage('dn1');
+    await consumeRecomputeBatch([message], s.deps, gate(mode));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(s.mondayClient.getDonorLinkForDonation).not.toHaveBeenCalled();
+    expectNoWrites(s);
+    expect(s.pendingStore.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('hold backs off by attempt, capped at an hour', async () => {
+    const s = setup();
+    const fourth = { ...fakeMessage('dn1'), attempts: 4 };
+    const late = { ...fakeMessage('dn2'), attempts: 30 };
+    await consumeRecomputeBatch([fourth, late], s.deps, gate('hold'));
+    expect(fourth.retry).toHaveBeenCalledWith({ delaySeconds: 480 });
+    expect(late.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+  });
+
+  it('an unstamped message enqueued before the switch existed is written under on', async () => {
+    const s = setup();
+    const message = fakeMessage('dn1'); // no writeStamp field at all
+    await consumeRecomputeBatch([message], s.deps, gate('on'));
+    expect(s.mondayClient.changeColumnValues).toHaveBeenCalled();
+    expect(s.linksStore.upsertLink).toHaveBeenCalled();
+    expect(s.queue.send).toHaveBeenCalledWith({ donationItemId: 'dn1', donationBoardId: '1', ownerItemId: 'donor-0', ownerBoardId: '3' });
+    expect(s.recomputesStore.record).toHaveBeenCalled();
+    expect(s.pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('a D1 quota error under on keeps its midnight-UTC delay as the retry hint, past the one-hour backoff cap', async () => {
+    const s = setup({ now: new Date('2026-10-26T14:00:00Z') });
+    (s.giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("D1_ERROR: Your account has exceeded D1's free tier daily row write limit."));
+    const message = fakeMessage('dn1');
+    const next = fakeMessage('dn2');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await consumeRecomputeBatch([message, next], s.deps, gate('on'));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 10 * 3600 });
+    expect(next.retry).toHaveBeenCalledWith({ delaySeconds: 10 * 3600 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('off: an owner-keyed fan-out message has no pending row of its own — it marks nothing', async () => {
+    const s = setup();
+    const message = { body: { donationItemId: 'dnMoved', donationBoardId: '1', ownerItemId: 'donor-0', ownerBoardId: '3' }, ack: vi.fn(), retry: vi.fn() };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([message], s.deps, gate('off'));
+    expectNoWrites(s);
+    expect(s.pendingStore.updateStatus).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('off: a registration message dry-runs the volunteer upsert too', async () => {
+    const s = setup();
+    const reg = { body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '7' }, ack: vi.fn(), retry: vi.fn() };
+    const cfg: DonationRollupsConfig = { ...membershipEnabled, donationRollups: { ...membershipEnabled.donationRollups,
+      volunteerBoards: [{ boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
+        eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] }] } };
+    (s.mondayClient.getRegistration as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { id: 'r1', state: 'active', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([reg], { ...s.deps, config: cfg }, gate('off'));
+    expect(s.mondayClient.getRegistration).toHaveBeenCalled();
+    expectNoWrites(s);
+    expectOnlyDropped(s, 'r1');
+    expect(reg.ack).toHaveBeenCalled();
+  });
+});
+
+describe('affiliation messages (kind: affiliation)', () => {
+  const employerSync = {
+    currentStatusLabel: 'Current',
+    columns: { organizationLink: 'br_o', status: 'st', primary: 'pr' },
+    ownerColumnsByBoard: { '2': { employerName: 'emp', affiliationsLink: 'br_a' } },
+  };
+  const cfg: DonationRollupsConfig = { ...configWithAffiliations, affiliations: { ...affiliationsCfg, employerSync } };
+  const message = () => ({ body: { kind: 'affiliation' as const, donationItemId: 'af-1', donationBoardId: '555' }, ack: vi.fn(), retry: vi.fn() });
+  const current = (id: string, organizationName: string, primary = false) => ({ id, statusLabel: 'Current', primary, organizationName });
+
+  function deps(over: { config?: DonationRollupsConfig; monday?: Partial<DonationRollupsMondayClient> } = {}) {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const pendingStore = fakePendingStore();
+    const mondayClient = fakeMondayClient({
+      changeColumnValues,
+      getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'Uma @ Acme', personItemId: 'p-1', personBoardId: '2' }),
+      getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: 'Old Co', affiliationItemIds: ['af-1'] }),
+      getEmployerAffiliations: vi.fn().mockResolvedValue([current('af-1', 'Acme')]),
+      ...over.monday,
+    });
+    const allDeps = {
+      pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+      recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: over.config ?? cfg,
+      queue: { send: vi.fn().mockResolvedValue(undefined) }, now: NOW };
+    return { changeColumnValues, pendingStore, mondayClient, allDeps, run: (m = message()) => processRecomputeBatch([m], allDeps) };
+  }
+
+  it('writes the organization name to the person\'s Employer Name and marks the pending row written', async () => {
+    const d = deps();
+    const m = message();
+    await d.run(m);
+    expect(d.changeColumnValues).toHaveBeenCalledTimes(1);
+    expect(d.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { emp: 'Acme' });
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('af-1', 'written', expect.objectContaining({ ownerItemId: 'p-1', ownerBoard: '2' }));
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('reads the changed affiliation as well as those on the person\'s link, which can lag', async () => {
+    const d = deps({ monday: { getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: '', affiliationItemIds: ['af-2'] }) } });
+    await d.run();
+    expect(d.mondayClient.getEmployerAffiliations).toHaveBeenCalledWith(['af-2', 'af-1'], employerSync.columns);
+  });
+
+  it('skips the write when Employer Name already matches', async () => {
+    const d = deps({ monday: { getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: 'Acme', affiliationItemIds: ['af-1'] }) } });
+    await d.run();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it('leaves Employer Name alone when no affiliation is current', async () => {
+    const d = deps({ monday: { getEmployerAffiliations: vi.fn().mockResolvedValue([{ ...current('af-1', 'Acme'), statusLabel: 'Former' }]) } });
+    const m = message();
+    await d.run(m);
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('does nothing for an affiliation that was deleted or has no Person linked', async () => {
+    for (const summary of [null, { name: 'x', personItemId: null, personBoardId: null }]) {
+      const d = deps({ monday: { getAffiliationSummary: vi.fn().mockResolvedValue(summary) } });
+      await d.run();
+      expect(d.changeColumnValues).not.toHaveBeenCalled();
+      expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('af-1', 'written', expect.anything());
+    }
+  });
+
+  it('does nothing for a person on a board with no Employer Name configured', async () => {
+    const d = deps({ monday: { getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'x', personItemId: 'p-1', personBoardId: '99' }) } });
+    await d.run();
+    expect(d.mondayClient.getPersonEmployerState).not.toHaveBeenCalled();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges without reading Monday once employer sync is off in config', async () => {
+    const d = deps({ config: configWithAffiliations });
+    const m = message();
+    await d.run(m);
+    expect(d.mondayClient.getAffiliationSummary).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('under the off write mode it reads but does not write to Monday', async () => {
+    const d = deps();
+    const m = message();
+    await consumeRecomputeBatch([m], d.allDeps, { worker: 'donation-rollups', environment: 'sandbox', mode: 'off', logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS });
+    expect(d.mondayClient.getEmployerAffiliations).toHaveBeenCalled();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalled();
   });
 });
