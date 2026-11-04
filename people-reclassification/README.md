@@ -318,7 +318,7 @@ in config and a renamed column fails the pass loudly rather than reading blanks.
 | `boards.historical` | People (Historical) `18437342607` | People (Historical) `18437909784` |
 | `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `18437909792` / `18437909790` |
 | `volunteers` | Volunteers `18437342662` | `18437909797` |
-| `loggedActivities` | Activities (Logged) `18438204391` | Activities (Logged) `18438042551` |
+| `loggedActivities` | Activities (Logged) (sandbox v4) `18438393347`, a small test board. `email-log`'s sandbox writes to the v3 board `18438204391`, whose links are v3 items, so logged email doesn't reach this Worker in the sandbox | Activities (Logged) `18438042551` |
 | `alerts.itRequests` | `null` (log only — IT Requests is a production board) | `8846215481`, `Type` = `IT Support`, 30-day cooldown |
 
 Column titles (`peopleColumns`, the registrations and volunteers `columns` blocks) are the ones

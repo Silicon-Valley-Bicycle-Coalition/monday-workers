@@ -29,7 +29,7 @@
     "columns": { "volunteer": "Volunteer", "date": "Date" }
   },
   "loggedActivities": {
-    "boardId": 18438204391,
+    "boardId": 18438393347,
     "columns": { "person": "Person", "date": "Date", "activityType": "Activity Type" },
     "countedTypeLabels": ["Email", "Call", "Meeting"]
   },
