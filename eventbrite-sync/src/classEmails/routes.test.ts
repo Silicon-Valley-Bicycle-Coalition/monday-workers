@@ -79,12 +79,16 @@ function harness(o: Options = {}) {
 }
 
 type App = ReturnType<typeof harness>['app'];
-function call(app: App, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = { 'X-Class-Email-Secret': SECRET }) {
+function call(app: App, method: 'GET' | 'POST', path: string, body?: unknown, headers: Record<string, string> = { 'X-Class-Email-Secret': SECRET }, ctx?: ExecutionContext) {
   return app.request(path, {
     method,
     headers: { 'Content-Type': 'application/json', ...headers },
     ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
-  });
+  }, undefined, ctx);
+}
+function fakeExecutionContext() {
+  const waited: Promise<unknown>[] = [];
+  return { waited, ctx: { waitUntil: (p: Promise<unknown>) => void waited.push(p), passThroughOnException: () => {} } as unknown as ExecutionContext };
 }
 const get = (h: { app: App }, eventId = 'e1') => call(h.app, 'GET', `/class-emails/${eventId}`);
 const post = (h: { app: App }, route: 'claim' | 'result' | 'release', body: unknown) => call(h.app, 'POST', `/class-emails/e1/${route}`, body);
@@ -228,6 +232,19 @@ describe('POST claim', () => {
   it('404s an unknown event', async () => {
     const h = harness({ event: null });
     expect((await post(h, 'claim', { kind: 'reminder' })).status).toBe(404);
+  });
+
+  it('refuses when the Events item is archived, deleted or purged, claiming nothing', async () => {
+    for (const state of ['archived', 'deleted']) {
+      const h = harness();
+      h.items.set('900', mondayItem('900', 'Learn to Ride', {}, { state }));
+      expect((await post(h, 'claim', { kind: 'reminder' })).status, state).toBe(404);
+      expect(h.store.rows).toEqual([]);
+    }
+    const purged = harness();
+    purged.items.delete('900');
+    expect((await post(purged, 'claim', { kind: 'reminder' })).status).toBe(404);
+    expect(purged.store.rows).toEqual([]);
   });
 });
 
@@ -391,18 +408,78 @@ describe('POST result', () => {
     expect(JSON.stringify(error.mock.calls)).not.toContain('real.org');
   });
 
-  it('returns 503 and records nothing unless writes are on', async () => {
+  it('records the ledger under any write mode, and skips every Monday write unless on', async () => {
     for (const mode of ['off', 'hold', 'unknown'] as const) {
-      const h = harness({ mode, ledger: [row('reminder', '10')] });
-      const res = await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
-      expect(res.status, mode).toBe(503);
-      expect(h.store.rows[0]!.status).toBe('claimed');
+      const h = harness({ mode, ledger: [row('missed-you', '10'), row('missed-you', '11'), row('missed-you', '12')] });
+      const res = await post(h, 'result', sendResult('missed-you', [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'failed', error: 'x' }]));
+      expect(res.status, mode).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, sent: 1, failed: 1, unresolved: 2 });
+      expect(h.store.rows.map((r) => r.status)).toEqual(['sent', 'failed', 'claimed']);
       expect(h.mondayClient).not.toHaveBeenCalled();
     }
   });
 
+  it('still refuses a malformed result under any write mode', async () => {
+    const h = harness({ mode: 'off', ledger: [row('reminder', '10')] });
+    expect((await post(h, 'result', sendResult('reminder', 'nope'))).status).toBe(400);
+    expect(h.store.rows[0]!.status).toBe('claimed');
+  });
+
   it('404s an unknown event', async () => {
     expect((await post(harness({ event: null }), 'result', sendResult('reminder', []))).status).toBe(404);
+  });
+});
+
+describe('POST result: the update comes before the follow-ups', () => {
+  const missedYou = () => harness({ ledger: [row('missed-you', '10')] });
+  const sentOne = sendResult('missed-you', [{ registrationId: '10', status: 'sent' }]);
+  const postWith = (h: { app: App }, ctx: ExecutionContext) => call(h.app, 'POST', '/class-emails/e1/result', sentOne, undefined, ctx);
+
+  it('posts the update, then writes No Show, when there is no execution context', async () => {
+    const h = missedYou();
+    expect((await post(h, 'result', sentOne)).status).toBe(200);
+    expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
+    expect(h.client.postUpdate.mock.invocationCallOrder[0]!).toBeLessThan(h.client.changeColumnValues.mock.invocationCallOrder[0]!);
+  });
+
+  it('answers with the update posted and leaves the follow-ups to waitUntil', async () => {
+    const h = missedYou();
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const getItems = h.client.getItems.getMockImplementation()!;
+    h.client.getItems.mockImplementation(async (board, ids) => { await gate; return getItems(board, ids); });
+    const { ctx, waited } = fakeExecutionContext();
+
+    const res = await postWith(h, ctx);
+    expect(res.status).toBe(200);
+    expect(h.store.rows[0]!.status).toBe('sent');
+    expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
+    expect(h.client.changeColumnValues).not.toHaveBeenCalled();
+    expect(waited).toHaveLength(1);
+
+    open();
+    await waited[0];
+    expect(h.client.changeColumnValues).toHaveBeenCalledWith(333, '10', { [rc.attendanceColumn]: 'No Show' });
+  });
+
+  it('logs a background failure by kind and id only, and never rejects', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const h = missedYou();
+    h.client.getItems.mockImplementation(async () => { throw new Error('Monday refused p10@real.org for Al One'); });
+    const { ctx, waited } = fakeExecutionContext();
+    expect((await postWith(h, ctx)).status).toBe(200);
+    await expect(waited[0]).resolves.toBeUndefined();
+    const logged = JSON.stringify(error.mock.calls);
+    expect(logged).toContain('e1');
+    expect(logged).not.toContain('real.org');
+    expect(logged).not.toContain('Al One');
+  });
+
+  it('still runs the follow-ups when the update fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const h = harness({ ledger: [row('missed-you', '10')], postUpdate: async () => { throw new Error('boom'); } });
+    await post(h, 'result', sentOne);
+    expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
   });
 });
 

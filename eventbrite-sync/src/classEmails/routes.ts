@@ -106,6 +106,15 @@ const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim().slice
 // Monday errors can echo what was sent, so only the class of the failure is ever logged.
 const errorKind = (err: unknown): string => (err instanceof Error ? err.name : 'unknown error');
 
+// Hono's getter throws when the request has no execution context, as in app.request() from a test.
+function executionContextOf(c: Context): ExecutionContext | null {
+  try {
+    return c.executionCtx as ExecutionContext;
+  } catch {
+    return null;
+  }
+}
+
 export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): void {
   const { store, config } = deps;
   const now = deps.now ?? (() => new Date());
@@ -202,7 +211,12 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     // Always re-planned from live data: what the page was shown earlier may be stale.
     const client = deps.mondayClient();
     const at = now();
-    const [roster, ledger] = await Promise.all([loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }), store.listByEvent(eventId)]);
+    const [[item], roster, ledger] = await Promise.all([
+      client.getItems(boards.events!, [event.mondayItemId], []),
+      loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
+      store.listByEvent(eventId),
+    ]);
+    if (!isActive(item)) return notFound(c);
     const plan = planKind(kind, factsOf(event), roster, ledger, at);
     if (plan.refusal !== null) return json(c, { refusal: plan.refusal, recipients: [] });
 
@@ -215,7 +229,6 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
   app.post('/class-emails/:eventId/result', handle('result', async (c) => {
     const { kind, sender, subject, results } = parseResult(await readJson(c));
-    if ((await deps.writeMode()) !== 'on') return writesRefusal(c);
     if (!configured()) return unconfigured(c);
     const eventId = idOf(c);
     const event = await findEvent(eventId);
@@ -240,6 +253,17 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     // check Sent mail; the page shows them too (GET's `unresolved`).
     const unconfirmed = ledger.filter((r) => r.kind === kind && !acted.has(r.registrationId) && r.status === 'claimed').map((r) => r.registrationId);
 
+    const answer = { ok: true, sent: sentIds.length, failed: failed.length, unresolved };
+
+    // These emails went out whatever the switch says now, so the ledger above is written under any
+    // mode (a switch flipped mid-send must not leave them unconfirmed). Monday is what the switch
+    // guards, and nothing replays these writes later.
+    const mode = await deps.writeMode();
+    if (mode !== 'on') {
+      console.log(`eventbrite-sync class emails: Monday writes skipped after result for event "${eventId}": write mode ${mode}`);
+      return json(c, answer);
+    }
+
     if (acted.size > 0 || unconfirmed.length > 0) {
       let client: MondayClient | null = null;
       try {
@@ -248,11 +272,16 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         console.error(`eventbrite-sync class emails: no Monday client after result for event "${eventId}": ${errorKind(err)}`);
       }
       if (client !== null) {
-        await followUp(client, kind, sentIds, eventId);
+        // The update first: it is the record of the send, and a long Thank-you's People matching
+        // must not be able to cost it. The follow-ups can outlive the response.
         await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed);
+        const work = followUp(client, kind, sentIds, eventId);
+        const ctx = executionContextOf(c);
+        if (ctx === null) await work;
+        else ctx.waitUntil(work);
       }
     }
-    return json(c, { ok: true, sent: sentIds.length, failed: failed.length, unresolved });
+    return json(c, answer);
   }));
 
   app.post('/class-emails/:eventId/release', handle('release', async (c) => {
@@ -288,10 +317,11 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
   // What the ledger doesn't cover: a missed-you marks No Show and a thank-you links People. Each
   // item is independent and none of it can undo the ledger, so a failure is logged and skipped.
+  // Runs under waitUntil, so it never rejects.
   async function followUp(client: MondayClient, kind: ClassEmailKind, sentIds: string[], eventId: string): Promise<void> {
     if (sentIds.length === 0 || kind === 'reminder') return;
-    const regBoard = boards['event-registrations']!;
     try {
+      const regBoard = boards['event-registrations']!;
       if (kind === 'missed-you') {
         // Fresh: staff may have checked someone in since the page was loaded.
         const fresh = (await client.getItems(regBoard, sentIds, [rc.attendanceColumn])).filter(isActive);
