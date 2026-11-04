@@ -46,8 +46,21 @@ In the backup Shared Drive, each run is a folder named `YYYY-MM-DD run-N`. Open 
   from it (the restore also warns about this);
 * `itemCountsByBoard`, `updateCountsByBoard`, `blockCountsByDoc` look plausible for the date.
 
-A folder with no `manifest.json` is a run that didn't finish — don't use it. For "undo a bad
-change", pick the last good run *before* the change.
+A folder with no `manifest.json` is a run that didn't finish, or that the write switch stopped —
+don't use it. A file can't be half-written: uploads only appear in Drive once they close.
+
+### A snapshot is captured over a window, not at one instant
+
+A run takes about an hour and captures one board or doc at a time. `runAt` and `finishedAt` in the
+manifest give the window, and `capturedAt` says when each board and doc was captured (keyed
+`board-<id>` and `doc-<id>`, like the filenames). So:
+
+* For "undo a bad change", pick a run whose window ended *before* the change. A change made during a
+  run's window may or may not be in it, depending on when that board was captured.
+* An item created during the window can be on one board and missing from another. Most often that's
+  a link to an item that was created after its board was captured: the restore drops that link and
+  warns (`links to … dropped (not in this restore)`). Check those warnings against `capturedAt`
+  before treating one as a problem.
 
 ## 2. Download it
 

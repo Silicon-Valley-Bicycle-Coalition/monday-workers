@@ -79,7 +79,7 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
       .prepare(
         `UPDATE snapshot_runs
          SET status = 'abandoned', finished_at = ?2, error_count = 1,
-             last_error = 'run never finished — killed by the runtime (CPU/wall-time limit) or crashed before recording a result'
+             last_error = 'run never finished — the Workflow died or hung before recording a result'
          WHERE status = 'running' AND started_at < ?1
          RETURNING id, started_at`,
       )
@@ -96,7 +96,7 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
 
   async lastSnapshotAt(): Promise<string | null> {
     const row = await this.db
-      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status IN ('success', 'partial')`)
+      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status = 'success'`)
       .first<{ at: string | null }>();
     return row?.at ?? null;
   }

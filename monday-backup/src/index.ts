@@ -1,24 +1,17 @@
 import { Hono } from 'hono';
-import productionConfig from '../config/backup.json';
-import sandboxConfig from '../config/backup.sandbox.json';
-import { createConfigSelector, environmentOf } from './environment';
-import { runBackup } from './backup';
-import { validateConfig } from './config';
+import { environmentOf } from './environment';
 import { D1SnapshotRunStore } from './db/runs';
-import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
-import { Deadline } from './deadline';
+import { configFor } from './runConfig';
 import { runUsageCheck } from './usage';
 import { runWatchdog } from './watchdog';
 import { DEFAULT_PII_KEYS, logSkip, readLogLevel, readWriteMode, runDisposition, type SkipContext } from './flags';
 import type { Env } from './env';
 
-// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
-// per isolate — see src/environment.ts and config/split.test.ts. In the sandbox,
-// destinationParentFolderId names the sandbox Drive folder; the split test is what keeps that id
-// off the production file.
-const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
+// The nightly snapshot runs as a Workflow, which has to be exported from the main module.
+export { SnapshotWorkflow } from './workflow';
+
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
 // Must match wrangler.jsonc `triggers.crons` (both environments; index.test.ts checks).
@@ -80,22 +73,8 @@ export default {
       return;
     }
 
-    // One deadline shared by both clients; runBackup sets and extends it (src/deadline.ts).
-    const deadline = new Deadline();
-    await runBackup({
-      monday: new HttpMondayClient(MONDAY_API_URL, tokenProviderFor(env), { deadline }),
-      drive: new GoogleDriveClient(
-        {
-          clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-          privateKeyPem: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-        },
-        { deadline },
-      ),
-      deadline,
-      runStore: new D1SnapshotRunStore(env.DB),
-      config,
-      slackWebhookUrl: env.SLACK_WEBHOOK_URL,
-      now: () => new Date(),
-    });
+    // A full run takes about an hour and a cron invocation gets 15 minutes, so this only starts it.
+    // A failure here surfaces in Workers Issues, and the watchdog alerts when no snapshot lands.
+    await env.SNAPSHOT.create({ id: `nightly-${controller.scheduledTime}` });
   },
 };

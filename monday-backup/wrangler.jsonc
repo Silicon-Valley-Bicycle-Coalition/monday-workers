@@ -20,12 +20,17 @@
   // env.sandbox); every in-scope Worker carries the same two ids, which
   // scripts/check-worker-flags.mjs verifies.
   "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // The snapshot itself: one step per board or doc (src/workflow.ts). A complete run takes about an
+  // hour, which no single cron invocation gets. Trigger one by hand with
+  // `npx wrangler workflows trigger svbc-monday-backup-snapshot`.
+  "workflows": [{ "name": "svbc-monday-backup-snapshot", "binding": "SNAPSHOT", "class_name": "SnapshotWorkflow" }],
   "triggers": {
     // Daily at 09:00 UTC (1am/2am Pacific depending on DST) — after Monday's own nightly
     // processing settles, well before SVBC staff start their day. Adjust if a different
     // time is preferred once this is actually scheduled.
-    // Second entry: the hourly staleness watchdog (src/watchdog.ts, issue #29) — alerts when a
-    // run was killed mid-flight (row stuck 'running' > 1h) or no snapshot succeeded in 36h.
+    // This only starts the Workflow. Second entry: the hourly staleness watchdog (src/watchdog.ts,
+    // issue #29) — alerts when a run died mid-flight (row stuck 'running' > 12h) or no complete
+    // snapshot landed in 36h.
     // Keep in sync with BACKUP_CRON / WATCHDOG_CRON in src/index.ts (index.test.ts checks).
     "crons": ["0 9 * * *", "30 * * * *"]
   },
@@ -72,6 +77,7 @@
       ],
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "workflows": [{ "name": "svbc-monday-backup-snapshot-sandbox", "binding": "SNAPSHOT", "class_name": "SnapshotWorkflow" }],
       "triggers": {
         "crons": ["0 9 * * *", "30 * * * *"]
       },

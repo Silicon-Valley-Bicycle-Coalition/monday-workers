@@ -294,7 +294,7 @@ export class HttpMondayClient implements MondayClient {
   }
 
   // First page through boards { items_page }, then the cheaper root next_items_page with the
-  // cursor (cursors stay valid for 60 minutes — far longer than one run's budget).
+  // cursor (cursors stay valid for 60 minutes — far longer than one board takes).
   async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
     const first = await this.graphql<{ boards: { items_page: ItemsPage }[] }>(
       `query ($boardId: [ID!], $limit: Int!) {

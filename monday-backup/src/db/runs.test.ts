@@ -91,7 +91,7 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     expect(await store.abandonStaleRuns('2026-08-25T10:00:00.000Z', '2026-08-25T11:00:00.000Z')).toEqual([]);
   });
 
-  it('lastSnapshotAt returns the latest success or partial finish, ignoring failures', async () => {
+  it('lastSnapshotAt returns the latest success, ignoring partial and failed runs', async () => {
     const store = new D1SnapshotRunStore(env.DB);
     expect(await store.lastSnapshotAt()).toBeNull();
     const a = await store.recordRunStart('2026-08-24T09:00:00.000Z');
@@ -100,7 +100,7 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     await store.recordRunFinish(b, '2026-08-25T09:05:00.000Z', { ...ok, status: 'partial', errorCount: 1, lastError: 'x' });
     const c = await store.recordRunStart('2026-08-26T09:00:00.000Z');
     await store.recordRunFailure(c, '2026-08-26T09:01:00.000Z', 'boom');
-    expect(await store.lastSnapshotAt()).toBe('2026-08-25T09:05:00.000Z');
+    expect(await store.lastSnapshotAt()).toBe('2026-08-24T09:05:00.000Z');
   });
 
   it('recordRunStopped marks the run stopped, without touching the failure streak', async () => {

@@ -68,8 +68,8 @@ switch stops the run mid-way (`stopped`, no manifest, no alert); the deadline is
 `src/index.ts`; binding `SNAPSHOT`; names `svbc-monday-backup-snapshot` and
 `svbc-monday-backup-snapshot-sandbox`.
 
-Tests: cron `on` creates `nightly-<scheduledTime>`; `hold`/`off` create nothing; a duplicate id is
-ignored; any other create error propagates; `MondayApiError` with a daily-limit code becomes
+Tests: cron `on` creates `nightly-<scheduledTime>`; `hold`/`off` create nothing; a create error
+propagates; `MondayApiError` with a daily-limit code becomes
 `NonRetryableError`; wrangler binds the Workflow in both environments; a smoke test through
 `introspectWorkflowInstance` with `start` mocked to `null` reaches `complete`.
 

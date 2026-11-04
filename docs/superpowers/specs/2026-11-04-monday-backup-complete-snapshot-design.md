@@ -117,7 +117,7 @@ The README's direction holds up against the evidence: a bigger single run is imp
 | Concurrency inside the cron | Would need 5x or more with no headroom, and a failure still loses the run. |
 
 The `0 9 * * *` cron stops doing the work. It reads the write switch and calls
-`env.SNAPSHOT.create({ id: 'nightly-<scheduledTime>' })`, ignoring a duplicate-id error. The Workflow
+`env.SNAPSHOT.create({ id: 'nightly-<scheduledTime>' })`. The Workflow
 also runs on demand with `npx wrangler workflows trigger svbc-monday-backup-snapshot`, which is how
 the first production run gets tested without waiting for 09:00 UTC.
 
@@ -207,9 +207,9 @@ remapped. The restore already handles this: it drops the link and reports it (`r
 
 ### Observability
 
-One log line per board or doc: id, counts, milliseconds, requests, and throttled responses (429s and
-complexity errors), counted through the transport's `fetchFn` option so `graphql.ts` stays
-byte-identical. This fills the gap that made this investigation rely on file timestamps.
+One log line per board or doc: id, counts, milliseconds, requests and retries, counted through the
+transport's `fetchFn` option so `graphql.ts` stays byte-identical (a retry is the same query sent
+again, whatever the reason). This fills the gap that made this investigation rely on file timestamps.
 
 ### Config and docs
 
