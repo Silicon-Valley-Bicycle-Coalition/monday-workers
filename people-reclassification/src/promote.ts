@@ -15,6 +15,7 @@ export type PromoteResult =
   | { outcome: 'moved' | 'promoted-in-place' | 'dry-run' | 'not-requested' | 'not-found' | 'wrong-board' | 'blocked'; itemId: string }
   | { outcome: 'failed' | 'ambiguous' | 'error'; itemId: string; error: string };
 
+const MAX_CONSECUTIVE_FAILURES = 5;
 const UPDATE_NO_ROOM = "Couldn't promote this person: the People board is full. IT has to make room first. Set Promote again after that.";
 const UPDATE_COLUMNS = "Couldn't promote this person: the two People boards don't match, so moves are paused. File an IT Request, then set Promote again.";
 const UPDATE_MOVE_FAILED = "Couldn't promote this person: Monday wouldn't move the item, even after retrying. Set Promote again to retry, or file an IT Request if it keeps happening.";
@@ -154,3 +155,62 @@ export async function promoteFromWebhook(
     await deps.ledger.releaseLease(runId);
   }
 }
+
+// The morning's backstop: anything still at Promote on either board gets promoted, which covers a
+// dropped webhook, a lease a pass held, a transient failure, and a label a pass's move carried over.
+export async function sweepPromotes(
+  deps: PassDeps, opts: { runId: string; dryRun: boolean },
+): Promise<{ found: number; results: PromoteResult[] } | { skipped: string }> {
+  const { monday, ledger, config } = deps;
+  const now = deps.now ?? (() => new Date());
+  const { runId, dryRun } = opts;
+  const startedAt = now().toISOString();
+  if (!(await ledger.acquireLease(runId, startedAt, new Date(now().getTime() + LEASE_MS).toISOString()))) {
+    return { skipped: `another pass is running; sweep ${runId} not started` };
+  }
+  try {
+    let resolved: Resolved;
+    try {
+      resolved = await resolveBoards(monday, config);
+    } catch (err) {
+      if (!(err instanceof PassAbort || err instanceof ColumnLookupError)) throw err;
+      console.error(`promote ${runId}: sweep skipped: ${errorText(err)}`);
+      return { skipped: errorText(err) };
+    }
+    const label = config.promote.requestLabel;
+    const itemIds = [
+      ...await monday.findItemsByStatus(Number(resolved.historical.id), resolved.historicalCols.promoteStatus, label),
+      ...await monday.findItemsByStatus(Number(resolved.live.id), resolved.liveCols.promoteStatus, label),
+    ];
+    if (itemIds.length === 0) return { found: 0, results: [] };
+
+    const { created, existing } = await ledger.startRun({ runId, trigger: 'promote-sweep', dryRun, startedAt });
+    if (!created) return { skipped: `run ${runId} already recorded (${existing!.status})` };
+    const results: PromoteResult[] = [];
+    let consecutiveFailures = 0;
+    for (const itemId of itemIds.slice(0, config.run.maxMovesPerRun)) {
+      const result = await promoteOne(deps, resolved, { runId, itemId, dryRun, source: 'sweep' });
+      results.push(result);
+      const failed = result.outcome === 'failed' || result.outcome === 'ambiguous' || result.outcome === 'error';
+      consecutiveFailures = failed ? consecutiveFailures + 1 : 0;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) break;
+    }
+    const summary = { found: itemIds.length, results };
+    const stopped = consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+    await ledger.finishRun(runId, stopped ? 'failed' : 'ok', now().toISOString(), summary);
+    console.log(`promote ${runId}: swept ${results.length} of ${itemIds.length} items at ${label}`);
+    return summary;
+  } finally {
+    await ledger.releaseLease(runId);
+  }
+}
+
+// What a Monday status-change webhook says, or null if it isn't a request to promote. The label is
+// only a filter: promoteOne re-reads the item before acting on it.
+export function parsePromoteEvent(body: unknown, requestLabel: string): { itemId: string } | null {
+  const event = (body as { event?: { pulseId?: unknown; value?: { label?: { text?: unknown } } } } | null)?.event;
+  const pulseId = event?.pulseId;
+  if (typeof pulseId !== 'number' && (typeof pulseId !== 'string' || pulseId === '')) return null;
+  return event?.value?.label?.text === requestLabel ? { itemId: String(pulseId) } : null;
+}
+

@@ -134,6 +134,10 @@ export function fakeClient(state: FakeState): ReclassificationMondayClient {
       if (err) throw err;
       state.moves.push({ itemId, boardId, groupId, mapping });
     },
+    async findItemsByStatus(boardId, _columnId, label) {
+      const people = boardId === LIVE ? state.live : boardId === HIST ? state.historical : [];
+      return people.filter((p) => p.promote === label).map((p) => p.id);
+    },
     async writeColumnValues(boardId, itemId, values) {
       const err = state.failWrite?.(itemId, values) ?? null;
       if (err) throw err;

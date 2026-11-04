@@ -4,7 +4,7 @@ export interface RequestRateLimiter {
 
 // A blanket per-IP guard checked before any routing, D1, or Monday work — the root README's
 // "Reliability: traffic and cost limits". This Worker's only HTTP surface is the authenticated
-// /reclassify/* trigger, so every request is limited; a flood costs at most REQUEST_RATE_LIMITER's
+// /reclassify/* routes and the promote webhook, so every request is limited; a flood costs at most REQUEST_RATE_LIMITER's
 // configured rate. Keyed on CF-Connecting-IP (set by Cloudflare's edge); local dev and tests
 // never see it and fall back to a fixed key.
 export async function checkRequestRateLimit(request: Request, limiter: RequestRateLimiter): Promise<Response | null> {

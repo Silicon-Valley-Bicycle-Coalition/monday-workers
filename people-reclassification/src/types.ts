@@ -72,6 +72,8 @@ export interface Env {
   MONDAY_API_TOKEN?: string;
   // Shared secret for the /reclassify/* routes (Authorization: Bearer …); unset = routes disabled.
   RECLASSIFY_SECRET?: string;
+  // Shared secret on the registered Monday webhook URL (?secret=…); unset = route disabled.
+  PROMOTE_WEBHOOK_SECRET?: string;
   // Write switch (`people-reclassification:writes` = on | hold | off), see src/flags.ts.
   FLAGS: KVNamespace;
   REQUEST_RATE_LIMITER: RateLimit;

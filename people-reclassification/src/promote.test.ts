@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1Ledger } from './db/ledger';
-import { promoteFromWebhook, promoteOne, type PromoteSource } from './promote';
+import { parsePromoteEvent, promoteFromWebhook, promoteOne, sweepPromotes, type PromoteSource } from './promote';
 import { resolveBoards } from './pass';
 import { AmbiguousWriteError, MondayApiError } from './monday/graphql';
 import { config, deps, moveRows, peopleColumns, type FakeState, type Person, HIST, LIVE } from '../test/fakeMonday';
@@ -198,5 +198,104 @@ describe('promoteFromWebhook', () => {
     d.monday.getBoardSchema = async () => { throw new MondayApiError('down', { httpStatus: 503 }); };
     expect(await promoteFromWebhook(d, opts)).toMatchObject({ outcome: 'error', itemId: 'p1' });
     expect(s.writes).toEqual([]);
+  });
+});
+
+describe('sweepPromotes', () => {
+  beforeEach(async () => {
+    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs'), env.DB.prepare('DELETE FROM pass_lease')]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  const opts = { runId: 'sweep', dryRun: false };
+  const many = (n: number, over: Partial<FakeState> = {}): FakeState => {
+    const people = Array.from({ length: n }, (_, i) => ({ id: `p${i}`, lastGift: '2010-01-01', promote: 'Promote' }));
+    return { live: [], historical: people, boardOf: Object.fromEntries(people.map((p) => [p.id, String(HIST)])), moves: [], created: [], writes: [], updates: [], ...over };
+  };
+
+  it('promotes Promote items on both boards as the last try', async () => {
+    const s: FakeState = {
+      live: [{ id: 'l1', promote: 'Promote' }], historical: [{ id: 'h1', lastGift: '2010-01-01', promote: 'Promote' }],
+      boardOf: { l1: String(LIVE), h1: String(HIST) }, moves: [], created: [], writes: [], updates: [],
+    };
+    const result = await sweepPromotes(deps(s), opts);
+    expect(result).toMatchObject({ found: 2 });
+    expect(s.moves.map((m) => m.itemId)).toEqual(['h1']);
+    expect(s.writes!.some((w) => w.itemId === 'l1' && 'date_po_l' in w.values)).toBe(true);
+    expect(await new D1Ledger(env.DB).lastRun()).toMatchObject({ runId: 'sweep', trigger: 'promote-sweep', status: 'ok' });
+  });
+
+  it('records no run when it finds nothing', async () => {
+    expect(await sweepPromotes(deps(many(0)), opts)).toEqual({ found: 0, results: [] });
+    expect(await new D1Ledger(env.DB).lastRun()).toBeNull();
+  });
+
+  it('leaves alone someone staff changed away from Promote', async () => {
+    const s = many(1);
+    s.historical[0]!.promote = 'Promoted';
+    expect(await sweepPromotes(deps(s), opts)).toMatchObject({ found: 0 });
+    expect(s.writes).toEqual([]);
+    expect(s.moves).toEqual([]);
+  });
+
+  it('skips with no label when a pass holds the lease, and promotes them once it is free', async () => {
+    const ledger = new D1Ledger(env.DB);
+    await ledger.acquireLease('a-pass', '2026-10-09T17:00:00Z', '2026-10-09T18:00:00Z');
+    const s = many(1);
+    expect(await sweepPromotes(deps(s), opts)).toHaveProperty('skipped');
+    expect(s.writes).toEqual([]);
+    await ledger.releaseLease('a-pass');
+    expect(await sweepPromotes(deps(s), opts)).toMatchObject({ found: 1 });
+    expect(s.moves).toHaveLength(1);
+  });
+
+  it('stops at maxMovesPerRun', async () => {
+    const s = many(3);
+    const cfg = config();
+    cfg.run.maxMovesPerRun = 2;
+    expect(await sweepPromotes(deps(s, cfg), opts)).toMatchObject({ found: 3 });
+    expect(s.moves).toHaveLength(2);
+  });
+
+  it('stops after five consecutive failures', async () => {
+    const s = many(7, { failMove: () => new MondayApiError('nope', { httpStatus: 500 }) });
+    const result = await sweepPromotes(deps(s), opts);
+    expect(result).toMatchObject({ found: 7 });
+    expect('results' in result && result.results).toHaveLength(5);
+    expect(await new D1Ledger(env.DB).lastRun()).toMatchObject({ status: 'failed' });
+  });
+
+  it('skips a run id already recorded', async () => {
+    const s = many(1);
+    await new D1Ledger(env.DB).startRun({ runId: 'sweep', trigger: 'promote-sweep', dryRun: false, startedAt: '2026-10-09T17:00:00Z' });
+    expect(await sweepPromotes(deps(s), opts)).toHaveProperty('skipped');
+    expect(s.moves).toEqual([]);
+  });
+
+  it('skips when the boards disagree, leaving items at Promote', async () => {
+    const s = many(1, { historicalColumns: [...peopleColumns('h'), { id: 'extra_h', title: 'Only Here', type: 'text' }] });
+    expect(await sweepPromotes(deps(s), opts)).toHaveProperty('skipped');
+    expect(s.writes).toEqual([]);
+  });
+
+  it('writes nothing in a dry run', async () => {
+    const s = many(1);
+    expect(await sweepPromotes(deps(s), { ...opts, dryRun: true })).toMatchObject({ found: 1 });
+    expect(s.writes).toEqual([]);
+    expect(s.moves).toEqual([]);
+  });
+});
+
+describe('parsePromoteEvent', () => {
+  it('reads the item id and insists on the request label', () => {
+    const event = (text: string, pulseId: unknown = 123) => ({ event: { pulseId, value: { label: { text } } } });
+    expect(parsePromoteEvent(event('Promote'), 'Promote')).toEqual({ itemId: '123' });
+    expect(parsePromoteEvent(event('Promote', '456'), 'Promote')).toEqual({ itemId: '456' });
+    expect(parsePromoteEvent(event('Promoted'), 'Promote')).toBeNull();
+    expect(parsePromoteEvent(event('Promote', {}), 'Promote')).toBeNull();
+    expect(parsePromoteEvent({ event: {} }, 'Promote')).toBeNull();
+    expect(parsePromoteEvent(null, 'Promote')).toBeNull();
   });
 });
