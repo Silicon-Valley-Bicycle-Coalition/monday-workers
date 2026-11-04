@@ -1,7 +1,8 @@
+import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
-import { registerClassEmailRoutes } from './routes';
-import type { ClassEmailRow } from '../db/classEmails';
+import { RELEASE_MIN_CLAIM_AGE_MS, registerClassEmailRoutes } from './routes';
+import { D1ClassEmailStore, type ClassEmailRow, type ClassEmailStore } from '../db/classEmails';
 import type { MondayClient, MondayItemColumns } from '../monday/client';
 import type { WriteMode } from '../flags';
 import type { AttendeeRow, EventRow } from '../types';
@@ -46,6 +47,7 @@ interface Options {
   secret?: string | undefined;
   peopleLookup?: () => Promise<{ id: string } | null>;
   postUpdate?: () => Promise<void>;
+  store?: ClassEmailStore;
 }
 
 function harness(o: Options = {}) {
@@ -63,13 +65,14 @@ function harness(o: Options = {}) {
   };
   const mondayClient = vi.fn(() => client as unknown as MondayClient);
   const store = fakeClassEmailStore(o.ledger ?? []);
+  const routeStore = o.store ?? store;
   const eventStore = fakeEventStore({ getEvent: vi.fn(async (id: string) => (o.event === null || id !== 'e1' ? null : eventRow(o.event))) });
   const attendeeStore = fakeAttendeeStore({
     listByEvent: vi.fn(async (eventId: string) => (eventId === 'e1' ? [...items.keys()].filter((k) => k !== '900').map((k) => attendee(`a${k}`, k)) : [attendee('zz', '99', eventId)])),
   });
   const app = new Hono();
   registerClassEmailRoutes(app, {
-    store, mondayClient, secret: 'secret' in o ? o.secret : SECRET, eventStore, attendeeStore, config,
+    store: routeStore, mondayClient, secret: 'secret' in o ? o.secret : SECRET, eventStore, attendeeStore, config,
     writeMode: async () => o.mode ?? 'on', now: () => NOW,
   });
   return { app, client, mondayClient, store, items, eventStore, attendeeStore };
@@ -404,14 +407,56 @@ describe('POST result', () => {
 });
 
 describe('POST release', () => {
-  it('release frees rows and posts an update naming the sender', async () => {
+  const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+  const claimedAgo = (registrationId: string, ms: number): ClassEmailRow => ({ ...row('reminder', registrationId), claimedAt: ago(ms) });
+  const release = (h: { app: App }, registrationIds: string[]) => post(h, 'release', { kind: 'reminder', sender: 'coach@svbc.org', registrationIds });
+
+  it('keeps the age limit at 10 minutes, longer than an Apps Script run', () => {
+    expect(RELEASE_MIN_CLAIM_AGE_MS).toBe(10 * 60 * 1000);
+  });
+
+  it('release frees old claims and failed rows and counts them in the update', async () => {
     const h = harness({ ledger: [row('reminder', '10'), row('reminder', '11', 'failed'), row('reminder', '12', 'sent'), row('thank-you', '13')] });
-    const res = await post(h, 'release', { kind: 'reminder', sender: 'coach@svbc.org', registrationIds: ['10', '11', '12', '14'] });
+    const res = await release(h, ['10', '11', '12', '14']);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, released: 2, tooRecent: 0 });
     expect(h.store.rows.map((r) => `${r.kind}/${r.registrationId}=${r.status}`)).toEqual(['reminder/12=sent', 'thank-you/13=claimed']);
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
     expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Class email: Reminder. coach@svbc.org released 2 people who were not confirmed sent, so they can be emailed again.');
+  });
+
+  it('refuses a claim younger than 10 minutes and counts only what was released', async () => {
+    const h = harness({ ledger: [claimedAgo('10', RELEASE_MIN_CLAIM_AGE_MS - 1), claimedAgo('11', RELEASE_MIN_CLAIM_AGE_MS), claimedAgo('12', 60_000)] });
+    expect(await (await release(h, ['10', '11', '12'])).json()).toEqual({ ok: true, released: 1, tooRecent: 2 });
+    expect(h.store.rows.map((r) => r.registrationId)).toEqual(['10', '12']);
+    expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
+    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Class email: Reminder. coach@svbc.org released 1 person who was not confirmed sent, so they can be emailed again.');
+  });
+
+  it('releases a failed row at any age', async () => {
+    const h = harness({ ledger: [{ ...claimedAgo('10', 1000), status: 'failed' }] });
+    expect(await (await release(h, ['10'])).json()).toEqual({ ok: true, released: 1, tooRecent: 0 });
+    expect(h.store.rows).toEqual([]);
+  });
+
+  it('posts nothing when every id is too recent', async () => {
+    const h = harness({ ledger: [claimedAgo('10', 1000)] });
+    expect(await (await release(h, ['10'])).json()).toEqual({ ok: true, released: 0, tooRecent: 1 });
+    expect(h.store.rows).toHaveLength(1);
+    expect(h.client.postUpdate).not.toHaveBeenCalled();
+    expect(h.mondayClient).not.toHaveBeenCalled();
+  });
+
+  it('applies the guard through the real D1 store, leaving sent rows', async () => {
+    await env.DB.exec('DELETE FROM class_email_recipients');
+    const store = new D1ClassEmailStore(env.DB);
+    await store.claim('e1', 'reminder', ['10', '11', '12'], ago(RELEASE_MIN_CLAIM_AGE_MS));
+    await store.claim('e1', 'reminder', ['13', '14'], ago(1000));
+    await store.resolve('e1', 'reminder', '11', 'sent', ago(500));
+    await store.resolve('e1', 'reminder', '14', 'failed', ago(500));
+    const h = harness({ store, items: [reg('10'), reg('11'), reg('12'), reg('13')] });
+    expect(await (await release(h, ['10', '11', '13', '14'])).json()).toEqual({ ok: true, released: 2, tooRecent: 1 });
+    expect((await store.listByEvent('e1')).map((r) => [r.registrationId, r.status]).sort()).toEqual([['11', 'sent'], ['12', 'claimed'], ['13', 'claimed']]);
   });
 
   it('posts no update when nothing was released, and survives a failed post', async () => {

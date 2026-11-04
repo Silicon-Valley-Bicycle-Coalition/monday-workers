@@ -54,17 +54,52 @@ describe('D1ClassEmailStore', () => {
     expect((await store.listByEvent('e1'))[0]!.status).toBe('sent');
   });
 
-  it('release frees claimed and failed rows, but not sent ones', async () => {
+  it('release frees old claims and failed rows, returns what it freed, and leaves sent rows', async () => {
     await store.claim('e1', 'reminder', ['r1', 'r2', 'r3'], T0);
     await store.resolve('e1', 'reminder', 'r2', 'failed', T1);
     await store.resolve('e1', 'reminder', 'r3', 'sent', T1);
-    await store.release('e1', 'reminder', ['r1', 'r2', 'r3']);
-    expect((await store.listByEvent('e1')).map((r) => r.registrationId)).toEqual(['r3']);
+    expect((await store.release('e1', 'reminder', ['r1', 'r2', 'r3'], T2)).sort()).toEqual(['r1', 'r2']);
+    expect((await store.listByEvent('e1')).map((r) => [r.registrationId, r.status])).toEqual([['r3', 'sent']]);
+  });
+
+  it('release keeps a claim younger than the cutoff, and frees one exactly at it', async () => {
+    await store.claim('e1', 'reminder', ['young'], T2);
+    await store.claim('e1', 'reminder', ['edge'], T1);
+    expect(await store.release('e1', 'reminder', ['young', 'edge'], T1)).toEqual(['edge']);
+    expect((await store.listByEvent('e1')).map((r) => [r.registrationId, r.status])).toEqual([['young', 'claimed']]);
+  });
+
+  it('release frees a failed row however recent its claim', async () => {
+    await store.claim('e1', 'reminder', ['r1'], T2);
+    await store.resolve('e1', 'reminder', 'r1', 'failed', T2);
+    expect(await store.release('e1', 'reminder', ['r1'], T0)).toEqual(['r1']);
+    expect(await store.listByEvent('e1')).toEqual([]);
+  });
+
+  it('release never frees a sent row, however old', async () => {
+    await store.claim('e1', 'reminder', ['r1'], T0);
+    await store.resolve('e1', 'reminder', 'r1', 'sent', T1);
+    expect(await store.release('e1', 'reminder', ['r1'], T2)).toEqual([]);
+    expect((await store.listByEvent('e1'))[0]).toMatchObject({ registrationId: 'r1', status: 'sent', resolvedAt: T1 });
+  });
+
+  it('release of nothing, or of an unknown id, frees nothing', async () => {
+    expect(await store.release('e1', 'reminder', [], T2)).toEqual([]);
+    expect(await store.release('e1', 'reminder', ['nope'], T2)).toEqual([]);
+  });
+
+  it('release touches only that event and kind', async () => {
+    await store.claim('e1', 'reminder', ['r1'], T0);
+    await store.claim('e1', 'thank-you', ['r1'], T0);
+    await store.claim('e2', 'reminder', ['r1'], T0);
+    expect(await store.release('e1', 'reminder', ['r1'], T2)).toEqual(['r1']);
+    expect((await store.listByEvent('e1')).map((r) => r.kind)).toEqual(['thank-you']);
+    expect(await store.listByEvent('e2')).toHaveLength(1);
   });
 
   it('a released id can be claimed again', async () => {
     await store.claim('e1', 'reminder', ['r1'], T0);
-    await store.release('e1', 'reminder', ['r1']);
+    await store.release('e1', 'reminder', ['r1'], T1);
     expect(await store.claim('e1', 'reminder', ['r1'], T1)).toEqual(['r1']);
   });
 

@@ -18,6 +18,10 @@ import { loadRoster, sandboxRecipients } from './roster';
 
 export const CLASS_EMAIL_SECRET_HEADER = 'X-Class-Email-Secret';
 
+// A `claimed` row may be a send still running. Apps Script runs stop at about 6 minutes, so a claim
+// this old can no longer be sending and a person may release it after checking Sent mail.
+export const RELEASE_MIN_CLAIM_AGE_MS = 10 * 60 * 1000;
+
 export interface ClassEmailRouteDeps {
   store: ClassEmailStore;
   // A function so a missing Monday binding can't break the webhook routes, and so it is only
@@ -259,17 +263,19 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     const event = await findEvent(eventId);
     if (event === null) return notFound(c);
 
-    // A `sent` row is never released; ids with no row are ignored.
-    const wanted = new Set(registrationIds);
-    const releasable = (await store.listByEvent(eventId)).filter((r) => r.kind === kind && r.status !== 'sent' && wanted.has(r.registrationId)).map((r) => r.registrationId);
-    await store.release(eventId, kind, releasable);
-    console.log(`eventbrite-sync class emails: released ${releasable.length} ${kind} for event "${eventId}"`);
+    // A `sent` row is never released; ids with no row are ignored. A `failed` row goes at any time,
+    // since its send has finished; a `claimed` row only once it is too old to be still running.
+    const claimedBefore = new Date(now().getTime() - RELEASE_MIN_CLAIM_AGE_MS).toISOString();
+    const wanted = (await store.listByEvent(eventId)).filter((r) => r.kind === kind && r.status !== 'sent' && registrationIds.includes(r.registrationId));
+    const released = (await store.release(eventId, kind, wanted.map((r) => r.registrationId), claimedBefore)).length;
+    const tooRecent = wanted.filter((r) => r.status === 'claimed' && r.claimedAt > claimedBefore).length;
+    console.log(`eventbrite-sync class emails: released ${released} ${kind} for event "${eventId}", ${tooRecent} too recent`);
 
-    if (releasable.length > 0) {
-      const people = releasable.length === 1 ? 'person' : 'people';
-      await postUpdate(event.mondayItemId, eventId, `Class email: ${KIND_LABEL[kind]}. ${sender} released ${releasable.length} ${people} who ${releasable.length === 1 ? 'was' : 'were'} not confirmed sent, so they can be emailed again.`);
+    if (released > 0) {
+      const people = released === 1 ? 'person' : 'people';
+      await postUpdate(event.mondayItemId, eventId, `Class email: ${KIND_LABEL[kind]}. ${sender} released ${released} ${people} who ${released === 1 ? 'was' : 'were'} not confirmed sent, so they can be emailed again.`);
     }
-    return json(c, { ok: true });
+    return json(c, { ok: true, released, tooRecent });
   }));
 
   async function postUpdate(itemId: string, eventId: string, body: string, client?: MondayClient): Promise<void> {

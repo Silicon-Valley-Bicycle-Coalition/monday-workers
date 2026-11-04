@@ -20,8 +20,9 @@ export interface ClassEmailStore {
   claim(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedAt: string): Promise<string[]>;
   // Records the outcome of a claimed send. A row already `sent` is never changed.
   resolve(eventId: string, kind: ClassEmailKind, registrationId: string, status: 'sent' | 'failed', resolvedAt: string): Promise<void>;
-  // Frees claimed and failed rows so they can be claimed again. A `sent` row stays.
-  release(eventId: string, kind: ClassEmailKind, registrationIds: string[]): Promise<void>;
+  // Frees `failed` rows, and `claimed` rows claimed at or before `claimedBefore`, so they can be
+  // claimed again, and returns the ids it freed. A `sent` row or a younger claim stays.
+  release(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedBefore: string): Promise<string[]>;
 }
 
 interface D1ClassEmailRecord {
@@ -84,14 +85,22 @@ export class D1ClassEmailStore implements ClassEmailStore {
       .run();
   }
 
-  async release(eventId: string, kind: ClassEmailKind, registrationIds: string[]): Promise<void> {
-    if (registrationIds.length === 0) return;
-    await this.db.batch(
+  async release(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedBefore: string): Promise<string[]> {
+    if (registrationIds.length === 0) return [];
+    // The conditions live in the DELETE, so a row resolved or re-claimed since the caller read the
+    // ledger is judged as it is now. claimed_at is always toISOString(), so text order is time order.
+    const results = await this.db.batch<{ registration_item_id: string }>(
       registrationIds.map((id) =>
         this.db
-          .prepare(`DELETE FROM class_email_recipients WHERE event_id = ?1 AND kind = ?2 AND registration_item_id = ?3 AND status != 'sent'`)
-          .bind(eventId, kind, id)
+          .prepare(
+            `DELETE FROM class_email_recipients
+             WHERE event_id = ?1 AND kind = ?2 AND registration_item_id = ?3
+               AND (status = 'failed' OR (status = 'claimed' AND claimed_at <= ?4))
+             RETURNING registration_item_id`
+          )
+          .bind(eventId, kind, id, claimedBefore)
       )
     );
+    return results.flatMap((r) => r.results.map((row) => row.registration_item_id));
   }
 }

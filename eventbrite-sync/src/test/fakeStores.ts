@@ -24,7 +24,7 @@ export function fakeAttendeeStore(overrides: Partial<AttendeeStore> = {}): Atten
 }
 
 // An in-memory ledger that behaves like D1ClassEmailStore: claim returns only the ids it newly
-// claimed, resolve never changes a `sent` row, release frees claimed and failed rows.
+// claimed, resolve never changes a `sent` row, release frees failed rows and old enough claims.
 export function fakeClassEmailStore(seed: ClassEmailRow[] = []): ClassEmailStore & { rows: ClassEmailRow[] } {
   const rows: ClassEmailRow[] = [...seed];
   const find = (eventId: string, kind: ClassEmailKind, id: string) => rows.findIndex((r) => r.eventId === eventId && r.kind === kind && r.registrationId === id);
@@ -44,11 +44,18 @@ export function fakeClassEmailStore(seed: ClassEmailRow[] = []): ClassEmailStore
       const i = find(eventId, kind, id);
       if (i !== -1 && rows[i]!.status !== 'sent') rows[i] = { ...rows[i]!, status, resolvedAt };
     },
-    release: async (eventId, kind, ids) => {
+    release: async (eventId, kind, ids, claimedBefore) => {
+      const released: string[] = [];
       for (const id of ids) {
         const i = find(eventId, kind, id);
-        if (i !== -1 && rows[i]!.status !== 'sent') rows.splice(i, 1);
+        if (i === -1) continue;
+        const r = rows[i]!;
+        if (r.status === 'failed' || (r.status === 'claimed' && r.claimedAt <= claimedBefore)) {
+          rows.splice(i, 1);
+          released.push(id);
+        }
       }
+      return released;
     },
   };
 }
