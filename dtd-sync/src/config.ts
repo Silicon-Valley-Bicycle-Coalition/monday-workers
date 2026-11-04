@@ -11,7 +11,7 @@ export interface DtdSyncConfig {
     matchedBy: string; matchStatus: string; dtdStatusRaw: string; matchCompany: string;
     matchesGift: string; matchPairing: string; sentToDtd: string;
   };
-  people: { email: string; householdEmail: string; phone: string; dtdCompanyId: string; dtdCompany: string; dtdLink: string };
+  people: { email: string; householdEmail: string; firstName: string; lastName: string; phone: string; dtdCompanyId: string; dtdCompany: string; dtdLink: string };
   programSummary: {
     fiscalYear: string; screened: string; employerIdentified: string; eligible: string;
     submitted: string; matchesPaid: string; matchDollars: string; matchedGiftDollars: string;
@@ -107,7 +107,7 @@ export function validateConfig(raw: unknown): DtdSyncConfig {
       'anonymousDonor', 'donor', 'matchedBy', 'matchStatus', 'dtdStatusRaw', 'matchCompany',
       'matchesGift', 'matchPairing', 'sentToDtd',
     ] as const),
-    people: columns(root.people, 'people', ['email', 'householdEmail', 'phone', 'dtdCompanyId', 'dtdCompany', 'dtdLink'] as const),
+    people: columns(root.people, 'people', ['email', 'householdEmail', 'firstName', 'lastName', 'phone', 'dtdCompanyId', 'dtdCompany', 'dtdLink'] as const),
     programSummary: columns(root.programSummary, 'programSummary', [
       'fiscalYear', 'screened', 'employerIdentified', 'eligible', 'submitted', 'matchesPaid', 'matchDollars',
       'matchedGiftDollars', 'newMatchingCompanies', 'firstTimeMatchedDonors', 'asOf',
