@@ -401,7 +401,7 @@ never touches the giving rollups.
 
 | Kind | Source | Qualifies when | Date |
 |---|---|---|---|
-| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
+| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation", "Donor Advised Fund"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
 | migrated term | Donations dated **before** `fromISO` | a pre-`fromISO` gift that does not itself qualify, with a migrated Term Start, counts on that Term Start — **regardless of its amount, type or status** | Term Start |
 | volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
 | historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
@@ -476,7 +476,7 @@ membership keys and stamps are compared away).
   ```json
   "membership": {
     "fromISO": "2026-10-30",
-    "eligibleGiftTypes": ["Donation"],
+    "eligibleGiftTypes": ["Donation", "Donor Advised Fund"],
     "minAmountCents": 100,
     "termMonths": 13,
     "lifetimeThresholdCents": 100000,
@@ -551,6 +551,9 @@ membership keys and stamps are compared away).
 * **Funraise gifts** qualify only because `funraise-sync` stamps Gift Type = Donation on the
   items it creates (see that README) and only once its Date column transform lands — a gift
   with an empty Date never starts a term.
+* **Donor Advised Fund gifts** qualify like a Donation (#56). Staff entered DAF checks as Donation
+  before that Gift Type existed, and those renewed; leaving the new type out would lapse the same
+  donors. Matching is an exact string, so the label has to be typed as written.
 * Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
   staff created by cloning gifts. Add `"Matching Donation"` to `eligibleGiftTypes` if that
   practice should continue.
@@ -672,7 +675,8 @@ constants in `custodian.ts` can grow — not yet done.
 **Chartable gift labels.** Monday charts group by status/dropdown columns, not formulas or text,
 so the custodian's `classify` duty writes four status columns on each Donations board that has
 `donationBoards[].columns.classification` configured: **Funding Stream** (Individual Giving,
-Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue),
+Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue, Donor
+Advised Funds),
 **Gift Size** (`< $100`, `$100–249`, `$250–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
 **Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
 gift's amount, date and type. It runs nightly and on demand

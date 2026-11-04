@@ -122,7 +122,8 @@
     "membership": {
       "fromISO": "2026-10-01",
       "eligibleGiftTypes": [
-        "Donation"
+        "Donation",
+        "Donor Advised Fund"
       ],
       "minAmountCents": 100,
       "termMonths": 13,

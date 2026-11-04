@@ -174,8 +174,8 @@ size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching
-Donations, Other Program Revenue), **Gift Size**, **Fiscal Quarter** (`FY26 Q1` is July to
-September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
+Donations, Other Program Revenue, Donor Advised Funds), **Gift Size**, **Fiscal Quarter**
+(`FY26 Q1` is July to September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
 
 **Try it:**
 
@@ -306,9 +306,8 @@ Monday user with dashboard rights, so there is nothing to open yet:
 
 Please don't build your own in the meantime. If a number you report today isn't in that list,
 say so on IT Requests as a Feature Request. Known omissions: no Grants Pipeline widget until
-cutover (that board lives in the live workspace); Donor Advised Funds sit inside Individual
-Giving; members by city and membership type are board views, not charts, because Monday can't
-chart text columns.
+cutover (that board lives in the live workspace); members by city and membership type are board
+views, not charts, because Monday can't chart text columns.
 
 ## Donor portal boards
 

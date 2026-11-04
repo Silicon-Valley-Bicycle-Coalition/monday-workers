@@ -168,3 +168,9 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(wrangler.name).toBe('svbc-donation-rollups');
   });
 });
+
+describe('membership: a Donor Advised Fund gift renews like a Donation', () => {
+  it.each([['production', production], ['sandbox', sandbox]])('%s lists both as eligible', (_name, config) => {
+    expect(validateConfig(config).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation', 'Donor Advised Fund']);
+  });
+});

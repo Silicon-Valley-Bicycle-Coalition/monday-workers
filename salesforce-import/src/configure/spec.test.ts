@@ -206,6 +206,10 @@ describe('final-review spec rulings', () => {
     expect(view('donations', 'Recent gifts').coloring).toBeUndefined();
   });
 
+  it('names Donor Advised Fund in the Gift Type vocabulary staff type from', () => {
+    expect(BOARD_SPECS['donations']!.columnDescriptions!['Gift Type']).toContain('Donor Advised Fund');
+  });
+
   it('describes the computed columns as rollup-owned', () => {
     for (const b of ['people-live', 'organizations']) expect(BOARD_SPECS[b]!.columnDescriptions!['Donor Level']).toMatch(/Leadership.*Overwritten|Edits are overwritten/s);
     for (const c of ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year'])
