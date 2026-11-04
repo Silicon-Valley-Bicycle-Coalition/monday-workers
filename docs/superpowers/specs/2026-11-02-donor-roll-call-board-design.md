@@ -1,6 +1,6 @@
 # Donor Roll Call board — design
 
-**Date:** 2026-11-02, amended 2026-11-03 (§10) · **Status:** built; §10 approved by David 2026-11-03 · **Worker:** `donation-rollups` (new custodian
+**Date:** 2026-11-02, amended 2026-11-03 (§10) and 2026-11-04 (§11) · **Status:** built; §10 approved by David 2026-11-03 · **Worker:** `donation-rollups` (new custodian
 duty) · **Background:** monday-migration `docs/40-donor-roll-call.md` and
 `protocols/monday/donor-roll-call.md`
 
@@ -324,3 +324,37 @@ names the donor), kept when the gift archives like any other row. For a ledger g
 Amount wins when it's positive; otherwise the row's in-kind cents count. Configured by
 `donations.columns.inKindValue` (optional; absent = Amount only). FY2026 and FY2027 gifts are all
 active today, so the first night fills every covered year.
+
+## 11. Mailing Address (2026-11-04)
+
+David asked for full mailing addresses on Felicia's roll call. This changes §1's "the board is the
+data" only by adding data; nothing about who is listed or how much they gave moves.
+
+A **Mailing Address** text column on the roll-call board, written by the Worker like every other
+cell. It copies **Address** from People, People (Historical) or Organizations, so a correction is
+made once, on the donor (§1 anti-goal), and reaches the board the next night. Address is one line,
+as salesforce-import built it (`street, city, state, zip`); Monday holds no separate street field.
+
+**Rules** (`mailingFor` in `src/rollcall/compute.ts`):
+
+- **Household:** the first member, by item id, who has an address, the same order the name uses.
+  Addresses that differ other than by case or punctuation get a Review Note naming them.
+- **Do Not Mail wins (decided with David 2026-11-04).** Any member with Do Not Mail checked leaves
+  the row's address blank, and the Review Note says who. A blank can't be mailed by accident from
+  an export; the address is still on the donor's item. It's any member, not all, because the mail
+  goes to one home. The reason can also be Undeliverable, a bad address to fix. Listed is
+  unchanged: recognition and mail are separate decisions. Organizations have no Do Not Mail.
+- **Blank stays quiet.** No address on file gets no Review Note: 2,413 of 8,361 People were blank on
+  2026-11-04, and notes on those would bury the real findings in Needs review. The empty cell can
+  be filtered instead.
+- **Incomplete gets a note:** no ZIP at the end, or no digit before it (a street or PO Box number).
+  Salesforce records can hold a city alone. An address abroad gets the note too.
+- **Anonymous** has no address, so the row can't identify anyone who asked not to be named.
+
+**Off until configured.** `columns.mailingAddress` is the switch. Absent, the Address and Do Not Mail
+columns aren't read and no note changes, so the donor column ids can ship before the board column
+exists. Closed years update too, like every other cell (§5), so an export always carries today's
+address; a frozen year's row with no computed row keeps its old cell.
+
+**Backfill.** Each existing row takes one update. With about 1,670 rows and `writesPerRun` 250 on
+production, that's seven nights, or `POST /custodian/run/rollcall` repeated until `remaining` is 0.

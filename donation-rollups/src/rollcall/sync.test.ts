@@ -12,7 +12,7 @@ const GROUPS = new Map([['g26', 2026], ['g27', 2027]]);
 
 function row(over: Partial<RollCallRow> & { key: string }): RollCallRow {
   return { fiscalYear: Number(over.key.slice(0, 4)), name: 'Ada Lovelace', tier: '$1,000+', type: 'Individual', listed: 'Listed',
-    totalCents: 125050, gifts: 3, personIds: ['101'], organizationId: null, reviewNote: '', ...over };
+    totalCents: 125050, gifts: 3, personIds: ['101'], organizationId: null, reviewNote: '', mailingAddress: '', ...over };
 }
 
 // The row as pageItemsColumnsText + boardItemFrom would read it back: Monday's own number text,
@@ -51,6 +51,31 @@ describe('Household Name (spec §10.2)', () => {
     const item = { ...itemFor(row({ key: '2026|item:101' }), '1', { hn: 'Ada L.' }) };
     expect(planSync([r], [item], WITH, new Set(), GROUPS)).toEqual([
       { op: 'update', itemId: '1', row: r, values: { name: 'Ada & Bo Lovelace', hn: 'Ada & Bo Lovelace' } }]);
+  });
+});
+
+describe('Mailing Address (spec §11)', () => {
+  const WITH = { ...COLS, mailingAddress: 'ma' };
+  const HOME = '12 Oak St, San Jose, CA, 95113';
+  it('writes the address only when the column is configured', () => {
+    const r = row({ key: '2026|item:101', mailingAddress: HOME });
+    expect(columnValuesFor(r, WITH)).toMatchObject({ ma: HOME });
+    expect(columnValuesFor(r, COLS)).not.toHaveProperty('ma');
+  });
+  it('backfills a blank cell, then leaves a matching one alone', () => {
+    const r = row({ key: '2026|item:101', mailingAddress: HOME });
+    expect(planSync([r], [itemFor(r, '1')], WITH, new Set(), GROUPS)).toEqual([
+      { op: 'update', itemId: '1', row: r, values: { ma: HOME } }]);
+    expect(planSync([r], [itemFor(r, '1', { ma: HOME })], WITH, new Set(), GROUPS)).toEqual([]);
+  });
+  it('clears a cell when the address goes away, such as a new Do Not Mail', () => {
+    const r = row({ key: '2026|item:101' });
+    expect(planSync([r], [itemFor(r, '1', { ma: HOME })], WITH, new Set(), GROUPS)).toEqual([
+      { op: 'update', itemId: '1', row: r, values: { ma: '' } }]);
+  });
+  it('makes no write for a blank address on a blank cell', () => {
+    const r = row({ key: '2026|item:101' });
+    expect(planSync([r], [itemFor(r, '1', { ma: null })], WITH, new Set(), GROUPS)).toEqual([]);
   });
 });
 

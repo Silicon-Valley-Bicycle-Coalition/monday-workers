@@ -119,6 +119,9 @@ const FIELDS = {
   // Spec §10.2: the item's Name again, as a cell exports and sorts keep.
   householdName: { title: 'Household Name', type: 'text',
     description: 'Written by the Worker: the name printed on the roll call (Household Greeting, else Name; an organization\'s Recognition Name). Edit it on the donor, not here.' },
+  // Spec §11: for mailing an export. Text, like Address, the column it copies.
+  mailingAddress: { title: 'Mailing Address', type: 'text',
+    description: 'Written by the Worker from the donor\'s Address. Blank means no address on file, or Do Not Mail is checked (the Review Note says so). Edit it on the donor, not here.' },
 };
 const columns = {};
 for (const [field, spec] of Object.entries(FIELDS)) columns[field] = await ensureColumn(boardId, boardColumns, spec);
@@ -134,6 +137,8 @@ for (const id of peopleIds) {
     householdEmail: lookup(byTitle, id, 'Household Email'),
     doNotSolicit: lookup(byTitle, id, 'Do Not Solicit'),
     dontList,
+    address: lookup(byTitle, id, 'Address'),
+    doNotMail: lookup(byTitle, id, 'Do Not Mail'),
   };
 }
 const orgColumns = await columnsOf(organizationsId);
@@ -142,6 +147,7 @@ const organizations = {
   columns: {
     recognitionName: await ensureColumn(organizationsId, orgColumns, RECOGNITION_NAME),
     dontList: await ensureColumn(organizationsId, orgColumns, DONT_LIST),
+    address: lookup(orgColumns, organizationsId, 'Address'),
   },
 };
 
