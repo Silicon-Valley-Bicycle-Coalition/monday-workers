@@ -15,6 +15,11 @@
   //                               subscription URL must include it: register the webhook as
   //                               https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>
   //                               — re-register the subscription if the secret changes.
+  "triggers": {
+    // Daily PII retention purge (src/db/retention.ts); the windows are quickbooksSync.payloadRetentionDays
+    // and unresolvedRetentionDays in config. Runs in every write mode.
+    "crons": ["30 9 * * *"]
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -82,6 +87,10 @@
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
+      // Same purge as production (the split test asserts they match).
+      "triggers": {
+        "crons": ["30 9 * * *"]
+      },
       "d1_databases": [
         {
           "binding": "DB",

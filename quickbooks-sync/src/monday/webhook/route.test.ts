@@ -30,6 +30,8 @@ const config: QuickbooksSyncConfig = {
     customerCreateFieldMap: {},
     customerQbIdColumn: null,
     currency: 'USD',
+    payloadRetentionDays: 30,
+    unresolvedRetentionDays: 90,
   },
 };
 

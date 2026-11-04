@@ -41,6 +41,8 @@
       "email_column_id": "PrimaryEmailAddr.Address"
     },
     "customerQbIdColumn": null,
-    "currency": "USD"
+    "currency": "USD",
+    "payloadRetentionDays": 30,
+    "unresolvedRetentionDays": 90
   }
 }

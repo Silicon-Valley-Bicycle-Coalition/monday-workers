@@ -80,6 +80,10 @@ export interface QuickbooksSyncConfig {
     // record whose CurrencyRef names any other currency is not written (#76): its amounts are in
     // that currency, so it fails terminally for a human instead of landing on Monday as dollars.
     currency: string;
+    // Days after the Monday or QuickBooks write that a row keeps its stored payload, and days after
+    // receipt that a row which never reached 'written' keeps its payload and error text (#68).
+    payloadRetentionDays: number;
+    unresolvedRetentionDays: number;
   };
 }
 

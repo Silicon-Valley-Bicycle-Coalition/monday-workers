@@ -139,6 +139,23 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
   UPDATE monday_events SET create_attempt = create_attempt + 1, create_sends = 0 WHERE event_id = '<Monday item id>'"
 ```
 
+## Data retention
+
+`qb_events.fetched_payload` and `monday_events.raw_payload` hold Customer and Invoice PII. They are
+only a record for inspecting a row: the consumer re-reads the record from its source on every
+attempt, so nothing replays them. A daily cron (`30 9 * * *`, `src/db/retention.ts`, runs in every
+write mode) empties them:
+
+* **Written rows:** the payload, `quickbooksSync.payloadRetentionDays` (30) after the write.
+* **Rows that never reached `written`:** the payload and the `error` text,
+  `quickbooksSync.unresolvedRetentionDays` (90) after receipt. The error goes too because Intuit's
+  fault detail can name the customer. The row stays `failed` and can still be redriven; if that
+  fails again, the new error lasts until the next daily pass, since the row's receipt date is old.
+
+Rows themselves are never deleted: they are the webhook dedupe ledger, and the create-loop guards
+read their ids. `qb_monday_map` holds only ids. Log lines, including the errors the consumer logs,
+are outside this purge, and follow Workers Logs' own retention.
+
 ## APIs & auth
 
 * **QuickBooks Online Accounting API** — free up to 500,000 read operations/month on the Builder
