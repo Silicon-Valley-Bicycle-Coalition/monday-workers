@@ -453,6 +453,13 @@ the parent project for fork MRs** off. The deploy jobs declare a `sandbox` envir
 history, but it is not an approval gate: Protected environments need GitLab Premium and this group
 is on Free, so the Protected variable and protected `main` are the boundary.
 
+**Keep non-production branch builds off on every Workers Builds connection (#58).** A branch build
+installs that branch's `package.json` and runs its `wrangler`, so branch code runs with the
+connection's build token, the same token production deploys use. GitLab's Protected variables and
+fork settings don't apply to it. Cloudflare's docs don't say whether fork MRs can trigger these
+builds, so answer that before turning them on in a public repo. `svbc-calendars` builds `main` only;
+its "Deploy non-production branches" trigger was removed on 2026-11-03.
+
 **Current state (verified 2026-09-28) — merging deploys only `svbc-calendars`.** All eight
 provisioned sandbox Workers were last hand-deployed from `main` on 2026-10-09 (none had pending D1
 migrations); `eventbrite-sync` and `people-reclassification` still carry placeholder sandbox D1
