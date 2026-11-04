@@ -19,6 +19,9 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    excludedGiftTypes: [],
+    separateGiftTypes: [],
+    separateGiftsStatement: 'SEPARATE-STATEMENT',
   },
   changeRequests: {
     boardId: 99,
@@ -170,7 +173,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
 
-    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026);
+    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026, []);
     expect(result).toMatchObject({ kind: 'ran', year: 2026 });
   });
 
@@ -183,7 +186,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
 
-    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026);
+    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026, []);
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 });
     expect(queue.send).toHaveBeenCalledTimes(2);
   });

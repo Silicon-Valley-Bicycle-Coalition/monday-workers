@@ -401,7 +401,7 @@ never touches the giving rollups.
 
 | Kind | Source | Qualifies when | Date |
 |---|---|---|---|
-| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
+| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation", "Donor Advised Fund"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
 | migrated term | Donations dated **before** `fromISO` | a pre-`fromISO` gift that does not itself qualify, with a migrated Term Start, counts on that Term Start — **regardless of its amount, type or status** | Term Start |
 | volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
 | historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
@@ -476,7 +476,7 @@ membership keys and stamps are compared away).
   ```json
   "membership": {
     "fromISO": "2026-10-30",
-    "eligibleGiftTypes": ["Donation"],
+    "eligibleGiftTypes": ["Donation", "Donor Advised Fund"],
     "minAmountCents": 100,
     "termMonths": 13,
     "lifetimeThresholdCents": 100000,
@@ -551,6 +551,9 @@ membership keys and stamps are compared away).
 * **Funraise gifts** qualify only because `funraise-sync` stamps Gift Type = Donation on the
   items it creates (see that README) and only once its Date column transform lands — a gift
   with an empty Date never starts a term.
+* **Donor Advised Fund gifts** qualify like a Donation (#56). Staff entered DAF checks as Donation
+  before that Gift Type existed, and those renewed; leaving the new type out would lapse the same
+  donors. Matching is an exact string, so the label has to be typed as written.
 * Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
   staff created by cloning gifts. Add `"Matching Donation"` to `eligibleGiftTypes` if that
   practice should continue.
@@ -601,6 +604,11 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
   'https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/custodian/run/classify'
 ```
 
+Alerts post as updates on one item per environment (`custodian.alertItemId`). Production:
+[IT Requests](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/13460707947).
+Sandbox: [Worker Alerts (sandbox)](https://bikesiliconvalley.monday.com/boards/18438405821/pulses/13460723549).
+Updates notify only that item's subscribers, so subscribe to be told. Don't reuse a request or
+ticket as the sink, and don't close the production item.
 
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
   (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
@@ -641,9 +649,12 @@ markdown on a board whose item view lacks the **Item description** widget, so a 
 "gift-history description skipped" and moves on rather than burning queue retries over a
 redundant rendering of the JSON column. **Add that widget by hand to the item view of every owner
 board** (open an item → **+** in the item view header → Item description) before the first sweep;
-there is no API for it. Once it's there, writes succeed for every item on the board, including
-items with no description yet (verified on the sandbox 2026-10-30; the 2026-08-31 reading that
-the feature was off for the whole account was wrong). Provision the
+there is no API for it. Once it's there, writes succeed on items with no description yet (verified
+on the sandbox 2026-10-30; the 2026-08-31 reading that the feature was off for the whole account
+was wrong). The same bare error comes back past roughly 250 doc blocks, and every table cell is a
+block, so a 70-row table fails at under 1KB (measured 2026-11-04; Monday doesn't document it). So
+one description holds at most `DESCRIPTION_TABLE_ROW_BUDGET` table rows across its tables, and past
+that Gift History shows the newest gifts with a line pointing at the JSON column. Provision the
 column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
 
 **The Annual Giving Summary board (docs/20 §5.4)** — created by
@@ -667,7 +678,8 @@ constants in `custodian.ts` can grow — not yet done.
 **Chartable gift labels.** Monday charts group by status/dropdown columns, not formulas or text,
 so the custodian's `classify` duty writes four status columns on each Donations board that has
 `donationBoards[].columns.classification` configured: **Funding Stream** (Individual Giving,
-Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue),
+Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue, Donor
+Advised Funds),
 **Gift Size** (`< $100`, `$100–249`, `$250–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
 **Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
 gift's amount, date and type. It runs nightly and on demand
@@ -703,7 +715,8 @@ Every Organizations recompute also writes a `## Sponsorships` section above `## 
 the item description: the paid (`Received`) cash and in-kind sponsorships of the last
 `windowYears` years (calendar or fiscal, per `yearBasis`), one row each with date, event and
 amount, plus per-year and overall totals (cash and in-kind kept separate). It exists to be copied
-into an email reply to a sponsor's auditor. **Organizations only**; People get no section.
+into an email reply to a sponsor's auditor. **Organizations only**; People get no section. Every
+sponsorship row is kept, and Gift History gets what's left of the description's row budget.
 Prerequisite: the **Item description** widget on the Organizations item view (see "Gift-history
 projections" above; there is no API for it).
 

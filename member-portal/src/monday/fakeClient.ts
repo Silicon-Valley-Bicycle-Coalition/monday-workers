@@ -65,6 +65,9 @@ const DONORS: FakeDonor[] = [
         description: 'General donation',
         matchHintUrl: 'https://example.com/match-lookup',
       },
+      // Previews a letter's separately listed and left-off gifts (taxLetter in config/local.json).
+      { date: '2025-08-04', amount: '500.00', description: 'Donor Advised Fund' },
+      { date: '2025-09-20', amount: '35.00', description: 'Event Ticket' },
     ],
   },
   {
@@ -211,7 +214,7 @@ export class FakeMondayClient implements MondayClient {
     return null;
   }
 
-  async listDonorIdsWithDonationsInYear(_year: number): Promise<string[]> {
+  async listDonorIdsWithDonationsInYear(_year: number, _excludedGiftTypes: string[]): Promise<string[]> {
     return [];
   }
 

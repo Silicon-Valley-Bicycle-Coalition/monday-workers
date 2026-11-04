@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { formatColumnValue } from './columnValues.js';
 
 describe('formatColumnValue', () => {
+  it('wraps a dropdown value as one label', () => {
+    expect(formatColumnValue('dropdown', 'Bike Shop')).toEqual({ labels: ['Bike Shop'] });
+  });
+
   it('wraps link values in {url, text}, adding a scheme when missing', () => {
     expect(formatColumnValue('link', 'www.svbc.org')).toEqual({ url: 'https://www.svbc.org', text: 'www.svbc.org' });
     expect(formatColumnValue('link', 'https://svbc.org')).toEqual({ url: 'https://svbc.org', text: 'https://svbc.org' });

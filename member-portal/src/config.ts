@@ -1,3 +1,4 @@
+import { giftTypeIn } from './letters/giftTypes';
 import type { Config, FunraiseLinkUrls, MondayColumns, PrefField } from './types';
 import { isLocale } from './i18n/locales';
 
@@ -110,6 +111,9 @@ const REQUIRED_TAX_LETTER_KEYS = [
   'plainStatement',
   'benefitStatement',
   'benefitTiers',
+  'excludedGiftTypes',
+  'separateGiftTypes',
+  'separateGiftsStatement',
 ] as const;
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
@@ -224,6 +228,19 @@ export function validateConfig(raw: unknown): Config {
 
   const taxLetter = requireObject(cfg, 'taxLetter');
   requireKeys(taxLetter, 'taxLetter', REQUIRED_TAX_LETTER_KEYS);
+  // A mistyped shape here would silently print the wrong gifts on a tax document, so fail at
+  // startup. A label in both lists has no single right treatment, so that fails too.
+  for (const key of ['excludedGiftTypes', 'separateGiftTypes'] as const) {
+    const labels = taxLetter[key];
+    if (!Array.isArray(labels) || labels.some((label) => typeof label !== 'string' || label.trim().length === 0)) {
+      throw new Error(`config: "taxLetter.${key}" must be an array of non-empty strings`);
+    }
+  }
+  const separateLabels = taxLetter.separateGiftTypes as string[];
+  const overlap = (taxLetter.excludedGiftTypes as string[]).find((label) => giftTypeIn(separateLabels, label));
+  if (overlap !== undefined) {
+    throw new Error(`config: "${overlap}" is in both taxLetter.excludedGiftTypes and taxLetter.separateGiftTypes`);
+  }
 
   const changeRequests = requireObject(cfg, 'changeRequests');
   requireKeys(changeRequests, 'changeRequests', REQUIRED_CHANGE_REQUEST_KEYS);
@@ -409,6 +426,7 @@ export function lettersEnabled(config: Config): boolean {
     t.signatureTitle,
     t.plainStatement,
     t.benefitStatement,
+    t.separateGiftsStatement,
   ];
   return strings.every((s) => s !== SIGNOFF_PLACEHOLDER && s.length > 0);
 }

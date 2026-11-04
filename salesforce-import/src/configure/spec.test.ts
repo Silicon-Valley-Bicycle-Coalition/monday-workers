@@ -17,6 +17,43 @@ describe('BOARD_SPECS columns', () => {
     const cols = (key: string) => (BOARD_SPECS[key]!.columns ?? []).map((c) => `${c.title} (${c.type})`).sort();
     expect(cols('people-historical')).toEqual(cols('people-live'));
   });
+  it('People boards carry First Name and Last Name as text', () => {
+    const cols = (BOARD_SPECS['people-live']!.columns ?? []).map((c) => `${c.title} (${c.type})`);
+    expect(cols).toEqual(expect.arrayContaining(['First Name (text)', 'Last Name (text)']));
+  });
+  it('attendee list views show what a mail merge needs', () => {
+    for (const name of ['By event', 'Attended']) {
+      const view = BOARD_SPECS['event-registrations']!.views!.find((v) => v.name === name)!;
+      expect(view.columns).toEqual(expect.arrayContaining(['First Name', 'Attendee Email']));
+    }
+  });
+});
+
+describe('Possible Duplicate flag (#54)', () => {
+  const PEOPLE_BOARDS = ['people-live', 'people-historical'];
+
+  it('is a status column with the agreed labels on both People boards, and leaves blank as unflagged', () => {
+    for (const b of PEOPLE_BOARDS) {
+      expect(BOARD_SPECS[b]!.columns, b).toContainEqual(
+        { title: 'Possible Duplicate', type: 'status', labels: ['Possible Duplicate', 'Merged', 'Not a Duplicate'] });
+    }
+  });
+
+  it('tells staff what the flag does on both boards', () => {
+    for (const b of PEOPLE_BOARDS) {
+      expect(BOARD_SPECS[b]!.columnDescriptions!['Possible Duplicate'], b).toMatch(/David/);
+    }
+  });
+
+  it('has a worklist on both boards holding only open flags, with same-named records side by side', () => {
+    for (const b of PEOPLE_BOARDS) {
+      const view = BOARD_SPECS[b]!.views!.find((v) => v.name === 'Possible duplicates')!;
+      expect(view.tag, b).toBe('Worklist');
+      expect(view.filter!.rules, b).toEqual(
+        [{ columnTitle: 'Possible Duplicate', operator: 'any_of', labelValues: ['Possible Duplicate'] }]);
+      expect(view.sort, b).toEqual([{ columnTitle: 'Name' }]);
+    }
+  });
 });
 
 describe('Event Registrations class roster', () => {
@@ -167,6 +204,10 @@ describe('final-review spec rulings', () => {
 
   it('"Recent gifts" has no colouring (red means needs action)', () => {
     expect(view('donations', 'Recent gifts').coloring).toBeUndefined();
+  });
+
+  it('names Donor Advised Fund in the Gift Type vocabulary staff type from', () => {
+    expect(BOARD_SPECS['donations']!.columnDescriptions!['Gift Type']).toContain('Donor Advised Fund');
   });
 
   it('describes the computed columns as rollup-owned', () => {

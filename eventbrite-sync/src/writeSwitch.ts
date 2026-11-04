@@ -3,15 +3,21 @@
 // maps and matches exactly as a live run would; only the last step — the Monday write or the D1
 // bookkeeping that records it — is swapped out here. The Eventbrite client is GET-only and passes
 // through untouched.
-import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
+import { DEFAULT_PII_KEYS, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
 import type { OrderStore } from './db/orders';
 import type { EventStore } from './db/events';
 import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
 import type { EndedEventSweepDeps } from './endedEvents/sweep';
-import type { EventRow, MondayBoards } from './types';
+import type { EventbriteSyncConfig, EventRow, MondayBoards } from './types';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
+
+// Debug skip lines key Monday values by column id, which DEFAULT_PII_KEYS can't recognize as names.
+export function piiKeysFor(config: EventbriteSyncConfig): readonly string[] {
+  const { donorFirstNameColumn, donorLastNameColumn } = config.eventbriteSync;
+  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase()];
+}
 
 // Everything a skip line needs except the delivery, which is per message.
 export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;

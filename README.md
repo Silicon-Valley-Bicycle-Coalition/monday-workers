@@ -449,8 +449,16 @@ When adding it (#58): mark it **Protected, Masked and Hidden** — Protected is 
 merge-request pipelines, which run unreviewed branch code — and mint it in Cloudflare with only
 *Workers Scripts: Edit* (plus D1/Queues/KV edit only if a deploy needs them) on SVBC's account,
 never a broad account token. Keep `main` protected (Maintainers only) and leave **Run pipelines in
-the parent project for fork MRs** off. The deploy jobs declare a `sandbox` environment, so a
-maintainer can also require approval under Settings > CI/CD > Protected environments.
+the parent project for fork MRs** off. The deploy jobs declare a `sandbox` environment for deploy
+history, but it is not an approval gate: Protected environments need GitLab Premium and this group
+is on Free, so the Protected variable and protected `main` are the boundary.
+
+**Keep non-production branch builds off on every Workers Builds connection (#58).** A branch build
+installs that branch's `package.json` and runs its `wrangler`, so branch code runs with the
+connection's build token, the same token production deploys use. GitLab's Protected variables and
+fork settings don't apply to it. Cloudflare's docs don't say whether fork MRs can trigger these
+builds, so answer that before turning them on in a public repo. `svbc-calendars` builds `main` only;
+its "Deploy non-production branches" trigger was removed on 2026-11-03.
 
 **Current state (verified 2026-09-28) — merging deploys only `svbc-calendars`.** All eight
 provisioned sandbox Workers were last hand-deployed from `main` on 2026-10-09 (none had pending D1

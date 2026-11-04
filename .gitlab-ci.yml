@@ -49,9 +49,10 @@ default:
 # out of merge-request pipelines, which run unprotected branch code, so an MR
 # can't echo it. If you environment-scope it to `sandbox`, check the first main
 # pipeline still runs the job: the `rules:` gate below must see the variable. The
-# `sandbox` environment lets a maintainer protect deploys in Settings > CI/CD >
-# Protected environments; resource_group stops two main pipelines deploying
-# the same Worker at once.
+# `sandbox` environment records deploy history but is not an approval gate:
+# Protected environments need GitLab Premium and this group is on Free, so the
+# boundary is the Protected variable plus protected `main`. resource_group stops
+# two main pipelines deploying the same Worker at once.
 .deploy_sandbox_job:
   stage: deploy
   environment:

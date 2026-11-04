@@ -151,3 +151,27 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(wrangler.name).toBe('svbc-mailchimp-sync');
   });
 });
+
+describe('config split: the People (Historical) board', () => {
+  const asColumns = (columns: unknown) => columns as Record<string, string | null>;
+
+  it('both configs watch it, and on a board of its own', () => {
+    expect(sandbox.monday.historical.boardId).toBe(18431577228);
+    expect(production.monday.historical.boardId).toBe(18437909784);
+    expect(production.monday.historical.boardId).not.toBe(production.monday.donorsBoardId);
+    expect(sandbox.monday.historical.boardId).not.toBe(sandbox.monday.donorsBoardId);
+  });
+
+  it('no sandbox Historical column id appears anywhere in production', () => {
+    const prod = [...Object.values(asColumns(production.monday.columns)), ...Object.values(asColumns(production.monday.historical.columns))];
+    const ids = Object.values(asColumns(sandbox.monday.historical.columns)).filter((id) => id !== null);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(prod).not.toContain(id);
+  });
+
+  it('a board move carries Nearby only if both boards name the column, so both stay set or unset together', () => {
+    for (const cfg of [sandbox, production]) {
+      expect(cfg.monday.historical.columns.nearby === null).toBe(cfg.monday.columns.nearby === null);
+    }
+  });
+});

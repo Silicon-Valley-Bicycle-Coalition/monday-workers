@@ -85,6 +85,16 @@ describe('config split: board and column ids', () => {
   });
 });
 
+describe('tax letter Gift Types', () => {
+  it.each(['taxLetter.excludedGiftTypes', 'taxLetter.separateGiftTypes'])('%s is the same in both environments', (path) => {
+    expect(get(sandbox, path)).toEqual(get(production, path));
+  });
+
+  it('holds the new statement behind the sign-off gate in production', () => {
+    expect(get(production, 'taxLetter.separateGiftsStatement')).toBe('REPLACE_AFTER_SIGNOFF');
+  });
+});
+
 describe('wrangler.jsonc env.sandbox', () => {
   it('locks the EMAIL binding to exactly the sink address', () => {
     expect(sandboxEnv.send_email).toEqual([{ name: 'EMAIL', allowed_destination_addresses: [SINK] }]);

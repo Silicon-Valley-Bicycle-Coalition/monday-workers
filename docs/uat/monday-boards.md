@@ -128,8 +128,8 @@ organizations with no Partner Type) · **Municipal** · **Funders and matching c
 
 1. Open a bike shop, a funder, and a city. Do Partner Type, Website, and the giving totals read
    right? Website was filled from Google Places where Salesforce had none.
-2. **Untyped** is the cleanup list. Is Partner Type a vocabulary you'd keep consistent as free
-   text, or should it become a fixed dropdown? (Open decision; your answer settles it.)
+2. **Untyped** is the cleanup list. Partner Type is a dropdown of ten values. Pick one on a blank
+   organization and check that it leaves the list.
 3. **Discount Offered** and **Discount Active** are what the donor portal shows members as
    partner bike-shop discounts. Set one on a shop and check it in the
    [donor portal](member-portal.md) script.
@@ -174,8 +174,8 @@ size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching
-Donations, Other Program Revenue), **Gift Size**, **Fiscal Quarter** (`FY26 Q1` is July to
-September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
+Donations, Other Program Revenue, Donor Advised Funds), **Gift Size**, **Fiscal Quarter**
+(`FY26 Q1` is July to September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
 
 **Try it:**
 
@@ -306,9 +306,8 @@ Monday user with dashboard rights, so there is nothing to open yet:
 
 Please don't build your own in the meantime. If a number you report today isn't in that list,
 say so on IT Requests as a Feature Request. Known omissions: no Grants Pipeline widget until
-cutover (that board lives in the live workspace); Donor Advised Funds sit inside Individual
-Giving; members by city and membership type are board views, not charts, because Monday can't
-chart text columns.
+cutover (that board lives in the live workspace); members by city and membership type are board
+views, not charts, because Monday can't chart text columns.
 
 ## Donor portal boards
 

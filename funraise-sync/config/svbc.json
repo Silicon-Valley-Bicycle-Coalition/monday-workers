@@ -29,6 +29,10 @@
     "donorExternalIdColumn": "link_mm8ndb1a",
     "donorEmailColumn": "email_mm8nx6qg",
     "donorNameField": "supporter.name",
+    "donorFirstNameField": "supporter.firstName",
+    "donorLastNameField": "supporter.lastName",
+    "donorFirstNameColumn": "text_mm8scaqj",
+    "donorLastNameColumn": "text_mm8ssty4",
     "donorLinkColumn": "board_relation_mm8n97wj",
     "emailFieldPrecedence": [
       "supporter.email"

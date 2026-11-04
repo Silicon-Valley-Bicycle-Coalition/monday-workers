@@ -13,8 +13,8 @@ import { processDeadLetters } from './consumer/processDeadLetters';
 import { pollSubscriptions } from './subscriptions/poll';
 import { dispatchScheduled } from './scheduled';
 import { checkRequestRateLimit } from './rateLimit';
-import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
-import { pollDepsFor, type BatchSkipContext } from './writeSwitch';
+import { readLogLevel, readWriteMode } from './flags';
+import { piiKeysFor, pollDepsFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // This Worker's name in the FLAGS KV keys (`funraise-sync:writes`, `funraise-sync:log`) — the
@@ -43,7 +43,7 @@ export function isDeadLetterBatch(queueName: string): boolean {
 // flip reaches the next batch within the KV edge cache's 30 seconds).
 async function skipContext(env: Env): Promise<BatchSkipContext> {
   const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
-  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: piiKeysFor(configFor(env)) };
 }
 
 function funraiseClient(env: Env): HttpFunraiseClient | undefined {

@@ -214,9 +214,43 @@ Deliberate limits:
   tag but leaves the unsubscribe in place; only the person can opt back in, through Mailchimp.
 * **Personal Email only.** The Household Email may be shared by other people in the household,
   so it is never unsubscribed on one person's flag (it isn't synced at all yet — see below).
-* **People board only.** People (Historical) and Organizations carry the same columns but
-  aren't watched by this Worker.
+* **People and People (Historical) only.** Organizations carry the same columns but aren't
+  watched: they stay a call list, not an email audience. A reviewed Do Not Solicit on Historical
+  unsubscribes the address even if a People item holds it too.
 * **Nothing flows back.** An unsubscribe that starts in Mailchimp doesn't check Do Not Solicit.
+
+## People (Historical)
+
+The outbound flow also runs for People (Historical) (#83), configured as `monday.historical`: its
+board id and its own column ids, since Monday gives each board different ones. Both boards post to
+the same `/webhooks/monday/donors` route. The inbound flow stays on People: an audience event for
+an address only Historical holds records as `skipped`, and Historical has no Campaigns connect
+column.
+
+* **Moving between the boards** (`people-reclassification`). The move keeps the Monday item id,
+  and a contact is keyed by address, so it stays the same contact and the same
+  `pending_outbound_syncs` row, and a `PATCH` can't create a duplicate. The consumer reads the
+  item's board from Monday when it runs, not from the webhook, so a message queued before a move
+  reads the right columns. Tags survive because the move carries the columns they come from.
+* **An address on both boards.** One address is one contact, and People owns it. A Historical
+  item whose address is also on People records as `skipped` and doesn't touch the contact's
+  fields or tags, so a lapsed record can't overwrite a live one; its Nearby labels don't reach
+  Mailchimp either. It doesn't move the contact off an address People still holds. The check costs
+  a Monday read or two per Historical event.
+* **Nothing backfills.** A Historical person syncs on their next change to a column the sync
+  reads, a new Nearby label included. Until then their contact keeps what it has, and a Do Not
+  Solicit already Confirmed on Historical doesn't unsubscribe anyone.
+
+**To turn it on** (not done as of this change). Deploy, then register a second Monday webhook,
+`create_item` + `change_column_value`, on the Historical board, with the same URL and secret as
+the People one: sandbox board `18431577228`, production `18437909784`. SVBC Integration and
+Sandbox Integration already subscribe to those private boards (checked 2026-11-03). Then have
+`nearby-search` drop its "won't get the email yet" note (`src/page.ts`).
+
+**Sandbox limits.** This Worker's sandbox uses the `(sandbox v3)` boards, while
+`people-reclassification`'s sandbox uses v4, so a real move can't be rehearsed end to end here.
+The v3 Historical board has no State column (`state: null`, so the ZIP gives the state) and its
+DNS Reason Status has no Confirmed label; add one to test the unsubscribe there.
 
 ## Resetting for new board ids
 
@@ -224,8 +258,8 @@ When the People board is deleted and rebuilt (a cutover retry — private runboo
 — or a sandbox rebuild), D1 still describes the old board's items. Reset it before deploying
 against the new boards.
 
-**First:** disable the Monday Donors webhook and the Mailchimp audience webhook, and delete or
-archive the old boards (while the old Mailchimp Campaigns board exists, the daily reconcile on
+**First:** disable the Monday Donors webhooks (People and People (Historical)) and the Mailchimp
+audience webhook, and delete or archive the old boards (while the old Mailchimp Campaigns board exists, the daily reconcile on
 the old config creates fresh items on it and records them in `campaign_items` again).
 
 ```sh
@@ -250,7 +284,7 @@ Sandbox: `svbc-mailchimp-sync-sandbox`, with `--env sandbox` on every command.
 
 | Table | Reset | Why |
 |---|---|---|
-| `pending_outbound_syncs` | cleared | Keyed on People item ids from the old board. Dead rows skew the `failed`/`skipped` counts, and `redrive-dead-lettered.mjs` would replay them against items that are gone. |
+| `pending_outbound_syncs` | cleared | Keyed on item ids from the old People boards. Dead rows skew the `failed`/`skipped` counts, and `redrive-dead-lettered.mjs` would replay them against items that are gone. |
 | `pending_inbound_syncs` | cleared | Keyed on email, no item ids, but every `written` row records a connect-column write to the old board. The export keeps the list of addresses. |
 | `campaign_items` | cleared **only if the Mailchimp Campaigns board was rebuilt** | Interest → Campaigns item. On a new board the old ids would be written into Donors' connect columns and the reconcile would never recreate the items; cleared, the next reconcile (the daily cron, or the first inbound event) creates one item per interest. If the board survived, keep the rows: clearing them makes the reconcile create a second item for every interest. |
 | `dns_unsubscribes` | **kept** | The audit trail of unsubscribes that really happened in Mailchimp, which a board rebuild doesn't undo. Its guard is keyed on the email address, so it still stops a second Mailchimp call for the same person on the new board. `donor_item_id` in existing rows names the item on the old board; leave it (rows are never updated) and keep the export with the reset date, so pre-reset ids can be told apart. |
@@ -318,9 +352,8 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   about to run. `nearby` is `null` in both configs until the column exists (set its id in
   `config/svbc.json` / `config/sandbox.json` to turn this on). Any People column change fires
   the Donors webhook, so editing Nearby flows through the normal outbound path.
-  **Limit:** only the People board is watched. People (Historical) items get Nearby labels
-  too but are not synced to Mailchimp until this Worker watches that board
-  (svbc-monday-workers#83).
+  Set `monday.historical.columns.nearby` at the same time (`config/split.test.ts` fails on one
+  without the other), so a person's labels sync from whichever board they're on.
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
@@ -352,7 +385,12 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   its usual update. Its status — subscribed, unsubscribed, cleaned — and tags and history carry
   over unchanged, so consent follows the person and nothing is ever created. No rename when the
   new address is already a contact (two contacts are never merged; the new one is updated as
-  before), when the old address isn't one, or when only case or spacing changed. A permanent
+  before), when the old address isn't one, when only case or spacing changed, or when another
+  People or Historical item still holds the old address. That last check is a forgery guard: the
+  old address comes from the webhook payload, so a leaked webhook secret could otherwise move any
+  member. It protects anyone with a CRM record, not a Mailchimp-only contact. A refused move logs
+  a warning and the update carries on by the new address, so a shared address needs moving by hand
+  in Mailchimp. A permanent
   Mailchimp refusal is logged and the update carries on by the new address, as before this
   existed. Fixed 2026-11-02, after the cutover's Gate C check showed an edited address skipping
   (svbc-monday-migration cutover log, Mon 9:31 am). Edits made before this deploy aren't
@@ -360,8 +398,8 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.
-* A webhook subscription (`create_item` + `change_column_value`) on the Donors board, pointed at
-  `/webhooks/monday/donors`, with a secret in the URL. If Monday's webhook UI allows scoping to
+* A webhook subscription (`create_item` + `change_column_value`) on the Donors board and on
+  People (Historical), pointed at `/webhooks/monday/donors`, with a secret in the URL. If Monday's webhook UI allows scoping to
   specific columns, exclude the `mailchimpCampaigns` connect-column from the watched columns —
   defense in depth against the inbound consumer's own write to that column re-triggering this
   webhook (the Worker also guards against this in code; see the design doc's feedback-loop note).

@@ -1,4 +1,5 @@
 import type { MondayClient } from '../monday/client';
+import { MondayApiError } from '../monday/graphql';
 import type { FunraiseSyncConfig } from '../types';
 import { getPath } from '../util/getPath';
 
@@ -65,5 +66,35 @@ export async function matchDonor(
     }
   );
 
+  await writeNames(mondayClient, config, donorsBoardId, created.id, rawPayload);
   return { donorItemId: created.id, created: true };
+}
+
+// A separate, best-effort write after the create: Monday rejects a whole create_item over one bad
+// column, and a name problem must never send a gift to retries and the dead-letter queue. A person
+// whose names didn't write stays blank. The error's message could echo a value, so it isn't logged.
+async function writeNames(
+  mondayClient: MondayClient,
+  config: FunraiseSyncConfig,
+  boardId: number,
+  itemId: string,
+  rawPayload: Record<string, unknown>
+): Promise<void> {
+  const { donorFirstNameField, donorLastNameField, donorFirstNameColumn, donorLastNameColumn } = config.funraiseSync;
+  const trimmed = (field: string): string => {
+    const value = getPath(rawPayload, field);
+    return typeof value === 'string' ? value.trim() : '';
+  };
+  const first = trimmed(donorFirstNameField);
+  const last = trimmed(donorLastNameField);
+  if (first === '' && last === '') return;
+  try {
+    await mondayClient.changeColumnValues(boardId, itemId, {
+      ...(first !== '' ? { [donorFirstNameColumn]: first } : {}),
+      ...(last !== '' ? { [donorLastNameColumn]: last } : {}),
+    });
+  } catch (err) {
+    const detail = err instanceof MondayApiError ? `status ${err.httpStatus ?? '?'}, code ${err.code ?? '?'}` : 'not a Monday error';
+    console.warn(`funraise-sync: no names written on People item ${itemId}: ${detail}`);
+  }
 }

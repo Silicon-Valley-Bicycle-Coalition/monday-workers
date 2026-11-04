@@ -124,4 +124,15 @@ describe('OVERVIEW_SPECS', () => {
     expect(tile('volunteers', 'Unlinked')).toBe(true);
     expect(tile('activities', 'Unlinked')).toBe(true);
   });
+
+  it('counts the same Unlinked attendees as the tab, from both registration platforms (#57)', () => {
+    const rules = [
+      { columnTitle: 'Attendee', operator: 'is_empty' },
+      { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite', 'Funraise'] },
+    ];
+    const tab = BOARD_SPECS['event-registrations']!.views!.find((v) => v.name === 'Unlinked attendees')!;
+    const tile = OVERVIEW_SPECS['event-registrations']!.widgets.find((w) => w.name === 'Unlinked attendees')!;
+    expect(tab.filter!.rules).toEqual(rules);
+    expect(tile.filter!.rules).toEqual(rules);
+  });
 });

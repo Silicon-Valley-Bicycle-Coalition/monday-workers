@@ -276,6 +276,22 @@ describe('sponsorships section in the recompute path', () => {
     expect(getItemsBoardAndGroup).not.toHaveBeenCalled();
   });
 
+  it('an Organizations description stays within the row budget, keeping every sponsorship row', async () => {
+    const { countTableRows, DESCRIPTION_TABLE_ROW_BUDGET } = await import('../projections/giftHistory');
+    const hist = [
+      ...sponsorHistory(),
+      ...Array.from({ length: 200 }, (_, i) => ({
+        mondayItemId: `old${i}`, donationBoardId: '1', amountCents: 100, giftDateISO: '2001-01-15', fiscalYear: 2001,
+        status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, sponsorshipEvent: null, inKindValueCents: null,
+      })),
+    ];
+    const { setItemDescription } = await runSponsor(sponsorshipsConfig, '2', hist, [sponsorDonation()]);
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(countTableRows(md)).toBe(DESCRIPTION_TABLE_ROW_BUDGET);
+    expect(md.startsWith('## Sponsorships')).toBe(true);
+    expect(md).toContain(`of ${hist.length} gifts shown`);
+  });
+
   it('with sponsorships null the description is exactly the gift history and the facts carry no sponsorship fields', async () => {
     const { buildGiftHistoryMarkdown } = await import('../projections/giftHistory');
     const hist = sponsorHistory();

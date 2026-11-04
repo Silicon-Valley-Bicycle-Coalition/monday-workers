@@ -1,8 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLabelId, statusLabelDefaults, statusLabelIds, EMPTY_STATUS_LABEL_ID } from './labels.js';
+import { dropdownLabelDefaults, resolveLabelId, statusLabelDefaults, statusLabelIds, EMPTY_STATUS_LABEL_ID } from './labels.js';
 import { columnDefaults } from './index.js';
 import { BOARD_SPECS } from './spec.js';
 import { STATUS_LABELS, DONATION_STATUS_LABELS, AFFILIATION_STATUS_LABELS } from '../load/boards.js';
+
+describe('dropdownLabelDefaults', () => {
+  it('wraps the labels in settings, which Monday needs or it seeds nothing', () => {
+    expect(JSON.parse(dropdownLabelDefaults(['A', 'B']))).toEqual({
+      settings: { labels: [{ id: 1, name: 'A' }, { id: 2, name: 'B' }] },
+    });
+  });
+
+  it('limits a single-select dropdown to one label', () => {
+    expect(JSON.parse(dropdownLabelDefaults(['A'], { single: true })).settings).toMatchObject({
+      limit_select: true, label_limit_count: 1,
+    });
+  });
+
+  it('backs configure-created dropdown columns too', () => {
+    expect(columnDefaults({ title: 'X', type: 'dropdown', labels: ['A'] })).toBe(dropdownLabelDefaults(['A']));
+  });
+});
 
 describe('resolveLabelId', () => {
   it('resolves a status label by text from an id-keyed object, ids need not be sequential', () => {

@@ -520,7 +520,7 @@ export function createApp(deps: AppDeps) {
     }
     let listings;
     try {
-      listings = await listLetterYears(donorItemIds, deps.monday, deps.now());
+      listings = await listLetterYears(donorItemIds, deps.monday, deps.config.taxLetter, deps.now());
     } catch (err) {
       // A Monday read failure here would otherwise fall through to the global onError, whose
       // generic "please try logging in again" copy is misleading — this isn't an auth problem.
@@ -968,6 +968,7 @@ export function createApp(deps: AppDeps) {
     try {
       result = await triggerLetterSend(event.donorItemId, {
         monday: deps.monday,
+        taxLetter: deps.config.taxLetter,
         store: deps.letterSendStore,
         queue: stampedQueue(deps.letterQueue, gate.mode),
         now: deps.now,

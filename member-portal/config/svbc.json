@@ -63,7 +63,17 @@
     "signatureTitle": "Executive Director",
     "plainStatement": "No goods or services were provided in exchange for these contributions.",
     "benefitStatement": "REPLACE_AFTER_SIGNOFF",
-    "benefitTiers": []
+    "benefitTiers": [],
+    "excludedGiftTypes": [
+      "Event Ticket",
+      "Sponsorship",
+      "In Kind Donation / Sponsorship",
+      "Matching Donation",
+      "Grants",
+      "Contracts"
+    ],
+    "separateGiftTypes": ["Donor Advised Fund"],
+    "separateGiftsStatement": "REPLACE_AFTER_SIGNOFF"
   },
   "changeRequests": {
     "boardId": 18438337985,

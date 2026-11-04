@@ -31,6 +31,8 @@
     "giftTypeValue": "Event Ticket",
     "fiscalYearColumn": "text_mm8ngcfh",
     "donorEmailColumn": "email_mm8nx6qg",
+    "donorFirstNameColumn": "text_mm8scaqj",
+    "donorLastNameColumn": "text_mm8ssty4",
     "donorLinkColumn": "board_relation_mm8n97wj"
   },
   "attendeeSync": {

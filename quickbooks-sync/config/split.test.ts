@@ -126,10 +126,10 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(bothPlaceholders || sbDb.database_id !== prodDb.database_id).toBe(true);
   });
 
-  it('derives its own name and has no cron, like production', () => {
+  it('derives its own name and keeps the same daily purge cron as production (#68)', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-quickbooks-sync');
-    expect(sandboxEnv.triggers).toBeUndefined();
-    expect(wrangler.triggers).toBeUndefined();
+    expect((wrangler.triggers as Json).crons).toEqual(['30 9 * * *']);
+    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
   });
 });

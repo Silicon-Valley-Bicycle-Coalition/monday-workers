@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { matchDonor } from './donors';
+import { MondayApiError } from '../monday/graphql';
+import { dryRunMondayClient, piiKeysFor } from '../writeSwitch';
 import type { MondayClient, MondayItem } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
 import { testConfig } from '../test/testConfig';
@@ -83,6 +85,76 @@ describe('matchDonor', () => {
     await matchDonor(client, config, { donor: { contactId: 'fr-4', email: 'd@example.com' } });
 
     expect(createItem).toHaveBeenCalledWith(42, 'Unknown Donor', expect.any(Object));
+  });
+
+  describe('names on a new person', () => {
+    const payload = (donor: Record<string, unknown>) => ({ donor: { contactId: 'fr-5', email: 'e@example.com', name: 'Ada Lovelace', ...donor } });
+
+    it('creates the person as before, then writes both names separately', async () => {
+      const createItem = vi.fn().mockResolvedValue({ id: 'new-item' });
+      const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+      const client = fakeMondayClient({ createItem, changeColumnValues });
+
+      const result = await matchDonor(client, config, payload({ firstName: 'Ada', lastName: 'Lovelace' }));
+
+      expect(result).toEqual({ donorItemId: 'new-item', created: true });
+      expect(Object.keys(createItem.mock.calls[0]![2])).toEqual(['email_col', 'funraise_id_col']);
+      expect(changeColumnValues).toHaveBeenCalledWith(42, 'new-item', { first_col: 'Ada', last_col: 'Lovelace' });
+    });
+
+    it('omits a blank part, treating spaces as blank', async () => {
+      const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+      const client = fakeMondayClient({ changeColumnValues });
+
+      await matchDonor(client, config, payload({ firstName: '   ', lastName: ' Lovelace ' }));
+
+      expect(changeColumnValues).toHaveBeenCalledWith(42, 'new-item', { last_col: 'Lovelace' });
+    });
+
+    it('makes no name write when the source has neither part', async () => {
+      const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+      await matchDonor(fakeMondayClient({ changeColumnValues }), config, payload({}));
+      expect(changeColumnValues).not.toHaveBeenCalled();
+    });
+
+    it('never writes names on a matched person', async () => {
+      const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+      const client = fakeMondayClient({ changeColumnValues, findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'donor-1' }) });
+      await matchDonor(client, config, payload({ firstName: 'Ada', lastName: 'Lovelace' }));
+      expect(changeColumnValues).not.toHaveBeenCalled();
+    });
+
+    it('still returns the person when the name write fails, logging the id and not the name', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const failure = new MondayApiError('column_values rejected: Ada', { httpStatus: 200, code: 'ColumnValueException' });
+      const client = fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(failure) });
+
+      const result = await matchDonor(client, config, payload({ firstName: 'Ada', lastName: 'Lovelace' }));
+
+      expect(result).toEqual({ donorItemId: 'new-item', created: true });
+      const logged = warn.mock.calls.flat().join(' ');
+      expect(logged).toContain('new-item');
+      expect(logged).toContain('ColumnValueException');
+      expect(logged).not.toContain('Ada');
+      warn.mockRestore();
+    });
+
+    it('stays a dry run under the write switch, with the name masked in debug logs', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+      const real = fakeMondayClient({ changeColumnValues });
+      const ctx = { worker: 'funraise-sync', environment: 'sandbox', mode: 'off' as const, logLevel: 'debug' as const, deliveryId: 'd', piiKeys: piiKeysFor(config) };
+      const dry = dryRunMondayClient(real, config.monday.boards, ctx);
+
+      const result = await matchDonor(dry, config, payload({ firstName: 'Ada', lastName: 'Lovelace' }));
+
+      expect(result).toEqual({ donorItemId: 'dry-run-1', created: true });
+      expect(changeColumnValues).not.toHaveBeenCalled();
+      const logged = log.mock.calls.flat().join(' ');
+      expect(logged).toContain('changeColumnValues');
+      expect(logged).not.toContain('Ada');
+      log.mockRestore();
+    });
   });
 
   it('throws when the Donors board is not configured', async () => {

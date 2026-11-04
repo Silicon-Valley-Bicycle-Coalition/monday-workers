@@ -7,7 +7,7 @@ import type { BoardMap } from '../load/boards.js';
 import { configureDashboards } from './dashboards.js';
 import { configureOverviews, overviewScope, parseRebuild, checkRebuildScope } from './overviews.js';
 import { VIEW_API_VERSION } from './constants.js';
-import { statusLabelDefaults } from './labels.js';
+import { dropdownLabelDefaults, statusLabelDefaults } from './labels.js';
 import { BOARD_SPECS, type ColumnSpec } from './spec.js';
 import { planBoardBase, planColumnDescriptions, planViews, type ResolvedView, type CurrentBoard, type CurrentColumn } from './plan.js';
 
@@ -33,7 +33,7 @@ async function fetchBoard(client: MondayClient, boardId: number): Promise<Curren
 export function columnDefaults(col: ColumnSpec): string | undefined {
   if ((col.type === 'status' || col.type === 'dropdown') && col.labels) {
     if (col.type === 'status') return statusLabelDefaults(col.labels);
-    return JSON.stringify({ labels: col.labels.map((l, i) => ({ id: i + 1, name: l })) });
+    return dropdownLabelDefaults(col.labels);
   }
   return undefined;
 }

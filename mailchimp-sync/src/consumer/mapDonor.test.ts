@@ -3,7 +3,7 @@ import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import type { Config, DonorRecord } from '../types';
 
 const CONFIG: Config = {
-  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, columns: {} as never },
+  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, historical: null, columns: {} as never },
   mailchimp: {
     apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: {
@@ -24,7 +24,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '2027-01-01', addr1: '1 Main St', city: 'San Jose',
-    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], ...overrides,
+    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false, ...overrides,
   };
 }
 

@@ -10,7 +10,7 @@ import type { PendingInboundStore } from '../db/pendingInbound';
 import type { Config, InboundSyncMessage } from '../types';
 
 const CONFIG: Config = {
-  monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
+  monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, historical: null, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,

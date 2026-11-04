@@ -62,7 +62,17 @@
     "signatureTitle": "Sandbox environment",
     "plainStatement": "SANDBOX TEST LETTER — NOT A VALID TAX RECEIPT. No goods or services were provided in exchange for these contributions.",
     "benefitStatement": "SANDBOX TEST LETTER — NOT A VALID TAX RECEIPT. The estimated value of goods and services provided in exchange for these contributions is shown below.",
-    "benefitTiers": []
+    "benefitTiers": [],
+    "excludedGiftTypes": [
+      "Event Ticket",
+      "Sponsorship",
+      "In Kind Donation / Sponsorship",
+      "Matching Donation",
+      "Grants",
+      "Contracts"
+    ],
+    "separateGiftTypes": ["Donor Advised Fund"],
+    "separateGiftsStatement": "SANDBOX TEST LETTER — NOT A VALID TAX RECEIPT. Gifts from a donor-advised fund, listed for your records only. They are not counted as contributions in this letter."
   },
   "changeRequests": {
     "boardId": 18431948024,
