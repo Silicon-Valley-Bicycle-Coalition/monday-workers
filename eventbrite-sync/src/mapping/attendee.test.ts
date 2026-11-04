@@ -71,9 +71,4 @@ describe('mapAttendee', () => {
     expect(m.columnValues.att_role_col).toBe('Participant');
   });
 
-  it('never writes the class type or follow-up email columns', () => {
-    const m = mapAttendee(attendee(), facts, config, 'Registered');
-    expect(m.columnValues).not.toHaveProperty('att_class_type_col');
-    expect(m.columnValues).not.toHaveProperty('att_followup_col');
-  });
 });

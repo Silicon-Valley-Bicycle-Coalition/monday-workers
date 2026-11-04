@@ -29,6 +29,11 @@ export interface ReclassificationMondayClient {
   // One item's values, for a single-person move. null = deleted or not visible.
   getItemValues(itemId: string, columnIds: string[]): Promise<PageItem | null>;
   moveItemToBoard(itemId: string, boardId: number, groupId: string, mapping: ColumnMapping[]): Promise<void>;
+  // Items on a board whose status column shows this label; the board isn't paged in full.
+  findItemsByStatus(boardId: number, columnId: string, label: string): Promise<string[]>;
+  // Column id → value. Writing the same values twice is harmless, so the transport may retry it.
+  writeColumnValues(boardId: number, itemId: string, values: Record<string, unknown>): Promise<void>;
+  postUpdate(itemId: string, body: string): Promise<void>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
 }
 
@@ -38,6 +43,7 @@ export interface ReclassificationMondayClient {
 // next day's cron continues (src/duties.ts).
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 4, requestTimeoutMs: 30_000 };
 
+interface IdsPage { cursor: string | null; items: { id: string }[] }
 interface RawColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
 interface RawItem { id: string; column_values: RawColumnValue[] }
 
@@ -127,6 +133,50 @@ export class HttpMondayClient implements ReclassificationMondayClient {
       { itemId, boardId: String(boardId), groupId, mapping },
       // A move that may have committed must not be retried blind: a second move of an item already
       // on the target board errors, and the ledger row must record the ambiguity instead.
+      { idempotent: false },
+    );
+  }
+
+  async findItemsByStatus(boardId: number, columnId: string, label: string): Promise<string[]> {
+    const settings = await this.graphql<{ boards: { columns: { settings_str: string }[] }[] }>(
+      `query ($boardId: [ID!], $columnId: [String!]) { boards(ids: $boardId) { columns(ids: $columnId) { settings_str } } }`,
+      { boardId: [String(boardId)], columnId: [columnId] },
+    );
+    const labels = (JSON.parse(settings.boards[0]?.columns[0]?.settings_str ?? '{}') as { labels?: Record<string, string> }).labels ?? {};
+    // Status rules compare by label index, which differs per board.
+    const index = Object.entries(labels).find(([, text]) => text === label)?.[0];
+    if (index === undefined) throw new Error(`board ${boardId}: column ${columnId} has no label "${label}"`);
+
+    const query = { rules: [{ column_id: columnId, compare_value: [Number(index)], operator: 'any_of' }] };
+    const ids: string[] = [];
+    let page = (await this.graphql<{ boards: { items_page: IdsPage }[] }>(
+      `query ($boardId: [ID!], $query: ItemsQuery) { boards(ids: $boardId) { items_page(limit: 500, query_params: $query) { cursor items { id } } } }`,
+      { boardId: [String(boardId)], query },
+    )).boards[0]?.items_page ?? { cursor: null, items: [] };
+    ids.push(...page.items.map((i) => i.id));
+    while (page.cursor !== null) {
+      page = (await this.graphql<{ next_items_page: IdsPage }>(
+        `query ($cursor: String!) { next_items_page(limit: 500, cursor: $cursor) { cursor items { id } } }`,
+        { cursor: page.cursor },
+      )).next_items_page;
+      ids.push(...page.items.map((i) => i.id));
+    }
+    return ids;
+  }
+
+  async writeColumnValues(boardId: number, itemId: string, values: Record<string, unknown>): Promise<void> {
+    await this.graphql<{ change_multiple_column_values: { id: string } }>(
+      `mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $values) { id }
+      }`,
+      { boardId: String(boardId), itemId, values: JSON.stringify(values) },
+    );
+  }
+
+  async postUpdate(itemId: string, body: string): Promise<void> {
+    await this.graphql<{ create_update: { id: string } }>(
+      `mutation ($itemId: ID!, $body: String!) { create_update(item_id: $itemId, body: $body) { id } }`,
+      { itemId, body },
       { idempotent: false },
     );
   }

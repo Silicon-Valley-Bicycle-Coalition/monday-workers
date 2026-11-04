@@ -19,12 +19,12 @@ const NULLABLE_COLUMN_KEYS = {
 
 const ATTENDEE_EVENT_COLUMN_KEYS = [
   'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
-  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'classTypeColumn', 'followupsColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
-  'classLocationColumn', 'classTypeColumn', 'followupEmailColumn',
+  'classLocationColumn',
 ] as const;
 
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
@@ -139,18 +139,18 @@ function validateAttendeeSync(raw: unknown): void {
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
-
-  if (!isObject(a.followups)) {
-    throw new Error('config: missing required key "attendeeSync.followups"');
+  if (!isObject(a.classEmails)) {
+    throw new Error('config: missing required key "attendeeSync.classEmails"');
   }
-  const f = a.followups;
-  if (typeof f.maxAgeDays !== 'number' || !Number.isFinite(f.maxAgeDays) || f.maxAgeDays <= 0) {
-    throw new Error('config: "attendeeSync.followups.maxAgeDays" must be a positive number of days');
+  const { pageUrl, sandboxRecipient } = a.classEmails;
+  if (pageUrl !== null && !(typeof pageUrl === 'string' && /^https:\/\/[^\s/]+\S*$/.test(pageUrl))) {
+    throw new Error('config: "attendeeSync.classEmails.pageUrl" must be an https URL, or null until the page is deployed');
   }
-  if (typeof f.sendHourLocal !== 'number' || !Number.isInteger(f.sendHourLocal) || f.sendHourLocal < 0 || f.sendHourLocal > 23) {
-    throw new Error('config: "attendeeSync.followups.sendHourLocal" must be an integer hour from 0 to 23');
+  if (sandboxRecipient !== null && !(typeof sandboxRecipient === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sandboxRecipient))) {
+    throw new Error('config: "attendeeSync.classEmails.sandboxRecipient" must be an email address, or null');
   }
-  if (f.notifyUserId !== null && (typeof f.notifyUserId !== 'number' || !Number.isInteger(f.notifyUserId))) {
-    throw new Error('config: "attendeeSync.followups.notifyUserId" must be a Monday user id number, or null to skip the notification');
+  // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
+  if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
   }
 }

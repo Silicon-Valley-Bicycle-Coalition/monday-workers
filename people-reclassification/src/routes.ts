@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { secretsMatch } from './secret';
 import type { RunRow } from './db/ledger';
 import type { PassReport, SingleMoveResult } from './pass';
+import { parsePromoteEvent } from './promote';
 import { runDisposition, type WriteMode } from './flags';
 
 export interface RoutesDeps {
@@ -16,6 +17,13 @@ export interface RoutesDeps {
   // never in the query string, where it would land in request logs (#64). Checked constant-time
   // and fail-closed: an unset/empty secret disables the routes entirely.
   secret?: string;
+  // Promotes one person on staff request (src/promote.ts).
+  promote(opts: { itemId: string; dryRun: boolean; runId: string }): Promise<unknown>;
+  requestLabel: string;
+  // Shared secret on the registered Monday webhook URL (`?secret=`); unset = route disabled.
+  webhookSecret?: string;
+  // ctx.waitUntil: a promote can outlast Monday's webhook timeout, and the sweep covers a lost one.
+  defer(work: Promise<unknown>): void;
   now?: () => Date;
 }
 
@@ -72,6 +80,29 @@ export function createApp(deps: RoutesDeps) {
     const result = await deps.moveToPeople({ itemId, dryRun: choice.dryRun, runId });
     const status = MOVE_STATUS[result.outcome];
     return c.json({ ok: status === 200, ...result }, status);
+  });
+
+  // Staff set Promote to People = Promote on an item. Monday can't send a header, so the secret is in
+  // the URL (root README, "Webhook secrets in the URL").
+  app.post('/webhooks/monday/promote', async (c) => {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) return c.json({ ok: false }, 401);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: 'invalid JSON body' }, 200);
+    }
+    const challenge = (body as { challenge?: unknown } | null)?.challenge;
+    if (typeof challenge === 'string') return c.json({ challenge }, 200);
+    const event = parsePromoteEvent(body, deps.requestLabel);
+    if (event === null) return c.json({ ok: false, ignored: true }, 200);
+    // The status stays at Promote under hold, so the morning sweep picks it up after.
+    const mode = await deps.mode();
+    const disposition = runDisposition(mode);
+    if (disposition === 'skip') return c.json({ ok: false, error: `write mode is ${mode}` }, 503);
+    const runId = `promote-${event.itemId}-${now().toISOString().replace(/[:.]/g, '-')}`;
+    deps.defer(deps.promote({ itemId: event.itemId, dryRun: disposition === 'dry-run', runId }));
+    return c.json({ ok: true }, 200);
   });
 
   return app;

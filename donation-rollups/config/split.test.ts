@@ -69,10 +69,17 @@ describe('config split: board ids', () => {
   it('custodian ids are real in sandbox; production is a placeholder or a different id', () => {
     expect(sandbox.custodian.workspaceId).toBe(18210301);
     expect(sandbox.custodian.annualSummaryBoardId).toBe(18437530607);
-    for (const key of ['workspaceId', 'alertItemId', 'annualSummaryBoardId'] as const) {
+    for (const key of ['workspaceId', 'annualSummaryBoardId'] as const) {
       const prod = production.custodian[key];
       expect(isPlaceholder(prod) || prod !== sandbox.custodian[key], key).toBe(true);
     }
+  });
+
+  // A null alertItemId silently drops the Monday alert (console.error only), and the sandbox once
+  // posted to an unrelated production IT Requests ticket, so both ids are pinned, not just compared.
+  it('custodian alerts each have their own item: never null, never shared', () => {
+    expect(sandbox.custodian.alertItemId).toBe(13460723549);
+    expect(production.custodian.alertItemId).toBe(13460707947);
   });
 });
 

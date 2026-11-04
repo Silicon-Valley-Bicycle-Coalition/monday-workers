@@ -38,6 +38,23 @@ describe('validateConfig', () => {
     expect(() => validateConfig(raw)).toThrow('must be different boards');
   });
 
+  it('allows loggedActivities to be null, and rejects one that counts nothing', () => {
+    const none = clone();
+    none.loggedActivities = null;
+    expect(validateConfig(none).loggedActivities).toBeNull();
+    const nothing = clone();
+    nothing.loggedActivities.countedTypeLabels = [];
+    expect(() => validateConfig(nothing)).toThrow('counts no activity type');
+  });
+
+  it('requires the promote labels and column titles', () => {
+    for (const mutate of [(r: any) => { delete r.promote; }, (r: any) => { r.promote.failedLabel = ''; }, (r: any) => { delete r.peopleColumns.promotedOn; }]) {
+      const raw = clone();
+      mutate(raw);
+      expect(() => validateConfig(raw)).toThrow();
+    }
+  });
+
   it('rejects a registrations source that counts nothing', () => {
     const raw = clone();
     raw.eventRegistrations.countedAttendanceLabels = [];

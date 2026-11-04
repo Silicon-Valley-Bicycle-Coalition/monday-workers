@@ -45,16 +45,16 @@ export function testConfig(
       events: {
         eventbriteIdColumn: 'ev_id_col', dateColumn: 'ev_date_col', endColumn: 'ev_end_col', venueColumn: 'ev_venue_col',
         addressColumn: 'ev_address_col', cityColumn: 'ev_city_col', programColumn: 'ev_program_col', eventStatusColumn: 'ev_status_col',
-        sourceColumn: 'ev_source_col', urlColumn: 'ev_url_col', classTypeColumn: 'ev_class_type_col', followupsColumn: 'ev_followups_col',
+        sourceColumn: 'ev_source_col', urlColumn: 'ev_url_col', sendLinkColumn: 'ev_send_col',
       },
       registrations: {
         attendeeIdColumn: 'att_col', attendeeNameColumn: 'att_name_col', attendeeEmailColumn: 'att_email_col', firstNameColumn: 'att_first_col',
         attendanceColumn: 'att_attendance_col', sourceColumn: 'att_source_col', roleColumn: 'att_role_col', eventLinkColumn: 'att_event_col',
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
-        classLocationColumn: 'att_class_loc_col', classTypeColumn: 'att_class_type_col', followupEmailColumn: 'att_followup_col',
+        classLocationColumn: 'att_class_loc_col',
       },
+      classEmails: { pageUrl: null, sandboxRecipient: null },
       peopleEmailColumn: 'people_email_col',
-      followups: { maxAgeDays: 3, sendHourLocal: 8, notifyUserId: null },
     },
   };
 }

@@ -1,5 +1,5 @@
 import { fiscalYear } from '../transform/fields.js';
-import { cnpOverlapCheck, foldFeeCoverage } from '../transform/donations.js';
+import { cnpGiftDay, cnpOverlapCheck, foldFeeCoverage } from '../transform/donations.js';
 import type { ItemPayload } from '../transform/types.js';
 
 type Row = Record<string, unknown>;
@@ -30,7 +30,7 @@ export function expectedGifts(rawOpportunities: readonly Row[], cnp: readonly Ro
   const { unique, duplicateTransactionIds } = cnpOverlapCheck([...cnp], [...opportunities]);
   const gifts = [
     ...opportunities.map((o) => ({ sfId: o['Id'] as string, fy: fyOf(o['CloseDate']), cents: toCents(o['Amount']) })),
-    ...unique.map((t) => ({ sfId: t['Id'] as string, fy: fyOf(t['CnP_PaaS__TransactionDate__c']),
+    ...unique.map((t) => ({ sfId: t['Id'] as string, fy: fyOf(cnpGiftDay(t)),
       cents: toCents(t['CnP_PaaS__TotalCharged__c']) })),
   ];
   return { gifts, cnpUnique: unique.length, cnpOverlap: duplicateTransactionIds.length };

@@ -23,7 +23,7 @@ export interface EventStore {
   recordDelivery(delivery: NewEventDelivery): Promise<'inserted' | 'updated'>;
   updateStatus(eventId: string, status: LedgerStatus, patch?: EventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<EventRow | null>;
-  // Events with a Monday item whose end falls in [fromIso, toIso]; what the follow-up sweep reads.
+  // Events with a Monday item whose end falls in [fromIso, toIso]; what the ended-event sweep reads.
   listEndedBetween(fromIso: string, toIso: string): Promise<EventRow[]>;
 }
 

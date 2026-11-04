@@ -28,6 +28,8 @@ const config: QuickbooksSyncConfig = {
     customerCreateFieldMap: { name: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
     customerQbIdColumn: 'qb_id_col',
     currency: 'USD',
+    payloadRetentionDays: 30,
+    unresolvedRetentionDays: 90,
   },
 };
 

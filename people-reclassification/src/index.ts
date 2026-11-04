@@ -7,10 +7,10 @@ import { D1Ledger } from './db/ledger';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import { moveOneToPeople, runPass, type PassDeps } from './pass';
-import { decideCron } from './duties';
+import { runDaily } from './daily';
+import { promoteFromWebhook } from './promote';
 import { createApp } from './routes';
 import { checkRequestRateLimit } from './rateLimit';
-import { todayInZone } from './classify';
 import { errorText } from './logSafe';
 import type { Env } from './types';
 
@@ -39,14 +39,18 @@ export default {
         recentRuns: () => deps.ledger.recentRuns(10),
         mode: () => readWriteMode(env, WORKER),
         secret: env.RECLASSIFY_SECRET,
+        promote: (opts) => promoteFromWebhook(deps, opts).catch((err) => console.error(`promote ${opts.runId}: ${errorText(err)}`)),
+        requestLabel: deps.config.promote.requestLabel,
+        webhookSecret: env.PROMOTE_WEBHOOK_SECRET,
+        defer: (work) => ctx.waitUntil(work),
       });
       return app.fetch(request, env, ctx);
     });
   },
 
-  // Daily trigger (wrangler.jsonc); decideCron says whether today owes a pass. The write mode is
-  // read once per run: `on` moves items, `off` plans only (a dry-run pass still records its plan in
-  // the ledger), `hold`/`unknown` skip the run without touching Monday or the ledger.
+  // Daily trigger (wrangler.jsonc). The write mode is read once per run: `on` writes, `off` plans
+  // only (a dry run still records its plan in the ledger), `hold`/`unknown` skip the run without
+  // touching Monday or the ledger. src/daily.ts says what the morning does.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const mode = await readWriteMode(env, WORKER);
     const disposition = runDisposition(mode);
@@ -57,27 +61,6 @@ export default {
       }));
       return;
     }
-    const deps = passDeps(env);
-    const { config } = deps;
-    const live = await deps.monday.getBoardSchema(config.boards.live.boardId);
-    if (live === null) {
-      console.error(`reclassify cron: People board ${config.boards.live.boardId} is not visible — nothing checked`);
-      return;
-    }
-    const decision = decideCron({
-      todayISO: todayInZone(new Date(), config.window.timeZone),
-      liveItemsCount: live.itemsCount, liveItemsLimit: live.itemsLimit ?? config.thresholds.itemsLimit,
-      lastRun: await deps.ledger.lastRun({ passesOnly: true }), config,
-    });
-    if (decision === null) {
-      console.log(`reclassify cron: no pass due (People at ${live.itemsCount}/${live.itemsLimit ?? config.thresholds.itemsLimit})`);
-      return;
-    }
-    try {
-      const result = await runPass(deps, { ...decision, dryRun: disposition === 'dry-run' });
-      if ('skipped' in result) console.log(`reclassify cron: ${result.skipped}`);
-    } catch (err) {
-      console.error(`reclassify cron (${decision.trigger}): ${errorText(err)}`);
-    }
+    await runDaily(passDeps(env), { dryRun: disposition === 'dry-run' });
   },
 };

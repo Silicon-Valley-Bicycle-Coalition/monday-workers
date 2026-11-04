@@ -120,7 +120,7 @@ export interface EventbriteSyncConfig {
     donorLinkColumn: string;
   };
   // The attendee/event feed: Eventbrite events → Events board, attendees → Event Registrations,
-  // and the class follow-up emails (docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md).
+  // and the class email send page (docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
   attendeeSync: {
     // Webhook actions the attendee/event route processes; anything else is acknowledged and ignored.
     actions: string[];
@@ -139,8 +139,8 @@ export interface EventbriteSyncConfig {
       eventStatusColumn: string;
       sourceColumn: string;
       urlColumn: string;
-      classTypeColumn: string;
-      followupsColumn: string;
+      // The Events board link column holding the class's send-page link.
+      sendLinkColumn: string;
     };
     registrations: {
       attendeeIdColumn: string;
@@ -155,19 +155,15 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
-      classTypeColumn: string;
-      followupEmailColumn: string;
+    };
+    // The class email send page. pageUrl is the page's https URL (null until deployed);
+    // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).
+    classEmails: {
+      pageUrl: string | null;
+      sandboxRecipient: string | null;
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;
-    followups: {
-      // Events that ended more than this many days ago are not sent follow-ups.
-      maxAgeDays: number;
-      // Local (America/Los_Angeles) hour at which the daily follow-up sweep sends.
-      sendHourLocal: number;
-      // Monday user notified when follow-ups are Held; null disables the notification.
-      notifyUserId: number | null;
-    };
   };
 }
 
@@ -190,6 +186,10 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   // X-Webhook-Secret header (`wrangler secret put EVENTBRITE_WEBHOOK_SECRET`). The route fails
   // closed (401 on every delivery) until it is set.
   EVENTBRITE_WEBHOOK_SECRET?: string;
+  // Shared secret the class email send page presents in X-Class-Email-Secret (`wrangler secret put
+  // CLASS_EMAIL_SECRET`; the same value goes in the Apps Script's Script Properties). The
+  // /class-emails routes answer 401 to everything while it is unset.
+  CLASS_EMAIL_SECRET?: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }

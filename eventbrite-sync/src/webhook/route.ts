@@ -8,6 +8,9 @@ import { validateAttendeeDelivery } from './validateAttendee';
 import { errorMessage } from '../util/errorMessage';
 import type { WriteQueueMessage } from '../consumer/processBatch';
 import { stampFor, type WriteMode } from '../flags';
+import type { ClassEmailStore } from '../db/classEmails';
+import type { MondayClient } from '../monday/client';
+import { registerClassEmailRoutes } from '../classEmails/routes';
 
 // Header form of the shared secret, for callers that can set one (scripts/backfill-orders.mjs,
 // a hand replay). Eventbrite itself cannot: its webhook form takes only a target URL and the
@@ -53,6 +56,16 @@ export interface AppDeps {
   // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
   // in every mode; under `off` the message is stamped so the consumer dry-runs it.
   writeMode: () => Promise<WriteMode>;
+  // The class email send page's routes (src/classEmails/routes.ts). Optional only so the webhook
+  // tests need not build them; the Worker always passes it, and the routes answer 401 to
+  // everything while `secret` is unset. `mondayClient` is a function so a missing Monday binding
+  // can't break the webhook routes, and it is called only after the secret has passed.
+  classEmails?: {
+    store: ClassEmailStore;
+    mondayClient: () => MondayClient;
+    secret: string | undefined;
+    now?: () => Date;
+  };
 }
 
 // The handler only authenticates, validates, records, and enqueues. The Eventbrite fetch, donor
@@ -142,6 +155,16 @@ export function createApp(deps: AppDeps) {
     markFailed: (d, error) =>
       d.kind === 'event' ? deps.eventStore.updateStatus(d.eventId, 'failed', { error }) : deps.attendeeStore.updateStatus(d.attendeeId, 'failed', { error }),
   });
+
+  if (deps.classEmails) {
+    registerClassEmailRoutes(app, {
+      ...deps.classEmails,
+      eventStore: deps.eventStore,
+      attendeeStore: deps.attendeeStore,
+      config: deps.config,
+      writeMode: deps.writeMode,
+    });
+  }
 
   return app;
 }

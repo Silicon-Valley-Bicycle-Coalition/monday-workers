@@ -7,8 +7,8 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 // boards that have since been rebuilt with new ids.
 //
 // Deliberately out of scope here (left as manual steps — see README "configure" section):
-// * Automations — monday.com has no public create_automation mutation; docs/22 §2.9 itself
-//   already treats the automation description field as UI-only.
+// * Automations — built by hand or through Monday's MCP create_automation tool (verified
+//   2026-11-03, #54), not this CLI; docs/22 §2.9 treats the automation description field as UI-only.
 // * The "Documentation" doc view — no API creates a doc-kind view or writes doc content.
 // * Stripping Monday's stock status labels — docs/22 §2.5 recommends the UI for this itself
 //   ("safer" on a column that may carry data); not scripted here.
@@ -21,7 +21,7 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 
 export interface ColumnSpec {
   title: string;
-  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date';
+  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date' | 'link';
   labels?: string[]; // status/dropdown only, in display order
 }
 
@@ -121,6 +121,24 @@ const DNS_REASON_STATUS_DESC = "Missing means Do Not Solicit is checked with no 
 
 const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', labels: ['OK', 'Missing'] };
 
+// Staff flag a suspected duplicate; David reviews it and runs the merge (monday-migration docs/22
+// §3.1, decided 2026-09-25). Blank means not flagged. Staff set this, so it takes no 🔒 marker.
+const POSSIBLE_DUPLICATE_COLUMN: ColumnSpec = {
+  title: 'Possible Duplicate', type: 'status', labels: ['Possible Duplicate', 'Merged', 'Not a Duplicate'],
+};
+const POSSIBLE_DUPLICATE_DESCRIPTIONS = {
+  'Possible Duplicate': "Set Possible Duplicate if you think this person is in Monday twice, and add an update " +
+    "naming the other record. David is notified, reviews it, and sets Merged or Not a Duplicate. " +
+    "Don't delete either record or copy details between them.",
+} as const;
+// Name order, because records for the same person usually have similar names.
+const POSSIBLE_DUPLICATES_VIEW: ViewSpec = {
+  name: 'Possible duplicates', tag: 'Worklist',
+  columns: ['Possible Duplicate', 'Personal Email', 'Phone', 'City', 'Last Gift Date'],
+  filter: { rules: [{ columnTitle: 'Possible Duplicate', operator: 'any_of', labelValues: ['Possible Duplicate'] }] },
+  sort: [{ columnTitle: 'Name' }],
+};
+
 // Hidden from every working view (spec 2026-09-29 §3.2); still on the board and in Main Table.
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
@@ -157,6 +175,7 @@ const PEOPLE_COLUMNS: ColumnSpec[] = [
   { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
   { title: 'Campaign', type: 'tags' },
   DNS_COLUMN,
+  POSSIBLE_DUPLICATE_COLUMN,
   { title: 'First Name', type: 'text' },
   { title: 'Last Name', type: 'text' },
 ];
@@ -170,6 +189,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -280,6 +300,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
         filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
+      POSSIBLE_DUPLICATES_VIEW,
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -293,6 +314,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -306,6 +328,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           { columnTitle: 'Last Gift Date', operator: 'greater_than', compareValue: ['EXACT', '2019-01-01'] },
           { columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
       ...DNS_VIEWS,
+      POSSIBLE_DUPLICATES_VIEW,
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -359,7 +382,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Status': 'Received, or Received (Historical) for gifts staff filed under Salesforce’s ' +
         'legacy Closed Won stage (Eventbrite ticket orders also arrive as Closed Won, but those ' +
         'are Received with Gift Type Event Ticket). Failed and Pending are real outcomes, not ' +
-        'stages to work.',
+        'stages to work. Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
+        'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grants, Contracts…',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
@@ -488,7 +512,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       '(public, volunteering, bike parking, group rides, private). One item per event; who came ' +
       `is on Event Registrations. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Events',
+    // Written per Public event by eventbrite-sync once the send page is deployed.
+    columns: [{ title: 'Send class email', type: 'link' }],
     columnDescriptions: {
+      'Send class email': 'Opens the page that emails everyone registered for this class. Filled in by ' +
+        'the Eventbrite integration for Public classes.',
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
@@ -523,7 +551,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columnDescriptions: {
       'Class Date': "The event's start date, from Eventbrite. Blank on registrations from before the Eventbrite integration.",
       'Attendee': "The registrant's People item, when they're a known person. Blank for " +
-        'Eventbrite registrants who never became contacts; Attendee Name / Email keep what the platform had.',
+        'Eventbrite registrants who never became contacts and for rows from the yearly Funraise ' +
+        'import until someone links them; Attendee Name / Email keep what the platform had.',
       'Attendance': 'Registered, Attended, Canceled. No Show is never set by the import — staff ' +
         'set it after an event that took check-in.',
       'Role': 'Volunteer when the event ran on the volunteering organizer account, else Participant.',
@@ -544,7 +573,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role'],
         filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
       { name: 'Unlinked attendees', tag: 'Worklist', columns: ['Attendee Name', 'Attendee Email', 'Event'],
-        filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite'] }] } },
+        filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite', 'Funraise'] }] } },
       { name: 'Needs review', tag: 'Worklist', columns: ['Attendee', 'Event', 'Attribution'],
         filter: { rules: [{ columnTitle: 'Attribution', operator: 'any_of', labelValues: ['Needs review'] }] } },
     ],

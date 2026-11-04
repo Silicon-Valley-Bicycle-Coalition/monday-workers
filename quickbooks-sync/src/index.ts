@@ -7,6 +7,7 @@ import { processDeadLetters } from './consumer/processDeadLetters';
 import { D1MapStore } from './db/map';
 import { D1MondayEventStore } from './db/mondayEvents';
 import { D1QbEventStore } from './db/qbEvents';
+import { purgeExpiredEventData } from './db/retention';
 import { createConfigSelector, environmentOf } from './environment';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
@@ -76,7 +77,7 @@ export default {
           qbEventStore: new D1QbEventStore(env.DB),
           queue,
           verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
-          connectedRealmId: async () => (await new D1TokenStore(env.DB).getTokens())?.realmId ?? null,
+          connectedRealmId: () => new D1TokenStore(env.DB, env.QB_TOKEN_ENCRYPTION_KEY).getRealmId(),
           writeMode: () => readWriteMode(env, WORKER),
         })
       );
@@ -114,12 +115,27 @@ export default {
       mapStore: new D1MapStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       quickBooksClient: new HttpQuickBooksClient(
-        new D1TokenStore(env.DB),
+        new D1TokenStore(env.DB, env.QB_TOKEN_ENCRYPTION_KEY),
         env.QB_CLIENT_ID,
         env.QB_CLIENT_SECRET,
         config.quickbooks.apiBaseUrl
       ),
       config,
     }, gate);
+  },
+
+  // Daily PII retention pass (src/db/retention.ts). D1 only, with no Monday or QuickBooks write, so
+  // the write switch does not gate it. Same shape as benevity-import's scheduled handler.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const { payloadRetentionDays, unresolvedRetentionDays } = configFor(env).quickbooksSync;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const writtenBefore = new Date(Date.now() - payloadRetentionDays * dayMs).toISOString();
+    const unresolvedBefore = new Date(Date.now() - unresolvedRetentionDays * dayMs).toISOString();
+    const purged = await purgeExpiredEventData(env.DB, { writtenBefore, unresolvedBefore });
+    if (purged.written > 0 || purged.unresolved > 0) {
+      console.log(
+        `quickbooks-sync scheduled: purged ${purged.written} written (older than ${writtenBefore}) and ${purged.unresolved} unresolved (older than ${unresolvedBefore}) event rows`
+      );
+    }
   },
 };

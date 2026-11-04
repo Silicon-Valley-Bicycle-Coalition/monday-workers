@@ -10,6 +10,7 @@ const BOARD_KEYS = ['activities-logged', 'people-live', 'people-historical', 'af
 const ACTIVITY_STRING_KEYS = [
   'activityTypeColumn',
   'activityTypeLabel',
+  'bulkActivityTypeLabel',
   'dateColumn',
   'statusColumn',
   'doneLabel',
@@ -88,6 +89,9 @@ export function validateConfig(raw: unknown): EmailLogConfig {
   }
   if (!isStringArray(mail.staffSenders)) {
     throw new Error('config: "mail.staffSenders" must be an array of addresses ([] allows the whole staff domain)');
+  }
+  if (!isStringArray(mail.bulkSenders)) {
+    throw new Error('config: "mail.bulkSenders" must be an array of addresses');
   }
   // Staff means exact domain equality, so a logging subdomain (log.example.org) is fine, but the
   // logging address on a staff domain itself would make the Worker treat its own address as staff.

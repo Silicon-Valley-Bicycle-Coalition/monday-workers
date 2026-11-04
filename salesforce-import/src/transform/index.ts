@@ -14,9 +14,9 @@ import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './m
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
   rosterContactIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
-import { donationArchivePlan, shouldArchive } from './schedule.js';
-import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
-  eventbriteOrderIdsByOpportunity, foldFeeCoverage } from './donations.js';
+import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
+import { opportunityToPayload, cnpGiftDay, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
+  eventbriteOrderIdsByOpportunity, foldFeeCoverage, LOST } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
   registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload,
@@ -111,7 +111,7 @@ export async function runTransform(args: string[]): Promise<number> {
     ?? personNamed.get(t['CnP_PaaS__Account__c'] as string) ?? null;
   const cnpDonorIds = new Set(cnpUnique.map(cnpDonorOf).filter((x): x is string => !!x));
   const cnpRecentDonorIds = new Set(cnpUnique
-    .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
+    .filter((t) => cnpGiftDay(t) >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
   // Event registrants from both platforms feed People inclusion: a Funraise registration (a paid
@@ -382,6 +382,7 @@ export async function runTransform(args: string[]): Promise<number> {
       're-run extract before a real load, or eventbrite-sync will duplicate migrated ticket gifts');
   }
   const ebOrders = eventbriteOrderIdsByOpportunity(ordersExist ? await load('eb4sf_orders') : []);
+  const staleBeforeFY = archiveCutoffFY(cfg.cutoverDateISO, cfg.donationsActiveFiscalYears);
   for (const o of opportunities) {
     if (!o['npsp__Primary_Contact__c'] && !o['funraise__fr_Donor__c']) {
       notePersonAccountGift(o['AccountId'] as string | null, o['Id'], o['Amount'], o['CloseDate']);
@@ -389,8 +390,12 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias, orgAccountIds, placeholderDonorSfIds, personAccountIds,
       actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
       eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName,
-      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null }));
+      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null, staleBeforeFY }));
   }
+  const lostCount = payloads.filter((p) => p.board === 'donations'
+    && (p.columns['Status'] as { label?: string } | undefined)?.label === LOST).length;
+  warnings.push(`donations: ${lostCount} gifts Lost — pipeline pitches closed lost or withdrawn, and open ` +
+    `stages dated before FY${staleBeforeFY} (docs/32)`);
   if (ebOrders.multiOrderOpportunities > 0) {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
       'each keeps the lowest order id, so eventbrite-sync creates a separate item for the others');
@@ -398,7 +403,7 @@ export async function runTransform(args: string[]): Promise<number> {
   for (const t of rollups.cnpUnique) {
     if (!t['CnP_PaaS__Contact__c']) {
       notePersonAccountGift(t['CnP_PaaS__Account__c'] as string | null, t['Id'], t['CnP_PaaS__TotalCharged__c'],
-        t['CnP_PaaS__TransactionDate__c']);
+        cnpGiftDay(t));
     }
     payloads.push(cnpToPayload(t, donorAlias, personAccountIds));
   }
@@ -416,7 +421,7 @@ export async function runTransform(args: string[]): Promise<number> {
   const ebEventById = new Map(ebEvents.map((e) => [e['Id'] as string, e]));
   const ebEventsWithAttendees = new Set(ebAttendees.map((a) => a['eb4sf__Eventbrite_Event__c'] as string));
   for (const e of ebEvents) {
-    const p = eventbriteEventToPayload(e, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
+    const p = eventbriteEventToPayload(e, cfg.cutoverDateISO, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
     if (p) payloads.push(p);
   }
   for (const a of ebAttendees) {

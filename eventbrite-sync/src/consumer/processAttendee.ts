@@ -11,7 +11,7 @@ import { linkedItemId } from '../util/itemId';
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
 // item. Attendance is the one column staff also edit, so it is read back from Monday and merged:
-// the Worker only moves Registered forward and never downgrades what staff or the follow-up job set.
+// the Worker only moves Registered forward and never downgrades what staff or a class email's No Show set.
 export async function processAttendee(message: AttendeeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
   const { eventStore, attendeeStore, queue, eventbriteClient, mondayClient, config } = deps;
   const { eventId, attendeeId } = message;
@@ -97,7 +97,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   }
 
   const attendance = mergeAttendance(currentAttendance, attendanceFromEventbrite(attendee));
-  const mapping = mapAttendee(attendee, mapEvent(event, config), config, attendance);
+  const mapping = mapAttendee(attendee, mapEvent(event, config, new Date()), config, attendance);
   const columnValues = { ...mapping.columnValues, [cols.eventLinkColumn]: { item_ids: [linkedItemId(eventRow.mondayItemId)] } };
 
   // People only once they have actually attended (spec decision D). Cached on the ledger so retries

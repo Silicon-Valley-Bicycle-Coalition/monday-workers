@@ -4,12 +4,15 @@
 // JSON block of every column id:
 //   Donations: Match Status, DTD Status (raw), Match Company, Matches gift, Match pairing, Sent to DTD
 //   People:    DTD Company ID, DTD Company, DTD match link
+//   People (Historical): the same three, same titles and types. dtd-sync never writes them there, and
+//     the printed block omits their ids; people-reclassification moves nobody while a value-bearing
+//     column is on only one of the two boards.
 //   Board "Matching Gift Program" (program summary) in the given workspace
 //   Donations table view "Matching gifts to follow up" (Match Status = Waiting for donor, newest first)
 // Run once per environment, then paste the output into config/sandbox.json or config/svbc.json.
 //
 // Usage:
-//   MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id>
+//   MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --people-historical <id> --workspace <id>
 //     [--config dtd-sync/config/sandbox.json]   # statusLabels / programSummary keys come from here
 
 import { readFileSync } from 'node:fs';
@@ -105,6 +108,30 @@ export function planColumns(specs, existingColumns) {
   return { have, missing };
 }
 
+// Specs whose title is already on the board with another type. planColumns would call that column
+// done, but people-reclassification pairs columns by title and type, so it would still block moves.
+export function typeConflicts(specs, existingColumns) {
+  const byTitle = indexByTitle(existingColumns);
+  return specs.flatMap((spec) => {
+    const hit = byTitle.get(spec.title);
+    return hit && hit.type !== spec.type ? [{ title: spec.title, expected: spec.type, actual: hit.type }] : [];
+  });
+}
+
+// Puts the People columns on both People boards, checking both before creating anything, and
+// returns the People ids only: those are the ones config needs.
+export async function ensurePeopleColumns(args, { readBoard, ensureColumns }) {
+  const people = await readBoard(args.people);
+  const historical = await readBoard(args['people-historical']);
+  for (const board of [people, historical]) {
+    const [conflict] = typeConflicts(PEOPLE_COLUMN_SPECS, board.columns);
+    if (conflict) throw new Error(`setup-columns: ${board.name}: "${conflict.title}" is ${conflict.actual}, needs ${conflict.expected}; fix it by hand and re-run`);
+  }
+  const ids = await ensureColumns(people, PEOPLE_COLUMN_SPECS);
+  await ensureColumns(historical, PEOPLE_COLUMN_SPECS);
+  return ids;
+}
+
 export function createColumnDefaults(spec, donationsBoardId) {
   if (spec.type === 'status') return statusDefaults(spec.labels);
   if (spec.boardRelation) return JSON.stringify({ boardIds: [Number(donationsBoardId)] });
@@ -131,9 +158,10 @@ export function parseArgs(argv) {
     if (!flag?.startsWith('--') || value === undefined || value.startsWith('--')) throw new Error(`setup-columns: ${flag} needs a value`);
     out[flag.slice(2)] = value;
   }
-  for (const k of ['donations', 'people', 'workspace']) {
+  for (const k of ['donations', 'people', 'people-historical', 'workspace']) {
     if (!/^\d+$/.test(out[k] ?? '')) throw new Error(`setup-columns: --${k} <numeric id> is required`);
   }
+  if (out.people === out['people-historical']) throw new Error('setup-columns: --people and --people-historical must be different boards');
   return out;
 }
 
@@ -175,8 +203,7 @@ async function main() {
 
   const donationsBoard = await readBoard(args.donations);
   const donations = await ensureColumns(donationsBoard, donationColumnSpecs(config.statusLabels));
-  const peopleBoard = await readBoard(args.people);
-  const people = await ensureColumns(peopleBoard, PEOPLE_COLUMN_SPECS);
+  const people = await ensurePeopleColumns(args, { readBoard, ensureColumns });
 
   // Program summary board, found by name inside the workspace.
   const inWorkspace = await graphql('query ($ws: [ID!]) { boards(workspace_ids: $ws, limit: 100) { id name } }', { ws: [args.workspace] });

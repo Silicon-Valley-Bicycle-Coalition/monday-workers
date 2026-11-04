@@ -123,11 +123,17 @@ For each row:
 | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
 | `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
 | `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
-| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` |
+| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET`, `CLASS_EMAIL_SECRET` (header `X-Class-Email-Secret` from the class email send page; not a webhook secret, never in a URL) |
 
 Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
 password manager before `wrangler secret put` — the same value goes into the registration URL
 below, and a lost copy means re-setting the secret and re-registering the webhook.
+
+**The password manager is Google Passwords**, in the deploying operator's
+`@bikesiliconvalley.org` account: the only approved store, per SVBC's Information Technology and
+Cyber Security protocols. Worker secrets, webhook secrets (and the registration URLs that contain
+them) and Monday integration-user credentials **never** go in the shared Box note, a Box file,
+email or chat. Forks: substitute your own password manager.
 
 **Webhook registration URLs.** Register each after its Worker's production deploy, in that
 Worker's Phase 3/4 step; `<SECRET>` is the value set above. The secret is part of the URL, so
@@ -141,7 +147,7 @@ Worker's first deploy) except `member-portal`, which is
 |---|---|---|
 | `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, !214):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
-| `mailchimp-sync` | Monday webhook on the Donors board | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
+| `mailchimp-sync` | Monday webhook on the Donors board and on People (Historical) (`18437909784`), same URL | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
 | `benevity-import` | Monday webhook `change_specific_column_value` on the Uploads file column | `<host>/webhooks/monday/benevity-upload?secret=<SECRET>` |
 | `benevity-import` | Monday webhook on the worklist Retry status column (needs `uploadsBoard.retry` provisioned; until then the route ignores every event) | `<host>/webhooks/monday/benevity-retry?secret=<SECRET>` |
@@ -338,7 +344,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       automation. Verify with its Phase 5 (login round-trip, enumeration guard, feature gates,
       rate limits).
 - [ ] **4. `mailchimp-sync`** — Campaigns board + connect/State columns; Monday webhook
-      `/webhooks/monday/donors?secret=`; Mailchimp audience webhook
+      `/webhooks/monday/donors?secret=` on People and on People (Historical); Mailchimp audience webhook
       `/webhooks/mailchimp/audience?secret=` with the **API source unchecked**. No documented
       verification yet — at minimum, change one Donor's email and confirm the audience member
       updates (and that no member is *created*).

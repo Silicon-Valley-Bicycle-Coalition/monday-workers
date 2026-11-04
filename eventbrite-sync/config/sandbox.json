@@ -40,6 +40,8 @@
       "attendee.updated",
       "attendee.checked_in",
       "attendee.checked_out",
+      "barcode.checked_in",
+      "barcode.un_checked_in",
       "event.created",
       "event.published",
       "event.updated",
@@ -60,8 +62,7 @@
       "eventStatusColumn": "color_mm79dkmj",
       "sourceColumn": "color_mm799v1e",
       "urlColumn": "link_mm79b6kx",
-      "classTypeColumn": "color_mm8ht1y6",
-      "followupsColumn": "color_mm8gfb93"
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm79bmyb",
@@ -75,15 +76,12 @@
       "attendeeLinkColumn": "board_relation_mm794v4j",
       "classDateColumn": "date_mm8gggwd",
       "classDayColumn": "text_mm8gkw96",
-      "classLocationColumn": "text_mm8gmxsr",
-      "classTypeColumn": "text_mm8gvjfd",
-      "followupEmailColumn": "color_mm8hvdrz"
+      "classLocationColumn": "text_mm8gmxsr"
     },
-    "peopleEmailColumn": "email_mm79m5qa",
-    "followups": {
-      "maxAgeDays": 3,
-      "sendHourLocal": 8,
-      "notifyUserId": 74336833
-    }
+    "classEmails": {
+      "pageUrl": null,
+      "sandboxRecipient": "sandbox@bikesiliconvalley.org"
+    },
+    "peopleEmailColumn": "email_mm79m5qa"
   }
 }

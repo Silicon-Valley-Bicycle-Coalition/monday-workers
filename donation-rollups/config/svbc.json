@@ -258,11 +258,7 @@
       "yearBasis": "calendar",
       "windowYears": 7,
       "pipelineBoards": {
-        "18391037433": "BTWD",
-        "18390869107": "Advocacy Summit",
-        "18390883634": "Fundraising Ride",
-        "18391037577": "Misc.",
-        "18423176514": "Annual Gala"
+        "18391037433": ""
       }
     }
   },
@@ -270,7 +266,7 @@
     "activeFiscalYears": 2,
     "workspaceId": 18201685,
     "capacityAlertPct": 80,
-    "alertItemId": null,
+    "alertItemId": 13460707947,
     "annualSummaryBoardId": 18438022323,
     "annualSummaryColumns": {
       "fiscalYear": "text_mm8pkjav",

@@ -40,6 +40,8 @@
       "attendee.updated",
       "attendee.checked_in",
       "attendee.checked_out",
+      "barcode.checked_in",
+      "barcode.un_checked_in",
       "event.created",
       "event.published",
       "event.updated",
@@ -60,8 +62,7 @@
       "eventStatusColumn": "color_mm8n8y5v",
       "sourceColumn": "color_mm8nbh4t",
       "urlColumn": "link_mm8njbkh",
-      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
-      "followupsColumn": "REPLACE_WITH_COLUMN_ID"
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8ng6d5",
@@ -75,15 +76,12 @@
       "attendeeLinkColumn": "board_relation_mm8nbcw7",
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
-      "classLocationColumn": "text_mm8rpb9h",
-      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
-      "followupEmailColumn": "REPLACE_WITH_COLUMN_ID"
+      "classLocationColumn": "text_mm8rpb9h"
     },
-    "peopleEmailColumn": "email_mm8nx6qg",
-    "followups": {
-      "maxAgeDays": 3,
-      "sendHourLocal": 8,
-      "notifyUserId": null
-    }
+    "classEmails": {
+      "pageUrl": null,
+      "sandboxRecipient": null
+    },
+    "peopleEmailColumn": "email_mm8nx6qg"
   }
 }

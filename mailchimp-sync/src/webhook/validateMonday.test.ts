@@ -4,21 +4,21 @@ import { validateMondayWebhookBody } from './validateMonday';
 describe('validateMondayWebhookBody', () => {
   it('extracts the donor item id from a valid event', () => {
     expect(validateMondayWebhookBody({ event: { type: 'update_column_value', pulseId: 555, boardId: 123 } }))
-      .toEqual({ donorItemId: '555', columnId: undefined });
+      .toMatchObject({ donorItemId: '555', columnId: undefined, boardId: 123 });
   });
 
   it('accepts a numeric or string pulseId', () => {
-    expect(validateMondayWebhookBody({ event: { pulseId: '555' } })).toEqual({ donorItemId: '555', columnId: undefined });
+    expect(validateMondayWebhookBody({ event: { pulseId: '555' } })).toEqual({ donorItemId: '555', columnId: undefined, boardId: undefined });
   });
 
   it('extracts columnId when present on a column-change event', () => {
     expect(validateMondayWebhookBody({ event: { type: 'update_column_value', pulseId: 555, boardId: 123, columnId: 'mc' } }))
-      .toEqual({ donorItemId: '555', columnId: 'mc' });
+      .toMatchObject({ donorItemId: '555', columnId: 'mc', boardId: 123 });
   });
 
   it('leaves columnId undefined for a create_pulse event (no columnId at all)', () => {
     expect(validateMondayWebhookBody({ event: { type: 'create_pulse', pulseId: 555, boardId: 123 } }))
-      .toEqual({ donorItemId: '555', columnId: undefined });
+      .toMatchObject({ donorItemId: '555', columnId: undefined, boardId: 123 });
   });
 
   it('extracts the previous address from an email column change', () => {

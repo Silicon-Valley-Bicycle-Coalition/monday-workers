@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, pacificDate, salesforceDebug } from './fields.js';
 import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 
 // Closed Won is a distinct label, not plain "Received", on purpose: it's the same
@@ -21,6 +21,27 @@ const PENDING_STAGES = new Set(['Prospecting', 'Pledged', 'Invoiced', 'Not Poste
 
 export const donationStatus = (stage: unknown): string =>
   typeof stage === 'string' && Object.hasOwn(STATUS, stage) ? STATUS[stage]! : 'Pending';
+
+// Lost (decided 2026-10-26, monday-migration docs/32 decisions 5 and 6): a pitch that didn't
+// land, not a payment that failed. Staff ran these record types as a sales / grants pipeline —
+// opened as prospects, mostly closed lost (2,385 Sponsorship alone) — so their Closed Lost and
+// Withdrawn are Lost, keeping Failed for declined donations. And any gift still at an open stage
+// with a close date before the oldest fiscal year kept active on the board (~620, $4.2M: dead
+// prospects nobody will work after cutover) is Lost rather than Pending forever. Lost counts
+// toward nothing and stays out of the "Failed and pending" worklist.
+export const LOST = 'Lost';
+const PIPELINE_TYPES = new Set(['Sponsorship', 'Grants', 'Contracts', 'Membership',
+  'In Kind Donation / Sponsorship', 'Commute Workshop', 'Driver Training']);
+
+export function giftStatus(o: Record<string, unknown>, staleBeforeFY?: number | null): string {
+  const status = donationStatus(o['StageName']);
+  if (status === 'Failed' && PIPELINE_TYPES.has(giftType(o))) return LOST;
+  if (status === 'Pending' && staleBeforeFY != null) {
+    // fiscalYear() is '' for an undated gift → 0, which counts as stale like the archive does.
+    if (Number(fiscalYear(o['CloseDate'] as string | null)) < staleBeforeFY) return LOST;
+  }
+  return status;
+}
 
 // Gift Type for an Eventbrite paid ticket order. Same label funraise-sync writes for its paid
 // events (`eventGiftTypeValue` in ../../funraise-sync/config/svbc.json) — keep them identical,
@@ -182,6 +203,9 @@ export interface OpportunityDeps extends DonorResolution {
   eventbriteIntegrationUserName?: string | null;
   // See eventbriteOrderIdsByOpportunity.
   eventbriteOrderId?: string | null;
+  // First fiscal year kept active on the board (archiveCutoffFY); older open gifts are Lost.
+  // Omit (or null) to leave every open gift Pending.
+  staleBeforeFY?: number | null;
 }
 
 export const giftType = (o: Record<string, unknown>): string =>
@@ -232,7 +256,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Date': dateCol(o['CloseDate'] as string),
       'Fiscal Year Ending': fiscalYear(o['CloseDate'] as string | null),
       'Salesforce Owner': ownerAttribution(o['Owner']),
-      'Status': { label: ticketOrder ? 'Received' : donationStatus(o['StageName']) },
+      'Status': { label: ticketOrder ? 'Received' : giftStatus(o, deps.staleBeforeFY) },
       'Gift Type': type,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId || unresolvedPerson ? null : { checked: 'true' },
@@ -271,18 +295,25 @@ export function cnpOverlapCheck(
   return { duplicateTransactionIds, unique };
 }
 
+// TransactionDate is a true datetime, unlike CloseDate. Its Pacific day is the gift date: it's what
+// Salesforce displays, and the CloseDate on all 929 of the paired Opportunities whose UTC and Pacific
+// days differ (2026-11-03).
+export const cnpGiftDay = (tx: Record<string, unknown>): string =>
+  pacificDate(tx['CnP_PaaS__TransactionDate__c'] as string | null);
+
 export function cnpToPayload(tx: Record<string, unknown>, donorAlias?: Map<string, string>,
   personAccountIds?: ReadonlySet<string>): ItemPayload {
   const resolved = resolveDonor(tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c'], donorAlias);
   const donorId = resolved && !personAccountIds?.has(resolved) ? resolved : null;
+  const day = cnpGiftDay(tx);
   return {
     board: 'donations',
     sfId: tx['Id'] as string,
     name: (tx['Name'] as string) ?? '(C&P transaction)',
     columns: {
       'Amount': tx['CnP_PaaS__TotalCharged__c'] != null ? String(tx['CnP_PaaS__TotalCharged__c']) : '',
-      'Date': dateCol(tx['CnP_PaaS__TransactionDate__c'] as string),
-      'Fiscal Year Ending': fiscalYear(tx['CnP_PaaS__TransactionDate__c'] as string | null),
+      'Date': dateCol(day),
+      'Fiscal Year Ending': fiscalYear(day),
       'Status': { label: 'Received' },
       'Gift Type': 'Click & Pledge (historical)',
       ...salesforceDebug(tx),

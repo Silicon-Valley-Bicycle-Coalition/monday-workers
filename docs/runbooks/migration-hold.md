@@ -138,9 +138,10 @@ node scripts/flags.mjs status --env production
   Worker to `off` instead of `on`) stays stranded as `queued` until a staff re-click.
 - `report-digests` skips each hour's digests under `hold` and does not catch up: after the flip,
   resend any digest that fell due with `POST /digests/run?key=<key>&date=<day it was due>`.
-- `eventbrite-sync` skips its hourly class follow-ups and its daily missed-order check under
-  `hold`. A class that ended more than `followups.maxAgeDays` (3) days before the flip gets no
-  follow-ups; the missed-order check looks back only 26 h, so compare the held days by hand
+- `eventbrite-sync` skips its daily missed-order check under `hold`, and the class email send page
+  can't claim or release. A send already running still records its result in D1, but its update, No
+  Show and People link writes are skipped and not replayed, so check that class's Attendance after
+  the flip. The missed-order check looks back only 26 h, so compare the held days by hand
   (`scripts/backfill-orders.mjs --dry-run` per event).
 - Queue retries: 1 minute doubling to 1 hour, `max_retries: 100` (about 4 days) before the DLQ;
   hinted waits (Retry-After, midnight daily limit) up to 12 h. A held message that keeps failing on

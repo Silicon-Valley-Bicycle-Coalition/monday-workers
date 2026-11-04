@@ -1,3 +1,5 @@
+import { TokenCipher } from './tokenCipher';
+
 export interface QbTokens {
   realmId: string;
   accessToken: string;
@@ -35,9 +37,30 @@ interface D1TokenRecord {
 }
 
 export class D1TokenStore implements TokenStore {
-  constructor(private db: D1Database) {}
+  private cipher: Promise<TokenCipher> | null = null;
 
+  constructor(
+    private db: D1Database,
+    private encryptionKey: string | undefined
+  ) {}
+
+  private loadCipher(): Promise<TokenCipher> {
+    this.cipher ??= TokenCipher.load(this.encryptionKey);
+    return this.cipher;
+  }
+
+  // Needs no key, so the webhook route can check the connected company without ever holding a
+  // decrypted token.
+  async getRealmId(): Promise<string | null> {
+    const record = await this.db.prepare('SELECT realm_id FROM qb_oauth_tokens WHERE id = 1').first<{ realm_id: string }>();
+    return record?.realm_id ?? null;
+  }
+
+  // Loads the key before anything else, even for a row that is still plaintext. Every refresh starts
+  // here, and it must fail now rather than at the save: by then Intuit may have rotated the refresh
+  // token, and a pair that can't be saved is lost.
   async getTokens(): Promise<StoredQbTokens | null> {
+    const cipher = await this.loadCipher();
     const record = await this.db
       .prepare(
         'SELECT realm_id, access_token, refresh_token, access_token_expires_at, version FROM qb_oauth_tokens WHERE id = 1'
@@ -46,14 +69,17 @@ export class D1TokenStore implements TokenStore {
     if (record === null) return null;
     return {
       realmId: record.realm_id,
-      accessToken: record.access_token,
-      refreshToken: record.refresh_token,
+      accessToken: await cipher.decrypt(record.access_token, 'access_token'),
+      refreshToken: await cipher.decrypt(record.refresh_token, 'refresh_token'),
       accessTokenExpiresAt: record.access_token_expires_at,
       version: record.version,
     };
   }
 
   async saveTokens(tokens: QbTokens): Promise<void> {
+    const cipher = await this.loadCipher();
+    const accessToken = await cipher.encrypt(tokens.accessToken, 'access_token');
+    const refreshToken = await cipher.encrypt(tokens.refreshToken, 'refresh_token');
     await this.db
       .prepare(
         `INSERT INTO qb_oauth_tokens (id, realm_id, access_token, refresh_token, access_token_expires_at, updated_at, version)
@@ -68,7 +94,7 @@ export class D1TokenStore implements TokenStore {
            refresh_lease_token = NULL,
            refresh_lease_until = NULL`
       )
-      .bind(tokens.realmId, tokens.accessToken, tokens.refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString())
+      .bind(tokens.realmId, accessToken, refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString())
       .run();
   }
 
@@ -85,6 +111,9 @@ export class D1TokenStore implements TokenStore {
   }
 
   async saveRefreshedTokens(tokens: QbTokens, expectedVersion: number, leaseToken: string): Promise<boolean> {
+    const cipher = await this.loadCipher();
+    const accessToken = await cipher.encrypt(tokens.accessToken, 'access_token');
+    const refreshToken = await cipher.encrypt(tokens.refreshToken, 'refresh_token');
     const result = await this.db
       .prepare(
         `UPDATE qb_oauth_tokens SET
@@ -97,7 +126,7 @@ export class D1TokenStore implements TokenStore {
            refresh_lease_until = NULL
          WHERE id = 1 AND version = ?5 AND refresh_lease_token = ?6`
       )
-      .bind(tokens.accessToken, tokens.refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString(), expectedVersion, leaseToken)
+      .bind(accessToken, refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString(), expectedVersion, leaseToken)
       .run();
     return result.meta.changes === 1;
   }

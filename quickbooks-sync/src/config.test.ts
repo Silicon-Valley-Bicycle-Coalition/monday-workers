@@ -21,6 +21,8 @@ const validConfig = {
     customerCreateFieldMap: { text_col: 'DisplayName' },
     customerQbIdColumn: null,
     currency: 'USD',
+    payloadRetentionDays: 30,
+    unresolvedRetentionDays: 90,
   },
 };
 
@@ -35,6 +37,13 @@ describe('validateConfig', () => {
     for (const bad of ['', 42, undefined]) {
       const broken = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, customerQbIdColumn: bad } };
       expect(() => validateConfig(broken), String(bad)).toThrow(/customerQbIdColumn/);
+    }
+  });
+
+  it.each(['payloadRetentionDays', 'unresolvedRetentionDays'])('requires %s to be a positive number of days', (key) => {
+    for (const bad of [0, -1, '30', null, undefined]) {
+      const broken = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, [key]: bad } };
+      expect(() => validateConfig(broken), String(bad)).toThrow(new RegExp(key));
     }
   });
 

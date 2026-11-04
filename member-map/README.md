@@ -8,10 +8,10 @@ their exact address, each linking to their Monday item. Design:
 It is for staff choosing places for membership drives, events and group rides. It is not public and
 not for members. It reads Monday and **never writes it**.
 
-Status: **sandbox deployed 2026-11-03** on `map.sandbox.bikesiliconvalley.org`, behind the
-"SVBC Member Map (sandbox)" Access application. Production is not deployed: it needs board ids in
-`config/svbc.json`, its own D1, R2 bucket and queue, and its own Access application; see
-[Provisioning](#provisioning).
+Status: **production deployed 2026-11-03** on `map.bikesiliconvalley.org`, behind the "SVBC
+Member Map" Access application (first snapshot taken the same day). The sandbox runs on
+`map.sandbox.bikesiliconvalley.org` behind "SVBC Member Map (sandbox)". Production has no CI
+deploy job: deploy it by hand with `npm run deploy` (see [Provisioning](#provisioning)).
 
 ## What staff see
 
@@ -157,7 +157,8 @@ Then, signed in through Access in a browser on `map.sandbox.bikesiliconvalley.or
 first snapshot with the **Refresh now** button on the page's "No data yet" screen, or with
 `POST /api/refresh` (for example from the browser console:
 `fetch('/api/refresh', { method: 'POST' })`). Without it the page shows no data until the weekly
-cron fires (Mondays). Production needs the real board ids in `config/svbc.json` first.
+cron fires (Mondays). Production's resources exist too (2026-11-03): `svbc-member-map` D1, R2 bucket and the
+`svbc-member-map-refresh` queue.
 
 ## Local development
 

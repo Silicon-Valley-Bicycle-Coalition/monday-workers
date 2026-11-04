@@ -1,5 +1,5 @@
 import { PLACEHOLDER_COLUMN_ID } from '../config';
-import { mapEvent } from '../mapping/event';
+import { effectiveEventStatus, mapEvent } from '../mapping/event';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeQueueMessage, EventQueueMessage, ProcessBatchDeps } from './processBatch';
 import { stampOf } from './messages';
@@ -45,12 +45,16 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     }
   }
 
-  const mapping = mapEvent(event, config);
+  // One moment for the status and written_at: the ended-event sweep reads written_at before ends_at
+  // as "that write can't have been Completed", so a slow Monday write mustn't stamp it past the end.
+  const now = new Date();
+  const mapping = mapEvent(event, config, now);
+  const status = effectiveEventStatus(event);
   const facts = {
     ...(mapping.startsAt !== null && { startsAt: mapping.startsAt }),
     ...(mapping.endsAt !== null && { endsAt: mapping.endsAt }),
     locationKey: mapping.locationKey,
-    ...(event.status != null && { eventbriteStatus: event.status }),
+    ...(status != null && { eventbriteStatus: status }),
   };
 
   if (mondayItemId !== null) {
@@ -89,5 +93,5 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     await sendInBatches(queue, fanOut);
   }
 
-  await eventStore.updateStatus(eventId, 'written', { ...facts, mondayItemId, writtenAt: new Date().toISOString() });
+  await eventStore.updateStatus(eventId, 'written', { ...facts, mondayItemId, writtenAt: now.toISOString() });
 }
