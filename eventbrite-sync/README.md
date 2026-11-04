@@ -367,7 +367,8 @@ in the 2026-11-02 Salesforce org, every one over), so a replay would otherwise w
 over a corrected row. Canceled and Draft stay as they are.
 
 Whether Eventbrite sends `event.updated` when an event ends is unconfirmed: we found nothing in its
-docs that says so, and no ledger yet has an event that ended with the webhook registered. So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
+docs that says so, and the sandbox ledger has no event that ended with the webhook registered (the
+production ledger hasn't been checked). So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
 in the last 30 days that ended, was last seen `live` or `started`, is `written`, and whose
 `written_at` is before its `ends_at`. The ordinary event consumer then fetches it and writes it, so a
 class canceled or moved since is written as that, and failures get the usual retries and DLQ. The
