@@ -34,6 +34,9 @@ export interface DonorRecord {
   householdEmail: string;
   doNotSolicit: boolean;
   dontList: boolean;
+  // People's or Organizations' Address; '' when blank or not read (spec §11).
+  mailingAddress: string;
+  doNotMail: boolean;
 }
 
 export interface RollCallRow {
@@ -48,9 +51,37 @@ export interface RollCallRow {
   personIds: string[];
   organizationId: string | null;
   reviewNote: string;
+  mailingAddress: string;
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+// A street or PO Box number, then a US ZIP at the end. Salesforce records can hold a city alone,
+// so a filled-in cell isn't necessarily one a letter can reach. Addresses abroad get the note too.
+function looksComplete(address: string): boolean {
+  const zip = /\b\d{5}(?:-\d{4})?$/.exec(address);
+  return zip !== null && /\d/.test(address.slice(0, zip.index));
+}
+
+// One row's address and its notes (spec §11). Do Not Mail on any member blanks the row's address,
+// so an export can't mail a shared home someone there opted out of.
+function mailingFor(members: { name: string; mailingAddress: string; doNotMail: boolean }[]): { address: string; notes: string[] } {
+  const optedOut = members.filter((m) => m.doNotMail).map((m) => oneLine(m.name));
+  if (optedOut.length) return { address: '', notes: [`Do Not Mail is checked on ${optedOut.join(', ')}, so the mailing address is left blank`] };
+  // Keyed without case or punctuation: "12 Oak St." and "12 OAK ST" are one address.
+  const distinct = new Map<string, string>();
+  for (const m of members) {
+    const address = oneLine(m.mailingAddress);
+    const key = address.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    if (key && !distinct.has(key)) distinct.set(key, address);
+  }
+  const addresses = [...distinct.values()];
+  const address = addresses[0] ?? '';
+  const notes: string[] = [];
+  if (addresses.length > 1) notes.push(`members' mailing addresses differ: ${addresses.join(' / ')}`);
+  if (address && !looksComplete(address)) notes.push('mailing address looks incomplete (no street number or ZIP)');
+  return { address, notes };
+}
 
 // Item ids in numeric order (Monday ids are digit strings), so a row's name, members and notes
 // don't depend on the order People was paged or the gifts were read.
@@ -118,7 +149,7 @@ export function buildRollCall(
   for (const [key, group] of groups) {
     const base = { key, fiscalYear: group.fiscalYear, tier: tierFor(group.totalCents), totalCents: group.totalCents, gifts: group.gifts };
     if (group.ids.size === 0) {
-      rows.push({ ...base, name: 'Anonymous', type: 'Anonymous', listed: 'Listed', personIds: [], organizationId: null, reviewNote: '' });
+      rows.push({ ...base, name: 'Anonymous', type: 'Anonymous', listed: 'Listed', personIds: [], organizationId: null, reviewNote: '', mailingAddress: '' });
       continue;
     }
     const ids = sortedIds(group.ids);
@@ -149,6 +180,8 @@ export function buildRollCall(
       const names = [...sharing].map((k) => sortedIds(groups.get(k)!.ids).map((id) => oneLine(donors.get(id)!.name)).join(' & ')).sort();
       notes.push(`shares a Household Email with ${names.join(', ')} — same household?`);
     }
+    const mailing = mailingFor(members);
+    notes.push(...mailing.notes);
     const isOrg = type === 'Organization';
     rows.push({
       ...base, name, type,
@@ -158,6 +191,7 @@ export function buildRollCall(
       personIds: isOrg ? [] : ids,
       organizationId: isOrg ? ids[0]! : null,
       reviewNote: notes.join('; '),
+      mailingAddress: mailing.address,
     });
   }
   rows.sort((a, b) => b.fiscalYear - a.fiscalYear || b.totalCents - a.totalCents || a.name.localeCompare(b.name));

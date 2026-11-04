@@ -7,8 +7,8 @@
 Every night, copy every board, item, comment thread, and doc in the workspace into a dated folder
 on SVBC's Google Drive, so that after cutover, when Monday holds the only copy of the donor
 records, a mistaken bulk delete or a vendor outage isn't a data loss. A separate restore procedure
-puts a board back from a snapshot. An hourly check raises an alert if no backup has succeeded in
-36 hours.
+puts a board back from a snapshot. A run takes about an hour. An hourly check raises an alert if no
+complete backup has landed in 36 hours.
 
 ## Where it stands
 

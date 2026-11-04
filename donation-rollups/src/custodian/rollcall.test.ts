@@ -103,6 +103,38 @@ const ORGS: ItemColumns[] = [item('31', 'Acme Inc', { rec: 'Acme Foundation', od
 
 afterEach(() => { vi.restoreAllMocks(); });
 
+describe('runRollCall mailing address (spec §11)', () => {
+  const HOME = '12 Oak St, San Jose, CA, 95113';
+  const ADDRESSED: RollCallConfig = { ...ROLL_CALL, columns: { ...COLS, mailingAddress: 'ma' },
+    people: { '201': { ...ROLL_CALL.people['201']!, address: 'addr', doNotMail: 'dnm' } },
+    organizations: { boardId: 300, columns: { ...ROLL_CALL.organizations.columns, address: 'oaddr' } } };
+  const donors = {
+    201: [item('11', 'Pat Lee', { hid: null, hg: null, he: null, dns: null, pdl: null, addr: HOME, dnm: null }),
+      item('13', 'Ada Park', { hid: null, hg: null, he: null, dns: null, pdl: null, addr: HOME, dnm: 'v' })],
+    300: [item('31', 'Acme Inc', { rec: null, odl: null, oaddr: '1 Main St, Campbell, CA, 95008' })],
+    900: [],
+  };
+  const ledger = [gift('g1', '11', 50_000), gift('g2', '13', 40_000), gift('g3', '31', 30_000)];
+
+  it('writes each donor\'s address, blank under Do Not Mail', async () => {
+    const h = harness({ ledger, boards: donors, rollCall: ADDRESSED });
+    await runRollCall(h.deps, NOW);
+    const cell = (name: string) => h.created.find((c) => c.name === name)!.values.ma;
+    expect(cell('Pat Lee')).toBe(HOME);
+    expect(cell('Acme Inc')).toBe('1 Main St, Campbell, CA, 95008');
+    expect(cell('Ada Park')).toBe('');
+  });
+
+  it('stays off until the board column is configured: no cell and no address notes', async () => {
+    const off = { ...ADDRESSED, columns: COLS };
+    const h = harness({ ledger, boards: donors, rollCall: off });
+    await runRollCall(h.deps, NOW);
+    const ada = h.created.find((c) => c.name === 'Ada Park')!.values;
+    expect(ada).not.toHaveProperty('ma');
+    expect(ada.rn).toEqual({ text: '' });
+  });
+});
+
 describe('runRollCall', () => {
   it('skips when not configured', async () => {
     const h = harness({ rollCall: null });

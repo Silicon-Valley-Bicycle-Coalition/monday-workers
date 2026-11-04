@@ -45,6 +45,12 @@ export interface DriveClient {
   ensureFolder(parentFolderId: string, folderName: string): Promise<string>;
   createFile(folderId: string, filename: string, mimeType: string): Promise<DriveFileWriter>;
   uploadJson(folderId: string, filename: string, data: unknown): Promise<void>;
+  // A file of this name in the folder, or null. Files only appear once their upload closes, so a
+  // match is complete. This is how a retried Workflow step avoids writing a second copy: Drive
+  // allows duplicate names, and a Contributor can't delete one (issue #67).
+  findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null>;
+  // A file's text, one line at a time, without holding the whole file in memory.
+  readLines(fileId: string): AsyncIterable<string>;
 }
 
 export interface GoogleDriveClientOptions {
@@ -58,6 +64,7 @@ export interface GoogleDriveClientOptions {
 
 // No Drive request may hang indefinitely; the deadline can shorten this further.
 const REQUEST_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 interface CachedToken {
   value: string;
@@ -164,7 +171,7 @@ export class GoogleDriveClient implements DriveClient {
   // Authorized fetch that retries rate limits, 5xx and network errors, and throws on any other
   // non-OK response. Used for metadata calls and for opening upload sessions — a retried session
   // open that had actually succeeded just leaves an unused session, never a file.
-  private async driveFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  private async driveFetch(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
     let lastError = '';
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await this.deadline.sleepBeforeRetry(this.sleep, backoffMs(attempt), `Drive ${path} (last error: ${lastError})`);
@@ -176,7 +183,7 @@ export class GoogleDriveClient implements DriveClient {
         response = await fetch(`${DRIVE_ORIGIN}${path}`, {
           ...init,
           headers,
-          signal: AbortSignal.timeout(this.deadline.timeoutMs(REQUEST_TIMEOUT_MS)),
+          signal: AbortSignal.timeout(this.deadline.timeoutMs(timeoutMs)),
         });
       } catch (err) {
         this.deadline.check(`Drive ${path} (request cut off: ${String(err)})`);
@@ -212,6 +219,33 @@ export class GoogleDriveClient implements DriveClient {
     });
     const created = (await createResponse.json()) as { id: string };
     return created.id;
+  }
+
+  async findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null> {
+    const query =
+      `'${escapeDriveQueryValue(folderId)}' in parents` +
+      ` and name = '${escapeDriveQueryValue(filename)}' and trashed = false`;
+    const response = await this.driveFetch(`/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,createdTime)&${LIST_ALL_DRIVES}`);
+    const listed = (await response.json()) as { files: { id: string; createdTime: string }[] };
+    return listed.files[0] ?? null;
+  }
+
+  async *readLines(fileId: string): AsyncGenerator<string> {
+    // The timeout also covers reading the body, and a snapshot file can be tens of MB.
+    const response = await this.driveFetch(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&${ALL_DRIVES}`, {}, DOWNLOAD_TIMEOUT_MS);
+    if (response.body === null) return;
+    const decoder = new TextDecoder();
+    let buffered = '';
+    const reader = response.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      // stream: true holds back a multi-byte character split across two chunks.
+      buffered += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      const lines = buffered.split('\n');
+      buffered = done ? '' : lines.pop()!;
+      for (const line of lines) if (line !== '') yield line;
+      if (done) return;
+    }
   }
 
   async createFile(folderId: string, filename: string, mimeType: string): Promise<DriveFileWriter> {

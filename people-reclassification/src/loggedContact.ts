@@ -3,7 +3,7 @@ import { LEASE_MS, pageAll, readLoggedActivities, resolveBoards, settleUnsettled
 import { cutoffFor, todayInZone } from './classify';
 import { errorText } from './logSafe';
 
-// A logged email, call or meeting brings someone on Historical back by the next morning, rather
+// A logged contact on Activities (Logged) brings someone on Historical back by the next morning, rather
 // than at the next quarterly pass. Only logged contact does: a new gift still waits for the pass.
 // Runs on days no pass is owed, since a pass reads the same board through src/classify.ts.
 

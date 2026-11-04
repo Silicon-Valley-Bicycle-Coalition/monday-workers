@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { RELEASE_MIN_CLAIM_AGE_MS, registerClassEmailRoutes } from './routes';
 import { D1ClassEmailStore, type ClassEmailRow, type ClassEmailStore } from '../db/classEmails';
-import type { MondayClient, MondayItemColumns } from '../monday/client';
+import type { MondayClient, MondayItemColumns, TimelineItemInput } from '../monday/client';
 import type { WriteMode } from '../flags';
 import type { AttendeeRow, EventRow } from '../types';
 import { fakeAttendeeStore, fakeClassEmailStore, fakeEventStore } from '../test/fakeStores';
@@ -47,12 +47,15 @@ interface Options {
   secret?: string | undefined;
   peopleLookup?: () => Promise<{ id: string } | null>;
   postUpdate?: () => Promise<void>;
+  createTimelineItem?: (input: TimelineItemInput) => Promise<string>;
+  timelineActivityId?: string | null;
   store?: ClassEmailStore;
 }
 
 function harness(o: Options = {}) {
   const config = testConfig();
   config.attendeeSync.classEmails.sandboxRecipient = o.sandbox ?? null;
+  config.attendeeSync.classEmails.timelineActivityId = o.timelineActivityId ?? null;
   const items = new Map<string, MondayItemColumns>();
   for (const i of [mondayItem('900', 'Learn to Ride', {}), ...(o.items ?? [reg('10'), reg('11')])]) items.set(i.id, i);
   const client = {
@@ -61,6 +64,7 @@ function harness(o: Options = {}) {
     findItemByColumnValue: vi.fn(o.peopleLookup ?? (async () => ({ id: '50' }))),
     createItem: vi.fn().mockResolvedValue({ id: '51' }),
     postUpdate: vi.fn(o.postUpdate ?? (async () => undefined)),
+    createTimelineItem: vi.fn<(input: TimelineItemInput) => Promise<string>>(o.createTimelineItem ?? (async () => 'tl1')),
    
   };
   const mondayClient = vi.fn(() => client as unknown as MondayClient);
@@ -156,7 +160,18 @@ describe('GET /class-emails/:eventId', () => {
     const items = [mondayItem('900', 'Learn to Ride', { [ev.venueColumn]: 'Millbrae Rec', [ev.addressColumn]: '477 Lincoln Cir' }), reg('10')];
     const h = harness({ items });
     const body = (await (await get(h)).json()) as any;
-    expect(body.fields).toEqual({ 'Class Day': 'Thursday', 'Class Date': 'November 12', 'Start Time': '9:00 AM', 'Class Location': 'Millbrae Rec, 477 Lincoln Cir' });
+    expect(body.fields).toEqual({
+      'Class Day': 'Thursday',
+      'Class Date': 'November 12',
+      'Start Time': '9:00 AM',
+      'End Time': '11:00 AM',
+      'Arrival Time': '8:55 AM',
+      'Spanish Day': 'jueves',
+      'Spanish Date': '12 de noviembre',
+      'Spanish Time': '9:00 a.m.',
+      'Spanish Arrival Time': '8:55 a.m.',
+      'Class Location': 'Millbrae Rec, 477 Lincoln Cir',
+    });
     expect(h.client.getItems).toHaveBeenCalledWith(expect.any(Number), ['900'], [ev.venueColumn, ev.addressColumn]);
   });
 
@@ -680,5 +695,79 @@ describe('logging', () => {
     const logged = JSON.stringify(spies.flatMap((s) => s.mock.calls));
     for (const secretBit of ['real.org', 'Al One', 'Bo Two', 'coach@svbc.org', 'See you soon', 'rejected']) expect(logged).not.toContain(secretBit);
     expect(spies.some((s) => s.mock.calls.length > 0)).toBe(true);
+  });
+});
+
+describe('POST result: the timeline entries', () => {
+  const on = (o: Options) => harness({ timelineActivityId: 'activity-1', ...o });
+  const entry = (h: ReturnType<typeof harness>, i: number) => h.client.createTimelineItem.mock.calls[i]![0]!;
+  const result = (kind: ClassEmailRow['kind'], subject: string, ids: string[]) => ({
+    kind, sender: 'coach@svbc.org', subject, results: ids.map((registrationId) => ({ registrationId, status: 'sent' })),
+  });
+
+  it('posts one entry per sent person on their People item, for every kind', async () => {
+    for (const kind of ['reminder', 'thank-you', 'missed-you'] as const) {
+      const h = on({ ledger: [row(kind, '10'), row(kind, '11')], event: kind === 'reminder' ? {} : PAST });
+      const res = await post(h, 'result', result(kind, 'Your class', ['10', '11']));
+      expect(res.status).toBe(200);
+      expect(h.client.createTimelineItem).toHaveBeenCalledTimes(2);
+      expect(entry(h, 0)).toMatchObject({ itemId: '50', customActivityId: 'activity-1', title: 'Your class' });
+      expect(entry(h, 0).timestamp).toBe(NOW.toISOString());
+      expect(entry(h, 0).summary).toContain('coach@svbc.org');
+      expect(entry(h, 0).summary).toContain('Learn to Ride');
+    }
+  });
+
+  it('falls back to the registration, and never creates a person', async () => {
+    const h = on({ ledger: [row('reminder', '10')], peopleLookup: async () => null });
+    await post(h, 'result', result('reminder', 'Your class', ['10']));
+    expect(entry(h, 0).itemId).toBe('10');
+    expect(h.client.createItem).not.toHaveBeenCalled();
+  });
+
+  it('skips failed and unconfirmed people', async () => {
+    const h = on({ ledger: [row('reminder', '10'), row('reminder', '11'), row('reminder', '12')], items: [reg('10'), reg('11'), reg('12')] });
+    await post(h, 'result', { kind: 'reminder', sender: 'coach@svbc.org', subject: 'S', results: [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'failed', error: 'x' }] });
+    expect(h.client.createTimelineItem).toHaveBeenCalledTimes(1);
+    expect(entry(h, 0).itemId).toBe('50');
+  });
+
+  it("fills the person's name and the class details into the title", async () => {
+    const h = on({ ledger: [row('reminder', '10')] });
+    await post(h, 'result', result('reminder', 'Hi {{First Name}}: {{Class Day}} {{Unknown}}', ['10']));
+    expect(entry(h, 0).title).toBe('Hi F10: Thursday {{Unknown}}');
+  });
+
+  it('escapes the entry content', async () => {
+    const h = on({ ledger: [row('reminder', '10')] });
+    await post(h, 'result', result('reminder', 'A <b> & C', ['10']));
+    expect(entry(h, 0).content).toContain('A &lt;b&gt; &amp; C');
+  });
+
+  it('keeps going past a failed entry and reports it on the Events item, without the address', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const create = vi.fn().mockRejectedValueOnce(new Error('boom p10@real.org')).mockResolvedValue('tl2');
+    const h = on({ ledger: [row('reminder', '10'), row('reminder', '11')], createTimelineItem: create });
+    const res = await post(h, 'result', result('reminder', 'S', ['10', '11']));
+    expect(res.status).toBe(200);
+    expect(create).toHaveBeenCalledTimes(2);
+    const updates = h.client.postUpdate.mock.calls.map((c) => String((c as unknown[])[1]));
+    expect(updates.some((u) => u.includes('1 person') && u.includes('timeline') && u.includes('registration 10'))).toBe(true);
+    expect(JSON.stringify(error.mock.calls)).not.toContain('@real.org');
+  });
+
+  it('posts nothing when the write switch is off, or no activity is configured', async () => {
+    const off = on({ ledger: [row('reminder', '10')], mode: 'off' });
+    await post(off, 'result', result('reminder', 'S', ['10']));
+    expect(off.client.createTimelineItem).not.toHaveBeenCalled();
+    const none = harness({ ledger: [row('reminder', '10')] });
+    await post(none, 'result', result('reminder', 'S', ['10']));
+    expect(none.client.createTimelineItem).not.toHaveBeenCalled();
+  });
+
+  it('still links People on a thank-you, and posts entries first', async () => {
+    const h = on({ ledger: [row('thank-you', '10')], event: PAST, items: [reg('10', { [rc.attendanceColumn]: 'Attended' })] });
+    await post(h, 'result', result('thank-you', 'Thanks', ['10']));
+    expect(h.client.createTimelineItem.mock.invocationCallOrder[0]!).toBeLessThan(h.client.changeColumnValues.mock.invocationCallOrder[0]!);
   });
 });

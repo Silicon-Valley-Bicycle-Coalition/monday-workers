@@ -12,21 +12,21 @@ work with. (It was first made because a board was thought to hold at most 10,000
 real limit is 100,000, so neither board is close to full.) The migration decides who goes where
 once; nothing keeps it right afterwards. This integration does: every quarter it looks at each
 person's most recent activity — their last gift, their membership term, an event they attended
-or a ticket they bought, volunteer hours, an email, call or meeting logged on Activities (Logged)
+or a ticket they bought, volunteer hours, an item logged on Activities (Logged)
 — and moves anyone with nothing in the last **seven
 years** to People (Historical). It also moves people the other way: a lapsed donor on
-Historical who gives again comes back to People, so you see them where you work. Mail-merge emails
-from `learn@` don't count, because they're bulk sends.
+Historical who gives again comes back to People, so you see them where you work. Email logged
+through a connected Gmail lands on the Emails & Activities timeline, which this doesn't read, so it
+doesn't count.
 
 A person's item keeps its id, its Updates thread and its links to gifts and organizations when
 it moves. Someone with **no** activity recorded at all (a city staff contact, someone added by
 hand) is never moved by the quarterly pass.
 
-**Logging an email, call or meeting brings someone back.** BCC or forward the email to the logging
-address, or log the call or meeting on Activities (Logged), linked to the person and with a Date. If
-they're on People (Historical), they move to People the next morning.
+**Logging a call or meeting brings someone back.** Log it on Activities (Logged), linked to the
+person and with a Date. If they're on People (Historical), they move to People the next morning.
 
-**To bring someone back without a logged contact,** set **Promote to People** to **Promote** on their
+**To bring someone back after an email, or without a logged contact,** set **Promote to People** to **Promote** on their
 item. They move to People within a few seconds and it shows **Promoted**. That counts as activity, so
 they stay for seven years. On someone already on People, it restarts their seven years. If it shows
 **Couldn't promote**, the item's Updates say why. If it still shows **Promote**, it hasn't run yet; that

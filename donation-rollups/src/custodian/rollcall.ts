@@ -98,20 +98,28 @@ async function pageAll(deps: CustodianDeps, boardId: number, columnIds: string[]
 // People and People (Historical), then Organizations, keyed by item id.
 async function readDonors(deps: CustodianDeps, cfg: RollCallConfig): Promise<Map<string, DonorRecord>> {
   const donors = new Map<string, DonorRecord>();
+  // Addresses stay out of memory and the Review Note until the board has a column for them (spec §11).
+  const mailingOn = cfg.columns.mailingAddress !== undefined;
+  const mailingColumns = (...ids: (string | undefined)[]): string[] => (mailingOn ? ids.filter((id) => id !== undefined) : []);
   for (const [boardId, cols] of Object.entries(cfg.people)) {
-    const ids = [cols.householdId, cols.householdGreeting, cols.householdEmail, cols.doNotSolicit, cols.dontList];
+    const ids = [cols.householdId, cols.householdGreeting, cols.householdEmail, cols.doNotSolicit, cols.dontList,
+      ...mailingColumns(cols.address, cols.doNotMail)];
     for (const item of await pageAll(deps, Number(boardId), ids)) {
       const text = (id: string) => item.text.get(id) ?? null;
       donors.set(item.id, { kind: 'person', name: item.name ?? '', recognitionName: text(cols.householdGreeting) ?? '',
         householdId: text(cols.householdId) ?? '', householdEmail: text(cols.householdEmail) ?? '',
-        doNotSolicit: isChecked(text(cols.doNotSolicit)), dontList: isChecked(text(cols.dontList)) });
+        doNotSolicit: isChecked(text(cols.doNotSolicit)), dontList: isChecked(text(cols.dontList)),
+        mailingAddress: mailingOn && cols.address !== undefined ? text(cols.address) ?? '' : '',
+        doNotMail: mailingOn && cols.doNotMail !== undefined && isChecked(text(cols.doNotMail)) });
     }
   }
   const org = cfg.organizations;
-  for (const item of await pageAll(deps, org.boardId, [org.columns.recognitionName, org.columns.dontList])) {
+  for (const item of await pageAll(deps, org.boardId, [org.columns.recognitionName, org.columns.dontList, ...mailingColumns(org.columns.address)])) {
     donors.set(item.id, { kind: 'organization', name: item.name ?? '',
       recognitionName: item.text.get(org.columns.recognitionName) ?? '', householdId: '', householdEmail: '',
-      doNotSolicit: false, dontList: isChecked(item.text.get(org.columns.dontList) ?? null) });
+      doNotSolicit: false, dontList: isChecked(item.text.get(org.columns.dontList) ?? null),
+      mailingAddress: mailingOn && org.columns.address !== undefined ? item.text.get(org.columns.address) ?? '' : '',
+      doNotMail: false });
   }
   return donors;
 }

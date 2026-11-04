@@ -161,6 +161,8 @@ export interface EventbriteSyncConfig {
     classEmails: {
       pageUrl: string | null;
       sandboxRecipient: string | null;
+    // The "Logged email" custom activity, or null to post no Emails & Activities entries.
+    timelineActivityId: string | null;
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;

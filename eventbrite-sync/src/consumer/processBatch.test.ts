@@ -51,7 +51,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 42 ? { id: '55' } : null)),
     createItem: vi.fn().mockResolvedValue({ id: 'item-1' }),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
-    getItems: vi.fn(), postUpdate: vi.fn(),
+    getItems: vi.fn(), postUpdate: vi.fn(), createTimelineItem: vi.fn(),
     ...overrides,
   };
 }

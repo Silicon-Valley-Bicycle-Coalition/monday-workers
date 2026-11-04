@@ -28,7 +28,6 @@ export const EXPECTED = {
   'dtd-sync': 'SyncToken',
   'mailchimp-sync': 'SyncToken',
   'benevity-import': 'SyncToken',
-  'email-log': 'SyncToken',
   'eventbrite-sync': 'SyncToken',
   'people-reclassification': 'SyncToken',
   'bp-feedback-notify': 'SyncToken',

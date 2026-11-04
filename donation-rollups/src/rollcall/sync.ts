@@ -58,6 +58,7 @@ export function columnValuesFor(row: RollCallRow, cols: Columns): Record<string,
     [cols.rowKey]: row.key,
     // The item's Name again, as a cell that survives exports and sorting (spec §10.2).
     ...(cols.householdName !== undefined ? { [cols.householdName]: row.name } : {}),
+    ...(cols.mailingAddress !== undefined ? { [cols.mailingAddress]: row.mailingAddress } : {}),
   };
 }
 
@@ -82,6 +83,7 @@ function expectedCells(row: RollCallRow, cols: Columns): [keyof Columns, string 
     ['organization', row.organizationId],
     ['reviewNote', blank(row.reviewNote)],
     ...(cols.householdName !== undefined ? [['householdName', blank(row.name)] as [keyof Columns, string | null]] : []),
+    ...(cols.mailingAddress !== undefined ? [['mailingAddress', blank(row.mailingAddress)] as [keyof Columns, string | null]] : []),
   ];
 }
 

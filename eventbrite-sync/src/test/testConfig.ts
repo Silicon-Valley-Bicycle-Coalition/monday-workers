@@ -53,7 +53,7 @@ export function testConfig(
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
         classLocationColumn: 'att_class_loc_col',
       },
-      classEmails: { pageUrl: null, sandboxRecipient: null },
+      classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },
       peopleEmailColumn: 'people_email_col',
     },
   };

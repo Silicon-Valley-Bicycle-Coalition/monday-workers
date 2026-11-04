@@ -309,21 +309,27 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
   const rawPeople = obj(v.people);
   const boardIds = Object.keys(rawPeople);
   if (boardIds.length === 0) throw new Error(`config: ${path}.people must have at least one board entry`);
+  // Optional columns (spec §10, §11): omitted means off, but present must be a column id.
+  const optional = (raw: unknown, at: string): string | undefined => (raw === undefined ? undefined : columnId(raw, at));
   const people: RollCallConfig['people'] = {};
   for (const id of boardIds) {
     const p = obj(rawPeople[id]);
     const pcol = (k: string) => columnId(p[k], `${path}.people["${id}"].${k}`);
+    const address = optional(p.address, `${path}.people["${id}"].address`);
+    const doNotMail = optional(p.doNotMail, `${path}.people["${id}"].doNotMail`);
     people[id] = {
       householdId: pcol('householdId'), householdGreeting: pcol('householdGreeting'), householdEmail: pcol('householdEmail'),
       doNotSolicit: pcol('doNotSolicit'), dontList: pcol('dontList'),
+      ...(address !== undefined ? { address } : {}),
+      ...(doNotMail !== undefined ? { doNotMail } : {}),
     };
   }
   const o = obj(v.organizations);
   if (typeof o.boardId !== 'number') throw new Error(`config: ${path}.organizations.boardId must be a number`);
   const oc = obj(o.columns);
-  // Optional columns (spec §10): omitted means off, but present must be a column id.
-  const optional = (raw: unknown, at: string): string | undefined => (raw === undefined ? undefined : columnId(raw, at));
   const householdName = optional(c.householdName, `${path}.columns.householdName`);
+  const mailingAddress = optional(c.mailingAddress, `${path}.columns.mailingAddress`);
+  const orgAddress = optional(oc.address, `${path}.organizations.columns.address`);
   const inKindValue = optional(dc.inKindValue, `${path}.donations.columns.inKindValue`);
   const recognitionFiscalYear = optional(dc.recognitionFiscalYear, `${path}.donations.columns.recognitionFiscalYear`);
   return {
@@ -335,6 +341,7 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
       fiscalYear: col('fiscalYear'), tier: col('tier'), type: col('type'), listed: col('listed'), total: col('total'),
       gifts: col('gifts'), people: col('people'), organization: col('organization'), reviewNote: col('reviewNote'), rowKey: col('rowKey'),
       ...(householdName !== undefined ? { householdName } : {}),
+      ...(mailingAddress !== undefined ? { mailingAddress } : {}),
     },
     donations: {
       boardId: d.boardId,
@@ -351,6 +358,7 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
       columns: {
         recognitionName: columnId(oc.recognitionName, `${path}.organizations.columns.recognitionName`),
         dontList: columnId(oc.dontList, `${path}.organizations.columns.dontList`),
+        ...(orgAddress !== undefined ? { address: orgAddress } : {}),
       },
     },
   };

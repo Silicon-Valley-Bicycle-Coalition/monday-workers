@@ -20,6 +20,9 @@ export interface SnapshotManifest {
   format: string;
   runId?: number;
   runAt?: string;
+  // A snapshot is captured over a window (runAt to finishedAt), one board or doc at a time.
+  finishedAt?: string;
+  capturedAt?: Record<string, { startedAt: string; finishedAt: string }>;
   errors?: string[];
   itemCountsByBoard?: Record<string, number>;
   updateCountsByBoard?: Record<string, number>;

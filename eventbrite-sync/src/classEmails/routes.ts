@@ -278,7 +278,10 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         // The update first: it is the record of the send, and a long Thank-you's People matching
         // must not be able to cost it. The follow-ups can outlive the response.
         await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed);
-        const work = followUp(client, kind, sentIds, eventId);
+        // Entries first: a thank-you's People link can create the person, and an entry shouldn't
+        // depend on that having happened.
+        const monday = client;
+        const work = logToTimeline(monday, event, eventId, kind, sender, subject, sentIds).then(() => followUp(monday, kind, sentIds, eventId));
         const ctx = executionContextOf(c);
         if (ctx === null) await work;
         else ctx.waitUntil(work);
@@ -315,6 +318,51 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       await (client ?? deps.mondayClient()).postUpdate(itemId, body);
     } catch (err) {
       console.error(`eventbrite-sync class emails: update on event "${eventId}" not posted: ${errorKind(err)}`);
+    }
+  }
+
+  // The email on each person's Emails & Activities timeline, because Monday's own logging doesn't
+  // pick up mail sent as a Google Group. On their People item when the address matches, else their
+  // registration; never creates a person. The email has gone, so a failure is reported on the Events
+  // item, not retried: an entry can't be looked up, so a retry could post it twice. Never rejects.
+  async function logToTimeline(
+    client: MondayClient, event: EventRow & { mondayItemId: string }, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[]
+  ): Promise<void> {
+    const customActivityId = config.attendeeSync.classEmails.timelineActivityId;
+    if (customActivityId === null || sentIds.length === 0) return;
+    const failed: string[] = [];
+    try {
+      const [classItem] = await client.getItems(boards['events']!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]);
+      const fields = classFields(event, classItem?.columns[ev.venueColumn] ?? '', classItem?.columns[ev.addressColumn] ?? '');
+      const className = classItem?.name ?? `Eventbrite event ${eventId}`;
+      const fresh = await client.getItems(boards['event-registrations']!, sentIds, [rc.attendeeEmailColumn, rc.firstNameColumn]);
+      const byId = new Map(fresh.map((item) => [item.id, item]));
+      const peopleBoard = boards['people-live'];
+      const timestamp = now().toISOString();
+      for (const id of sentIds) {
+        try {
+          const item = byId.get(id);
+          const email = (item?.columns[rc.attendeeEmailColumn] ?? '').trim();
+          const person = peopleBoard != null && email !== '' ? await client.findItemByColumnValue(peopleBoard, config.attendeeSync.peopleEmailColumn, email) : null;
+          const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': (item?.columns[rc.firstNameColumn] ?? '').trim() || null })).slice(0, MAX_TIMELINE_TEXT);
+          const summary = `${KIND_LABEL[kind]} for ${oneLine(className)}. Sent by ${sender}.`;
+          await client.createTimelineItem({
+            itemId: person?.id ?? id, customActivityId, title, timestamp,
+            summary: summary.slice(0, MAX_TIMELINE_TEXT),
+            content: `<p>${escapeHtml(title)}</p><p>${escapeHtml(summary)}</p>`,
+          });
+        } catch (err) {
+          failed.push(id);
+          console.error(`eventbrite-sync class emails: timeline entry for registration ${id} on event "${eventId}" failed: ${errorKind(err)}`);
+        }
+      }
+    } catch (err) {
+      failed.splice(0, failed.length, ...sentIds);
+      console.error(`eventbrite-sync class emails: timeline entries for event "${eventId}" failed: ${errorKind(err)}`);
+    }
+    if (failed.length > 0) {
+      const who = failed.length === 1 ? '1 person' : `${failed.length} people`;
+      await postUpdate(event.mondayItemId, eventId, `Class email: ${KIND_LABEL[kind]}. Sent, but not added to the timeline for ${who}: ${failed.map((id) => `registration ${id}`).join(', ')}`, client);
     }
   }
 
@@ -380,4 +428,16 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     }
     await postUpdate(itemId, eventId, lines.join('\n'), client);
   }
+}
+
+// create_timeline_item's limit on title and summary.
+const MAX_TIMELINE_TEXT = 255;
+
+// Fills what's known, and leaves anything else as typed so a mistake stays visible.
+function fillPlaceholders(text: string, values: Record<string, string | null>): string {
+  return text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (whole, name: string) => values[name] ?? whole);
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

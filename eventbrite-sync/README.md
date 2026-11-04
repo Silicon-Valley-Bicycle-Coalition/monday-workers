@@ -351,8 +351,8 @@ delivery.
 ### Prerequisites
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
-  `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production ships
-  `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
+  since 2026-11-04; the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -425,7 +425,7 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 
 | Route | Does |
 |---|---|
-| `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `Class Location`), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
+| `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `End Time`, `Arrival Time` (5 minutes before the start), `Spanish Day`, `Spanish Date`, `Spanish Time`, `Spanish Arrival Time`, `Class Location`), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
 | `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
 | `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then, under `waitUntil`, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. |
 | `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
@@ -441,6 +441,13 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
   claimed recipient is never handed out again. A crash leaves them `claimed`, shown as unconfirmed;
   only a person releases them, and not until 10 minutes after the claim (`RELEASE_MIN_CLAIM_AGE_MS`),
   because Apps Script runs stop at about 6 and a younger claim may still be sending.
+* **Each sent email goes on the person's timeline.** Monday's own logging doesn't pick up mail sent as
+  a Google Group (tested 2026-11-04), so after a send `result` posts a `Logged email` custom activity
+  (`classEmails.timelineActivityId`, null to turn it off) on the person's People item when the address
+  matches, otherwise on their Event Registrations item. It never creates a person. The entry has the
+  subject with its placeholders filled in, the kind, the class and the sender, not the body. It doesn't
+  count as contact in `people-reclassification` or reach Activities (Logged). A failed entry isn't
+  retried, because an entry can't be looked up to dedupe; an update on the Events item lists it.
 * **The ledger is written first** in `result`, so a Monday failure (the update, No Show, People
   match) is logged by id and error class and cannot lose what was sent.
 * **A switch flipped mid-send.** `result` records the ledger under any mode so people already
@@ -629,11 +636,11 @@ beyond the table above:
 
 ## Open
 
-0. **Production class emails (attendee feed).** Production column ids; the `Attendee Email`
-   Email-column conversion; `CLASS_EMAIL_SECRET` on both Workers and in the send page's Script
-   Properties; the send page deployed and its URL in `classEmails.pageUrl`; register the attendee
-   webhook; name an owner. A timed run of `result` on a 26-person roster in the sandbox (the CPU
-   limit in `wrangler.jsonc`).
+0. **Production class emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
+   (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
+   `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
+   Still open: a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
+   in `wrangler.jsonc`).
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.

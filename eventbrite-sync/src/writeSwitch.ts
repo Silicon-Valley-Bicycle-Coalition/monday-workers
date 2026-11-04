@@ -70,10 +70,16 @@ export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, c
     return proxy;
   };
   const updates = recordingProxy(client, 'Monday update', { postUpdate: undefined }, ctx);
+  const timeline = recordingProxy(client, 'Monday timeline', {
+    createTimelineItem: function (): string {
+      return `dry-run-${this.n}`;
+    },
+  }, ctx);
   return {
     findItemByColumnValue: (boardId, columnId, value) => client.findItemByColumnValue(boardId, columnId, value),
     getItems: (boardId, itemIds, columnIds) => client.getItems(boardId, itemIds, columnIds),
     postUpdate: (itemId, body) => updates.postUpdate(itemId, body),
+    createTimelineItem: (input) => timeline.createTimelineItem(input),
     createItem: (boardId, itemName, columnValues) => sinkFor(boardId).createItem(boardId, itemName, columnValues),
     changeColumnValues: (boardId, itemId, columnValues) => sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues),
   };

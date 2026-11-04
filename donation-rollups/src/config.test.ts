@@ -386,6 +386,19 @@ describe('validateConfig — rollCall block', () => {
       columns: { ...rollCall.donations.columns, recognitionFiscalYear: 7 } } }))).toThrow(/donations\.columns\.recognitionFiscalYear/);
   });
 
+  it('accepts the optional mailing address columns (spec §11), and rejects one that is not a column id', () => {
+    const full = { ...rollCall, columns: { ...rollCall.columns, mailingAddress: 'text_ma' },
+      people: { '2': { ...rollCall.people['2'], address: 'text_a', doNotMail: 'boolean_d' } },
+      organizations: { boardId: 80, columns: { ...rollCall.organizations.columns, address: 'text_o' } } };
+    expect(validateConfig(withRollCall(full)).donationRollups.rollCall).toEqual(full);
+    expect(() => validateConfig(withRollCall({ ...full, columns: { ...full.columns, mailingAddress: '' } })))
+      .toThrow(/rollCall\.columns\.mailingAddress/);
+    expect(() => validateConfig(withRollCall({ ...full, people: { '2': { ...full.people['2'], doNotMail: 7 } } })))
+      .toThrow(/people\["2"\]\.doNotMail/);
+    expect(() => validateConfig(withRollCall({ ...full, organizations: { boardId: 80, columns: { ...full.organizations.columns, address: '' } } })))
+      .toThrow(/organizations\.columns\.address/);
+  });
+
   it('defaults excludedGiftTypes to ["Contracts"] and writesPerRun to 500', () => {
     const { excludedGiftTypes: _e, writesPerRun: _w, ...bare } = rollCall;
     const cfg = validateConfig(withRollCall(bare)).donationRollups.rollCall!;

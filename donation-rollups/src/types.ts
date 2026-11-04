@@ -133,6 +133,8 @@ export interface RollCallConfig {
     people: string; organization: string; reviewNote: string; rowKey: string;
     // Optional (spec §10.2): the row's Recognition Name as a cell of its own. Absent = not written.
     householdName?: string;
+    // Optional (spec §11): turns mailing addresses on. Absent = the address columns below aren't read.
+    mailingAddress?: string;
   };
   donations: {
     boardId: number;
@@ -144,8 +146,8 @@ export interface RollCallConfig {
       recognitionFiscalYear?: string;
     };
   };
-  people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string }>;
-  organizations: { boardId: number; columns: { recognitionName: string; dontList: string } };
+  people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string; address?: string; doNotMail?: string }>;
+  organizations: { boardId: number; columns: { recognitionName: string; dontList: string; address?: string } };
 }
 
 export interface OwnerColumns {

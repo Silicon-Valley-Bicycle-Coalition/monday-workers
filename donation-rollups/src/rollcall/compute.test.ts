@@ -6,15 +6,70 @@ const gift = (o: Partial<CountedGift> = {}): CountedGift => ({
 });
 const person = (o: Partial<DonorRecord> = {}): DonorRecord => ({
   kind: 'person', name: 'Jane Smith', recognitionName: 'Jane and John Smith', householdId: 'HH1',
-  householdEmail: '', doNotSolicit: false, dontList: false, ...o,
+  householdEmail: '', doNotSolicit: false, dontList: false, mailingAddress: '', doNotMail: false, ...o,
 });
 const donors = (): Map<string, DonorRecord> => new Map<string, DonorRecord>([
   ['p10', person()],
   ['p11', person({ name: 'John Smith' })],
   ['p12', person({ name: 'Pat Lee', recognitionName: '', householdId: '', householdEmail: 'lees@example.org' })],
   ['p13', person({ name: 'Sam Lee', recognitionName: '', householdId: '', householdEmail: 'Lees@example.org' })],
-  ['o90', { kind: 'organization', name: 'Amazon', recognitionName: '', householdId: '', householdEmail: '', doNotSolicit: false, dontList: false }],
+  ['o90', { kind: 'organization', name: 'Amazon', recognitionName: '', householdId: '', householdEmail: '', doNotSolicit: false, dontList: false, mailingAddress: '', doNotMail: false }],
 ]);
+
+describe('buildRollCall mailing address (spec §11)', () => {
+  const HOME = '12 Oak St, San Jose, CA, 95113';
+  const only = (d: [string, DonorRecord][], credit = 'item:p10') => buildRollCall([gift({ credit })], new Map(d)).rows[0]!;
+
+  it('uses the address one line, whitespace normalized', () => {
+    const row = only([['p10', person({ mailingAddress: '  12 Oak St,\n San  Jose, CA, 95113 ' })]]);
+    expect(row.mailingAddress).toBe(HOME);
+    expect(row.reviewNote).toBe('');
+  });
+
+  it('takes a household address from the first member who has one', () => {
+    const row = only([['p10', person()], ['p11', person({ name: 'John Smith', mailingAddress: HOME })]]);
+    expect(row.mailingAddress).toBe(HOME);
+    expect(row.reviewNote).toBe('');
+  });
+
+  it("uses an organization's own address", () => {
+    const row = only([['o90', { ...person({ mailingAddress: '1 Main St, Campbell, CA, 95008' }), kind: 'organization', name: 'Amazon', householdId: '' }]], 'item:o90');
+    expect(row.mailingAddress).toBe('1 Main St, Campbell, CA, 95008');
+  });
+
+  it('leaves a blank address blank, with no note: the cell itself is filterable', () => {
+    const row = only([['p10', person({ householdId: '' })]]);
+    expect(row.mailingAddress).toBe('');
+    expect(row.reviewNote).toBe('');
+  });
+
+  it("notes household members' differing addresses, ignoring case and punctuation", () => {
+    const other = '99 Elm Ave, Palo Alto, CA, 94301';
+    expect(only([['p10', person({ mailingAddress: HOME })], ['p11', person({ name: 'John Smith', mailingAddress: other })]]))
+      .toMatchObject({ mailingAddress: HOME, reviewNote: `members' mailing addresses differ: ${HOME} / ${other}` });
+    expect(only([['p10', person({ mailingAddress: HOME })], ['p11', person({ name: 'John Smith', mailingAddress: '12 OAK ST. San Jose CA 95113' })]]).reviewNote).toBe('');
+  });
+
+  it.each([['San Jose, CA, 95113'], ['12 Oak St, San Jose, CA'], ['San Jose']])('notes %s as incomplete', (mailingAddress) => {
+    expect(only([['p10', person({ mailingAddress, householdId: '' })]]))
+      .toMatchObject({ mailingAddress, reviewNote: 'mailing address looks incomplete (no street number or ZIP)' });
+  });
+
+  it.each([['PO Box 1927, San José, CA, 95109'], ['12 Oak St San Jose CA 95113-1234']])('accepts %s as complete', (mailingAddress) => {
+    expect(only([['p10', person({ mailingAddress, householdId: '' })]]).reviewNote).toBe('');
+  });
+
+  it('withholds the whole row\'s address when any member has Do Not Mail, and says why', () => {
+    const row = only([['p10', person({ mailingAddress: HOME })], ['p11', person({ name: 'John Smith', doNotMail: true, mailingAddress: 'San Jose' })]]);
+    expect(row.mailingAddress).toBe('');
+    expect(row.listed).toBe('Listed');
+    expect(row.reviewNote).toBe('Do Not Mail is checked on John Smith, so the mailing address is left blank');
+  });
+
+  it('gives the Anonymous row no address', () => {
+    expect(buildRollCall([gift({ credit: 'anonymous' })], new Map()).rows[0]!.mailingAddress).toBe('');
+  });
+});
 
 describe('tierFor', () => {
   it('uses the report outline tiers', () => {

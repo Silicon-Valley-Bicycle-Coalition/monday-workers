@@ -40,7 +40,6 @@ export const QUEUES = {
   'bp-feedback-notify': [],
   'donation-rollups': ['donation-rollups-recompute'],
   'dtd-sync': [], // cron-only: no queues to pause; the write switch is the dtd-sync-writes flag
-  'email-log': ['email-log-writes'],
   'eventbrite-sync': ['eventbrite-sync-writes'],
   'funraise-sync': ['funraise-sync-writes'],
   'mailchimp-sync': ['mailchimp-sync-outbound', 'mailchimp-sync-inbound'],

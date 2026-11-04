@@ -230,21 +230,26 @@
           "householdGreeting": "text_mm8qw6jc",
           "householdEmail": "email_mm8n2wzk",
           "doNotSolicit": "boolean_mm8nf0wq",
-          "dontList": "boolean_mm8qd7sb"
+          "dontList": "boolean_mm8qd7sb",
+          "address": "text_mm8n6sap",
+          "doNotMail": "boolean_mm8nes4f"
         },
         "18437909784": {
           "householdId": "text_mm8qt39n",
           "householdGreeting": "text_mm8qc8fd",
           "householdEmail": "email_mm8np26g",
           "doNotSolicit": "boolean_mm8n4c91",
-          "dontList": "boolean_mm8q52e1"
+          "dontList": "boolean_mm8q52e1",
+          "address": "text_mm8ng0jm",
+          "doNotMail": "boolean_mm8nyhf3"
         }
       },
       "organizations": {
         "boardId": 18437909779,
         "columns": {
           "recognitionName": "text_mm8qpeyn",
-          "dontList": "boolean_mm8qe5ne"
+          "dontList": "boolean_mm8qe5ne",
+          "address": "text_mm8nhnjq"
         }
       }
     },

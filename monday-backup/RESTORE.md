@@ -46,8 +46,21 @@ In the backup Shared Drive, each run is a folder named `YYYY-MM-DD run-N`. Open 
   from it (the restore also warns about this);
 * `itemCountsByBoard`, `updateCountsByBoard`, `blockCountsByDoc` look plausible for the date.
 
-A folder with no `manifest.json` is a run that didn't finish — don't use it. For "undo a bad
-change", pick the last good run *before* the change.
+A folder with no `manifest.json` is a run that didn't finish, or that the write switch stopped —
+don't use it. A file can't be half-written: uploads only appear in Drive once they close.
+
+### A snapshot is captured over a window, not at one instant
+
+A run takes about an hour and captures one board or doc at a time. `runAt` and `finishedAt` in the
+manifest give the window, and `capturedAt` says when each board and doc was captured (keyed
+`board-<id>` and `doc-<id>`, like the filenames). So:
+
+* For "undo a bad change", pick a run whose window ended *before* the change. A change made during a
+  run's window may or may not be in it, depending on when that board was captured.
+* An item created during the window can be on one board and missing from another. Most often that's
+  a link to an item that was created after its board was captured: the restore drops that link and
+  warns (`links to … dropped (not in this restore)`). Check those warnings against `capturedAt`
+  before treating one as a problem.
 
 ## 2. Download it
 
@@ -131,9 +144,8 @@ Do this once end to end in the sandbox, then record the result below and close i
 2. Seed the sandbox boards with representative data: several groups, every column type in use in
    production, a connect-boards column across two boards (with a mirror), subitems, updates with
    replies, one archived board, and a Doc longer than 100 blocks with nested lists.
-3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger
-   it locally — `npm run dev:sandbox -- --test-scheduled` with sandbox secrets in `.dev.vars`,
-   then `curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=0+9+*+*+*"`.
+3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger one
+   with `npx wrangler workflows trigger svbc-monday-backup-snapshot-sandbox`.
 4. Confirm the run folder and a `manifest.json` with `errors: []`.
 5. Create an empty workspace for the rehearsal and follow steps 2–5 above against it (dry run
    first). Use a token that can write only to that workspace.

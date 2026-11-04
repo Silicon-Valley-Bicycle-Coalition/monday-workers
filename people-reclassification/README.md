@@ -104,7 +104,7 @@ date is read in `window.timeZone`):
 | Last gift | People `Last Gift Date` — donation-rollups' rollup, kept current on **both** boards | Activity date |
 | Membership term end | People `Member Until` on or before today | Activity date |
 | Event registration | Event Registrations → the linked Event's `Date`, counted when `Attendance` ∈ `countedAttendanceLabels` (`Attended`) **or** `Source` ∈ `countedRegisteredSources` (`Funraise`) — the import's "a Funraise registration is a paid ticket; an Eventbrite registration counts only once checked in" rule (decision 2026-09-08) | Activity date |
-| Logged contact | Activities (Logged) `Date`, via the `Person` link, when `Activity Type` is `Email`, `Call` or `Meeting` (`countedTypeLabels`). `Bulk Email`, one per mail-merge recipient, doesn't count | Activity date (optional source; `loggedActivities: null` turns it off) |
+| Logged contact | Activities (Logged) `Date`, via the `Person` link, when `Activity Type` is `Email`, `Call` or `Meeting` (`countedTypeLabels`). `Bulk Email` doesn't count. Email logged through a connected Gmail lands on the Emails & Activities timeline, which this doesn't read, so it doesn't count either; `Email` items already on the board still do | Activity date (optional source; `loggedActivities: null` turns it off) |
 | Promotion | People `Promoted On`, written when staff promote someone | Activity date |
 | Volunteer hours | Volunteers `Date`, via the `Volunteer` link | Activity date (optional source; `volunteers: null` turns it off) |
 
@@ -318,7 +318,7 @@ in config and a renamed column fails the pass loudly rather than reading blanks.
 | `boards.historical` | People (Historical) `18437342607` | People (Historical) `18437909784` |
 | `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `18437909792` / `18437909790` |
 | `volunteers` | Volunteers `18437342662` | `18437909797` |
-| `loggedActivities` | Activities (Logged) (sandbox v4) `18438393347`, a small test board. `email-log`'s sandbox writes to the v3 board `18438204391`, whose links are v3 items, so logged email doesn't reach this Worker in the sandbox | Activities (Logged) `18438042551` |
+| `loggedActivities` | Activities (Logged) (sandbox v4) `18438393347`, a small test board | Activities (Logged) `18438042551` |
 | `alerts.itRequests` | `null` (log only — IT Requests is a production board) | `8846215481`, `Type` = `IT Support`, 30-day cooldown |
 
 Column titles (`peopleColumns`, the registrations and volunteers `columns` blocks) are the ones
@@ -377,9 +377,6 @@ both new columns exist, and Monday won't register a webhook until the URL answer
 2. `wrangler secret put PROMOTE_WEBHOOK_SECRET` (with `--env sandbox` for the sandbox).
 3. Deploy.
 4. Re-run the script with `--worker-url <url>` and `WEBHOOK_SECRET` to subscribe the webhooks.
-
-`email-log` deploys separately: add the `Bulk Email` label to its Activity Type column first, or a
-`learn@` BCC fails until the label exists. Then run its `scripts/relabel-bulk-email.mjs --apply`.
 
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
