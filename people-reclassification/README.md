@@ -150,8 +150,8 @@ So:
   a column with no counterpart maps to null, which is only allowed for types holding no value
   of their own (formula, mirror, auto-number, …).
 * `dtd-sync/scripts/setup-columns.mjs` adds `DTD Company ID`, `DTD Company` and `DTD match link` to
-  People only, which stops every move here until Historical has them too. Sandbox v4's were added
-  by hand on 2026-11-03. Production needs the same when that script runs there.
+  both People boards (`--people-historical`), since on People alone they would stop every move here.
+  Sandbox v4's Historical copies were added by hand on 2026-11-03, before the script did this.
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values. **Any column added to one People board must be

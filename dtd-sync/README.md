@@ -167,6 +167,11 @@ config-ready JSON block of every id:
 
 * **Donations:** Match Status, DTD Status (raw), Match Company, Matches gift, Match pairing, Sent to DTD.
 * **People:** DTD Company ID, DTD Company, DTD match link (the per-donor "start your match" link).
+* **People (Historical):** the same three, same titles and types. The Worker never writes them
+  there and its config holds no ids for them, so the printed block leaves them out. They exist because
+  `people-reclassification` moves nobody while a value-bearing column is on only one of the two
+  People boards. **The columns must land on both boards**, and the script stops, creating neither board's
+  columns, if either has one of these titles with another type.
 * **The Matching Gift Program board** (one row per fiscal year) and a Donations view,
   **Matching gifts to follow up** (Match Status = Waiting for donor, newest first).
 
@@ -228,9 +233,14 @@ rest from the repo root. Both crons are UTC: the hourly run is at :15 past each 
    allow-listed donor shows Sent to DTD and appears in DTD under the test campaign; a test Matching
    Donation with Matched By set gets Matches gift and `Matched`. Remove the test items and the DTD
    test donations.
-9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id> --config dtd-sync/config/svbc.json`
-   against the production boards, paste the printed ids into `config/svbc.json`, set the
-   campaign, deploy, run with the flag `off` and read the logs, then turn it `on`.
+9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --people-historical <id> --workspace <id> --config dtd-sync/config/svbc.json`
+   against the production boards (the Historical id is `boards.historical.boardId` in
+   `people-reclassification/config/svbc.json`), paste the printed ids into `config/svbc.json`, set
+   the campaign, deploy, run with the flag `off` and read the logs, then turn it `on`. The script
+   must finish: if the columns land on People but not People (Historical), `people-reclassification`
+   stops moving anyone until they match. It is idempotent, so re-run it after any failure. CRM Sandbox
+   v4's Historical columns were added by hand on 2026-11-03; a re-run there finds them by title and
+   creates nothing, as long as their types match.
 
 ### Cutover backfill
 
