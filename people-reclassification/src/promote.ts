@@ -16,6 +16,11 @@ export type PromoteResult =
   | { outcome: 'failed' | 'ambiguous' | 'error'; itemId: string; error: string };
 
 const MAX_CONSECUTIVE_FAILURES = 5;
+// Selecting several people and setting Promote fires one webhook each, and they share one lease. A
+// few short waits let them run in turn, and stay well inside waitUntil's 30 s so the work after has
+// time to finish. A pass holds the lease far longer; the morning sweep covers that.
+const LEASE_TRIES = 5;
+const LEASE_WAIT_MS = 3_000;
 const UPDATE_NO_ROOM = "Couldn't promote this person: the People board is full. IT has to make room first. Set Promote again after that.";
 const UPDATE_COLUMNS = "Couldn't promote this person: the two People boards don't match, so moves are paused. File an IT Request, then set Promote again.";
 const UPDATE_MOVE_FAILED = "Couldn't promote this person: Monday wouldn't move the item, even after retrying. Set Promote again to retry, or file an IT Request if it keeps happening.";
@@ -124,12 +129,17 @@ async function reportColumnsFailure(deps: PassDeps, itemId: string, runId: strin
 
 export async function promoteFromWebhook(
   deps: PassDeps, opts: { runId: string; itemId: string; dryRun: boolean },
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<PromoteResult | { outcome: 'skipped'; itemId: string }> {
   const now = deps.now ?? (() => new Date());
   const { runId, itemId, dryRun } = opts;
   const startedAt = now().toISOString();
-  if (!(await deps.ledger.acquireLease(runId, startedAt, new Date(now().getTime() + LEASE_MS).toISOString()))) {
-    return { outcome: 'skipped', itemId };
+  let leased = false;
+  for (let attempt = 1; !leased; attempt += 1) {
+    leased = await deps.ledger.acquireLease(runId, startedAt, new Date(now().getTime() + LEASE_MS).toISOString());
+    if (leased) break;
+    if (attempt === LEASE_TRIES) return { outcome: 'skipped', itemId };
+    await sleep(LEASE_WAIT_MS);
   }
   try {
     let resolved: Resolved;

@@ -35,6 +35,14 @@ describe('planPromoteSetup', () => {
     expect(planPromoteSetup(boards, STATUS, DATE)).toEqual({ createColumns: [{ boardId: '2', title: DATE, type: 'date' }], createWebhooks: [] });
   });
 
+  it('plans columns but no webhook when asked for columns only', () => {
+    const boards = [{ id: '1', columns: [], webhooks: [] }];
+    expect(planPromoteSetup(boards, STATUS, DATE, { webhooks: false })).toEqual({
+      createColumns: [{ boardId: '1', title: STATUS, type: 'status' }, { boardId: '1', title: DATE, type: 'date' }],
+      createWebhooks: [],
+    });
+  });
+
   it('plans a webhook when one exists only for another column', () => {
     const boards = [{ id: '1', columns: [{ id: 's1', title: STATUS }, { id: 'd1', title: DATE }], webhooks: [hook('other')] }];
     expect(planPromoteSetup(boards, STATUS, DATE).createWebhooks).toEqual(['1']);

@@ -233,10 +233,12 @@ covers a dropped webhook, a lease held by a running pass, and a label carried ac
 | Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
 | Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
 
+Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
+so a small batch finishes within seconds and anything left finishes the next morning. So does someone
+promoted while a pass is running.
+
 Anyone who can edit the board can promote. `moves` records each move, with reason `staff-promoted`.
-Set it up with `scripts/setup-promote.mjs`, which adds both columns to both boards together (a column
-on one board stops every pass) and subscribes the webhook, then re-run
-`scripts/mark-read-only-columns.mjs`. The webhook runs on `workers.dev`, outside the zone's bot rules.
+The webhook runs on `workers.dev`, outside the zone's bot rules.
 
 ### Moving one person now (operators)
 
@@ -360,6 +362,18 @@ max(Last Gift Date, Member Until), with no Lifetime tier and no Funraise profile
 
 When that first pass runs, check `runs`/`moves` for failures, and spot-check one moved person
 who has gifts. Inbound Donor links are the one link type not yet seen across a live move.
+**Adding staff promote to a live environment, in this order.** This build aborts every pass until
+both new columns exist, and Monday won't register a webhook until the URL answers its challenge:
+
+1. `node scripts/setup-promote.mjs --config config/<env>.json` adds the columns to both boards.
+   Then run `scripts/mark-read-only-columns.mjs` to mark `Promoted On`.
+2. `wrangler secret put PROMOTE_WEBHOOK_SECRET` (with `--env sandbox` for the sandbox).
+3. Deploy.
+4. Re-run the script with `--worker-url <url>` and `WEBHOOK_SECRET` to subscribe the webhooks.
+
+`email-log` deploys separately: add the `Bulk Email` label to its Activity Type column first, or a
+`learn@` BCC fails until the label exists. Then run its `scripts/relabel-bulk-email.mjs --apply`.
+
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.

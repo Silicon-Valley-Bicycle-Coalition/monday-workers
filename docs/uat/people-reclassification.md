@@ -29,7 +29,8 @@ they're on People (Historical), they move to People the next morning.
 **To bring someone back without a logged contact,** set **Promote to People** to **Promote** on their
 item. They move to People within a few seconds and it shows **Promoted**. That counts as activity, so
 they stay for seven years. On someone already on People, it restarts their seven years. If it shows
-**Couldn't promote**, the item's Updates say why.
+**Couldn't promote**, the item's Updates say why. If it still shows **Promote**, it hasn't run yet; that
+can happen when you promote many people at once or a pass is running, and it finishes the next morning.
 
 ## Try it (once it is live in the sandbox)
 

@@ -174,9 +174,29 @@ describe('promoteFromWebhook', () => {
   it('skips with no writes when a pass holds the lease, leaving the item at Promote', async () => {
     await new D1Ledger(env.DB).acquireLease('a-pass', '2026-10-09T17:00:00Z', '2026-10-09T18:00:00Z');
     const s = state('historical', requested);
-    expect(await promoteFromWebhook(deps(s), opts)).toEqual({ outcome: 'skipped', itemId: 'p1' });
+    expect(await promoteFromWebhook(deps(s), opts, async () => {})).toEqual({ outcome: 'skipped', itemId: 'p1' });
     expect(s.writes).toEqual([]);
     expect(s.moves).toEqual([]);
+  });
+
+  it('waits for a lease another promote holds, so promoting several people at once works', async () => {
+    const ledger = new D1Ledger(env.DB);
+    await ledger.acquireLease('other-promote', '2026-10-09T17:00:00Z', '2026-10-09T18:00:00Z');
+    const s = state('historical', requested);
+    const sleep = vi.fn(async () => { await ledger.releaseLease('other-promote'); });
+    expect(await promoteFromWebhook(deps(s), opts, sleep)).toEqual({ outcome: 'moved', itemId: 'p1' });
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after a few tries, well inside waitUntil, and leaves the item at Promote', async () => {
+    await new D1Ledger(env.DB).acquireLease('a-pass', '2026-10-09T17:00:00Z', '2026-10-09T18:00:00Z');
+    const s = state('historical', requested);
+    const sleep = vi.fn(async (_ms: number) => {});
+    expect(await promoteFromWebhook(deps(s), opts, sleep)).toEqual({ outcome: 'skipped', itemId: 'p1' });
+    const waited = sleep.mock.calls.reduce((sum, [ms]) => sum + ms, 0);
+    expect(waited).toBeGreaterThan(0);
+    expect(waited).toBeLessThanOrEqual(15_000);
+    expect(s.writes).toEqual([]);
   });
 
   it('labels the item and posts the columns Update when the two boards disagree', async () => {

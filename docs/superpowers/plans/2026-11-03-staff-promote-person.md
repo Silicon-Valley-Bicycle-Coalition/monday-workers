@@ -356,14 +356,14 @@ Nothing in this task runs without the user's approval, and production is a separ
 
 **Files:** none, unless verification finds a bug. Fix those with a test, in the task's own commit.
 
-- [ ] **Step 1: Add the labels and columns.** Add `Bulk Email` to the sandbox Activity Type column. Confirm the sandbox's `Person`, `Date` and `Activity Type` titles match config, then run `setup-promote.mjs` against sandbox and re-run the mark script. Expected: both columns on both boards, webhooks on both.
+- [ ] **Step 1: Add the labels and columns.** Add `Bulk Email` to the sandbox Activity Type column. Confirm the sandbox's `Person`, `Date` and `Activity Type` titles match config, and that Activities (Logged)'s `Person` connects to this Worker's sandbox People boards (email-log's sandbox config names different ones). Run `setup-promote.mjs` without `--worker-url` against sandbox and re-run the mark script. Expected: both columns on both boards.
 
 - [ ] **Step 2: Confirm token access.** Run `node scripts/check-monday-token-scope.mjs --workspace <sandbox id>` for the `SyncToken` user. Expected: it can read Activities (Logged) and write both People boards.
 
-- [ ] **Step 3: Deploy.** Set `PROMOTE_WEBHOOK_SECRET`, then `npm run deploy:sandbox` in both Workers.
+- [ ] **Step 3: Deploy.** Set `PROMOTE_WEBHOOK_SECRET`, run `npm run deploy:sandbox` in both Workers, then re-run `setup-promote.mjs` with `--worker-url`. Expected: webhooks on both boards, and a re-run reports nothing to do.
 
-- [ ] **Step 4: Verify the promote path.** With the sandbox write switch `on`, set `Promote` on a sandbox Historical person with old activity. Expected: same item id on People, `Promoted`, date today, links intact, and a `POST /reclassify/run?dryRun=true` afterwards doesn't plan them back. This also exercises `findItemsByStatus` if the next sweep runs against a second test item left at `Promote`.
+- [ ] **Step 4: Verify the promote path.** With the sandbox write switch `on`, set `Promote` on a sandbox Historical person with old activity. Expected: same item id on People, `Promoted`, date today, links intact, and a `POST /reclassify/run?dryRun=true` afterwards doesn't plan them back. This also exercises `findItemsByStatus` if the next sweep runs against a second test item left at `Promote`. Promote two people at once and confirm both finish.
 
 - [ ] **Step 5: Verify the logged-contact path.** Log a `Call` against a sandbox Historical person and run the cron step (`npm run dev:sandbox` with `--test-scheduled`, or wait for the morning run). Expected: they move, under a `logged-contact` run. A `learn@` BCC produces `Bulk Email` and moves nobody.
 
-- [ ] **Step 6: Report to the user** with item ids and the `/reclassify/status` output, and ask about the production rollout: labels, `setup-promote.mjs`, secret, deploy, then `relabel-bulk-email.mjs --apply`.
+- [ ] **Step 6: Report to the user** with item ids and the `/reclassify/status` output, and ask about the production rollout: the `Bulk Email` label, then `email-log`'s deploy and `relabel-bulk-email.mjs --apply`; `setup-promote.mjs` columns, secret, deploy, then `setup-promote.mjs --worker-url`.

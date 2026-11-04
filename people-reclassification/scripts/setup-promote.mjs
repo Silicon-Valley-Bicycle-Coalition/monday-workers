@@ -4,9 +4,12 @@
 // run because a column on only one stops every pass (the column check). Safe to re-run. Then re-run
 // scripts/mark-read-only-columns.mjs to mark Promoted On.
 //
-// Usage:
-//   MONDAY_API_TOKEN=... WEBHOOK_SECRET=... node scripts/setup-promote.mjs \
-//     --config config/<env>.json --worker-url https://<worker>.workers.dev
+// It runs twice, around the deploy. The new build aborts every pass until the columns exist, and
+// Monday won't register a webhook until the URL answers its challenge, which needs the new build:
+//   1. MONDAY_API_TOKEN=... node scripts/setup-promote.mjs --config config/<env>.json
+//   2. wrangler secret put PROMOTE_WEBHOOK_SECRET, then deploy
+//   3. MONDAY_API_TOKEN=... WEBHOOK_SECRET=... node scripts/setup-promote.mjs \
+//        --config config/<env>.json --worker-url https://<worker>.workers.dev
 //
 // WEBHOOK_SECRET must match the Worker's PROMOTE_WEBHOOK_SECRET.
 
@@ -20,15 +23,14 @@ const token = process.env.MONDAY_API_TOKEN;
 const secret = process.env.WEBHOOK_SECRET;
 const configPath = argOf('--config');
 const workerUrl = argOf('--worker-url');
-if (!token || !secret || !configPath || !workerUrl) {
-  console.error('usage: MONDAY_API_TOKEN=... WEBHOOK_SECRET=... node scripts/setup-promote.mjs --config config/<env>.json --worker-url <url>');
+if (!token || !configPath || (workerUrl !== null && !secret)) {
+  console.error('usage: MONDAY_API_TOKEN=... [WEBHOOK_SECRET=...] node scripts/setup-promote.mjs --config config/<env>.json [--worker-url <url>]');
   process.exit(1);
 }
 const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const { promoteStatus, promotedOn } = config.peopleColumns;
 const { requestLabel, doneLabel, failedLabel } = config.promote;
 const boardIds = [config.boards.live.boardId, config.boards.historical.boardId].map(String);
-const url = `${workerUrl.replace(/\/$/, '')}/webhooks/monday/promote?secret=${encodeURIComponent(secret)}`;
 
 const monday = new MondayGraphQL(config.monday.apiUrl, token);
 // Mutations create things, so a failure that may have committed mustn't be retried into a duplicate.
@@ -42,7 +44,7 @@ async function readBoards() {
   }));
 }
 
-const plan = planPromoteSetup(await readBoards(), promoteStatus, promotedOn);
+const plan = planPromoteSetup(await readBoards(), promoteStatus, promotedOn, { webhooks: workerUrl !== null });
 // Keyed 0..2: Monday shows label id 5's text for an empty status cell, so a real label stays off it.
 const defaults = JSON.stringify({ labels: { 0: requestLabel, 1: doneLabel, 2: failedLabel } });
 for (const { boardId, title, type } of plan.createColumns) {
@@ -55,6 +57,7 @@ for (const { boardId, title, type } of plan.createColumns) {
   console.log(`board ${boardId}: created column "${title}"`);
 }
 if (plan.createWebhooks.length > 0) {
+  const url = `${workerUrl.replace(/\/$/, '')}/webhooks/monday/promote?secret=${encodeURIComponent(secret)}`;
   const boards = await readBoards();
   for (const boardId of plan.createWebhooks) {
     const column = boards.find((b) => b.id === boardId).columns.find((c) => bareTitle(c.title) === bareTitle(promoteStatus));
@@ -68,3 +71,4 @@ if (plan.createWebhooks.length > 0) {
   }
 }
 if (plan.createColumns.length === 0 && plan.createWebhooks.length === 0) console.log('nothing to do');
+if (workerUrl === null) console.log('columns only: no webhook subscribed. Deploy, then re-run with --worker-url.');
