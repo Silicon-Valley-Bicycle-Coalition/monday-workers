@@ -41,6 +41,10 @@ const ELIGIBLE_ATTENDANCE: Record<ClassEmailKind, string[]> = {
 
 const normalize = (email: string): string => email.trim().toLowerCase();
 
+// Checked in, on a row that counts: a volunteer or a row with no address proves nothing about the
+// class, whether for the check-in guard or for "this address already came".
+const isCheckedIn = (e: RosterEntry): boolean => e.attendance === 'Attended' && e.role === ELIGIBLE_ROLE && normalize(e.email) !== '';
+
 function toRecipient(e: RosterEntry): Recipient {
   return { registrationId: e.registrationId, email: e.email, firstName: e.firstName, name: e.name };
 }
@@ -58,7 +62,7 @@ function refusalFor(kind: ClassEmailKind, facts: ClassFacts, roster: RosterEntry
   const endsAt = facts.endsAt === null ? NaN : Date.parse(facts.endsAt);
   if (Number.isNaN(endsAt)) return 'This class has no end time, so this email cannot be sent.';
   if (now.getTime() < endsAt) return 'This class has not ended yet, so this email cannot be sent.';
-  if (!roster.some((e) => e.attendance === 'Attended')) {
+  if (!roster.some(isCheckedIn)) {
     return 'Nobody has been checked in for this class, so this email cannot be sent.';
   }
   return null;
@@ -89,7 +93,7 @@ export function planKind(kind: ClassEmailKind, facts: ClassFacts, roster: Roster
     if (e && normalize(e.email) !== '') taken.add(normalize(e.email));
   }
   // A person who attended on any registration of an address is not told they were missed.
-  const attendedAddresses = new Set(roster.filter((e) => e.attendance === 'Attended').map((e) => normalize(e.email)));
+  const attendedAddresses = new Set(roster.filter(isCheckedIn).map((e) => normalize(e.email)));
   const claimedIds = new Set(rows.map((r) => r.registrationId));
 
   const recipients: Recipient[] = [];

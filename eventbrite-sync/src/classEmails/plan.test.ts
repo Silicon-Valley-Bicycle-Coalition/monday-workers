@@ -68,6 +68,35 @@ describe('planKind', () => {
     }
   });
 
+  it('an Attended volunteer alone does not satisfy the check-in guard', () => {
+    const roster = [entry('v', 'Attended', { role: 'Volunteer' }), entry('a', 'Registered')];
+    for (const kind of ['thank-you', 'missed-you'] as const) {
+      const plan = planKind(kind, facts, roster, [], AFTER);
+      expect(plan.refusal).toContain('checked in');
+      expect(plan.recipients).toEqual([]);
+    }
+  });
+
+  it('an Attended row with a blank email alone does not satisfy the check-in guard', () => {
+    for (const email of ['', '   ']) {
+      const roster = [entry('b', 'Attended', { email }), entry('a', 'Registered')];
+      for (const kind of ['thank-you', 'missed-you'] as const) {
+        const plan = planKind(kind, facts, roster, [], AFTER);
+        expect(plan.refusal).toContain('checked in');
+        expect(plan.recipients).toEqual([]);
+      }
+    }
+  });
+
+  it("a volunteer's Attended address doesn't block a participant's missed-you", () => {
+    const roster = [
+      entry('p', 'Attended'),
+      entry('v', 'Attended', { role: 'Volunteer', email: 'shared@x.org' }),
+      entry('a', 'Registered', { email: 'Shared@x.org' }),
+    ];
+    expect(ids(planKind('missed-you', facts, roster, [], AFTER))).toEqual(['a']);
+  });
+
   it('thank-you goes to Attended only', () => {
     const roster = [entry('a', 'Attended'), entry('b', 'Registered'), entry('c', 'No Show'), entry('d', 'Canceled')];
     expect(ids(planKind('thank-you', facts, roster, [], AFTER))).toEqual(['a']);
