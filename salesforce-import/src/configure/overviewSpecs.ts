@@ -162,7 +162,7 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     count('Registrations', 'event-registrations'),
     count('Attended', 'event-registrations', [is('Attendance', 'Attended')]),
     sum('Volunteer hours', 'event-registrations', 'Hours', [], 'number'),
-    count('Unlinked attendees', 'event-registrations', [empty('Attendee'), is('Source', 'Eventbrite')]),
+    count('Unlinked attendees', 'event-registrations', [empty('Attendee'), is('Source', 'Eventbrite', 'Funraise')]),
   ] },
   volunteers: { widgets: [
     count('Shifts', 'volunteers'),

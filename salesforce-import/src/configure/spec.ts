@@ -526,7 +526,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columnDescriptions: {
       'Class Date': "The event's start date, from Eventbrite. Blank on registrations from before the Eventbrite integration.",
       'Attendee': "The registrant's People item, when they're a known person. Blank for " +
-        'Eventbrite registrants who never became contacts; Attendee Name / Email keep what the platform had.',
+        'Eventbrite registrants who never became contacts and for rows from the yearly Funraise ' +
+        'import until someone links them; Attendee Name / Email keep what the platform had.',
       'Attendance': 'Registered, Attended, Canceled. No Show is never set by the import — staff ' +
         'set it after an event that took check-in.',
       'Role': 'Volunteer when the event ran on the volunteering organizer account, else Participant.',
@@ -547,7 +548,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],
         filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
       { name: 'Unlinked attendees', tag: 'Worklist', columns: ['Attendee Name', 'Attendee Email', 'Event'],
-        filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite'] }] } },
+        filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite', 'Funraise'] }] } },
       { name: 'Needs review', tag: 'Worklist', columns: ['Attendee', 'Event', 'Attribution'],
         filter: { rules: [{ columnTitle: 'Attribution', operator: 'any_of', labelValues: ['Needs review'] }] } },
     ],
