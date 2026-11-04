@@ -29,6 +29,9 @@ export interface ReclassificationMondayClient {
   // One item's values, for a single-person move. null = deleted or not visible.
   getItemValues(itemId: string, columnIds: string[]): Promise<PageItem | null>;
   moveItemToBoard(itemId: string, boardId: number, groupId: string, mapping: ColumnMapping[]): Promise<void>;
+  // Column id → value. Writing the same values twice is harmless, so the transport may retry it.
+  writeColumnValues(boardId: number, itemId: string, values: Record<string, unknown>): Promise<void>;
+  postUpdate(itemId: string, body: string): Promise<void>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
 }
 
@@ -127,6 +130,23 @@ export class HttpMondayClient implements ReclassificationMondayClient {
       { itemId, boardId: String(boardId), groupId, mapping },
       // A move that may have committed must not be retried blind: a second move of an item already
       // on the target board errors, and the ledger row must record the ambiguity instead.
+      { idempotent: false },
+    );
+  }
+
+  async writeColumnValues(boardId: number, itemId: string, values: Record<string, unknown>): Promise<void> {
+    await this.graphql<{ change_multiple_column_values: { id: string } }>(
+      `mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $values) { id }
+      }`,
+      { boardId: String(boardId), itemId, values: JSON.stringify(values) },
+    );
+  }
+
+  async postUpdate(itemId: string, body: string): Promise<void> {
+    await this.graphql<{ create_update: { id: string } }>(
+      `mutation ($itemId: ID!, $body: String!) { create_update(item_id: $itemId, body: $body) { id } }`,
+      { itemId, body },
       { idempotent: false },
     );
   }
