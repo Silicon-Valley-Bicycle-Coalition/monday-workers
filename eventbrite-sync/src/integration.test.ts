@@ -5,7 +5,6 @@ import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
 import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
-import { runFollowups } from './followups/run';
 import { processEvent } from './consumer/processEvent';
 import { sweepEndedEvents } from './endedEvents/sweep';
 import { fakeAttendeeStore } from './test/fakeStores';
@@ -52,7 +51,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
       findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 555666 ? { id: '9001' } : null)),
       createItem: vi.fn().mockResolvedValue({ id: 'monday-item-int-1' }),
       changeColumnValues: vi.fn().mockResolvedValue(undefined),
-      getItems: vi.fn(), notify: vi.fn(),
+      getItems: vi.fn(), postUpdate: vi.fn(),
     };
 
     const ack = vi.fn();
@@ -114,8 +113,8 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
   });
 });
 
-describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> Monday, then the hourly follow-up', () => {
-  it('writes the Events item and a registration, then labels the registration at 08:00 Pacific the next day', async () => {
+describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> Monday', () => {
+  it('writes the Events item and a registration', async () => {
     const eventStore = new D1EventStore(env.DB);
     const attendeeStore = new D1AttendeeStore(env.DB);
     const orderStore = new D1OrderStore(env.DB);
@@ -131,7 +130,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
         headers: { 'Content-Type': 'application/json' },
       });
 
-    // Monday mock: items created by the consumers are readable back by the follow-up job.
+    // Monday mock: items created by the consumers are readable back.
     const items = new Map<string, { board: number; name: string; columns: Record<string, string> }>();
     let next = 0;
     // Monday's `text` for a column: a string stays, a status/email object reads as its label/address.
@@ -155,7 +154,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
         Object.assign(items.get(id)!.columns, flat(values));
       }),
       getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => mondayItem(id, items.get(id)!.name, items.get(id)!.columns))),
-      notify: vi.fn().mockResolvedValue(undefined),
+      postUpdate: vi.fn().mockResolvedValue(undefined),
     };
     const eventbriteClient: EventbriteClient = {
       getOrder: vi.fn(),
@@ -189,20 +188,6 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
     // Nothing personal reached D1.
     expect(JSON.stringify(attendeeRow)).not.toContain('pat@example.com');
 
-    // The staff-set Class Type on the Events item is what the follow-up job needs.
-    items.get(eventRow!.mondayItemId!)!.columns['ev_class_type_col'] = 'Adult Learn to Ride';
-
-    const followDeps = { eventStore, attendeeStore, mondayClient, config: cfg };
-    // 07:00 Pacific the next day (PST): not yet due.
-    expect(await runFollowups(new Date('2026-11-01T15:00:00Z'), followDeps)).toEqual({ sent: [], held: [], skipped: [], failed: [] });
-    // 09:00 Pacific: due.
-    const result = await runFollowups(new Date('2026-11-01T17:00:00Z'), followDeps);
-    expect(result).toEqual({ sent: ['9001'], held: [], skipped: [], failed: [] });
-    expect(items.get(registrationId)!.columns['att_followup_col']).toBe('Thank-you: Adult Learn to Ride');
-    expect(items.get(eventRow!.mondayItemId!)!.columns['ev_followups_col']).toBe('Sent');
-
-    // Run-once: the next hourly sweep skips it.
-    expect(await runFollowups(new Date('2026-11-01T18:00:00Z'), followDeps)).toEqual({ sent: [], held: [], skipped: ['9001'], failed: [] });
   });
 });
 
@@ -231,7 +216,7 @@ describe('integration: ended-event sweep -> D1 -> consumer -> Monday write', () 
       attendeeStore: fakeAttendeeStore(),
       queue: { ...queue, sendBatch: vi.fn() },
       eventbriteClient: { getEvent: vi.fn().mockResolvedValue(event), getOrder: vi.fn(), getAttendee: vi.fn() },
-      mondayClient: { changeColumnValues, findItemByColumnValue: vi.fn(), createItem: vi.fn(), getItems: vi.fn(), notify: vi.fn() },
+      mondayClient: { changeColumnValues, findItemByColumnValue: vi.fn(), createItem: vi.fn(), getItems: vi.fn() },
       config,
     } as unknown as ProcessBatchDeps;
     await processEvent(sent[0]!, deps);

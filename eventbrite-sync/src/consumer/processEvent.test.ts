@@ -47,7 +47,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     findItemByColumnValue: vi.fn().mockResolvedValue(null),
     createItem: vi.fn().mockResolvedValue({ id: 'item-1' }),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
-    getItems: vi.fn(), notify: vi.fn(),
+    getItems: vi.fn(), postUpdate: vi.fn(),
     ...overrides,
   };
 }
@@ -94,7 +94,7 @@ describe('processEvent', () => {
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Completed' }));
   });
 
-  // The follow-up sweep and the ended-event sweep read this, so neither treats the class as having run.
+  // The class email routes and the ended-event sweep read this, so neither treats the class as open.
   it('records a canceled event Eventbrite still reports as live as canceled in the ledger', async () => {
     const { deps, eventStore, mondayClient } = setup({
       row: eventRow({ mondayItemId: 'item-9' }),

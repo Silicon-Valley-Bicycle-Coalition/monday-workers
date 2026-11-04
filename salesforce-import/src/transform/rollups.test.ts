@@ -8,8 +8,16 @@ describe('donorRollups', () => {
        { Id: 'o2', npsp__Primary_Contact__c: 'c1', Amount: 20.2, CloseDate: '2024-01-01', StageName: 'Posted' },
        { Id: 'o3', npsp__Primary_Contact__c: 'c1', Amount: 999, CloseDate: '2024-02-01', StageName: 'Closed Lost' }],
       [{ Id: 't1', CnP_PaaS__Contact__c: 'c1', CnP_PaaS__TotalCharged__c: 5,
-         CnP_PaaS__TransactionDate__c: '2015-01-01T00:00:00Z' }]);
+         CnP_PaaS__TransactionDate__c: '2015-01-01T20:00:00Z' }]);
     expect(r.get('c1')).toEqual({ lifetimeGiving: 35.3, firstGiftISO: '2015-01-01', giftCount: 3 });
+  });
+
+  it('takes First Gift from the Pacific day of a C&P transaction, and CloseDate as written', () => {
+    const r = donorRollups(
+      [{ Id: 'o1', npsp__Primary_Contact__c: 'c1', Amount: 10, CloseDate: '2022-01-01', StageName: 'Posted' }],
+      [{ Id: 't1', CnP_PaaS__Contact__c: 'c1', CnP_PaaS__TotalCharged__c: 5,
+         CnP_PaaS__TransactionDate__c: '2022-01-01T07:28:38.000+0000' }]);
+    expect(r.get('c1')?.firstGiftISO).toBe('2021-12-31');
   });
 
   it('excludes Closed Won — not IsWon in Salesforce, unlike Posted (monday-migration docs/07 gotcha #10)', () => {

@@ -2,15 +2,14 @@
 
 **Staff UAT script:** [`docs/uat/monday-backup.md`](../docs/uat/monday-backup.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
-`wrangler.jsonc` is a placeholder), the `monday-auth` broker's Read-only app consented
-(`MONDAY_AUTH`), a Google service account added as a member (**Contributor**, not Content manager — see
-"Service account key" below) of the destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
-and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
-that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
-config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
+**Status:** **Production deployed 2026-11-03** from `main` (e4f0678, version `43d05351`): both
+crons, `writes on`, D1 migrations applied, `MONDAY_AUTH` bound to the `monday-auth` broker's
+Read-only app, a Google service account as a member (**Contributor**, not Content manager — see
+"Service account key" below) of the destination **Shared Drive**, and `config/backup.json`'s
+`destinationParentFolderId` set to it. **The first 09:00 UTC snapshot is still to be confirmed.**
+Requires **Workers Paid** (see Cloudflare config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
 paginated `Doc.blocks`) nor the restore mutations in `src/restore/api.ts` have been exercised
-against a live account yet — confirm them in Monday's API Explorer before the first real run.
+against a live account yet, so the first production run is their first real test.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
 [`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
 outstanding** (it needs the provisioned sandbox, issue #14).
@@ -121,8 +120,9 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 * **Cron-only, no public surface.** No routes, and `workers_dev`/`preview_urls` stay `false` —
   nothing about a backup Worker should be reachable from the Internet at all; it only makes
   outbound calls.
-* **Workers Builds on first ship.** Connect the Worker in the dashboard with root directory
-  `/monday-backup`; after that, routine changes deploy by merging to `main`, and manual
+* **Workers Builds connected 2026-11-03** (root directory `/monday-backup`, branch `main`, watch
+  path `monday-backup/*`, preview builds off); no build has run yet, so the first merge touching
+  `monday-backup/src/` is what proves the watch path. Routine changes deploy by merging to `main`, and manual
   `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
   section for why hand-deploys are distrusted here).
 * **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50

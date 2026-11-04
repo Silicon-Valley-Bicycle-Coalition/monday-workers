@@ -5,11 +5,27 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
+// en-CA formats as YYYY-MM-DD. The org and every event run on Pacific time (monday-migration docs/07 §7).
+const pacificDay = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+// For a true datetime field, which the API returns in UTC: dateCol's slice puts anything after
+// 4 or 5 pm Pacific on the next day. Same day eventbrite-sync writes (src/util/isoDate.ts).
+export function pacificDate(iso: string | null | undefined): string {
+  const ms = Date.parse(iso ?? '');
+  return Number.isNaN(ms) ? '' : pacificDay.format(ms);
+}
+
+export function pacificDateCol(iso: string | null | undefined): unknown {
+  const date = pacificDate(iso);
+  return date ? { date } : null;
+}
+
 // SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes
 // into the fiscal year ending the following June once its month is July or later. Integer
-// parsing, not Date-object arithmetic — no timezone conversion needed since CloseDate/
-// TransactionDate are already plain dates by the time they reach this column (see
-// docs/07-migration-gotchas.md §7 in monday-migration for why that's safe).
+// parsing, not Date-object arithmetic: it takes a plain date such as CloseDate and converts no
+// timezone, so a datetime has to be reduced to its Pacific day first (see cnpGiftDay).
 export function fiscalYear(iso: string | null | undefined): string {
   if (!iso) return '';
   const [y, m] = iso.slice(0, 10).split('-').map(Number);

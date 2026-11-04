@@ -4,9 +4,9 @@
     "accountUrl": "https://bikesiliconvalley.monday.com"
   },
   "boards": {
-    "peopleLive": 0,
-    "peopleHistorical": 0,
-    "organizations": 0
+    "peopleLive": 18437909781,
+    "peopleHistorical": 18437909784,
+    "organizations": 18437909779
   },
   "columns": {
     "address": "Address",
@@ -30,8 +30,8 @@
     "budgetMs": 480000
   },
   "access": {
-    "teamDomain": "",
-    "aud": "",
+    "teamDomain": "https://bikesiliconvalley.cloudflareaccess.com",
+    "aud": "82e2a814a17b3d31d9813dbb135513b1355cb33271781620cc0b2230db749c92",
     "allowedEmailDomain": "bikesiliconvalley.org"
   }
 }

@@ -48,8 +48,34 @@ describe('mapEvent', () => {
       ev_source_col: 'Eventbrite',
       ev_url_col: { url: 'https://www.eventbrite.com/e/9001', text: 'Eventbrite' },
     });
-    expect(m.columnValues).not.toHaveProperty('ev_class_type_col');
-    expect(m.columnValues).not.toHaveProperty('ev_followups_col');
+  });
+
+  describe('Send class email link', () => {
+    const withPage = (pageUrl: string | null) => {
+      const c = testConfig();
+      c.attendeeSync.classEmails.pageUrl = pageUrl;
+      return c;
+    };
+
+    it('writes the link for a Public event', () => {
+      const m = mapEvent(event(), withPage('https://example.org/classes'), NOW);
+      expect(m.columnValues['ev_send_col']).toEqual({ url: 'https://example.org/classes?event=9001', text: 'Send class email' });
+    });
+
+    it('omits it for other programs', () => {
+      const m = mapEvent(event({ organizer_id: undefined, organizer: { name: 'Silicon Valley Bicycle Coalition (volunteering)' } }), withPage('https://example.org/classes'), NOW);
+      expect(m.program).toBe('Volunteering');
+      expect(m.columnValues).not.toHaveProperty('ev_send_col');
+    });
+
+    it('omits it when pageUrl is null', () => {
+      expect(mapEvent(event(), withPage(null), NOW).columnValues).not.toHaveProperty('ev_send_col');
+    });
+
+    it('URL-encodes the event id', () => {
+      const m = mapEvent(event({ id: 'a b&c' }), withPage('https://example.org/classes'), NOW);
+      expect(m.columnValues['ev_send_col']).toEqual({ url: 'https://example.org/classes?event=a%20b%26c', text: 'Send class email' });
+    });
   });
 
   it('is online for online events', () => {

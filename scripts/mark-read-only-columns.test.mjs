@@ -66,6 +66,10 @@ describe('MARKED_COLUMNS', () => {
     }
   });
 
+  it('locks the Send class email link on Events', () => {
+    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send class email'));
+  });
+
   it('marks both People boards identically, so people-reclassification moves keep matching', () => {
     assert.deepEqual(MARKED_COLUMNS['People (Historical)'], MARKED_COLUMNS.People);
   });

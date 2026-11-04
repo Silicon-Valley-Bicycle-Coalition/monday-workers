@@ -4,7 +4,6 @@ import { toISODate } from '../util/isoDate';
 
 export interface EventMapping {
   itemName: string;
-  // Never includes classTypeColumn or followupsColumn: staff own those on the Events board.
   columnValues: Record<string, unknown>;
   // Normalized ISO UTC (`toISOString`), because the D1 ledger compares `ends_at` as text.
   startsAt: string | null;
@@ -42,7 +41,7 @@ function programFromOrganizer(organizer: unknown): string {
 
 // A canceled event's status can stay `live` or `started`, with only its sales status saying so
 // (Eventbrite staff, developer forum, 2021). This is the status everything downstream goes by: the
-// Event Status label, and through the ledger the follow-up and ended-event sweeps.
+// Event Status label, and through the ledger the class email routes and the ended-event sweep.
 export function effectiveEventStatus(event: EventbriteEvent): string | null | undefined {
   return event.event_sales_status?.message_code === 'event_cancelled' ? 'canceled' : event.status;
 }
@@ -87,6 +86,12 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, n
   if (city !== null) columnValues[cols.cityColumn] = city;
   const url = nonEmpty(event.url);
   if (url !== null) columnValues[cols.urlColumn] = { url, text: 'Eventbrite' };
+  // Only Public classes get the send link, and never before the page is deployed (pageUrl null).
+  const pageUrl = config.attendeeSync.classEmails.pageUrl;
+  if (pageUrl !== null && program === 'Public') {
+    const sep = pageUrl.includes('?') ? '&' : '?';
+    columnValues[cols.sendLinkColumn] = { url: `${pageUrl}${sep}event=${encodeURIComponent(event.id)}`, text: 'Send class email' };
+  }
 
   return {
     itemName: nonEmpty(event.name?.text) ?? `Eventbrite event ${event.id}`,

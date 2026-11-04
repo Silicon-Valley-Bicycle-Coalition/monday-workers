@@ -6,6 +6,8 @@ import { parseJsonc } from '../test/jsonc';
 import { validateConfig, PLACEHOLDER_COLUMN_ID } from '../src/config';
 import { queueBaseName } from '../src/environment';
 import { isDeadLetterBatch } from '../src/index';
+import { validateAttendeeDelivery } from '../src/webhook/validateAttendee';
+import type { EventbriteSyncConfig } from '../src/types';
 
 // Keeps the sandbox and production deployments apart at the repo level: sandbox.json is the
 // real CRM Sandbox config; svbc.json is production and may hold no sandbox id; and env.sandbox
@@ -38,8 +40,7 @@ const COLUMN_KEYS = [
   'attendeeSync.events.eventStatusColumn',
   'attendeeSync.events.sourceColumn',
   'attendeeSync.events.urlColumn',
-  'attendeeSync.events.classTypeColumn',
-  'attendeeSync.events.followupsColumn',
+  'attendeeSync.events.sendLinkColumn',
   'attendeeSync.registrations.attendeeIdColumn',
   'attendeeSync.registrations.attendeeNameColumn',
   'attendeeSync.registrations.attendeeEmailColumn',
@@ -52,8 +53,6 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.classDateColumn',
   'attendeeSync.registrations.classDayColumn',
   'attendeeSync.registrations.classLocationColumn',
-  'attendeeSync.registrations.classTypeColumn',
-  'attendeeSync.registrations.followupEmailColumn',
   'attendeeSync.peopleEmailColumn',
 ];
 
@@ -69,8 +68,8 @@ describe('config split: board and column ids', () => {
   it.each(COLUMN_KEYS)('%s: a real sandbox id never appears in production', (path) => {
     const sb = get(sandbox, path);
     const prod = get(production, path);
-    if (sb === null) return;
-    expect(sb).not.toBe(PLACEHOLDER_COLUMN_ID);
+    // A placeholder is "not created yet" (sendLinkColumn until the column exists); only a real id is checked.
+    if (sb === null || sb === PLACEHOLDER_COLUMN_ID) return;
     expect(prod === PLACEHOLDER_COLUMN_ID || prod === null || prod !== sb).toBe(true);
   });
 
@@ -85,7 +84,7 @@ describe('config split: board and column ids', () => {
   });
 
   // The order path is live in production (2026-11-02): every Donations/People key is filled from
-  // the production boards. The attendee feed stays unset until Event Registrations is mapped.
+  // the production boards.
   it('production fills the order path: both boards and every eventbriteSync column', () => {
     expect(production.monday.boards['donations:live']).toBe(18437909794);
     expect(production.monday.boards['people-live']).toBe(18437909781);
@@ -97,6 +96,28 @@ describe('config split: board and column ids', () => {
   it('both shipped configs validate', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
+  });
+
+  it('production fills the attendee feed: both boards and every attendeeSync column', () => {
+    expect(production.monday.boards['events']).toBe(18437909790);
+    expect(production.monday.boards['event-registrations']).toBe(18437909792);
+    // sendLinkColumn is the one exception: the Events "Send link" column does not exist yet, so
+    // it holds the placeholder until it is created.
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && k !== 'attendeeSync.events.sendLinkColumn')) {
+      expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
+    }
+    expect(production.attendeeSync.events.sendLinkColumn).toBe(PLACEHOLDER_COLUMN_ID);
+  });
+
+  it('class emails: production never redirects to the sandbox inbox; sandbox always does', () => {
+    expect(production.attendeeSync.classEmails.sandboxRecipient).toBeNull();
+    expect(sandbox.attendeeSync.classEmails.sandboxRecipient).toBe('sandbox@bikesiliconvalley.org');
+  });
+
+  it('class emails: sandbox and production send pages differ when both are set', () => {
+    const sb = sandbox.attendeeSync.classEmails.pageUrl;
+    const prod = production.attendeeSync.classEmails.pageUrl;
+    if (sb !== null && prod !== null) expect(sb).not.toBe(prod);
   });
 
   it('sandbox.json targets the CRM Sandbox (sandbox v3) Donations and People boards — the same ones funraise-sync writes', () => {
@@ -111,10 +132,7 @@ describe('config split: board and column ids', () => {
     expect(production.monday.boards['event-registrations']).not.toBe(18431577302);
   });
 
-  it('attendee follow-ups: sandbox notifies David; production is unset until the cutover fills it', () => {
-    expect(sandbox.attendeeSync.followups).toEqual({ maxAgeDays: 3, sendHourLocal: 8, notifyUserId: 74336833 });
-    const prodUser: unknown = production.attendeeSync.followups.notifyUserId;
-    expect(prodUser === null || (typeof prodUser === 'number' && prodUser > 0)).toBe(true);
+  it('sandbox.json maps the People email column', () => {
     expect(sandbox.attendeeSync.peopleEmailColumn).toBe('email_mm79m5qa');
   });
 
@@ -135,7 +153,7 @@ describe('config split: board and column ids', () => {
     };
     collect(sandbox.eventbriteSync);
     collect(sandbox.attendeeSync);
-    expect(ids.size).toBeGreaterThan(30);
+    expect(ids.size).toBeGreaterThan(25);
     const productionText = JSON.stringify(production);
     for (const id of ids) {
       expect(productionText, id).not.toContain(`"${id}"`);
@@ -213,5 +231,19 @@ describe('wrangler.jsonc env.sandbox', () => {
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-eventbrite-sync');
+  });
+});
+
+describe('check-in deliveries', () => {
+  // Eventbrite stores attendee.checked_in/out as these on the webhook, and the route ignores an
+  // action the config doesn't list, which would leave a checked-in attendee as Registered.
+  it.each([['production', production], ['sandbox', sandbox]])('%s accepts the names Eventbrite stores', (_name, config) => {
+    for (const action of ['barcode.checked_in', 'barcode.un_checked_in']) {
+      const verdict = validateAttendeeDelivery(
+        { api_url: 'https://www.eventbriteapi.com/v3/events/1001/attendees/2002/', config: { action } },
+        config as unknown as EventbriteSyncConfig,
+      );
+      expect(verdict).toEqual({ kind: 'process', delivery: { kind: 'attendee', eventId: '1001', attendeeId: '2002', action } });
+    }
   });
 });

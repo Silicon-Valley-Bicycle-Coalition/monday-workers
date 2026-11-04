@@ -104,6 +104,8 @@ date is read in `window.timeZone`):
 | Last gift | People `Last Gift Date` — donation-rollups' rollup, kept current on **both** boards | Activity date |
 | Membership term end | People `Member Until` on or before today | Activity date |
 | Event registration | Event Registrations → the linked Event's `Date`, counted when `Attendance` ∈ `countedAttendanceLabels` (`Attended`) **or** `Source` ∈ `countedRegisteredSources` (`Funraise`) — the import's "a Funraise registration is a paid ticket; an Eventbrite registration counts only once checked in" rule (decision 2026-09-08) | Activity date |
+| Logged contact | Activities (Logged) `Date`, via the `Person` link, when `Activity Type` is `Email`, `Call` or `Meeting` (`countedTypeLabels`). `Bulk Email`, one per mail-merge recipient, doesn't count | Activity date (optional source; `loggedActivities: null` turns it off) |
+| Promotion | People `Promoted On`, written when staff promote someone | Activity date |
 | Volunteer hours | Volunteers `Date`, via the `Volunteer` link | Activity date (optional source; `volunteers: null` turns it off) |
 
 Latest activity = the max of the activity dates; dates after today are ignored as data-entry
@@ -111,9 +113,10 @@ defects (docs/07's `CloseDate` finding), except Member Until, which is clamped t
 if latest activity ≥ cutoff, historical if before it. **No evidence at all → left in place and
 counted** (`verdicts.unknown` in the report): advocacy contacts (Stakeholder Type = City or
 Agency Staff / Elected Official) and anyone staff add by hand leave no gift, term or
-registration behind, and sweeping them to Historical on absence would be wrong. Staff Task
-activity (`recentActivityIds` in the import) is not a source: the sizing analysis left it out,
-and the Activities board holds two years of it, inside any window.
+registration behind, and sweeping them to Historical on absence would be wrong. Once such a person
+has a logged contact or a promotion they have an activity date, so seven years later they can age
+out like anyone else. The imported Activities board (`recentActivityIds` in the import) is not a
+source: the sizing analysis left it out, and it holds two years of staff Tasks, inside any window.
 
 Rollup columns that already exist on People are used in preference to re-scanning Donations:
 `Last Gift Date` is donation-rollups' maintained rollup (it writes all three owner boards, so a
@@ -131,6 +134,10 @@ values depends on `columns_mapping`. **The rules, probed against sandbox v4 on 2
 * Given at all, `columns_mapping` must have an entry for **every source column except the name
   column**. Leaving any column out, or including the name, fails with "Columns mapping is not in
   the expected format". So does any mapping on API versions 2026-07, 2026-10 and 2027-01 alike.
+* **The exception: a doc column (`direct_doc`) must be left out.** Monday rejects any mapping that
+  names one, even with a null target, with that same error. So `monday Doc v2` stops every live move
+  if mapped, while dry runs pass, since they never call the move (found 2026-11-03 in sandbox v4). Whether
+  a doc attached to an item survives a move is unverified: `create_doc` returned nothing in the probe.
 * A `target: null` entry is accepted and drops that column's data. Formula columns can't be
   mapped, so they are always null.
 * Connect columns **are** mapped explicitly, like any other column.
@@ -142,6 +149,9 @@ So:
   column but the name** by title + type (`src/columns.ts`), leaving nothing to "best match";
   a column with no counterpart maps to null, which is only allowed for types holding no value
   of their own (formula, mirror, auto-number, …).
+* `dtd-sync/scripts/setup-columns.mjs` adds `DTD Company ID`, `DTD Company` and `DTD match link` to
+  People only, which stops every move here until Historical has them too. Sandbox v4's were added
+  by hand on 2026-11-03. Production needs the same when that script runs there.
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values. **Any column added to one People board must be
@@ -199,12 +209,84 @@ So:
 * A pass stops after five consecutive move failures (Monday is unhappy, not one odd item) and
   reports `remaining`; the next day's cron continues.
 
+### Staff promote and logged contact
+
+Two daily paths bring someone back to People without waiting for a quarterly pass. Each morning's
+order is in `src/daily.ts`: the promote sweep, then a pass if one is owed, otherwise the logged-contact
+run. Neither run counts as a pass when the cron decides whether one is due.
+
+**A logged contact** (`src/loggedContact.ts`): on a morning no pass is owed, anyone on Historical
+with a counted Activities (Logged) item inside the window moves to People, most recent first, under
+the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged contact does this; a
+new gift still waits for the pass. This pages all of Activities (Logged) every day, so watch the
+invocation's CPU and subrequests as that board grows.
+
+**A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
+either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
+(`PROMOTE_WEBHOOK_SECRET`). The Worker writes `Promoted On` = today, moves the item if it's on
+Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
+for the window. On People it restarts the window with no move.
+
+The status stays at `Promote` until the work is done, so a crash leaves something to find. Each
+morning a sweep finds anything at `Promote` on either board and runs the same steps, which also
+covers a dropped webhook, a lease held by a running pass, and a label carried across by a pass's move.
+
+| Situation | What staff see |
+|---|---|
+| Worked | `Promoted`, and the item on People |
+| People is full, or the two boards' columns disagree | `Couldn't promote`, and an Update with the reason. No date is written |
+| The move fails from the webhook | Still `Promote`; the morning sweep retries |
+| The move fails from the sweep | `Couldn't promote`, `Promoted On` cleared (so no pass moves them later), and an Update. Set `Promote` again to retry |
+| Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
+| Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
+
+Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
+so a small batch finishes within seconds and anything left finishes the next morning. So does someone
+promoted while a pass is running.
+
+Anyone who can edit the board can promote. `moves` records each move, with reason `staff-promoted`.
+The webhook runs on `workers.dev`, outside the zone's bot rules.
+
+### Moving one person now (operators)
+
+For someone who can't wait for the next pass, `POST /reclassify/move-to-people/<itemId>` moves one
+person from People (Historical) to People. Unlike `POST /reclassify/run`, it touches nobody else.
+The item id is the number in the person's Monday URL. Preview first:
+
+```sh
+curl -X POST -H "Authorization: Bearer $RECLASSIFY_SECRET" "https://<worker>/reclassify/move-to-people/<itemId>?dryRun=true"
+```
+
+It follows the write switch like `/reclassify/run`: `off` is a dry run, `hold` and `unknown` answer
+409, and `?dryRun=true` forces a preview in any mode but `unknown` (503). It holds the same lease,
+refuses on the same column check, and records a `moves` row under a run with trigger `single-move`.
+The cron ignores those runs when deciding whether a pass is due, so a single move can't stop a
+continuation or use up a quarterly pass.
+
+It applies the liveness rule first, so it reads Event Registrations, Events and Volunteers in full.
+That's a few dozen page reads.
+
+| `outcome` | HTTP | Meaning |
+|---|---|---|
+| `moved`, `dry-run` | 200 | Moved, or would move. `reason` and `latestActivity` say why |
+| `already-on-people` | 200 | Nothing to do |
+| `refused` | 409 | Latest activity is before `cutoffISO`, so the next pass would send them straight back. Record the qualifying activity first (a gift, a term, a registration, volunteer hours), then retry. There is no override |
+| `not-found` | 404 | Deleted or not visible |
+| `wrong-board` | 409 | The item isn't on either People board, so nothing was touched |
+| `skipped` | 409 | A pass holds the lease; try again later |
+| `failed`, `error` | 502 | The move failed, or a read or check stopped it first. See `error` |
+| `ambiguous` | 502 | Monday may have applied it. The next pass settles the row; check the item's board in the meantime |
+
+Someone with no evidence at all may move, and stays moved, since no pass moves such a person.
+There's no route for the other direction, because a pass handles that.
+
 ## APIs & auth
 
 * **Monday GraphQL** (`src/monday/graphql.ts`, the canonical transport copy; `src/monday/client.ts`
   tunes it to 4 attempts / 30 s per request). Reads: `boards { items_count items_limit columns
   groups }`, `items_page(limit: 500)` with `column_values` (+ `linked_item_ids` on connect
-  columns), `items(ids:) { board { id } }`. Writes: `move_item_to_board`, and `create_item` on IT
+  columns), `items(ids:) { board { id } }`, `items(ids:) { column_values }` (a single-person
+  move). Writes: `move_item_to_board`, and `create_item` on IT
   Requests when configured — both sent non-idempotent so a timeout is recorded, never retried blind.
 * **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
   `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
@@ -232,16 +314,18 @@ in config and a renamed column fails the pass loudly rather than reading blanks.
 
 | Config | Sandbox (`config/sandbox.json`, CRM Sandbox v4) | Production (`config/svbc.json`) |
 |---|---|---|
-| `boards.live` | People `18437342592` | `0` until cutover |
-| `boards.historical` | People (Historical) `18437342607` | `0` |
-| `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `0` / `0` |
-| `volunteers` | Volunteers `18437342662` | `0` |
+| `boards.live` | People `18437342592` | People `18437909781` |
+| `boards.historical` | People (Historical) `18437342607` | People (Historical) `18437909784` |
+| `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `18437909792` / `18437909790` |
+| `volunteers` | Volunteers `18437342662` | `18437909797` |
+| `loggedActivities` | Activities (Logged) (sandbox v4) `18438393347`, a small test board. `email-log`'s sandbox writes to the v3 board `18438204391`, whose links are v3 items, so logged email doesn't reach this Worker in the sandbox | Activities (Logged) `18438042551` |
 | `alerts.itRequests` | `null` (log only — IT Requests is a production board) | `8846215481`, `Type` = `IT Support`, 30-day cooldown |
 
 Column titles (`peopleColumns`, the registrations and volunteers `columns` blocks) are the ones
 the import and donation-rollups create: `Last Gift Date`, `Member Until`, `Membership Tier`,
 `Funraise Profile`, `Attendee`, `Event`, `Attendance`, `Source`, `Date` (Events), `Volunteer`,
-`Date` (Volunteers). Checked against the CRM Sandbox v4 boards 2026-10-28: all present with the
+`Date` (Volunteers), and on Activities (Logged) `Person`, `Date`, `Activity Type`. `promote` holds
+the status labels. Checked against the CRM Sandbox v4 boards 2026-10-28: all present with the
 expected types, and the two People boards' columns agree. The Events start date is titled
 `Date`, not `Start` — `Start` is the Campaigns and Affiliations column — so the config's
 original `startColumn: "Start"` would have failed every pass at the Events schema read.
@@ -285,6 +369,18 @@ max(Last Gift Date, Member Until), with no Lifetime tier and no Funraise profile
 
 When that first pass runs, check `runs`/`moves` for failures, and spot-check one moved person
 who has gifts. Inbound Donor links are the one link type not yet seen across a live move.
+**Adding staff promote to a live environment, in this order.** This build aborts every pass until
+both new columns exist, and Monday won't register a webhook until the URL answers its challenge:
+
+1. `node scripts/setup-promote.mjs --config config/<env>.json` adds the columns to both boards.
+   Then run `scripts/mark-read-only-columns.mjs` to mark `Promoted On`.
+2. `wrangler secret put PROMOTE_WEBHOOK_SECRET` (with `--env sandbox` for the sandbox).
+3. Deploy.
+4. Re-run the script with `--worker-url <url>` and `WEBHOOK_SECRET` to subscribe the webhooks.
+
+`email-log` deploys separately: add the `Bulk Email` label to its Activity Type column first, or a
+`learn@` BCC fails until the label exists. Then run its `scripts/relabel-bulk-email.mjs --apply`.
+
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.

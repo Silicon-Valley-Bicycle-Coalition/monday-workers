@@ -401,6 +401,22 @@ describe('runTransform', () => {
     expect(ada.columns['Personal Email Consent']).toEqual({ label: 'Not in Mailchimp' });
   });
 
+  it('judges a C&P donor against peopleActiveSinceISO by the Pacific day of the gift', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      { Id: 'c4', FirstName: 'CnP', LastName: 'Only', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'clickpledge_transactions.ndjson'), [
+      { Id: 'cnp1', Name: 'New Year Eve Gift', CnP_PaaS__Contact__c: 'c4',
+        CnP_PaaS__TransactionDate__c: '2019-01-01T05:00:00.000+0000', CnP_PaaS__TotalCharged__c: 40, ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
+    expect(await runTransform([])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    expect(payloads.find((p) => p.sfId === 'c4')!.board).toBe('people-historical');
+  });
+
   it('includes a C&P-only donor as People (historical for an old gift), with a resolving Donor link', async () => {
     await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
       { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
@@ -484,6 +500,10 @@ describe('runTransform', () => {
       { Id: 'k-noend', Name: 'Bike to the Future 2025 homepage', IsActive: false, ...prov },
       { Id: 'k-unused', Name: 'Never used', IsActive: false, EndDate: '2012-01-01', ...prov },
     ]);
+    await writeNdjson(dataPath('extract', 'clickpledge_transactions.ndjson'), [
+      { Id: 'cnp8', Name: 'New Year Eve Gift', CnP_PaaS__Account__c: 'a-ind2', CnP_PaaS__TotalCharged__c: 15,
+        CnP_PaaS__TransactionDate__c: '2014-01-01T05:00:00.000+0000', ...prov },
+    ]);
     await writeNdjson(dataPath('extract', 'affiliations.ndjson'), []);
     await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), []);
     expect(await runTransform(['--no-consent'])).toBe(0);
@@ -498,10 +518,11 @@ describe('runTransform', () => {
 
     expect(readFileSync(dataPath('review', 'unlinked-person-account-gifts.csv'), 'utf8')).toBe(
       'opportunitySfId,accountSfId,accountName,reason,amount,closeDate\n' +
-      'o8,a-ind2,Lone Q Household,sole contact not migrated,40,2014-04-01\n');
+      'o8,a-ind2,Lone Q Household,sole contact not migrated,40,2014-04-01\n' +
+      'cnp8,a-ind2,Lone Q Household,sole contact not migrated,15,2013-12-31\n');
     const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
     expect(report.assertions.find((a) => a.name === 'skipped-links')!.violations).toEqual([]);
-    expect(report.warnings.some((w) => w.startsWith('donations: 1 gifts on One-to-One accounts linked to their sole Person; 1 left without a Donor'))).toBe(true);
+    expect(report.warnings.some((w) => w.startsWith('donations: 1 gifts on One-to-One accounts linked to their sole Person; 2 left without a Donor'))).toBe(true);
   });
 
   it('fails the skipped-links assertion on a link whose target is not migrated', async () => {
