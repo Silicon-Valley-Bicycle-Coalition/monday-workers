@@ -93,6 +93,16 @@ The giving letter (tax letter) *does* work in this test environment, but it's de
 with obvious "SANDBOX TEST" placeholder wording everywhere, since SVBC hasn't finalized the real
 wording for that letter yet.
 
+To check how it treats different gifts, look at a letter for a person who has, in the same year:
+
+- **A gift with Gift Type `Donor Advised Fund`:** it should appear in its own table below the
+  total, and its amount should not be in the total.
+- **A gift with Gift Type `Event Ticket`, `Sponsorship`, `Grants` or `Contracts`:** it should not
+  appear on the letter at all, but should still appear in their giving history.
+
+A person with only Donor Advised Fund gifts that year should get a letter with just that table,
+and no total. A person with only the other four types should have no letter for that year.
+
 ## If something seems stuck
 
 - **No email after a couple of minutes?** Wait about 15 minutes and try again. The system limits
@@ -110,8 +120,8 @@ wording for that letter yet.
 The portal's year-end giving letters double as IRS donation acknowledgments, so they stay
 switched off until SVBC approves the exact wording. That is gated in code, not just a process
 step. **Raised 2026-08-24; owner: Executive Director plus SVBC's accountant.** Sign off directly
-in this document: check each box and add your initials and the date beside it. All four are
-needed before letters go live. Two are already drafted and just need review as written; two are
+in this document: check each box and add your initials and the date beside it. All six are
+needed before letters go live. Four are already drafted and just need review as written; two are
 genuinely blank and need real input.
 
 **Already drafted, review and approve as written or send back changes:**
@@ -121,6 +131,14 @@ genuinely blank and need real input.
       José, CA 95109", signed by "Clarrissa Cabansagan", "Executive Director".
 - [ ] **Standard statement** (non-member donors): *"No goods or services were provided in
       exchange for these contributions."*
+- [ ] **Donor-advised fund gifts.** These are listed below the total, in their own table, without
+      the statement above, under this wording: *"Gifts from a donor-advised fund, listed for your
+      records only. They are not counted as contributions in this letter."* A donor whose only
+      gifts that year came through a fund gets a letter with just this table. Approve the wording
+      and that these gifts are listed at all.
+- [ ] **Gifts left off the letter.** Event Ticket, Sponsorship, Grants and Contracts don't appear,
+      and a donor with only those gets no letter for that year. Confirm this, including for
+      event tickets, which may instead need a statement of what the ticket's value was.
 
 **Still blank, need real answers:**
 
@@ -132,7 +150,7 @@ genuinely blank and need real input.
       plain one. Monday has two tier values today, **Member** and **Lifetime**; decide whether
       both get it (both have the same bike-shop discount access today) or just one.
 
-Donors won't see any letters until all four boxes are checked, the approved wording is entered
+Donors won't see any letters until all six boxes are checked, the approved wording is entered
 into the portal's configuration (`member-portal/config/svbc.json`, the `taxLetter` block), and
 the portal is redeployed. Once that lands, "resend my tax receipt" requests become "log into the
 portal."

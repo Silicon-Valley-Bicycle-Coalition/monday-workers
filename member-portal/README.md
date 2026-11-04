@@ -279,6 +279,15 @@ config-gated features:
   consolidated per-year giving letter rendered live from the Donations board as HTML with print
   CSS — the browser's Print → Save as PDF is the delivery mechanism; nothing is generated or
   stored server-side. Only completed calendar years with at least one donation get a letter.
+  **Gift Types treated differently** (`monday.columns.donationDescription` is the board's Gift Type
+  column; labels compare without case or punctuation): `taxLetter.excludedGiftTypes` (Event Ticket,
+  Sponsorship, Grants, Contracts) are left off and never earn a letter or a January email on their
+  own. `taxLetter.separateGiftTypes` (Donor Advised Fund) are listed after the total under
+  `taxLetter.separateGiftsStatement`, outside the total and away from the no-goods sentence; a donor
+  with only those gets a letter with no contributions table, total, statement or tax-records line.
+  Any other label, or a blank, is an ordinary contribution. A DAF gift only counts as one once its
+  Gift Type says so: one entered as Donation is an ordinary contribution. The portal's giving
+  history still shows every gift.
   **Gated on `taxLetter` config:** every string in it ships as `REPLACE_AFTER_SIGNOFF` and the
   feature shows a friendly "not available yet" state until SVBC signs off on the IRS
   acknowledgment language (both the plain no-goods-or-services statement and the

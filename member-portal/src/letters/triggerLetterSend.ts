@@ -1,6 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import type { LetterSendStore } from '../db/letterSends';
-import type { LetterSendQueueMessage } from '../types';
+import type { LetterSendQueueMessage, TaxLetterConfig } from '../types';
 import { listLetterYears } from './loadLetterData';
 
 // Re-exported so importers of this module don't also need to import ../types directly for the
@@ -17,6 +17,7 @@ export type TriggerLetterSendResult =
 
 export interface TriggerLetterSendDeps {
   monday: MondayClient;
+  taxLetter: TaxLetterConfig;
   store: LetterSendStore;
   queue: { send(message: LetterSendQueueMessage): Promise<void> };
   now: () => Date;
@@ -28,7 +29,7 @@ export async function triggerLetterSend(donorItemId: string, deps: TriggerLetter
   }
 
   const now = deps.now();
-  const [listing] = await listLetterYears([donorItemId], deps.monday, now);
+  const [listing] = await listLetterYears([donorItemId], deps.monday, deps.taxLetter, now);
   const year = listing?.years[0];
   if (year === undefined) {
     return { kind: 'no-eligible-year' };

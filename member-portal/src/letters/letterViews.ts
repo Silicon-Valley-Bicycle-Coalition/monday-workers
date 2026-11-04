@@ -1,6 +1,6 @@
 import { escapeHtml } from '../views';
 import type { TaxLetterConfig } from '../types';
-import type { LetterData, LetterYearListing } from './loadLetterData';
+import type { LetterData, LetterGift, LetterYearListing } from './loadLetterData';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 
@@ -32,9 +32,28 @@ export function lettersListView(listings: LetterYearListing[], locale: Locale): 
 // English (spec non-goal: it's an official document a donor may keep for tax purposes). Only the
 // surrounding chrome (nav links, print button) and a new disclaimer note are translated.
 export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generatedOn: string, locale: Locale): string {
-  const rows = data.gifts
-    .map((gift) => `<tr><td>${escapeHtml(gift.date)}</td><td>${escapeHtml(gift.amount)}</td></tr>`)
-    .join('');
+  const giftTable = (gifts: LetterGift[]) => `
+      <table>
+        <thead><tr><th>Date</th><th>Amount</th></tr></thead>
+        <tbody>${gifts.map((gift) => `<tr><td>${escapeHtml(gift.date)}</td><td>${escapeHtml(gift.amount)}</td></tr>`).join('')}</tbody>
+      </table>`;
+
+  // A donor whose only gifts that year are separately listed has nothing to acknowledge: no
+  // contributions, no total and no statement, and nothing to keep for their tax records.
+  const hasContributions = data.gifts.length > 0;
+  const contributions = hasContributions
+    ? `<p>Thank you for supporting ${escapeHtml(taxLetter.orgLegalName)}. Our records show the
+      following contributions from you during the ${data.year} calendar year:</p>
+      ${giftTable(data.gifts)}
+      <p class="total">Total contributions for ${data.year}: ${escapeHtml(data.totalFormatted)}</p>
+      <p>${escapeHtml(data.statement)}</p>`
+    : `<p>Thank you for supporting ${escapeHtml(taxLetter.orgLegalName)}.</p>`;
+  const separate =
+    data.separateGifts.length > 0
+      ? `<p>${escapeHtml(taxLetter.separateGiftsStatement)}</p>
+      ${giftTable(data.separateGifts)}`
+      : '';
+  const retain = hasContributions ? 'Please retain this letter for your tax records. ' : '';
 
   return `
     <style>
@@ -71,16 +90,9 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
       </header>
       <p>${escapeHtml(generatedOn)}</p>
       <p>Dear ${escapeHtml(data.donorName)},</p>
-      <p>Thank you for supporting ${escapeHtml(taxLetter.orgLegalName)}. Our records show the
-      following contributions from you during the ${data.year} calendar year:</p>
-      <table>
-        <thead><tr><th>Date</th><th>Amount</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="total">Total contributions for ${data.year}: ${escapeHtml(data.totalFormatted)}</p>
-      <p>${escapeHtml(data.statement)}</p>
-      <p>Please retain this letter for your tax records. If anything here looks incorrect,
-      contact us and we will review it.</p>
+      ${contributions}
+      ${separate}
+      <p>${retain}If anything here looks incorrect, contact us and we will review it.</p>
       <p>Sincerely,<br>
       ${escapeHtml(taxLetter.signatureName)}<br>
       ${escapeHtml(taxLetter.signatureTitle)}, ${escapeHtml(taxLetter.orgLegalName)}</p>

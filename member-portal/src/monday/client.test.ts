@@ -1629,7 +1629,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     }));
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '88']);
+    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77', '88']);
   });
 
   it('skips gifts dated before historyStartISO so a mid-year floor never earns a letter for the earlier part', async () => {
@@ -1651,7 +1651,48 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     const flooredCfg = { countableStatuses, historyStartISO: '2026-06-01' };
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, flooredCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['88']);
+    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['88']);
+  });
+
+  it('skips gifts of an excluded Gift Type, so they never earn a letter on their own', async () => {
+    const sweepItem = (id: string, giftType: string, donorId: string) => ({
+      id,
+      column_values: [
+        { id: 'date_col', text: '2026-03-01' },
+        { id: 'desc_col', text: giftType },
+        { id: 'donation_status_col', text: 'Received' },
+        { id: 'link_col', text: 'x', linked_item_ids: [donorId] },
+      ],
+    });
+    let query = '';
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      query = (JSON.parse(init.body as string) as { query: string }).query;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: null,
+                  items: [
+                    sweepItem('1', 'Event Ticket', '77'),
+                    sweepItem('2', 'Donor Advised Fund', '88'),
+                    sweepItem('3', 'event ticket', '99'),
+                    sweepItem('4', 'Donation', '99'),
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026, ['Event Ticket'])).toEqual(['88', '99']);
+    expect(query).toContain('desc_col');
   });
 
   it('ends the sweep gracefully when next_items_page comes back null (expired cursor)', async () => {
@@ -1688,7 +1729,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
+    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77']);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1723,7 +1764,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       },
     });
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
+    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77']);
   });
 
   it('skips donations with non-countable statuses so donors with only Failed/Pending gifts get no letter', async () => {
@@ -1753,7 +1794,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       },
     });
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '99']);
+    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77', '99']);
   });
 
   it('requests the donation status column in the sweep query', async () => {
@@ -1768,7 +1809,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listDonorIdsWithDonationsInYear(2026);
+    await client.listDonorIdsWithDonationsInYear(2026, []);
 
     expect(captured!.query).toContain('donation_status_col');
   });
@@ -1785,7 +1826,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listDonorIdsWithDonationsInYear(2026);
+    await client.listDonorIdsWithDonationsInYear(2026, []);
 
     expect(captured).not.toBeNull();
     expect(captured!.variables.from).toBe('2026-01-01');

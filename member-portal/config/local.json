@@ -63,7 +63,10 @@
     "signatureTitle": "Executive Director",
     "plainStatement": "No goods or services were provided in exchange for this contribution.",
     "benefitStatement": "In exchange for this contribution, you received membership benefits.",
-    "benefitTiers": ["Gold"]
+    "benefitTiers": ["Gold"],
+    "excludedGiftTypes": ["Event Ticket", "Sponsorship", "Grants", "Contracts"],
+    "separateGiftTypes": ["Donor Advised Fund"],
+    "separateGiftsStatement": "Gifts from a donor-advised fund, listed for your records only. They are not counted as contributions in this letter."
   },
   "changeRequests": {
     "boardId": 4,

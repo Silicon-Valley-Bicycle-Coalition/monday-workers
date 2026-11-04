@@ -18,6 +18,7 @@ import type {
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { MondayGraphQL, type TokenProvider } from './graphql';
+import { giftTypeIn } from '../letters/giftTypes';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
@@ -129,7 +130,7 @@ export interface MondayClient {
     columns: LetterCronColumns;
     settingsItemName: string;
   }): Promise<LetterSettings | null>;
-  listDonorIdsWithDonationsInYear(year: number): Promise<string[]>;
+  listDonorIdsWithDonationsInYear(year: number, excludedGiftTypes: string[]): Promise<string[]>;
 }
 
 export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'historyStartISO'>;
@@ -754,7 +755,7 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  async listDonorIdsWithDonationsInYear(year: number): Promise<string[]> {
+  async listDonorIdsWithDonationsInYear(year: number, excludedGiftTypes: string[]): Promise<string[]> {
     // Backs the January letter cron: one ids-only sweep of the Donations board bounded to the
     // target year, instead of a getMemberPortalData call per Donors-board item. The date-column
     // `between` rules shape (with the CheckboxValue/BoardRelationValue fragments this file
@@ -765,6 +766,7 @@ export class HttpMondayClient implements MondayClient {
       this.columns.donationDate,
       this.columns.donationDonorLink,
       this.columns.donationStatus,
+      this.columns.donationDescription,
     ]);
     const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
     const firstPageQuery = `
@@ -800,6 +802,8 @@ export class HttpMondayClient implements MondayClient {
       // the donor's own letter page would omit.
       if (floor !== null && date < floor) continue;
       if (!countable.has(columnText(item, this.columns.donationStatus))) continue;
+      // Same Gift Type rule as loadLetterData (donationDescription is the Gift Type column).
+      if (giftTypeIn(excludedGiftTypes, columnText(item, this.columns.donationDescription))) continue;
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
       for (const donorId of link?.linked_item_ids ?? []) {
         donorIds.add(donorId);
