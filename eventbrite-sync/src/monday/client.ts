@@ -17,6 +17,18 @@ export interface MondayClient {
   // An update (comment) on an item's page (create_update). Not retried: a retry after an
   // ambiguous failure could post it twice.
   postUpdate(itemId: string, body: string): Promise<void>;
+  // One Emails & Activities entry. Not idempotent, and an entry can't be looked up to dedupe.
+  createTimelineItem(input: TimelineItemInput): Promise<string>;
+}
+
+// One Emails & Activities entry (create_timeline_item).
+export interface TimelineItemInput {
+  itemId: string;
+  customActivityId: string;
+  title: string;
+  summary: string;
+  content: string;
+  timestamp: string;
 }
 
 export interface MondayItemColumns {
@@ -155,5 +167,18 @@ export class HttpMondayClient implements MondayClient {
       { itemId, body },
       { idempotent: false }
     );
+  }
+
+  async createTimelineItem(input: TimelineItemInput): Promise<string> {
+    const data = await this.transport.request<{ create_timeline_item: { id: string } }>(
+      `mutation ($itemId: ID!, $customActivityId: String!, $title: String!, $summary: String, $content: String, $timestamp: ISO8601DateTime!) {
+        create_timeline_item(item_id: $itemId, custom_activity_id: $customActivityId, title: $title, summary: $summary, content: $content, timestamp: $timestamp) {
+          id
+        }
+      }`,
+      { ...input },
+      { idempotent: false }
+    );
+    return data.create_timeline_item.id;
   }
 }

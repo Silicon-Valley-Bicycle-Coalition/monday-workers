@@ -441,6 +441,13 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
   claimed recipient is never handed out again. A crash leaves them `claimed`, shown as unconfirmed;
   only a person releases them, and not until 10 minutes after the claim (`RELEASE_MIN_CLAIM_AGE_MS`),
   because Apps Script runs stop at about 6 and a younger claim may still be sending.
+* **Each sent email goes on the person's timeline.** Monday's own logging doesn't pick up mail sent as
+  a Google Group (tested 2026-11-04), so after a send `result` posts a `Logged email` custom activity
+  (`classEmails.timelineActivityId`, null to turn it off) on the person's People item when the address
+  matches, otherwise on their Event Registrations item. It never creates a person. The entry has the
+  subject with its placeholders filled in, the kind, the class and the sender, not the body. It doesn't
+  count as contact in `people-reclassification` or reach Activities (Logged). A failed entry isn't
+  retried, because an entry can't be looked up to dedupe; an update on the Events item lists it.
 * **The ledger is written first** in `result`, so a Monday failure (the update, No Show, People
   match) is logged by id and error class and cannot lose what was sent.
 * **A switch flipped mid-send.** `result` records the ledger under any mode so people already

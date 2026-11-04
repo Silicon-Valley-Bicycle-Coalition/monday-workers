@@ -80,7 +80,8 @@
     },
     "classEmails": {
       "pageUrl": null,
-      "sandboxRecipient": "sandbox@bikesiliconvalley.org"
+      "sandboxRecipient": "sandbox@bikesiliconvalley.org",
+      "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
     "peopleEmailColumn": "email_mm79m5qa"
   }

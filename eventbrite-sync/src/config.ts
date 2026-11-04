@@ -142,12 +142,15 @@ function validateAttendeeSync(raw: unknown): void {
   if (!isObject(a.classEmails)) {
     throw new Error('config: missing required key "attendeeSync.classEmails"');
   }
-  const { pageUrl, sandboxRecipient } = a.classEmails;
+  const { pageUrl, sandboxRecipient, timelineActivityId } = a.classEmails;
   if (pageUrl !== null && !(typeof pageUrl === 'string' && /^https:\/\/[^\s/]+\S*$/.test(pageUrl))) {
     throw new Error('config: "attendeeSync.classEmails.pageUrl" must be an https URL, or null until the page is deployed');
   }
   if (sandboxRecipient !== null && !(typeof sandboxRecipient === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sandboxRecipient))) {
     throw new Error('config: "attendeeSync.classEmails.sandboxRecipient" must be an email address, or null');
+  }
+  if (timelineActivityId !== null && !(typeof timelineActivityId === 'string' && timelineActivityId.trim() !== '')) {
+    throw new Error('config: "attendeeSync.classEmails.timelineActivityId" must be a custom activity id, or null to post no timeline entries');
   }
   // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
   if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
