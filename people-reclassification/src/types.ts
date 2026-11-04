@@ -30,9 +30,9 @@ export interface VolunteersConfig {
   columns: { volunteer: string; date: string };
 }
 
-// The go-forward activity board: emails email-log writes, and calls and meetings staff log by hand.
-// A logged item counts as activity when its Activity Type label is one of countedTypeLabels, which
-// leaves out email-log's Bulk Email (one per mail-merge recipient, not a contact).
+// The go-forward activity board: calls and meetings staff log by hand, and the emails logged there
+// before log@ was retired (2026-11-04). A logged item counts as activity when its Activity Type
+// label is one of countedTypeLabels, which leaves out Bulk Email (a mail-merge send, not a contact).
 export interface LoggedActivitiesConfig {
   boardId: number;
   columns: { person: string; date: string; activityType: string };

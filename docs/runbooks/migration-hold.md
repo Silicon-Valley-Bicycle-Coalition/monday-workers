@@ -7,7 +7,7 @@ root. Never run `hold` to `off` to leave a hold: it drops the held messages. Nev
 The in-scope Workers, in four groups that this runbook treats differently:
 
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
-  `email-log`, `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
+  `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
   `monday-backup`, `report-digests`.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
@@ -60,7 +60,7 @@ notice), so allow about a minute per Worker that has queues.
 Set the writing-normally group one Worker at a time, never with `all`:
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -104,7 +104,7 @@ node scripts/flags.mjs donation-rollups writes off --env production
    with `on` would turn them on.
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes hold --env production || echo "FAILED: $w"
 done
 ```
@@ -154,7 +154,7 @@ node scripts/flags.mjs status --env production
    never `all`. The CLI waits 60 s before resuming each Worker's queues.
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -196,7 +196,6 @@ flip. Recover them by hand if wanted:
   any block worklist item it needs. Which reports: the `uploads` rows with `uploaded_at` inside the
   off window (`wrangler d1 execute svbc-benevity-import --remote --command "SELECT monday_asset_id,
   uploaded_at FROM uploads WHERE uploaded_at >= '<off start>'"`). See `benevity-import/README.md`.
-- `email-log`: rows close out `failed`, so a staff re-send is logged.
 - `member-portal`: change requests are refused with 503 under `off` (the donor re-submits); the
   letters webhook logs and returns 200 with no `letter_sends` row (staff re-click); a message
   queued under `hold` but consumed under `off` stays `queued`.
