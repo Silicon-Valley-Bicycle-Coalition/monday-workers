@@ -8,6 +8,15 @@ function requireString(src: Record<string, unknown>, key: string): string {
   return value;
 }
 
+function stringList(src: Record<string, unknown>, key: string): string[] {
+  const value = src[key];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || id === '')) {
+    throw new Error(`config: ${key} must be an array of non-empty strings if present`);
+  }
+  return value as string[];
+}
+
 export function validateConfig(raw: unknown): BackupConfig {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -42,5 +51,7 @@ export function validateConfig(raw: unknown): BackupConfig {
     excludeBoardIds: (excludeBoardIds as string[] | undefined) ?? [],
     workspaceIds: workspaceIds as string[] | undefined,
     apiUsageAlerts: apiUsageAlerts ?? false,
+    requiredBoardIds: stringList(cfg, 'requiredBoardIds'),
+    priorityWorkspaceIds: stringList(cfg, 'priorityWorkspaceIds'),
   };
 }

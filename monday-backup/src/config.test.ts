@@ -4,7 +4,7 @@ import { validateConfig } from './config';
 describe('validateConfig', () => {
   it('accepts a minimal valid config', () => {
     const config = validateConfig({ destinationParentFolderId: 'folder-123' });
-    expect(config).toEqual({ destinationParentFolderId: 'folder-123', excludeBoardIds: [], apiUsageAlerts: false });
+    expect(config).toMatchObject({ destinationParentFolderId: 'folder-123', excludeBoardIds: [], apiUsageAlerts: false });
   });
 
   it('carries through excludeBoardIds when present', () => {
@@ -67,5 +67,14 @@ describe('validateConfig', () => {
 
   it('rejects a non-boolean apiUsageAlerts', () => {
     expect(() => validateConfig({ destinationParentFolderId: 'f', apiUsageAlerts: 'yes' })).toThrow(/apiUsageAlerts must be a boolean/);
+  });
+
+  it.each(['requiredBoardIds', 'priorityWorkspaceIds'])('%s defaults to empty and must hold non-empty strings', (key) => {
+    const base = { destinationParentFolderId: 'folder' };
+    expect(validateConfig(base)[key as 'requiredBoardIds']).toEqual([]);
+    expect(validateConfig({ ...base, [key]: ['1'] })[key as 'requiredBoardIds']).toEqual(['1']);
+    expect(() => validateConfig({ ...base, [key]: 'nope' })).toThrow(key);
+    expect(() => validateConfig({ ...base, [key]: [1] })).toThrow(key);
+    expect(() => validateConfig({ ...base, [key]: [''] })).toThrow(key);
   });
 });
