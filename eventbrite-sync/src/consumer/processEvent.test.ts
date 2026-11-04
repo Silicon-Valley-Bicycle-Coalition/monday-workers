@@ -85,6 +85,46 @@ describe('processEvent', () => {
     expect(queue.send).not.toHaveBeenCalled();
   });
 
+  it('writes Completed for a finished event Eventbrite still reports as started', async () => {
+    const { deps, mondayClient } = setup({
+      row: eventRow({ mondayItemId: 'item-9' }),
+      event: event({ status: 'started', start: { utc: '2020-01-01T02:00:00Z' }, end: { utc: '2020-01-01T04:00:00Z' } }),
+    });
+    await processEvent(message, deps);
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Completed' }));
+  });
+
+  // The class email routes and the ended-event sweep read this, so neither treats the class as open.
+  it('records a canceled event Eventbrite still reports as live as canceled in the ledger', async () => {
+    const { deps, eventStore, mondayClient } = setup({
+      row: eventRow({ mondayItemId: 'item-9' }),
+      event: event({ status: 'live', event_sales_status: { sales_status: 'sales_ended', message_code: 'event_cancelled' } }),
+    });
+    await processEvent(message, deps);
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Canceled' }));
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.objectContaining({ eventbriteStatus: 'canceled' }));
+  });
+
+  // The ended-event sweep reads written_at before ends_at as "that write can't have been Completed".
+  it('stamps written_at with the moment it chose the status, when the Monday write spans the end', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-31T03:59:59.000Z'));
+      const { deps, eventStore, mondayClient } = setup({
+        row: eventRow({ mondayItemId: 'item-9' }),
+        monday: { changeColumnValues: vi.fn(async () => { vi.setSystemTime(new Date('2026-10-31T04:00:05.000Z')); }) },
+      });
+      await processEvent(message, deps);
+      expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Upcoming' }));
+      expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.objectContaining({
+        endsAt: '2026-10-31T04:00:00.000Z',
+        writtenAt: '2026-10-31T03:59:59.000Z',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('adopts an existing item found by the Eventbrite id column: changes values, never creates', async () => {
     const { deps, mondayClient, eventStore } = setup({ monday: { findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'staff-7' }) } });
     await processEvent(message, deps);

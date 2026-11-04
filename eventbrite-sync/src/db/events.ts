@@ -23,6 +23,8 @@ export interface EventStore {
   recordDelivery(delivery: NewEventDelivery): Promise<'inserted' | 'updated'>;
   updateStatus(eventId: string, status: LedgerStatus, patch?: EventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<EventRow | null>;
+  // Events with a Monday item whose end falls in [fromIso, toIso]; what the ended-event sweep reads.
+  listEndedBetween(fromIso: string, toIso: string): Promise<EventRow[]>;
 }
 
 interface D1EventRecord {
@@ -114,5 +116,13 @@ export class D1EventStore implements EventStore {
   async getEvent(eventId: string): Promise<EventRow | null> {
     const record = await this.db.prepare(`SELECT ${COLUMNS} FROM events WHERE event_id = ?1`).bind(eventId).first<D1EventRecord>();
     return record === null ? null : toEventRow(record);
+  }
+
+  async listEndedBetween(fromIso: string, toIso: string): Promise<EventRow[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${COLUMNS} FROM events WHERE monday_item_id IS NOT NULL AND ends_at >= ?1 AND ends_at <= ?2 ORDER BY ends_at`)
+      .bind(fromIso, toIso)
+      .all<D1EventRecord>();
+    return results.map(toEventRow);
   }
 }

@@ -68,7 +68,7 @@ consumer fetches the order at processing time. That is why out-of-order deliveri
 (whatever Eventbrite says now is what gets written), why a redelivery is enqueued rather than
 deduped (one extra fetch, an idempotent write, never a second item), and why the D1 ledger holds
 **no name, email or payload** — nothing personal at rest, so unlike `funraise-sync` there is no
-retention purge. (The hourly cron only runs the daily missed-order check.) See `../README.md`'s Reliability section for why the Queue shape is
+retention purge. (The hourly cron runs the ended-event sweep and the daily missed-order check; neither purges.) See `../README.md`'s Reliability section for why the Queue shape is
 standard across every webhook-driven Worker here.
 
 ## APIs & auth
@@ -328,6 +328,7 @@ Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Sec
 Events board (one item per Eventbrite event, program from the organizer name)
 Event Registrations board (one item per attendee: Attendance, First Name, Class Date/Day/Location, People link)
   ▲
+Hourly cron  0 * * * *  → ended-event sweep re-queues events that have ended, for Event Status
 Send page (Apps Script, runs as the coordinator)   X-Class-Email-Secret
   │  GET  /class-emails/:eventId          who may get each email, refusals, earlier sends
   │  POST /class-emails/:eventId/claim    records the recipients, returns the ones newly claimed
@@ -384,6 +385,36 @@ Eventbrite stores `attendee.checked_in` and `attendee.checked_out` as `barcode.c
 `barcode.un_checked_in` (production's webhook read back that way on 2026-11-03), and the Worker
 ignores an action its config doesn't list, so the config lists both spellings. No real check-in
 delivery has been seen yet, so which spelling arrives, and its `api_url` shape, are unconfirmed.
+
+### Event Status after the event ends
+
+`mapEvent` writes **Completed** once the event's end (else its start) has passed, whatever Eventbrite
+says: `live` and `started` mean Upcoming only until then. Salesforce's copy of `started` outlived 84
+events (2026-11-02 org). Eventbrite itself read `completed` for all 211 past events on the board on
+2026-11-03, but when it flips isn't documented, so a fetch near the end could otherwise write
+Upcoming back over a corrected row. Canceled and Draft stay as they are.
+
+A canceled event's status doesn't reliably say so, but its sales status does
+(`?expand=event_sales_status`, `message_code: event_cancelled`). On 2026-11-03 SVBC's 7 canceled
+events read `deleted`, `draft` and `completed`, all with that code, and none of the 226 others had
+it; Eventbrite staff describe `live` too (developer forum, 2021). The consumer treats that code as `canceled`, on
+the board and in the ledger, so the send page refuses every class email for it. It only learns this
+when it fetches the event: on a delivery, or when the sweep below re-queues it after its end.
+
+Whether Eventbrite sends `event.updated` when an event ends is unconfirmed: we found nothing in its
+docs that says so, and no ledger has an event that ended with the webhook registered yet (production's
+first ends 2026-11-09). So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
+in the last 30 days that ended, was last seen `live` or `started`, is `written`, and whose
+`written_at` is before its `ends_at`. The ordinary event consumer then fetches it and writes it, so a
+class canceled or moved since is written as that, and failures get the usual retries and DLQ. The
+consumer's write moves `written_at` past `ends_at`, which is the run-once guard; if a real delivery
+does arrive at the end, it does the same and the sweep finds nothing to do.
+
+It only sees this Worker's own ledger, with `ends_at` set: **an item `salesforce-import` loaded has no
+row until a delivery for that event arrives**, so a future event imported at cutover that hears
+nothing stays Upcoming. Run `scripts/backfill-attendees.mjs` for those events to give them rows (all 15
+future events were in the production ledger by 2026-11-04). An
+event older than 30 days (a longer `hold`, say) needs the same.
 
 ### Class email routes
 
@@ -580,13 +611,20 @@ beyond the table above:
   is `on`, so under `off`, `hold` or an unreadable switch the send page can neither be handed
   recipients nor record a send, and no Monday write runs through a dry-run client there. `GET`
   still answers and reports `writesOn: false`, which the page shows as a notice.
+- **The hourly ended-event sweep** (`sweepEndedEvents`). `on` re-queues each event through the
+  consumer. `off` changes nothing: each would-be send is a `Write queue` skip line and the ledger is
+  untouched, so an ended event is logged again every hour until it ages out of the 30-day window,
+  and any still inside it are re-queued on the first `on` run. Only a correction to an event that
+  has already ended, so unlike a poller's cursor nothing is skipped for good. `hold` or an unreadable
+  switch skips the run with one `eventbrite-sync scheduled: write mode is …` line, and the first `on` run walks what it missed.
 - **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
   runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with one
   `eventbrite-sync scheduled: write mode is …` line. Its 26-hour lookback does not reach back over a long hold, so after a
   multi-day `hold` compare the orders ledger against Eventbrite by hand (or run
   `scripts/backfill-orders.mjs --dry-run` per event) for the held days.
 - No path re-enqueues "stuck" ledger rows automatically, so a row ingested under `off` is never
-  resurrected later; re-driving stays the backfill scripts' job.
+  resurrected later; re-driving stays the backfill scripts' job. The ended-event sweep is no
+  exception: it takes only `written` rows, and a row an `off` delivery left `queued` isn't one.
 
 ## Open
 

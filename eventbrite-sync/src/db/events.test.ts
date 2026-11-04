@@ -54,4 +54,21 @@ describe('D1EventStore', () => {
   it('returns null for an unknown event', async () => {
     expect(await new D1EventStore(env.DB).getEvent('nope')).toBeNull();
   });
+
+  it('lists only events that ended in range and have a Monday item', async () => {
+    const store = new D1EventStore(env.DB);
+    const seed = async (id: string, endsAt: string | null, item: string | null) => {
+      await store.recordDelivery({ eventId: id, action: 'event.updated', receivedAt: T0 });
+      await store.updateStatus(id, 'written', { endsAt: endsAt ?? undefined, mondayItemId: item ?? undefined });
+    };
+    await seed('r-in', '2026-10-24T19:00:00Z', 'm-1');
+    await seed('r-edge', '2026-10-26T12:00:00Z', 'm-2');
+    await seed('r-before', '2026-10-22T19:00:00Z', 'm-3');
+    await seed('r-after', '2026-10-26T12:00:01Z', 'm-4');
+    await seed('r-noitem', '2026-10-24T19:00:00Z', null);
+    await seed('r-noend', null, 'm-5');
+
+    const rows = await store.listEndedBetween('2026-10-23T00:00:00Z', '2026-10-26T12:00:00Z');
+    expect(rows.map((r) => r.eventId).sort()).toEqual(['r-edge', 'r-in']);
+  });
 });

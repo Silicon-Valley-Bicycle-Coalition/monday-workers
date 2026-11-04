@@ -5,6 +5,10 @@ import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
 import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
+import { processEvent } from './consumer/processEvent';
+import { sweepEndedEvents } from './endedEvents/sweep';
+import { fakeAttendeeStore } from './test/fakeStores';
+import type { ProcessBatchDeps, EventQueueMessage } from './consumer/processBatch';
 import type { EventbriteClient } from './eventbrite/client';
 import type { MondayClient } from './monday/client';
 import { mondayItem } from './test/mondayItem';
@@ -184,5 +188,43 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
     // Nothing personal reached D1.
     expect(JSON.stringify(attendeeRow)).not.toContain('pat@example.com');
 
+  });
+});
+
+describe('integration: ended-event sweep -> D1 -> consumer -> Monday write', () => {
+  it('re-drives a live event once after it ends, and writes it Completed', async () => {
+    const eventStore = new D1EventStore(env.DB);
+    await eventStore.recordDelivery({ eventId: 'swept-1', action: 'event.published', receivedAt: '2019-12-20T00:00:00.000Z' });
+    await eventStore.updateStatus('swept-1', 'written', {
+      mondayItemId: 'item-swept', endsAt: '2020-01-01T04:00:00.000Z', eventbriteStatus: 'live', writtenAt: '2019-12-20T00:00:05.000Z',
+    });
+
+    const sent: EventQueueMessage[] = [];
+    const queue = { send: async (m: EventQueueMessage) => { sent.push(m); } };
+    const afterEnd = new Date('2020-01-01T05:00:00Z');
+    expect(await sweepEndedEvents(afterEnd, { eventStore, queue })).toEqual({ queued: ['swept-1'], failed: [] });
+    expect(sent).toEqual([{ kind: 'event', eventId: 'swept-1', action: 'event.ended' }]);
+    expect((await eventStore.getEvent('swept-1'))?.status).toBe('queued');
+
+    // Queued: the next hour's sweep leaves it alone while the message is on its way.
+    expect(await sweepEndedEvents(afterEnd, { eventStore, queue })).toEqual({ queued: [], failed: [] });
+
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const event = { id: 'swept-1', status: 'live', start: { utc: '2020-01-01T02:00:00Z' }, end: { utc: '2020-01-01T04:00:00Z' } };
+    const deps = {
+      eventStore,
+      attendeeStore: fakeAttendeeStore(),
+      queue: { ...queue, sendBatch: vi.fn() },
+      eventbriteClient: { getEvent: vi.fn().mockResolvedValue(event), getOrder: vi.fn(), getAttendee: vi.fn() },
+      mondayClient: { changeColumnValues, findItemByColumnValue: vi.fn(), createItem: vi.fn(), getItems: vi.fn() },
+      config,
+    } as unknown as ProcessBatchDeps;
+    await processEvent(sent[0]!, deps);
+    expect(changeColumnValues).toHaveBeenCalledWith(expect.any(Number), 'item-swept', expect.objectContaining({ ev_status_col: 'Completed' }));
+
+    // Written after it ended: run-once, however often the cron comes round.
+    expect((await eventStore.getEvent('swept-1'))?.status).toBe('written');
+    expect(await sweepEndedEvents(afterEnd, { eventStore, queue })).toEqual({ queued: [], failed: [] });
+    expect(sent).toHaveLength(1);
   });
 });

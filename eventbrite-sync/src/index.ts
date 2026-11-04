@@ -12,11 +12,12 @@ import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
+import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/sweep';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition } from './flags';
-import type { BatchSkipContext } from './writeSwitch';
+import { dryRunEndedEventDeps, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
@@ -41,6 +42,12 @@ export function isDeadLetterBatch(queueName: string): boolean {
 async function skipContext(env: Env): Promise<BatchSkipContext> {
   const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
   return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+}
+
+// Quiet when there is nothing to re-drive, which is most hours.
+function logEndedEventSummary(result: EndedEventSweepResult): void {
+  if (result.failed.length > 0) console.error(`eventbrite-sync ended events: queued ${result.queued.length}, failed ${result.failed.length} (${result.failed.join(', ')})`);
+  else if (result.queued.length > 0) console.log(`eventbrite-sync ended events: queued ${result.queued.length}`);
 }
 
 export default {
@@ -107,31 +114,48 @@ export default {
     }, gate);
   },
 
-  // Hourly (wrangler.jsonc triggers), but only the daily missed-order check (src/missedOrders/check.ts)
-  // does anything: every other hour returns before touching KV, D1 or Eventbrite.
+  // Hourly (wrangler.jsonc triggers): the ended-event status sweep (src/endedEvents/sweep.ts), cheap
+  // when idle at one D1 read, and once a day the missed-order check (src/missedOrders/check.ts).
   scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     return runScheduled(controller, env, ctx);
   },
 };
 
-// `check` is a parameter so a test can observe the call without module mocking.
+// `check` and `sweep` are parameters so a test can observe the calls without module mocking.
 export async function runScheduled(
   controller: ScheduledController,
   env: Env,
   ctx: ExecutionContext,
-  check: typeof checkMissedOrders = checkMissedOrders
+  check: typeof checkMissedOrders = checkMissedOrders,
+  sweep: typeof sweepEndedEvents = sweepEndedEvents
 ): Promise<void> {
   const config = configFor(env);
   const now = new Date(controller.scheduledTime);
-  if (!isCheckHour(now)) return;
-  // The write switch, read once for this cron run. The check follows runDisposition: `on` and `off`
-  // run it (it only reads Eventbrite and the orders ledger and logs, so its dry run is the live
-  // run), `hold` or an unreadable switch skips it with one line.
+  // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them;
+  // `off` dry-runs the sweep (each queue send logged, none made) and runs the check, which only reads
+  // Eventbrite and the orders ledger and logs, so its dry run is the live run; `hold` or an unreadable
+  // switch skips them with one line.
   const gate = await skipContext(env);
-  if (runDisposition(gate.mode) === 'skip') {
-    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the missed-order check`);
+  const disposition = runDisposition(gate.mode);
+  const isCheck = isCheckHour(now);
+  if (disposition === 'skip') {
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping ${isCheck ? 'the ended-event sweep and the missed-order check' : 'the ended-event sweep'}`);
     return;
   }
+
+  const sweepCtx = { ...gate, deliveryId: `ended-events:${now.toISOString()}` };
+  const sweepDeps = {
+    eventStore: new D1EventStore(env.DB),
+    queue: { send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined) },
+  };
+  ctx.waitUntil(
+    sweep(now, disposition === 'run' ? sweepDeps : dryRunEndedEventDeps(sweepDeps, sweepCtx))
+      .then(logEndedEventSummary)
+      // A sweep-level throw (D1) must be logged, not become an unhandled waitUntil rejection.
+      .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`))
+  );
+
+  if (!isCheck) return;
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
   if (eventbriteToken === undefined || eventbriteToken === '') {
     // Logged, not thrown, so Workers Issues shows it once a day until it's fixed.
