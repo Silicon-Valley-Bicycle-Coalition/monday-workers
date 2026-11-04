@@ -228,7 +228,23 @@ describe('validateConfig — affiliations block', () => {
         attributedGiftCount: 'numeric_mm8hn5vv',
         lastAttributedGift: 'date_mm8hy6jg',
       },
+      employerSync: {
+        currentStatusLabel: 'Current',
+        columns: { organizationLink: 'board_relation_mm8h730r', status: 'color_mm8h68bj', primary: 'boolean_mm8hz6xj' },
+        ownerColumnsByBoard: {
+          '18437342592': { employerName: 'text_mm8hdpm', affiliationsLink: 'board_relation_mm8hk2s1' },
+          '18437342607': { employerName: 'text_mm8h2x1t', affiliationsLink: 'board_relation_mm8htenw' },
+        },
+      },
     });
+  });
+  it('rejects an employerSync block missing a column or a board\'s Employer Name', () => {
+    const raw = rawBase();
+    delete raw.affiliations.employerSync.columns.status;
+    expect(() => validateConfig(raw)).toThrow(/employerSync\.columns\.status/);
+    const raw2 = rawBase();
+    delete raw2.affiliations.employerSync.ownerColumnsByBoard['18437342592'].employerName;
+    expect(() => validateConfig(raw2)).toThrow(/employerSync\.ownerColumnsByBoard\[18437342592\]\.employerName/);
   });
   it('accepts a full affiliations block and an optional organizationalGiving owner column', () => {
     const raw = rawBase();

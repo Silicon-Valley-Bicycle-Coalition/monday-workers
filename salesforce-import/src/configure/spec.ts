@@ -185,7 +185,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Member Until': 'Current membership term. Each membership payment on Donations carries its own Term Start / Term End.',
       'Organization': 'Organizations this person is affiliated with. Tenure, role, and work ' +
         'email for each are on the Affiliations board.',
-      'Employer Name': 'Free text from Salesforce. Structured employment lives on Affiliations.',
+      'Employer Name': 'Starts as free text from Salesforce; set to the Organization when a current affiliation is added or changed. Structured employment lives on Affiliations.',
       'Stakeholder Type': 'Advocacy classification. City or Agency Staff and Elected Official ' +
         'link to their municipal organization via Organization.',
       'Campaign': 'Which outreach pushes this person was loaded or tagged into (replaces ' +

@@ -246,3 +246,34 @@ describe('write switch', () => {
     expect(writeMode).not.toHaveBeenCalled();
   });
 });
+
+describe('Affiliations webhooks', () => {
+  const AFF = new Map([['555', new Set(['br_p', 'br_o', 'st', 'pr'])]]);
+  function affApp(send = vi.fn(), pendingStore = fakePendingStore()) {
+    return { app: createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), affiliationBoards: AFF, ignoredColumnIds: new Set(), webhookSecret: 'shh' }), send, pendingStore };
+  }
+  it('enqueues an affiliation message for a change to a watched column and records kind on the pending row', async () => {
+    const { app, send, pendingStore } = affApp();
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 41, boardId: 555, columnId: 'br_o' } });
+    expect(res.status).toBe(200);
+    expect(send).toHaveBeenCalledWith({ kind: 'affiliation', donationItemId: '41', donationBoardId: '555' });
+    expect(pendingStore.upsertPending).toHaveBeenCalledWith(expect.objectContaining({ donationItemId: '41', donationBoardId: '555', kind: 'affiliation' }));
+  });
+  it('enqueues for a new item', async () => {
+    const { app, send } = affApp();
+    await post(app, { event: { type: 'create_pulse', pulseId: 41, boardId: 555 } });
+    expect(send).toHaveBeenCalledOnce();
+  });
+  it('ignores any other column, including the attributed totals this Worker writes to the same board', async () => {
+    const { app, send } = affApp();
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 41, boardId: 555, columnId: 'n_ag' } });
+    expect(await res.json()).toMatchObject({ ok: true, ignored: expect.stringContaining('n_ag') });
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('still ignores an unconfigured board when employer sync is off', async () => {
+    const send = vi.fn();
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    await post(app, { event: { type: 'create_pulse', pulseId: 41, boardId: 555 } });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
