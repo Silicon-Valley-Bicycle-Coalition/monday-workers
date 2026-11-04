@@ -7,8 +7,8 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 // boards that have since been rebuilt with new ids.
 //
 // Deliberately out of scope here (left as manual steps — see README "configure" section):
-// * Automations — monday.com has no public create_automation mutation; docs/22 §2.9 itself
-//   already treats the automation description field as UI-only.
+// * Automations — built by hand or through Monday's MCP create_automation tool (verified
+//   2026-11-03, #54), not this CLI; docs/22 §2.9 treats the automation description field as UI-only.
 // * The "Documentation" doc view — no API creates a doc-kind view or writes doc content.
 // * Stripping Monday's stock status labels — docs/22 §2.5 recommends the UI for this itself
 //   ("safer" on a column that may carry data); not scripted here.
@@ -121,6 +121,24 @@ const DNS_REASON_STATUS_DESC = "Missing means Do Not Solicit is checked with no 
 
 const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', labels: ['OK', 'Missing'] };
 
+// Staff flag a suspected duplicate; David reviews it and runs the merge (monday-migration docs/22
+// §3.1, decided 2026-09-25). Blank means not flagged. Staff set this, so it takes no 🔒 marker.
+const POSSIBLE_DUPLICATE_COLUMN: ColumnSpec = {
+  title: 'Possible Duplicate', type: 'status', labels: ['Possible Duplicate', 'Merged', 'Not a Duplicate'],
+};
+const POSSIBLE_DUPLICATE_DESCRIPTIONS = {
+  'Possible Duplicate': "Set Possible Duplicate if you think this person is in Monday twice, and add an update " +
+    "naming the other record. David is notified, reviews it, and sets Merged or Not a Duplicate. " +
+    "Don't delete either record or copy details between them.",
+} as const;
+// Name order, because records for the same person usually have similar names.
+const POSSIBLE_DUPLICATES_VIEW: ViewSpec = {
+  name: 'Possible duplicates', tag: 'Worklist',
+  columns: ['Possible Duplicate', 'Personal Email', 'Phone', 'City', 'Last Gift Date'],
+  filter: { rules: [{ columnTitle: 'Possible Duplicate', operator: 'any_of', labelValues: ['Possible Duplicate'] }] },
+  sort: [{ columnTitle: 'Name' }],
+};
+
 // Hidden from every working view (spec 2026-09-29 §3.2); still on the board and in Main Table.
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
@@ -157,6 +175,7 @@ const PEOPLE_COLUMNS: ColumnSpec[] = [
   { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
   { title: 'Campaign', type: 'tags' },
   DNS_COLUMN,
+  POSSIBLE_DUPLICATE_COLUMN,
 ];
 
 export const BOARD_SPECS: Record<string, BoardSpec> = {
@@ -168,6 +187,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -278,6 +298,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
         filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
+      POSSIBLE_DUPLICATES_VIEW,
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -291,6 +312,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -304,6 +326,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           { columnTitle: 'Last Gift Date', operator: 'greater_than', compareValue: ['EXACT', '2019-01-01'] },
           { columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
       ...DNS_VIEWS,
+      POSSIBLE_DUPLICATES_VIEW,
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
