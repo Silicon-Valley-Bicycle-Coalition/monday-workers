@@ -26,11 +26,13 @@ interface BoardIdSources {
   boards: { live: { boardId: number }; historical: { boardId: number } };
   eventRegistrations: { boardId: number; events: { boardId: number } } | null;
   volunteers: { boardId: number } | null;
+  loggedActivities: { boardId: number } | null;
 }
 const boardIds = (cfg: BoardIdSources): number[] => [
   cfg.boards.live.boardId, cfg.boards.historical.boardId,
   ...(cfg.eventRegistrations ? [cfg.eventRegistrations.boardId, cfg.eventRegistrations.events.boardId] : []),
   ...(cfg.volunteers ? [cfg.volunteers.boardId] : []),
+  ...(cfg.loggedActivities ? [cfg.loggedActivities.boardId] : []),
 ];
 
 describe('config split: board ids', () => {

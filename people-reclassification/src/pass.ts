@@ -30,7 +30,7 @@ export interface PassReport {
   cutoffISO: string;
   live: BoardCount;
   historical: BoardCount;
-  scanned: { live: number; historical: number; registrations: number; volunteers: number };
+  scanned: { live: number; historical: number; registrations: number; volunteers: number; logged: number };
   verdicts: Record<Verdict['kind'], number>;
   decided: { toHistorical: number; toLive: number };
   // What this pass actually did (or, dry run, would have done) — capped by run.maxMovesPerRun
@@ -46,13 +46,13 @@ export interface PassReport {
   error: string | null;
 }
 
-interface Resolved {
+export interface Resolved {
   live: BoardSchema; historical: BoardSchema;
   liveCols: PersonColumnIds; historicalCols: PersonColumnIds;
   toHistorical: ColumnMapping[]; toLive: ColumnMapping[];
   liveGroup: string; historicalGroup: string;
 }
-interface PersonColumnIds { lastGift: string; memberUntil: string; membershipTier: string; funraiseProfile: string | null }
+export interface PersonColumnIds { lastGift: string; memberUntil: string; membershipTier: string; funraiseProfile: string | null; promoteStatus: string; promotedOn: string }
 
 export class PassAbort extends Error {
   constructor(message: string) {
@@ -75,7 +75,7 @@ const HISTORICAL_ALERT_KIND = 'historical-capacity';
 const MAX_CONSECUTIVE_FAILURES = 5;
 // How long a pass's lease lasts before another pass may take it over: well past the longest pass
 // a Worker invocation can run, so it only ever frees a lease whose holder died.
-const LEASE_MS = 30 * 60_000;
+export const LEASE_MS = 30 * 60_000;
 
 export async function runPass(deps: PassDeps, opts: PassOptions): Promise<PassReport | { skipped: string }> {
   const now = deps.now ?? (() => new Date());
@@ -121,7 +121,7 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
 
   const report: PassReport = {
     runId: opts.runId, trigger: opts.trigger, dryRun: opts.dryRun, todayISO, cutoffISO, live, historical,
-    scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0 },
+    scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0, logged: 0 },
     verdicts: { live: 0, historical: 0, unknown: 0 },
     decided: { toHistorical: 0, toLive: 0 }, planned: { toHistorical: 0, toLive: 0 },
     moved: 0, failed: 0, ambiguous: 0, settled: 0, remaining: 0, warnings, error: null,
@@ -138,7 +138,7 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
       people.set(item.id, personFacts(item, board, cols));
     }
   }
-  const bump = (personId: string, key: 'latestRegistrationISO' | 'latestVolunteerISO', dateISO: string | null) => {
+  const bump = (personId: string, key: ActivityKey, dateISO: string | null) => {
     const p = people.get(personId);
     if (p === undefined || dateISO === null) return;
     if (p[key] === null || dateISO > p[key]!) p[key] = dateISO;
@@ -236,7 +236,7 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
 // Moves one named person from People (Historical) to People, now, for an operator who can't wait
 // for the next pass. Same safeguards as a pass (the lease, the column check, the ledger), but only
 // in that direction, only for an item that really is on Historical, and only if the liveness rule
-// agrees: a person with old activity would just go back on the next pass. Reads the two activity
+// agrees: a person with old activity would just go back on the next pass. Reads the activity
 // boards in full, since their links can't be looked up by person.
 export async function moveOneToPeople(deps: PassDeps, opts: { runId: string; itemId: string; dryRun: boolean }): Promise<SingleMoveResult> {
   const now = deps.now ?? (() => new Date());
@@ -271,7 +271,7 @@ async function executeSingleMove(deps: PassDeps, opts: { runId: string; itemId: 
   await readActivity(monday, config, (personId, key, dateISO) => {
     if (personId !== itemId || dateISO === null) return;
     if (person[key] === null || dateISO > person[key]!) person[key] = dateISO;
-  }, { registrations: 0, volunteers: 0 });
+  }, { registrations: 0, volunteers: 0, logged: 0 });
 
   const todayISO = todayInZone(now(), config.window.timeZone);
   const cutoffISO = cutoffFor(todayISO, config.window.years);
@@ -312,7 +312,7 @@ async function executeSingleMove(deps: PassDeps, opts: { runId: string; itemId: 
 }
 
 const personColumnIdList = (cols: PersonColumnIds): string[] =>
-  [cols.lastGift, cols.memberUntil, cols.membershipTier, ...(cols.funraiseProfile ? [cols.funraiseProfile] : [])];
+  [cols.lastGift, cols.memberUntil, cols.membershipTier, cols.promotedOn, ...(cols.funraiseProfile ? [cols.funraiseProfile] : [])];
 
 const personFacts = (item: PageItem, board: Board, cols: PersonColumnIds): PersonFacts => ({
   itemId: item.id, board,
@@ -320,18 +320,22 @@ const personFacts = (item: PageItem, board: Board, cols: PersonColumnIds): Perso
   memberUntilISO: dateOnly(item.text.get(cols.memberUntil)),
   membershipTier: item.text.get(cols.membershipTier) ?? null,
   funraiseLinked: cols.funraiseProfile !== null && item.text.get(cols.funraiseProfile) !== null,
-  latestRegistrationISO: null, latestVolunteerISO: null,
+  latestRegistrationISO: null, latestVolunteerISO: null, latestLoggedISO: null,
+  promotedOnISO: dateOnly(item.text.get(cols.promotedOn)),
 });
 
 const ruleOptions = (config: ReclassificationConfig, todayISO: string, cutoffISO: string) =>
   ({ todayISO, cutoffISO, lifetimeTierLabel: config.perpetual.lifetimeTierLabel, funraiseLinked: config.perpetual.funraiseLinked });
 
 // Pages the optional activity boards, reporting each person's counted dates through `bump`.
-async function readActivity(
+type ActivityKey = 'latestRegistrationISO' | 'latestVolunteerISO' | 'latestLoggedISO';
+
+export async function readActivity(
   monday: ReclassificationMondayClient, config: ReclassificationConfig,
-  bump: (personId: string, key: 'latestRegistrationISO' | 'latestVolunteerISO', dateISO: string | null) => void,
-  scanned: { registrations: number; volunteers: number },
+  bump: (personId: string, key: ActivityKey, dateISO: string | null) => void,
+  scanned: { registrations: number; volunteers: number; logged: number },
 ): Promise<void> {
+  await readLoggedActivities(monday, config, (personId, dateISO) => bump(personId, 'latestLoggedISO', dateISO), scanned);
   if (config.eventRegistrations !== null) {
     const er = config.eventRegistrations;
     const events = await requireSchema(monday, er.events.boardId, 'Events');
@@ -365,6 +369,29 @@ async function readActivity(
   }
 }
 
+// Pages Activities (Logged), reporting each linked person's counted dates. An item with no Date or
+// no Person counts for nobody; a Bulk Email isn't in countedTypeLabels.
+export async function readLoggedActivities(
+  monday: ReclassificationMondayClient, config: ReclassificationConfig,
+  report: (personId: string, dateISO: string) => void,
+  scanned: { logged: number },
+): Promise<void> {
+  const la = config.loggedActivities;
+  if (la === null) return;
+  const board = await requireSchema(monday, la.boardId, 'Activities (Logged)');
+  const label = `Activities (Logged) board ${board.id}`;
+  const c = {
+    person: columnIdByTitle(board.columns, la.columns.person, label), date: columnIdByTitle(board.columns, la.columns.date, label),
+    activityType: columnIdByTitle(board.columns, la.columns.activityType, label),
+  };
+  for await (const a of pageAll(monday, la.boardId, [c.person, c.date, c.activityType])) {
+    scanned.logged += 1;
+    const date = dateOnly(a.text.get(c.date));
+    if (date === null || !la.countedTypeLabels.includes(a.text.get(c.activityType) ?? '')) continue;
+    for (const personId of a.linked.get(c.person) ?? []) report(personId, date);
+  }
+}
+
 async function raiseHistoricalAlert(deps: PassDeps, opts: PassOptions, board: BoardSchema, text: string, now: () => Date): Promise<void> {
   const alert = deps.config.alerts.itRequests;
   if (alert === null || opts.dryRun) return;
@@ -382,7 +409,7 @@ async function raiseHistoricalAlert(deps: PassDeps, opts: PassOptions, board: Bo
   }
 }
 
-async function settleUnsettled(deps: PassDeps, now: () => Date): Promise<number> {
+export async function settleUnsettled(deps: PassDeps, now: () => Date): Promise<number> {
   const rows = await deps.ledger.unsettledMoves();
   for (const row of rows) {
     const boardId = await deps.monday.getItemBoardId(row.itemId);
@@ -401,7 +428,7 @@ async function requireSchema(monday: ReclassificationMondayClient, boardId: numb
   return schema;
 }
 
-async function resolveBoards(monday: ReclassificationMondayClient, config: ReclassificationConfig): Promise<Resolved> {
+export async function resolveBoards(monday: ReclassificationMondayClient, config: ReclassificationConfig): Promise<Resolved> {
   const live = await requireSchema(monday, config.boards.live.boardId, 'People');
   const historical = await requireSchema(monday, config.boards.historical.boardId, 'People (Historical)');
   const cols = (schema: BoardSchema, label: string): PersonColumnIds => {
@@ -410,6 +437,7 @@ async function resolveBoards(monday: ReclassificationMondayClient, config: Recla
       lastGift: columnIdByTitle(schema.columns, pc.lastGift, label), memberUntil: columnIdByTitle(schema.columns, pc.memberUntil, label),
       membershipTier: columnIdByTitle(schema.columns, pc.membershipTier, label),
       funraiseProfile: pc.funraiseProfile === null ? null : columnIdByTitle(schema.columns, pc.funraiseProfile, label),
+      promoteStatus: columnIdByTitle(schema.columns, pc.promoteStatus, label), promotedOn: columnIdByTitle(schema.columns, pc.promotedOn, label),
     };
   };
   const toHistorical = moveMapping(live.columns, historical.columns);
@@ -437,12 +465,12 @@ async function resolveBoards(monday: ReclassificationMondayClient, config: Recla
   };
 }
 
-function countOf(schema: BoardSchema, configuredLimit: number): BoardCount {
+export function countOf(schema: BoardSchema, configuredLimit: number): BoardCount {
   const itemsLimit = schema.itemsLimit ?? configuredLimit;
   return { boardId: schema.id, name: schema.name, itemsCount: schema.itemsCount, itemsLimit, pct: Math.round((schema.itemsCount / itemsLimit) * 100) };
 }
 
-async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[]): AsyncGenerator<PageItem> {
+export async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[]): AsyncGenerator<PageItem> {
   let cursor: string | null = null;
   do {
     const page: { items: PageItem[]; cursor: string | null } = await monday.pageItems(boardId, columnIds, cursor);

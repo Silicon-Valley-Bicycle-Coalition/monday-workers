@@ -39,6 +39,14 @@ describe('D1Ledger', () => {
     expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'cron-dry' });
   });
 
+  it('passesOnly skips the promote sweep and the logged-contact run too', async () => {
+    const ledger = new D1Ledger(env.DB);
+    await ledger.startRun({ runId: 'pass', trigger: 'quarterly', dryRun: false, startedAt: '2026-10-01T00:00:00Z' });
+    await ledger.startRun({ runId: 'sweep', trigger: 'promote-sweep', dryRun: false, startedAt: '2026-10-02T00:00:00Z' });
+    await ledger.startRun({ runId: 'logged', trigger: 'logged-contact', dryRun: false, startedAt: '2026-10-03T00:00:00Z' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'pass' });
+  });
+
   it('passesOnly also skips single-person moves, which must not stop a continuation or use up a pass', async () => {
     await ledger.startRun({ runId: 'pass', trigger: 'quarterly', dryRun: false, startedAt: '2026-10-01T10:00:00Z' });
     await ledger.startRun({ runId: 'one', trigger: 'single-move', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });

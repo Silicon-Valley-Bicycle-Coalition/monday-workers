@@ -12,7 +12,9 @@
     "lastGift": "Last Gift Date",
     "memberUntil": "Member Until",
     "membershipTier": "Membership Tier",
-    "funraiseProfile": "Funraise Profile"
+    "funraiseProfile": "Funraise Profile",
+    "promoteStatus": "Promote to People",
+    "promotedOn": "Promoted On"
   },
   "perpetual": { "lifetimeTierLabel": "Lifetime", "funraiseLinked": true },
   "eventRegistrations": {
@@ -26,6 +28,12 @@
     "boardId": 18437342662,
     "columns": { "volunteer": "Volunteer", "date": "Date" }
   },
+  "loggedActivities": {
+    "boardId": 18438393347,
+    "columns": { "person": "Person", "date": "Date", "activityType": "Activity Type" },
+    "countedTypeLabels": ["Email", "Call", "Meeting"]
+  },
+  "promote": { "requestLabel": "Promote", "doneLabel": "Promoted", "failedLabel": "Couldn't promote" },
   "thresholds": { "itemsLimit": 100000, "liveTriggerPct": 85, "historicalWarnPct": 80 },
   "run": { "maxMovesPerRun": 400, "quarterlyMonths": [1, 4, 7, 10], "cronHourUTC": 10 },
   "alerts": { "itRequests": null }

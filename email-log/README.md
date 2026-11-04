@@ -50,7 +50,12 @@ If you BCC and also forward the same email, you may get two items; delete the ex
 this address on every email it sends as `learn@` (`scripts/apps-script/mail-merge.gs` in the
 migration repo, `docs/37`). The merge sends one message per recipient, so each gets its own item
 and timeline entry, and each recipient not on a People record gets its own `Needs Person` item and
-reply to `learn@`. The Worker treats these like any other BCC; nothing in it is specific to them.
+reply to `learn@`. A BCC from an address in `mail.bulkSenders` (`learn@`) gets Activity Type
+`Bulk Email` instead of `Email`, so people-reclassification doesn't count it as contact. A forward
+from `learn@` stays `Email`, because it's a reply someone really sent. Someone writing by hand from
+`learn@` and BCCing the log looks the same as the merge, and is labelled bulk too. The label must
+exist on the Activity Type column before this deploys. `scripts/relabel-bulk-email.mjs` relabels
+items logged before it did.
 
 ## Data flow
 
@@ -137,6 +142,7 @@ still unset until the board and live mail exist.
 |---|---|
 | `monday.boards` | `activities-logged` (write target), `people-live`, `people-historical`, `affiliations`; `null` = not configured |
 | `activities.*Column` | column ids on Activities (Logged): activity type, date, status, owner, person, notes, message hash |
+| `activities.bulkActivityTypeLabel`, `mail.bulkSenders` | the label for a BCC from a bulk sender, and those senders |
 | `activities.activityTypeLabel`, `doneLabel`, `needsPersonLabel` | status/label text written (`Email`, `Done`, `Needs Person`) |
 | `matching.*` | email column ids on People, People (Historical), and Affiliations (Work Email + Person link) |
 | `timeline.customActivityId` | the Emails & Activities custom activity posted on each matched person (`Logged email`, `79eba48d-…`, created 2026-11-03; one account, so both configs share it); `null` turns the entry off |
