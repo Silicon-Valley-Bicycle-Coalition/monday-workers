@@ -6,7 +6,7 @@ import type { CampaignItemsStore } from '../db/campaignItems';
 import type { Config } from '../types';
 
 const CONFIG: Config = {
-  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: 999, columns: {} as never },
+  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: 999, historical: null, columns: {} as never },
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };

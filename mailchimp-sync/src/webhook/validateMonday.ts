@@ -1,6 +1,8 @@
 export interface MondayDonorEvent {
   donorItemId: string;
   columnId: string | undefined;
+  // Which of the two People boards fired, so the route reads the event against that board's columns.
+  boardId: number | undefined;
   // The address an email column held before this change, when the event carries one. The one
   // thing the consumer can't re-read later: by then the column holds only the new address.
   previousEmail?: string;
@@ -36,7 +38,9 @@ export function validateMondayWebhookBody(body: unknown): MondayDonorEvent {
     throw new Error('webhook event has no pulseId');
   }
   const columnId = (event as Record<string, unknown>).columnId;
+  const boardId = Number((event as Record<string, unknown>).boardId);
   return {
+    boardId: Number.isNaN(boardId) ? undefined : boardId,
     donorItemId: String(pulseId),
     columnId: typeof columnId === 'string' ? columnId : undefined,
     previousEmail: emailOf((event as Record<string, unknown>).previousValue),

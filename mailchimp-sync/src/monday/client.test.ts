@@ -59,7 +59,7 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor).toEqual({
       id: '42', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
       memberSince: '2026-01-01', memberUntil: '', addr1: '1 Main St', city: 'San Jose',
-      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [],
+      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false,
     });
   });
 
@@ -305,5 +305,42 @@ describe('HttpMondayClient rate-limit errors', () => {
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await expect(client.createCampaignItem(1, 'Newsletter')).rejects.toBeInstanceOf(AmbiguousWriteError);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HttpMondayClient.getDonorById across the two People boards', () => {
+  const HISTORICAL = { boardId: 222, columns: {
+    membershipStatus: 'h-status', membershipTier: 'h-tier', memberSince: 'h-since', memberUntil: 'h-until',
+    addr1: 'h-addr1', city: 'h-city', state: null, zip: 'h-zip', email: 'h-email', totalGiven: 'h-given',
+    doNotSolicit: 'h-dns', dnsReasonStatus: 'h-dnsStatus', nearby: null,
+  } };
+
+  it('reads an item on the Historical board through that board\'s columns', async () => {
+    const fetchFn = fakeFetch({ items: [{
+      id: '42', board: { id: '222' },
+      column_values: [{ id: 'h-email', text: 'old@b.com' }, { id: 'h-status', text: 'Lapsed' }, { id: 'email', text: null }],
+    }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    const donor = await client.getDonorById('42', COLUMNS, HISTORICAL);
+    expect(donor).toMatchObject({ email: 'old@b.com', membershipStatus: 'Lapsed', state: '', onHistorical: true });
+  });
+
+  it('reads an item on People through the People columns, whichever board the webhook named', async () => {
+    const fetchFn = fakeFetch({ items: [{
+      id: '42', board: { id: '111' },
+      column_values: [{ id: 'email', text: 'live@b.com' }, { id: 'h-email', text: null }],
+    }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    const donor = await client.getDonorById('42', COLUMNS, HISTORICAL);
+    expect(donor).toMatchObject({ email: 'live@b.com', onHistorical: false });
+  });
+
+  it('asks Monday for both boards\' columns, because the item\'s board is only known from the answer', async () => {
+    const fetchFn = fakeFetch({ items: [] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    await client.getDonorById('42', COLUMNS, HISTORICAL);
+    const sent = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string) as { query: string; variables: { columnIds: string[] } };
+    expect(sent.query).toContain('board { id }');
+    expect(sent.variables.columnIds).toEqual(expect.arrayContaining(['email', 'h-email']));
   });
 });

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createOutboundApp } from './outboundRoute';
 import type { PendingOutboundStore } from '../db/pendingOutbound';
-import type { Config } from '../types';
+import type { Config, OutboundSyncMessage } from '../types';
 
 const CONFIG: Config = {
-  monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
+  monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, historical: null, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
@@ -196,5 +196,46 @@ describe('POST /webhooks/monday/donors', () => {
 
     expect(res.status).toBe(500);
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('1', 'failed', 'queue down');
+  });
+});
+
+describe('the People (Historical) board', () => {
+  const HISTORICAL_CONFIG: Config = { ...CONFIG, monday: { ...CONFIG.monday, historical: { boardId: 222, columns: {
+    membershipStatus: 'h-s', membershipTier: 'h-t', memberSince: 'h-ms', memberUntil: 'h-mu', addr1: 'h-a1', city: 'h-c',
+    state: null, zip: 'h-z', email: 'h-e', totalGiven: 'h-g', doNotSolicit: 'h-dns', dnsReasonStatus: 'h-dnsStatus', nearby: null,
+  } } } };
+  const appFor = (send: (message: OutboundSyncMessage) => Promise<void>) =>
+    createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: HISTORICAL_CONFIG, writeMode: async () => 'on' });
+
+  it('enqueues a change to a column the sync reads on that board', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const res = await post(appFor(send), { event: { type: 'update_column_value', pulseId: 555, boardId: 222, columnId: 'h-s' } });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
+  });
+
+  it('skips a column on that board the sync does not read, even if People uses the id', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const res = await post(appFor(send), { event: { type: 'update_column_value', pulseId: 555, boardId: 222, columnId: 's' } });
+    expect(await res.json()).toEqual({ ok: true, skipped: true });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('carries the old address from that board\'s own Email column', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    await post(appFor(send), { event: { type: 'update_column_value', pulseId: 555, boardId: 222, columnId: 'h-e', previousValue: { email: 'old@b.com' } } });
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555', previousEmail: 'old@b.com' });
+  });
+
+  it('reads a board id Monday sends as a string', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    await post(appFor(send), { event: { type: 'update_column_value', pulseId: 555, boardId: '222', columnId: 'h-s' } });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('still reads the People columns for a People event', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    await post(appFor(send), { event: { type: 'update_column_value', pulseId: 555, boardId: 111, columnId: 's' } });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

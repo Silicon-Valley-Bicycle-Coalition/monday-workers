@@ -18,6 +18,24 @@
       "doNotSolicit": "boolean_mm8nf0wq",
       "dnsReasonStatus": "color_mm8qfbce",
       "nearby": null
+    },
+    "historical": {
+      "boardId": 18437909784,
+      "columns": {
+        "membershipStatus": "color_mm8nfcw",
+        "membershipTier": "color_mm8nfy0c",
+        "memberSince": "date_mm8n545j",
+        "memberUntil": "date_mm8n2hvv",
+        "addr1": "text_mm8ng0jm",
+        "city": "text_mm8nq7a6",
+        "state": null,
+        "zip": "text_mm8n5qbj",
+        "email": "email_mm8nfyfc",
+        "totalGiven": "numeric_mm8nr5f7",
+        "doNotSolicit": "boolean_mm8n4c91",
+        "dnsReasonStatus": "color_mm8qpapt",
+        "nearby": null
+      }
     }
   },
   "mailchimp": {

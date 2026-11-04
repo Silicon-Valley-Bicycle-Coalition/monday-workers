@@ -1,11 +1,11 @@
-import type { MondayColumnsConfig, DonorRecord } from '../types';
+import type { Config, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, DonorRecord } from '../types';
 import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 // The consumer's backoff reads Monday's code and retry hint off this (consumer/backoff.ts).
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
 export interface MondayClient {
-  getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null>;
+  getDonorById(itemId: string, columns: DonorColumnsConfig, historical?: HistoricalBoardConfig | null): Promise<DonorRecord | null>;
   createCampaignItem(boardId: number, name: string): Promise<string>;
   renameItem(boardId: number, itemId: string, name: string): Promise<void>;
   archiveItem(itemId: string): Promise<void>;
@@ -28,7 +28,7 @@ function splitDropdownLabels(text: string): string[] {
 
 // Every Donor column the outbound sync reads. outboundRoute.ts skips a column change outside this
 // list, so a bulk write to an unrelated column (a backfill) doesn't PATCH every Mailchimp contact.
-export function donorColumnIds(columns: MondayColumnsConfig): string[] {
+export function donorColumnIds(columns: DonorColumnsConfig): string[] {
   return [
     columns.email, columns.membershipStatus, columns.membershipTier,
     columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
@@ -36,6 +36,12 @@ export function donorColumnIds(columns: MondayColumnsConfig): string[] {
     ...(columns.state === null ? [] : [columns.state]),
     ...(columns.nearby === null ? [] : [columns.nearby]),
   ];
+}
+
+// The columns of the board a webhook event names. Any board but Historical reads as People, as it
+// did before there were two, so a delivery with no board id behaves as it always has.
+export function columnsForBoard(monday: Config['monday'], boardId: number | undefined): DonorColumnsConfig {
+  return monday.historical !== null && boardId === monday.historical.boardId ? monday.historical.columns : monday.columns;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -47,17 +53,22 @@ export class HttpMondayClient implements MondayClient {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options });
   }
 
-  async getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null> {
-    const columnIds = donorColumnIds(columns);
-    const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
+  // The two People boards name the same columns differently, and the item's board is only known
+  // from this answer: people-reclassification may have moved it since its webhook fired. So ask for
+  // both boards' columns and read the set belonging to the board it is on now.
+  async getDonorById(itemId: string, peopleColumns: DonorColumnsConfig, historical: HistoricalBoardConfig | null = null): Promise<DonorRecord | null> {
+    const columnIds = [...donorColumnIds(peopleColumns), ...(historical === null ? [] : donorColumnIds(historical.columns))];
+    const data = await this.transport.request<{ items: { id: string; board?: { id: string } | null; column_values: { id: string; text: string | null }[] }[] }>(
       `query ($itemId: ID!, $columnIds: [String!]) {
-        items(ids: [$itemId]) { id column_values(ids: $columnIds) { id text } }
+        items(ids: [$itemId]) { id board { id } column_values(ids: $columnIds) { id text } }
       }`,
       { itemId, columnIds },
     );
     const item = data.items[0];
     if (item === undefined) return null;
 
+    const onHistorical = historical !== null && Number(item.board?.id) === historical.boardId;
+    const columns = onHistorical ? historical.columns : peopleColumns;
     const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
     return {
       id: item.id,
@@ -75,6 +86,7 @@ export class HttpMondayClient implements MondayClient {
       doNotSolicit: (byId.get(columns.doNotSolicit) ?? '') !== '',
       dnsReasonStatus: byId.get(columns.dnsReasonStatus) ?? '',
       nearby: columns.nearby === null ? [] : splitDropdownLabels(byId.get(columns.nearby) ?? ''),
+      onHistorical,
     };
   }
 
