@@ -56,25 +56,25 @@ describe('runWatchdog', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('abandons runs stuck in running for over an hour and alerts about them', async () => {
+  it('abandons runs stuck in running for over twelve hours and alerts about them', async () => {
     const { store, state } = fakeStore({
       stale: [{ id: 7, startedAt: '2026-08-26T09:00:00.000Z' }],
       lastSnapshot: '2026-08-25T09:10:00.000Z',
     });
     const { texts } = stubSlack();
     await runWatchdog({ store, slackWebhookUrl: hook, now: () => NOW });
-    expect(state.abandonCalls).toEqual([['2026-08-26T11:00:00.000Z', '2026-08-26T12:00:00.000Z']]);
+    expect(state.abandonCalls).toEqual([['2026-08-26T00:00:00.000Z', '2026-08-26T12:00:00.000Z']]);
     expect(texts()).toHaveLength(1);
     expect(texts()[0]).toContain('never finished');
     expect(texts()[0]).toContain('run 7');
   });
 
-  it('alerts when no snapshot has succeeded in 36 hours', async () => {
+  it('alerts when no snapshot has been complete in 36 hours', async () => {
     const { store, state } = fakeStore({ lastSnapshot: '2026-08-24T23:59:00.000Z' });
     const { texts } = stubSlack();
     await runWatchdog({ store, slackWebhookUrl: hook, now: () => NOW });
     expect(texts()).toHaveLength(1);
-    expect(texts()[0]).toContain('no successful snapshot');
+    expect(texts()[0]).toContain('no complete snapshot');
     expect(texts()[0]).toContain('2026-08-24T23:59:00.000Z');
     expect(state.lastStaleAlert).toBe(NOW.toISOString());
   });
@@ -96,7 +96,7 @@ describe('runWatchdog', () => {
     const later = stubSlack();
     await runWatchdog({ store, slackWebhookUrl: hook, now: () => new Date('2026-08-28T00:00:01.000Z') });
     expect(later.texts()).toHaveLength(1);
-    expect(later.texts()[0]).toContain('no successful snapshot');
-    expect(later.texts()[0]).toContain('ever');
+    expect(later.texts()[0]).toContain('no complete snapshot');
+    expect(later.texts()[0]).toContain('No complete snapshot yet');
   });
 });

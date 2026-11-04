@@ -135,4 +135,11 @@ export interface BackupConfig {
   // limit is per Monday account and sandbox and production share one, so exactly one deployment
   // sets this. Absent means false.
   apiUsageAlerts: boolean;
+  // Boards a run must capture to count as complete. The token never sees a private board its user
+  // isn't subscribed to, so without this a missing board goes unnoticed: a run can finish every board
+  // it can see and still leave out thousands of records. Optional, so tests can omit them.
+  requiredBoardIds?: string[];
+  // Workspaces captured first, so if a run dies or hits the daily API limit, what it missed is what
+  // matters least. Order within a workspace stays as listed.
+  priorityWorkspaceIds?: string[];
 }

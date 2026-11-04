@@ -5,9 +5,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import type { Env } from './env';
 
-// The backup itself is covered in backup.test.ts. Module mocks don't reach the workers pool, so
-// "runBackup was (not) called" is read off its first side effect: the snapshot_runs row it records
-// before touching Drive or Monday. These tests' fake env has no Google key, so a live run throws.
+// The backup itself is covered in backup.test.ts; here the cron only has to start a Workflow.
 const runCount = async () => (await env.DB.prepare('SELECT COUNT(*) AS n FROM snapshot_runs').first<{ n: number }>())!.n;
 
 afterEach(async () => {
@@ -21,11 +19,13 @@ const flags = (value: string | null | Error) =>
 const cron = (c: string) => ({ scheduledTime: Date.now(), cron: c }) as ScheduledController;
 // vitest.config.ts stubs the MONDAY_AUTH service binding (it isn't RPC-capable), so the fake env
 // clears it and uses a fixed token unless a test passes its own.
+const snapshotBinding = () => ({ create: vi.fn(async () => ({ id: 'instance' })) });
 const withFlags = (value: string | null | Error, extra: Record<string, unknown> = {}) =>
   ({
     ...env, MONDAY_AUTH: undefined, MONDAY_API_TOKEN: 'test-token',
-    SLACK_WEBHOOK_URL: 'https://hooks.example/webhook', FLAGS: flags(value), ...extra,
+    SLACK_WEBHOOK_URL: 'https://hooks.example/webhook', FLAGS: flags(value), SNAPSHOT: snapshotBinding(), ...extra,
   }) as unknown as Env;
+const creates = (e: Env) => (e.SNAPSHOT.create as unknown as ReturnType<typeof vi.fn>).mock.calls;
 
 type Json = Record<string, unknown>;
 
@@ -107,40 +107,37 @@ describe('worker entry point', () => {
 
   describe('write switch', () => {
     it('reads <worker>:writes once per cron run', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
-      vi.spyOn(console, 'error').mockImplementation(() => {});
       const e = withFlags('on');
-      await worker.scheduled(cron(BACKUP_CRON), e).catch(() => {});
+      await worker.scheduled(cron(BACKUP_CRON), e);
       const keys = (e.FLAGS.get as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([k]) => k as string);
       expect(keys.filter((k) => k === 'monday-backup:writes')).toHaveLength(1);
       expect(e.FLAGS.get).toHaveBeenCalledWith('monday-backup:writes', { cacheTtl: 30 });
     });
 
-    it('on: runs the backup', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      await worker.scheduled(cron(BACKUP_CRON), withFlags('on')).catch(() => {});
-      expect(await runCount()).toBe(1);
+    it('on: starts one Workflow, named for this firing, and does no backup work itself', async () => {
+      const e = withFlags('on');
+      await worker.scheduled({ scheduledTime: 1762246800000, cron: BACKUP_CRON } as ScheduledController, e);
+      expect(creates(e)).toEqual([[{ id: 'nightly-1762246800000' }]]);
+      expect(await runCount()).toBe(0);
+    });
+
+    it('a failure to start surfaces, so Workers Issues records it', async () => {
+      const SNAPSHOT = { create: vi.fn().mockRejectedValue(new Error('workflows down')) };
+      await expect(worker.scheduled(cron(BACKUP_CRON), withFlags('on', { SNAPSHOT }))).rejects.toThrow('workflows down');
     });
 
     it.each([
       ['hold', 'hold'],
-      ['a KV read error', new Error('kv down')],
-    ] as const)('%s: backup cron skips, with a skip line and no D1 run row', async (_l, value) => {
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      await worker.scheduled(cron(BACKUP_CRON), withFlags(value));
-      expect(logSpy.mock.calls.some(([l]) => String(l).includes('skipped'))).toBe(true);
-      expect(await runCount()).toBe(0);
-    });
-
-    it.each([
       ['off', 'off'],
       ['a missing key', null],
-    ] as const)('%s: backup cron skips and logs a skip line', async (_l, value) => {
+      ['a KV read error', new Error('kv down')],
+    ] as const)('%s: backup cron starts nothing, with a skip line', async (_l, value) => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      await worker.scheduled(cron(BACKUP_CRON), withFlags(value));
-      expect(await runCount()).toBe(0);
+      const e = withFlags(value);
+      await worker.scheduled(cron(BACKUP_CRON), e);
+      expect(creates(e)).toEqual([]);
       expect(logSpy.mock.calls.some(([l]) => String(l).includes('skipped'))).toBe(true);
+      expect(await runCount()).toBe(0);
     });
 
     it('watchdog off with a stale snapshot: no Slack fetch, and a skip line', async () => {
@@ -159,6 +156,16 @@ describe('worker entry point', () => {
       await worker.scheduled(cron(WATCHDOG_CRON), withFlags('on'));
       expect(slackCalls(fetchMock)).toHaveLength(1);
     });
+  });
+});
+
+describe('wrangler.jsonc Workflow binding', () => {
+  it('binds the SnapshotWorkflow class in both environments, under different names', () => {
+    const wrangler = parseJsonc(wranglerText) as Json;
+    const sandbox = (wrangler.env as Json).sandbox as Json;
+    const entry = (b: Json) => (b.workflows as Json[])[0]!;
+    expect(entry(wrangler)).toEqual({ name: 'svbc-monday-backup-snapshot', binding: 'SNAPSHOT', class_name: 'SnapshotWorkflow' });
+    expect(entry(sandbox)).toEqual({ name: 'svbc-monday-backup-snapshot-sandbox', binding: 'SNAPSHOT', class_name: 'SnapshotWorkflow' });
   });
 });
 

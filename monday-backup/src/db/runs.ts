@@ -17,6 +17,8 @@ export interface SnapshotRunStore {
   // The run aborted entirely (e.g. Drive auth failed before any upload happened) — no
   // snapshot was produced at all. Returns the new consecutive-failure count for alerting.
   recordRunFailure(runId: number, finishedAtUtc: string, errorMessage: string): Promise<number>;
+  // The write switch stopped the run partway through, on purpose. Neither a snapshot nor a failure.
+  recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void>;
 }
 
 export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, UsageAlertStore {
@@ -65,12 +67,19 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
     return result.consecutive_failures;
   }
 
+  async recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE snapshot_runs SET finished_at = ?2, status = 'stopped', last_error = ?3 WHERE id = ?1`)
+      .bind(runId, finishedAtUtc, reason)
+      .run();
+  }
+
   async abandonStaleRuns(cutoffUtc: string, finishedAtUtc: string): Promise<{ id: number; startedAt: string }[]> {
     const { results } = await this.db
       .prepare(
         `UPDATE snapshot_runs
          SET status = 'abandoned', finished_at = ?2, error_count = 1,
-             last_error = 'run never finished — killed by the runtime (CPU/wall-time limit) or crashed before recording a result'
+             last_error = 'run never finished — the Workflow died or hung before recording a result'
          WHERE status = 'running' AND started_at < ?1
          RETURNING id, started_at`,
       )
@@ -87,7 +96,7 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
 
   async lastSnapshotAt(): Promise<string | null> {
     const row = await this.db
-      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status IN ('success', 'partial')`)
+      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status = 'success'`)
       .first<{ at: string | null }>();
     return row?.at ?? null;
   }

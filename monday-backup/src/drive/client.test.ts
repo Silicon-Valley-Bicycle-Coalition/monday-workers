@@ -38,7 +38,7 @@ interface PutRecord {
 // A small in-memory stand-in for Drive: token endpoint, files.list/create, and the resumable
 // upload protocol (308 + Range while incomplete, 200 + file on completion). Failures can be
 // injected per PUT to exercise recovery.
-function fakeDrive(opts: { existingFolders?: string[] } = {}) {
+function fakeDrive(opts: { existingFolders?: string[]; existingFiles?: { id: string; createdTime: string }[]; media?: Uint8Array[] } = {}) {
   const state = {
     received: new Uint8Array(0),
     puts: [] as PutRecord[],
@@ -63,7 +63,18 @@ function fakeDrive(opts: { existingFolders?: string[] } = {}) {
       return json({ access_token: 'token-abc', expires_in: 3600 });
     }
     if (url.pathname === '/drive/v3/files' && method === 'GET') {
-      return json({ files: (opts.existingFolders ?? []).map((id) => ({ id })) });
+      return json({ files: opts.existingFiles ?? (opts.existingFolders ?? []).map((id) => ({ id })) });
+    }
+    if (url.pathname.startsWith('/drive/v3/files/') && url.searchParams.get('alt') === 'media' && method === 'GET') {
+      const chunks = opts.media ?? [];
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(chunk);
+            controller.close();
+          },
+        }),
+      );
     }
     if (url.pathname === '/drive/v3/files' && method === 'POST') {
       return json({ id: 'new-folder' });
@@ -313,5 +324,43 @@ describe('GoogleDriveClient resumable uploads', () => {
     await newClient().uploadJson('folder-1', 'manifest.json', { boardCount: 3 });
     expect(state.sessionInits[0]!.metadata).toMatchObject({ name: 'manifest.json', mimeType: 'application/json' });
     expect(JSON.parse(new TextDecoder().decode(state.received))).toEqual({ boardCount: 3 });
+  });
+});
+
+describe('GoogleDriveClient reading back', () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const collect = async (lines: AsyncIterable<string>) => {
+    const out: string[] = [];
+    for await (const line of lines) out.push(line);
+    return out;
+  };
+
+  it('findFile looks in that folder for that name, opting in to Shared Drives', async () => {
+    const { state } = fakeDrive({ existingFiles: [{ id: 'f1', createdTime: '2026-11-04T09:01:00.000Z' }] });
+    expect(await newClient().findFile('folder-1', "board-1's.jsonl")).toEqual({ id: 'f1', createdTime: '2026-11-04T09:01:00.000Z' });
+    const url = state.urls.find((u) => u.pathname === '/drive/v3/files')!;
+    const q = url.searchParams.get('q')!;
+    expect(q).toContain("'folder-1' in parents");
+    expect(q).toContain("name = 'board-1\\'s.jsonl'");
+    expect(q).toContain('trashed = false');
+    expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+    expect(url.searchParams.get('includeItemsFromAllDrives')).toBe('true');
+  });
+
+  it('findFile returns null when nothing matches', async () => {
+    fakeDrive({ existingFiles: [] });
+    expect(await newClient().findFile('folder-1', 'board-1.jsonl')).toBeNull();
+  });
+
+  it('readLines splits lines across chunk boundaries, including a split multi-byte character', async () => {
+    const bytes = encode('{"a":"é"}\n{"b":2}\n');
+    const split = bytes.indexOf(0xc3) + 1; // inside the two bytes of é
+    fakeDrive({ media: [bytes.subarray(0, split), bytes.subarray(split, split + 5), bytes.subarray(split + 5)] });
+    expect(await collect(newClient().readLines('f1'))).toEqual(['{"a":"é"}', '{"b":2}']);
+  });
+
+  it('readLines yields a last line with no trailing newline, and skips blank ones', async () => {
+    fakeDrive({ media: [encode('one\n\ntwo')] });
+    expect(await collect(newClient().readLines('f1'))).toEqual(['one', 'two']);
   });
 });
