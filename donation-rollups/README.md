@@ -925,6 +925,12 @@ views leave them out. A person or household member with **Do Not Solicit** check
 Salesforce's Do Not Contact) makes the row `Don't list` too, decided 2026-11-02; its Review Note
 still says "Do Not Solicit is checked on …". Organizations have no Do Not Solicit.
 
+**Mailing Address** (optional `columns.mailingAddress`, spec §11) copies the donor's Address: for a
+household, the first member who has one. Fix an address on the donor, not the board. The cell is
+blank when no address is on file, or when any member has **Do Not Mail** checked, so an export
+can't mail someone who opted out; the Review Note names them. The Review Note also flags household
+members whose addresses differ and an address with no street number or ZIP. The Anonymous row has none.
+
 **The duty.** `rollcall` runs nightly from the custodian cron, behind the `donation-rollups:writes`
 switch. It reads the ledger (`gifts` for `firstFiscalYear` through the current year, archived gifts
 included, so closed years recompute without touching Donations), refreshes `roll_call_credits`,
@@ -1046,7 +1052,9 @@ rows can differ from what a live run would write.
    `firstFiscalYear` is the first year the board covers; `excludedGiftTypes` defaults to
    `["Contracts"]`; `writesPerRun` to 500. `columns.householdName`, `donations.columns.inKindValue`
    and `donations.columns.recognitionFiscalYear` are optional (absent = off), so a build can
-   deploy before the setup run adds them. `"rollCall": null` (or omitted) turns the duty off.
+   deploy before the setup run adds them. So is `columns.mailingAddress` (spec §11), which the setup
+   run adds as **Mailing Address**; without it, the optional `address` and `doNotMail` ids under
+   `people` and `organizations` aren't read. `"rollCall": null` (or omitted) turns the duty off.
 3. **Deploy order: apply migrations `0011` and `0013` to the remote D1 BEFORE deploying** a build that carries
    the duty (`npx wrangler d1 migrations apply <db> --remote`), or the nightly run fails on the
    missing `roll_call_credits` table or its `recognition_fiscal_year` column. Then set the write switch `on` and trigger a first run
