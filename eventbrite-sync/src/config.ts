@@ -149,5 +149,8 @@ function validateAttendeeSync(raw: unknown): void {
   if (sandboxRecipient !== null && !(typeof sandboxRecipient === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sandboxRecipient))) {
     throw new Error('config: "attendeeSync.classEmails.sandboxRecipient" must be an email address, or null');
   }
-
+  // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
+  if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
+  }
 }

@@ -137,6 +137,15 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync"');
     });
 
+    it('refuses a classEmails.pageUrl while sendLinkColumn is still the placeholder', () => {
+      const cfg = valid();
+      cfg.attendeeSync.events.sendLinkColumn = PLACEHOLDER_COLUMN_ID;
+      cfg.attendeeSync.classEmails.pageUrl = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.pageUrl = 'https://example.org/classes';
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.events.sendLinkColumn');
+    });
+
     it('requires classEmails.pageUrl to be an https URL or null', () => {
       const cfg = valid();
       cfg.attendeeSync.classEmails.pageUrl = null;
