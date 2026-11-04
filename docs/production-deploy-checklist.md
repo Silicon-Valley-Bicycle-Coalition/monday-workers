@@ -129,6 +129,12 @@ Webhook secrets must be **fresh production values**, never the sandbox ones. Sav
 password manager before `wrangler secret put` — the same value goes into the registration URL
 below, and a lost copy means re-setting the secret and re-registering the webhook.
 
+**The password manager is Google Passwords**, in the deploying operator's
+`@bikesiliconvalley.org` account: the only approved store, per SVBC's Information Technology and
+Cyber Security protocols. Worker secrets, webhook secrets (and the registration URLs that contain
+them) and Monday integration-user credentials **never** go in the shared Box note, a Box file,
+email or chat. Forks: substitute your own password manager.
+
 **Webhook registration URLs.** Register each after its Worker's production deploy, in that
 Worker's Phase 3/4 step; `<SECRET>` is the value set above. The secret is part of the URL, so
 **re-register the subscription if a secret is ever rotated**. Until a secret is set the route
