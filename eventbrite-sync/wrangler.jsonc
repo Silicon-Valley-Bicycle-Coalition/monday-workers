@@ -42,8 +42,8 @@
   // env.sandbox); every in-scope Worker carries the same two ids, which
   // scripts/check-worker-flags.mjs verifies.
   "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
-  // Hourly sweep for the morning-after class follow-ups (src/followups/run.ts). The 08:00 Pacific
-  // send time is decided in code, so this just has to fire every hour, DST included.
+  // Fires hourly, but only the daily missed-order check (src/missedOrders/check.ts) runs: the hour
+  // it runs at is decided in code (isCheckHour), and every other hour returns at once.
   "triggers": { "crons": ["0 * * * *"] },
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". 60/min/IP
   // is generous against real Eventbrite volume (tens of orders a day at a Summit peak) while

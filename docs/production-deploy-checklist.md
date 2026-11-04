@@ -120,10 +120,10 @@ For each row:
 | `funraise-sync` | `MONDAY_API_TOKEN`, `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
 | `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` (Bearer for `/custodian/*`; not a webhook secret, never in a URL) |
 | `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
-| `monday-backup` | `MONDAY_API_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
+| `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
 | `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
 | `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
-| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` |
+| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET`, `CLASS_EMAIL_SECRET` (header `X-Class-Email-Secret` from the class email send page; not a webhook secret, never in a URL) |
 
 Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
 password manager before `wrangler secret put` — the same value goes into the registration URL
@@ -244,7 +244,7 @@ For each Worker:
    `REPLACE_WITH_*`, no null board ids left for features you mean to enable.
 2. `npm test && npm run typecheck` (split test proves no sandbox id leaked in).
 3. Merge, then deploy: `npm run deploy` from `main` for the first deploy. (Merging alone deploys
-   nothing but `svbc-calendars` until the Workers Builds item above is done — root README, "Deploys".)
+   nothing but `svbc-calendars` and `monday-backup` until the Workers Builds item above is done — root README, "Deploys".)
 4. Turn its write switch on, `node scripts/flags.mjs <worker> writes on --env production` (a
    missing key reads as `off`, and work ingested under `off` is never written). `funraise-sync`:
    before its bootstrap walk. `donation-rollups` went on in Phase 3, after its webhooks.
@@ -355,7 +355,8 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       foreign-key order (`rows`, `disbursements`, `uploads`); a real row deleted from Monday
       but left in D1 stays `written` and is skipped forever. Don't backfill through this Worker.
 - [ ] **6. `monday-backup`** — Drive folder id in `config/backup.json`; confirm the first daily
-      snapshot lands and Slack reports it.
+      snapshot lands and Slack reports it. **Deployed 2026-11-03 with `writes on`; only the first
+      snapshot is left to confirm.**
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the
       automation (`bp-feedback-notify/README.md`, "Monday automation setup"); verify with
       `wrangler tail` on one real trigger.

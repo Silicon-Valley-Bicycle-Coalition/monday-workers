@@ -14,8 +14,9 @@ export interface MondayClient {
   // returns archived and deleted items, so callers must check `state === 'active'` (isActive) rather
   // than treat an omitted id as the only way an item can be gone; an id Monday has purged is omitted.
   getItems(boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]>;
-  // Bell notification to a user about an item (create_notification, target_type Project).
-  notify(userId: number, itemId: string, text: string): Promise<void>;
+  // An update (comment) on an item's page (create_update). Not retried: a retry after an
+  // ambiguous failure could post it twice.
+  postUpdate(itemId: string, body: string): Promise<void>;
 }
 
 export interface MondayItemColumns {
@@ -111,7 +112,7 @@ export class HttpMondayClient implements MondayClient {
     const result: MondayItemColumns[] = [];
     for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
       const data = await this.transport.request<{
-        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[] | null;
+        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null; linked_item_ids?: string[] }[] }[] | null;
       }>(
         // limit: without it items(ids:) returns at most 25 (Monday's default page size).
         `query ($ids: [ID!], $columnIds: [String!]) {
@@ -119,7 +120,12 @@ export class HttpMondayClient implements MondayClient {
             id
             name
             state
-            column_values(ids: $columnIds) { id text value }
+            column_values(ids: $columnIds) {
+              id
+              text
+              value
+              ... on BoardRelationValue { linked_item_ids }
+            }
           }
         }`,
         { ids: itemIds.slice(i, i + ITEMS_BATCH_SIZE), columnIds }
@@ -129,7 +135,9 @@ export class HttpMondayClient implements MondayClient {
           id: item.id,
           name: item.name,
           state: item.state,
-          columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
+          // A linked board_relation cell has no text or value, only linked_item_ids: expose them as
+          // comma-joined ids ('' when none) so every caller's blank check on a link column holds.
+          columns: Object.fromEntries(item.column_values.map((c) => [c.id, Array.isArray(c.linked_item_ids) ? c.linked_item_ids.join(',') : (c.text ?? '')])),
           values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
         });
       }
@@ -137,15 +145,14 @@ export class HttpMondayClient implements MondayClient {
     return result;
   }
 
-  async notify(userId: number, itemId: string, text: string): Promise<void> {
-    // Not idempotent: a retry after an ambiguous failure could ring the bell twice.
-    await this.transport.request<{ create_notification: { text: string | null } }>(
-      `mutation ($userId: ID!, $itemId: ID!, $text: String!) {
-        create_notification(user_id: $userId, target_id: $itemId, text: $text, target_type: Project) {
-          text
+  async postUpdate(itemId: string, body: string): Promise<void> {
+    await this.transport.request<{ create_update: { id: string } }>(
+      `mutation ($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) {
+          id
         }
       }`,
-      { userId, itemId, text },
+      { itemId, body },
       { idempotent: false }
     );
   }

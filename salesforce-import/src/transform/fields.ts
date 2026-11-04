@@ -6,20 +6,20 @@ export function dateCol(iso: string | null | undefined): unknown {
 }
 
 // en-CA formats as YYYY-MM-DD. The org and every event run on Pacific time (monday-migration docs/07 §7).
-const pacificDayFormat = new Intl.DateTimeFormat('en-CA', {
+const pacificDay = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
 });
 
 // For a true datetime field, which the API returns in UTC: dateCol's slice puts anything after
 // 4 or 5 pm Pacific on the next day. Same day eventbrite-sync writes (src/util/isoDate.ts).
-export function pacificDay(iso: string | null | undefined): string | null {
+export function pacificDate(iso: string | null | undefined): string {
   const ms = Date.parse(iso ?? '');
-  return Number.isNaN(ms) ? null : pacificDayFormat.format(ms);
+  return Number.isNaN(ms) ? '' : pacificDay.format(ms);
 }
 
 export function pacificDateCol(iso: string | null | undefined): unknown {
-  const day = pacificDay(iso);
-  return day ? { date: day } : null;
+  const date = pacificDate(iso);
+  return date ? { date } : null;
 }
 
 // SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes

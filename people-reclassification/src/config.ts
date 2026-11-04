@@ -1,4 +1,4 @@
-import type { BoardRef, EventRegistrationsConfig, ItRequestsAlertConfig, PeopleColumns, ReclassificationConfig, VolunteersConfig } from './types';
+import type { BoardRef, EventRegistrationsConfig, ItRequestsAlertConfig, LoggedActivitiesConfig, PeopleColumns, PromoteConfig, ReclassificationConfig, VolunteersConfig } from './types';
 
 // Validates a config/*.json at startup so a placeholder or a typo fails the first request, not
 // the first move. Board ids of 0 are allowed (the production file until cutover) — a pass against
@@ -49,6 +49,7 @@ function peopleColumns(raw: unknown, path: string): PeopleColumns {
   return {
     lastGift: str(o, 'lastGift', path), memberUntil: str(o, 'memberUntil', path),
     membershipTier: str(o, 'membershipTier', path), funraiseProfile,
+    promoteStatus: str(o, 'promoteStatus', path), promotedOn: str(o, 'promotedOn', path),
   };
 }
 
@@ -80,6 +81,27 @@ function volunteers(raw: unknown, path: string): VolunteersConfig | null {
   return { boardId: num(o, 'boardId', path), columns: { volunteer: str(cols, 'volunteer', `${path}.columns`), date: str(cols, 'date', `${path}.columns`) } };
 }
 
+function loggedActivities(raw: unknown, path: string): LoggedActivitiesConfig | null {
+  if (raw === null || raw === undefined) return null;
+  const o = obj(raw, path);
+  const cols = obj(o.columns, `${path}.columns`);
+  const countedTypeLabels = strList(o, 'countedTypeLabels', path);
+  if (countedTypeLabels.length === 0) throw new Error(`config: ${path} counts no activity type at all — set countedTypeLabels, or set it to null`);
+  return {
+    boardId: num(o, 'boardId', path),
+    columns: {
+      person: str(cols, 'person', `${path}.columns`), date: str(cols, 'date', `${path}.columns`),
+      activityType: str(cols, 'activityType', `${path}.columns`),
+    },
+    countedTypeLabels,
+  };
+}
+
+function promote(raw: unknown, path: string): PromoteConfig {
+  const o = obj(raw, path);
+  return { requestLabel: str(o, 'requestLabel', path), doneLabel: str(o, 'doneLabel', path), failedLabel: str(o, 'failedLabel', path) };
+}
+
 function itRequests(raw: unknown, path: string): ItRequestsAlertConfig | null {
   if (raw === null || raw === undefined) return null;
   const o = obj(raw, path);
@@ -107,6 +129,8 @@ export function validateConfig(raw: unknown): ReclassificationConfig {
     perpetual: { lifetimeTierLabel: str(perpetual, 'lifetimeTierLabel', 'perpetual'), funraiseLinked: perpetual.funraiseLinked === true },
     eventRegistrations: eventRegistrations(root.eventRegistrations, 'eventRegistrations'),
     volunteers: volunteers(root.volunteers, 'volunteers'),
+    loggedActivities: loggedActivities(root.loggedActivities, 'loggedActivities'),
+    promote: promote(root.promote, 'promote'),
     thresholds: {
       itemsLimit: num(thresholds, 'itemsLimit', 'thresholds', { min: 1 }),
       liveTriggerPct: num(thresholds, 'liveTriggerPct', 'thresholds', { min: 1 }),

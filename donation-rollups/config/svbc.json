@@ -287,6 +287,18 @@
       "attributedGiftCount": "numeric_mm8n9kg",
       "lastAttributedGift": "date_mm8nm5z7",
       "personLink": "board_relation_mm8nb95b"
+    },
+    "employerSync": {
+      "currentStatusLabel": "Current",
+      "columns": {
+        "organizationLink": "board_relation_mm8nsa59",
+        "status": "color_mm8na4wv",
+        "primary": "boolean_mm8nyg8y"
+      },
+      "ownerColumnsByBoard": {
+        "18437909781": { "employerName": "text_mm8nny92", "affiliationsLink": "board_relation_mm8nj561" },
+        "18437909784": { "employerName": "text_mm8nat1g", "affiliationsLink": "board_relation_mm8nw0hb" }
+      }
     }
   }
 }

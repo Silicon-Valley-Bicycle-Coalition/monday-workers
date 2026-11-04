@@ -18,7 +18,8 @@
     }
   ],
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". The only
-  // HTTP surface is the authenticated /reclassify/* operator routes, so 60/min/IP covers everything.
+  // HTTP surface is the authenticated /reclassify/* operator routes and the promote webhook, so
+  // 60/min/IP covers everything.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2081", "simple": { "limit": 60, "period": 60 } }],
   // Above the repo's usual 100 ms: a quarterly pass pages ~25k items (both People boards, Event
   // Registrations, Volunteers) through JSON.parse in one invocation, and a CPU-limit kill is

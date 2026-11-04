@@ -164,8 +164,24 @@ describe('HttpMondayClient transport (#35)', () => {
       // Without a limit items(ids:) returns at most 25 items (Monday's default page size).
       expect(body.query).toMatch(/items\(ids: \$ids, limit: 100\)/);
       expect(body.query).toMatch(/\bstate\b/);
-      expect(body.query).toMatch(/column_values\(ids: \$columnIds\) \{ id text value \}/);
+      expect(body.query).toMatch(/column_values\(ids: \$columnIds\) \{\s+id\s+text\s+value\s+\.\.\. on BoardRelationValue \{ linked_item_ids \}\s+\}/);
       expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank', 'default'] });
+    });
+
+    it('reads a board relation cell as its linked item ids, since Monday gives it no text or value', async () => {
+      mockFetchOnce({
+        data: { items: [{ id: '1', name: 'Jane', state: 'active', column_values: [
+          { id: 'linked', text: null, value: null, linked_item_ids: ['5550001'], display_value: 'Pat Example' },
+          { id: 'two', text: null, value: null, linked_item_ids: ['5', '6'] },
+          { id: 'unlinked', text: null, value: null, linked_item_ids: [] },
+          { id: 'plain', text: 'x', value: null },
+        ] }] },
+      });
+
+      const [item] = await newClient().getItems(999, ['1'], ['linked', 'two', 'unlinked', 'plain']);
+
+      expect(item!.columns).toEqual({ linked: '5550001', two: '5,6', unlinked: '', plain: 'x' });
+      expect(item!.values.linked).toBeNull();
     });
 
     it('passes archived and deleted items through with their state', async () => {
@@ -196,16 +212,21 @@ describe('HttpMondayClient transport (#35)', () => {
     });
   });
 
-  describe('notify', () => {
-    it('creates a Project notification for the user on the item', async () => {
-      const fetchMock = mockFetchOnce({ data: { create_notification: { text: 'hi' } } });
+  describe('postUpdate', () => {
+    it('postUpdate sends create_update once', async () => {
+      const fetchMock = mockFetchOnce({ data: { create_update: { id: '9' } } });
 
-      await newClient().notify(42, '777', 'Follow-up held');
+      await newClient().postUpdate('777', 'Sent reminder to 3');
 
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-      expect(body.query).toContain('create_notification');
-      expect(body.query).toContain('target_type: Project');
-      expect(body.variables).toEqual({ userId: 42, itemId: '777', text: 'Follow-up held' });
+      expect(body.query).toContain('create_update');
+      expect(body.variables).toEqual({ itemId: '777', body: 'Sent reminder to 3' });
+    });
+
+    it('is not retried after an ambiguous failure', async () => {
+      const fetchMock = mockFetchOnce({}, false);
+      await expect(newClient().postUpdate('777', 'x')).rejects.toBeInstanceOf(AmbiguousWriteError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 });

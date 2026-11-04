@@ -452,7 +452,8 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   **Source** status column (Funraise / Eventbrite) tells the rows apart and the platform ids ride
   along as text (**Funraise Event ID**, **Eventbrite ID**, **Eventbrite Attendee ID**) so the
   post-migration Eventbrite Worker can upsert idempotently. Shared closed vocabularies: **Event
-  Status** (Upcoming / Completed / Canceled / Draft), **Program** from the Eventbrite organizer
+  Status** (Upcoming / Completed / Canceled / Draft; an Eventbrite event over before cutover is
+  Completed even when Eventbrite still says `started` or `live`), **Program** from the Eventbrite organizer
   account suffix (Public / Volunteering / Bike Parking / Group Rides / Private, Fundraiser for
   Funraise), **Attendance** (Registered / Attended / No Show / Canceled — mirrors the production
   Event Participation board; the import never sets No Show) and **Role** (Volunteer for the
@@ -514,6 +515,16 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   column records the fee part; Gift Count drops by the number folded. `reconcile` folds the same
   way. A split with no matching gift stays a gift of its own and `transform` reports the count.
   **Needs a re-extract**, since the opportunities query gained the fields.
+* **Lost status (decided 2026-10-26, migration `docs/32` decisions 5 and 6).** Donations Status
+  gains a fifth label, **Lost**, seeded with the rest at board creation. Closed Lost and Withdrawn
+  on the pipeline record types (Sponsorship, Grants, Contracts, Membership, In Kind Donation /
+  Sponsorship, Commute Workshop, Driver Training) are Lost; Donation and Matching Donation keep
+  Failed. Any gift still at an open stage (Prospecting, Pledged, Invoiced…) whose close date is
+  before the first fiscal year kept active on the board (`archiveCutoffFY`: FY2026 for an
+  October 2026 cutover, ~620 gifts) is Lost too, instead of sitting in Pending for good.
+  `transform` prints the Lost count. Lost counts toward nothing and is outside the "Failed and
+  pending" worklist. On a Donations board created before this change, the load's
+  `create_labels_if_missing` adds the label the first time it writes one.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and

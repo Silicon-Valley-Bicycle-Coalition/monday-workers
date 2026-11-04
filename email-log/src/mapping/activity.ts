@@ -33,6 +33,14 @@ function notesText(body: string, footer: string): string {
   return truncate(text, MAX_NOTES);
 }
 
+// A BCC from a bulk sender is one of many identical sends, not a contact with this person. A
+// forward from the same address is a reply someone really wrote.
+function activityTypeLabel(msg: LogQueueMessage, config: EmailLogConfig): string {
+  const sender = msg.staffEmail.toLowerCase();
+  const bulk = msg.kind === 'bcc' && config.mail.bulkSenders.some((s) => s.toLowerCase() === sender);
+  return bulk ? config.activities.bulkActivityTypeLabel : config.activities.activityTypeLabel;
+}
+
 /** Maps a queued message and its People match to the Activities (Logged) create_item inputs. */
 export function buildActivity(
   msg: LogQueueMessage,
@@ -44,7 +52,7 @@ export function buildActivity(
   const [date, timeZ] = new Date(msg.dateISO).toISOString().split('T') as [string, string];
   const notes = notesText(msg.body, footerLines(msg, match, ownerUserId).join('\n'));
   const columnValues: Record<string, unknown> = {
-    [a.activityTypeColumn]: { label: a.activityTypeLabel },
+    [a.activityTypeColumn]: { label: activityTypeLabel(msg, config) },
     [a.dateColumn]: { date, time: timeZ.slice(0, 8) },
     [a.statusColumn]: { label: match.personItemIds.length ? a.doneLabel : a.needsPersonLabel },
     [a.notesColumn]: { text: notes },

@@ -55,7 +55,7 @@ const WINDFALL = [
   'Philanthropic Giver', 'Windfall Company', 'Windfall Priority', 'Windfall Profile',
 ];
 const PEOPLE = {
-  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile'],
+  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On'],
   history: [...SALESFORCE, 'Salesforce Owner', ...WINDFALL],
 };
 
@@ -82,9 +82,9 @@ export const MARKED_COLUMNS = {
     locked: ['Fiscal Year Ending', 'Total Received', 'Gift Count', 'By Gift Type', 'Restated'],
     history: [],
   },
-  'Events': { locked: ['Eventbrite ID'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
+  'Events': { locked: ['Eventbrite ID', 'Send class email'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID'],
+    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Type', 'Start', 'End', 'Active'] },
