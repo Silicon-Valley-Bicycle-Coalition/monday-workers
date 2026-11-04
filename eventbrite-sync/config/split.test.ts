@@ -27,6 +27,8 @@ const COLUMN_KEYS = [
   'eventbriteSync.giftTypeColumn',
   'eventbriteSync.fiscalYearColumn',
   'eventbriteSync.donorEmailColumn',
+  'eventbriteSync.donorFirstNameColumn',
+  'eventbriteSync.donorLastNameColumn',
   'eventbriteSync.donorLinkColumn',
   'attendeeSync.events.eventbriteIdColumn',
   'attendeeSync.events.dateColumn',

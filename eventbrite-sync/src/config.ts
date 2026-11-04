@@ -7,7 +7,7 @@ const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-r
 // it — production config is allowed to be unconfigured — and the consumer refuses to write on it.
 export const PLACEHOLDER_COLUMN_ID = 'REPLACE_WITH_COLUMN_ID';
 
-const REQUIRED_COLUMN_KEYS = ['orderIdColumn', 'amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
+const REQUIRED_COLUMN_KEYS = ['orderIdColumn', 'amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorFirstNameColumn', 'donorLastNameColumn', 'donorLinkColumn'] as const;
 
 // Column ids the consumer stamps on first write only. Each must be present so a fork opts out
 // deliberately with null rather than by forgetting the key.

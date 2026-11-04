@@ -15,8 +15,8 @@ import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
-import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition } from './flags';
-import { followupDepsFor, type BatchSkipContext } from './writeSwitch';
+import { readLogLevel, readWriteMode, runDisposition } from './flags';
+import { followupDepsFor, piiKeysFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
@@ -40,7 +40,7 @@ export function isDeadLetterBatch(queueName: string): boolean {
 // the next batch within the KV edge cache's 30 seconds).
 async function skipContext(env: Env): Promise<BatchSkipContext> {
   const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
-  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: piiKeysFor(configFor(env)) };
 }
 
 // One line per sweep for Workers Logs. A failed event is an error (its Follow-ups stays blank, so

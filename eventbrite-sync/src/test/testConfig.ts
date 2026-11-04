@@ -33,6 +33,8 @@ export function testConfig(
       giftTypeValue: 'Event Ticket',
       fiscalYearColumn: null,
       donorEmailColumn: 'email_col',
+      donorFirstNameColumn: 'first_col',
+      donorLastNameColumn: 'last_col',
       donorLinkColumn: 'connect_col',
       ...eventbriteSync,
     },

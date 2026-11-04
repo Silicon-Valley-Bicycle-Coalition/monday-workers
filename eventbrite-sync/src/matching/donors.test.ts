@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { matchDonor } from './donors';
 import type { MondayClient } from '../monday/client';
 import { testConfig } from '../test/testConfig';
+import { dryRunMondayClient, piiKeysFor } from '../writeSwitch';
 
 const config = testConfig();
 
@@ -14,6 +15,32 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     ...overrides,
   };
 }
+
+describe('matchDonor names', () => {
+  const buyer = { email: 'a@example.com', name: 'Ada Lovelace', firstName: 'Ada', lastName: 'Lovelace' };
+
+  it('passes the order\'s first and last name to the new person\'s columns', async () => {
+    const client = fakeMondayClient();
+    await matchDonor(client, config, buyer);
+    expect(client.createItem).toHaveBeenCalledWith(42, 'Ada Lovelace', { email_col: { email: 'a@example.com', text: 'a@example.com' } });
+    expect(client.changeColumnValues).toHaveBeenCalledWith(42, 'new-item', { first_col: 'Ada', last_col: 'Lovelace' });
+  });
+
+  it('stays a dry run under the write switch, with the name masked in debug logs', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const real = fakeMondayClient();
+    const ctx = { worker: 'eventbrite-sync', environment: 'sandbox', mode: 'off' as const, logLevel: 'debug' as const, deliveryId: 'd', piiKeys: piiKeysFor(config) };
+
+    const result = await matchDonor(dryRunMondayClient(real, config.monday.boards, ctx), config, buyer);
+
+    expect(result).toEqual({ donorItemId: 'dry-run-1', created: true });
+    expect(real.changeColumnValues).not.toHaveBeenCalled();
+    const logged = log.mock.calls.flat().join(' ');
+    expect(logged).toContain('changeColumnValues');
+    expect(logged).not.toContain('Ada');
+    log.mockRestore();
+  });
+});
 
 describe('matchDonor', () => {
   it('matches an existing People item by the bare email address', async () => {
