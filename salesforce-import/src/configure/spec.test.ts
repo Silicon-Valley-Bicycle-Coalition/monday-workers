@@ -19,6 +19,39 @@ describe('BOARD_SPECS columns', () => {
   });
 });
 
+describe('Event Registrations class roster', () => {
+  const spec = BOARD_SPECS['event-registrations']!;
+  const roster = spec.views!.find((v) => v.name === 'Class roster')!;
+
+  it('creates every per-attendee column eventbrite-sync writes that the load does not', () => {
+    expect(spec.columns).toEqual([
+      { title: 'First Name', type: 'text' },
+      { title: 'Class Date', type: 'date' },
+      { title: 'Class Day', type: 'text' },
+      { title: 'Class Location', type: 'text' },
+    ]);
+  });
+
+  it('lists only people still registered for a class that has not happened yet', () => {
+    expect(roster.filter!.rules).toEqual([
+      { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
+      { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+    ]);
+  });
+
+  it('groups by class, soonest first, with the fields staff need to reach someone', () => {
+    expect(roster.groupBy).toEqual({ columnTitle: 'Event' });
+    expect(roster.sort).toEqual([{ columnTitle: 'Class Date' }]);
+    expect(roster.columns).toEqual(expect.arrayContaining(['Attendee Name', 'Attendee Email', 'Class Date']));
+  });
+});
+
+describe('Events send link', () => {
+  it('has a Send class email link column, written by eventbrite-sync', () => {
+    expect(BOARD_SPECS['events']!.columns).toContainEqual({ title: 'Send class email', type: 'link' });
+  });
+});
+
 describe('BOARD_SPECS views', () => {
   const all = Object.entries(BOARD_SPECS).flatMap(([board, s]) => (s.views ?? []).map((v) => ({ board, v })));
 

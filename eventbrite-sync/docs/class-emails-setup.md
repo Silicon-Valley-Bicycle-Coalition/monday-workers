@@ -1,5 +1,11 @@
 # Class emails: Monday-side setup checklist
 
+> **Superseded (2026-11-03).** Class emails are now sent from Gmail through the send page, which
+> asks the Worker who may be emailed; Monday no longer sends them, and the hourly follow-up job
+> and the `Follow-up Email` column are retired. Nothing below is needed. See
+> [`docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md`](../../docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md)
+> and this Worker's README, "Attendee feed and class emails". Kept only for history.
+
 > **Not used for SVBC's production setup (decided 2026-10-28).** Monday can't send as the
 > shared address the class emails come from (a Google Group), so SVBC sends them by hand from
 > Gmail instead, with an Apps Script mail merge in a Google Sheet (Gmail's built-in mail merge

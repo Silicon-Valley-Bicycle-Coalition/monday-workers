@@ -6,17 +6,17 @@ import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
+import { D1ClassEmailStore } from './db/classEmails';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
-import { tokenProviderFor, type TokenProvider } from './monday/graphql';
+import { tokenProviderFor } from './monday/graphql';
 import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
-import { runFollowups, type FollowupResult } from './followups/run';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition } from './flags';
-import { followupDepsFor, type BatchSkipContext } from './writeSwitch';
+import type { BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
@@ -43,14 +43,6 @@ async function skipContext(env: Env): Promise<BatchSkipContext> {
   return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
 }
 
-// One line per sweep for Workers Logs. A failed event is an error (its Follow-ups stays blank, so
-// the next hourly run retries it); a clean sweep is just info.
-export function logFollowupSummary(result: FollowupResult): void {
-  const counts = `sent ${result.sent.length}, held ${result.held.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`;
-  if (result.failed.length > 0) console.error(`eventbrite-sync follow-ups: ${counts} (${result.failed.join(', ')})`);
-  else console.log(`eventbrite-sync follow-ups: ${counts}`);
-}
-
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
     // configFor validates synchronously and must keep throwing synchronously (before any
@@ -72,6 +64,13 @@ export default {
         },
         webhookSecret: env.EVENTBRITE_WEBHOOK_SECRET,
         writeMode: () => readWriteMode(env, WORKER),
+        classEmails: {
+          store: new D1ClassEmailStore(env.DB),
+          // A plain client, never the write switch's dry-run wrapper: the routes make no Monday
+          // write unless the mode is `on`. Built only after the secret passes.
+          mondayClient: () => new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+          secret: env.CLASS_EMAIL_SECRET,
+        },
       });
       return app.fetch(request, env, ctx);
     });
@@ -108,64 +107,37 @@ export default {
     }, gate);
   },
 
-  // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups. Cheap when idle: one D1
-  // read of events that ended in the last few days, and Monday is touched only for those. Once a
-  // day it also runs the missed-order check (src/missedOrders/check.ts).
+  // Hourly (wrangler.jsonc triggers), but only the daily missed-order check (src/missedOrders/check.ts)
+  // does anything: every other hour returns before touching KV, D1 or Eventbrite.
   scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    return runScheduled(controller, env, ctx, runFollowups);
+    return runScheduled(controller, env, ctx);
   },
 };
 
-// `run` and `check` are parameters so a test can observe the calls without module mocking.
+// `check` is a parameter so a test can observe the call without module mocking.
 export async function runScheduled(
   controller: ScheduledController,
   env: Env,
   ctx: ExecutionContext,
-  run: typeof runFollowups,
   check: typeof checkMissedOrders = checkMissedOrders
 ): Promise<void> {
   const config = configFor(env);
-  // The broker binding, else the fixed token (an empty one counts as unset, as it always has here).
-  let token: TokenProvider;
-  try {
-    token = tokenProviderFor({ MONDAY_AUTH: env.MONDAY_AUTH, MONDAY_API_TOKEN: env.MONDAY_API_TOKEN || undefined });
-  } catch {
-    throw new Error('neither the MONDAY_AUTH service binding (monday-auth) nor MONDAY_API_TOKEN (wrangler secret put MONDAY_API_TOKEN) is set; cannot run class follow-ups');
-  }
   const now = new Date(controller.scheduledTime);
-  // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them,
-  // `off` dry-runs them (every Monday write and notification logged, none made), `hold` or an
-  // unreadable switch skips them with one line each.
+  if (!isCheckHour(now)) return;
+  // The write switch, read once for this cron run. The check follows runDisposition: `on` and `off`
+  // run it (it only reads Eventbrite and the orders ledger and logs, so its dry run is the live
+  // run), `hold` or an unreadable switch skips it with one line.
   const gate = await skipContext(env);
-  const disposition = runDisposition(gate.mode);
-  const isCheck = isCheckHour(now);
-  if (disposition === 'skip') {
-    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the class follow-ups${isCheck ? ' and the missed-order check' : ''}`);
+  if (runDisposition(gate.mode) === 'skip') {
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the missed-order check`);
     return;
   }
-  const liveDeps = {
-    eventStore: new D1EventStore(env.DB),
-    attendeeStore: new D1AttendeeStore(env.DB),
-    mondayClient: new HttpMondayClient(config.monday.apiUrl, token),
-    config,
-  };
-  ctx.waitUntil(
-    run(now, followupDepsFor(disposition, liveDeps, { ...gate, deliveryId: `followups:${now.toISOString()}` }))
-      .then(logFollowupSummary)
-      // A sweep-level throw (config, D1) must be logged, not become an unhandled waitUntil rejection.
-      .catch((err) => console.error(`eventbrite-sync follow-ups: sweep failed: ${errorMessage(err)}`))
-  );
-
-  if (!isCheck) return;
-  // Logged, not thrown: the follow-ups above are already under way, and an unset token is
-  // something Workers Issues should show once a day until it's fixed.
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
   if (eventbriteToken === undefined || eventbriteToken === '') {
+    // Logged, not thrown, so Workers Issues shows it once a day until it's fixed.
     console.error('eventbrite-sync missed orders: EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); check skipped');
     return;
   }
-  // The check reads Eventbrite and the orders ledger and only logs: it has no sink and no cursor,
-  // so its dry run is the live run.
   ctx.waitUntil(
     check(now, {
       lister: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),

@@ -21,7 +21,7 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 
 export interface ColumnSpec {
   title: string;
-  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people';
+  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date' | 'link';
   labels?: string[]; // status/dropdown only, in display order
 }
 
@@ -185,7 +185,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Member Until': 'Current membership term. Each membership payment on Donations carries its own Term Start / Term End.',
       'Organization': 'Organizations this person is affiliated with. Tenure, role, and work ' +
         'email for each are on the Affiliations board.',
-      'Employer Name': 'Free text from Salesforce. Structured employment lives on Affiliations.',
+      'Employer Name': 'Starts as free text from Salesforce; set to the Organization when a current affiliation is added or changed. Structured employment lives on Affiliations.',
       'Stakeholder Type': 'Advocacy classification. City or Agency Staff and Elected Official ' +
         'link to their municipal organization via Organization.',
       'Campaign': 'Which outreach pushes this person was loaded or tagged into (replaces ' +
@@ -486,7 +486,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       '(public, volunteering, bike parking, group rides, private). One item per event; who came ' +
       `is on Event Registrations. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Events',
+    // Written per Public event by eventbrite-sync once the send page is deployed.
+    columns: [{ title: 'Send class email', type: 'link' }],
     columnDescriptions: {
+      'Send class email': 'Opens the page that emails everyone registered for this class. Filled in by ' +
+        'the Eventbrite integration for Public classes.',
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
@@ -510,7 +514,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       "gift (Payment). Eventbrite registrants who never checked in have no Attendee link — they " +
       `aren't People. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Registrations',
+    // Written per attendee by eventbrite-sync. The load leaves them blank, so migrated history
+    // has no Class Date and stays out of the Class roster view.
+    columns: [
+      { title: 'First Name', type: 'text' },
+      { title: 'Class Date', type: 'date' },
+      { title: 'Class Day', type: 'text' },
+      { title: 'Class Location', type: 'text' },
+    ],
     columnDescriptions: {
+      'Class Date': "The event's start date, from Eventbrite. Blank on registrations from before the Eventbrite integration.",
       'Attendee': "The registrant's People item, when they're a known person. Blank for " +
         'Eventbrite registrants who never became contacts; Attendee Name / Email keep what the platform had.',
       'Attendance': 'Registered, Attended, Canceled. No Show is never set by the import — staff ' +
@@ -522,6 +535,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     views: [
       { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
+      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
+        filter: { rules: [
+          { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
+          { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+        ] },
+        groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],
