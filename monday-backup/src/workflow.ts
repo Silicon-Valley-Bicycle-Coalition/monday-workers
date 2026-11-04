@@ -43,6 +43,26 @@ export function asSnapshotStep(step: WorkflowStep): SnapshotStep {
   };
 }
 
+// Read at each step rather than once, because a run lasts an hour and `hold` has to take effect. Only
+// an explicit hold or off stops the run. A failed KV read throws, so the step retries it: one blip
+// must not silently end a night's backup, and if it persists the board is recorded as failed, which
+// alerts.
+export async function writesOn(env: Env): Promise<boolean> {
+  const mode = await readWriteMode(env, WORKER);
+  if (mode === 'unknown') throw new Error('write switch unreadable');
+  if (runDisposition(mode) === 'run') return true;
+  const ctx: SkipContext = {
+    worker: WORKER,
+    environment: environmentOf(env),
+    mode,
+    logLevel: await readLogLevel(env, WORKER),
+    deliveryId: 'snapshot-workflow',
+    piiKeys: DEFAULT_PII_KEYS,
+  };
+  logSkip(ctx, 'Google Drive', 'runSnapshot', undefined);
+  return false;
+}
+
 // The nightly snapshot, one step per board or doc (src/backup.ts). Started by the cron in src/index.ts,
 // or by hand: npx wrangler workflows trigger svbc-monday-backup-snapshot
 export class SnapshotWorkflow extends WorkflowEntrypoint<Env, unknown> {
@@ -63,21 +83,7 @@ export class SnapshotWorkflow extends WorkflowEntrypoint<Env, unknown> {
       config: configFor(env),
       slackWebhookUrl: env.SLACK_WEBHOOK_URL,
       now: () => new Date(),
-      // Read at each step rather than once, because a run lasts an hour and `hold` has to take effect.
-      writesOn: async () => {
-        const mode = await readWriteMode(env, WORKER);
-        if (runDisposition(mode) === 'run') return true;
-        const ctx: SkipContext = {
-          worker: WORKER,
-          environment: environmentOf(env),
-          mode,
-          logLevel: await readLogLevel(env, WORKER),
-          deliveryId: 'snapshot-workflow',
-          piiKeys: DEFAULT_PII_KEYS,
-        };
-        logSkip(ctx, 'Google Drive', 'runSnapshot', undefined);
-        return false;
-      },
+      writesOn: () => writesOn(env),
     });
   }
 }

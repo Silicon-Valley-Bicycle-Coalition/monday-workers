@@ -144,6 +144,10 @@ the board loop (Drive auth, say) calls the existing `recordRunFailure` and alert
 **In-memory state doesn't survive hibernation,** so counts and errors are rebuilt from step results
 as `run()` replays, and nothing else is kept outside a step.
 
+**Giving up.** Ten board or doc failures in a row end the run as `partial`, with an alert and an entry
+saying so. A failing step costs at least 3 minutes, so an outage would otherwise take over 14 hours
+and pass for a stuck run.
+
 **The per-step deadline stays, per step.** Each board step builds its clients with a fresh `Deadline`
 at 25 minutes, so a stuck call fails with a clear `BudgetExhaustedError` before the step's own opaque
 30-minute timeout. The 12-minute budget, its `pastDeadline` checks and the finalize grace all go.
@@ -161,6 +165,11 @@ that closed its upload and then failed before returning would otherwise write a 
 So board and doc steps first look for that filename in the run folder. Files appear only when an
 upload closes, so an existing file is complete: the step takes its counts by streaming it back and
 returns without re-uploading. `DriveClient` gains `findFile` and a way to read a file's lines.
+
+Accepted risks, both narrow: Drive listings can lag, so a retry could miss a just-closed file and
+write a second copy, which the at-least-1-minute retry delay makes unlikely. And a `start` step
+repeated after its insert committed leaves a stray `running` row, whose only effect is one false
+"never finished" alert 12 hours later.
 
 ### Status means complete
 
@@ -180,8 +189,9 @@ returns without re-uploading. `DriveClient` gains `findFile` and a way to read a
   repeats at most every 24 hours until the first `success`.
 - `STUCK_RUN_MS` goes from 1 hour to 12 hours. `abandonStaleRuns` keeps working, and a very late
   finisher can still overwrite `abandoned` with its real result, which is the truth.
-- **Write switch mid-run.** Board and doc steps read the switch. Anything but `on` stops the run: a
-  new `stopped` status (a free-text column, so no migration), no manifest and no alert. A folder
+- **Write switch mid-run.** Board and doc steps read the switch. An explicit `hold` or `off` stops the
+  run: a new `stopped` status (a free-text column, so no migration), no manifest and no alert. A KV
+  read error throws so the step retries it, and a persistent one is recorded like any failed board. A folder
   without a manifest already means "don't use" in `RESTORE.md`. This reads once per step rather than
   once per run, because a run now lasts an hour and `hold` has to take effect.
 

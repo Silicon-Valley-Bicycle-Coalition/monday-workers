@@ -64,6 +64,7 @@ export interface GoogleDriveClientOptions {
 
 // No Drive request may hang indefinitely; the deadline can shorten this further.
 const REQUEST_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 interface CachedToken {
   value: string;
@@ -170,7 +171,7 @@ export class GoogleDriveClient implements DriveClient {
   // Authorized fetch that retries rate limits, 5xx and network errors, and throws on any other
   // non-OK response. Used for metadata calls and for opening upload sessions — a retried session
   // open that had actually succeeded just leaves an unused session, never a file.
-  private async driveFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  private async driveFetch(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
     let lastError = '';
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await this.deadline.sleepBeforeRetry(this.sleep, backoffMs(attempt), `Drive ${path} (last error: ${lastError})`);
@@ -182,7 +183,7 @@ export class GoogleDriveClient implements DriveClient {
         response = await fetch(`${DRIVE_ORIGIN}${path}`, {
           ...init,
           headers,
-          signal: AbortSignal.timeout(this.deadline.timeoutMs(REQUEST_TIMEOUT_MS)),
+          signal: AbortSignal.timeout(this.deadline.timeoutMs(timeoutMs)),
         });
       } catch (err) {
         this.deadline.check(`Drive ${path} (request cut off: ${String(err)})`);
@@ -230,7 +231,8 @@ export class GoogleDriveClient implements DriveClient {
   }
 
   async *readLines(fileId: string): AsyncGenerator<string> {
-    const response = await this.driveFetch(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&${ALL_DRIVES}`);
+    // The timeout also covers reading the body, and a snapshot file can be tens of MB.
+    const response = await this.driveFetch(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&${ALL_DRIVES}`, {}, DOWNLOAD_TIMEOUT_MS);
     if (response.body === null) return;
     const decoder = new TextDecoder();
     let buffered = '';

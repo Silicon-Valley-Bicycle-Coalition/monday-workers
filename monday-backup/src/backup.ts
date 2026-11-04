@@ -29,6 +29,11 @@ export interface SnapshotStep {
 // takes about 4 minutes.
 const STEP_DEADLINE_MS = 25 * 60_000;
 
+// A failing step costs at least 3 minutes of retries. When Drive or Monday is down, trying all 286
+// boards and docs would take over 14 hours and tell nobody until the end, so stop and alert instead.
+// Rerun by hand once it's fixed: a new run starts its own folder.
+const MAX_CONSECUTIVE_FAILURES = 10;
+
 export interface BackupDeps {
   monday: MondayClient;
   drive: DriveClient;
@@ -238,6 +243,9 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
     let boardCount = 0;
     let docCount = 0;
     let stopped = false;
+    let failuresInARow = 0;
+    const gaveUp = (): boolean => failuresInARow >= MAX_CONSECUTIVE_FAILURES;
+    const giveUpError = `gave up after ${MAX_CONSECUTIVE_FAILURES} failures in a row; the rest of this run was not attempted`;
 
     const boards = [...listing.boards];
     const queued = new Set([...boards.map((b) => b.id), ...listing.deletedBoardsSkipped, ...listing.leftOut]);
@@ -251,7 +259,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
 
     // A queue, not a plain loop: backing up a board can discover its subitems board, which is
     // appended if `boards` didn't already list it (issue #30).
-    for (let i = 0; i < boards.length && !stopped; i++) {
+    for (let i = 0; i < boards.length && !stopped && !gaveUp(); i++) {
       const board = boards[i]!;
       try {
         const filename = `board-${board.id}.jsonl`;
@@ -270,6 +278,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
         updateCountsByBoard[board.id] = result.updateCount;
         capturedAt[`board-${board.id}`] = { startedAt: result.startedAt, finishedAt: result.finishedAt };
         boardCount++;
+        failuresInARow = 0;
         for (const subBoardId of result.subitemBoardIds) {
           if (queued.has(subBoardId) || deps.config.excludeBoardIds.includes(subBoardId)) continue;
           queued.add(subBoardId);
@@ -285,11 +294,12 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
       } catch (err) {
         const message = errorMessage(err);
         errors.push(`board ${board.id} (${board.name}): ${message}`);
+        failuresInARow++;
         console.error(`monday-backup: board ${board.id} failed: ${message}`);
       }
     }
 
-    for (let i = 0; i < docs.length && !stopped; i++) {
+    for (let i = 0; i < docs.length && !stopped && !gaveUp(); i++) {
       const doc = docs[i]!;
       try {
         const filename = `doc-${doc.id}.jsonl`;
@@ -307,12 +317,16 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
         blockCountsByDoc[doc.id] = result.blockCount;
         capturedAt[`doc-${doc.id}`] = { startedAt: result.startedAt, finishedAt: result.finishedAt };
         docCount++;
+        failuresInARow = 0;
       } catch (err) {
         const message = errorMessage(err);
         errors.push(`doc ${doc.id} (${doc.name}): ${message}`);
+        failuresInARow++;
         console.error(`monday-backup: doc ${doc.id} failed: ${message}`);
       }
     }
+
+    if (gaveUp()) errors.push(giveUpError);
 
     // Stopped by the write switch: no manifest, and a folder without one already means "don't use"
     // (RESTORE.md). An operator did this on purpose, so no alert either.

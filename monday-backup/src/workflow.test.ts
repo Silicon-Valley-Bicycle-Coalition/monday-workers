@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { env, introspectWorkflowInstance } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
-import { asSnapshotStep, isUnretryable } from './workflow';
+import { asSnapshotStep, isUnretryable, writesOn } from './workflow';
+import type { Env } from './env';
 import { MondayApiError } from './monday/graphql';
 import type { WorkflowStep } from 'cloudflare:workers';
 
@@ -35,6 +36,28 @@ describe('asSnapshotStep', () => {
         throw other;
       }),
     ).rejects.toBe(other);
+  });
+});
+
+describe('writesOn', () => {
+  const withSwitch = (get: () => Promise<string | null>) => ({ ...env, FLAGS: { get } }) as unknown as Env;
+
+  it('is true only for on', async () => {
+    await expect(writesOn(withSwitch(async () => 'on'))).resolves.toBe(true);
+  });
+
+  it.each(['hold', 'off', null])('stops the run for %s, with a skip line', async (value) => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(writesOn(withSwitch(async () => value))).resolves.toBe(false);
+    expect(logSpy.mock.calls.some(([l]) => String(l).includes('skipped'))).toBe(true);
+    logSpy.mockRestore();
+  });
+
+  it('throws on a failed KV read, so the step retries instead of ending the night', async () => {
+    const unreadable = withSwitch(async () => {
+      throw new Error('kv down');
+    });
+    await expect(writesOn(unreadable)).rejects.toThrow('write switch unreadable');
   });
 });
 

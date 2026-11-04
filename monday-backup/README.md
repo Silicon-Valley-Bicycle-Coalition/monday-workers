@@ -135,7 +135,8 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   hour: roughly 2–3 s per 100 items, and at least 5–8 s per board even when it's empty, across about
   262 boards. Each board fits easily in a step (the largest takes about 4 minutes), and a Workflow step has no
   wall-time limit. A step gets three tries; one that still fails is recorded in the manifest and the
-  run carries on. A step can run twice, so it first looks for its file in the run folder: Drive
+  run carries on, unless 10 fail in a row, when it stops and alerts rather than spend 14 hours on an
+  outage (rerun it once that's fixed). A step can run twice, so it first looks for its file in the run folder: Drive
   allows duplicate names and a Contributor can't delete one. Each step has a 25-minute deadline
   (`src/deadline.ts`) inside its 30-minute timeout. Start a run by hand with:
 
@@ -145,7 +146,8 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 
   Each file logs one line with its counts, duration, requests and retries.
 * **Failure visibility.** `success` means complete: nothing failed, and every board in
-  `requiredBoardIds` was captured. Any partial run and any total failure alerts Slack immediately. A
+  `requiredBoardIds` was captured. Any partial run and any total failure alerts Slack immediately
+  (if the very first step can't write to D1, there's no run to report, and the watchdog catches it). A
   second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and alerts
   if a run is stuck in `running` for over 12 hours (marked `abandoned` in D1) or if no **complete**
   snapshot has landed in 36 hours. A partial run doesn't reset that clock, so one board failing
@@ -200,7 +202,7 @@ dashboard refuses two connections on one root directory, fall back to the
 
 The sandbox token scoped to the CRM Sandbox workspace (design doc §4) is the primary guard
 against a sandbox run touching production boards or docs. `config/backup.sandbox.json` also sets
-`workspaceIds: ["17141226"]`, a config-level belt-and-braces check: `runBackup` skips any board
+`workspaceIds: ["17141226"]`, a config-level belt-and-braces check: `runSnapshot` skips any board
 or doc whose `workspaceId` isn't in the list, so a token that somehow gained broader access still
 wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
 in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
@@ -239,8 +241,9 @@ The `FLAGS` KV key `monday-backup:writes` (`on` | `hold` | `off`; missing or unr
 `off`, a KV read error acts like `hold`) gates both crons. Anything but `on`
 makes the nightly backup log one skip line and return, with no `snapshot_runs` row, so the watchdog
 does not count it as a failure. A run already under way reads the switch before each board and doc, because it
-lasts an hour and `hold` has to take effect: it stops, recorded as `stopped` in D1, with no manifest
-and no alert. The watchdog always computes and keeps its D1 bookkeeping, but its
+lasts an hour and `hold` has to take effect: an explicit `hold` or `off` stops it, recorded as
+`stopped` in D1, with no manifest and no alert. A KV read error instead retries the step, so a blip
+can't silently end a night's backup. The watchdog always computes and keeps its D1 bookkeeping, but its
 Slack alerts are logged as skips unless the mode is `on` (and a suppressed stale-snapshot alert is
 not marked as sent, so it fires once the switch is on). After a long `off`/`hold`, expect the
 36-hour staleness alert on the first watchdog run after flipping to `on`, until the next backup

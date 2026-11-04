@@ -165,7 +165,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('runBackup', () => {
+describe('runSnapshot', () => {
   it('streams every board and doc as JSONL plus a manifest, and records a success run', async () => {
     const monday = fakeMonday({
       listBoards: async () => [board('1'), board('2')],
@@ -658,6 +658,51 @@ describe('runBackup', () => {
       expect(attempts).toEqual(['1', '1', '1', '2']);
       expect(fake.manifest().errors).toEqual(['board 1 (Board 1): nope']);
       expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 1, errorCount: 1 });
+    });
+
+    it('gives up after 10 failures in a row, says so, and alerts rather than trying everything', async () => {
+      const ids = Array.from({ length: 30 }, (_, i) => String(i + 1));
+      const schemaCalls: string[] = [];
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      await runBackup(
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => ids.map((id) => board(id)),
+            listDocs: async () => [doc('d1')],
+            getBoardSchema: async (id) => {
+              schemaCalls.push(id);
+              throw new Error('monday is down');
+            },
+          }),
+          drive: fake.drive,
+          runStore,
+        }),
+      );
+      expect(new Set(schemaCalls).size).toBe(10);
+      const errors = fake.manifest().errors as string[];
+      expect(errors).toHaveLength(11);
+      expect(errors[10]).toContain('gave up after 10 failures in a row');
+      expect(fake.filenames()).toEqual(['manifest.json']);
+      expect(runStore.finishes[0]).toMatchObject({ status: 'partial', errorCount: 11 });
+    });
+
+    it('a success in between resets the count of failures in a row', async () => {
+      const fake = fakeDrive();
+      await runBackup(
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => Array.from({ length: 30 }, (_, i) => board(String(i + 1))),
+            getBoardSchema: async (id) => {
+              if (Number(id) % 5 !== 0) throw new Error('flaky');
+              return { columns: [], groups: [] };
+            },
+          }),
+          drive: fake.drive,
+        }),
+      );
+      expect((fake.manifest().errors as string[]).some((e) => e.includes('gave up'))).toBe(false);
+      expect(fake.manifest().boardCount).toBe(6);
     });
 
     it.each([

@@ -69,7 +69,7 @@ export default {
     // Not `on`: skip the whole run with one line. A dry-run backup would stream every board for
     // nothing, and no snapshot_runs row is written, so the watchdog never counts the skip as a failure.
     if (runDisposition(mode) !== 'run') {
-      logSkip(ctx, 'Google Drive', 'runBackup', undefined);
+      logSkip(ctx, 'Google Drive', 'runSnapshot', undefined);
       return;
     }
 

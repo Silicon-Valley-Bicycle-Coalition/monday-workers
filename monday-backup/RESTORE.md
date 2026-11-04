@@ -144,9 +144,8 @@ Do this once end to end in the sandbox, then record the result below and close i
 2. Seed the sandbox boards with representative data: several groups, every column type in use in
    production, a connect-boards column across two boards (with a mirror), subitems, updates with
    replies, one archived board, and a Doc longer than 100 blocks with nested lists.
-3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger
-   it locally — `npm run dev:sandbox -- --test-scheduled` with sandbox secrets in `.dev.vars`,
-   then `curl "http://localhost:8787/cdn-cgi/local/scheduled?cron=0+9+*+*+*"`.
+3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger one
+   with `npx wrangler workflows trigger svbc-monday-backup-snapshot-sandbox`.
 4. Confirm the run folder and a `manifest.json` with `errors: []`.
 5. Create an empty workspace for the rehearsal and follow steps 2–5 above against it (dry run
    first). Use a token that can write only to that workspace.
