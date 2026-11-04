@@ -46,6 +46,12 @@ describe('Event Registrations class roster', () => {
   });
 });
 
+describe('Events send link', () => {
+  it('has a Send class email link column, written by eventbrite-sync', () => {
+    expect(BOARD_SPECS['events']!.columns).toContainEqual({ title: 'Send class email', type: 'link' });
+  });
+});
+
 describe('BOARD_SPECS views', () => {
   const all = Object.entries(BOARD_SPECS).flatMap(([board, s]) => (s.views ?? []).map((v) => ({ board, v })));
 

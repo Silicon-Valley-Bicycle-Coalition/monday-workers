@@ -7,7 +7,7 @@ import type { EventbriteOrderLister } from '../eventbrite/client';
 // received. A day with no sales is not an alarm, unlike the Salesforce rule.
 
 // 15:00 UTC is 07:00 or 08:00 Pacific, so a gap shows in Workers Issues by the start of the day.
-// The cron is hourly (wrangler.jsonc) for the follow-ups; this runs on one of those hours.
+// The cron is hourly (wrangler.jsonc); this runs on one of those hours.
 export const CHECK_HOUR_UTC = 15;
 // A little over a day, so consecutive checks overlap and a slow day's last orders aren't missed.
 const LOOKBACK_MS = 26 * 60 * 60 * 1000;

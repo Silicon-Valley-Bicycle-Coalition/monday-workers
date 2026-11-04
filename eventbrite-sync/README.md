@@ -6,8 +6,8 @@
 [`docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md`](../docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md))
 — **deployed: sandbox 2026-10-26, production 2026-11-02** (see "Deploy"). Production's order path
 is filled from the live boards (Donations, People, `Eventbrite Order ID` `text_mm8n459q`; c579d0d),
-with its own D1 and queues; its attendee feed is configured (2026-11-03) with follow-ups off (see
-"Class roster"), and its webhook isn't registered yet, so only the order webhook is live there. The sandbox order path still can't write: `orderIdColumn` in
+with its own D1 and queues; its attendee feed is configured (2026-11-03) with the class emails sent from the send page (see
+"Class emails"), and its webhook isn't registered yet, so only the order webhook is live there. The sandbox order path still can't write: `orderIdColumn` in
 `config/sandbox.json` is `REPLACE_WITH_COLUMN_ID`. This README doesn't record whether the
 `Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
@@ -32,9 +32,9 @@ a paid Funraise ticket — linked to the buyer on People by email. Nothing does 
 
 The orders feed is one half. One order is one gift, however many tickets it holds; the buyer is
 the donor. The other half (2026-10-26) is an **attendee feed**: a second webhook keeps the Events
-and Event Registrations boards in step with Eventbrite, and an hourly job sets the morning-after
-**Follow-up Email** label that fires the Bike Education thank-you and missed-you emails from
-Monday (see "Attendee feed and class emails"). The Worker itself never sends email.
+and Event Registrations boards in step with Eventbrite, and a send page (Google Apps Script) asks
+the Worker who may be emailed for a class and records who was (see "Attendee feed and class
+emails"). The Worker itself never sends email.
 `svbc-calendars`, the other Eventbrite consumer in this repo, reads the public event feed for the
 website and never sees orders or attendees.
 
@@ -68,7 +68,7 @@ consumer fetches the order at processing time. That is why out-of-order deliveri
 (whatever Eventbrite says now is what gets written), why a redelivery is enqueued rather than
 deduped (one extra fetch, an idempotent write, never a second item), and why the D1 ledger holds
 **no name, email or payload** — nothing personal at rest, so unlike `funraise-sync` there is no
-retention purge. (The hourly cron is for the class follow-ups and the daily missed-order check.) See `../README.md`'s Reliability section for why the Queue shape is
+retention purge. (The hourly cron only runs the daily missed-order check.) See `../README.md`'s Reliability section for why the Queue shape is
 standard across every webhook-driven Worker here.
 
 ## APIs & auth
@@ -311,7 +311,9 @@ message at a time, so a few hundred orders take a few minutes; then check the bo
 ## Attendee feed and class emails
 
 Replaces the Salesforce `eb4sf` Campaigns Bike Education sent class emails from (migration repo
-issue #62). Eventbrite is the source of who registered and who checked in; Monday sends the mail.
+issue #62). Eventbrite is the source of who registered and who checked in; Monday holds Attendance;
+a coordinator sends the mail from Gmail through the send page. Design:
+[`docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md`](../docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
 
 ```
 Eventbrite (SaaS)
@@ -323,11 +325,16 @@ Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Sec
   │  only, no personal data), then the same queue → consumer fetches the attendee or event fresh
   ▼
 Events board (one item per Eventbrite event, program from the organizer name)
-Event Registrations board (one item per attendee: Attendance, Class Type/Date/Day/Location, People link)
+Event Registrations board (one item per attendee: Attendance, First Name, Class Date/Day/Location, People link)
   ▲
-Hourly cron  0 * * * *  → follow-up job sets Event Registrations → Follow-up Email
+Send page (Apps Script, runs as the coordinator)   X-Class-Email-Secret
+  │  GET  /class-emails/:eventId          who may get each email, refusals, earlier sends
+  │  POST /class-emails/:eventId/claim    records the recipients, returns the ones newly claimed
+  │  (the page sends from Gmail, one recipient at a time)
+  │  POST /class-emails/:eventId/result   marks the ledger, posts an update, No Show / People link
+  │  POST /class-emails/:eventId/release  frees failed recipients, and unconfirmed ones after 10 minutes
   ▼
-Monday automation (label → Sequence enrollment) → email from learn@
+D1 `class_email_recipients` (migration 0003: event, kind, registration id, status; no names or addresses)
 ```
 
 As with orders, the delivery is only a pointer; what is written comes from the Worker's own fetch.
@@ -340,17 +347,18 @@ delivery.
 
 ### Prerequisites
 
-* Config `attendeeSync` ids for the Events and Event Registrations columns, `peopleEmailColumn`,
-  and `followups.notifyUserId` (the Bike Education coordinator's Monday user id, for the Held
-  notice). Production ships
+* Config `attendeeSync` ids for the Events and Event Registrations columns (including
+  `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production ships
   `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
-* The Monday-side setup (Mass email templates, Sequences, automations, the Class reminders view,
-  `learn@`) is [`docs/class-emails-setup.md`](docs/class-emails-setup.md). Sequences only work on
-  boards in a monday CRM workspace, so production Events and Event Registrations must live in one.
+* `wrangler secret put CLASS_EMAIL_SECRET` (`openssl rand -hex 32`), and the same value in the
+  send page's Script Properties. Sandbox and production each have their own.
 * Register the second webhook (below).
+
+The Monday-side Sequences checklist, [`docs/class-emails-setup.md`](docs/class-emails-setup.md), is
+superseded and not part of this flow.
 
 ### Class roster
 
@@ -363,11 +371,7 @@ stays empty until the attendee webhook is registered, and a class that was alrea
 drop people off the view; a class leaves it the day after it runs.
 
 In production the view and columns were created directly on the board on 2026-11-03 rather than
-with `configure`, which would also have re-applied the board's five existing views. **Follow-ups are
-off in production:** SVBC sends class emails by hand (2026-10-28), so the production boards have no
-Class Type, Follow-ups or Follow-up Email column and those config keys stay placeholders. Monday
-ignores an unknown column id on a read, every event reads as having no Class Type, and the hourly
-job skips it. Turning follow-ups on means creating those columns and filling those keys.
+with `configure`, which would also have re-applied the board's five existing views.
 
 ### Registering it
 
@@ -375,52 +379,59 @@ Same dashboard route as the order webhook: Payload URL
 `https://<worker-host>/webhooks/eventbrite/attendee?secret=<EVENTBRITE_WEBHOOK_SECRET>`, Event =
 *All events*, Actions = the list in `attendeeSync.actions` in config. Sandbox keeps its own.
 
-### Follow-up rules
+### Class email routes
 
-The cron looks at Events that have **Class Type** set and **Follow-ups** blank, are in this
-Worker's own `events` ledger, are past **08:00 Pacific the day after End**, ended no more than
-`followups.maxAgeDays` (3) days ago, and are not canceled. For each:
+All four need the header `X-Class-Email-Secret` (compared in constant time against
+`CLASS_EMAIL_SECRET`); a missing, wrong or unset secret is a 401 before anything else runs, the
+Monday client included. Responses carry names and addresses and are `Cache-Control: no-store`.
 
-* Nobody **Attended** (no check-ins at all): the event is set to **Held** and `notifyUserId` is
-  notified. Clearing Held re-runs it, but only within the 3 days.
-* **Attended** registrations get `Thank-you: <class type>`. **Registered** ones get
-  `Missed-you: <class type>` and Attendance becomes **No Show**. Canceled, No Show and
-  registrations with no email get nothing.
-* One label per email address per class (a shared address gets one email, thank-you wins). A retry
-  skips addresses already labelled.
-* A class with no registrations (or whose registrations are all deleted or archived in Monday)
-  is skipped; a deleted or archived registration gets nothing. Registrations added by hand in
-  Monday (not via Eventbrite) get no follow-up.
-* Just before a missed-you is written, that registration's Attendance is read again; anyone
-  checked in since the run started gets nothing rather than a missed-you.
-* After labelling, the event's **Follow-ups** is set to **Sent**: that is the run-once guard.
-* The label is `Thank-you: ` / `Missed-you: ` plus the Class Type text, so a Class Type with no
-  matching Follow-up Email label makes Monday reject the write: the event logs `failed` every hour
-  (nothing sent, Follow-ups stays blank) until the label is added — the setup checklist covers
-  adding both labels for every Class Type.
+| Route | Does |
+|---|---|
+| `GET /class-emails/:eventId` | `{ event, writesOn, kinds }`: for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
+| `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
+| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then, under `waitUntil`, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. |
+| `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
 
-**Only events in this Worker's own ledger can send, but any of them can.** A class migrated from
-Salesforce, or created in Monday by hand, is never in the ledger and never emails. A class that
-*is* in the ledger — because a webhook arrived, or because `backfill-attendees.mjs` or a
-redelivery put it there — sends as soon as it is within the window above with Class Type set and
-Follow-ups blank, even if it was already emailed by hand. So at cutover, after any backfill, set
-**Follow-ups = Sent** on every class that ended in the last 3 days and was already emailed by hand
-(the setup checklist's cutover step).
-The hourly summary line is `eventbrite-sync follow-ups: sent N, held N, skipped N, failed N`; a
-sweep that throws logs `sweep failed`.
+* **Who gets each email:** Role = Participant with an Attendee Email. Reminder: Registered, refused
+  once the class has started. Thank-you: Attended, refused until the class has ended or when no
+  Participant with an Attendee Email is Attended (a volunteer or a blank-email row doesn't count).
+  Missed-you: Registered or No Show, same refusals. Canceled never. Only an Eventbrite status of
+  `live`, `started`, `ended` or `completed` may send; anything else, including `draft`, `canceled`,
+  `deleted` and no status, is refused for every kind. One email per address per kind, first
+  registration wins; a missed-you skips an address that attended on another eligible registration.
+* **At most once.** A recipient is recorded (claimed) before the page may send to them, and a
+  claimed recipient is never handed out again. A crash leaves them `claimed`, shown as unconfirmed;
+  only a person releases them, and not until 10 minutes after the claim (`RELEASE_MIN_CLAIM_AGE_MS`),
+  because Apps Script runs stop at about 6 and a younger claim may still be sending.
+* **The ledger is written first** in `result`, so a Monday failure (the update, No Show, People
+  match) is logged by id and error class and cannot lose what was sent.
+* **A switch flipped mid-send.** `result` records the ledger under any mode so people already
+  emailed don't show as unconfirmed, but off `on` it skips the update, No Show and People link, and
+  nothing replays them.
+* **Nothing personal is logged.** Addresses, names, the subject and the page's `error` strings
+  (which may echo an address) never reach `console.*`. The update on the staff board does carry
+  the real sender, the subject, failed and unconfirmed addresses (the replaced one in the sandbox),
+  and the page's error text passes through, one line cut to 200 characters.
+* **Sandbox lock.** When `attendeeSync.classEmails.sandboxRecipient` is set, every recipient any
+  route returns, and every address in an update, is that one address. Planning still runs on the
+  real addresses, so the one-address rule behaves as in production.
+* Bodies are validated by hand: an unknown `kind`, a non-array `results`, a non-string or
+  non-address `sender`, or more than 500 `results` or `registrationIds` is a 400.
+* Cost of a result is one Monday read and at most one write per sent registration (plus a People
+  lookup for each unlinked thank-you), so a 26-person thank-you is about 80 subrequests and little CPU;
+  `wrangler.jsonc`'s 100 ms limit should hold, but a timed run in the sandbox is still to do.
 
 **Accepted risk: partial check-in.** If staff check in only some of the people who came, the rest
-get a missed-you. The Held case covers nobody checked in; partial check-in cannot be detected.
-Staff should finish check-in before 08:00 the next morning.
+get a missed-you. The page shows the list first and the coordinator chooses when check-in is
+finished; only "nobody checked in" is refused.
 
 ### Backfill
 
 `scripts/backfill-attendees.mjs` replays an event's attendees to the deployed Worker, as the order
 backfill does: flags `--event-id`, `--worker-url`, `--env`, `--pause-ms`, `--dry-run`. Use it for a
-class that predates the webhook. A backfilled class that ended more than 3 days ago is never
-emailed; one that ended within 3 days **will** be once its Class Type is set and Follow-ups is
-blank — see "Follow-up rules" above, and set Follow-ups = Sent first if it was already emailed by
-hand.
+class that predates the webhook. Nothing is emailed automatically: a backfill only fills the boards,
+and mail goes out when a coordinator uses the send page, which hands out only people no one has been
+sent to for that kind.
 
 ## Resetting for new board ids
 
@@ -559,15 +570,13 @@ beyond the table above:
   skips, not sent. A message the consumer does send live carries its parent's stamp. A dry-run
   attendee whose event has a ledger row but no Events item yet (a dry run never records one) links
   the placeholder `dry-run-event` rather than retrying until its event is written.
-- **The hourly follow-up sweep** (`runFollowups`). `on` runs it; `off` runs it against a recording
-  Monday client — every Follow-up Email, Attendance, People link, Follow-ups `Sent`/`Held` and the
-  Held bell notification is a skip line, nothing reaches Monday, so no Sequence fires. It has no
-  cursor: its run-once guard is the event's Follow-ups column, which a dry run never sets, so a
-  due class is logged again every hour until it ages out of `maxAgeDays`. `hold` or an unreadable
-  switch skips the run with one `eventbrite-sync scheduled: write mode is …` line.
+- **The class email routes.** `claim`, `result` and `release` are refused with a 503 unless the mode
+  is `on`, so under `off`, `hold` or an unreadable switch the send page can neither be handed
+  recipients nor record a send, and no Monday write runs through a dry-run client there. `GET`
+  still answers and reports `writesOn: false`, which the page shows as a notice.
 - **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
-  runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with the
-  sweep (the same line). Its 26-hour lookback does not reach back over a long hold, so after a
+  runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with one
+  `eventbrite-sync scheduled: write mode is …` line. Its 26-hour lookback does not reach back over a long hold, so after a
   multi-day `hold` compare the orders ledger against Eventbrite by hand (or run
   `scripts/backfill-orders.mjs --dry-run` per event) for the held days.
 - No path re-enqueues "stuck" ledger rows automatically, so a row ingested under `off` is never
@@ -575,13 +584,11 @@ beyond the table above:
 
 ## Open
 
-0. **Production class emails (attendee feed).** Connect `learn@` in Emails & Activities; the Bike
-   Education coordinator's `notifyUserId`; production column ids; the `Attendee Email` Email-column conversion; Sequences
-   and automations per the setup checklist, every Thank-you Sequence created **paused** until the
-   Bike Education coordinator refreshes the dated upcoming-classes list and the Bike to Wherever Days line;
-   register the attendee webhook; after any backfill, set Follow-ups = Sent on recent classes
-   already emailed by hand (setup checklist Step 5); name an owner. Known limits: no Class Time column (reminders
-   carry a `[start time]` note), and Spanish class day/date render in English.
+0. **Production class emails (attendee feed).** Production column ids; the `Attendee Email`
+   Email-column conversion; `CLASS_EMAIL_SECRET` on both Workers and in the send page's Script
+   Properties; the send page deployed and its URL in `classEmails.pageUrl`; register the attendee
+   webhook; name an owner. A timed run of `result` on a 26-person roster in the sandbox (the CPU
+   limit in `wrangler.jsonc`).
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.

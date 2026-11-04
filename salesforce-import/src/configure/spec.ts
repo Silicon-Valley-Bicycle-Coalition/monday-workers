@@ -21,7 +21,7 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 
 export interface ColumnSpec {
   title: string;
-  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date';
+  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date' | 'link';
   labels?: string[]; // status/dropdown only, in display order
 }
 
@@ -486,7 +486,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       '(public, volunteering, bike parking, group rides, private). One item per event; who came ' +
       `is on Event Registrations. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Events',
+    // Written per Public event by eventbrite-sync once the send page is deployed.
+    columns: [{ title: 'Send class email', type: 'link' }],
     columnDescriptions: {
+      'Send class email': 'Opens the page that emails everyone registered for this class. Filled in by ' +
+        'the Eventbrite integration for Public classes.',
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
