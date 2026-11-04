@@ -107,19 +107,38 @@ async function processOne(donorItemId: string, previousEmail: string | undefined
   const heldOnPeople = async (email: string): Promise<boolean> =>
     donor.onHistorical && donorsBoardId !== null && (await mondayClient.findItemIdByEmail(donorsBoardId, columns.email, email)) !== null;
 
+  // The old address comes from the webhook payload, so anyone holding the webhook secret chooses
+  // it. An address still on another item belongs to that person, whatever the event says, so its
+  // contact stays put. This item itself doesn't count: a lagging search can still return it.
+  const heldByAnotherItem = async (email: string): Promise<boolean> => {
+    const boards = [
+      ...(donorsBoardId === null ? [] : [{ boardId: donorsBoardId, emailColumn: columns.email }]),
+      ...(historical === null ? [] : [{ boardId: historical.boardId, emailColumn: historical.columns.email }]),
+    ];
+    for (const { boardId, emailColumn } of boards) {
+      const holder = await mondayClient.findItemIdByEmail(boardId, emailColumn, email);
+      if (holder !== null && holder !== donorItemId) return true;
+    }
+    return false;
+  };
+
   // Staff changed this Donor's Email on Monday: move the Mailchimp member that held the old
   // address to the new one, so its consent and history follow the person instead of the new
   // address reading as "not in the audience" forever. First, so the Do Not Solicit unsubscribe
   // and the update below both land on the renamed member. A permanent refusal (say, an address
   // Mailchimp won't accept) is logged and the run carries on as it did before this existed;
   // anything transient throws and retries the whole message.
-  if (previousEmail !== undefined && memberId(previousEmail) !== memberId(donor.email) && !(await heldOnPeople(previousEmail))) {
-    try {
-      const renamed = await mailchimpClient.renameMember(previousEmail, donor.email);
-      if (renamed === 'renamed') console.log(`mailchimp-sync outbound consumer: donor ${donorItemId} member ${memberId(previousEmail)} moved to ${memberId(donor.email)}`);
-    } catch (err) {
-      if (!(err instanceof MailchimpPermanentError)) throw err;
-      console.warn(`mailchimp-sync outbound consumer: donor ${donorItemId} member not moved to the new address: ${redactEmails(errorText(err))}`);
+  if (previousEmail !== undefined && memberId(previousEmail) !== memberId(donor.email)) {
+    if (await heldByAnotherItem(previousEmail)) {
+      console.warn(`mailchimp-sync outbound consumer: donor ${donorItemId} member ${memberId(previousEmail)} not moved: another item still holds that address`);
+    } else {
+      try {
+        const renamed = await mailchimpClient.renameMember(previousEmail, donor.email);
+        if (renamed === 'renamed') console.log(`mailchimp-sync outbound consumer: donor ${donorItemId} member ${memberId(previousEmail)} moved to ${memberId(donor.email)}`);
+      } catch (err) {
+        if (!(err instanceof MailchimpPermanentError)) throw err;
+        console.warn(`mailchimp-sync outbound consumer: donor ${donorItemId} member not moved to the new address: ${redactEmails(errorText(err))}`);
+      }
     }
   }
 

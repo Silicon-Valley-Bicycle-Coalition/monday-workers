@@ -534,6 +534,55 @@ describe('processOutboundBatch: People (Historical) items', () => {
     expect(deps.mailchimpClient.renameMember).toHaveBeenCalledWith('old@b.com', 'a@b.com');
   });
 
+  // previousEmail comes from the webhook payload, so whoever holds the webhook secret chooses it.
+  // A forged event naming someone else's address must not carry that person's contact off.
+  describe('an old address another item still holds', () => {
+    const changedFrom = (previousEmail: string) => ({ ...fakeMessage('1'), body: { donorItemId: '1', previousEmail } });
+
+    function holdsOn(deps: ReturnType<typeof setup>, holders: Record<number, string>) {
+      vi.mocked(deps.mondayClient.findItemIdByEmail).mockImplementation(async (board) => holders[board] ?? null);
+    }
+
+    it('does not move a contact another People item holds when a People item changes address', async () => {
+      const deps = setup(donor({ onHistorical: false }), ['victim@b.com']);
+      const message = changedFrom('victim@b.com');
+      await processOutboundBatch([message], deps);
+      expect(deps.mailchimpClient.renameMember).not.toHaveBeenCalled();
+      expect(deps.mailchimpClient.updateMember).toHaveBeenCalledTimes(1);
+      expect(message.ack).toHaveBeenCalled();
+    });
+
+    it('does not move a contact a Historical item holds', async () => {
+      const deps = setup(donor({ onHistorical: false }));
+      holdsOn(deps, { 222: '901' });
+      await processOutboundBatch([changedFrom('victim@b.com')], deps);
+      expect(deps.mondayClient.findItemIdByEmail).toHaveBeenCalledWith(222, 'h-e', 'victim@b.com');
+      expect(deps.mailchimpClient.renameMember).not.toHaveBeenCalled();
+    });
+
+    it('moves the contact when no item holds the old address any more', async () => {
+      const deps = setup(donor({ onHistorical: false }));
+      await processOutboundBatch([changedFrom('old@b.com')], deps);
+      expect(deps.mailchimpClient.renameMember).toHaveBeenCalledWith('old@b.com', 'a@b.com');
+    });
+
+    it('moves the contact when the only holder is this item, from a lagging search', async () => {
+      const deps = setup(donor({ onHistorical: false }));
+      holdsOn(deps, { 111: '1' });
+      await processOutboundBatch([changedFrom('old@b.com')], deps);
+      expect(deps.mailchimpClient.renameMember).toHaveBeenCalledWith('old@b.com', 'a@b.com');
+    });
+
+    it('retries rather than moving the contact when the lookup fails', async () => {
+      const deps = setup(donor({ onHistorical: false }));
+      vi.mocked(deps.mondayClient.findItemIdByEmail).mockRejectedValue(new Error('network'));
+      const message = changedFrom('old@b.com');
+      await processOutboundBatch([message], deps);
+      expect(deps.mailchimpClient.renameMember).not.toHaveBeenCalled();
+      expect(message.retry).toHaveBeenCalled();
+    });
+  });
+
   it('never looks a People item up on People, whatever it holds', async () => {
     const deps = setup(donor({ onHistorical: false }), ['a@b.com']);
     await processOutboundBatch([fakeMessage('1')], deps);

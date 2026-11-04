@@ -351,7 +351,10 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   `Complete` after a `Refunded` edit was already written, and without the guard the consumer
   would push the stale columns back onto the Monday item. A stale delivery is reported as a
   duplicate; a NULL send time on either side (pre-`0003` rows, envelopes without one) never
-  blocks an update, since their order is unknown.
+  blocks an update, since their order is unknown. A send time more than an hour ahead is rejected
+  and logged as `rejected delivery`, and one up to an hour ahead is stored as the receive time, so
+  a forged send time can't block later genuine edits. This limits a leaked webhook secret; it doesn't stop one writing a false gift, because the
+  payload is still trusted.
 * **Field names.** Amount and status live under `data.transaction`; the donor under
   `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
   "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
