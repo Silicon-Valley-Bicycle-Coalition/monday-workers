@@ -7,7 +7,7 @@ const report = (over: Partial<PassReport> = {}): PassReport => ({
   runId: 'x', trigger: 'http', dryRun: true, todayISO: '2026-10-09', cutoffISO: '2019-10-09',
   live: { boardId: '1', name: 'People', itemsCount: 1, itemsLimit: 10000, pct: 0 },
   historical: { boardId: '2', name: 'People (Historical)', itemsCount: 1, itemsLimit: 10000, pct: 0 },
-  scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0 }, verdicts: { live: 0, historical: 0, unknown: 0 },
+  scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0, logged: 0 }, verdicts: { live: 0, historical: 0, unknown: 0 },
   decided: { toHistorical: 0, toLive: 0 }, planned: { toHistorical: 0, toLive: 0 },
   moved: 0, failed: 0, ambiguous: 0, settled: 0, remaining: 0, warnings: [], error: null, ...over,
 });

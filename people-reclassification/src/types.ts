@@ -10,6 +10,8 @@ export interface PeopleColumns {
   memberUntil: string;     // date — Member Until (import + donation-rollups' renewal path)
   membershipTier: string;  // status — Lifetime = never ages out
   funraiseProfile: string | null; // link — a linked Funraise supporter never ages out (import rule)
+  promoteStatus: string;   // status — staff set the request label to promote someone (src/promote.ts)
+  promotedOn: string;      // date — written by a promotion; counts as activity
 }
 
 export interface EventRegistrationsConfig {
@@ -28,6 +30,17 @@ export interface VolunteersConfig {
   columns: { volunteer: string; date: string };
 }
 
+// The go-forward activity board: emails email-log writes, and calls and meetings staff log by hand.
+// A logged item counts as activity when its Activity Type label is one of countedTypeLabels, which
+// leaves out email-log's Bulk Email (one per mail-merge recipient, not a contact).
+export interface LoggedActivitiesConfig {
+  boardId: number;
+  columns: { person: string; date: string; activityType: string };
+  countedTypeLabels: string[];
+}
+
+export interface PromoteConfig { requestLabel: string; doneLabel: string; failedLabel: string }
+
 export interface ItRequestsAlertConfig {
   boardId: number;
   typeColumn: string;   // status column title
@@ -43,6 +56,8 @@ export interface ReclassificationConfig {
   perpetual: { lifetimeTierLabel: string; funraiseLinked: boolean };
   eventRegistrations: EventRegistrationsConfig | null;
   volunteers: VolunteersConfig | null;
+  loggedActivities: LoggedActivitiesConfig | null;
+  promote: PromoteConfig;
   thresholds: { itemsLimit: number; liveTriggerPct: number; historicalWarnPct: number };
   run: { maxMovesPerRun: number; quarterlyMonths: number[]; cronHourUTC: number };
   alerts: { itRequests: ItRequestsAlertConfig | null };

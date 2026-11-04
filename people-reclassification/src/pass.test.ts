@@ -15,19 +15,22 @@ const EVENTS = 300;
 const REGS = 400;
 const VOLS = 500;
 const IT = 600;
+const LOGGED = 700;
 
 function config(over: Partial<ReclassificationConfig> = {}): ReclassificationConfig {
   return {
     monday: { apiUrl: 'https://x', accountUrl: 'https://acme.monday.com' },
     window: { years: 7, timeZone: 'America/Los_Angeles' },
     boards: { live: { boardId: LIVE, groupId: null }, historical: { boardId: HIST, groupId: null } },
-    peopleColumns: { lastGift: 'Last Gift Date', memberUntil: 'Member Until', membershipTier: 'Membership Tier', funraiseProfile: 'Funraise Profile' },
+    peopleColumns: { lastGift: 'Last Gift Date', memberUntil: 'Member Until', membershipTier: 'Membership Tier', funraiseProfile: 'Funraise Profile', promoteStatus: 'Promote to People', promotedOn: 'Promoted On' },
     perpetual: { lifetimeTierLabel: 'Lifetime', funraiseLinked: true },
     eventRegistrations: {
       boardId: REGS, columns: { attendee: 'Attendee', event: 'Event', attendance: 'Attendance', source: 'Source' },
       countedAttendanceLabels: ['Attended'], countedRegisteredSources: ['Funraise'], events: { boardId: EVENTS, startColumn: 'Date' },
     },
     volunteers: { boardId: VOLS, columns: { volunteer: 'Volunteer', date: 'Date' } },
+    loggedActivities: { boardId: LOGGED, columns: { person: 'Person', date: 'Date', activityType: 'Activity Type' }, countedTypeLabels: ['Email', 'Call', 'Meeting'] },
+    promote: { requestLabel: 'Promote', doneLabel: 'Promoted', failedLabel: "Couldn't promote" },
     thresholds: { itemsLimit: 10000, liveTriggerPct: 85, historicalWarnPct: 80 },
     run: { maxMovesPerRun: 400, quarterlyMonths: [1, 4, 7, 10], cronHourUTC: 10 },
     alerts: { itRequests: null },
@@ -44,9 +47,11 @@ const peopleColumns = (suffix: string): BoardColumn[] => [
   { id: `link_fp_${suffix}`, title: 'Funraise Profile', type: 'link' },
   { id: `br_org_${suffix}`, title: 'Organization', type: 'board_relation' },
   { id: `formula_${suffix}`, title: 'Age', type: 'formula' },
+  { id: `color_pp_${suffix}`, title: 'Promote to People', type: 'status' },
+  { id: `date_po_${suffix}`, title: 'Promoted On', type: 'date' },
 ];
 
-interface Person { id: string; lastGift?: string; memberUntil?: string; tier?: string; funraise?: string }
+interface Person { id: string; lastGift?: string; memberUntil?: string; tier?: string; funraise?: string; promotedOn?: string }
 interface Registration { id: string; attendees: string[]; events: string[]; attendance?: string; source?: string }
 
 interface FakeState {
@@ -58,6 +63,7 @@ interface FakeState {
   events?: { id: string; start?: string }[];
   registrations?: Registration[];
   volunteers?: { id: string; people: string[]; date?: string }[];
+  logged?: { id: string; people?: string[]; date?: string; type?: string }[];
   itRequestsColumns?: BoardColumn[];
   moves: { itemId: string; boardId: number; groupId: string; mapping: ColumnMapping[] }[];
   failMove?: (itemId: string) => Error | null;
@@ -72,6 +78,7 @@ function personItem(p: Person, suffix: string): PageItem {
     text: new Map([
       [`date_lg_${suffix}`, p.lastGift ?? null], [`date_mu_${suffix}`, p.memberUntil ?? null],
       [`color_mt_${suffix}`, p.tier ?? null], [`link_fp_${suffix}`, p.funraise ?? null],
+      [`date_po_${suffix}`, p.promotedOn ?? null],
     ]),
     linked: new Map(),
   };
@@ -89,6 +96,10 @@ function fakeClient(state: FakeState): ReclassificationMondayClient {
       { id: 'color_at', title: 'Attendance', type: 'status' }, { id: 'color_src', title: 'Source', type: 'status' },
     ], 0),
     [VOLS]: schema(VOLS, 'Volunteers', [{ id: 'br_vol', title: 'Volunteer', type: 'board_relation' }, { id: 'date_d', title: 'Date', type: 'date' }], 0),
+    [LOGGED]: schema(LOGGED, 'Activities (Logged)', [
+      { id: 'br_person', title: 'Person', type: 'board_relation' }, { id: 'date_a', title: 'Date', type: 'date' },
+      { id: 'color_type', title: 'Activity Type', type: 'status' },
+    ], 0),
     [IT]: schema(IT, 'IT Requests', state.itRequestsColumns ?? [{ id: 'color_type', title: 'Type', type: 'status' }], 0),
   };
   const items: Record<number, PageItem[]> = {
@@ -100,6 +111,9 @@ function fakeClient(state: FakeState): ReclassificationMondayClient {
       linked: new Map([['br_att', r.attendees], ['br_ev', r.events]]),
     })),
     [VOLS]: (state.volunteers ?? []).map((v) => ({ id: v.id, text: new Map([['date_d', v.date ?? null]]), linked: new Map([['br_vol', v.people]]) })),
+    [LOGGED]: (state.logged ?? []).map((a) => ({
+      id: a.id, text: new Map([['date_a', a.date ?? null], ['color_type', a.type ?? null]]), linked: new Map([['br_person', a.people ?? []]]),
+    })),
   };
   return {
     async getBoardSchema(boardId) { return schemas[boardId] ?? null; },
@@ -146,6 +160,57 @@ describe('runPass', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  describe('logged contact and promotions', () => {
+    const old = { lastGift: '2010-01-01' };
+    const empty = () => ({ moves: [], created: [] });
+
+    it('a Call logged last month brings someone on Historical back', async () => {
+      const state: FakeState = { live: [], historical: [{ id: 'h', ...old }], logged: [{ id: 'a', people: ['h'], date: '2026-09-15', type: 'Call' }], ...empty() };
+      const report = await pass(state);
+      expect(state.moves.map((m) => [m.itemId, m.boardId])).toEqual([['h', LIVE]]);
+      expect(report.scanned.logged).toBe(1);
+    });
+
+    it('a Bulk Email does not', async () => {
+      const state: FakeState = { live: [], historical: [{ id: 'h', ...old }], logged: [{ id: 'a', people: ['h'], date: '2026-09-15', type: 'Bulk Email' }], ...empty() };
+      await pass(state);
+      expect(state.moves).toEqual([]);
+    });
+
+    it('a logged item with no Date or no Person counts for nobody', async () => {
+      const state: FakeState = {
+        live: [], historical: [{ id: 'h', ...old }],
+        logged: [{ id: 'a', people: ['h'], type: 'Email' }, { id: 'b', date: '2026-09-15', type: 'Email' }], ...empty(),
+      };
+      await pass(state);
+      expect(state.moves).toEqual([]);
+    });
+
+    it('a recent Promoted On brings someone back and keeps someone on People', async () => {
+      const state: FakeState = {
+        live: [{ id: 'l', ...old, promotedOn: '2026-09-15' }], historical: [{ id: 'h', ...old, promotedOn: '2026-09-15' }], ...empty(),
+      };
+      await pass(state);
+      expect(state.moves.map((m) => [m.itemId, m.boardId])).toEqual([['h', LIVE]]);
+    });
+
+    it('moveOneToPeople no longer refuses someone whose only recent activity is a logged Email', async () => {
+      const state: FakeState = {
+        live: [], historical: [{ id: 'h', ...old }], logged: [{ id: 'a', people: ['h'], date: '2026-09-15', type: 'Email' }],
+        boardOf: { h: String(HIST) }, ...empty(),
+      };
+      const result = await moveOneToPeople(deps(state), { runId: 'one', itemId: 'h', dryRun: false });
+      expect(result).toMatchObject({ outcome: 'moved', latestActivity: '2026-09-15' });
+    });
+
+    it('loggedActivities: null reads no such board', async () => {
+      const state: FakeState = { live: [], historical: [{ id: 'h', ...old }], logged: [{ id: 'a', people: ['h'], date: '2026-09-15', type: 'Call' }], ...empty() };
+      const report = await pass(state, { cfg: config({ loggedActivities: null }) });
+      expect(state.moves).toEqual([]);
+      expect(report.scanned.logged).toBe(0);
+    });
+  });
+
   it('moves aged-out live people to Historical and reactivated Historical people back, with an explicit column mapping', async () => {
     const state: FakeState = {
       live: [
@@ -165,7 +230,7 @@ describe('runPass', () => {
     };
     const report = await pass(state);
     expect(report.error).toBeNull();
-    expect(report.scanned).toEqual({ live: 6, historical: 3, registrations: 0, volunteers: 0 });
+    expect(report.scanned).toEqual({ live: 6, historical: 3, registrations: 0, volunteers: 0, logged: 0 });
     expect(report.verdicts).toEqual({ live: 5, historical: 2, unknown: 2 });
     expect(report.decided).toEqual({ toHistorical: 1, toLive: 1 });
     expect(report.planned).toEqual({ toHistorical: 1, toLive: 1 });
@@ -178,11 +243,13 @@ describe('runPass', () => {
         { source: 'date_lg_l', target: 'date_lg_h' }, { source: 'date_mu_l', target: 'date_mu_h' },
         { source: 'color_mt_l', target: 'color_mt_h' }, { source: 'link_fp_l', target: 'link_fp_h' },
         { source: 'br_org_l', target: 'br_org_h' }, { source: 'formula_l', target: null },
+        { source: 'color_pp_l', target: 'color_pp_h' }, { source: 'date_po_l', target: 'date_po_h' },
       ] },
       { itemId: 'gave-again', boardId: LIVE, groupId: `g_${LIVE}`, mapping: [
         { source: 'date_lg_h', target: 'date_lg_l' }, { source: 'date_mu_h', target: 'date_mu_l' },
         { source: 'color_mt_h', target: 'color_mt_l' }, { source: 'link_fp_h', target: 'link_fp_l' },
         { source: 'br_org_h', target: 'br_org_l' }, { source: 'formula_h', target: null },
+        { source: 'color_pp_h', target: 'color_pp_l' }, { source: 'date_po_h', target: 'date_po_l' },
       ] },
     ]);
     expect(await moveRows()).toEqual([
@@ -394,6 +461,7 @@ describe('moveOneToPeople', () => {
       { source: 'date_lg_h', target: 'date_lg_l' }, { source: 'date_mu_h', target: 'date_mu_l' },
       { source: 'color_mt_h', target: 'color_mt_l' }, { source: 'link_fp_h', target: 'link_fp_l' },
       { source: 'br_org_h', target: 'br_org_l' }, { source: 'formula_h', target: null },
+        { source: 'color_pp_h', target: 'color_pp_l' }, { source: 'date_po_h', target: 'date_po_l' },
     ] }]);
     expect(await moveRows()).toEqual([{ item_id: 'p1', direction: 'to-live', status: 'moved', reason: 'recent-activity', latest_activity: '2026-09-30', error: null }]);
     const run = await new D1Ledger(env.DB).lastRun();

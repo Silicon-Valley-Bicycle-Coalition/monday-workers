@@ -8,9 +8,29 @@ const rule = { todayISO: TODAY, cutoffISO: CUTOFF, lifetimeTierLabel: 'Lifetime'
 function person(over: Partial<PersonFacts> = {}): PersonFacts {
   return {
     itemId: '1', board: 'live', lastGiftISO: null, memberUntilISO: null, membershipTier: null,
-    funraiseLinked: false, latestRegistrationISO: null, latestVolunteerISO: null, ...over,
+    funraiseLinked: false, latestRegistrationISO: null, latestVolunteerISO: null, latestLoggedISO: null, promotedOnISO: null, ...over,
   };
 }
+
+describe('logged contact and promotions', () => {
+  it('a logged contact inside the window is live', () => {
+    expect(classify(person({ lastGiftISO: '2010-01-01', latestLoggedISO: '2026-10-01' }), rule))
+      .toEqual({ kind: 'live', reason: 'recent-activity', latestActivity: '2026-10-01' });
+  });
+
+  it('a promotion inside the window is live, with no other evidence', () => {
+    expect(classify(person({ promotedOnISO: '2026-10-01' }), rule))
+      .toEqual({ kind: 'live', reason: 'recent-activity', latestActivity: '2026-10-01' });
+  });
+
+  it('ages out once a promotion is older than the window', () => {
+    expect(classify(person({ promotedOnISO: '2019-10-08' }), rule).kind).toBe('historical');
+  });
+
+  it('ignores a logged date after today', () => {
+    expect(classify(person({ latestLoggedISO: '2027-01-01' }), rule).kind).toBe('unknown');
+  });
+});
 
 describe('latestActivity', () => {
   it('is the max of gift, registration, volunteer and term-end dates', () => {
