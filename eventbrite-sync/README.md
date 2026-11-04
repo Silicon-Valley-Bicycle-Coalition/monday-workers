@@ -351,8 +351,8 @@ delivery.
 ### Prerequisites
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
-  `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production ships
-  `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
+  since 2026-11-04; the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -629,11 +629,11 @@ beyond the table above:
 
 ## Open
 
-0. **Production class emails (attendee feed).** Production column ids; the `Attendee Email`
-   Email-column conversion; `CLASS_EMAIL_SECRET` on both Workers and in the send page's Script
-   Properties; the send page deployed and its URL in `classEmails.pageUrl`; register the attendee
-   webhook; name an owner. A timed run of `result` on a 26-person roster in the sandbox (the CPU
-   limit in `wrangler.jsonc`).
+0. **Production class emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
+   (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
+   `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Still open: name an
+   owner, a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
+   in `wrangler.jsonc`).
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.
