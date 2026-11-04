@@ -103,12 +103,9 @@ describe('config split: board and column ids', () => {
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {
     expect(production.monday.boards['events']).toBe(18437909790);
     expect(production.monday.boards['event-registrations']).toBe(18437909792);
-    // sendLinkColumn is the one exception: the Events "Send link" column does not exist yet, so
-    // it holds the placeholder until it is created.
-    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && k !== 'attendeeSync.events.sendLinkColumn')) {
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.'))) {
       expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
-    expect(production.attendeeSync.events.sendLinkColumn).toBe(PLACEHOLDER_COLUMN_ID);
   });
 
   it('class emails: production never redirects to the sandbox inbox; sandbox always does', () => {
