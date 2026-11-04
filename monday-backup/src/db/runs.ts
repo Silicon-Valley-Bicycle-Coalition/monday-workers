@@ -17,6 +17,8 @@ export interface SnapshotRunStore {
   // The run aborted entirely (e.g. Drive auth failed before any upload happened) — no
   // snapshot was produced at all. Returns the new consecutive-failure count for alerting.
   recordRunFailure(runId: number, finishedAtUtc: string, errorMessage: string): Promise<number>;
+  // The write switch stopped the run partway through, on purpose. Neither a snapshot nor a failure.
+  recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void>;
 }
 
 export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, UsageAlertStore {
@@ -63,6 +65,13 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
       throw new Error('db: recordRunFailure returned no row');
     }
     return result.consecutive_failures;
+  }
+
+  async recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE snapshot_runs SET finished_at = ?2, status = 'stopped', last_error = ?3 WHERE id = ?1`)
+      .bind(runId, finishedAtUtc, reason)
+      .run();
   }
 
   async abandonStaleRuns(cutoffUtc: string, finishedAtUtc: string): Promise<{ id: number; startedAt: string }[]> {

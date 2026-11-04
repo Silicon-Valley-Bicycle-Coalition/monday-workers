@@ -1,10 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runBackup, SNAPSHOT_FORMAT, type BackupDeps } from './backup';
+import { runSnapshot, SNAPSHOT_FORMAT, type BackupDeps, type SnapshotStep } from './backup';
 import type { RunResult, SnapshotRunStore } from './db/runs';
 import type { DriveClient } from './drive/client';
 import { Deadline } from './deadline';
 import { HttpMondayClient, type MondayClient } from './monday/client';
+import { RequestStats } from './monday/requestStats';
 import type { BackupConfig, BoardSummary, DocSummary, ItemRecord } from './types';
+
+// Stands in for Cloudflare's WorkflowStep: results are saved by name and answered from there on a
+// replay, returned through JSON as the real ones are, and a failing step gets the same three tries.
+function fakeStep() {
+  const saved = new Map<string, unknown>();
+  const failed = new Map<string, unknown>();
+  const ran: string[] = [];
+  const step: SnapshotStep = {
+    do: async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      if (saved.has(name)) return saved.get(name) as T;
+      if (failed.has(name)) throw failed.get(name);
+      ran.push(name);
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = (await fn()) as unknown;
+          const stored = result === undefined ? undefined : JSON.parse(JSON.stringify(result));
+          saved.set(name, stored);
+          return stored as T;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      failed.set(name, lastError);
+      throw lastError;
+    },
+  };
+  return { step, ran, saved };
+}
+
+const runBackup = (d: BackupDeps) => runSnapshot(fakeStep().step, d);
 
 function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
   return {
@@ -50,6 +82,14 @@ function fakeDrive(overrides: Partial<DriveClient> = {}) {
     uploadJson: async (folderId, filename, data) => {
       files.push({ folderId, filename, mimeType: 'application/json', writes: [JSON.stringify(data)], closed: true, aborted: false });
     },
+    findFile: async (folderId, filename) =>
+      files.some((f) => f.closed && f.folderId === folderId && f.filename === filename)
+        ? { id: `${folderId}/${filename}`, createdTime: '2026-08-25T08:59:00.000Z' }
+        : null,
+    async *readLines(fileId) {
+      const file = files.find((f) => f.closed && `${f.folderId}/${f.filename}` === fileId)!;
+      yield* file.writes.join('').split('\n').filter((l) => l !== '');
+    },
     ...overrides,
   };
   const completed = () => files.filter((f) => f.closed);
@@ -68,11 +108,16 @@ function fakeDrive(overrides: Partial<DriveClient> = {}) {
   };
 }
 
-function fakeRunStore(): SnapshotRunStore & { finishes: RunResult[]; failures: string[] } {
+function fakeRunStore(): SnapshotRunStore & { finishes: RunResult[]; failures: string[]; stops: string[]; starts: string[] } {
   const finishes: RunResult[] = [];
   const failures: string[] = [];
+  const stops: string[] = [];
+  const starts: string[] = [];
   return {
-    recordRunStart: async () => 1,
+    recordRunStart: async (startedAtUtc) => {
+      starts.push(startedAtUtc);
+      return 1;
+    },
     recordRunFinish: async (_runId, _finishedAtUtc, result) => {
       finishes.push(result);
     },
@@ -80,8 +125,13 @@ function fakeRunStore(): SnapshotRunStore & { finishes: RunResult[]; failures: s
       failures.push(errorMessage);
       return failures.length;
     },
+    recordRunStopped: async (_runId, _finishedAtUtc, reason) => {
+      stops.push(reason);
+    },
     finishes,
     failures,
+    stops,
+    starts,
   };
 }
 
@@ -184,34 +234,6 @@ describe('runBackup', () => {
     expect(JSON.parse(manifests[0]!.writes.join(''))).toMatchObject({ runId: 17, snapshotFolder: '2026-08-25 run-17' });
   });
 
-  // Issue #29: cron invocations are killed at 15 minutes of wall time — like a CPU kill, that is
-  // uncatchable. Stop starting new work at the budget so the manifest, D1 row and alert still land.
-  it('stops at the wall-time budget, skipping remaining boards and docs, and reports a partial run', async () => {
-    const start = Date.parse('2026-08-25T09:00:00.000Z');
-    let t = start;
-    const monday = fakeMonday({
-      listBoards: async () => [board('1'), board('2'), board('3')],
-      async *boardItemPages(boardId) {
-        yield [item(`${boardId}-a`)];
-        t += 4 * 60_000; // each board's page takes four minutes
-        yield [item(`${boardId}-b`)];
-      },
-      listDocs: async () => [doc('d1')],
-    });
-    const fake = fakeDrive();
-    const runStore = fakeRunStore();
-    await runBackup(deps({ monday, drive: fake.drive, runStore, now: () => new Date(t), wallTimeBudgetMs: 10 * 60_000 }));
-
-    // Boards 1 and 2 finish (t = 8 min); board 3 is started (under budget) but crosses it mid-page.
-    expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'manifest.json']);
-    expect(fake.files.find((f) => f.filename === 'board-3.jsonl')!.aborted).toBe(true);
-    const errors = fake.manifest().errors as string[];
-    expect(errors).toHaveLength(2);
-    expect(errors[0]).toMatch(/board 3 .*wall-time budget/);
-    expect(errors[1]).toMatch(/docs: skipped — wall-time budget/); // not even listed once out of budget
-    expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 2, errorCount: 2 });
-  });
-
   // Issue #30: archived boards are captured (listBoards asks for every state); boards already in
   // Monday's trash are not — their items can't be paged and trash is Monday's own 30-day undo.
   it('backs up archived boards, skips deleted ones, and lists the skipped ids in the manifest', async () => {
@@ -292,59 +314,42 @@ describe('runBackup', () => {
     expect(fake.manifest().updateCountsByBoard).toEqual({ '1': 3 });
   });
 
-  // Issue #29 review: a single Monday call stuck retrying (slow 5xx responses, backoff) must not
-  // carry the run past the cron's 15-minute kill. With the shared Deadline the call gives up at
-  // 13 minutes and the run still records itself: manifest, D1 finish row, alert.
-  it('a call stuck retrying stops at the deadline, and the run still writes manifest, D1 row and alert', async () => {
-    const start = Date.parse('2026-08-25T09:00:00.000Z');
-    let t = start;
+  // A single Monday call stuck retrying (slow 5xx responses, backoff) must fail with a clear message
+  // inside its step's window, and leave later boards their own window.
+  it('a call stuck retrying gives up at the step deadline, and the next board gets a fresh one', async () => {
+    let t = Date.parse('2026-08-25T09:00:00.000Z');
     const deadline = new Deadline(Number.POSITIVE_INFINITY, () => t);
-    const slack: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string, init: RequestInit) => {
-        if (url === 'https://hooks.example/webhook') {
-          slack.push(JSON.parse(init.body as string).text as string);
-          return new Response('ok');
-        }
-        const { query } = JSON.parse(init.body as string) as { query: string };
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const { query, variables } = JSON.parse(init.body as string) as { query: string; variables: { boardId?: string[] } };
         if (query.includes('workspace_id') && query.includes('state: all')) {
-          return Response.json({ data: { boards: [{ id: '1', name: 'People', workspace_id: 'ws-1', state: 'active' }] } });
+          return Response.json({
+            data: {
+              boards: [
+                { id: '1', name: 'People', workspace_id: 'ws-1', state: 'active' },
+                { id: '2', name: 'Events', workspace_id: 'ws-1', state: 'active' },
+              ],
+            },
+          });
         }
         if (query.includes('settings_str')) return Response.json({ data: { boards: [{ columns: [], groups: [] }] } });
         if (query.includes('docs(')) return Response.json({ data: { docs: [] } });
-        // The items query: Monday is struggling — every attempt takes 50s (just under the 60s
-        // request timeout), then 503s. Ten attempts plus backoff would run ~25 minutes.
-        t += 50_000;
+        if (query.includes('updates(')) return Response.json({ data: { boards: [{ updates: [] }] } });
+        if (variables.boardId?.[0] === '2') return Response.json({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } });
+        t += 10 * 60_000; // board 1's items: every attempt takes ten minutes, then 503s
         return new Response('upstream timeout', { status: 503 });
       }),
     );
-    const monday = new HttpMondayClient('https://api.monday.com/v2', 'token', {
-      deadline,
-      maxAttempts: 10,
-      sleepFn: async (ms) => void (t += ms),
-    });
-    const manifestUploadedWith: number[] = [];
-    const fake = fakeDrive({
-      uploadJson: async (folderId, filename, data) => {
-        manifestUploadedWith.push(deadline.remainingMs());
-        fake.files.push({ folderId, filename, mimeType: 'application/json', writes: [JSON.stringify(data)], closed: true, aborted: false });
-      },
-    });
+    const monday = new HttpMondayClient('https://api.monday.com/v2', 'token', { deadline, maxAttempts: 10, sleepFn: async (ms) => void (t += ms) });
+    const fake = fakeDrive();
     const runStore = fakeRunStore();
 
-    await runBackup(
-      deps({ monday, drive: fake.drive, runStore, deadline, now: () => new Date(t), slackWebhookUrl: 'https://hooks.example/webhook' }),
-    );
+    await runBackup(deps({ monday, drive: fake.drive, runStore, deadline, now: () => new Date(t) }));
 
-    expect(t - start).toBeLessThan(15 * 60_000); // never reached the cron's kill
-    const errors = fake.manifest().errors as string[];
-    expect(errors[0]).toMatch(/^board 1 \(People\): wall-time budget exhausted/);
-    expect(manifestUploadedWith).toHaveLength(1);
-    expect(manifestUploadedWith[0]).toBeGreaterThan(0); // finalize phase had room
-    expect(runStore.finishes).toEqual([expect.objectContaining({ status: 'partial', errorCount: errors.length })]);
-    expect(slack).toHaveLength(1);
-    expect(slack[0]).toContain('partial snapshot');
+    expect((fake.manifest().errors as string[])[0]).toMatch(/^board 1 \(People\): wall-time budget exhausted/);
+    expect(fake.filenames()).toEqual(['board-2.jsonl', 'manifest.json']);
+    expect(runStore.finishes).toEqual([expect.objectContaining({ status: 'partial', boardCount: 1, errorCount: 1 })]);
   });
 
   it('writes a board one page at a time rather than buffering it whole', async () => {
@@ -504,5 +509,297 @@ describe('runBackup', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
     expect(second.text).toContain('2 nights in a row');
+  });
+
+  describe('as a Workflow', () => {
+    const counted = fakeMonday({
+      listBoards: async () => [board('1'), board('2')],
+      async *boardItemPages(boardId) {
+        yield [item(`${boardId}-a`), item(`${boardId}-b`)];
+      },
+      listDocs: async () => [doc('d1')],
+      async *docBlockPages() {
+        yield [{ id: 'b1', type: 'normal_text', content: '{}' }];
+      },
+    });
+
+    it('names one step per board and doc', async () => {
+      const { step, ran } = fakeStep();
+      await runSnapshot(step, deps({ monday: counted, drive: fakeDrive().drive }));
+      expect(ran).toEqual(['start', 'folder', 'list boards', 'list docs', 'board 1', 'board 2', 'doc d1', 'manifest', 'finish']);
+    });
+
+    // A step that closed its upload and then failed before returning runs again. Drive would accept a
+    // second file of the same name, and the service account can't delete one.
+    it('a step repeated after its upload closed reuses the file, with its counts and subitems', async () => {
+      const subtasks = { id: 's', title: 'Subitems', type: 'subtasks', settingsStr: '{"boardIds":[99]}' };
+      const fake = fakeDrive();
+      const inner = fakeStep().step;
+      let failedOnce = false;
+      const step: SnapshotStep = {
+        do: (name, fn) =>
+          inner.do(name, async () => {
+            const result = await fn();
+            if (name === 'board 1' && !failedOnce) {
+              failedOnce = true;
+              throw new Error('lost the step result');
+            }
+            return result;
+          }),
+      };
+      await runSnapshot(
+        step,
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => [board('1')],
+            getBoardSchema: async (id) => ({ columns: id === '1' ? [subtasks] : [], groups: [] }),
+            async *boardItemPages(id) {
+              if (id === '1') yield [item('a'), item('b')];
+            },
+            async *boardUpdatePages(id) {
+              if (id === '1') yield [{ id: 'u', itemId: 'a', body: '', textBody: null, createdAt: null, updatedAt: null, creatorId: null, replies: [], assets: [] }];
+            },
+          }),
+          drive: fake.drive,
+        }),
+      );
+      expect(fake.files.filter((f) => f.filename === 'board-1.jsonl')).toHaveLength(1);
+      expect(fake.manifest()).toMatchObject({ itemCountsByBoard: { '1': 2, '99': 0 }, updateCountsByBoard: { '1': 1 }, errors: [] });
+      expect((fake.manifest().capturedAt as Record<string, unknown>)['board-1']).toEqual({
+        startedAt: '2026-08-25T08:59:00.000Z',
+        finishedAt: '2026-08-25T08:59:00.000Z',
+      });
+    });
+
+    it('a doc step repeated after its upload closed reuses the file too', async () => {
+      const fake = fakeDrive();
+      const inner = fakeStep().step;
+      let failedOnce = false;
+      const step: SnapshotStep = {
+        do: (name, fn) =>
+          inner.do(name, async () => {
+            const result = await fn();
+            if (name === 'doc d1' && !failedOnce) {
+              failedOnce = true;
+              throw new Error('lost the step result');
+            }
+            return result;
+          }),
+      };
+      await runSnapshot(step, deps({ monday: counted, drive: fake.drive }));
+      expect(fake.files.filter((f) => f.filename === 'doc-d1.jsonl')).toHaveLength(1);
+      expect(fake.manifest().blockCountsByDoc).toEqual({ d1: 1 });
+    });
+
+    it('a manifest step repeated after its upload does not leave a second manifest', async () => {
+      const fake = fakeDrive();
+      const inner = fakeStep().step;
+      let failedOnce = false;
+      const step: SnapshotStep = {
+        do: (name, fn) =>
+          inner.do(name, async () => {
+            const result = await fn();
+            if (name === 'manifest' && !failedOnce) {
+              failedOnce = true;
+              throw new Error('lost the step result');
+            }
+            return result;
+          }),
+      };
+      await runSnapshot(step, deps({ monday: counted, drive: fake.drive }));
+      expect(fake.files.filter((f) => f.filename === 'manifest.json')).toHaveLength(1);
+    });
+
+    // Workflows can hibernate and lose all memory; run() then replays from the top.
+    it('a replay runs only unfinished steps, and rebuilds the counts from saved results', async () => {
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      const { step, ran } = fakeStep();
+      let reachedBoard2!: () => void;
+      const atBoard2 = new Promise<void>((resolve) => (reachedBoard2 = resolve));
+      const hibernating: SnapshotStep = {
+        do: (name, fn) => {
+          if (name !== 'board 2') return step.do(name, fn);
+          reachedBoard2();
+          return new Promise(() => {}); // this invocation is gone, and never continues
+        },
+      };
+      const d = deps({ monday: counted, drive: fake.drive, runStore });
+      void runSnapshot(hibernating, d);
+      await atBoard2;
+      expect(ran).toEqual(['start', 'folder', 'list boards', 'list docs', 'board 1']);
+      ran.length = 0;
+
+      await runSnapshot(step, d);
+
+      expect(ran).toEqual(['board 2', 'doc d1', 'manifest', 'finish']);
+      expect(fake.manifest()).toMatchObject({ boardCount: 2, itemCountsByBoard: { '1': 2, '2': 2 }, blockCountsByDoc: { d1: 1 } });
+      expect(runStore.starts).toHaveLength(1);
+    });
+
+    it('a board that exhausts its retries is recorded, and the run carries on', async () => {
+      const attempts: string[] = [];
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      await runBackup(
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => [board('1'), board('2')],
+            getBoardSchema: async (id) => {
+              attempts.push(id);
+              if (id === '1') throw new Error('nope');
+              return { columns: [], groups: [] };
+            },
+          }),
+          drive: fake.drive,
+          runStore,
+        }),
+      );
+      expect(attempts).toEqual(['1', '1', '1', '2']);
+      expect(fake.manifest().errors).toEqual(['board 1 (Board 1): nope']);
+      expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 1, errorCount: 1 });
+    });
+
+    it.each([
+      ['missing from the listing', [board('1')]],
+      ['deleted', [board('1'), { ...board('7'), state: 'deleted' }]],
+    ])('a required board that is %s makes the run partial, even with every visible board captured', async (_label, boards) => {
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+      await runBackup(
+        deps({
+          monday: fakeMonday({ listBoards: async () => boards }),
+          drive: fake.drive,
+          runStore,
+          slackWebhookUrl: 'https://hooks.example/webhook',
+          config: { ...config, requiredBoardIds: ['1', '7'] },
+        }),
+      );
+      expect(fake.manifest().errors).toEqual(['board 7: required but not visible to this token']);
+      expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 1, errorCount: 1 });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('all required boards present is a success', async () => {
+      const runStore = fakeRunStore();
+      await runBackup(
+        deps({ monday: counted, drive: fakeDrive().drive, runStore, config: { ...config, requiredBoardIds: ['1', '2'] } }),
+      );
+      expect(runStore.finishes[0]).toMatchObject({ status: 'success', errorCount: 0 });
+    });
+
+    it('captures priority workspaces first, otherwise in listed order', async () => {
+      const { step, ran } = fakeStep();
+      await runSnapshot(
+        step,
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => [board('a', 'A', 'ws-1'), board('b', 'B', 'crm'), board('c', 'C', 'ws-2'), board('d', 'D', 'crm'), board('e', 'E', null)],
+            listDocs: async () => [doc('x', 'X', 'ws-1'), doc('y', 'Y', 'crm')],
+          }),
+          drive: fakeDrive().drive,
+          config: { ...config, priorityWorkspaceIds: ['crm'] },
+        }),
+      );
+      expect(ran.filter((n) => n.startsWith('board ') || n.startsWith('doc '))).toEqual([
+        'board b',
+        'board d',
+        'board a',
+        'board c',
+        'board e',
+        'doc y',
+        'doc x',
+      ]);
+    });
+
+    it('the switch off at the start skips the run with no row, folder or file', async () => {
+      const fake = fakeDrive({
+        ensureFolder: async () => {
+          throw new Error('should not be called');
+        },
+      });
+      const runStore = fakeRunStore();
+      await runBackup(deps({ monday: counted, drive: fake.drive, runStore, writesOn: async () => false }));
+      expect(runStore.starts).toEqual([]);
+      expect(runStore.finishes).toEqual([]);
+      expect(runStore.failures).toEqual([]);
+    });
+
+    it.each([
+      ['a board', 3],
+      ['a doc', 4],
+    ])('the switch flipped before %s stops the run: stopped, no manifest, no alert', async (_label, readsUntilOff) => {
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+      let reads = 0;
+      await runBackup(
+        deps({
+          monday: counted,
+          drive: fake.drive,
+          runStore,
+          slackWebhookUrl: 'https://hooks.example/webhook',
+          writesOn: async () => ++reads < readsUntilOff,
+        }),
+      );
+      expect(fake.filenames()).not.toContain('manifest.json');
+      expect(runStore.stops).toHaveLength(1);
+      expect(runStore.finishes).toEqual([]);
+      expect(runStore.failures).toEqual([]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('the manifest records the window and when each board and doc was captured', async () => {
+      let t = Date.parse('2026-08-25T09:00:00.000Z');
+      const fake = fakeDrive();
+      await runBackup(
+        deps({
+          monday: fakeMonday({
+            listBoards: async () => [board('1')],
+            async *boardItemPages() {
+              t += 60_000;
+              yield [item('a')];
+            },
+            listDocs: async () => [doc('d1')],
+            async *docBlockPages() {
+              t += 60_000;
+              yield [{ id: 'b1', type: 'normal_text', content: '{}' }];
+            },
+          }),
+          drive: fake.drive,
+          now: () => new Date(t),
+        }),
+      );
+      expect(fake.manifest()).toMatchObject({
+        format: 'monday-backup/2',
+        runAt: '2026-08-25T09:00:00.000Z',
+        finishedAt: '2026-08-25T09:02:00.000Z',
+        capturedAt: {
+          'board-1': { startedAt: '2026-08-25T09:00:00.000Z', finishedAt: '2026-08-25T09:01:00.000Z' },
+          'doc-d1': { startedAt: '2026-08-25T09:01:00.000Z', finishedAt: '2026-08-25T09:02:00.000Z' },
+        },
+      });
+    });
+
+    it('logs each file with its requests and retries', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const stats = new RequestStats();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+      const monday = fakeMonday({
+        listBoards: async () => [board('1')],
+        async *boardItemPages() {
+          await stats.fetchFn('https://x', { method: 'POST', body: 'q' });
+          await stats.fetchFn('https://x', { method: 'POST', body: 'q' });
+          yield [item('a')];
+        },
+      });
+      await runBackup(deps({ monday, drive: fakeDrive().drive, requestStats: stats }));
+      const logged = logSpy.mock.calls.map(([l]) => String(l));
+      expect(logged.some((l) => l.includes('board-1.jsonl items=1 updates=0') && l.includes('requests=2 retries=1'))).toBe(true);
+      logSpy.mockRestore();
+    });
   });
 });

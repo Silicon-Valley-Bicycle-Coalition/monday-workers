@@ -103,6 +103,16 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     expect(await store.lastSnapshotAt()).toBe('2026-08-25T09:05:00.000Z');
   });
 
+  it('recordRunStopped marks the run stopped, without touching the failure streak', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    const id = await store.recordRunStart('2026-08-25T09:00:00.000Z');
+    await store.recordRunStopped(id, '2026-08-25T09:10:00.000Z', 'stopped by the write switch');
+    const row = await env.DB.prepare('SELECT * FROM snapshot_runs WHERE id = ?').bind(id).first();
+    expect(row).toMatchObject({ status: 'stopped', finished_at: '2026-08-25T09:10:00.000Z', last_error: 'stopped by the write switch' });
+    const state = await env.DB.prepare('SELECT consecutive_failures FROM run_alert_state WHERE id = 1').first<{ consecutive_failures: number }>();
+    expect(state?.consecutive_failures).toBe(0);
+  });
+
   it('armWatchdog records the first arm time and keeps it', async () => {
     const store = new D1SnapshotRunStore(env.DB);
     expect(await store.armWatchdog('2026-08-25T09:00:00.000Z')).toBe('2026-08-25T09:00:00.000Z');
