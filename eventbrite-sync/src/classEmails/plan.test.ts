@@ -120,6 +120,32 @@ describe('planKind', () => {
     }
   });
 
+  it('only live, started, ended and completed events may send', () => {
+    const roster = [entry('a', 'Attended'), entry('b', 'Registered')];
+    for (const eventbriteStatus of ['live', 'started', 'ended', 'completed']) {
+      expect(planKind('thank-you', { ...facts, eventbriteStatus }, roster, [], AFTER).refusal, eventbriteStatus).toBeNull();
+      expect(planKind('reminder', { ...facts, eventbriteStatus }, roster, [], BEFORE).refusal, eventbriteStatus).toBeNull();
+    }
+  });
+
+  it('draft, null, blank and unknown statuses refuse every kind, with a clear reason', () => {
+    const roster = [entry('a', 'Attended'), entry('b', 'Registered')];
+    const cases: [string | null, RegExp][] = [['draft', /draft/], [null, /no Eventbrite status/], ['', /no Eventbrite status/], ['postponed', /postponed/], ['LIVE', /LIVE/]];
+    for (const [eventbriteStatus, reason] of cases) {
+      for (const kind of ['reminder', 'thank-you', 'missed-you'] as const) {
+        const plan = planKind(kind, { ...facts, eventbriteStatus }, roster, [], kind === 'reminder' ? BEFORE : AFTER);
+        expect(plan.refusal, String(eventbriteStatus)).toMatch(reason);
+        expect(plan.recipients).toEqual([]);
+      }
+    }
+  });
+
+  it('canceled and deleted keep their plain wording', () => {
+    for (const eventbriteStatus of ['canceled', 'deleted']) {
+      expect(planKind('reminder', { ...facts, eventbriteStatus }, [entry('a', 'Registered')], [], BEFORE).refusal).toBe(`This class is ${eventbriteStatus} on Eventbrite, so no emails can be sent.`);
+    }
+  });
+
   it('null dates refuse', () => {
     const roster = [entry('a', 'Attended'), entry('b', 'Registered')];
     expect(planKind('reminder', { ...facts, startsAt: null }, roster, [], BEFORE).refusal).not.toBeNull();

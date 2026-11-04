@@ -31,7 +31,8 @@ export interface KindPlan {
   unresolved: Recipient[];
 }
 
-const REFUSED_EVENT_STATUSES = ['canceled', 'deleted'];
+// An allowlist: draft, a missing status and anything Eventbrite adds later all refuse until listed.
+const SENDABLE_EVENT_STATUSES = ['live', 'started', 'ended', 'completed'];
 const ELIGIBLE_ROLE = 'Participant';
 const ELIGIBLE_ATTENDANCE: Record<ClassEmailKind, string[]> = {
   reminder: ['Registered'],
@@ -49,10 +50,16 @@ function toRecipient(e: RosterEntry): Recipient {
   return { registrationId: e.registrationId, email: e.email, firstName: e.firstName, name: e.name };
 }
 
+function statusRefusal(status: string | null): string | null {
+  if (status === null || status === '') return 'This class has no Eventbrite status yet, so no emails can be sent.';
+  if (SENDABLE_EVENT_STATUSES.includes(status)) return null;
+  if (status === 'canceled' || status === 'deleted') return `This class is ${status} on Eventbrite, so no emails can be sent.`;
+  return `This class has the Eventbrite status "${status}", so no emails can be sent.`;
+}
+
 function refusalFor(kind: ClassEmailKind, facts: ClassFacts, roster: RosterEntry[], now: Date): string | null {
-  if (facts.eventbriteStatus !== null && REFUSED_EVENT_STATUSES.includes(facts.eventbriteStatus)) {
-    return `This class is ${facts.eventbriteStatus} on Eventbrite, so no emails can be sent.`;
-  }
+  const refused = statusRefusal(facts.eventbriteStatus);
+  if (refused !== null) return refused;
   if (kind === 'reminder') {
     const startsAt = facts.startsAt === null ? NaN : Date.parse(facts.startsAt);
     if (Number.isNaN(startsAt)) return 'This class has no start time, so the reminder cannot be sent.';
