@@ -18,7 +18,7 @@ export interface EventMapping {
   program: string;
 }
 
-const pacificWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long' });
+export const pacificWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long' });
 
 // Matches salesforce-import/src/transform/boards.ts EVENTBRITE_EVENT_STATUS, plus `deleted` (what
 // Eventbrite reports for a canceled event that was removed); anything else (including `ended`) is

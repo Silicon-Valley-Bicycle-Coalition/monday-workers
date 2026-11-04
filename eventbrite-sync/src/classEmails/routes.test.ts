@@ -151,6 +151,21 @@ describe('GET /class-emails/:eventId', () => {
     expect((await get(harness({ event: null }))).status).toBe(404);
   });
 
+  it('returns the class fields, reading the venue and address from the Events item', async () => {
+    const ev = testConfig().attendeeSync.events;
+    const items = [mondayItem('900', 'Learn to Ride', { [ev.venueColumn]: 'Millbrae Rec', [ev.addressColumn]: '477 Lincoln Cir' }), reg('10')];
+    const h = harness({ items });
+    const body = (await (await get(h)).json()) as any;
+    expect(body.fields).toEqual({ 'Class Day': 'Thursday', 'Class Date': 'November 12', 'Start Time': '9:00 AM', 'Class Location': 'Millbrae Rec, 477 Lincoln Cir' });
+    expect(h.client.getItems).toHaveBeenCalledWith(expect.any(Number), ['900'], [ev.venueColumn, ev.addressColumn]);
+  });
+
+  it('returns null for a class field Eventbrite has not given', async () => {
+    const body = (await (await get(harness())).json()) as any;
+    expect(body.fields['Class Location']).toBeNull();
+    expect(body.fields['Class Day']).toBe('Thursday');
+  });
+
   it('reports writesOn false and still serves the plan when writes are not on', async () => {
     const res = await get(harness({ mode: 'hold' }));
     expect(res.status).toBe(200);

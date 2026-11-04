@@ -13,6 +13,7 @@ import { isActive, statusText, type MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { linkedItemId } from '../util/itemId';
 import { secretsMatch } from '../webhook/route';
+import { classFields } from './fields';
 import { planKind, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
 import { loadRoster, sandboxRecipients } from './roster';
 
@@ -120,8 +121,9 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   const now = deps.now ?? (() => new Date());
   const boards = config.monday.boards;
   const rc = config.attendeeSync.registrations;
+  const ev = config.attendeeSync.events;
 
-  const json = (c: Context, body: unknown, status: 200 | 400 | 401 | 404 | 502 | 503 = 200) => {
+  const json =(c: Context, body: unknown, status: 200 | 400 | 401 | 404 | 502 | 503 = 200) => {
     // Responses carry names and addresses: nothing may keep a copy.
     c.header('Cache-Control', 'no-store');
     return c.json(body as object, status);
@@ -186,7 +188,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
     const client = deps.mondayClient();
     const [[item], roster, ledger, mode] = await Promise.all([
-      client.getItems(boards.events!, [event.mondayItemId], []),
+      client.getItems(boards.events!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]),
       loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
       store.listByEvent(eventId),
       deps.writeMode(),
@@ -195,6 +197,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
     return json(c, {
       event: { name: item.name, startsAt: event.startsAt, endsAt: event.endsAt, status: event.eventbriteStatus },
+      fields: classFields(event, item.columns[ev.venueColumn] ?? '', item.columns[ev.addressColumn] ?? ''),
       writesOn: mode === 'on',
       kinds: planAll(KINDS, event, roster, ledger, now()),
     });
