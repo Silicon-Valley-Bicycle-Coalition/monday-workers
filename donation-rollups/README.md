@@ -641,9 +641,12 @@ markdown on a board whose item view lacks the **Item description** widget, so a 
 "gift-history description skipped" and moves on rather than burning queue retries over a
 redundant rendering of the JSON column. **Add that widget by hand to the item view of every owner
 board** (open an item → **+** in the item view header → Item description) before the first sweep;
-there is no API for it. Once it's there, writes succeed for every item on the board, including
-items with no description yet (verified on the sandbox 2026-10-30; the 2026-08-31 reading that
-the feature was off for the whole account was wrong). Provision the
+there is no API for it. Once it's there, writes succeed on items with no description yet (verified
+on the sandbox 2026-10-30; the 2026-08-31 reading that the feature was off for the whole account
+was wrong). The same bare error comes back past roughly 250 doc blocks, and every table cell is a
+block, so a 70-row table fails at under 1KB (measured 2026-11-04; Monday doesn't document it). So
+one description holds at most `DESCRIPTION_TABLE_ROW_BUDGET` table rows across its tables, and past
+that Gift History shows the newest gifts with a line pointing at the JSON column. Provision the
 column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
 
 **The Annual Giving Summary board (docs/20 §5.4)** — created by
@@ -703,7 +706,8 @@ Every Organizations recompute also writes a `## Sponsorships` section above `## 
 the item description: the paid (`Received`) cash and in-kind sponsorships of the last
 `windowYears` years (calendar or fiscal, per `yearBasis`), one row each with date, event and
 amount, plus per-year and overall totals (cash and in-kind kept separate). It exists to be copied
-into an email reply to a sponsor's auditor. **Organizations only**; People get no section.
+into an email reply to a sponsor's auditor. **Organizations only**; People get no section. Every
+sponsorship row is kept, and Gift History gets what's left of the description's row budget.
 Prerequisite: the **Item description** widget on the Organizations item view (see "Gift-history
 projections" above; there is no API for it).
 

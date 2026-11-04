@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildGiftLedgerJson, buildGiftHistoryMarkdown, parseGiftLedgerJson,
+  buildGiftLedgerJson, buildGiftHistoryMarkdown, parseGiftLedgerJson, countTableRows,
+  DESCRIPTION_TABLE_ROW_BUDGET,
   GIFT_LEDGER_ALERT_BYTES, GIFT_LEDGER_MAX_BYTES, GIFT_LEDGER_TRUNCATION_ID,
   type GiftHistoryRow,
 } from './giftHistory';
@@ -107,6 +108,41 @@ describe('parseGiftLedgerJson', () => {
 });
 
 describe('buildGiftHistoryMarkdown', () => {
+  it('leaves a history that fits the row budget whole', () => {
+    const md = buildGiftHistoryMarkdown(manyRows(DESCRIPTION_TABLE_ROW_BUDGET - 1), 'https://x');
+    expect(countTableRows(md)).toBe(DESCRIPTION_TABLE_ROW_BUDGET);
+    expect(md).toContain(`${DESCRIPTION_TABLE_ROW_BUDGET - 1} gifts. Maintained automatically`);
+    expect(md).not.toContain('shown');
+  });
+
+  it('past the row budget keeps the newest gifts and says how many are shown', () => {
+    const rows = [
+      ...manyRows(DESCRIPTION_TABLE_ROW_BUDGET + 40),
+      row({ mondayItemId: 'newest', giftDateISO: '2099-01-01' }),
+      row({ mondayItemId: 'oldest', giftDateISO: '1900-01-01' }),
+    ];
+    const md = buildGiftHistoryMarkdown(rows, 'https://x');
+    expect(countTableRows(md)).toBe(DESCRIPTION_TABLE_ROW_BUDGET);
+    expect(md).toContain('pulses/newest');
+    expect(md).not.toContain('pulses/oldest');
+    expect(md).toContain(`Newest ${DESCRIPTION_TABLE_ROW_BUDGET - 1} of ${rows.length} gifts shown`);
+    expect(md).toContain('Gift Ledger (JSON) column');
+  });
+
+  it('counts the Driven for organizations rows and the caller\'s budget against the cap', () => {
+    const driven = [{ affiliationName: 'A', cents: 100, count: 1 }, { affiliationName: 'B', cents: 100, count: 1 }];
+    const md = buildGiftHistoryMarkdown(manyRows(100), 'https://x', driven, 30);
+    expect(countTableRows(md)).toBe(30);
+    expect(md).toContain('Newest 26 of 100 gifts shown');
+    expect(md).toContain('| A | $1.00 | 1 |');
+  });
+
+  it('still reports the count when the budget leaves no room for gift rows', () => {
+    const md = buildGiftHistoryMarkdown(manyRows(5), 'https://x', undefined, 0);
+    expect(md).toContain('Newest 0 of 5 gifts shown');
+    expect(md).not.toContain('pulses/');
+  });
+
   it('renders a newest-first table with deep links and a maintenance note', () => {
     const md = buildGiftHistoryMarkdown([
       row({ mondayItemId: 'a', giftDateISO: '2015-06-01' }),

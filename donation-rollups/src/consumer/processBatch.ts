@@ -13,7 +13,7 @@ import type {
 import { donorLevel } from '../rollups/donorLevel';
 import { computeRollup, currentFiscalYear, localDateParts, type Rollup } from '../rollups/compute';
 import {
-  buildGiftLedgerJson, buildGiftHistoryMarkdown,
+  buildGiftLedgerJson, buildGiftHistoryMarkdown, countTableRows, DESCRIPTION_TABLE_ROW_BUDGET,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
 } from '../projections/giftHistory';
 import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
@@ -554,18 +554,21 @@ async function recomputeOwnerLeased(
     }
   }
   try {
-    const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven);
     const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
       ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
         localISODate(deps.now ?? new Date(), config.fiscalYear.timeZone))
       : null;
+    // Sponsorships is what gets copied to an auditor, so it keeps every row and Gift History takes
+    // what's left of the budget. The largest sandbox sponsor renders 22 rows, so no cut of its own.
+    const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven,
+      DESCRIPTION_TABLE_ROW_BUDGET - countTableRows(sponsorshipsMd ?? ''));
     await mondayClient.setItemDescription(ownerItemId,
       sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
-    // whose item view lacks the Item description widget (UI-only setup; with it, every item on
-    // the board writes, verified 2026-10-30). The rollups and JSON projection above already
+    // whose item view lacks the Item description widget (UI-only setup) or on a description past
+    // Monday's block limit (DESCRIPTION_TABLE_ROW_BUDGET). The rollups and JSON projection above already
     // landed; don't burn queue retries over the optional rendering.
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
   }
