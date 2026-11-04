@@ -28,6 +28,8 @@ const COLUMN_KEYS = [
   'funraiseSync.fiscalYearColumn',
   'funraiseSync.donorExternalIdColumn',
   'funraiseSync.donorEmailColumn',
+  'funraiseSync.donorFirstNameColumn',
+  'funraiseSync.donorLastNameColumn',
   'funraiseSync.donorLinkColumn',
   'funraiseSync.entityIdColumn',
 ];
