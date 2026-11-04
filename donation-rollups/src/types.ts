@@ -284,5 +284,5 @@ export interface SponsorshipsConfig {
   inKindGiftTypes: string[];
   yearBasis: 'calendar' | 'fiscal';
   windowYears: number;              // integer >= 1
-  pipelineBoards: Record<string, string>; // pipeline board id -> event name, e.g. "18391037433": "BTWD"
+  pipelineBoards: Record<string, string>; // pipeline board id -> event name; "" when group titles name the event ("2027 Annual Gala")
 }

@@ -9,7 +9,7 @@ import type { DnsUnsubscribeLog } from '../db/dnsUnsubscribes';
 import type { Config, DonorRecord, OutboundSyncMessage } from '../types';
 
 const CONFIG: Config = {
-  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, columns: {
+  monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, historical: null, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
@@ -36,7 +36,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: false, dnsReasonStatus: '', nearby: [],
+    doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false,
     ...overrides,
   };
 }
@@ -465,5 +465,96 @@ describe('processOutboundBatch', () => {
       expect(message.retry).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });
+  });
+});
+
+describe('processOutboundBatch: People (Historical) items', () => {
+  const HISTORICAL_COLUMNS = {
+    membershipStatus: 'h-s', membershipTier: 'h-t', memberSince: 'h-ms', memberUntil: 'h-mu', addr1: 'h-a1', city: 'h-c',
+    state: null, zip: 'h-z', email: 'h-e', totalGiven: 'h-g', doNotSolicit: 'h-dns', dnsReasonStatus: 'h-dnsStatus', nearby: null,
+  };
+  const config: Config = { ...CONFIG, monday: { ...CONFIG.monday, donorsBoardId: 111, historical: { boardId: 222, columns: HISTORICAL_COLUMNS } } };
+
+  function setup(record: DonorRecord, peopleHolds: string[] = []) {
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(record),
+      findItemIdByEmail: vi.fn(async (_board: number, _column: string, email: string) => (peopleHolds.includes(email) ? '900' : null)),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn().mockResolvedValue('updated'),
+      renameMember: vi.fn().mockResolvedValue('renamed'),
+      unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
+      getMemberTagNames: vi.fn().mockResolvedValue(['Near: Old project']),
+      getMemberInterests: vi.fn(), listInterests: vi.fn(),
+    };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    return { mondayClient, mailchimpClient, pendingStore, config, dnsLog: fakeDnsLog() };
+  }
+
+  it('updates the contact of a Historical item no People item shares', async () => {
+    const message = fakeMessage('1');
+    const deps = setup(donor({ onHistorical: true }));
+    await processOutboundBatch([message], deps);
+    expect(deps.mondayClient.getDonorById).toHaveBeenCalledWith('1', config.monday.columns, config.monday.historical);
+    expect(deps.mondayClient.findItemIdByEmail).toHaveBeenCalledWith(111, 'e', 'a@b.com');
+    expect(deps.mailchimpClient.updateMember).toHaveBeenCalledTimes(1);
+    expect(deps.pendingStore.updateStatus).toHaveBeenCalledWith('1', 'written', undefined, expect.any(String));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('leaves the contact alone when a People item holds the same address, so a lapsed record cannot overwrite a live one', async () => {
+    const message = fakeMessage('1');
+    const deps = setup(donor({ onHistorical: true, membershipStatus: 'Lapsed' }), ['a@b.com']);
+    await processOutboundBatch([message], deps);
+    expect(deps.mailchimpClient.updateMember).not.toHaveBeenCalled();
+    expect(deps.pendingStore.updateStatus).toHaveBeenCalledWith('1', 'skipped', expect.stringContaining('People'));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('still honors a reviewed Do Not Solicit when People holds the same address', async () => {
+    const deps = setup(donor({ onHistorical: true, doNotSolicit: true, dnsReasonStatus: 'Confirmed' }), ['a@b.com']);
+    await processOutboundBatch([fakeMessage('1')], deps);
+    expect(deps.mailchimpClient.unsubscribeMember).toHaveBeenCalledWith('a@b.com');
+    expect(deps.mailchimpClient.updateMember).not.toHaveBeenCalled();
+  });
+
+  it('does not move a contact a People item still holds when a Historical item changes address', async () => {
+    const message = { ...fakeMessage('1'), body: { donorItemId: '1', previousEmail: 'old@b.com' } };
+    const deps = setup(donor({ onHistorical: true }), ['old@b.com']);
+    await processOutboundBatch([message], deps);
+    expect(deps.mailchimpClient.renameMember).not.toHaveBeenCalled();
+    expect(deps.mailchimpClient.updateMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves the contact when a Historical item changes an address only it held', async () => {
+    const message = { ...fakeMessage('1'), body: { donorItemId: '1', previousEmail: 'old@b.com' } };
+    const deps = setup(donor({ onHistorical: true }));
+    await processOutboundBatch([message], deps);
+    expect(deps.mailchimpClient.renameMember).toHaveBeenCalledWith('old@b.com', 'a@b.com');
+  });
+
+  it('never looks a People item up on People, whatever it holds', async () => {
+    const deps = setup(donor({ onHistorical: false }), ['a@b.com']);
+    await processOutboundBatch([fakeMessage('1')], deps);
+    expect(deps.mondayClient.findItemIdByEmail).not.toHaveBeenCalled();
+    expect(deps.mailchimpClient.updateMember).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Near: tags when the item\'s own board has no Nearby column yet, though People does', async () => {
+    const withPeopleNearby: Config = { ...config, monday: { ...config.monday, columns: { ...config.monday.columns, nearby: 'n' } } };
+    const deps = { ...setup(donor({ onHistorical: true })), config: withPeopleNearby };
+    await processOutboundBatch([fakeMessage('1')], deps);
+    expect(deps.mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
+    const managed = (deps.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]![3] as string[];
+    expect(managed).not.toContain('Near: Old project');
+  });
+
+  it('reads Near: tags when the Historical board has its own Nearby column', async () => {
+    const withBothNearby: Config = { ...config, monday: { ...config.monday, historical: { boardId: 222, columns: { ...HISTORICAL_COLUMNS, nearby: 'h-n' } } } };
+    const deps = { ...setup(donor({ onHistorical: true })), config: withBothNearby };
+    await processOutboundBatch([fakeMessage('1')], deps);
+    const managed = (deps.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]![3] as string[];
+    expect(managed).toContain('Near: Old project');
   });
 });

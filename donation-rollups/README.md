@@ -601,6 +601,11 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
   'https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/custodian/run/classify'
 ```
 
+Alerts post as updates on one item per environment (`custodian.alertItemId`). Production:
+[IT Requests](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/13460707947).
+Sandbox: [Worker Alerts (sandbox)](https://bikesiliconvalley.monday.com/boards/18438405821/pulses/13460723549).
+Updates notify only that item's subscribers, so subscribe to be told. Don't reuse a request or
+ticket as the sink, and don't close the production item.
 
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
   (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.

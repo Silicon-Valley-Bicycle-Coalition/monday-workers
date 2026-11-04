@@ -38,12 +38,24 @@ export interface MondayColumnsConfig {
   nearby: string | null;
 }
 
+// The columns the outbound sync reads. Everything but the Campaigns connect column, which only the
+// inbound side writes, and only on People.
+export type DonorColumnsConfig = Omit<MondayColumnsConfig, 'mailchimpCampaigns'>;
+
+// People (Historical): the same columns as People under their own ids. Outbound only.
+export interface HistoricalBoardConfig {
+  boardId: number;
+  columns: DonorColumnsConfig;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
     donorsBoardId: number | null;
     campaignsBoardId: number | null;
     columns: MondayColumnsConfig;
+    // null = this deployment watches People only.
+    historical: HistoricalBoardConfig | null;
   };
   mailchimp: {
     apiBaseUrl: string;
@@ -132,6 +144,9 @@ export interface DonorRecord {
   dnsReasonStatus: string;
   // Labels from the Nearby dropdown; [] when unset or the column isn't configured.
   nearby: string[];
+  // Which board the item is on now, read with its columns. A move between the People boards keeps
+  // the item id, so this can differ from the board its webhook named.
+  onHistorical: boolean;
 }
 
 export interface MailchimpInterest {

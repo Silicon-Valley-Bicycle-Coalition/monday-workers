@@ -12,7 +12,7 @@ function validRaw(): Record<string, any> {
       benevityTransactionId: 'bt', anonymousDonor: 'ad', donor: 'dn', matchedBy: 'mb', matchStatus: 'ms',
       dtdStatusRaw: 'raw', matchCompany: 'mc', matchesGift: 'mg', matchPairing: 'mp', sentToDtd: 'std',
     },
-    people: { email: 'e', householdEmail: 'he', phone: 'p', dtdCompanyId: 'ci', dtdCompany: 'cn', dtdLink: 'lk' },
+    people: { email: 'e', householdEmail: 'he', firstName: 'fn', lastName: 'ln', phone: 'p', dtdCompanyId: 'ci', dtdCompany: 'cn', dtdLink: 'lk' },
     programSummary: {
       fiscalYear: 'fy', screened: 'sc', employerIdentified: 'ei', eligible: 'el', submitted: 'su', matchesPaid: 'mp',
       matchDollars: 'md', matchedGiftDollars: 'mgd', newMatchingCompanies: 'nmc', firstTimeMatchedDonors: 'ftd', asOf: 'ao',
@@ -39,6 +39,12 @@ describe('validateConfig', () => {
         expect(() => validateConfig(raw), `${group}.${key}`).toThrow(/REPLACE_WITH_COLUMN_ID|column id/);
       }
     }
+  });
+
+  it('requires the People name columns', () => {
+    const raw = validRaw();
+    delete raw.people.firstName;
+    expect(() => validateConfig(raw)).toThrow(/firstName/);
   });
 
   it('requires dtd.publicKey', () => {

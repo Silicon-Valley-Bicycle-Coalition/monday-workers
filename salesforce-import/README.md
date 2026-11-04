@@ -229,12 +229,23 @@ rather than overwritten, a column already on the board (including Stakeholder Ty
 normally creates because `transform` seeds it — see "What the script must resolve") is skipped,
 and a view is only created if no view of that name exists yet. Run it
 after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
-specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (no
-public API to create them), the Documentation doc view (no API for doc-kind views), stripping
+specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (built
+by hand or through Monday's MCP `create_automation` tool, see "Possible Duplicate" below), the
+Documentation doc view (no API for doc-kind views), stripping
 Monday's stock status labels (data-safety — do it by hand per docs/22 §2.5), Subitems-column
 deletion and hide-plumbing view settings (both UI-only in the plan), the Donations Fiscal Year
 column removal (a guarded one-off, not repeatable structure), and the Acknowledgment Tier
 backfill (a data operation, not board configuration).
+
+**Possible Duplicate (#54).** `configure` creates the status column and the **Possible duplicates**
+worklist on both People boards. Two steps sit outside it, once per board, after `configure` has
+created the column:
+
+- **Notify automation:** when Possible Duplicate changes to Possible Duplicate, notify the Monday
+  admin with the item name, the board name and a pointer to the worklist. Create it in the UI or
+  with Monday's MCP `create_automation`, then flag a test item and clear it again.
+- **Item card:** tick the column into the card's Contact section (pencil → "Edit layout"). A new
+  column appears on no section until it is ticked in one, and the card is where staff set the flag.
 
 The `dashboards` step (`--only dashboards`) also creates the Development, Membership, and Board
 Report dashboards with their chart/number widgets in `monday.workspaceId`. What it created is

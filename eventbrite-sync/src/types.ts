@@ -115,6 +115,8 @@ export interface EventbriteSyncConfig {
     // People board email column (lookup by bare address; create writes { email, text }) and the
     // Donations board's Donor connect column.
     donorEmailColumn: string;
+    donorFirstNameColumn: string;
+    donorLastNameColumn: string;
     donorLinkColumn: string;
   };
   // The attendee/event feed: Eventbrite events → Events board, attendees → Event Registrations,

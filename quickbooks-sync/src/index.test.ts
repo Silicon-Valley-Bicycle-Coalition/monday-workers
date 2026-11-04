@@ -24,6 +24,23 @@ describe('worker entry point', () => {
     expect(typeof worker.queue).toBe('function');
   });
 
+  // #68: the purge is a D1 retention pass, not a Monday or QuickBooks write, so it runs with the
+  // write switch off (FLAGS is empty in tests, which reads as `off`).
+  it('scheduled purges an expired payload using the shipped retention config', async () => {
+    const longAgo = '2020-01-01T00:00:00.000Z';
+    await env.DB.prepare(
+      `INSERT INTO monday_events (event_id, monday_item_id, raw_payload, status, received_at, written_at)
+       VALUES ('sched-1', 'sched-1', '{"email":"pat@example.org"}', 'written', ?1, ?1)`
+    )
+      .bind(longAgo)
+      .run();
+
+    await worker.scheduled({} as ScheduledController, env as unknown as import('./types').Env);
+
+    const row = await env.DB.prepare("SELECT raw_payload FROM monday_events WHERE event_id = 'sched-1'").first<{ raw_payload: string }>();
+    expect(row!.raw_payload).toBe('{}');
+  });
+
   it('routes /webhooks/monday through the composed app (challenge handshake)', async () => {
     // MONDAY_WEBHOOK_SECRET comes from vitest.config.ts's miniflare bindings.
     const request = new Request('http://localhost/webhooks/monday?secret=test-monday-webhook-secret', {

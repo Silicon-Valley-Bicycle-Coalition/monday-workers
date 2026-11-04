@@ -125,6 +125,22 @@ npm run deploy:writer   # the change-requests consumer lives in member-portal-wr
 Production's portal never consumed `member-portal-change-requests`, so either order works here;
 portal first just matches the sandbox. Change requests wait in the queue until the writer is up.
 
+**Zone rate-limit rule on the login form** (Security → WAF → Rate limiting rules; not in
+`wrangler.jsonc`, so a fork adds it by hand). SVBC's rule was created 2026-11-03 as `member-portal:
+rate limit login POST`:
+
+| Setting | Value |
+|---|---|
+| Expression | `(http.host in {"member.bikesiliconvalley.org" "member.sandbox.bikesiliconvalley.org"} and http.request.method eq "POST" and http.request.uri.path eq "/")` |
+| Counted by | `ip.src`, `cf.colo.id` |
+| Threshold | 20 requests in 60 seconds |
+| Action | Block for 600 seconds (429 with Cloudflare's default response) |
+
+It stops a flood before the Worker runs, so blocked requests cost no invocations or D1 writes.
+The threshold sits above `LOGIN_RATE_LIMITER` (10 a minute), so everything between the two still
+gets the normal generic page. The two hostnames share one counter per IP, so heavy sandbox testing
+can briefly block login on production from the same IP.
+
 ## Sandbox environment (independent of Phases 1–5)
 
 The sandbox is a permanent parallel deployment, `svbc-member-portal-sandbox`, defined by
@@ -255,7 +271,9 @@ its own README's "Sandbox environment" section.
    `/portal/change-request` shows the form (if Phase 1–2 done) — submit a test request and
    confirm the item lands on the Change Requests board with old/new values and the donor link.
 6. **Rate limits:** >10 login posts in a minute from one IP get denied silently (same generic
-   response); repeated identical change requests report "already submitted."
+   response); >20 get a Cloudflare 429 for 10 minutes (the zone rule in Phase 4, which also blocks
+   that IP's login posts to the other hostname); repeated identical change requests report
+   "already submitted."
 7. **Logout + cache:** after logout, back-button must not show portal data (no-store headers).
 
 ## Go-live, rollback, and aftercare

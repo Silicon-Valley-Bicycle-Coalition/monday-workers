@@ -105,6 +105,10 @@ export interface FunraiseSyncConfig {
     donorExternalIdColumn: string;
     donorEmailColumn: string;
     donorNameField: string;
+    donorFirstNameField: string;
+    donorLastNameField: string;
+    donorFirstNameColumn: string;
+    donorLastNameColumn: string;
     donorLinkColumn: string;
     emailFieldPrecedence: string[];
     statusField: string;

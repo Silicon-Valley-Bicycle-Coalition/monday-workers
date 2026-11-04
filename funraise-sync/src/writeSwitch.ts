@@ -2,13 +2,19 @@
 // of the consumer's and the poller's deps. The business logic runs unchanged against them, so a
 // dry run validates, matches and builds every mutation exactly as a live run would; only the last
 // step — the Monday write or the D1 bookkeeping that records it — is swapped out here.
-import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
+import { DEFAULT_PII_KEYS, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
 import type { EventStore } from './db/events';
 import type { SubscriptionStore } from './db/subscriptions';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ProcessBatchDeps } from './consumer/processBatch';
 import type { PollSubscriptionsDeps } from './subscriptions/poll';
-import type { MondayBoards } from './types';
+import type { FunraiseSyncConfig, MondayBoards } from './types';
+
+// Debug skip lines key Monday values by column id, which DEFAULT_PII_KEYS can't recognize as names.
+export function piiKeysFor(config: FunraiseSyncConfig): readonly string[] {
+  const { donorFirstNameColumn, donorLastNameColumn } = config.funraiseSync;
+  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase()];
+}
 
 // Everything a skip line needs except the delivery, which is per message (or per cron run).
 export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;

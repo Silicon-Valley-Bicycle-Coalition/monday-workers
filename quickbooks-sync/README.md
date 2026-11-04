@@ -139,6 +139,23 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
   UPDATE monday_events SET create_attempt = create_attempt + 1, create_sends = 0 WHERE event_id = '<Monday item id>'"
 ```
 
+## Data retention
+
+`qb_events.fetched_payload` and `monday_events.raw_payload` hold Customer and Invoice PII. They are
+only a record for inspecting a row: the consumer re-reads the record from its source on every
+attempt, so nothing replays them. A daily cron (`30 9 * * *`, `src/db/retention.ts`, runs in every
+write mode) empties them:
+
+* **Written rows:** the payload, `quickbooksSync.payloadRetentionDays` (30) after the write.
+* **Rows that never reached `written`:** the payload and the `error` text,
+  `quickbooksSync.unresolvedRetentionDays` (90) after receipt. The error goes too because Intuit's
+  fault detail can name the customer. The row stays `failed` and can still be redriven; if that
+  fails again, the new error lasts until the next daily pass, since the row's receipt date is old.
+
+Rows themselves are never deleted: they are the webhook dedupe ledger, and the create-loop guards
+read their ids. `qb_monday_map` holds only ids. Log lines, including the errors the consumer logs,
+are outside this purge, and follow Workers Logs' own retention.
+
 ## APIs & auth
 
 * **QuickBooks Online Accounting API** — free up to 500,000 read operations/month on the Builder
@@ -151,7 +168,7 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
 
 ## OAuth tokens
 
-The token pair lives in D1 (`qb_oauth_tokens`, one row). Only the queue consumer calls
+The token pair lives in D1 (`qb_oauth_tokens`, one row), encrypted (below). Only the queue consumer calls
 QuickBooks, and it refreshes the access token a minute before expiry. Intuit rotates the refresh
 token and expires the previous one, so refreshes have a single writer (#33): the refresher takes a
 D1 lease at the row's `version` and saves by compare-and-swap on it; other callers wait and
@@ -174,10 +191,27 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
 Bumping `version` makes any refresh in flight against the old pair lose its compare-and-swap
 instead of overwriting the new one.
 
+**Encryption at rest (#68).** Both tokens are stored AES-256-GCM encrypted (`enc:v1:…`,
+`src/quickbooks/tokenCipher.ts`) under the `QB_TOKEN_ENCRYPTION_KEY` secret, so reading D1 alone
+(the dashboard, an export, a D1-scoped API token) doesn't yield a live credential. It does not
+protect against someone who can also deploy to this Worker, which can read the secret.
+
+* **Set the key before the first deploy that carries this code**, per environment, each with its
+  own value: `openssl rand -base64 32 | npx wrangler secret put QB_TOKEN_ENCRYPTION_KEY [--env sandbox]`.
+  Without a usable key the consumer fails before calling Intuit, so messages retry instead of a
+  rotated token being lost. The webhook route doesn't need the key.
+* **A hand seed is plaintext** (the SQL above can't encrypt), and is accepted as such. Its expiry
+  is in the past, so the first consumer call refreshes it and saves the new pair encrypted; run the
+  seed only when that call will follow soon. D1 Time Travel keeps the earlier plaintext for its
+  retention window, but Intuit expires that refresh token after the rotation.
+* **Rotating or losing the key** means re-seeding: set the new key, then seed a fresh pair as above.
+  There is no re-encrypt step. A row the key can't open fails with "could not decrypt" and retries.
+
 ## Secrets
 
 Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
 `wrangler.jsonc`'s comments: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`,
+`QB_TOKEN_ENCRYPTION_KEY`,
 `MONDAY_WEBHOOK_SECRET`.
 
 Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind

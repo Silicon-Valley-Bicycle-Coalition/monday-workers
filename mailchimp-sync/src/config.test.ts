@@ -151,3 +151,37 @@ describe('validateConfig', () => {
     expect(() => validateConfig(raw)).toThrow('config: "monday.campaignsBoardId" must be a number or null');
   });
 });
+
+describe('validateConfig: monday.historical', () => {
+  const COLUMNS = {
+    membershipStatus: 'h1', membershipTier: 'h2', memberSince: 'h3', memberUntil: 'h4', addr1: 'h5', city: 'h6',
+    state: null, zip: 'h7', email: 'h8', totalGiven: 'h9', doNotSolicit: 'h10', dnsReasonStatus: 'h11', nearby: null,
+  };
+  const withHistorical = (historical: unknown, donorsBoardId: number | null = 111) => {
+    const raw = validRaw() as unknown as { monday: Record<string, unknown> };
+    raw.monday.donorsBoardId = donorsBoardId;
+    raw.monday.historical = historical;
+    return raw;
+  };
+
+  it('reads the board and its columns, which need no mailchimpCampaigns', () => {
+    const config = validateConfig(withHistorical({ boardId: 222, columns: COLUMNS }));
+    expect(config.monday.historical?.boardId).toBe(222);
+    expect(config.monday.historical?.columns.email).toBe('h8');
+  });
+
+  it('treats null or an absent key as not watching a second board', () => {
+    expect(validateConfig(withHistorical(null)).monday.historical).toBeNull();
+    expect(validateConfig(validRaw()).monday.historical).toBeNull();
+  });
+
+  it('rejects a board with no id, a missing column, or a placeholder state', () => {
+    expect(() => validateConfig(withHistorical({ boardId: null, columns: COLUMNS }))).toThrow('monday.historical.boardId');
+    expect(() => validateConfig(withHistorical({ boardId: 222, columns: { ...COLUMNS, email: '' } }))).toThrow('monday.historical.columns.email');
+    expect(() => validateConfig(withHistorical({ boardId: 222, columns: { ...COLUMNS, state: 'REPLACE_WITH_COLUMN_ID' } }))).toThrow('monday.historical.columns.state');
+  });
+
+  it('needs the People board, since People owns an address both boards hold', () => {
+    expect(() => validateConfig(withHistorical({ boardId: 222, columns: COLUMNS }, null))).toThrow('monday.donorsBoardId');
+  });
+});
