@@ -168,7 +168,7 @@ are outside this purge, and follow Workers Logs' own retention.
 
 ## OAuth tokens
 
-The token pair lives in D1 (`qb_oauth_tokens`, one row). Only the queue consumer calls
+The token pair lives in D1 (`qb_oauth_tokens`, one row), encrypted (below). Only the queue consumer calls
 QuickBooks, and it refreshes the access token a minute before expiry. Intuit rotates the refresh
 token and expires the previous one, so refreshes have a single writer (#33): the refresher takes a
 D1 lease at the row's `version` and saves by compare-and-swap on it; other callers wait and
@@ -191,10 +191,27 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
 Bumping `version` makes any refresh in flight against the old pair lose its compare-and-swap
 instead of overwriting the new one.
 
+**Encryption at rest (#68).** Both tokens are stored AES-256-GCM encrypted (`enc:v1:…`,
+`src/quickbooks/tokenCipher.ts`) under the `QB_TOKEN_ENCRYPTION_KEY` secret, so reading D1 alone
+(the dashboard, an export, a D1-scoped API token) doesn't yield a live credential. It does not
+protect against someone who can also deploy to this Worker, which can read the secret.
+
+* **Set the key before the first deploy that carries this code**, per environment, each with its
+  own value: `openssl rand -base64 32 | npx wrangler secret put QB_TOKEN_ENCRYPTION_KEY [--env sandbox]`.
+  Without a usable key the consumer fails before calling Intuit, so messages retry instead of a
+  rotated token being lost. The webhook route doesn't need the key.
+* **A hand seed is plaintext** (the SQL above can't encrypt), and is accepted as such. Its expiry
+  is in the past, so the first consumer call refreshes it and saves the new pair encrypted; run the
+  seed only when that call will follow soon. D1 Time Travel keeps the earlier plaintext for its
+  retention window, but Intuit expires that refresh token after the rotation.
+* **Rotating or losing the key** means re-seeding: set the new key, then seed a fresh pair as above.
+  There is no re-encrypt step. A row the key can't open fails with "could not decrypt" and retries.
+
 ## Secrets
 
 Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
 `wrangler.jsonc`'s comments: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`,
+`QB_TOKEN_ENCRYPTION_KEY`,
 `MONDAY_WEBHOOK_SECRET`.
 
 Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind

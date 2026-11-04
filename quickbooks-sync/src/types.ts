@@ -109,6 +109,8 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   QB_CLIENT_ID: string;
   QB_CLIENT_SECRET: string;
   QB_WEBHOOK_VERIFIER_TOKEN: string;
+  // Optional here so a missing secret is a clear refusal from TokenCipher.load rather than a type lie.
+  QB_TOKEN_ENCRYPTION_KEY?: string;
   MONDAY_WEBHOOK_SECRET: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;

@@ -77,7 +77,7 @@ export default {
           qbEventStore: new D1QbEventStore(env.DB),
           queue,
           verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
-          connectedRealmId: async () => (await new D1TokenStore(env.DB).getTokens())?.realmId ?? null,
+          connectedRealmId: () => new D1TokenStore(env.DB, env.QB_TOKEN_ENCRYPTION_KEY).getRealmId(),
           writeMode: () => readWriteMode(env, WORKER),
         })
       );
@@ -115,7 +115,7 @@ export default {
       mapStore: new D1MapStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       quickBooksClient: new HttpQuickBooksClient(
-        new D1TokenStore(env.DB),
+        new D1TokenStore(env.DB, env.QB_TOKEN_ENCRYPTION_KEY),
         env.QB_CLIENT_ID,
         env.QB_CLIENT_SECRET,
         config.quickbooks.apiBaseUrl
