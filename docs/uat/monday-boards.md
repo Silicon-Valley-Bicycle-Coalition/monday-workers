@@ -128,8 +128,8 @@ organizations with no Partner Type) · **Municipal** · **Funders and matching c
 
 1. Open a bike shop, a funder, and a city. Do Partner Type, Website, and the giving totals read
    right? Website was filled from Google Places where Salesforce had none.
-2. **Untyped** is the cleanup list. Is Partner Type a vocabulary you'd keep consistent as free
-   text, or should it become a fixed dropdown? (Open decision; your answer settles it.)
+2. **Untyped** is the cleanup list. Partner Type is a dropdown of ten values. Pick one on a blank
+   organization and check that it leaves the list.
 3. **Discount Offered** and **Discount Active** are what the donor portal shows members as
    partner bike-shop discounts. Set one on a shop and check it in the
    [donor portal](member-portal.md) script.

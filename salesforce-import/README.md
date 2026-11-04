@@ -393,9 +393,11 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   and gifts/links booked against the Account re-point at the person. `enrich` skips them too.
   Blank-type Accounts with no Contact, or a differently-named one ("Smith Family"), still land on
   Organizations — a human review list is the follow-up if that residue matters.
-* **Partner-type reconciliation** — cascade `Type` → `Type_2__c` → `Industry`; ~1,212 organizations
-  have none of the three set and need the Pre-Migration Deliverables' manual classification pass
-  completed before the script can consume it.
+* **Partner-type reconciliation** — cascade `Type` → `Type_2__c` → `Industry`, then mapped to the
+  ten approved dropdown values (`src/transform/partnerType.ts`, #55; a multipicklist keeps its most
+  specific value). Organizations with none of the three stay blank, for the Untyped worklist. Boards
+  loaded as text move over with `scripts/relabel-partner-type.ts`, then `configure
+  --rebuild-overviews organizations` so views and the Overview follow the new column.
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
   Unique Advocacy-Specific Needs. **Seeded at import (#46):** `extract` selects

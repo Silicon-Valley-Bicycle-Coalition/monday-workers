@@ -248,12 +248,16 @@ describe('accountToPayload', () => {
   });
   it('maps organizations with the partner-type coalesce chain and Do Not Solicit fields', () => {
     const p = accountToPayload({ Id: 'a2', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
-      Type: null, Type_2__c: 'Sponsor', Industry: 'Tech',
+      Type: null, Type_2__c: 'Government Committee', Industry: 'Private Sector',
       Do_Not_Solicit__c: true, Do_Not_Solicit_What__c: 'phone' })!;
     expect(p.board).toBe('organizations');
-    expect(p.columns['Partner Type']).toBe('Sponsor');
+    expect(p.columns['Partner Type']).toBe('Municipal');
     expect(p.columns['Do Not Solicit']).toEqual({ checked: 'true' });
     expect(p.columns['Do Not Solicit Reason']).toBe('phone');
+  });
+  it('loads an unknown partner type blank rather than adding a dropdown label', () => {
+    const p = accountToPayload({ Id: 'a3', Name: 'Acme', npe01__SYSTEM_AccountType__c: null, Type: 'Sponsor' })!;
+    expect(p.columns['Partner Type']).toBe('');
   });
   it('takes Salesforce Owner directly from the Account (true organizations, not one-to-one)', () => {
     const p = accountToPayload({ Id: 'a9', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,

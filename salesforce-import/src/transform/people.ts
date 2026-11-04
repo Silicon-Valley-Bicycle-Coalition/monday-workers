@@ -1,6 +1,7 @@
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
+import { partnerTypeFor } from './partnerType.js';
 import { windfallColumns } from './windfall.js';
 import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, relationshipOwner, salesforceDebug } from './fields.js';
 
@@ -235,7 +236,8 @@ export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): I
   return {
     board: 'organizations', sfId: a['Id'] as string, name: (a['Name'] as string) ?? '(no name)',
     columns: {
-      'Partner Type': (a['Type'] ?? a['Type_2__c'] ?? a['Industry'] ?? '') as string,
+      // An unknown value loads blank (Untyped) rather than adding a label to the closed dropdown.
+      'Partner Type': partnerTypeFor((a['Type'] ?? a['Type_2__c'] ?? a['Industry'] ?? '') as string) ?? '',
       'Website': (a['Website'] ?? '') as string,
       'Phone': (a['Phone'] ?? '') as string,
       'Address': [a['BillingStreet'], a['BillingCity'], a['BillingState'], a['BillingPostalCode']]
