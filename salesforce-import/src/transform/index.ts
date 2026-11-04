@@ -416,7 +416,7 @@ export async function runTransform(args: string[]): Promise<number> {
   const ebEventById = new Map(ebEvents.map((e) => [e['Id'] as string, e]));
   const ebEventsWithAttendees = new Set(ebAttendees.map((a) => a['eb4sf__Eventbrite_Event__c'] as string));
   for (const e of ebEvents) {
-    const p = eventbriteEventToPayload(e, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
+    const p = eventbriteEventToPayload(e, cfg.cutoverDateISO, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
     if (p) payloads.push(p);
   }
   for (const a of ebAttendees) {
