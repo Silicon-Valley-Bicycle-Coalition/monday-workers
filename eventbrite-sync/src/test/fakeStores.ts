@@ -8,7 +8,6 @@ export function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore 
     recordDelivery: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
-    listEndedBetween: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

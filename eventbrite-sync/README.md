@@ -325,14 +325,14 @@ Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Sec
   │  only, no personal data), then the same queue → consumer fetches the attendee or event fresh
   ▼
 Events board (one item per Eventbrite event, program from the organizer name)
-Event Registrations board (one item per attendee: Attendance, Class Type/Date/Day/Location, People link)
+Event Registrations board (one item per attendee: Attendance, First Name, Class Date/Day/Location, People link)
   ▲
 Send page (Apps Script, runs as the coordinator)   X-Class-Email-Secret
   │  GET  /class-emails/:eventId          who may get each email, refusals, earlier sends
   │  POST /class-emails/:eventId/claim    records the recipients, returns the ones newly claimed
   │  (the page sends from Gmail, one recipient at a time)
-  │  POST /class-emails/:eventId/result   marks the ledger, No Show / People link, posts an update
-  │  POST /class-emails/:eventId/release  frees recipients nobody confirmed (a person decides)
+  │  POST /class-emails/:eventId/result   marks the ledger, posts an update, No Show / People link
+  │  POST /class-emails/:eventId/release  frees failed recipients, and unconfirmed ones after 10 minutes
   ▼
 D1 `class_email_recipients` (migration 0003: event, kind, registration id, status; no names or addresses)
 ```
@@ -387,21 +387,27 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 
 | Route | Does |
 |---|---|
-| `GET /class-emails/:eventId` | `{ event, writesOn, kinds }`: for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, and the earlier recipients still unconfirmed. 404 when the event has no ledger row or Monday item. Works under any write mode. |
-| `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 503 unless the write switch is `on`. |
-| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. Then, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. Then one update on the Events item: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). 503 unless `on`. |
-| `POST .../release` `{ kind, sender, registrationIds }` | Frees claimed and failed rows (never `sent`) so they can be claimed again, and posts an update naming the sender. 503 unless `on`. |
+| `GET /class-emails/:eventId` | `{ event, writesOn, kinds }`: for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
+| `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
+| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then, under `waitUntil`, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. |
+| `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
 
 * **Who gets each email:** Role = Participant with an Attendee Email. Reminder: Registered, refused
-  once the class has started. Thank-you: Attended, refused until the class has ended or when nobody
-  is Attended. Missed-you: Registered or No Show, same refusals. Canceled never. A canceled or
-  deleted Eventbrite event is refused for every kind. One email per address per kind, first
-  registration wins; a missed-you skips an address that attended on another registration.
+  once the class has started. Thank-you: Attended, refused until the class has ended or when no
+  Participant with an Attendee Email is Attended (a volunteer or a blank-email row doesn't count).
+  Missed-you: Registered or No Show, same refusals. Canceled never. Only an Eventbrite status of
+  `live`, `started`, `ended` or `completed` may send; anything else, including `draft`, `canceled`,
+  `deleted` and no status, is refused for every kind. One email per address per kind, first
+  registration wins; a missed-you skips an address that attended on another eligible registration.
 * **At most once.** A recipient is recorded (claimed) before the page may send to them, and a
   claimed recipient is never handed out again. A crash leaves them `claimed`, shown as unconfirmed;
-  only a person releases them.
-* **The ledger is written first** in `result`, so a Monday failure (People match, No Show, the
-  update) is logged by id and error class and cannot lose what was sent.
+  only a person releases them, and not until 10 minutes after the claim (`RELEASE_MIN_CLAIM_AGE_MS`),
+  because Apps Script runs stop at about 6 and a younger claim may still be sending.
+* **The ledger is written first** in `result`, so a Monday failure (the update, No Show, People
+  match) is logged by id and error class and cannot lose what was sent.
+* **A switch flipped mid-send.** `result` records the ledger under any mode so people already
+  emailed don't show as unconfirmed, but off `on` it skips the update, No Show and People link, and
+  nothing replays them.
 * **Nothing personal is logged.** Addresses, names, the subject and the page's `error` strings
   (which may echo an address) never reach `console.*`. The update on the staff board does carry
   the real sender, the subject, failed and unconfirmed addresses (the replaced one in the sandbox),

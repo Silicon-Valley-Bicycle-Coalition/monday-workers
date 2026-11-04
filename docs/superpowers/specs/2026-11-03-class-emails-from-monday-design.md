@@ -105,12 +105,18 @@ Only **Role = Participant**, with an **Attendee Email**, on registrations linked
 | Kind | Attendance | Refused when |
 |---|---|---|
 | Reminder | Registered | The class has already started |
-| Thank-you | Attended | The class hasn't ended, or nobody is Attended |
-| Missed-you | Registered or No Show | The class hasn't ended, or nobody is Attended |
+| Thank-you | Attended | The class hasn't ended, or no eligible person is Attended |
+| Missed-you | Registered or No Show | The class hasn't ended, or no eligible person is Attended |
 
-Canceled never receives anything. The page explains a refusal and offers no send button.
+Canceled never receives anything. Every kind is refused unless the Eventbrite status is `live`,
+`started`, `ended` or `completed`. That is an allowlist, so `draft`, no status at all and any status
+Eventbrite adds later refuse, as `canceled` and `deleted` do. The page explains a refusal and offers
+no send button.
 
-The Attended check is the old Held guard. Partial check-in remains a known risk: anyone not scanned
+The Attended check is the old Held guard. Only a Participant with an Attendee Email counts, so a
+checked-in volunteer or a row with no address can't open a Missed-you to a class that came, or keep
+someone from one. The page warns, without refusing, when a Thank-you or Missed-you is for a class
+that ended more than 3 days ago. Partial check-in remains a known risk: anyone not scanned
 gets a missed-you. The page reduces it by showing the list first, and the coordinator chooses when
 check-in is finished.
 
@@ -121,13 +127,17 @@ check-in is finished.
 * **At most once.** The Worker records `(event, kind, registration)` before the script may send to
   them. A recorded recipient is never handed out again, so a double click or reload can't duplicate.
 * **A crash never resends.** Recipients claimed but not confirmed show as "unconfirmed: check Sent
-  mail" on the page and in the update. Only a person can release them. A missed email is the better
-  failure here.
+  mail" on the page and in the update. Only a person can release them, and the Worker refuses until
+  10 minutes after the claim: Apps Script runs stop at about 6, so a younger claim may still be
+  sending. A missed email is the better failure here.
+* **A failed send is shown as failed.** Gmail refused it or the name was blank, so the run is over
+  and it didn't go. It's listed apart from the unconfirmed, and a person can release it at any time.
 * **Draft checks before anything sends.** The From must be the sender's address or alias, a Gmail mail
   merge "Unsubscribe" footer is refused, and a placeholder with no value is refused rather than sent
   as "Hello ,". The first two already exist in `mail-merge.gs`.
-* **Write switch.** `eventbrite-sync:writes`: under anything but `on`, claims are refused and the page
-  says so.
+* **Write switch.** `eventbrite-sync:writes`: under anything but `on`, claims and releases are refused
+  and the page says so. A result is still recorded in the ledger, because those emails already went,
+  but its update, No Show and People link are skipped and not replayed.
 * **Sandbox.** The sandbox config only returns recipients at the sandbox address, enforced in the
   Worker and checked by `config/split.test.ts`. It has its own deployment of the page.
 * **D1 holds ids and statuses only.** Names and addresses pass through in responses and aren't logged.

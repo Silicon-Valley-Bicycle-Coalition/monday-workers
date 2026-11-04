@@ -62,13 +62,10 @@ export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, c
     }
     return proxy;
   };
-  const notifications = recordingProxy(client, 'Monday notification', { notify: undefined }, ctx);
   const updates = recordingProxy(client, 'Monday update', { postUpdate: undefined }, ctx);
   return {
     findItemByColumnValue: (boardId, columnId, value) => client.findItemByColumnValue(boardId, columnId, value),
     getItems: (boardId, itemIds, columnIds) => client.getItems(boardId, itemIds, columnIds),
-    // A bell notification is a Monday write too, logged under its own sink.
-    notify: (userId, itemId, text) => notifications.notify(userId, itemId, text),
     postUpdate: (itemId, body) => updates.postUpdate(itemId, body),
     createItem: (boardId, itemName, columnValues) => sinkFor(boardId).createItem(boardId, itemName, columnValues),
     changeColumnValues: (boardId, itemId, columnValues) => sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues),

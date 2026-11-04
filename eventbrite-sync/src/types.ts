@@ -118,7 +118,7 @@ export interface EventbriteSyncConfig {
     donorLinkColumn: string;
   };
   // The attendee/event feed: Eventbrite events → Events board, attendees → Event Registrations,
-  // and the class follow-up emails (docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md).
+  // and the class email send page (docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
   attendeeSync: {
     // Webhook actions the attendee/event route processes; anything else is acknowledged and ignored.
     actions: string[];

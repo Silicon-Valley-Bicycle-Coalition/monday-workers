@@ -14,8 +14,6 @@ export interface MondayClient {
   // returns archived and deleted items, so callers must check `state === 'active'` (isActive) rather
   // than treat an omitted id as the only way an item can be gone; an id Monday has purged is omitted.
   getItems(boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]>;
-  // Bell notification to a user about an item (create_notification, target_type Project).
-  notify(userId: number, itemId: string, text: string): Promise<void>;
   // An update (comment) on an item's page (create_update). Not retried: a retry after an
   // ambiguous failure could post it twice.
   postUpdate(itemId: string, body: string): Promise<void>;
@@ -145,19 +143,6 @@ export class HttpMondayClient implements MondayClient {
       }
     }
     return result;
-  }
-
-  async notify(userId: number, itemId: string, text: string): Promise<void> {
-    // Not idempotent: a retry after an ambiguous failure could ring the bell twice.
-    await this.transport.request<{ create_notification: { text: string | null } }>(
-      `mutation ($userId: ID!, $itemId: ID!, $text: String!) {
-        create_notification(user_id: $userId, target_id: $itemId, text: $text, target_type: Project) {
-          text
-        }
-      }`,
-      { userId, itemId, text },
-      { idempotent: false }
-    );
   }
 
   async postUpdate(itemId: string, body: string): Promise<void> {

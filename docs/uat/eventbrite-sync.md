@@ -1,6 +1,6 @@
 # UAT script: Eventbrite ticket orders and class emails
 
-**Class emails (attendee feed): see the last two sections.** Orders below are unchanged.
+**Class emails: see the sections starting at "Class emails: try it".** Orders below are unchanged.
 
 **Status 2026-11-02: nothing to test yet for orders.** The sandbox copy has been deployed since
 2026-10-26, but it can't write a gift until the **Eventbrite Order ID** column exists on
@@ -58,47 +58,51 @@ column to write to. See `eventbrite-sync/README.md` "Deploy".
 
 ## Class emails: try it (sandbox)
 
-For the Bike Education coordinator. Everything here uses a test class and **staff email addresses only**; never register a
-real attendee. The Worker only sets a label; Monday sends the email from `learn@`.
+For the Bike Education coordinator. Everything here uses a test class and **staff email addresses
+only**; never register a real attendee. Each email is a Gmail draft you write. The **Send class
+email** link on the class's Events item opens a page that sends it from your Gmail as `learn@`. In
+the sandbox, every email goes to the sandbox address, whoever is on the list.
 
-1. **Set up the class.** On the sandbox Events board, find the test class (it appears when the
-   Eventbrite event is created or updated) and set **Class Type**.
-2. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
+1. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
    should appear on Event Registrations with Attendance **Registered** and the class date, day and
-   location filled in. Class Type stays blank on the registrations until the morning follow-up run
-   copies it from the event (step 5).
-3. **Send a reminder.** Open the **Class reminders** view, filter to the test class, select all,
-   open Mass email, pick `Reminder: <class type>`, fill the `[ … ]` notes and send. Check the
-   email lands in the staff inboxes.
-4. **Check in some.** In Eventbrite check in two of the three. Attendance should change to
+   location filled in.
+2. **Write a draft.** In Gmail, write the email From `learn@`, with `{{First Name}}` in the greeting
+   and mail merge off.
+3. **Send a reminder.** Before the class starts, click **Send class email** on the test class. Choose
+   **Reminder** and your draft, check From, subject and the list of people, then click **Send a test
+   to me**. Check the test in your inbox, then click **Send to 3 people**. The page shows the result,
+   and an update on the Events item gives the kind, sender and count.
+4. **Try to send it twice.** Reload the page. Reminder should show 3 sent already and nobody left.
+5. **Check in some.** In Eventbrite check in two of the three. Attendance should change to
    **Attended** for those two. The third stays Registered.
-5. **Morning after.** After 08:00 Pacific the day after the class ends (the job runs hourly, so
-   allow until the next hour), the two checked-in rows get Follow-up Email `Thank-you: <class
-   type>`, the third gets `Missed-you: <class type>` and its Attendance becomes **No Show**, and
-   all three get the event's Class Type. The matching emails arrive from `learn@`. The test
-   event's **Follow-ups** then turns to **Sent** — that is what stops the class being emailed
-   twice.
-6. **Held.** Repeat with a second test class and check in nobody. The event's **Follow-ups**
-   should turn to **Held** and you should get a Monday notification. Check someone in, then
-   clear Held: the follow-ups run on the next hourly pass. (Only within 3 days of the class end.)
+6. **After the class ends.** Open the page again. Thank-you should list the two who checked in.
+   Missed-you should say 1 person will get it and 2 checked in. Send both, testing each first. The
+   third person's Attendance becomes **No Show**, and the two who came get linked to People.
+7. **Nobody checked in.** Repeat with a second test class and check in nobody. After it ends,
+   Thank-you and Missed-you should both be refused, with no send button. A volunteer checked in
+   doesn't count.
+8. **Not confirmed.** Ask for help with this one: it needs a send cut off partway. Those people show
+   under **Not confirmed**. Releasing them right away should say they're too recent; after 10 minutes
+   it should release them, and an update on the item should say how many. A person listed as
+   **failed** can be released at any time.
 
 ## Class emails: look at
 
-- Do the Thank-you and Missed-you texts read right, and are the bold, links and merged names
-  correct?
+- Do the Thank-you and Missed-you emails read right, and are the bold, links and names correct?
 - A person who checks in only some of a group: the others get a missed-you (known, see below).
+- Is the warning clear when a Thank-you or Missed-you is for a class that ended more than 3 days ago?
 
 ## Class emails: don't report these
 
-- Partial check-in sends a missed-you to anyone not checked in. Check everyone in before 08:00
-  the next morning.
-- A hand-added registration (not through Eventbrite) gets no follow-up.
-- Reminders show a `[start time]` note: there is no Class Time column yet.
+- Partial check-in sends a missed-you to anyone not checked in. Finish check-in before you send.
+- A hand-added registration (not through Eventbrite) isn't on the list.
+- A draft can only fill in `{{First Name}}`. Type each class's details into the draft.
 - Spanish class day and date appear in English.
-- Thank-you Sequences are created paused until the upcoming-classes list is refreshed.
-- A class that ended more than 3 days ago never emails, even if Held is cleared.
 
 ## Sandbox rehearsal, 2026-10-26
+
+History: this tested the hourly follow-up job and Sequences, since replaced by the send page. The
+feed findings still apply.
 
 Run 2026-10-27 (UTC) against the sandbox Worker (`svbc-eventbrite-sync-sandbox`, D1
 `svbc-eventbrite-sync-sandbox` with migrations 0001–0002) and the CRM Sandbox boards, which have no

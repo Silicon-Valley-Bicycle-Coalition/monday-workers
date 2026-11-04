@@ -229,19 +229,6 @@ describe('HttpMondayClient transport (#35)', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
-
-  describe('notify', () => {
-    it('creates a Project notification for the user on the item', async () => {
-      const fetchMock = mockFetchOnce({ data: { create_notification: { text: 'hi' } } });
-
-      await newClient().notify(42, '777', 'Follow-up held');
-
-      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-      expect(body.query).toContain('create_notification');
-      expect(body.query).toContain('target_type: Project');
-      expect(body.variables).toEqual({ userId: 42, itemId: '777', text: 'Follow-up held' });
-    });
-  });
 });
 
 // Monday returns label id 5's text for an EMPTY status cell (value null), so a status reads as

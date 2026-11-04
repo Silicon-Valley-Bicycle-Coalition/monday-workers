@@ -61,7 +61,7 @@ function harness(o: Options = {}) {
     findItemByColumnValue: vi.fn(o.peopleLookup ?? (async () => ({ id: '50' }))),
     createItem: vi.fn().mockResolvedValue({ id: '51' }),
     postUpdate: vi.fn(o.postUpdate ?? (async () => undefined)),
-    notify: vi.fn(),
+   
   };
   const mondayClient = vi.fn(() => client as unknown as MondayClient);
   const store = fakeClassEmailStore(o.ledger ?? []);

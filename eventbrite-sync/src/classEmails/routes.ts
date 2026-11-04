@@ -1,7 +1,7 @@
 // The routes the class email send page (a Google Apps Script web app) calls. They hand real
 // student addresses to that page and decide who may be emailed, so: every route checks the shared
 // secret before anything else (including before the Monday client is built), the ledger is written
-// before any Monday write, and nothing personal reaches console.* (ids, counts and error class
+// before any Monday write (and under any write mode, on `result`), and nothing personal reaches console.* (ids, counts and error class
 // names only; an `error` string from the page may hold an address, so it is never logged).
 import type { Context, Hono } from 'hono';
 import type { AttendeeStore } from '../db/attendees';

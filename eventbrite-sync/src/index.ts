@@ -66,8 +66,8 @@ export default {
         writeMode: () => readWriteMode(env, WORKER),
         classEmails: {
           store: new D1ClassEmailStore(env.DB),
-          // A plain client, never the write switch's dry-run wrapper: the routes refuse before
-          // any write unless the mode is `on`. Built only after the secret passes.
+          // A plain client, never the write switch's dry-run wrapper: the routes make no Monday
+          // write unless the mode is `on`. Built only after the secret passes.
           mondayClient: () => new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
           secret: env.CLASS_EMAIL_SECRET,
         },

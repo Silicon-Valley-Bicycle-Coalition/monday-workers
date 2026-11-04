@@ -44,7 +44,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     createItem: vi.fn().mockResolvedValue({ id: 'reg-1' }),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     getItems: vi.fn().mockResolvedValue([]),
-    notify: vi.fn(),
+   
     postUpdate: vi.fn(),
     ...overrides,
   };
