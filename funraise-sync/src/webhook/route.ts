@@ -96,13 +96,16 @@ export function createApp(deps: AppDeps) {
     const entityId = extractEntityId(envelope, deps.config);
     const stripped = stripDenylistedFields(envelope.raw, deps.config.funraiseSync.doNotMigrateFields);
 
+    // Stored no later than now: the stale-delivery guard keeps the newest send time, so a time
+    // ahead of the clock would outrank a genuine edit arriving before that time.
+    const receivedMs = Date.now();
     const upsertResult = await deps.eventStore.upsertEvent({
       eventId: envelope.eventId,
-      sentAt: envelope.sentAt,
+      sentAt: envelope.sentAt === null ? null : Math.min(envelope.sentAt, receivedMs),
       entityType: ENTITY_TYPE,
       entityId,
       rawPayload: JSON.stringify(stripped),
-      receivedAt: new Date().toISOString(),
+      receivedAt: new Date(receivedMs).toISOString(),
     });
 
     if (upsertResult === 'duplicate') {

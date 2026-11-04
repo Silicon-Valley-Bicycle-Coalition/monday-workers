@@ -106,6 +106,18 @@ describe('createApp', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('stores a send time slightly ahead as the receive time, so it cannot outrank a later genuine edit', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn().mockResolvedValue(undefined) }, webhookSecret: SECRET, writeMode: live });
+    const ahead = Date.now() + 30 * 60 * 1000;
+
+    await postEvent(app, { sentAt: ahead, data: { id: 123, transactionId: 'txn-9', amount: 5000 } });
+
+    const stored = vi.mocked(eventStore.upsertEvent).mock.calls[0]![0];
+    expect(stored.sentAt).toBeLessThanOrEqual(Date.now());
+    expect(stored.eventId).toBe(`123:${ahead}`);
+  });
+
   it('re-enqueues when the upsert reports an update to a known entity', async () => {
     const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('updated') });
     const send = vi.fn().mockResolvedValue(undefined);
