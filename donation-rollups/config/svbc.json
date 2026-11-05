@@ -207,7 +207,8 @@
         "organization": "board_relation_mm8qe1f2",
         "reviewNote": "long_text_mm8q772n",
         "rowKey": "text_mm8q6kfn",
-        "householdName": "text_mm8rpbah"
+        "householdName": "text_mm8rpbah",
+        "mailingAddress": "text_mm8ttsak"
       },
       "donations": {
         "boardId": 18437909794,
