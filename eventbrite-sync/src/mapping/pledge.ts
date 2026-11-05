@@ -7,6 +7,9 @@ const MAX_TEXT = 2000;
 const MAX_ITEM_NAME = 255;
 const MULTI_SELECT_SEPARATOR = ' | ';
 
+// Fields written to status and dropdown columns, whose labels the write may create.
+const LABEL_FIELDS: PledgeField[] = ['daysPledged', 'riderType', 'heardAbout'];
+
 export function countyForZip(zip: string | null, zipCounty: Record<string, string[]>): string {
   if (zip === null || !/^\d{5}$/.test(zip)) return 'Unknown';
   for (const [county, zips] of Object.entries(zipCounty)) {
@@ -30,11 +33,11 @@ export function mapPledge(
 
   const fields = new Map<PledgeField, string>();
   const other: string[] = [];
-  for (const { question_id: questionId, question, answer } of attendee.answers ?? []) {
+  for (const { question_id: questionId, question, type, answer } of attendee.answers ?? []) {
     if (typeof answer !== 'string' || answer.trim() === '' || typeof questionId !== 'string') continue;
     if (event.ignoreQuestions.includes(questionId)) continue;
     const field = event.questions[questionId];
-    if (field === undefined) {
+    if (field === undefined || (LABEL_FIELDS.includes(field) && !canLabel(answer, type, event))) {
       other.push(`${question ?? questionId}: ${answer}`);
     } else {
       fields.set(field, answer);
@@ -66,6 +69,12 @@ export function mapPledge(
   if (other.length > 0) columnValues[cols.otherAnswersColumn] = { text: cleanText(other.join('; ')) };
 
   return { itemName: (name ?? `Pledge ${attendee.id}`).slice(0, MAX_ITEM_NAME), columnValues };
+}
+
+// A new label is only made from Eventbrite's own fixed choices, so a mid-campaign change works. Text
+// someone typed never becomes a label, even if a free-text question is mapped to one of these fields.
+function canLabel(answer: string, type: string | null | undefined, event: PledgeEventConfig): boolean {
+  return type === 'multiple_choice' || answer.split(MULTI_SELECT_SEPARATOR).every((choice) => event.choices[choice] !== undefined);
 }
 
 function normalizeZip(answer: string | undefined): string | null {

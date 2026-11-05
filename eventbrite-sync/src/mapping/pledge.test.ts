@@ -69,19 +69,33 @@ describe('mapPledge', () => {
     expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días ')] })).columnValues.p_days).toBe('Multiple days');
   });
 
+  it('sends a typed answer with no label to Other Answers, never to a label column', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = map(attendee({ answers: [{ question_id: '12', question: 'Days', type: 'text', answer: 'whatever I typed' }] }));
+    expect(m.columnValues).not.toHaveProperty('p_days');
+    expect(m.columnValues.p_other).toEqual({ text: 'Days: whatever I typed' });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('keeps a mapped label for a typed answer', () => {
+    const m = map(attendee({ answers: [{ question_id: '12', question: 'Days', type: 'text', answer: 'Multiple days/Varios días ' }] }));
+    expect(m.columnValues.p_days).toBe('Multiple days');
+  });
+
   it('splits multi-select only on the pipe, so a choice with slashes stays whole', () => {
     const m = map(attendee({ answers: [answer('14', 'Banner/Flyer/Poster/Letrero/folleto | Friend/ Amigos')] }));
     expect(m.columnValues.p_heard).toEqual({ labels: ['Flyer', 'Friend'] });
   });
 
   it('keeps a comma inside a choice whole', () => {
-    const m = map(attendee({ answers: [answer('13', 'Fast, often | Slow')] }));
+    const m = map(attendee({ answers: [{ ...answer('13', 'Fast, often | Slow'), type: 'multiple_choice' }] }));
     expect(m.columnValues.p_rider).toEqual({ labels: ['Fast, often', 'Slow'] });
   });
 
-  it('writes an unmapped choice as it arrives, and warns without the answer', () => {
+  it('writes an unmapped multiple-choice answer as it arrives, and warns without the answer', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const m = map(attendee({ answers: [answer('12', ' Some days ')] }));
+    const m = map(attendee({ answers: [{ ...answer('12', ' Some days '), type: 'multiple_choice' }] }));
     expect(m.columnValues.p_days).toBe('Some days');
     const text = warn.mock.calls.flat().join(' ');
     expect(text).toContain('12');
