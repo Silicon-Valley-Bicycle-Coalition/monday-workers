@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { processAttendee } from './processAttendee';
 import { consumeWriteBatch } from './processBatch';
 import { fakeAttendeeStore, fakeEventStore } from '../test/fakeStores';
@@ -146,6 +147,14 @@ describe('processAttendee for a pledge event', () => {
     expect(mondayClient.createItem).not.toHaveBeenCalled();
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a1', 'failed', { error: expect.stringContaining('deleted or archived') });
+  });
+
+  it('refuses to write while the idempotency column is a placeholder', async () => {
+    const cfg = withPledge(testConfig());
+    cfg.pledge!.columns.attendeeIdColumn = PLACEHOLDER_COLUMN_ID;
+    const { deps, mondayClient } = setup({ cfg });
+    await expect(processAttendee(message, deps)).rejects.toThrow(/attendeeIdColumn/);
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
   });
 
   it('throws when the pledge board is not configured', async () => {

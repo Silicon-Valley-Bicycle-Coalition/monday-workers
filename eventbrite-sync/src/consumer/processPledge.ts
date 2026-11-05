@@ -1,3 +1,4 @@
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { isPlaceholderAttendee } from '../eventbrite/placeholder';
 import { mapPledge } from '../mapping/pledge';
 import { isActive } from '../monday/client';
@@ -17,6 +18,10 @@ export async function processPledge(message: AttendeeQueueMessage, event: Pledge
   const boardId = config.monday.boards['pledge-to-ride'];
   if (pledge === undefined || boardId === null || boardId === undefined) {
     throw new Error('config: monday.boards["pledge-to-ride"] is not configured');
+  }
+  // The idempotency key: without it nothing may be created, as for orders and events.
+  if (pledge.columns.attendeeIdColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: pledge.columns.attendeeIdColumn is the placeholder — run scripts/setup-pledge-board.mjs and set the real column ids before any pledge can be written');
   }
 
   const attendee = await eventbriteClient.getAttendee(eventId, attendeeId);

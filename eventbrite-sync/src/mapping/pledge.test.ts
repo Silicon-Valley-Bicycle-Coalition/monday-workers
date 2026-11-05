@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { countyForZip, mapPledge } from './pledge';
 import { testConfig, withPledge } from '../test/testConfig';
+import sandbox from '../../config/sandbox.json';
 import type { EventbriteAnswer, EventbriteAttendee } from '../eventbrite/client';
 
 const pledge = withPledge(testConfig()).pledge!;
@@ -175,5 +176,18 @@ describe('mapPledge', () => {
 
   it('cuts the item name to 255', () => {
     expect(map(attendee({ profile: { name: 'n'.repeat(300), email: 'pat@example.com' } })).itemName).toHaveLength(255);
+  });
+});
+
+describe('the shipped zip list', () => {
+  const shipped = sandbox.pledge.zipCounty;
+
+  it.each([
+    ['94303', 'San Mateo'], ['95014', 'Santa Clara'], ['94002', 'San Mateo'], ['95123', 'Santa Clara'], ['94612', 'Outside'], ['94103', 'Outside'],
+  ])('%s is %s', (zip, county) => expect(countyForZip(zip, shipped)).toBe(county));
+
+  it('lists no zip under both counties', () => {
+    const sanMateo = new Set(shipped['San Mateo']);
+    expect(shipped['Santa Clara'].filter((zip) => sanMateo.has(zip))).toEqual([]);
   });
 });

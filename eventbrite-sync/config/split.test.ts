@@ -21,6 +21,10 @@ const wrangler = parseJsonc(wranglerText) as Json;
 const sandboxEnv = get(wrangler, 'env.sandbox') as Json;
 
 const BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'];
+const PLEDGE_COLUMN_KEYS = [
+  'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
+  'daysPledgedColumn', 'riderTypeColumn', 'heardAboutColumn', 'whoAskedColumn', 'consentColumn', 'otherAnswersColumn',
+].map((key) => `pledge.columns.${key}`);
 const COLUMN_KEYS = [
   'eventbriteSync.amountColumn',
   'eventbriteSync.statusColumn',
@@ -57,6 +61,7 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.classLocationColumn',
   'attendeeSync.registrations.registrantsLinkColumn',
   'attendeeSync.peopleEmailColumn',
+  ...PLEDGE_COLUMN_KEYS,
 ];
 
 describe('config split: board and column ids', () => {
@@ -94,6 +99,14 @@ describe('config split: board and column ids', () => {
     for (const [key, value] of Object.entries(production.eventbriteSync)) {
       if (key.endsWith('Column')) expect(value, key).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
+  });
+
+  it('pledges: a real sandbox board never appears in production, and both zip lists agree', () => {
+    const sb = get(sandbox, 'monday.boards.pledge-to-ride');
+    const prod = (production.monday.boards as Record<string, unknown>)['pledge-to-ride'];
+    if (typeof sb === 'number') expect(prod).not.toBe(sb);
+    const prodZips = get(production, 'pledge.zipCounty');
+    if (prodZips !== undefined) expect(prodZips).toEqual(get(sandbox, 'pledge.zipCounty'));
   });
 
   it('both shipped configs validate', () => {

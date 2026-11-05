@@ -89,6 +89,18 @@ describe('scheduled (daily missed-order check)', () => {
     expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
   });
 
+  it('runs the pledge count check at the check hour for a config with pledges, and not otherwise', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const counts = vi.fn().mockResolvedValue([]);
+    const { ctx, waited } = context();
+    const sandboxEnv = { ...withToken, ENVIRONMENT: 'sandbox' } as unknown as Env;
+    await runScheduled(offHour, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
+    expect(counts).not.toHaveBeenCalled();
+    await runScheduled(checkController, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
+    await Promise.all(waited);
+    expect(counts.mock.calls[0]![1].eventIds).toEqual(['1977741403778']);
+  });
+
   it('skips the pledge count check under hold', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const counts = vi.fn().mockResolvedValue([]);
