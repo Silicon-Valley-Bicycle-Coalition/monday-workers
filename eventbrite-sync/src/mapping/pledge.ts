@@ -5,7 +5,7 @@ import { toISODate } from '../util/isoDate';
 
 const MAX_TEXT = 2000;
 const MAX_ITEM_NAME = 255;
-const MULTI_SELECT_SEPARATOR = ' | ';
+const MULTI_SELECT_SEPARATOR = /\s*\|\s*/;
 
 // Fields written to status and dropdown columns, whose labels the write may create.
 const LABEL_FIELDS: PledgeField[] = ['daysPledged', 'riderType', 'heardAbout'];
@@ -37,7 +37,7 @@ export function mapPledge(
     if (typeof answer !== 'string' || answer.trim() === '' || typeof questionId !== 'string') continue;
     if (event.ignoreQuestions.includes(questionId)) continue;
     const field = event.questions[questionId];
-    if (field === undefined || (LABEL_FIELDS.includes(field) && !canLabel(answer, type, event))) {
+    if (field === undefined || (LABEL_FIELDS.includes(field) && !canLabel(answer, field, type, event))) {
       other.push(`${question ?? questionId}: ${answer}`);
     } else {
       fields.set(field, answer);
@@ -65,7 +65,7 @@ export function mapPledge(
   if (heard !== undefined) columnValues[cols.heardAboutColumn] = { labels: heard.split(MULTI_SELECT_SEPARATOR).map((c) => label('heardAbout', c)) };
   const who = fields.get('whoAsked');
   if (who !== undefined) columnValues[cols.whoAskedColumn] = cleanText(who);
-  if (event.consentValues.includes(fields.get('consent') ?? '')) columnValues[cols.consentColumn] = { checked: 'true' };
+  if (event.consentValues.some((value) => value.trim() === fields.get('consent')?.trim())) columnValues[cols.consentColumn] = { checked: 'true' };
   if (other.length > 0) columnValues[cols.otherAnswersColumn] = { text: cleanText(other.join('; ')) };
 
   return { itemName: (name ?? `Pledge ${attendee.id}`).slice(0, MAX_ITEM_NAME), columnValues };
@@ -73,8 +73,17 @@ export function mapPledge(
 
 // A new label is only made from Eventbrite's own fixed choices, so a mid-campaign change works. Text
 // someone typed never becomes a label, even if a free-text question is mapped to one of these fields.
-function canLabel(answer: string, type: string | null | undefined, event: PledgeEventConfig): boolean {
-  return type === 'multiple_choice' || answer.split(MULTI_SELECT_SEPARATOR).every((choice) => event.choices[choice] !== undefined);
+// Splits exactly as the write does.
+function canLabel(answer: string, field: PledgeField, type: string | null | undefined, event: PledgeEventConfig): boolean {
+  if (type === 'multiple_choice') return true;
+  const choices = field === 'daysPledged' ? [answer] : answer.split(MULTI_SELECT_SEPARATOR);
+  return choices.every((choice) => mappedChoice(choice, event) !== undefined);
+}
+
+// By trimmed text: Eventbrite's choices carry stray spaces, and a joined answer's spacing varies.
+function mappedChoice(choice: string, event: PledgeEventConfig): string | undefined {
+  const key = Object.keys(event.choices).find((k) => k.trim() === choice.trim());
+  return key === undefined ? undefined : event.choices[key];
 }
 
 function normalizeZip(answer: string | undefined): string | null {
@@ -84,7 +93,7 @@ function normalizeZip(answer: string | undefined): string | null {
 }
 
 function choiceLabel(choice: string, field: PledgeField, attendee: EventbriteAttendee, event: PledgeEventConfig): string {
-  const mapped = event.choices[choice];
+  const mapped = mappedChoice(choice, event);
   if (mapped !== undefined) return mapped;
   const questionId = Object.keys(event.questions).find((id) => event.questions[id] === field);
   // Never the answer: it may be anything a person typed.

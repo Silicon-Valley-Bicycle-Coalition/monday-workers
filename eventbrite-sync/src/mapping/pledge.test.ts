@@ -78,6 +78,19 @@ describe('mapPledge', () => {
     warn.mockRestore();
   });
 
+  it('never makes a label from typed text shaped like a multi-select on a single-choice field', () => {
+    const typed = 'Multiple days/Varios días  | Friend/ Amigos';
+    const m = map(attendee({ answers: [{ question_id: '12', question: 'Days', type: 'text', answer: typed }] }));
+    expect(m.columnValues).not.toHaveProperty('p_days');
+    expect(m.columnValues.p_other).toEqual({ text: `Days: ${typed.replace(/\s+/g, ' ')}` });
+  });
+
+  it('finds a label despite stray spaces around a choice', () => {
+    const m = map(attendee({ answers: [{ question_id: '14', question: 'Heard', type: 'multiple_choice', answer: 'Friend/ Amigos  |  Banner/Flyer/Poster/Letrero/folleto ' }] }));
+    expect(m.columnValues.p_heard).toEqual({ labels: ['Friend', 'Flyer'] });
+    expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días')] })).columnValues.p_days).toBe('Multiple days');
+  });
+
   it('keeps a mapped label for a typed answer', () => {
     const m = map(attendee({ answers: [{ question_id: '12', question: 'Days', type: 'text', answer: 'Multiple days/Varios días ' }] }));
     expect(m.columnValues.p_days).toBe('Multiple days');
