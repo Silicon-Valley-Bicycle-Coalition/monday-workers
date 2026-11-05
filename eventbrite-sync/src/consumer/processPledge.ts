@@ -2,6 +2,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { isPlaceholderAttendee } from '../eventbrite/placeholder';
 import { mapPledge } from '../mapping/pledge';
 import { isActive } from '../monday/client';
+import { MondayApiError } from '../monday/graphql';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeRow, PledgeEventConfig } from '../types';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
@@ -49,7 +50,9 @@ export async function processPledge(message: AttendeeQueueMessage, event: Pledge
 
   const writtenAt = new Date().toISOString();
   if (mondayItemId === null) {
-    const item = await mondayClient.createItem(boardId, mapping.itemName, mapping.columnValues, LABELS);
+    const item = await mondayClient.createItem(boardId, mapping.itemName, mapping.columnValues, LABELS).catch((err: unknown) => {
+      throw scrubbed(err);
+    });
     await attendeeStore.updateStatus(attendeeId, 'written', { mondayItemId: item.id, writtenAt });
     return;
   }
@@ -62,9 +65,18 @@ export async function processPledge(message: AttendeeQueueMessage, event: Pledge
   try {
     await mondayClient.changeColumnValues(boardId, mondayItemId, { ...mapping.columnValues, name: mapping.itemName }, LABELS);
   } catch (err) {
-    if (!isItemGone(err)) throw err;
+    if (!isItemGone(err)) throw scrubbed(err);
     await markGone(mondayItemId);
     return;
   }
   await attendeeStore.updateStatus(attendeeId, 'written', { mondayItemId, writtenAt });
+}
+
+// Monday's message can echo the value it refused, here a person's answer, and it goes on to the logs
+// and the ledger's error column. Same error otherwise, so it's classified as terminal or not as usual.
+function scrubbed(err: unknown): unknown {
+  if (err instanceof MondayApiError) {
+    err.message = `Monday refused a pledge write (code ${err.code ?? 'none'}, HTTP ${err.httpStatus ?? 'none'})`;
+  }
+  return err;
 }

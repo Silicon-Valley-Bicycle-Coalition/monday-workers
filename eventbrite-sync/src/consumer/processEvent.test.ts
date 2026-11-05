@@ -314,6 +314,21 @@ describe('event messages under the write switch', () => {
   });
 });
 
+describe('processEvent: pledge event moved', () => {
+  it('does not fan out to its pledges, which copy nothing from the event', async () => {
+    const cfg = withPledge(testConfig());
+    cfg.pledge!.events['9001'] = cfg.pledge!.events['9100']!;
+    const { deps, queue, attendeeStore } = setup({
+      row: eventRow({ mondayItemId: 'item-9', startsAt: '2020-01-01T00:00:00.000Z' }),
+      attendees: [attendeeRow('a1')],
+      config: cfg,
+    });
+    await processEvent({ kind: 'event', eventId: '9001', action: 'event.updated' }, deps);
+    expect(attendeeStore.listByEvent).not.toHaveBeenCalled();
+    expect(queue.sendBatch).not.toHaveBeenCalled();
+  });
+});
+
 describe('processEvent: pledge event missing from config', () => {
   const message = { kind: 'event' as const, eventId: '9001', action: 'event.updated' };
   const pledged = withPledge(testConfig());

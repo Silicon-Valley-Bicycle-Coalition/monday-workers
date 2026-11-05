@@ -5,6 +5,7 @@ import { consumeWriteBatch } from './processBatch';
 import { fakeAttendeeStore, fakeEventStore } from '../test/fakeStores';
 import { testConfig, withPledge } from '../test/testConfig';
 import { mondayItem } from '../test/mondayItem';
+import { MondayApiError } from '../monday/graphql';
 import type { ProcessBatchDeps } from './processBatch';
 import type { EventbriteAttendee } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
@@ -162,6 +163,39 @@ describe('processAttendee for a pledge event', () => {
     cfg.monday.boards['pledge-to-ride'] = null;
     const { deps } = setup({ cfg });
     await expect(processAttendee(message, deps)).rejects.toThrow(/pledge-to-ride/);
+  });
+});
+
+describe('a pledge write Monday refuses', () => {
+  const refusal = () => new MondayApiError('Bad value "SecretAnswer" for column', { code: 'ColumnValueException' });
+
+  it('keeps the rejected value out of the log and the ledger, and stays terminal', async () => {
+    const { deps, attendeeStore } = setup({ monday: { createItem: vi.fn().mockRejectedValue(refusal()) } });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = { body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+    await consumeWriteBatch([m], { ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } } as ProcessBatchDeps, {
+      worker: 'eventbrite-sync', environment: 'production', mode: 'on', logLevel: 'normal', piiKeys: [],
+    });
+    const logged = error.mock.calls.flat().map(String).join('\n');
+    error.mockRestore();
+    const recorded = JSON.stringify((attendeeStore.updateStatus as ReturnType<typeof vi.fn>).mock.calls);
+    expect(logged).not.toContain('SecretAnswer');
+    expect(recorded).not.toContain('SecretAnswer');
+    expect(recorded).toContain('ColumnValueException');
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('scrubs a refused update too, but still recognizes a gone item', async () => {
+    const existing = { row: row({ mondayItemId: 'p-7' }) };
+    const getItems = vi.fn().mockResolvedValue([mondayItem('p-7', 'Pat', {})]);
+    const refused = setup({ ...existing, monday: { getItems, changeColumnValues: vi.fn().mockRejectedValue(refusal()) } });
+    const err = await processAttendee(message, refused.deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MondayApiError);
+    expect((err as Error).message).not.toContain('SecretAnswer');
+
+    const gone = setup({ ...existing, monday: { getItems, changeColumnValues: vi.fn().mockRejectedValue(new MondayApiError('Item not found', { code: 'ItemNotFound' })) } });
+    await processAttendee(message, gone.deps);
+    expect(gone.attendeeStore.updateStatus).toHaveBeenCalledWith('a1', 'failed', { error: expect.stringContaining('deleted or archived') });
   });
 });
 

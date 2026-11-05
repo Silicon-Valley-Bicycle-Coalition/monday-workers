@@ -86,7 +86,8 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
   const moved =
     (row.startsAt !== null && mapping.startsAt !== null && row.startsAt !== mapping.startsAt) ||
     (row.locationKey !== null && row.locationKey !== mapping.locationKey);
-  if (moved) {
+  // A pledge copies nothing from its event, and one edit would requeue thousands of them.
+  if (moved && config.pledge?.events[eventId] === undefined) {
     // Before the ledger records the new values: if a send fails, the retry still sees the
     // change and fans out again (at-least-once; the attendee consumer is idempotent). In batches
     // of up to 100 (#75), not one send per registration: a big class stays a few calls.
