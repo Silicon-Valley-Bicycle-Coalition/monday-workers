@@ -276,6 +276,9 @@ export interface RecomputeQueueMessage extends WriteStamp {
   // that left, kept for logs. Always recomputed — never coalesced away.
   ownerItemId?: string;
   ownerBoardId?: string;
+  // Set by the custodian sweep, whose point is rewriting the owner even if nothing changed: the
+  // consumer never coalesces it away, even when its representative gift has an open pending row.
+  sweep?: boolean;
 }
 
 // donationRollups.sponsorships — the Sponsorships section on Organizations items' descriptions.

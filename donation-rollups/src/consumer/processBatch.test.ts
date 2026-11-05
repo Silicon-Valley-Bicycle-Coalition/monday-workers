@@ -883,6 +883,17 @@ describe('owner recompute coalescing (fix 3)', () => {
     expect(mondayClient.getDonationsByIds).toHaveBeenCalled();
   });
 
+  it('a sweep message recomputes a fresh owner even when its donation has an open pending row, then closes that row', async () => {
+    const pendingStore = fakePendingStore({ getPending: vi.fn().mockResolvedValue(pendingRow) });
+    const mondayClient = fakeMondayClient();
+    const message = { body: { donationItemId: 'dn1', donationBoardId: '1', sweep: true }, ack: vi.fn(), retry: vi.fn() };
+    await processRecomputeBatch([message],
+      { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(fresh), volunteerStore: fakeVolunteerStore(), mondayClient, config });
+    expect(mondayClient.getDonationsByIds).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.objectContaining({ ownerItemId: 'donor-1' }));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('a successful recompute records the owner with fetched_at taken before the Monday fetch and written_at after the write', async () => {
     const order: string[] = [];
     const mondayClient = fakeMondayClient({

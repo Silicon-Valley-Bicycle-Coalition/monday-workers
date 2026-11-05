@@ -260,13 +260,14 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   // fetch time, not completion, since a recompute that started before the edit read stale
   // data; (2) this donation's link already existed, unchanged, before that fetch — a recompute
   // only reads the donations D1 links to the owner at that moment, so a new or re-owned link
-  // (or one rewritten after the fetch) can't have been covered. No pending row (a custodian
-  // sweep message) or no prior recompute means recompute.
+  // (or one rewritten after the fetch) can't have been covered. A custodian sweep message, no
+  // pending row, or no prior recompute means recompute: a sweep's representative gift can still
+  // have an old open row, and skipping would leave that owner out of the sweep.
   const [last, pending] = await Promise.all([
     deps.recomputesStore.get(ownerItemId),
     deps.pendingStore.getPending(donationItemId),
   ]);
-  if (last !== null && pending !== null
+  if (message.sweep !== true && last !== null && pending !== null
     && last.fetchedAt >= pending.receivedAt
     && !link.changed && link.updatedAt <= last.fetchedAt) {
     console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
