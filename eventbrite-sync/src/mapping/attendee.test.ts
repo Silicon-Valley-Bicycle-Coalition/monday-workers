@@ -52,6 +52,14 @@ describe('mapAttendee', () => {
     });
   });
 
+  it('maps a placeholder attendee with no name or email columns', () => {
+    const m = mapAttendee(attendee({ id: 'a9', profile: { name: 'Info Requested Info Requested', first_name: 'Info Requested', email: 'Info Requested' } }), facts, config, 'Registered');
+    expect(m.itemName).toBe('Eventbrite attendee a9');
+    expect(m.columnValues).not.toHaveProperty('att_email_col');
+    expect(m.columnValues).not.toHaveProperty('att_name_col');
+    expect(m.columnValues).not.toHaveProperty('att_first_col');
+  });
+
   it('sets Role = Volunteer for a volunteer program', () => {
     const m = mapAttendee(attendee(), { ...facts, program: 'Volunteering' }, config, 'Attended');
     expect(m.columnValues.att_role_col).toBe('Volunteer');

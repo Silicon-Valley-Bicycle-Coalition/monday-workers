@@ -1,4 +1,5 @@
 import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { realEmail, realName } from '../eventbrite/placeholder';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
 import { matchPerson } from '../matching/people';
@@ -112,7 +113,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     if (peopleBoardId === null) {
       throw new Error('config: monday.boards["people-live"] is not configured');
     }
-    const match = await matchPerson(mondayClient, peopleBoardId, config.attendeeSync.peopleEmailColumn, { email: attendee.profile?.email, name: attendee.profile?.name });
+    const match = await matchPerson(mondayClient, peopleBoardId, config.attendeeSync.peopleEmailColumn, { email: realEmail(attendee.profile?.email), name: realName(attendee.profile?.name) });
     if (match.donorItemId === null) {
       console.warn(`eventbrite-sync consumer: attendee "${attendeeId}" has no People link: ${match.reason}`);
     } else {

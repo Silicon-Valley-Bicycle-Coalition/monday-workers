@@ -100,6 +100,15 @@ describe('processAttendee', () => {
     expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].att_event_col).toEqual({ item_ids: [5551] });
   });
 
+  it('never creates a person from a checked-in placeholder attendee', async () => {
+    const { deps, mondayClient } = setup({
+      att: attendee({ checked_in: true, profile: { name: 'Info Requested Info Requested', first_name: 'Info Requested', email: 'Info Requested' } }),
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe(333);
+  });
+
   it('matches People and writes the Attendee link when checked in', async () => {
     const { deps, mondayClient, attendeeStore } = setup({
       att: attendee({ checked_in: true }),
