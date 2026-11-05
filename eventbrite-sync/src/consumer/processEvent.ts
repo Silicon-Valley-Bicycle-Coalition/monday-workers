@@ -1,6 +1,8 @@
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { effectiveEventStatus, mapEvent } from '../mapping/event';
 import { isItemGone } from '../monday/itemGone';
+import type { EventbriteEvent } from '../eventbrite/client';
+import type { EventbriteSyncConfig } from '../types';
 import type { AttendeeQueueMessage, EventQueueMessage, ProcessBatchDeps } from './processBatch';
 import { stampOf } from './messages';
 import { sendInBatches } from '../util/sendBatch';
@@ -36,6 +38,7 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     await eventStore.updateStatus(eventId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
   }
+  warnIfUnconfiguredPledge(event, config);
 
   let mondayItemId = row.mondayItemId;
   if (mondayItemId === null) {
@@ -94,4 +97,16 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
   }
 
   await eventStore.updateStatus(eventId, 'written', { ...facts, mondayItemId, writtenAt: now.toISOString() });
+}
+
+// Until an event is in pledge.events its pledges go to Event Registrations with no answers, and
+// nothing else would say so. An error, so Workers Issues raises it.
+function warnIfUnconfiguredPledge(event: EventbriteEvent, config: EventbriteSyncConfig): void {
+  const pledge = config.pledge;
+  if (pledge === undefined || pledge.events[event.id] !== undefined) return;
+  if (!(event.name?.text ?? '').toLowerCase().includes(pledge.nameMatch.toLowerCase())) return;
+  console.error(
+    `eventbrite-sync consumer: event "${event.id}" looks like a pledge campaign but isn't in pledge.events, so its pledges go to Event Registrations. ` +
+      'Add it with scripts/pledge-event-config.mjs and deploy; if any pledges came in, clear that event\'s ledger item ids, replay with scripts/backfill-attendees.mjs, and delete the stray rows'
+  );
 }
