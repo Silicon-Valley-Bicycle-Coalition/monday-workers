@@ -61,6 +61,14 @@ export interface EventbriteEvent {
   } | null;
 }
 
+// One answer on an attendee. `answer` is absent when blank; a multi-select's values are joined by " | ".
+export interface EventbriteAnswer {
+  question_id?: string | null;
+  question?: string | null;
+  type?: string | null;
+  answer?: string | null;
+}
+
 // Attendee (object), `GET /events/{event_id}/attendees/{attendee_id}/`.
 export interface EventbriteAttendee {
   id: string;
@@ -71,6 +79,9 @@ export interface EventbriteAttendee {
   status?: string | null;
   profile?: { name?: string | null; first_name?: string | null; email?: string | null } | null;
   ticket_class_name?: string | null;
+  created?: string | null;
+  order_id?: string | null;
+  answers?: EventbriteAnswer[] | null;
 }
 
 export interface EventbriteClient {
