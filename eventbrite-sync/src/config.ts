@@ -27,6 +27,14 @@ const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'classLocationColumn', 'registrantsLinkColumn',
 ] as const;
 
+const PLEDGE_COLUMN_KEYS = [
+  'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
+  'daysPledgedColumn', 'riderTypeColumn', 'heardAboutColumn', 'whoAskedColumn', 'consentColumn', 'otherAnswersColumn',
+] as const;
+const PLEDGE_FIELDS = ['zip', 'daysPledged', 'riderType', 'heardAbout', 'whoAsked', 'consent'];
+// The county labels mapPledge assigns itself.
+const PLEDGE_FALLBACK_COUNTIES = ['Outside', 'Unknown'];
+
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -107,6 +115,7 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
   }
 
   validateAttendeeSync(cfg.attendeeSync);
+  if (cfg.pledge !== undefined) validatePledge(cfg.pledge, monday.boards);
 
   return cfg as unknown as EventbriteSyncConfig;
 }
@@ -158,5 +167,71 @@ function validateAttendeeSync(raw: unknown): void {
   // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
   if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
     throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
+  }
+}
+
+function validatePledge(raw: unknown, boards: Record<string, unknown>): void {
+  if (!isObject(raw)) {
+    throw new Error('config: "pledge" must be an object');
+  }
+  const board = boards['pledge-to-ride'];
+  if (board !== null && (typeof board !== 'number' || !Number.isInteger(board))) {
+    throw new Error('config: "monday.boards.pledge-to-ride" must be a Monday board id number, or null when unconfigured, when "pledge" is set');
+  }
+  if (!isNonEmptyString(raw.nameMatch)) {
+    throw new Error('config: "pledge.nameMatch" must be a non-empty string');
+  }
+  requireColumns(raw.columns, 'pledge.columns', PLEDGE_COLUMN_KEYS);
+  if (!isObject(raw.zipCounty)) {
+    throw new Error('config: "pledge.zipCounty" must map county labels to arrays of 5-digit zips');
+  }
+  const seen = new Set<string>();
+  for (const [county, zips] of Object.entries(raw.zipCounty)) {
+    if (PLEDGE_FALLBACK_COUNTIES.includes(county)) {
+      throw new Error(`config: "pledge.zipCounty.${county}" can't be listed: it means a zip on no list`);
+    }
+    if (!Array.isArray(zips) || zips.some((zip) => typeof zip !== 'string' || !/^\d{5}$/.test(zip))) {
+      throw new Error(`config: "pledge.zipCounty.${county}" must be an array of 5-digit zips`);
+    }
+    for (const zip of zips as string[]) {
+      if (seen.has(zip)) throw new Error(`config: zip ${zip} is under more than one county in "pledge.zipCounty"`);
+      seen.add(zip);
+    }
+  }
+  if (!isObject(raw.events)) {
+    throw new Error('config: "pledge.events" must map Eventbrite event ids to their setup');
+  }
+  for (const [eventId, event] of Object.entries(raw.events)) {
+    validatePledgeEvent(eventId, event);
+  }
+}
+
+function validatePledgeEvent(eventId: string, event: unknown): void {
+  const path = `pledge.events.${eventId}`;
+  if (!/^\d+$/.test(eventId)) {
+    throw new Error(`config: "${path}" must be keyed by a numeric Eventbrite event id`);
+  }
+  if (!isObject(event)) {
+    throw new Error(`config: "${path}" must be an object`);
+  }
+  if (typeof event.year !== 'number' || !Number.isInteger(event.year)) {
+    throw new Error(`config: "${path}.year" must be an integer`);
+  }
+  if (!isObject(event.questions)) {
+    throw new Error(`config: "${path}.questions" must map question ids to fields`);
+  }
+  for (const [questionId, field] of Object.entries(event.questions)) {
+    if (!/^\d+$/.test(questionId) || !PLEDGE_FIELDS.includes(field as string)) {
+      throw new Error(`config: "${path}.questions.${questionId}" must be a numeric question id mapped to one of ${PLEDGE_FIELDS.join(', ')}`);
+    }
+  }
+  if (!Array.isArray(event.ignoreQuestions) || event.ignoreQuestions.some((id) => typeof id !== 'string')) {
+    throw new Error(`config: "${path}.ignoreQuestions" must be an array of question ids`);
+  }
+  if (!isObject(event.choices) || Object.values(event.choices).some((label) => !isNonEmptyString(label))) {
+    throw new Error(`config: "${path}.choices" must map Eventbrite's answer text to non-empty labels`);
+  }
+  if (!Array.isArray(event.consentValues) || event.consentValues.some((value) => typeof value !== 'string')) {
+    throw new Error(`config: "${path}.consentValues" must be an array of answer strings`);
   }
 }

@@ -29,6 +29,7 @@ const SINK_NAMES: Record<keyof MondayBoards, string> = {
   'people-live': 'People',
   events: 'Events',
   'event-registrations': 'Event Registrations',
+  'pledge-to-ride': 'Pledge to Ride',
 };
 
 // The ledger writes a dry run must not make: a placeholder item id stored here (matched_donor_item_id

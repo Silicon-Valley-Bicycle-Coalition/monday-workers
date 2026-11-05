@@ -85,3 +85,33 @@ export function testOrder(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+// testConfig plus a pledge block, for the suites that exercise pledges. Event 9100 is the pledge event.
+export function withPledge(config: EventbriteSyncConfig): EventbriteSyncConfig {
+  return {
+    ...config,
+    monday: { ...config.monday, boards: { ...config.monday.boards, 'pledge-to-ride': 444 } },
+    pledge: {
+      nameMatch: 'Pledge to Ride',
+      columns: {
+        attendeeIdColumn: 'p_id', yearColumn: 'p_year', statusColumn: 'p_status', dateColumn: 'p_date', emailColumn: 'p_email',
+        detailsColumn: 'p_details', zipColumn: 'p_zip', countyColumn: 'p_county', daysPledgedColumn: 'p_days', riderTypeColumn: 'p_rider',
+        heardAboutColumn: 'p_heard', whoAskedColumn: 'p_who', consentColumn: 'p_consent', otherAnswersColumn: 'p_other',
+      },
+      zipCounty: { 'Santa Clara': ['95014'], 'San Mateo': ['94002', '94303'] },
+      events: {
+        '9100': {
+          year: 2026,
+          questions: { '11': 'zip', '12': 'daysPledged', '13': 'riderType', '14': 'heardAbout', '15': 'whoAsked', '16': 'consent' },
+          ignoreQuestions: ['19'],
+          choices: {
+            'Multiple days/Varios días ': 'Multiple days',
+            'Banner/Flyer/Poster/Letrero/folleto': 'Flyer',
+            'Friend/ Amigos': 'Friend',
+          },
+          consentValues: ['Yes/Si'],
+        },
+      },
+    },
+  };
+}
