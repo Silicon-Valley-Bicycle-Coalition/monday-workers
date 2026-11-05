@@ -616,11 +616,14 @@ ticket as the sink, and don't close the production item.
   `capacityAlertPct` (update posted to `custodian.alertItemId`). First live run immediately
   flagged Activities v2 at 90% — a true positive.
 * **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
-  fiscal boundary (closes the staleness gap in Not-yet-done).
+  fiscal boundary (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so
+  the consumer never coalesces them away, even when the owner's representative gift has an old open
+  pending row.
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
   comparison — values written before issue #27 carry float noise; since then every money column
   is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
-  pass 2026-08-31: 6,886 owners, zero mismatches.
+  pass 2026-08-31: 6,886 owners, zero mismatches. It reads every configured board's columns, since
+  `owner_board_id` stays stale after an owner moves boards until their next recompute.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
   verification" above).
@@ -877,6 +880,10 @@ owner slice — they only spend Monday subrequests in an invocation whose owner 
 empty, to stay under the Workers Free plan's 50-subrequest cap. Each run's `detail` report
 carries `affiliationRemaining` and `personRemaining` to show progress; how many nights a full
 cycle takes depends on the board sizes and is visible in `custodian_runs`, not a fixed number here.
+An empty column against a $0 ledger total is not a mismatch, since most zero-total rows have never
+been written. Leg 6 reads every configured board's `Organizational Giving` column rather than the
+one `person_board_id` names, because that id stays stale after a person moves boards until the
+affiliation next recomputes. Leg 5 runs once per pass, keeping its cursor until leg 6 finishes.
 Now that the account is on Workers Paid (confirmed 2026-09-29), the per-run slice constants
 (`RECONCILE_AFFILIATIONS_PER_RUN` and `RECONCILE_PERSONS_PER_RUN` in `src/custodian/custodian.ts`)
 can grow to complete cycles faster — not yet done.
