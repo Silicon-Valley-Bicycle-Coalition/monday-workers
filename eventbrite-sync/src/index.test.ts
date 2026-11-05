@@ -89,6 +89,15 @@ describe('scheduled (daily missed-order check)', () => {
     expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
   });
 
+  it('skips the pledge count check under hold', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const counts = vi.fn().mockResolvedValue([]);
+    const { ctx, waited } = context();
+    await runScheduled(checkController, flags(async () => 'hold'), ctx, quietCheck(), idleSweep(), counts);
+    await Promise.all(waited);
+    expect(counts).not.toHaveBeenCalled();
+  });
+
   it('runs the ended-event sweep every hour', async () => {
     const sweep = idleSweep();
     const { ctx, waited } = context();
@@ -210,7 +219,7 @@ describe('scheduled (daily missed-order check)', () => {
       expect(waited).toHaveLength(0);
       expect(check).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the missed-order check`);
+      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the daily checks`);
     });
   });
 });

@@ -62,6 +62,15 @@ describe('D1AttendeeStore', () => {
     expect(await store.listByEvent('none')).toEqual([]);
   });
 
+  it('counts by event', async () => {
+    const store = new D1AttendeeStore(env.DB);
+    await store.recordDelivery({ attendeeId: 'c-1', eventId: 'E9', action: 'attendee.updated', receivedAt: T0 });
+    await store.recordDelivery({ attendeeId: 'c-2', eventId: 'E9', action: 'attendee.updated', receivedAt: T0 });
+    await store.recordDelivery({ attendeeId: 'c-3', eventId: 'E8', action: 'attendee.updated', receivedAt: T0 });
+    expect(await store.countByEvent('E9')).toBe(2);
+    expect(await store.countByEvent('none')).toBe(0);
+  });
+
   it('lists by received_at, then attendee_id', async () => {
     const store = new D1AttendeeStore(env.DB);
     const later = '2026-10-20T01:00:00.000Z';

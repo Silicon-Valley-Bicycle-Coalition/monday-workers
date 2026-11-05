@@ -102,6 +102,11 @@ export interface EventbriteOrderLister {
   listMyOrganizationIds(): Promise<string[]>;
 }
 
+// The daily pledge count check's read (src/pledgeCounts/check.ts), kept off EventbriteClient for the same reason.
+export interface EventbriteAttendeeCounter {
+  countAttendees(eventId: string): Promise<number>;
+}
+
 // Bounds one check's Eventbrite reads: 50 orders a page, so 20 pages is 1,000 orders changed in a
 // day, far past SVBC's busiest (tens a day at a Summit peak).
 const MAX_ORDER_PAGES = 20;
@@ -110,7 +115,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
-export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLister {
+export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLister, EventbriteAttendeeCounter {
   constructor(
     private baseUrl: string,
     private token: string,
@@ -159,6 +164,17 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
     const list = (body as { organizations?: unknown }).organizations;
     if (!Array.isArray(list)) throw new Error('eventbrite api: list my organizations returned no "organizations" array');
     return list.map((org) => String((org as { id?: unknown })?.id ?? '')).filter((id) => id !== '');
+  }
+
+  // pagination.object_count on one page of the list: the total, canceled attendees included.
+  async countAttendees(eventId: string): Promise<number> {
+    if (!/^\d+$/.test(eventId)) {
+      throw new Error(`eventbrite api: refusing to count attendees for non-numeric event id "${eventId}"`);
+    }
+    const body = await this.getJson(`count attendees for event ${eventId}`, `${this.baseUrl}/events/${eventId}/attendees/`);
+    const total = (body as { pagination?: { object_count?: unknown } }).pagination?.object_count;
+    if (typeof total !== 'number') throw new Error(`eventbrite api: count attendees for event ${eventId} returned no pagination.object_count`);
+    return total;
   }
 
   // One GET with the shared error handling: digits-only ids, 404 -> null, 401/403 name the token.
