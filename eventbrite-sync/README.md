@@ -349,8 +349,9 @@ Eventbrite: rename a class or attendee there, since a rename in Monday is overwr
 delivery.
 
 **Attendee Phone** comes from the event's order form: the built-in Cell Phone or Work Phone field, or
-else the first answered custom question whose wording mentions a phone (English or Spanish). An event
-whose form doesn't ask stays blank. It's a text column holding what the person typed, because Monday's
+else the first answered custom question whose wording mentions a phone (English or Spanish), skipping
+questions about someone else, such as "Emergency contact phone". An event whose form doesn't ask stays
+blank. It's a text column holding what the person typed, because Monday's
 phone column refuses a value it can't parse, and that would fail the whole registration write.
 Pledges don't get it: they go to their own board. `scripts/backfill-attendees.mjs` fills it for
 people who registered before this column, one event at a time.

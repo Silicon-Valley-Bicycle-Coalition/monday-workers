@@ -105,6 +105,19 @@ describe('mapAttendee', () => {
       expect(m.columnValues).not.toHaveProperty('att_phone_col');
     });
 
+    it("never writes someone else's number as the attendee's", () => {
+      for (const question of ['Emergency contact phone', 'Teléfono de contacto de emergencia', 'Parent or guardian phone number']) {
+        const m = mapAttendee(attendee({ answers: [answer(question, '4085550105')] }), facts, config, 'Registered');
+        expect(m.columnValues, question).not.toHaveProperty('att_phone_col');
+      }
+    });
+
+    it("still finds the attendee's own number past an emergency contact's", () => {
+      const answers = [answer('Emergency contact phone', '4085550105'), answer('Your phone number', '4085550106')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550106');
+    });
+
     it('falls back to the work phone', () => {
       const m = mapAttendee(attendee({ profile: { cell_phone: '', work_phone: '4085550104' } }), facts, config, 'Registered');
       expect(m.columnValues.att_phone_col).toBe('4085550104');
