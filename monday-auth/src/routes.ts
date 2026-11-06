@@ -136,7 +136,7 @@ export function createApp(deps: RouteDeps): Hono {
     if (env.PROBE_ENABLED !== 'true') return c.text('not found', 404);
     const name = c.req.param('app');
     if (!isAppKey(name)) return c.text('unknown app', 404);
-    return c.html(keyForm(`Probe the ${name} app`, `<p><label>Workspace id <input name="workspace" inputmode="numeric" required></label></p>`));
+    return c.html(keyForm(`Probe the ${name} app`, `<p><label>Workspace id <input name="workspace" inputmode="numeric" required></label></p><p><label>Board id to try reading (optional) <input name="board" inputmode="numeric"></label></p>`));
   });
 
   app.post('/oauth/probe/:app', async (c) => {
@@ -146,6 +146,8 @@ export function createApp(deps: RouteDeps): Hono {
     if (!isAppKey(name)) return c.text('unknown app', 404);
     const workspace = await formField(c, 'workspace');
     if (!/^\d+$/.test(workspace)) return c.text('workspace must be a numeric workspace id', 400);
+    const board = await formField(c, 'board');
+    if (board !== '' && !/^\d+$/.test(board)) return c.text('board must be a numeric board id', 400);
     if (!broker) return c.text('probe is not configured', 500);
     let token: string;
     try {
@@ -160,7 +162,7 @@ export function createApp(deps: RouteDeps): Hono {
         409
       );
     }
-    return c.json(await runProbe(name, token, workspace, fetchFn));
+    return c.json(await runProbe(name, token, workspace, fetchFn, board === '' ? undefined : board));
   });
 
   app.get('/oauth/callback', async (c) => {
