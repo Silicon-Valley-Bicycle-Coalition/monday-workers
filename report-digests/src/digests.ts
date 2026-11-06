@@ -14,9 +14,9 @@ export interface Digest { subject: string; intro: string; sections: Section[]; c
 // Board column titles. Titles, not ids: ids differ between the sandbox and production boards.
 const D = { donor: 'Donor', amount: 'Amount', date: 'Date', giftType: 'Gift Type', stream: 'Funding Stream', size: 'Gift Size', status: 'Status', anonymous: 'Anonymous Donor' };
 const P = { email: 'Personal Email', phone: 'Phone', status: 'Membership Status', tier: 'Membership Tier', until: 'Member Until' };
-// Read from each gift's Donor item. The Windfall columns exist only on the two People boards
-// (monday-workers!230) and are frozen at migration; an Organizations donor shows them blank.
-const WEALTH = ['Net Worth', 'Philanthropic Giver', 'Job Title', 'Windfall Company', 'Lifetime Giving', 'Donor Level'];
+// Read from each gift's Donor item: the donor's own giving history, which exists on the People
+// boards; an Organizations donor shows them blank. No purchased wealth-screening data goes in an email.
+const GIVING = ['Lifetime Giving', 'Donor Level'];
 
 // Rows past this go to the view instead of the email.
 export const MAX_ROWS = 150;
@@ -126,10 +126,10 @@ async function renewals(ctx: Context): Promise<Digest> {
   };
 }
 
-// "$400+ Donations + Windfall Last 60 Days" and "Wealth Screen on Donations-Last 60 Days", one
-// email: gifts from the last N days with each donor's Windfall screening alongside.
-async function recentGiftsWealth(ctx: Context): Promise<Digest> {
-  const cfg = ctx.config.digests['recent-gifts-wealth'];
+// "$400+ Donations + Windfall Last 60 Days": gifts from the last N days at or above the floor,
+// with each donor's giving alongside. The Windfall half of the old report is not carried over.
+async function recentGifts(ctx: Context): Promise<Digest> {
+  const cfg = ctx.config.digests['recent-gifts'];
   const board = await loadBoard(ctx, 'donations');
   const ids = columnIds(board, Object.values(D));
   const since = addDays(ctx.now.date, -cfg.days!);
@@ -140,30 +140,25 @@ async function recentGiftsWealth(ctx: Context): Promise<Digest> {
 
   const donorIds = [...new Set(items.flatMap((i) => i.linked.get(ids.get(D.donor)!) ?? []))];
   const donors = new Map((await ctx.monday.getItemsByTitle(donorIds)).map((d) => [d.id, d]));
-  const wealthOf = (item: Item) => {
+  const givingOf = (item: Item) => {
     const donor = donors.get((item.linked.get(ids.get(D.donor)!) ?? [])[0] ?? '');
-    return WEALTH.map((title) => {
+    return GIVING.map((title) => {
       const v = donor?.byTitle.get(title) ?? null;
-      return v !== null && (title === 'Net Worth' || title === 'Lifetime Giving') ? formatMoney(amountOf(v)) : (v ?? '');
+      return v !== null && title === 'Lifetime Giving' ? formatMoney(amountOf(v)) : (v ?? '');
     });
   };
-  const screened = (item: Item) => wealthOf(item)[0] !== '';
-  const row = (i: Item) => [...giftRow(i, ids).slice(0, 4), ...wealthOf(i)];
-  const headers = [...GIFT_HEADERS.slice(0, 4), ...WEALTH];
+  const row = (i: Item) => [...giftRow(i, ids).slice(0, 4), ...givingOf(i)];
+  const headers = [...GIFT_HEADERS.slice(0, 4), ...GIVING];
 
   const min = cfg.minAmount!;
   const big = items.filter((i) => amountOf(i.text.get(ids.get(D.amount)!)) >= min);
-  const smallScreened = items.filter((i) => amountOf(i.text.get(ids.get(D.amount)!)) < min && screened(i));
   return {
-    subject: `Gifts in the last ${cfg.days} days, with wealth screening: ${big.length} of ${formatMoney(min)}+`,
-    intro: `Received gifts dated ${since} through ${ctx.now.date}, largest first, with the donor’s Windfall screening from People. ` +
-      'Windfall data is frozen at migration; Organizations donors have none.',
+    subject: `Gifts of ${formatMoney(min)} and up in the last ${cfg.days} days: ${big.length}`,
+    intro: `Received gifts dated ${since} through ${ctx.now.date}, largest first, with the donor’s giving from People. Organizations donors have none.`,
     sections: [
       { heading: `${formatMoney(min)} and up`, table: big.length ? table(headers, big.map(row)) : null, empty: `No gifts of ${formatMoney(min)} or more.` },
-      { heading: `Under ${formatMoney(min)}, screened donors`, note: 'Donors with a Windfall Net Worth on file.',
-        table: smallScreened.length ? table(headers, smallScreened.map(row)) : null, empty: 'None.' },
     ],
-    count: big.length + smallScreened.length,
+    count: big.length,
     viewUrl: viewUrl(ctx, board, cfg.view),
   };
 }
@@ -218,7 +213,7 @@ async function lastWeek(ctx: Context): Promise<Digest> {
 export const BUILDERS: Record<DigestKey, (ctx: Context) => Promise<Digest>> = {
   'unmatched-gifts': unmatchedGifts,
   renewals,
-  'recent-gifts-wealth': recentGiftsWealth,
+  'recent-gifts': recentGifts,
   'fiscal-year-by-size': fiscalYearBySize,
   'last-week': lastWeek,
 };

@@ -16,9 +16,9 @@ const fakeEmail = () => ({ send: vi.fn().mockResolvedValue({ messageId: 'm1' }) 
 
 describe('dueDigests', () => {
   it('sends the three Monday-morning digests at 08:00 Pacific and the unmatched check at 13:00', () => {
-    expect(dueDigests(config, at('2026-10-26T15:00:00Z'))).toEqual(['recent-gifts-wealth', 'fiscal-year-by-size', 'last-week']);
+    expect(dueDigests(config, at('2026-10-26T15:00:00Z'))).toEqual(['recent-gifts', 'fiscal-year-by-size', 'last-week']);
     expect(dueDigests(config, at('2026-10-26T20:00:00Z'))).toEqual(['unmatched-gifts']);
-    expect(dueDigests(config, at('2026-11-02T16:00:00Z'))).toEqual(['recent-gifts-wealth', 'fiscal-year-by-size', 'last-week']); // after DST ends
+    expect(dueDigests(config, at('2026-11-02T16:00:00Z'))).toEqual(['recent-gifts', 'fiscal-year-by-size', 'last-week']); // after DST ends
     expect(dueDigests(config, at('2026-12-01T17:00:00Z'))).toEqual(['renewals']);
     expect(dueDigests(config, at('2026-10-27T15:00:00Z'))).toEqual([]);
   });
@@ -62,7 +62,7 @@ describe('runDigest', () => {
     await expect(runDigest({ monday, email: fakeEmail(), config }, 'renewals', at('2026-11-01T16:00:00Z'))).rejects.toThrow('no active recipients');
   });
 
-  // #70: the digests carry Windfall wealth-screening data, and production's EMAIL binding has no
+  // #70: the digests carry donor data (names, gift amounts, giving), and production's EMAIL binding has no
   // allowed_destination_addresses (that would put staff addresses in this public repo).
   it('never emails an address outside recipientDomains, and raises it as an error by id', async () => {
     const email = fakeEmail();

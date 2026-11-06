@@ -28,7 +28,7 @@ The views are created by `salesforce-import`'s `configure` step (`src/configure/
 |---|---|---|---|---|
 | `unmatched-gifts` | Funraise Opps with no Account | Donations › Needs a donor | Mondays 13:00, **only when not empty** | Felicia |
 | `renewals` | Renewals for Current and Next Month | People › Renewals this month and next | 1st and 15th, 09:00 | Felicia |
-| `recent-gifts-wealth` | $400+ Donations + Windfall Last 60 Days **and** Wealth Screen on Donations-Last 60 Days | Donations › Gifts, last 60 days | Mondays 08:00 | Clarrissa |
+| `recent-gifts` | $400+ Donations + Windfall Last 60 Days (the Windfall half is not carried over) | Donations › Gifts, last 60 days | Mondays 08:00 | Clarrissa |
 | `fiscal-year-by-size` | Current FY Opps (no contacts) | Donations › By gift size | Mondays 08:00 | Clarrissa, Deanna |
 | `last-week` | Donations Made in the Last Week | Donations › Gifts, last 7 days | Mondays 08:00 | Felicia |
 
@@ -36,11 +36,9 @@ The views are created by `salesforce-import`'s `configure` step (`src/configure/
   not only Funraise.
 * `renewals`: Member Until from the 1st of this month to the last day of next month, so
   memberships that already lapsed this month are still on it.
-* `recent-gifts-wealth`: Received gifts from the last 60 days, largest first. Each row carries the
-  donor's Windfall columns (Net Worth, Philanthropic Giver, Job Title, Windfall Company), plus
-  Lifetime Giving and Donor Level, read from the Donor item. One email replaces Clarrissa's two:
-  one section for $400 and up, one for smaller gifts from screened donors. Windfall data is on
-  the People boards only (monday-workers!230) and is frozen at migration.
+* `recent-gifts`: Received gifts of $400 and up from the last 60 days, largest first. Each row
+  carries the donor's Lifetime Giving and Donor Level, read from the Donor item. It carries no
+  Windfall wealth-screening data: that is purchased third-party data, and it stays off email.
 * `fiscal-year-by-size`: this fiscal year's Received gifts, counted and totalled by Gift Size.
 * `last-week`: every gift dated in the last 7 days, newest first, with its Status.
 
@@ -56,7 +54,7 @@ subscriptions are dropped, since nobody reads that mailbox.
 * **Recipients are Monday user ids** in `config/*.json`. Emails are looked up at send time, so no
   staff address sits in this public repo. A deactivated recipient is skipped with a warning (by
   id). An address outside `recipientDomains` never gets the digest, which carries
-  wealth-screening data. It is logged as an error, by id. A digest with no recipient left fails.
+  donor data. It is logged as an error, by id. A digest with no recipient left fails.
 * **Board views by name**: the link goes to the view `configure` made. If that view doesn't exist
   yet, the link goes to the board instead.
 * **Failures**: each digest runs on its own. A failure (a missing column, a Monday error, a send
@@ -111,7 +109,7 @@ picks one, and `src/config.ts` validates it.
   `{ "monthDays": [1, 15], "hour": 9 }`.
 * `digests.<key>.recipients`: Monday user ids. `view`: the board view name. `skipWhenEmpty`:
   skips the email when the digest is empty. `days`: the look-back window. `minAmount`: the
-  wealth digest's floor.
+  recent-gifts floor.
 
 ## Secrets
 

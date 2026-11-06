@@ -10,7 +10,7 @@ import { FakeMonday, item } from '../test/fakeMonday';
 // gated on `report-digests:writes`.
 const config = validateConfig(sandbox);
 const users = [{ id: '68160704', email: 'clarrissa@bikesiliconvalley.org', enabled: true }];
-// 08:00 Pacific on a Monday: recent-gifts-wealth, fiscal-year-by-size and last-week are due.
+// 08:00 Pacific on a Monday: recent-gifts, fiscal-year-by-size and last-week are due.
 const MONDAY_MORNING = new Date('2026-10-26T15:00:00Z');
 const gate = (mode: WriteMode, logLevel: 'normal' | 'debug' = 'normal'): BatchSkipContext => ({
   worker: 'report-digests', environment: 'sandbox', mode, logLevel, piiKeys: ['name', 'email', 'phone', 'address'],
@@ -47,7 +47,7 @@ describe('runScheduledDigests', () => {
     expect(email.send).not.toHaveBeenCalled();
     const lines = skipLines(log);
     expect(lines.map((l) => [l.sink, l.operation, l.mode, l.deliveryId])).toEqual([
-      ['Email', 'send', 'off', 'digest:recent-gifts-wealth:2026-10-26T15:00:00.000Z'],
+      ['Email', 'send', 'off', 'digest:recent-gifts:2026-10-26T15:00:00.000Z'],
       ['Email', 'send', 'off', 'digest:fiscal-year-by-size:2026-10-26T15:00:00.000Z'],
     ]);
     // Recipients' addresses never reach the log, and the bodies are logged by length only.
