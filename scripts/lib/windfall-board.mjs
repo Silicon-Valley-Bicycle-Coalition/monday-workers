@@ -413,3 +413,87 @@ export function formatReport(result) {
   lines.push(isClean(result) ? 'Result: clean' : 'Result: NOT clean');
   return lines.join('\n');
 }
+
+/** A snapshot line this tool can't read. The message is ours: a line number, never the line. */
+export class SnapshotError extends Error {}
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+function snapshotHeader(record, lineNo) {
+  const bad = (what) => new SnapshotError(`Line ${lineNo}: ${what}.`);
+  const boardId = record.board?.id;
+  if (!/^\d+$/.test(String(boardId ?? ''))) throw bad('the board header has no numeric board id');
+  const columns = record.schema?.columns;
+  if (!Array.isArray(columns) || columns.some((c) => !isPlainObject(c) || typeof c.title !== 'string' || typeof c.id !== 'string')) {
+    throw bad('the board header has no readable column list');
+  }
+  const byTitle = new Map();
+  const missingTitles = [];
+  for (const title of WINDFALL_TITLES) {
+    const matches = columns.filter((c) => bareTitle(c.title) === title);
+    if (matches.length > 1) throw bad(`"${title}" is on ${matches.length} columns`);
+    if (matches.length === 0) missingTitles.push(title);
+    else byTitle.set(title, matches[0]);
+  }
+  return { boardId: String(boardId), byTitle, missingTitles };
+}
+
+function countSnapshotItem(record, lineNo, header, perColumn) {
+  const bad = (what) => new SnapshotError(`Line ${lineNo}: ${what}.`);
+  const cells = record.item?.columnValues;
+  if (!Array.isArray(cells) || cells.some((c) => !isPlainObject(c))) throw bad('the item has no readable column values');
+  const byId = new Map(cells.map((c) => [c.id, c]));
+  for (const [title, column] of header.byTitle) {
+    const cell = byId.get(column.id);
+    if (!cell) throw bad(`the item leaves out "${title}"`);
+    if (cell.value !== null && typeof cell.value !== 'string') throw bad(`the item's "${title}" isn't a column value`);
+    const type = typeof cell.type === 'string' ? cell.type : column.type;
+    if (normalize(type, cell.value) !== '') perColumn[title] += 1;
+  }
+}
+
+/**
+ * Per-title non-empty counts for one monday-backup board file (`board-<id>.jsonl`, one JSON record
+ * per line: a `board` header, then `item` and `update` records; monday-backup/src/format.ts). Takes
+ * the lines as any iterable and keeps no value. The counts are unscrubbed, unlike reconcile's
+ * perColumn. Throws SnapshotError on a line it can't read; a title the board lacks is returned in
+ * `missingTitles`, with no count.
+ */
+export async function countSnapshot(lines) {
+  let lineNo = 0;
+  let header = null;
+  let items = 0;
+  const perColumn = {};
+  for await (const text of lines) {
+    lineNo += 1;
+    const p = parse(text);
+    if (!p.ok || !isPlainObject(p.v)) throw new SnapshotError(`Line ${lineNo}: not a JSON record.`);
+    const record = p.v;
+    if (record.type === 'board') {
+      if (header) throw new SnapshotError(`Line ${lineNo}: a second board header; pipe one board file at a time.`);
+      header = snapshotHeader(record, lineNo);
+      for (const title of header.byTitle.keys()) perColumn[title] = 0;
+    } else if (record.type === 'item' || record.type === 'update') {
+      if (!header) throw new SnapshotError(`Line ${lineNo}: a record before the board header.`);
+      if (record.type === 'item') {
+        countSnapshotItem(record, lineNo, header, perColumn);
+        items += 1;
+      } else if (!isPlainObject(record.update)) {
+        throw new SnapshotError(`Line ${lineNo}: the update has no body.`);
+      }
+    } else {
+      throw new SnapshotError(`Line ${lineNo}: not a board file record.`);
+    }
+  }
+  if (!header) throw new SnapshotError('No board header: the input was empty, or not a board file.');
+  return { boardId: header.boardId, items, perColumn, missingTitles: header.missingTitles };
+}
+
+/** Counts, the board id and column titles. */
+export function formatSnapshotCounts(result) {
+  const lines = [`Board ${result.boardId}: ${result.items} item(s).`, 'Non-empty values per column:'];
+  for (const t of WINDFALL_TITLES) {
+    if (t in result.perColumn) lines.push(`  ${t}: ${result.perColumn[t]}`);
+  }
+  return lines.join('\n');
+}

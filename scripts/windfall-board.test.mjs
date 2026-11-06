@@ -296,6 +296,7 @@ describe('parseArgs', () => {
     assert.throws(() => parseArgs(['copy', '--workspace', '1', '2', '--people', '3', '--historical', '4']), /--workspace/);
     assert.throws(() => parseArgs([...COPY, '--name', '']), /empty/);
     assert.throws(() => parseArgs([...COPY, '--people', '9']), /once/);
+    assert.throws(() => parseArgs([...COPY, '--name', '--apply']), /--name/);
   });
 
   it('refuses a board id used for two roles', () => {
@@ -371,6 +372,28 @@ describe('copy', () => {
     assert.equal(r.code, 1);
     assert.match(r.text, /300/);
     assert.deepEqual(mutations(w), []);
+  });
+
+  it('copy names --board for a live clash, and only --name for a deleted one', async () => {
+    const clash = (state) => ({
+      id: '300', name: 'Wealth Screening', workspace: WS, state, kind: 'private',
+      subscribers: [], teams: [], columns: [], items: [],
+    });
+    for (const state of ['active', 'archived']) {
+      const w = world();
+      w.boards.set('300', clash(state));
+      const r = await go(w, COPY);
+      assert.equal(r.code, 1);
+      assert.match(r.text, /--board 300/);
+      assert.match(r.text, /--name/);
+    }
+    const w = world();
+    w.boards.set('300', clash('deleted'));
+    const r = await go(w, COPY);
+    assert.equal(r.code, 1);
+    assert.doesNotMatch(r.text, /--board/);
+    assert.match(r.text, /--name/);
+    assert.match(r.text, /deleted/);
   });
 
   it('copy exits 1 if the created board does not read private', async () => {
@@ -646,6 +669,17 @@ describe('copy', () => {
     w.fail = (query) => (query.includes('items_page') ? new Error('SECRET read failure') : null);
     const r = await go(w, COPY);
     assert.equal(r.code, 2);
+    assert.match(r.text, /unexpected error/i);
+    assert.doesNotMatch(r.text, /Monday call failed/);
+    assertNoLeak(r.text);
+  });
+
+  it('a MondayApiError still reads as a failed Monday call', async () => {
+    const w = world();
+    w.fail = (query) => (query.includes('items_page') ? new MondayApiError('monday API: SECRET', { httpStatus: 500 }) : null);
+    const r = await go(w, COPY);
+    assert.equal(r.code, 2);
+    assert.match(r.text, /Monday call failed \(HTTP 500\)/);
     assertNoLeak(r.text);
   });
 
@@ -840,6 +874,16 @@ describe('verify', () => {
     assert.match(r.text, /zero people/i);
   });
 
+  it('fails if either People board reads zero, even when the other does not', async () => {
+    for (const id of [PEOPLE, HIST]) {
+      const w = await copied();
+      w.boards.get(id).items = [];
+      const r = await go(w, VERIFY);
+      assert.equal(r.code, 1, id);
+      assert.match(r.text, new RegExp(`Board ${id}.*zero people`, 'i'));
+    }
+  });
+
   it('fails on a missing or doubled title on any board, Person missing or not board_relation, a type difference', async () => {
     const cases = {
       'people missing': (w) => {
@@ -995,6 +1039,118 @@ describe('delete-people-columns', () => {
     assert.match(r.text, /2 of 22/);
     assertNoLeak(r.text);
     assert.equal(named(w, 'delete_column').length, 3);
+    // The third column, p_c2, is the one in doubt: it isn't called deleted or not deleted.
+    assert.match(r.text, new RegExp(`Board ${PEOPLE} column p_c2 \\(Net Worth Low\\) may or may not be gone`));
+    const notDeleted = /Not deleted: (.*?)\. /.exec(r.text)[1];
+    assert.doesNotMatch(notDeleted, /p_c2/);
+    assert.match(notDeleted, new RegExp(`board ${PEOPLE} column p_c3 \\(Net Worth High\\)`));
+    assert.match(notDeleted, new RegExp(`board ${HIST} column h_c10 \\(Windfall Profile\\)`));
+  });
+
+  it('a delete that plainly failed lists that column as not deleted, with board and title', async () => {
+    const w = await copied();
+    let n = 0;
+    w.fail = (query) =>
+      /delete_column/.test(query) && ++n === 2 ? new MondayApiError('monday API: SECRET', { httpStatus: 500 }) : null;
+    const r = await go(w, [...DELETE, '--apply']);
+    assert.equal(r.code, 2);
+    assert.match(r.text, /1 of 22/);
+    const notDeleted = /Not deleted: (.*?)\. /.exec(r.text)[1];
+    assert.match(notDeleted, new RegExp(`^board ${PEOPLE} column p_c1 \\(Net Worth\\)`));
+    assert.doesNotMatch(r.text, /may or may not/);
+    assertNoLeak(r.text);
+  });
+
+  it('a delete stopped by a renamed column lists what is left with board and title', async () => {
+    const w = await copied();
+    let n = 0;
+    w.before = (query, vars, world_) => {
+      if (/columns\(ids/.test(query) && ++n === 2) {
+        world_.boards.get(PEOPLE).columns.find((c) => c.id === vars.column[0]).title = 'Lifetime Giving';
+      }
+    };
+    const r = await go(w, [...DELETE, '--apply']);
+    assert.equal(r.code, 1);
+    assert.match(r.text, /1 of 22/);
+    assert.match(r.text, new RegExp(`Not deleted: board ${PEOPLE} column p_c1 \\(Net Worth\\)`));
+  });
+});
+
+describe('snapshot-counts', () => {
+  const SCRIPT = fileURLToPath(new URL('./windfall-board.mjs', import.meta.url));
+  const header = JSON.stringify({
+    type: 'board',
+    board: { id: PEOPLE, name: 'SECRET Name Board', workspaceId: WS },
+    schema: {
+      columns: WINDFALL_TITLES.map((t, i) => ({ id: `c${i}`, title: t, type: TYPES[t], settingsStr: '{}' })),
+      groups: [],
+    },
+  });
+  const itemLine = (id, raws) =>
+    JSON.stringify({
+      type: 'item',
+      item: {
+        id,
+        name: 'SECRET Name One',
+        columnValues: WINDFALL_TITLES.map((t, i) => ({ id: `c${i}`, type: TYPES[t], text: 'SECRET', value: raws[t] ?? null })),
+      },
+    });
+  const file = [header, itemLine('11', FULL), itemLine('12', {}), JSON.stringify({ type: 'update', update: { id: 'u', body: 'SECRET' } })];
+  // Run as an operator does: no token in the environment, the file on stdin.
+  const cli = (input) =>
+    spawnSync(process.execPath, [SCRIPT, 'snapshot-counts'], { input, encoding: 'utf8', env: { PATH: process.env.PATH } });
+
+  it('needs no flags, and takes none', () => {
+    assert.equal(parseArgs(['snapshot-counts']).command, 'snapshot-counts');
+    assert.throws(() => parseArgs(['snapshot-counts', '--apply']), /unknown/);
+    assert.throws(() => parseArgs(['snapshot-counts', '--board', '1']), /unknown/);
+  });
+
+  it('prints per-title counts from stdin with no token, no Monday call and no value', () => {
+    const r = cli(`${file.join('\n')}\n`);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`Board ${PEOPLE}: 2 item`));
+    assert.match(r.stdout, /Net Worth: 1/);
+    assert.match(r.stdout, /Windfall Profile: 1/);
+    assertNoLeak(r.stdout + r.stderr);
+  });
+
+  it('runs through run() without gql', async () => {
+    const lines = [];
+    const code = await run(parseArgs(['snapshot-counts']), { lines: file, out: (l) => lines.push(l), err: (l) => lines.push(l) });
+    assert.equal(code, 0);
+    assertNoLeak(lines.join('\n'));
+  });
+
+  it('exits 2 on a malformed or unknown line, naming the line and not quoting it', () => {
+    for (const bad of ['{"SECRET": oops', JSON.stringify({ type: 'SECRET' }), JSON.stringify({ type: 'block', block: { id: 'SECRET' } })]) {
+      const r = cli(`${header}\n${bad}\n`);
+      assert.equal(r.status, 2, bad);
+      assert.match(r.stderr, /Line 2/);
+      assertNoLeak(r.stdout + r.stderr);
+    }
+  });
+
+  it('exits 2 on empty input', () => {
+    const r = cli('');
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /board header/i);
+  });
+
+  it('exits 2 and stops early on a bad first line with more behind it', () => {
+    const r = cli(`{SECRET\n${file.join('\n')}\n`.repeat(2000));
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /Line 1/);
+    assertNoLeak(r.stdout + r.stderr);
+  });
+
+  it('exits 1 when the board lacks one of the 11 titles, still printing the rest', () => {
+    const lacking = JSON.parse(header);
+    lacking.schema.columns = lacking.schema.columns.filter((c) => c.title !== 'LinkedIn');
+    const r = cli(`${JSON.stringify(lacking)}\n`);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /Net Worth: 0/);
+    assert.match(r.stderr, /LinkedIn/);
   });
 });
 

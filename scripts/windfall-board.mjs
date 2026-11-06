@@ -15,6 +15,8 @@
 //   ... verify --people 201 --historical 202 --board 9001 --subscriber 1 --subscriber 2
 //   # runs all of verify, then lists (dry run) or deletes (--apply) the 11 columns on both boards
 //   ... delete-people-columns --people 201 --historical 202 --board 9001 --subscriber 1 --subscriber 2 [--apply]
+//   # per-title counts from one monday-backup board file on stdin; no token, no Monday call, no disk
+//   rclone cat "<remote>:<run folder>/board-201.jsonl" | node scripts/windfall-board.mjs snapshot-counts
 //
 // Values never reach the console or disk. Reports hold counts, Monday ids and column titles only,
 // not even item names, and a Monday error's message is never forwarded, since it can echo the write
@@ -30,19 +32,24 @@
 // The delete has one gate. deleteVerifiedColumns() is the only caller of delete_column, it takes
 // only what verifyAll() returned in this process, and it re-reads each column's title just before
 // deleting that column id. After a partial delete, verify fails by design on the missing titles,
-// so the rest is finished by hand in Monday.
+// so the rest is finished by hand in Monday. snapshot-counts is separate from all of it: it never
+// holds a token, so it can't reach delete_column.
 //
 // Exit 0: nothing wrong. Exit 1: a check failed. Exit 2: usage or API error, or a write whose
 // outcome is unknown. Dry runs send no mutation.
 
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
 import {
   FORBIDDEN_USERS,
+  SnapshotError,
   WINDFALL_TITLES,
   boardRowsFlagged,
+  countSnapshot,
   formatReport,
+  formatSnapshotCounts,
   isClean,
   peopleStillFlagged,
   planItems,
@@ -65,7 +72,8 @@ const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/windfall-board.mjs <comm
   inventory --workspace <id>...
   copy --workspace <id> --people <id> --historical <id> [--board <id>] [--name "${BOARD_NAME}"] [--apply]
   verify --people <id> --historical <id> --board <id> --subscriber <userId>...
-  delete-people-columns --people <id> --historical <id> --board <id> --subscriber <userId>... [--apply]`;
+  delete-people-columns --people <id> --historical <id> --board <id> --subscriber <userId>... [--apply]
+  snapshot-counts   (one monday-backup board file on stdin; needs no token)`;
 
 const BOARDS_TRIO = ['--people', '--historical', '--board'];
 const COMMANDS = {
@@ -73,6 +81,7 @@ const COMMANDS = {
   copy: { required: ['--workspace', '--people', '--historical'], optional: ['--board', '--name', '--apply'] },
   verify: { required: [...BOARDS_TRIO, '--subscriber'], optional: [] },
   'delete-people-columns': { required: [...BOARDS_TRIO, '--subscriber'], optional: ['--apply'] },
+  'snapshot-counts': { required: [], optional: [] },
 };
 const LIST_FLAGS = new Set(['--workspace', '--subscriber']);
 
@@ -98,6 +107,7 @@ export function parseArgs(argv) {
     if (argv[i + 1] === undefined) throw new Error(`${flag} needs a value`);
     if (flag === '--name') {
       if (argv[i + 1].trim() === '') throw new Error('--name must not be empty');
+      if (argv[i + 1].startsWith('--')) throw new Error(`--name needs a value, got the flag "${argv[i + 1]}"`);
       seen.set(flag, argv[++i]);
     } else if (LIST_FLAGS.has(flag)) {
       const values = seen.get(flag) ?? [];
@@ -134,11 +144,10 @@ class Stopped extends Error {}
 // Never a Monday message: it can echo the variables of the call that failed.
 function describeFailure(error) {
   if (error instanceof Stopped) return error.message;
+  if (!(error instanceof MondayApiError)) return 'Unexpected error; its message is withheld because it can echo a value.';
   const facts = [];
-  if (error instanceof MondayApiError) {
-    if (error.httpStatus !== undefined) facts.push(`HTTP ${error.httpStatus}`);
-    if (typeof error.code === 'string' && /^\w{1,64}$/.test(error.code)) facts.push(error.code);
-  }
+  if (error.httpStatus !== undefined) facts.push(`HTTP ${error.httpStatus}`);
+  if (typeof error.code === 'string' && /^\w{1,64}$/.test(error.code)) facts.push(error.code);
   return `Monday call failed${facts.length > 0 ? ` (${facts.join(', ')})` : ''}; its message is withheld because it can echo a value.`;
 }
 
@@ -286,13 +295,15 @@ async function readPeople(gql, source) {
 
 async function readAllPeople(gql, sources, out) {
   const people = [];
+  const emptyBoards = [];
   for (const source of sources) {
     const rows = await readPeople(gql, source);
     out(`Board ${source.boardId}: ${rows.length} People row(s) read.`);
+    if (rows.length === 0) emptyBoards.push(source.boardId);
     people.push(...rows);
   }
   out(ARCHIVED_NOTE);
-  return people;
+  return { people, emptyBoards };
 }
 
 const personIdsOf = (item, personColumnId) => {
@@ -332,7 +343,7 @@ async function verifyAll(args, { gql, out, err }) {
     failures.push(...columnFailures);
     sources = resolved.sources;
     if (columnFailures.length === 0) {
-      const people = await readAllPeople(gql, sources, out);
+      const { people, emptyBoards } = await readAllPeople(gql, sources, out);
       const items = await readBoardRows(gql, board.id, target);
       result = reconcile(people, items);
       out(formatReport(result));
@@ -340,7 +351,7 @@ async function verifyAll(args, { gql, out, err }) {
       const flagged = boardRowsFlagged(items);
       out(`Removed-flag check: ${flagged.length} board profile(s) name a removed flag.`);
       if (flagged.length > 0) failures.push(`Board ${board.id} profile(s) still name a removed flag: board item(s) ${flagged.join(', ')}.`);
-      if (people.length === 0) failures.push('Read zero people in total, so there is nothing to prove.');
+      for (const id of emptyBoards) failures.push(`Board ${id} read zero people, so there is nothing to prove.`);
       if (items.length === 0) failures.push(`Board ${board.id} has zero items, so there is nothing to prove.`);
     }
   }
@@ -527,11 +538,12 @@ async function cmdCopy(args, { gql, out, err }) {
   } else {
     const clash = (await listWorkspaceBoards(gql, workspace, 'id name state')).find((b) => b.name === args.name);
     if (clash) {
-      throw new CheckFailed(`Workspace ${workspace} already has a board of that name: ${clash.id} (${clash.state}). Pass --board ${clash.id}, or --name for a new one.`);
+      const options = clash.state === 'deleted' ? 'Pass --name for a new one.' : `Pass --board ${clash.id}, or --name for a new one.`;
+      throw new CheckFailed(`Workspace ${workspace} already has a board of that name: ${clash.id} (${clash.state}). ${options}`);
     }
   }
 
-  const people = await readAllPeople(gql, resolved.sources, out);
+  const { people } = await readAllPeople(gql, resolved.sources, out);
   const flagged = peopleStillFlagged(people);
   out(`Removed-flag check: ${flagged.length} People profile(s) still name a removed flag after the scrub.`);
   if (flagged.length > 0) {
@@ -614,10 +626,21 @@ async function deleteVerifiedColumns(gql, verified, { out, err }) {
   if (verified.ok !== true) throw new CheckFailed('Refusing to delete: verify did not pass.');
   const targets = planned(verified);
   let deleted = 0;
-  const left = () => targets.slice(deleted).map((t) => t.column.id).join(', ');
-  const partial = () =>
-    `Deleted ${deleted} of ${targets.length} columns. Not deleted: ${left()}. Verify now fails by design on the missing titles, so finish in Monday by hand.`;
-  for (const { boardId, title, column } of targets) {
+  const named = (t) => `board ${t.boardId} column ${t.column.id} (${t.title})`;
+  // `inDoubt` is the one delete whose outcome is unknown: it's neither deleted nor left.
+  const partial = (inDoubt = 0) => {
+    const left = targets.slice(deleted + inDoubt).map(named);
+    const lines = [`Deleted ${deleted} of ${targets.length} columns.`];
+    if (left.length > 0) lines.push(`Not deleted: ${left.join(', ')}.`);
+    lines.push(
+      deleted + inDoubt === 0
+        ? 'Nothing was deleted, so this can be re-run.'
+        : 'Verify now fails by design on the missing titles, so finish in Monday by hand.',
+    );
+    return lines.join(' ');
+  };
+  for (const target of targets) {
+    const { boardId, title, column } = target;
     try {
       const data = await gql(
         'query ($ids: [ID!], $column: [String!]) { boards(ids: $ids) { columns(ids: $column) { id title } } }',
@@ -635,11 +658,11 @@ async function deleteVerifiedColumns(gql, verified, { out, err }) {
         { idempotent: false },
       );
     } catch (error) {
-      const what =
-        error instanceof AmbiguousWriteError
-          ? `Deleting board ${boardId} column ${column.id} may or may not have committed.`
-          : `Stopped at board ${boardId} column ${column.id}. ${describeFailure(error)}`;
-      err(`${what} ${partial()}`);
+      if (error instanceof AmbiguousWriteError) {
+        err(`Board ${boardId} column ${column.id} (${title}) may or may not be gone; check it in Monday. ${partial(1)}`);
+      } else {
+        err(`Stopped at ${named(target)}. ${describeFailure(error)} ${partial()}`);
+      }
       return 2;
     }
     deleted += 1;
@@ -694,16 +717,32 @@ async function cmdInventory(args, { gql, out }) {
   return 0;
 }
 
+async function cmdSnapshotCounts(args, { lines, out }) {
+  let result;
+  try {
+    result = await countSnapshot(lines);
+  } catch (error) {
+    if (error instanceof SnapshotError) throw new Stopped(error.message);
+    throw error;
+  }
+  out(formatSnapshotCounts(result));
+  if (result.missingTitles.length > 0) {
+    throw new CheckFailed(`Board ${result.boardId} has no column for: ${result.missingTitles.join(', ')}.`);
+  }
+  return 0;
+}
+
 const HANDLERS = {
   inventory: cmdInventory,
   copy: cmdCopy,
   verify: cmdVerify,
   'delete-people-columns': cmdDelete,
+  'snapshot-counts': cmdSnapshotCounts,
 };
 
-export async function run(args, { gql, out, err = out }) {
+export async function run(args, { gql, lines, out, err = out }) {
   try {
-    return await HANDLERS[args.command](args, { gql, out, err });
+    return await HANDLERS[args.command](args, { gql, lines, out, err });
   } catch (error) {
     if (error instanceof CheckFailed) {
       err(`FAIL: ${error.message}`);
@@ -719,17 +758,21 @@ async function main() {
   const token = process.env.MONDAY_API_TOKEN;
   try {
     args = parseArgs(process.argv.slice(2));
-    if (!token) throw new Error('MONDAY_API_TOKEN is not set');
+    if (args.command === 'snapshot-counts') {
+      if (process.stdin.isTTY) throw new Error('snapshot-counts reads a board file on stdin; pipe one in');
+    } else if (!token) {
+      throw new Error('MONDAY_API_TOKEN is not set');
+    }
   } catch (error) {
     console.error(`${error.message}\n${USAGE}`);
     return 2;
   }
+  const sinks = { out: (line) => console.log(line), err: (line) => console.error(line) };
+  if (args.command === 'snapshot-counts') {
+    return run(args, { ...sinks, lines: createInterface({ input: process.stdin, crlfDelay: Infinity }) });
+  }
   const client = new MondayGraphQL(API_URL, token);
-  return run(args, {
-    gql: (query, variables, options) => client.request(query, variables, options),
-    out: (line) => console.log(line),
-    err: (line) => console.error(line),
-  });
+  return run(args, { ...sinks, gql: (query, variables, options) => client.request(query, variables, options) });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

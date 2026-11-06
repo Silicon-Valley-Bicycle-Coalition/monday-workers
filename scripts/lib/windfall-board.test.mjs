@@ -14,6 +14,8 @@ import {
   mentionsRemovedFlag,
   peopleStillFlagged,
   boardRowsFlagged,
+  countSnapshot,
+  SnapshotError,
 } from './windfall-board.mjs';
 
 describe('constants', () => {
@@ -495,5 +497,159 @@ describe('formatReport', () => {
     assert.match(out, /Job Title: 2 \/ 2/);
     assert.match(out, /Result: clean/);
     assert.match(formatReport(reconcile(people, [])), /Missing: 2[\s\S]*NOT clean/);
+  });
+});
+
+describe('countSnapshot', () => {
+  // A board file as monday-backup writes it (src/backup.ts, src/format.ts). Fake values only.
+  const TYPES = {
+    'Windfall ID': 'text',
+    'Net Worth': 'numbers',
+    'Net Worth Low': 'numbers',
+    'Net Worth High': 'numbers',
+    'Net Worth Date': 'date',
+    'Philanthropic Giver': 'checkbox',
+    'Job Title': 'text',
+    'Windfall Company': 'text',
+    LinkedIn: 'link',
+    'Windfall Priority': 'numbers',
+    'Windfall Profile': 'long_text',
+  };
+  const colId = (t) => `c${WINDFALL_TITLES.indexOf(t)}`;
+  const header = (titlePrefix = '', titles = WINDFALL_TITLES) =>
+    J({
+      type: 'board',
+      board: { id: '201', name: 'SECRET board name', workspaceId: '1' },
+      schema: {
+        columns: [
+          { id: 'name', title: 'Name', type: 'name', settingsStr: '{}' },
+          ...titles.map((t) => ({ id: colId(t), title: `${titlePrefix}${t}`, type: TYPES[t], settingsStr: '{}' })),
+        ],
+        groups: [],
+      },
+    });
+  const itemLine = (id, values = {}) =>
+    J({
+      type: 'item',
+      item: {
+        id,
+        name: 'SECRET item name',
+        columnValues: [
+          { id: 'name', type: 'name', text: 'SECRET item name', value: null },
+          ...WINDFALL_TITLES.map((t) => ({
+            id: colId(t),
+            type: TYPES[t],
+            text: values[t] ? 'SECRET text' : null,
+            value: values[t] ?? null,
+          })),
+        ],
+      },
+    });
+  const updateLine = J({ type: 'update', update: { id: 'u1', body: 'SECRET update' } });
+  const FULL_ROW = {
+    'Windfall ID': J('SECRET-wf'),
+    'Net Worth': J('990001'),
+    'Net Worth Date': J({ date: '1999-09-09', changed_at: 'a' }),
+    'Philanthropic Giver': J({ checked: 'true', changed_at: 'a' }),
+    LinkedIn: J({ url: 'https://example.test/SECRET', text: 'SECRET' }),
+    'Windfall Profile': J({ text: 'Flags: Recently Divorced', changed_at: 'a' }),
+  };
+  const EMPTY_FORMS = {
+    'Job Title': J(''),
+    'Net Worth': J(''),
+    'Philanthropic Giver': J({ checked: false, changed_at: 'a' }),
+    LinkedIn: J({ url: '', text: '' }),
+    'Windfall Profile': J({ text: '' }),
+  };
+
+  const fails = async (lines, pattern) => {
+    await assert.rejects(countSnapshot(lines), (e) => {
+      assert.ok(e instanceof SnapshotError, String(e));
+      assert.match(e.message, pattern);
+      assert.ok(!e.message.includes('SECRET'), e.message);
+      return true;
+    });
+  };
+
+  it('counts non-empty values per title, through normalize, and ignores updates', async () => {
+    const r = await countSnapshot([header(), itemLine('11', FULL_ROW), itemLine('12', EMPTY_FORMS), itemLine('13'), updateLine]);
+    assert.equal(r.boardId, '201');
+    assert.equal(r.items, 3);
+    assert.deepEqual(r.missingTitles, []);
+    assert.equal(r.perColumn['Windfall ID'], 1);
+    assert.equal(r.perColumn['Net Worth'], 1);
+    assert.equal(r.perColumn['Net Worth Low'], 0);
+    assert.equal(r.perColumn['Philanthropic Giver'], 1);
+    assert.equal(r.perColumn.LinkedIn, 1);
+    assert.equal(r.perColumn['Job Title'], 0);
+  });
+
+  it('counts a profile holding only removed flags: the snapshot is not scrubbed', async () => {
+    const r = await countSnapshot([header(), itemLine('11', { 'Windfall Profile': J({ text: 'Flags: Recently Divorced' }) })]);
+    assert.equal(r.perColumn['Windfall Profile'], 1);
+  });
+
+  it('finds marked titles through bareTitle', async () => {
+    const r = await countSnapshot([header('📜 '), itemLine('11', FULL_ROW)]);
+    assert.deepEqual(r.missingTitles, []);
+    assert.equal(r.perColumn['Net Worth'], 1);
+  });
+
+  it('reports a title the board lacks, leaving no count for it', async () => {
+    const titles = WINDFALL_TITLES.filter((t) => t !== 'LinkedIn');
+    const r = await countSnapshot([header('', titles)]);
+    assert.deepEqual(r.missingTitles, ['LinkedIn']);
+    assert.equal('LinkedIn' in r.perColumn, false);
+  });
+
+  it('fails on a title held by two columns', async () => {
+    const doubled = JSON.parse(header());
+    doubled.schema.columns.push({ id: 'dup', title: '📜 Net Worth', type: 'numbers', settingsStr: '{}' });
+    await fails([J(doubled)], /Net Worth/);
+  });
+
+  it('fails on a malformed or unknown line with its line number and never its text', async () => {
+    await fails([header(), '{"SECRET": not json'], /line 2/i);
+    await fails([header(), '"SECRET"'], /line 2/i);
+    await fails([header(), 'null'], /line 2/i);
+    await fails([header(), '[1]'], /line 2/i);
+    await fails([header(), J({ type: 'SECRET' })], /line 2/i);
+    await fails([header(), J({ type: 'block', block: { id: 'SECRET' } })], /line 2/i);
+    await fails([header(), itemLine('11', FULL_ROW), J({ type: 'toString' })], /line 3/i);
+    await fails([header(), J({ type: 'item' })], /line 2/i);
+    await fails([header(), J({ type: 'item', item: { id: '1', columnValues: 'SECRET' } })], /line 2/i);
+    await fails([header(), J({ type: 'update' })], /line 2/i);
+    await fails([J({ type: 'board', board: { id: 'SECRET' }, schema: { columns: [] } })], /line 1/i);
+    await fails([J({ type: 'board', board: { id: '1' }, schema: { columns: 'SECRET' } })], /line 1/i);
+  });
+
+  it('fails on a doc file, an item before the header, a second header, and an empty input', async () => {
+    await fails([J({ type: 'doc', doc: { id: 'd1', name: 'SECRET' } })], /line 1/i);
+    await fails([itemLine('11', FULL_ROW), header()], /line 1/i);
+    await fails([header(), header()], /line 2/i);
+    await fails([], /no board/i);
+  });
+
+  it('fails on an item that leaves out a Windfall cell, or holds an unexpected value type', async () => {
+    const partial = JSON.parse(itemLine('11', FULL_ROW));
+    partial.item.columnValues = partial.item.columnValues.slice(0, 3);
+    await fails([header(), J(partial)], /line 2/i);
+    const odd = JSON.parse(itemLine('11', FULL_ROW));
+    odd.item.columnValues[1].value = { SECRET: true };
+    await fails([header(), J(odd)], /line 2/i);
+  });
+
+  it('counts a malformed cell value as non-empty, so it can never hide a value', async () => {
+    const r = await countSnapshot([header(), itemLine('11', { 'Job Title': '{SECRET broken' })]);
+    assert.equal(r.perColumn['Job Title'], 1);
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+  });
+
+  it('takes an async iterable, as readline gives it', async () => {
+    async function* lines() {
+      yield header();
+      yield itemLine('11', FULL_ROW);
+    }
+    assert.equal((await countSnapshot(lines())).items, 1);
   });
 });
