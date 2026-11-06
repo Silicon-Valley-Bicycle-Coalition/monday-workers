@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError } from '../monday-backup/src/monday/graphql.ts';
 import { parseArgs, run, MAX_ITEM_PAGES } from './windfall-board.mjs';
 import { WINDFALL_TITLES, FORBIDDEN_USERS } from './lib/windfall-board.mjs';
@@ -255,6 +257,8 @@ async function copied(options) {
 
 const assertNoLeak = (text) => {
   for (const leak of LEAKS) assert.ok(!text.includes(leak), `output leaked ${leak}`);
+  assert.ok(!/SECRET Name/.test(text), 'output leaked an item name');
+  assert.ok(!/divorced|death in family/i.test(text), 'output named a removed flag');
 };
 
 describe('parseArgs', () => {
@@ -327,6 +331,27 @@ describe('copy', () => {
     assert.deepEqual(mutations(w), []);
     assert.match(r.text, /3 item/);
     assert.match(r.text, /[Aa]rchived/);
+  });
+
+  it('copy stops, dry run or not, on a profile the scrubber left a removed flag in', async () => {
+    for (const text of ['Flags: Boat Owner; Recently Divorced', 'Flags - Recent Death in Family', 'Note: recently  divorced']) {
+      const w = world();
+      const col = w.boards.get(PEOPLE).columns.find((c) => c.title === 'Windfall Profile');
+      w.boards.get(PEOPLE).items[0].cells[col.id] = { value: JSON.stringify({ text }) };
+      for (const argv of [COPY, [...COPY, '--apply']]) {
+        const r = await go(w, argv);
+        assert.equal(r.code, 1, r.text);
+        assert.match(r.text, /removed flag.*\b11\b/);
+        assertNoLeak(r.text);
+      }
+      assert.deepEqual(mutations(w), []);
+    }
+  });
+
+  it('copy prints a zero removed-flag count, dry run and apply', async () => {
+    const w = world();
+    assert.match((await go(w, COPY)).text, /Removed-flag check: 0 People profile/);
+    assert.match((await go(w, [...COPY, '--apply'])).text, /Removed-flag check: 0 People profile/);
   });
 
   it('copy --board without --apply sends no mutation', async () => {
@@ -738,6 +763,71 @@ describe('verify', () => {
       assert.equal(r.code, 1, label);
       assertNoLeak(r.text);
     }
+  });
+
+  it('says where each problem is, in ids and titles', async () => {
+    const differs = await copied();
+    const board = differs.boards.get(NEW_BOARD);
+    const job = board.columns.find((c) => c.title === 'Job Title');
+    const row = board.items.find((i) => i.name === 'SECRET Name One');
+    row.cells[job.id] = { value: JSON.stringify('SECRET-edited') };
+    const a = await go(differs, VERIFY);
+    assert.equal(a.code, 1);
+    assert.match(a.text, new RegExp(`Mismatch: People item 11, board item ${row.id}: Job Title`));
+    assertNoLeak(a.text);
+
+    const gone = await copied();
+    const goneBoard = gone.boards.get(NEW_BOARD);
+    const person = goneBoard.columns.find((c) => c.title === 'Person');
+    goneBoard.items = goneBoard.items.filter((i) => i.cells[person.id].linked[0] !== 21);
+    goneBoard.items.push({ ...goneBoard.items[0], id: 'dup-row' }, { id: 'loose-row', name: 'SECRET Name Loose', cells: {} });
+    const b = await go(gone, VERIFY);
+    assert.equal(b.code, 1);
+    assert.match(b.text, /Missing: People item 21/);
+    assert.match(b.text, new RegExp(`Duplicate: People item 11 on board items ${goneBoard.items[0].id}, dup-row`));
+    assert.match(b.text, /Extra: board item loose-row/);
+    assertNoLeak(b.text);
+  });
+
+  it('after a mismatch, deleting the listed row and re-running copy comes back clean', async () => {
+    const w = await copied();
+    const board = w.boards.get(NEW_BOARD);
+    const job = board.columns.find((c) => c.title === 'Job Title');
+    const row = board.items.find((i) => i.name === 'SECRET Name Two');
+    row.cells[job.id] = { value: JSON.stringify('SECRET-edited') };
+    assert.equal((await go(w, VERIFY)).code, 1);
+    board.items = board.items.filter((i) => i.id !== row.id);
+    const again = await go(w, [...COPY, '--board', NEW_BOARD, '--apply']);
+    assert.equal(again.code, 0, again.text);
+    assert.equal((await go(w, VERIFY)).code, 0);
+  });
+
+  it('fails on a removed flag on the board that matches People, naming the board item', async () => {
+    const w = await copied();
+    const peopleBoard = w.boards.get(PEOPLE);
+    const board = w.boards.get(NEW_BOARD);
+    const peopleProfile = peopleBoard.columns.find((c) => c.title === 'Windfall Profile');
+    const boardProfile = board.columns.find((c) => c.title === 'Windfall Profile');
+    const row = board.items.find((i) => i.name === 'SECRET Name One');
+    // The scrubber leaves this form alone, so reconcile sees both sides equal.
+    const missed = JSON.stringify({ text: 'SECRET\nFlags: Boat Owner; Recently Divorced' });
+    peopleBoard.items[0].cells[peopleProfile.id] = { value: missed };
+    row.cells[boardProfile.id] = { value: missed };
+    const r = await go(w, VERIFY);
+    assert.equal(r.code, 1, r.text);
+    assert.match(r.text, /Result: clean/);
+    assert.match(r.text, new RegExp(`removed flag.*${row.id}`));
+    assertNoLeak(r.text);
+    const d = await go(w, [...DELETE, '--apply']);
+    assert.equal(d.code, 1);
+    assert.deepEqual(named(w, 'delete_column'), []);
+  });
+
+  it('reports a zero removed-flag count when there are none', async () => {
+    const w = await copied();
+    const r = await go(w, VERIFY);
+    assert.equal(r.code, 0, r.text);
+    assert.match(r.text, /Removed-flag check: 0 board profile/);
   });
 
   it('refuses a vacuous check: zero people read in total, or an empty board', async () => {

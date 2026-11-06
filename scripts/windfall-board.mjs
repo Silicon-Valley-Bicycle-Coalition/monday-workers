@@ -16,9 +16,13 @@
 //   # runs all of verify, then lists (dry run) or deletes (--apply) the 11 columns on both boards
 //   ... delete-people-columns --people 201 --historical 202 --board 9001 --subscriber 1 --subscriber 2 [--apply]
 //
-// Values never reach the console or disk. Reports hold counts and Monday ids only, not even item
-// names, and a Monday error's message is never forwarded, since it can echo the write it refused.
-// Only its status and code are printed.
+// Values never reach the console or disk. Reports hold counts, Monday ids and column titles only,
+// not even item names, and a Monday error's message is never forwarded, since it can echo the write
+// it refused. Only its status and code are printed.
+//
+// reconcile() compares People to the board through the scrubber, so a flag the scrubber misses would
+// read clean. copy (People, after the scrub) and verify (the board) also look for the removed flags'
+// words anywhere in a profile, and fail on any hit. There is no override.
 //
 // Archived items are not read: items_page skips them and they report empty board_relation values
 // (donation-rollups/scripts/bootstrap-links-from-artifacts.mjs). Every command that compares says so.
@@ -34,7 +38,17 @@
 import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { FORBIDDEN_USERS, WINDFALL_TITLES, formatReport, isClean, planItems, reconcile, valueToWrite } from './lib/windfall-board.mjs';
+import {
+  FORBIDDEN_USERS,
+  WINDFALL_TITLES,
+  boardRowsFlagged,
+  formatReport,
+  isClean,
+  peopleStillFlagged,
+  planItems,
+  reconcile,
+  valueToWrite,
+} from './lib/windfall-board.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 const ITEM_PAGE_SIZE = 500;
@@ -290,6 +304,7 @@ async function readBoardRows(gql, boardId, target) {
   const titleById = titleByIdOf(target.byTitle);
   const items = await readItems(gql, boardId, [...titleById.keys(), target.person.id]);
   return items.map((item) => ({
+    itemId: String(item.id),
     personIds: personIdsOf(item, target.person.id),
     values: cellsOf(item, titleById),
   }));
@@ -322,6 +337,9 @@ async function verifyAll(args, { gql, out, err }) {
       result = reconcile(people, items);
       out(formatReport(result));
       if (!isClean(result)) failures.push('The reconciliation is not clean.');
+      const flagged = boardRowsFlagged(items);
+      out(`Removed-flag check: ${flagged.length} board profile(s) name a removed flag.`);
+      if (flagged.length > 0) failures.push(`Board ${board.id} profile(s) still name a removed flag: board item(s) ${flagged.join(', ')}.`);
       if (people.length === 0) failures.push('Read zero people in total, so there is nothing to prove.');
       if (items.length === 0) failures.push(`Board ${board.id} has zero items, so there is nothing to prove.`);
     }
@@ -514,6 +532,11 @@ async function cmdCopy(args, { gql, out, err }) {
   }
 
   const people = await readAllPeople(gql, resolved.sources, out);
+  const flagged = peopleStillFlagged(people);
+  out(`Removed-flag check: ${flagged.length} People profile(s) still name a removed flag after the scrub.`);
+  if (flagged.length > 0) {
+    throw new CheckFailed(`A removed flag survived the scrub on People item(s): ${flagged.join(', ')}. Nothing was written.`);
+  }
 
   let target = board ? resolveTarget(board, resolved.types) : null;
   if (target && target.failures.length > 0) throw new CheckFailed(target.failures.join('\n'));

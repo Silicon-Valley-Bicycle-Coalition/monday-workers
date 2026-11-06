@@ -3,8 +3,8 @@
 //
 // Pure and dependency-free: the operator script does the Monday calls. A false "clean" from
 // reconcile() loses data, so every doubtful case here fails toward "mismatch". Windfall values
-// never leave this module except as write payloads: results and reports hold counts and Monday
-// ids only, and errors never quote a value.
+// never leave this module except as write payloads: results and reports hold counts, Monday ids
+// and column titles only, and errors never quote a value.
 
 import { bareTitle } from './column-titles.mjs';
 
@@ -27,6 +27,10 @@ export const FORBIDDEN_USERS = ['120827741', '117112617'];
 
 const PROFILE_TITLE = 'Windfall Profile';
 const REMOVED_FLAGS = ['recently divorced', 'recent death in family'];
+
+// The check on the scrubber, so deliberately not built from it: these words anywhere in a profile,
+// in any line or separator. A flag scrubProfile() misses still fails here.
+const REMOVED_FLAG_TEXT = /recently\s+divorced|recent\s+death\s+in\s+family/i;
 
 const flagKey = (s) => s.trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -256,6 +260,38 @@ function boardNorm(title, values) {
 
 const hasAnyValue = (person) => WINDFALL_TITLES.some((t) => peopleNorm(t, person.values) !== '');
 
+const stringsIn = (v) => {
+  if (typeof v === 'string') return [v];
+  if (v && typeof v === 'object') return Object.values(v).flatMap(stringsIn);
+  return [];
+};
+
+/** True if a column value names a removed flag anywhere: as raw text, or in any string it parses to. */
+export function mentionsRemovedFlag(raw) {
+  if (isEmptyRaw(raw)) return false;
+  const text = String(raw);
+  if (REMOVED_FLAG_TEXT.test(text)) return true;
+  const p = parse(text);
+  return p.ok && stringsIn(p.v).some((s) => REMOVED_FLAG_TEXT.test(s));
+}
+
+/** People item ids whose profile still names a removed flag after the scrub: what copy would write. */
+export function peopleStillFlagged(people) {
+  const ids = new Set();
+  for (const p of people) {
+    const cell = cellFor(p.values, PROFILE_TITLE);
+    if (mentionsRemovedFlag(copiedRaw(PROFILE_TITLE, cell))) ids.add(p.itemId);
+  }
+  return [...ids];
+}
+
+/** Board item ids whose profile names a removed flag, as it stands on the board. */
+export function boardRowsFlagged(rows) {
+  return rows
+    .filter((row) => mentionsRemovedFlag(cellFor(row.values, PROFILE_TITLE)?.value))
+    .map((row) => String(row.itemId));
+}
+
 /** People still to copy: those with a Windfall value (after the profile scrub) and no item yet. */
 export function planItems(people, existingPersonIds) {
   const seen = new Set();
@@ -270,11 +306,14 @@ export function planItems(people, existingPersonIds) {
 }
 
 /**
- * Compare People rows to the private board's rows, by counts only.
- *  - missing: people with a Windfall value and no board item
- *  - duplicates: people linked from more than one board item (each personId link counts)
- *  - extra: board items linked to nobody on People, or to any id not in `people`
- *  - mismatches: people with a board item whose value differs in any of the 11 columns
+ * Compare People rows to the private board's rows. Counts, plus `details` saying where each
+ * problem is, in Monday ids and column titles only:
+ *  - missing: people with a Windfall value and no board item (People item ids)
+ *  - duplicates: people linked from more than one board item, each personId link counting (People
+ *    item id and board item ids)
+ *  - extra: board items linked to nobody on People, or to any id not in `people` (board item ids)
+ *  - mismatches: people with a board item whose value differs in any of the 11 columns (People item
+ *    id, the board items that differ, and the titles that differ)
  * The People profile is scrubbed before the comparison; the board's is not, so a flag still on
  * the board fails. A person with no value is not expected on the board; if they have an item,
  * it is compared like any other.
@@ -283,11 +322,11 @@ export function reconcile(people, boardItems) {
   const byId = new Map();
   for (const p of people) if (!byId.has(p.itemId)) byId.set(p.itemId, p);
 
+  const details = { missing: [], extra: [], duplicates: [], mismatches: [] };
   const links = new Map(); // person itemId -> board rows linking it, once per link
-  let extra = 0;
   for (const row of boardItems) {
     const ids = row.personIds ?? [];
-    if (ids.length === 0 || ids.some((id) => !byId.has(String(id)))) extra += 1;
+    if (ids.length === 0 || ids.some((id) => !byId.has(String(id)))) details.extra.push(String(row.itemId));
     for (const id of ids) {
       const key = String(id);
       if (!byId.has(key)) continue;
@@ -296,20 +335,26 @@ export function reconcile(people, boardItems) {
     }
   }
 
-  let missing = 0;
-  let duplicates = 0;
-  let mismatches = 0;
   for (const p of byId.values()) {
     const rows = links.get(p.itemId) ?? [];
     if (rows.length === 0) {
-      if (hasAnyValue(p)) missing += 1;
+      if (hasAnyValue(p)) details.missing.push(p.itemId);
       continue;
     }
-    if (rows.length > 1) duplicates += 1;
-    const differs = rows.some((row) =>
-      WINDFALL_TITLES.some((t) => peopleNorm(t, p.values) !== boardNorm(t, row.values)),
-    );
-    if (differs) mismatches += 1;
+    if (rows.length > 1) details.duplicates.push({ personId: p.itemId, boardItemIds: rows.map((r) => String(r.itemId)) });
+    const differing = rows
+      .map((row) => ({
+        row,
+        titles: WINDFALL_TITLES.filter((t) => peopleNorm(t, p.values) !== boardNorm(t, row.values)),
+      }))
+      .filter((d) => d.titles.length > 0);
+    if (differing.length > 0) {
+      details.mismatches.push({
+        personId: p.itemId,
+        boardItemIds: differing.map((d) => String(d.row.itemId)),
+        titles: WINDFALL_TITLES.filter((t) => differing.some((d) => d.titles.includes(t))),
+      });
+    }
   }
 
   const perColumn = {};
@@ -323,11 +368,12 @@ export function reconcile(people, boardItems) {
   return {
     people: people.length,
     items: boardItems.length,
-    missing,
-    extra,
-    duplicates,
-    mismatches,
+    missing: details.missing.length,
+    extra: details.extra.length,
+    duplicates: details.duplicates.length,
+    mismatches: details.mismatches.length,
     perColumn,
+    details,
   };
 }
 
@@ -342,7 +388,9 @@ export function isClean(result) {
   );
 }
 
-/** Counts only: no value, name or id is printed. */
+const itemList = (ids) => `board item${ids.length === 1 ? '' : 's'} ${ids.join(', ')}`;
+
+/** Counts, Monday item ids and column titles. No value and no name. */
 export function formatReport(result) {
   const lines = [
     `People rows: ${result.people}`,
@@ -357,6 +405,11 @@ export function formatReport(result) {
     const c = result.perColumn[t];
     lines.push(`  ${t}: ${c.people} / ${c.board}`);
   }
+  const { details } = result;
+  for (const id of details.missing) lines.push(`Missing: People item ${id}`);
+  for (const id of details.extra) lines.push(`Extra: board item ${id}`);
+  for (const d of details.duplicates) lines.push(`Duplicate: People item ${d.personId} on ${itemList(d.boardItemIds)}`);
+  for (const m of details.mismatches) lines.push(`Mismatch: People item ${m.personId}, ${itemList(m.boardItemIds)}: ${m.titles.join(', ')}`);
   lines.push(isClean(result) ? 'Result: clean' : 'Result: NOT clean');
   return lines.join('\n');
 }

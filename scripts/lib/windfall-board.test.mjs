@@ -11,6 +11,9 @@ import {
   reconcile,
   isClean,
   formatReport,
+  mentionsRemovedFlag,
+  peopleStillFlagged,
+  boardRowsFlagged,
 } from './windfall-board.mjs';
 
 describe('constants', () => {
@@ -248,7 +251,16 @@ describe('reconcile', () => {
     const r = reconcile(people, items);
     assert.deepEqual(
       { ...r, perColumn: undefined },
-      { people: 2, items: 2, missing: 0, extra: 0, duplicates: 0, mismatches: 0, perColumn: undefined },
+      {
+        people: 2,
+        items: 2,
+        missing: 0,
+        extra: 0,
+        duplicates: 0,
+        mismatches: 0,
+        perColumn: undefined,
+        details: { missing: [], extra: [], duplicates: [], mismatches: [] },
+      },
     );
     assert.equal(isClean(r), true);
     assert.deepEqual(r.perColumn['Windfall Profile'], { people: 1, board: 1 });
@@ -363,7 +375,119 @@ describe('reconcile', () => {
   });
 });
 
+describe('reconcile details: where each problem is', () => {
+  it('names the People item for a missing person', () => {
+    const { people, items } = fixtures();
+    assert.deepEqual(reconcile(people, items.slice(0, 1)).details.missing, ['2']);
+  });
+  it('names the board items for a duplicate', () => {
+    const { people, items } = fixtures();
+    const r = reconcile(people, [...items, boardRow('b3', ['1'], boardValues())]);
+    assert.deepEqual(r.details.duplicates, [{ personId: '1', boardItemIds: ['b1', 'b3'] }]);
+  });
+  it('names the board item for an extra row, unlinked or linked to an unknown person', () => {
+    const { people, items } = fixtures();
+    const r = reconcile(people, [...items, boardRow('b3', ['999'], boardValues()), boardRow('b4', [], boardValues())]);
+    assert.deepEqual(r.details.extra, ['b3', 'b4']);
+  });
+  it('names the People item, the board item and only the titles that differ', () => {
+    const { people, items } = fixtures();
+    items[1].values['Job Title'] = cell('text', J('COO'));
+    items[1].values['Windfall ID'] = cell('text', J('W-9'));
+    assert.deepEqual(reconcile(people, items).details.mismatches, [
+      { personId: '2', boardItemIds: ['b2'], titles: ['Windfall ID', 'Job Title'] },
+    ]);
+  });
+  it('lists only the differing row when a person has two rows', () => {
+    const { people, items } = fixtures();
+    const stale = boardValues();
+    stale['Job Title'] = cell('text', J('COO'));
+    const r = reconcile(people, [...items, boardRow('b3', ['1'], stale)]);
+    assert.deepEqual(r.details.mismatches, [{ personId: '1', boardItemIds: ['b3'], titles: ['Job Title'] }]);
+  });
+  it('holds no value or name', () => {
+    const people = [person('1', 'live', { 'Job Title': cell('text', J('SECRET-1')) })];
+    const items = [boardRow('b1', ['1'], { 'Job Title': cell('text', J('SECRET-2')) })];
+    const r = reconcile(people, items);
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+    assert.ok(!JSON.stringify(r).includes('Fake Person'));
+  });
+});
+
+describe('the removed-flag check, independent of the scrubber', () => {
+  const profile = (text) => ({ 'Windfall Profile': cell('long_text', J({ text })) });
+  const missed = [
+    'Flags: Boat Owner; Recently Divorced',
+    'Flags - Recent Death in Family',
+    'Life events: recently divorced',
+    'Note: RECENT   DEATH IN\nFAMILY',
+    'Recently\u00a0Divorced',
+    'Flags: Not Recently Divorced Yet',
+  ];
+  it('finds a flag anywhere, in any spacing or case', () => {
+    for (const text of missed) assert.equal(mentionsRemovedFlag(J({ text })), true, text);
+    for (const text of missed) assert.equal(mentionsRemovedFlag(J(text)), true, text);
+    assert.equal(mentionsRemovedFlag(J({ text: 'Flags: Boat Owner, Recent Mover' })), false);
+    assert.equal(mentionsRemovedFlag(null), false);
+    assert.equal(mentionsRemovedFlag(''), false);
+  });
+  it('reads malformed and odd-shaped values as text', () => {
+    assert.equal(mentionsRemovedFlag('{broken Recently Divorced'), true);
+    assert.equal(mentionsRemovedFlag(J({ text: 'x', note: 'Recently Divorced' })), true);
+    assert.equal(mentionsRemovedFlag(J(['Recent Death in Family'])), true);
+  });
+  it('names People items still flagged after the scrub, and passes what the scrub cleared', () => {
+    const people = missed.map((text, i) => person(String(i + 1), 'live', profile(text)));
+    assert.deepEqual(peopleStillFlagged(people), people.map((p) => p.itemId));
+    const clean = [
+      person('1', 'live', profile('Flags: Recently Divorced, Boat Owner')),
+      person('2', 'live', profile(' flags : recent death in family')),
+      person('3', 'live', { 'Job Title': cell('text', J('CEO')) }),
+    ];
+    assert.deepEqual(peopleStillFlagged(clean), []);
+  });
+  it('finds a profile under a marked title and counts a repeated person once', () => {
+    const marked = person('1', 'live', { '📜 Windfall Profile': cell('long_text', J({ text: 'x Recently Divorced' })) });
+    assert.deepEqual(peopleStillFlagged([marked, marked]), ['1']);
+  });
+  it('looks only at the profile column', () => {
+    assert.deepEqual(peopleStillFlagged([person('1', 'live', { 'Job Title': cell('text', J('Recently Divorced')) })]), []);
+  });
+  it('names board items whose profile holds a flag, unscrubbed', () => {
+    const rows = [
+      boardRow('b1', ['1'], profile('Flags: Recently Divorced')),
+      boardRow('b2', ['2'], profile('Flags: Boat Owner')),
+      boardRow('b3', ['3'], {}),
+    ];
+    assert.deepEqual(boardRowsFlagged(rows), ['b1']);
+  });
+});
+
 describe('formatReport', () => {
+  it('lists ids and titles for each problem, and no value or name', () => {
+    const people = [
+      person('1', 'live', { 'Job Title': cell('text', J('SECRET-1')) }),
+      person('2', 'live', { 'Job Title': cell('text', J('SECRET-3')) }),
+      person('3', 'live', { 'Job Title': cell('text', J('SECRET-4')) }),
+    ];
+    const items = [
+      boardRow('b1', ['1'], { 'Job Title': cell('text', J('SECRET-2')) }),
+      boardRow('b3', ['3'], { 'Job Title': cell('text', J('SECRET-4')) }),
+      boardRow('b4', ['3'], { 'Job Title': cell('text', J('SECRET-4')) }),
+      boardRow('b5', [], {}),
+    ];
+    const out = formatReport(reconcile(people, items));
+    assert.match(out, /Missing: People item 2/);
+    assert.match(out, /Mismatch: People item 1, board item b1: Job Title/);
+    assert.match(out, /Duplicate: People item 3 on board items b3, b4/);
+    assert.match(out, /Extra: board item b5/);
+    assert.ok(!out.includes('SECRET'));
+    assert.ok(!out.includes('Fake Person'));
+  });
+  it('lists nothing per id on a clean result', () => {
+    const { people, items } = fixtures();
+    assert.doesNotMatch(formatReport(reconcile(people, items)), /Missing: People|Mismatch:|Duplicate:|Extra: board/);
+  });
   it('prints the counts and a verdict', () => {
     const { people, items } = fixtures();
     const out = formatReport(reconcile(people, items));
