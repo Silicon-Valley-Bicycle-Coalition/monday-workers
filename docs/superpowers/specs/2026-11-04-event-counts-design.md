@@ -1,6 +1,7 @@
 # Event counts on the Events board and the Lifecycle Tracker
 
-**Status:** design, 2026-11-04. Waiting on staff approval (see "Questions for staff"). Nothing built.
+**Status:** design, 2026-11-04; custom-question answers added 2026-11-05. Waiting on staff approval (see
+"Questions for staff"). Nothing built.
 
 ## Why
 
@@ -25,6 +26,8 @@ blank one, and that decides most of what follows.
   formulas keep working and nobody retypes them.
 * A person can correct a tracker number, and the Worker leaves that correction alone.
 * A one-off board can show the counts with no code, using a connect column and a mirror.
+* Home zip and county reach Event Registrations, and the answers SMCTA reports use reach a separate
+  restricted board with no names. See "Custom-question answers".
 
 ## Non-goals
 
@@ -34,9 +37,13 @@ blank one, and that decides most of what follows.
   rows are linked).
 * Writing to one-off boards.
 * Counting Funraise events (no attendee feed; they load once a year by CSV).
-* Ticket type, phone numbers, or answers to custom Eventbrite questions.
+* Ticket type, phone numbers, or any custom-question answer outside the allowlist below. Health,
+  emergency-contact, height and waiver answers stay in Eventbrite.
 
 ## Anti-goals: this has failed if
+
+* A health, emergency-contact or waiver answer reaches Monday, D1 or a log.
+* A survey row on the restricted board carries a name, email, phone or attendee id.
 
 * A funder report carries a number the Worker wrote over a person's correction.
 * A tracker row shows another class's numbers because of a wrong link.
@@ -171,6 +178,68 @@ Sandbox: a small scratch tracker board in the sandbox workspace with the same co
 `config/sandbox.json`. `config/split.test.ts` gains the new keys. The `Staff Boards (sandbox)` workspace
 is empty, so there's no copy to use.
 
+## Custom-question answers
+
+**Why.** Funder reports are built from Eventbrite exports. David confirmed on 2026-11-05 that the waiver
+sign-off isn't a funder requirement, and chose to bring over home zip and the SMCTA answers. The same
+exports hold health and emergency-contact answers that no funder report reads, so this is an allowlist:
+a question not named in config is never read past matching, wherever it appears.
+
+| Answers | Used for | Goes to |
+|---|---|---|
+| Home zip, and county worked out from it | VTA home county | Event Registrations, `🔒 Home Zip` and `🔒 Home County` |
+| How heard, why signed up, riding frequency, street and everyday comfort, live or work in San Mateo County, city, gender, age, ethnicity | SMCTA | New restricted board, one row per registration, no names |
+| Mental or physical conditions, "please describe", emergency contact, height, release of liability, order and fee columns | No funder report | Nowhere: stay in Eventbrite |
+
+**Reading them.** The consumer already fetches the attendee on every update; from memory, not yet verified,
+that object carries `answers` (`question_id`, `question`, `type`, `answer`). One real read confirms the
+field and whether it needs an `expand`, before anything is built on it. A pure function picks the allowed
+answers, so it can't make a registration write fail.
+
+**Matching on wording.** From memory, question ids are per event, so a list of ids wouldn't carry to the next
+class; the real read confirms this. Config lists each allowed question's exact wordings, compared after
+trimming and lowercasing. The 2026 VTA report uses three for zip: `What is your home zip code?` (22 sheets),
+`Home zip code` (7) and `¿Cuál es el código postal de su domicilio?/What is your home zip code?` (1). A new
+wording stays blank until someone adds it, which fails safe: a reworded question can't let the wrong answer
+through. Substring matching isn't allowed, because "please describe" style follow-ups can sit beside any
+question. An attendee with answers but no zip match logs its event and question ids at info level, never the
+wording or the answer.
+
+**Zip and county.** The zip is written only if the answer starts with five digits, keeping those five, so free
+text can't land in the column. County comes from a config table seeded from the report's `Zip Codes - Counties`
+sheet; an unlisted zip leaves county blank. That sheet needs staff review first (question 7): it has 39 zips,
+none for most of San Jose; it lists 94022 (Los Altos) as San Mateo County, which looks wrong; and it lists
+94303 as Santa Clara County while the Q3 report treats it as either. A blank is visible, and a report can count them.
+
+**The restricted board.** A private board in the CRM workspace, with Cherie and whoever she names as
+subscribers, plus the integration user, which has to write to it. One row per registration, from the
+answers start date onward, only when at least one SMCTA answer is present. Each row holds the event name, class date,
+the answers, and `🔒 Canceled` (Eventbrite's cancelled or refunded state). The item name is the fixed word `Response`.
+No name, email, phone, zip, attendee id, or link to People or Event Registrations. City stays because SMCTA uses it.
+
+D1 keeps `answer_rows` (attendee id, Monday item id, written at) so an updated answer changes the same row.
+This table holds no answers, but it does make the rows **pseudonymous, not anonymous**, and:
+
+* **The privacy here is limited, so say so to staff.** Anyone who can read this Worker's D1 can re-link a row
+  to a person, and a small class's age, gender and city can identify someone without it. Free-text answers can
+  name people. Rows created in order can line up with registration times.
+* **A private board isn't a wall against the Workers.** One integration user backs all three OAuth apps, so the
+  internet-facing `member-portal`'s read-only token can read this board too (#18, accepted; see the root README).
+  Having no names on the board is what limits the damage, so that rule is the real control.
+* **Backups.** `monday-backup` snapshots every board the integration user can see, so this board goes in its
+  `excludeBoardIds`. The answers can be rebuilt from Eventbrite, so nothing is lost for good.
+* **Ages.** The SMCTA report's age question includes under 13. Eventbrite already holds this, but the board is a second copy.
+
+**Failures.** Zip and county are part of the registration write, as ordinary columns, and written only when
+non-blank so they can't clear a cell. The survey row is its own later write, like the registrants link: a failure
+logs and never fails the registration, and a small backfill script re-runs an event. A new row only ever comes from
+the attendee's own webhook, so the script is how a missed one is recovered. Under the write switch both follow
+`eventbrite-sync:writes`, and logs carry ids only, never question text or answers.
+
+**Start and order.** Separate from the counts, with its own `answers.startDate`, and it doesn't wait for a real check-in.
+Past classes stay as exports. `surveyBoard: null` keeps the board step off if staff say SMCTA no longer needs it.
+The parallel run covers these too: compare one quarter's Monday numbers against the export before retiring it.
+
 ## Rollout
 
 1. **Prerequisite:** see a real check-in reach Attendance. None has yet; the first events in the feed run
@@ -187,9 +256,8 @@ is empty, so there's no copy to use.
 
 These change what gets built. They go to Cherie with the plan.
 
-1. **Is the Registered / Checked in / No-shows count the information being pulled?** Or is there more?
-   `Custom Questions Report July-September 2025` in the Bike Education Box folder suggests answers to
-   custom Eventbrite questions may also be pulled. Those aren't in scope and would be a separate piece.
+1. **Is the Registered / Checked in / No-shows count the information being pulled,** along with the answers
+   listed under "Custom-question answers"? Or is there more?
 2. **Walk-ins.** There's a `Walk-in registration.docx` in the same folder. Do walk-ins get added to
    Eventbrite? If not, the count will be low for those events and someone corrects it by hand. Does that
    explain the repair clinic's 26?
@@ -198,6 +266,14 @@ These change what gets built. They go to Cherie with the plan.
 4. **Is check-in always done in Eventbrite?** If some classes take attendance on paper, or check in only
    some people, the numbers will be blank or low for those.
 5. **Which one-off boards take these numbers,** and is a mirror enough there?
+6. **Does SMCTA still need these answers in 2026, for which classes, and from registrants or only attendees?**
+   The file we have is from 2025. Rows cover registrations, with canceled ones marked; if reports count only
+   attendees, the board needs Attendance, which brings it closer to a person's record.
+7. **Is the zip-to-county table right?** See "Zip and county". Which county should 94303 count as?
+8. **Who should see the restricted board?** And how do instructors get health and accommodation answers now?
+   Those stay in Eventbrite, so whatever they use today has to keep working.
+9. **The Q3 report shows two sets of numbers:** the attendance chart has 66 / 138 / 44 and the class table
+   49 / 105 / 41, and the 56% sent to VTA comes from the chart. Which is right? The parallel run needs to know.
 
 ## Left to the builder
 
@@ -217,3 +293,8 @@ includes one, exclude it by config, as `registrantsLinkExcludedEventIds` does.
 * Building the tracker step last, off until staff answer.
 * Column names, and writing tracker numbers instead of mirroring them.
 * The parallel run's length.
+* Exact-wording matching, and leaving a new wording blank instead of guessing.
+* Keeping zip off the restricted board, and city on it.
+* Rows for all registrations with a Canceled mark, until staff answer question 6.
+* Leaving the restricted board out of Monday backups.
+* Text event name and date on the restricted board, not a connect column to Events.

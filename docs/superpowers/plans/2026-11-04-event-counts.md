@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-04-event-counts-design.md`
 
-**Gate:** Staff approval first. Tasks 1–4 can start once Cherie approves. Task 5's tracker switch-on waits for her answers to spec questions 2, 3 and 4. Production waits for a real check-in (2026-11-08/09 at the earliest).
+**Gate:** Staff approval first. Tasks 1–4 can start once Cherie approves. Task 5's tracker switch-on waits for her answers to spec questions 2, 3 and 4. Production counts wait for a real check-in (2026-11-08/09 at the earliest). Tasks 7–9 (custom-question answers) are independent of Tasks 1–6 and don't wait for a check-in; Task 8's board waits for spec questions 6 and 8, and Task 9's county table for question 7.
 
 ## Global Constraints
 
@@ -22,6 +22,7 @@
 - All Monday writes and `tracker_counts` writes go through the write switch.
 - Read status cells with `statusText`, never `text` (an empty status shows label 5's text).
 - Numbers: Registered = all active registrations; Checked in = Attended; No-shows = Registered, No Show or blank Attendance.
+- Answers: only questions named in config are read. Answer text and question wording never reach D1 or a log. A row on the restricted board never carries a name, email, phone, zip or attendee id; its item name is `Response`.
 
 ## Review Focus
 
@@ -30,6 +31,7 @@
 3. A tracker row whose CRM Event points at a class on another date: nothing written, one warning (Task 4).
 4. Staff rename or delete a tracker column: a logged failure, with the Events counts already written (Task 3, Task 4).
 5. A switch flipped to `off` with counts messages on the queue: no write and no `tracker_counts` change (Task 5).
+6. An attendee who answered the health question, and an event whose question is reworded to contain an allowed phrase: neither answer reaches any Monday payload or log (Task 7).
 
 ---
 
@@ -130,3 +132,53 @@ No code. Each step needs David's go-ahead at the time.
 - [ ] **Step 4: After staff answer questions 2, 3 and 4:** run `node scripts/check-monday-token-scope.mjs --workspace 12570563`, then set `attendeeSync.tracker` and deploy. If reports turn out to come from the Google Sheet, stop here and revisit.
 - [ ] **Step 5: Parallel run** for three classes or a month, whichever is longer: staff still pull the Eventbrite numbers and compare. Explain any difference.
 - [ ] **Step 6: Staff stop the manual step;** update the guide to say so.
+
+### Task 7: Allowlisted answers, zip and county
+
+**Files:**
+- Create: `eventbrite-sync/src/answers/allowlist.ts`, `allowlist.test.ts`, `eventbrite-sync/scripts/list-event-questions.mjs`
+- Modify: `src/eventbrite/client.ts`, `src/config.ts`, `src/mapping/attendee.ts`, its test, `src/consumer/processAttendee.ts`, its test, `src/test/testConfig.ts`, `config/svbc.json`, `config/sandbox.json`, `config/split.test.ts`, `../scripts/mark-read-only-columns.mjs`
+
+**Interfaces:**
+- Produces: `EventbriteAttendee.answers?: EventbriteAnswer[] | null`, with `EventbriteAnswer = { question_id?: string | null; question?: string | null; type?: string | null; answer?: string | null }`; `type AnswerKey = 'homeZip' | 'howHeard' | 'whySignedUp' | 'rideFrequency' | 'comfortStreet' | 'comfortEveryday' | 'liveWorkSanMateo' | 'city' | 'gender' | 'age' | 'ethnicity'`; `pickAnswers(answers: EventbriteAnswer[] | null | undefined, questions: Record<AnswerKey, string[]>): Partial<Record<AnswerKey, string>>`; `normalizeZip(raw: string): string | null`; `countyForZip(zip: string, table: Record<string, string>): string | null`.
+- Config: `attendeeSync.answers: { startDate: string | null; questions: Record<AnswerKey, string[]>; zipCounties: Record<string, string>; homeZipColumn: string; homeCountyColumn: string; surveyBoard: null | SurveyBoardConfig }`. `startDate: null` = feature off. Task 8 defines `SurveyBoardConfig`.
+
+- [ ] **Step 1: Do the one real read.** Write `list-event-questions.mjs`: for an event id, print each distinct `question_id` and `question` from its attendees, never `answer` or `profile`. Run it against two production events. Record in the spec whether `answers` needs an `expand` and whether question ids differ by event. If either memory is wrong, correct the spec before Step 2. Fill `questions` from this output and the wordings in the spec. It's read-only, but ask David first since it uses the production token.
+- [ ] **Step 2: Write failing tests:** `picks an allowed question`; `matches after trimming and lowercasing`; `matches all three zip wordings`; `ignores a question not on the list`; `ignores a question that only contains an allowed phrase`; `returns nothing for null answers`; `drops a blank answer`. `normalizeZip`: `95014` → `95014`; `95014-1234` → `95014`; ` 95014 ` → `95014`; `9501` → null; `I live in San Jose` → null. `countyForZip`: listed → county; unlisted → null.
+- [ ] **Step 3: Run** `npm test -- src/answers/allowlist.test.ts`. Expected: FAIL.
+- [ ] **Step 4: Implement** the module and the `EventbriteAttendee` field.
+- [ ] **Step 5: Write failing tests for `mapAttendee` and `processAttendee`:** `writes zip and county`; `writes zip with blank county for an unlisted zip`; `omits both for an invalid zip, leaving the cell alone`; `omits both before answers.startDate`; `an attendee's health answer appears in no column value and no log` (spy `console.*`, assert the fixture's sentinel strings are absent); `logs ids only when answers exist but no zip matched`; `off writes nothing`.
+- [ ] **Step 6: Implement.** Take `startDate` against the event's start, not the registration date. Create the `🔒 Home Zip` and `🔒 Home County` text columns on sandbox Event Registrations and add them to `MARKED_COLUMNS`. Add the keys to `split.test.ts`. `zipCounties` stays `{}` in `svbc.json` until Task 9.
+- [ ] **Step 7: Run** `npm test && npm run typecheck && node ../scripts/check-log-safety.mjs eventbrite-sync/src`. Expected: PASS and clean.
+- [ ] **Step 8: Commit** `feat(eventbrite-sync): home zip and county on registrations`.
+
+### Task 8: The restricted survey board
+
+**Files:**
+- Create: `migrations/0005_answer_rows.sql` (the next free number if Task 4 hasn't landed), `src/db/answerRows.ts`, `answerRows.test.ts`, `src/answers/surveyRow.ts`, `surveyRow.test.ts`, `eventbrite-sync/scripts/backfill-survey-answers.mjs`
+- Modify: `src/consumer/processAttendee.ts`, its test, `src/consumer/processBatch.ts` (deps), `src/writeSwitch.ts`, `src/test/fakeStores.ts`, `src/config.ts`, `config/svbc.json`, `config/sandbox.json`, `config/split.test.ts`, `../monday-backup/config/*.json` (exclude the board)
+
+**Interfaces:**
+- Consumes: Task 7's `pickAnswers` and `AnswerKey`.
+- Produces: table `answer_rows(attendee_id TEXT PRIMARY KEY, monday_item_id TEXT NOT NULL, written_at TEXT NOT NULL)`; `AnswerRowStore { get(attendeeId): Promise<string | null>; record(attendeeId, itemId): Promise<void> }`; `SurveyBoardConfig = { boardId: number; eventNameColumn: string; classDateColumn: string; canceledColumn: string; columns: Partial<Record<Exclude<AnswerKey, 'homeZip'>, string>> }`; `surveyRowValues(answers, eventFacts, canceled: boolean, board: SurveyBoardConfig): Record<string, unknown> | null` (null when no survey answer is present).
+
+- [ ] **Step 1: Write failing tests for `surveyRowValues`:** `maps each answer to its column`; `returns null with only a zip`; `never includes zip`; `sets Canceled when cancelled or refunded`; and `the payload holds none of the fixture's name, email or attendee id`, serializing the whole result.
+- [ ] **Step 2: Write failing tests for `processAttendee`:** `creates a Response row and records it`; `updates the same row on a later change`; `does nothing when surveyBoard is null`; `a Monday failure logs and leaves the registration written`; `off changes neither the board nor answer_rows`; `a dropped-stamped message stays a dry run`.
+- [ ] **Step 3: Run** both files. Expected: FAIL.
+- [ ] **Step 4: Implement** the migration, store, dry-run store and the step, after the registration write and registrants link, wrapped like `linkRegistrant`. The item name is always `Response`. Add the board to `MondayBoards`/`SINK_NAMES`.
+- [ ] **Step 5: Implement the backfill script:** for an event id, re-queue that event's attendees through the normal consumer, with `--dry-run`. It prints counts only.
+- [ ] **Step 6: Create a private scratch board in the sandbox workspace,** with the integration user subscribed, and put its ids in `config/sandbox.json`. `surveyBoard` stays `null` in `svbc.json`.
+- [ ] **Step 7: Run** `npm test && npm run typecheck && node ../scripts/check-log-safety.mjs eventbrite-sync/src`, and the same two test commands in `monday-backup`. Expected: PASS and clean.
+- [ ] **Step 8: Commit** `feat(eventbrite-sync): restricted board for SMCTA answers`.
+
+### Task 9: Answers rehearsal, docs and production
+
+Docs go in the same files as Task 5. Each production step needs David's go-ahead at the time.
+
+- [ ] **Step 1: Rehearse in sandbox and record:** an answered registration writes zip and county; a survey row has no identifying column; an updated answer changes the same row; a health answer appears nowhere; `writes off` changes nothing.
+- [ ] **Step 2: Write the docs:** README section on the allowlist and how to add a wording; staff guide note on what each destination holds and what the board's privacy does and doesn't cover.
+- [ ] **Step 3: Commit** `docs(eventbrite-sync): custom-question answers`.
+- [ ] **Step 4: Fill `zipCounties`** from the table staff reviewed (spec question 7), and add a test that `svbc.json`'s keys are all five digits. Commit.
+- [ ] **Step 5: Create the production zip and county columns,** run `node scripts/mark-read-only-columns.mjs`, apply nothing new yet, deploy, and set `answers.startDate`.
+- [ ] **Step 6: If staff confirm SMCTA still needs them,** create the private board with the subscribers staff named, exclude it from `monday-backup` and deploy that first, then apply the migration, set `surveyBoard` and deploy. Check who the board's subscribers are after creation.
+- [ ] **Step 7: Compare one quarter** of Monday numbers with the Eventbrite export before staff retire the export. Explain any difference.
