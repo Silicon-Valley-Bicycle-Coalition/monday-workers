@@ -446,11 +446,58 @@ describe('copy', () => {
     assert.ok(w.boards.get(NEW_BOARD).columns.some((c) => c.id === 'seed_status'));
   });
 
+  it('copy --board stops before any write if the board has rows and every link reads empty', async () => {
+    const w = await copied();
+    const board = w.boards.get(NEW_BOARD);
+    const person = board.columns.find((c) => c.title === 'Person');
+    for (const item of board.items) item.cells[person.id] = { linked: [] };
+    for (const argv of [[...COPY, '--board', NEW_BOARD], [...COPY, '--board', NEW_BOARD, '--apply']]) {
+      const r = await go(w, argv);
+      assert.equal(r.code, 1, r.text);
+      assert.match(r.text, /3 row\(s\) scanned, 3 with no Person link/);
+      assertNoLeak(r.text);
+    }
+    assert.deepEqual(mutations(w), []);
+    assert.equal(board.items.length, 3);
+  });
+
+  it('copy --board stops before any write if the board has items and no Person column', async () => {
+    const w = await copied();
+    const board = w.boards.get(NEW_BOARD);
+    board.columns = board.columns.filter((c) => c.title !== 'Person');
+    for (const argv of [[...COPY, '--board', NEW_BOARD], [...COPY, '--board', NEW_BOARD, '--apply']]) {
+      const r = await go(w, argv);
+      assert.equal(r.code, 1, r.text);
+      assert.match(r.text, /3 row\(s\) scanned, 3 with no Person link/);
+    }
+    assert.deepEqual(mutations(w), []);
+  });
+
+  it('copy --board still resumes on an empty board, with or without a Person column', async () => {
+    const empty = await copied();
+    empty.boards.get(NEW_BOARD).items = [];
+    assert.equal((await go(empty, [...COPY, '--board', NEW_BOARD, '--apply'])).code, 0);
+    assert.equal(empty.boards.get(NEW_BOARD).items.length, 3);
+
+    const noPerson = await copied();
+    const board = noPerson.boards.get(NEW_BOARD);
+    board.items = [];
+    board.columns = board.columns.filter((c) => c.title !== 'Person');
+    assert.equal((await go(noPerson, [...COPY, '--board', NEW_BOARD, '--apply'])).code, 0);
+    assert.equal(board.items.length, 3);
+    assert.equal(board.columns.filter((c) => c.title === 'Person').length, 1);
+  });
+
   it('copy --board never deletes items on a board it did not create', async () => {
     const w = await copied();
     const board = w.boards.get(NEW_BOARD);
     board.items.push({ id: 'staff-row', name: 'kept', cells: {} });
-    assert.equal((await go(w, [...COPY, '--board', NEW_BOARD, '--apply'])).code, 0);
+    const dry = await go(w, [...COPY, '--board', NEW_BOARD]);
+    assert.equal(dry.code, 0, dry.text);
+    assert.match(dry.text, /4 row\(s\) scanned, 1 with no Person link/);
+    const applied = await go(w, [...COPY, '--board', NEW_BOARD, '--apply']);
+    assert.equal(applied.code, 0, applied.text);
+    assert.match(applied.text, /4 row\(s\) scanned, 1 with no Person link/);
     assert.deepEqual(named(w, 'delete_item'), []);
     assert.ok(board.items.some((i) => i.id === 'staff-row'));
   });
@@ -652,14 +699,22 @@ describe('verify', () => {
     assert.equal(r.code, 1);
   });
 
-  it('a forbidden user the API does not return is only printed, unless subscribed', async () => {
+  it('one forbidden user the API does not return is only printed, unless subscribed', async () => {
     const w = await copied();
-    w.users = [];
+    w.users = w.users.slice(1);
     const r = await go(w, VERIFY);
     assert.equal(r.code, 0, r.text);
     assert.match(r.text, new RegExp(`${FORBIDDEN_USERS[0]}.*not found`));
     w.boards.get(NEW_BOARD).subscribers.push(FORBIDDEN_USERS[0]);
     assert.equal((await go(w, VERIFY)).code, 1);
+  });
+
+  it('fails if the API returns neither forbidden user: an empty answer proves nothing', async () => {
+    const w = await copied();
+    w.users = [];
+    const r = await go(w, VERIFY);
+    assert.equal(r.code, 1, r.text);
+    assert.match(r.text, /neither forbidden user/i);
   });
 
   it('fails on a value that differs, a missing item, a duplicate and an unlinked item', async () => {
@@ -731,6 +786,7 @@ describe('delete-people-columns', () => {
       (w) => w.boards.get(NEW_BOARD).subscribers.push(FORBIDDEN_USERS[0]),
       (w) => { w.boards.get(NEW_BOARD).items.pop(); },
       (w) => { w.users[0].is_admin = true; },
+      (w) => { w.users = []; },
       (w) => {
         const b = w.boards.get(PEOPLE);
         b.columns = b.columns.filter((c) => c.title !== 'LinkedIn');

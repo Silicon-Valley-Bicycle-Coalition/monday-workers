@@ -331,6 +331,10 @@ async function verifyAll(args, { gql, out, err }) {
     failures.push(...privacyFailures(board, args.subscribers));
     const data = await gql('query ($ids: [ID!]) { users(ids: $ids) { id is_admin } }', { ids: FORBIDDEN_USERS });
     const users = new Map((data.users ?? []).map((u) => [String(u.id), u]));
+    // Each id probably exists in only one account, so one absent is expected. Neither proves nothing.
+    if (!FORBIDDEN_USERS.some((id) => users.has(id))) {
+      failures.push('The API returned neither forbidden user, so the admin check proves nothing.');
+    }
     for (const id of FORBIDDEN_USERS) {
       if (!users.has(id)) out(`Forbidden user ${id} not found by the API; that's only a failure if subscribed.`);
       else if (users.get(id).is_admin !== false) failures.push(`Forbidden user ${id} is an account admin, or the API wouldn't say.`);
@@ -410,14 +414,47 @@ async function createPrivateBoard(gql, args, out) {
   return id;
 }
 
-// Only ever called on a board this run just created, before its first create_item.
-async function deleteSeedItems(gql, boardId, out) {
+async function firstItemsPage(gql, boardId) {
   const data = await gql(
     `query ($ids: [ID!]) { boards(ids: $ids) { items_page(limit: ${ITEM_PAGE_SIZE}) { cursor items { id } } } }`,
     { ids: [boardId] },
   );
   const page = data.boards?.[0]?.items_page;
   if (!page) throw new Stopped(`Board ${boardId} returned no items page.`);
+  return page;
+}
+
+// Who the board already has, for the re-run skip. If it has rows but no links, the scan can't tell
+// who's been copied (links reading empty, or no Person column), and trusting it would recreate
+// everyone. So that stops the copy, dry run included. Some unlinked rows among linked ones are fine:
+// they're left alone, and verify counts them as extra.
+async function scanLinks(gql, board, target, out) {
+  const linked = new Set();
+  let rows = 0;
+  let unlinked = 0;
+  if (target.person) {
+    for (const item of await readItems(gql, board.id, [target.person.id])) {
+      const personIds = personIdsOf(item, target.person.id);
+      rows += 1;
+      if (personIds.length === 0) unlinked += 1;
+      for (const id of personIds) linked.add(id);
+    }
+  } else {
+    rows = (await firstItemsPage(gql, board.id)).items.length;
+    unlinked = rows;
+  }
+  out(`Board ${board.id}: ${rows} row(s) scanned, ${unlinked} with no Person link, ${linked.size} person link(s).`);
+  if (rows > 0 && linked.size === 0) {
+    throw new CheckFailed(
+      `Board ${board.id} has rows and no Person links, so copy can't tell who's already there and would recreate everyone. Nothing was written. Check its ${target.person ? 'Person column' : 'missing Person column'}, or clear the rows if they're unwanted.`,
+    );
+  }
+  return linked;
+}
+
+// Only ever called on a board this run just created, before its first create_item.
+async function deleteSeedItems(gql, boardId, out) {
+  const page = await firstItemsPage(gql, boardId);
   if (page.cursor) throw new Stopped(`Board ${boardId} is new but holds more than one page of items.`);
   for (const item of page.items) {
     await gql('mutation ($id: ID!) { delete_item(item_id: $id) { id } }', { id: item.id }, { idempotent: false });
@@ -480,12 +517,7 @@ async function cmdCopy(args, { gql, out, err }) {
 
   let target = board ? resolveTarget(board, resolved.types) : null;
   if (target && target.failures.length > 0) throw new CheckFailed(target.failures.join('\n'));
-  const linked = new Set();
-  if (target?.person) {
-    for (const item of await readItems(gql, board.id, [target.person.id])) {
-      for (const id of personIdsOf(item, target.person.id)) linked.add(id);
-    }
-  }
+  const linked = board ? await scanLinks(gql, board, target, out) : new Set();
   const plan = planItems(people, linked);
   const writes = buildWrites(plan);
 
