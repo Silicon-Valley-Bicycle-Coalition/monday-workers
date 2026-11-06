@@ -154,7 +154,7 @@ node scripts/windfall-board.mjs verify --people 18437909781 --historical 1843790
 5. **Hold moves, and confirm the backup.**
 
 ```sh
-node scripts/flags.mjs people-reclassification writes hold
+node scripts/flags.mjs people-reclassification writes hold --env production
 ```
 
    Then confirm the latest nightly `monday-backup` snapshot, taken after step 2, holds both People
@@ -177,7 +177,7 @@ node scripts/windfall-board.mjs delete-people-columns --people 18437909781 --his
 7. **Resume, and finish up.**
 
 ```sh
-node scripts/flags.mjs people-reclassification writes on
+node scripts/flags.mjs people-reclassification writes on --env production
 ```
 
 ```sh
