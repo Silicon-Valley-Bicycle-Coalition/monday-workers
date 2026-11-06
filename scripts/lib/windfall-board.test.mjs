@@ -46,6 +46,14 @@ describe('scrubProfile', () => {
     assert.equal(scrubProfile('Flags: Recently Divorced\nB: 2'), 'B: 2');
     assert.equal(scrubProfile('Flags: Recently Divorced'), '');
   });
+  it('removes flags from a hand edit with a leading space or a space before the colon', () => {
+    assert.equal(scrubProfile(' Flags: Recently Divorced'), '');
+    assert.equal(scrubProfile('A: 1\nFlags : Recently Divorced'), 'A: 1');
+    assert.equal(scrubProfile('  flags:Recently Divorced, X'), 'Flags: X');
+    assert.equal(scrubProfile('A: 1\n\tFLAGS :  Boat Owner , Recent Death in Family'), 'A: 1\nFlags: Boat Owner');
+    assert.equal(scrubProfile('Note: Recently Divorced'), 'Note: Recently Divorced');
+    assert.equal(scrubProfile('Flagship: Recently Divorced'), 'Flagship: Recently Divorced');
+  });
   it('removes a flag written with extra inner spacing', () =>
     assert.equal(scrubProfile('Flags: Recently   Divorced, Boat Owner'), 'Flags: Boat Owner'));
 });
@@ -96,6 +104,46 @@ describe('normalize', () => {
     }
     assert.equal(normalize('text', '{not json'), normalize('text', '{not json'));
     assert.notEqual(normalize('text', '{not json'), normalize('text', '{not jsom'));
+  });
+  it('does not read an unexpected object or array shape as empty', () => {
+    for (const [t, v] of [
+      ['long_text', '{"foo":"bar"}'],
+      ['long_text', '["x"]'],
+      ['link', '{"foo":"bar"}'],
+      ['link', '{"href":"https://a"}'],
+      ['checkbox', '{"foo":"bar"}'],
+      ['date', '{"foo":"bar"}'],
+      ['checkbox', '["x"]'],
+      ['date', '["x"]'],
+      ['link', '["x"]'],
+      ['long_text', '{"text":"hi","foo":"bar"}'],
+    ]) {
+      assert.notEqual(normalize(t, v), '', `${t} ${v}`);
+      assert.match(normalize(t, v), /^raw:/, `${t} ${v}`);
+    }
+  });
+  it('still reads the listed empties, with changed_at, as empty', () => {
+    for (const [t, v] of [
+      ['checkbox', '{"checked":false,"changed_at":"a"}'],
+      ['long_text', '{"text":"","changed_at":"a"}'],
+      ['link', '{"url":"","text":"","changed_at":"a"}'],
+      ['date', '{"date":null,"time":null,"changed_at":"a"}'],
+      ['long_text', '{}'],
+    ])
+      assert.equal(normalize(t, v), '', `${t} ${v}`);
+  });
+  it('does not call a person with an odd-shaped value and an empty board cell clean', () => {
+    const people = [person('1', 'live', { 'Windfall Profile': cell('long_text', J({ foo: 'bar' })) })];
+    const items = [boardRow('b1', ['1'], {})];
+    const r = reconcile(people, items);
+    assert.equal(isClean(r), false);
+  });
+  it('does not call a profile with a spaced Flags line clean on the board', () => {
+    const v = cell('long_text', J({ text: ' Flags : Recently Divorced, Boat Owner' }));
+    const people = [person('1', 'live', { 'Windfall Profile': v })];
+    assert.equal(isClean(reconcile(people, [boardRow('b1', ['1'], { 'Windfall Profile': v })])), false);
+    const scrubbed = cell('long_text', J({ text: 'Flags: Boat Owner' }));
+    assert.equal(isClean(reconcile(people, [boardRow('b1', ['1'], { 'Windfall Profile': scrubbed })])), true);
   });
   it('compares an unknown type by raw text with changed_at removed', () => {
     assert.equal(

@@ -39,7 +39,7 @@ const flagKey = (s) => s.trim().replace(/\s+/g, ' ').toLowerCase();
 export function scrubProfile(text) {
   const parts = text.split(/(\r\n|\n|\r)/); // even = line, odd = its ending
   for (let i = 0; i < parts.length; i += 2) {
-    const m = /^flags:(.*)$/is.exec(parts[i]);
+    const m = /^\s*flags\s*:(.*)$/is.exec(parts[i]);
     if (!m) continue;
     const kept = m[1]
       .split(',')
@@ -83,6 +83,14 @@ const withoutChangedAt = (o) => {
   return rest;
 };
 
+// A plain object whose keys, apart from changed_at, are all in `known`. Anything else (an array,
+// an unfamiliar key) is not a shape we understand, and callers treat it as raw text.
+const isKnownShape = (v, known) =>
+  v !== null &&
+  typeof v === 'object' &&
+  !Array.isArray(v) &&
+  Object.keys(v).every((k) => k === 'changed_at' || known.includes(k));
+
 const isEmptyRaw = (raw) => raw === null || raw === undefined || String(raw).trim() === '';
 
 // One canonical, typed form of a Monday column value: { empty: true } or { kind, ... }.
@@ -112,14 +120,14 @@ function canon(type, raw) {
       };
     }
     case 'checkbox': {
-      if (typeof v !== 'object' || Array.isArray(v)) return asRaw;
+      if (!isKnownShape(v, ['checked'])) return asRaw;
       const c = v.checked;
       if (c === true || c === 'true') return { kind: 'checkbox' };
       if (c === false || c === 'false' || c === undefined || c === null) return { empty: true };
       return asRaw;
     }
     case 'date': {
-      if (typeof v !== 'object' || Array.isArray(v)) return asRaw;
+      if (!isKnownShape(v, ['date', 'time'])) return asRaw;
       if (v.date === undefined || v.date === null || v.date === '') {
         return v.time ? asRaw : { empty: true };
       }
@@ -128,13 +136,14 @@ function canon(type, raw) {
       return { kind: 'date', date: v.date, time };
     }
     case 'long_text': {
-      const text = typeof v === 'string' ? v : v && typeof v === 'object' ? v.text : undefined;
-      if (text === undefined || text === null) return v && typeof v === 'object' ? { empty: true } : asRaw;
+      if (typeof v !== 'string' && !isKnownShape(v, ['text'])) return asRaw;
+      const text = typeof v === 'string' ? v : v.text;
+      if (text === undefined || text === null) return { empty: true };
       if (typeof text !== 'string') return asRaw;
       return text === '' ? { empty: true } : { kind: 'long_text', text };
     }
     case 'link': {
-      if (typeof v !== 'object' || Array.isArray(v)) return asRaw;
+      if (!isKnownShape(v, ['url', 'text'])) return asRaw;
       const url = v.url ?? '';
       const text = v.text ?? '';
       if (typeof url !== 'string' || typeof text !== 'string') return asRaw;
