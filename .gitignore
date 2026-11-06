@@ -3,6 +3,9 @@ node_modules/
 .wrangler/
 .dev.vars
 .env
+# .env.production, .env.sandbox, etc. hold real tokens; only the blank template is tracked
+.env.*
+!.env.example
 
 # generated per-machine by `wrangler types` (can absorb local .env vars) — regenerate, don't commit
 worker-configuration.d.ts
