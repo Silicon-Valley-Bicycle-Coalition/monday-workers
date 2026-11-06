@@ -91,7 +91,7 @@ export const MARKED_COLUMNS = {
   },
   'Events': { locked: ['Eventbrite ID', 'Send class email'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
+    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Home Zip'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).

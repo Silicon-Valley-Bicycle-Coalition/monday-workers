@@ -51,6 +51,10 @@
     "volunteerPrograms": [
       "Volunteering"
     ],
+    "zipPrograms": [
+      "Public",
+      "Group Rides"
+    ],
     "events": {
       "eventbriteIdColumn": "text_mm795t6s",
       "dateColumn": "date_mm79ek6s",
@@ -76,7 +80,8 @@
       "attendeeLinkColumn": "board_relation_mm794v4j",
       "classDateColumn": "date_mm8gggwd",
       "classDayColumn": "text_mm8gkw96",
-      "classLocationColumn": "text_mm8gmxsr"
+      "classLocationColumn": "text_mm8gmxsr",
+      "homeZipColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "classEmails": {
       "pageUrl": null,

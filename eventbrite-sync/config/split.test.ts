@@ -55,6 +55,7 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.classDateColumn',
   'attendeeSync.registrations.classDayColumn',
   'attendeeSync.registrations.classLocationColumn',
+  'attendeeSync.registrations.homeZipColumn',
   'attendeeSync.peopleEmailColumn',
 ];
 
@@ -103,9 +104,16 @@ describe('config split: board and column ids', () => {
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {
     expect(production.monday.boards['events']).toBe(18437909790);
     expect(production.monday.boards['event-registrations']).toBe(18437909792);
-    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.'))) {
+    // Home Zip is a column staff create after this ships; it stays the placeholder until then.
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && !k.endsWith('homeZipColumn'))) {
       expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
+  });
+
+  it('production and sandbox share no Home Zip column id once both are set', () => {
+    const sb = get(sandbox, 'attendeeSync.registrations.homeZipColumn');
+    const prod = get(production, 'attendeeSync.registrations.homeZipColumn');
+    expect(sb === PLACEHOLDER_COLUMN_ID || prod === PLACEHOLDER_COLUMN_ID || sb !== prod).toBe(true);
   });
 
   it('class emails: production never redirects to the sandbox inbox; sandbox always does', () => {

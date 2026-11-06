@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from './attendee';
 import { testConfig } from '../test/testConfig';
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 
 const config = testConfig();
@@ -71,4 +72,61 @@ describe('mapAttendee', () => {
     expect(m.columnValues.att_role_col).toBe('Participant');
   });
 
+  describe('Home Zip', () => {
+    const answers = (answer: unknown) => [{ question: 'Home ZIP code', question_id: '9', type: 'text', answer }];
+
+    it('writes Home Zip for a program in zipPrograms', () => {
+      const m = mapAttendee(attendee({ answers: answers(' 95112-1234 ') }), facts, config, 'Registered');
+      expect(m.columnValues.att_zip_col).toBe('95112');
+      const grp = mapAttendee(attendee({ answers: answers('95112') }), { ...facts, program: 'Group Rides' }, config, 'Registered');
+      expect(grp.columnValues.att_zip_col).toBe('95112');
+    });
+
+    it('leaves Home Zip out for an invalid answer, so a good value stays, and the text reaches nothing', () => {
+      const m = mapAttendee(attendee({ answers: answers('95112 please call me') }), facts, config, 'Registered');
+      expect(m.columnValues).not.toHaveProperty('att_zip_col');
+      expect(JSON.stringify(m)).not.toContain('please call me');
+      expect(JSON.stringify(m)).not.toContain('95112');
+    });
+
+    it('leaves Home Zip out outside zipPrograms and when program is null', () => {
+      const a = attendee({ answers: answers('95112') });
+      expect(mapAttendee(a, { ...facts, program: 'Volunteering' }, config, 'Registered').columnValues).not.toHaveProperty('att_zip_col');
+      expect(mapAttendee(a, { ...facts, program: null }, config, 'Registered').columnValues).not.toHaveProperty('att_zip_col');
+    });
+
+    it('leaves Home Zip out while the column is the placeholder', () => {
+      const cfg = testConfig();
+      cfg.attendeeSync.registrations.homeZipColumn = PLACEHOLDER_COLUMN_ID;
+      const m = mapAttendee(attendee({ answers: answers('95112') }), facts, cfg, 'Registered');
+      expect(JSON.stringify(m.columnValues)).not.toContain('95112');
+      expect(m.columnValues).not.toHaveProperty(PLACEHOLDER_COLUMN_ID);
+    });
+
+    it('still writes the registration for an attendee with no answers key', () => {
+      const m = mapAttendee(attendee(), facts, config, 'Registered');
+      expect(m.columnValues.att_col).toBe('a1');
+      expect(m.columnValues).not.toHaveProperty('att_zip_col');
+    });
+
+    it('does not read a question that only contains zip inside a word', () => {
+      const a = attendee({ answers: [{ question: 'Do you use Zipcar?', type: 'text', answer: '95112' }] });
+      expect(JSON.stringify(mapAttendee(a, facts, config, 'Registered'))).not.toContain('95112');
+    });
+
+    it('carries no other answer into the write', () => {
+      const a = attendee({
+        answers: [
+          { question: 'Emergency contact name and phone', type: 'text', answer: 'Sam Rider 555-0142' },
+          { question: 'Do you have any medical conditions?', type: 'text', answer: 'asthma-fixture' },
+          { question: 'Anything else we should know?', type: 'text', answer: 'free-text-fixture' },
+          ...answers('95112'),
+        ],
+      });
+      const written = JSON.stringify(mapAttendee(a, facts, config, 'Registered'));
+      for (const leaked of ['Sam Rider', '555-0142', 'asthma-fixture', 'free-text-fixture', 'Emergency', 'medical']) {
+        expect(written).not.toContain(leaked);
+      }
+    });
+  });
 });

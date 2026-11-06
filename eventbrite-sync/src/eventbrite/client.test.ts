@@ -97,6 +97,17 @@ describe('HttpEventbriteClient', () => {
       expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/attendees/77/');
     });
 
+    it('keeps answers from the response, with its URL unchanged', async () => {
+      const answers = [{ question: 'Home ZIP code', question_id: '1', type: 'text', answer: '95112' }];
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { id: '77', answers }));
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
+
+      const attendee = await client.getAttendee('1993885250458', '77');
+
+      expect(attendee?.answers).toEqual(answers);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/attendees/77/');
+    });
+
     it('throws on a non-numeric id of either kind, without a request', async () => {
       const fetchImpl = vi.fn();
       const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);

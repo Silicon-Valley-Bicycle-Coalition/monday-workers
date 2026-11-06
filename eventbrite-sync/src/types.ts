@@ -128,6 +128,8 @@ export interface EventbriteSyncConfig {
     programByOrganizer: Record<string, string>;
     // Programs whose attendees get Role = Volunteer.
     volunteerPrograms: string[];
+    // Programs whose registrations get a Home Zip from the attendee's custom answers.
+    zipPrograms: string[];
     events: {
       eventbriteIdColumn: string;
       dateColumn: string;
@@ -155,6 +157,7 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
+      homeZipColumn: string;
     };
     // The class email send page. pageUrl is the page's https URL (null until deployed);
     // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).

@@ -1,5 +1,7 @@
 import type { EventbriteAttendee } from '../eventbrite/client';
 import type { EventbriteSyncConfig } from '../types';
+import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { homeZipFromAnswers } from './homeZip';
 
 export type Incoming = 'Registered' | 'Attended' | 'Canceled';
 
@@ -51,6 +53,11 @@ export function mapAttendee(
   if (eventFacts.classDate !== null) columnValues[cols.classDateColumn] = { date: eventFacts.classDate };
   if (eventFacts.classDay !== null) columnValues[cols.classDayColumn] = eventFacts.classDay;
   if (eventFacts.classLocation !== '') columnValues[cols.classLocationColumn] = eventFacts.classLocation;
+  // Only a validated ZIP is written; an invalid answer leaves the key out, so a good value stays.
+  if (eventFacts.program !== null && config.attendeeSync.zipPrograms.includes(eventFacts.program) && cols.homeZipColumn !== PLACEHOLDER_COLUMN_ID) {
+    const zip = homeZipFromAnswers(a.answers);
+    if (zip !== null) columnValues[cols.homeZipColumn] = zip;
+  }
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
 }

@@ -71,6 +71,8 @@ export interface EventbriteAttendee {
   status?: string | null;
   profile?: { name?: string | null; first_name?: string | null; email?: string | null } | null;
   ticket_class_name?: string | null;
+  // Custom question answers. Only mapping/homeZip.ts reads them; nothing else may carry one on.
+  answers?: { question?: string | null; question_id?: string | null; type?: string | null; answer?: unknown }[] | null;
 }
 
 export interface EventbriteClient {
