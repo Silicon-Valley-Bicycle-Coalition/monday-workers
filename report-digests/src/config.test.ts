@@ -32,7 +32,7 @@ describe('validateConfig', () => {
     expect(() => validateConfig(c)).toThrow('unknown keys: extra');
   });
 
-  it('requires the look-back windows and the wealth digest floor', () => {
+  it('requires the look-back windows and the recent-gifts floor', () => {
     let c = clone();
     delete c.digests['last-week'].days;
     expect(() => validateConfig(c)).toThrow('last-week.days');
