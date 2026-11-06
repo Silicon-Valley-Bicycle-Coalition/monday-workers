@@ -50,6 +50,7 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.attendeeIdColumn',
   'attendeeSync.registrations.attendeeNameColumn',
   'attendeeSync.registrations.attendeeEmailColumn',
+  'attendeeSync.registrations.attendeePhoneColumn',
   'attendeeSync.registrations.firstNameColumn',
   'attendeeSync.registrations.attendanceColumn',
   'attendeeSync.registrations.sourceColumn',

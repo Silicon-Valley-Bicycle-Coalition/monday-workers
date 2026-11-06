@@ -48,7 +48,7 @@ export function testConfig(
         sourceColumn: 'ev_source_col', urlColumn: 'ev_url_col', sendLinkColumn: 'ev_send_col',
       },
       registrations: {
-        attendeeIdColumn: 'att_col', attendeeNameColumn: 'att_name_col', attendeeEmailColumn: 'att_email_col', firstNameColumn: 'att_first_col',
+        attendeeIdColumn: 'att_col', attendeeNameColumn: 'att_name_col', attendeeEmailColumn: 'att_email_col', attendeePhoneColumn: 'att_phone_col', firstNameColumn: 'att_first_col',
         attendanceColumn: 'att_attendance_col', sourceColumn: 'att_source_col', roleColumn: 'att_role_col', eventLinkColumn: 'att_event_col',
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
         classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',

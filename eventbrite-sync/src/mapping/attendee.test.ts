@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from './attendee';
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { testConfig } from '../test/testConfig';
+import { dryRunMondayClient, piiKeysFor } from '../writeSwitch';
+import productionConfig from '../../config/svbc.json';
 import type { EventbriteAttendee } from '../eventbrite/client';
+import type { MondayClient } from '../monday/client';
 
 const config = testConfig();
 const facts = { classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Public' as string | null };
@@ -69,6 +73,70 @@ describe('mapAttendee', () => {
   it('omits the email column and does not throw with no email', () => {
     const m = mapAttendee(attendee({ profile: { name: 'Jane Rider' } }), facts, config, 'Registered');
     expect(m.columnValues).not.toHaveProperty('att_email_col');
+  });
+
+  describe('Attendee Phone', () => {
+    const answer = (question: string, value?: string) => ({ question_id: 'q1', question, type: 'text', answer: value });
+
+    it('writes the order form cell phone, as entered', () => {
+      const m = mapAttendee(attendee({ profile: { name: 'Jane Rider', cell_phone: ' (408) 555-0100 ' } }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('(408) 555-0100');
+    });
+
+    it('falls back to a custom phone question', () => {
+      const answers = [answer('Emergency contact name', 'Sam'), answer('Teléfono / Phone number', '408-555-0101 ext 2')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('408-555-0101 ext 2');
+    });
+
+    it('prefers the built-in field over a custom question', () => {
+      const m = mapAttendee(attendee({ profile: { cell_phone: '4085550100' }, answers: [answer('Phone', '4085550101')] }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550100');
+    });
+
+    it('takes the first question with a number, past one that has none', () => {
+      const answers = [answer('Do you have a cell phone?', 'Yes'), answer('Mobile number', '4085550102')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550102');
+    });
+
+    it('ignores a number answering a question that is not about a phone', () => {
+      const m = mapAttendee(attendee({ answers: [answer('Zip code', '95112'), answer('Membership number', '4085550103')] }), facts, config, 'Registered');
+      expect(m.columnValues).not.toHaveProperty('att_phone_col');
+    });
+
+    it('falls back to the work phone', () => {
+      const m = mapAttendee(attendee({ profile: { cell_phone: '', work_phone: '4085550104' } }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550104');
+    });
+
+    it('writes nothing until the column exists (a sandbox config still holding the placeholder)', () => {
+      const unset = testConfig();
+      unset.attendeeSync.registrations.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
+      const m = mapAttendee(attendee({ profile: { cell_phone: '4085550100' } }), facts, unset, 'Registered');
+      expect(m.columnValues).not.toHaveProperty(PLACEHOLDER_COLUMN_ID);
+    });
+
+    it("keeps a phone out of debug skip lines, under the real column's id", async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const real = { createItem: vi.fn(), changeColumnValues: vi.fn() } as unknown as MondayClient;
+      const ctx = { worker: 'eventbrite-sync', environment: 'sandbox', mode: 'off' as const, logLevel: 'debug' as const, deliveryId: 'd', piiKeys: piiKeysFor(config) };
+      const client = dryRunMondayClient(real, config.monday.boards, ctx);
+      await client.changeColumnValues(config.monday.boards['event-registrations']!, '1', { [productionConfig.attendeeSync.registrations.attendeePhoneColumn]: '4085550100' });
+      const logged = log.mock.calls.flat().join(' ');
+      expect(logged).toContain('changeColumnValues');
+      expect(logged).not.toContain('4085550100');
+      log.mockRestore();
+    });
+
+    it('never writes the Info Requested placeholder or a blank', () => {
+      for (const cell_phone of ['Info Requested', '', null]) {
+        const m = mapAttendee(attendee({ profile: { cell_phone } }), facts, config, 'Registered');
+        expect(m.columnValues).not.toHaveProperty('att_phone_col');
+      }
+      const m = mapAttendee(attendee({ answers: [answer('Phone')] }), facts, config, 'Registered');
+      expect(m.columnValues).not.toHaveProperty('att_phone_col');
+    });
   });
 
   it('copes with no profile and no class facts', () => {

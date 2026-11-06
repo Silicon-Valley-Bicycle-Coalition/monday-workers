@@ -348,6 +348,13 @@ only once the attendee is Attended and never overwrites a link staff set. Item n
 Eventbrite: rename a class or attendee there, since a rename in Monday is overwritten by the next
 delivery.
 
+**Attendee Phone** comes from the event's order form: the built-in Cell Phone or Work Phone field, or
+else the first answered custom question whose wording mentions a phone (English or Spanish). An event
+whose form doesn't ask stays blank. It's a text column holding what the person typed, because Monday's
+phone column refuses a value it can't parse, and that would fail the whole registration write.
+Pledges don't get it: they go to their own board. `scripts/backfill-attendees.mjs` fills it for
+people who registered before this column, one event at a time.
+
 ### Prerequisites
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including

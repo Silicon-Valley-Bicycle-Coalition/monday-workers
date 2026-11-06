@@ -22,7 +22,7 @@ const ATTENDEE_EVENT_COLUMN_KEYS = [
   'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
-  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
+  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'attendeePhoneColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
   'classLocationColumn', 'registrantsLinkColumn',
 ] as const;
