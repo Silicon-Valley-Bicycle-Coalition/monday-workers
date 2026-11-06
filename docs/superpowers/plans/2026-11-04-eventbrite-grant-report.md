@@ -24,7 +24,7 @@ Each line's test lives in Task 2.
 
 1. **A zip field holding anything but a zip** ("95112 please call me"): no write, and the text appears in no column value or log line.
 2. **A later invalid edit to a good zip:** the column key is absent from the write, so the good value stays.
-3. **Debug logging under `off`:** the skip line carries no zip, even though the value is keyed by a column id `DEFAULT_PII_KEYS` can't recognize.
+3. **Debug logging under `off`:** the skip line carries no zip. A `text_` column id is already cut to its length by `FREE_TEXT_KEYS`, so `piiKeysFor` protects any other id, and the test uses one that neither default list matches.
 4. **An attendee with no `answers` key at all** (older record, or an API shape change): registration still writes, with no zip and no throw.
 5. **A question whose wording only contains "zip" inside a word** ("Do you use Zipcar?"): its text answer is never written.
 
