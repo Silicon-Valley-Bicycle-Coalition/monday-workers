@@ -119,7 +119,7 @@ the sandbox, every email goes to the sandbox address, whoever is on the list.
 
 - No Show stays blank until staff or the class email page mark it. It isn't automatic.
 - Zip is empty when someone left it blank or typed something that isn't a zip.
-- Volunteer shifts, private events and fundraisers get no zip.
+- Events on the volunteering, bike parking and private Eventbrite accounts get no zip.
 - A class needs Grant set by hand. Until then it won't appear under any grant.
 
 ## Sandbox rehearsal, 2026-10-26

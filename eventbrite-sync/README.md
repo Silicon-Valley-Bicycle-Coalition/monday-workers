@@ -299,7 +299,7 @@ creates what landed after the extract.
 **Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
 closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
-has no `REPLACE_WITH_COLUMN_ID` left; the Worker is deployed and the webhook registered; then
+has no `REPLACE_WITH_COLUMN_ID` left, apart from `homeZipColumn` (see "Grant report"); the Worker is deployed and the webhook registered; then
 `--dry-run`, compare its order count with the Eventbrite attendee/orders report, then the real
 run. If the Worker cannot be in production by then, `--dry-run` still needs only the read-only
 token and lists the paid orders (ids and statuses, no PII) — use it as the checklist for a
@@ -352,7 +352,7 @@ delivery.
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
   `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
-  since 2026-11-04; the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  since 2026-11-04, except `homeZipColumn`, which stays off until set (see "Grant report"); the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -386,7 +386,9 @@ exported to Excel. Design:
 
 **What the Worker writes.** The consumer writes Home Zip with the rest of the registration when:
 
-* the program is in `attendeeSync.zipPrograms` (`Public` and `Group Rides`);
+* the program is in `attendeeSync.zipPrograms` (`Public` and `Group Rides`). Program follows the
+  Eventbrite organizer account, and the main account is `Public`, so a ticketed event there, like the
+  Bike Summit, gets a zip if its form asks;
 * `attendeeSync.registrations.homeZipColumn` isn't the placeholder, so a deploy can precede the column;
 * a `text` question whose wording has the whole word `zip` or `zipcode` holds a value that matches
   `^\d{5}(-\d{4})?$` after trimming. The first valid answer wins, and only its first 5 digits are kept.

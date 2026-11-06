@@ -1,7 +1,7 @@
 # Eventbrite grant report — Design
 
 **Date:** 2026-11-04
-**Status:** Approved by David 2026-11-04. Not built. Replaces a counts-only draft (see "Dropped").
+**Status:** Approved by David 2026-11-04. Built 2026-11-06, not deployed. Replaces a counts-only draft (see "Dropped").
 **Worker:** `eventbrite-sync` (extends the attendee feed from
 `2026-10-26-eventbrite-attendees-class-emails-design.md`).
 
@@ -50,8 +50,10 @@ and added to `MARKED_COLUMNS` as locked.
 * **Which value.** After trimming, the value must match `^\d{5}(-\d{4})?$`. Only the first 5 digits are
   kept. Anything else is treated as no answer, and the text is discarded.
 * **No valid answer** leaves the column as it is, so a later bad edit can't erase a good zip.
-* **Which events.** Only programs in `attendeeSync.zipPrograms`, shipped as `["Public", "Group Rides"]`.
-  Volunteer shifts, private events and fundraisers get no zip.
+* **Which events.** Only programs in `attendeeSync.zipPrograms`, shipped as `["Public", "Group Rides"]`, and
+  only where the form asks for a zip. Program follows the Eventbrite organizer account, and the main account
+  is `Public`, so a ticketed event there, like the Bike Summit, gets a zip if its form asks. Volunteering, bike
+  parking and private accounts get none. Eventbrite has no separate fundraiser account.
 * **Off switch.** `registrations.homeZipColumn` set to the placeholder id means no zip is written, so a
   deploy can precede the column and a fork can leave it out.
 
