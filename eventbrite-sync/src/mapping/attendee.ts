@@ -30,6 +30,9 @@ export function mergeAttendance(current: string | null, incoming: Incoming): str
 }
 
 const PHONE_QUESTION = /phone|\bcell\b|celular|mobile|\bm[oó]vil\b|tel[eé]fono/i;
+// A phone question about someone else: never the attendee's own number. Class forms ask for an
+// emergency contact's, so a match here would show that person's number as the attendee's.
+const OTHER_PERSON_QUESTION = /emergenc|guardian|parent|padre|madre|tutor/i;
 // Enough digits to be a number: rules out "Info Requested" and "Yes" to "Do you have a cell phone?".
 const MIN_PHONE_DIGITS = 7;
 
@@ -43,7 +46,9 @@ function realPhone(value: unknown): string | null {
 // answers), and each event's form is its own, so read both. Kept as entered, for a text column:
 // Monday's phone column refuses what it can't parse, which would fail the whole registration write.
 function attendeePhone(a: EventbriteAttendee): string | null {
-  const answers = (a.answers ?? []).filter((answer) => PHONE_QUESTION.test(answer.question ?? '')).map((answer) => answer.answer);
+  const answers = (a.answers ?? [])
+    .filter((answer) => PHONE_QUESTION.test(answer.question ?? '') && !OTHER_PERSON_QUESTION.test(answer.question ?? ''))
+    .map((answer) => answer.answer);
   for (const value of [a.profile?.cell_phone, a.profile?.work_phone, ...answers]) {
     const phone = realPhone(value);
     if (phone !== null) return phone;
