@@ -62,11 +62,17 @@ function nextTracking(last: UsageTracking | null, totals: Record<string, number>
   return { day, since: last.since, totals, today };
 }
 
+// Anyone on the account sets their own Monday name, and Slack would act on `<!channel>` or a
+// disguised `<url|text>` link in it.
+function escapeSlackText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
 function describeUsers({ since, today }: UsageTracking): string {
   const top = Object.entries(today)
     .sort(([, a], [, b]) => b - a)
     .slice(0, USERS_NAMED)
-    .map(([name, calls]) => `${name} ${calls.toLocaleString('en-US')}`);
+    .map(([name, calls]) => `${escapeSlackText(name)} ${calls.toLocaleString('en-US')}`);
   return top.length === 0
     ? 'No per-user figures yet today; they build up from the next hourly check.'
     : `Most calls since ${since.slice(11, 16)} UTC: ${top.join('; ')}.`;

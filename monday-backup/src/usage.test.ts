@@ -154,6 +154,15 @@ describe('who used today\'s calls', () => {
     expect(texts()[0]).toContain('Most calls since 00:30 UTC: Sandbox Integration 17,000; SVBC Integration 10.');
   });
 
+  it('escapes a user name, so it cannot ping the channel or disguise a link', async () => {
+    const { store } = fakeStore(null, earlier());
+    const { texts } = stubSlack();
+    const byUser = { '<!channel> & <https://evil.example|Help>': 9_000 };
+    await runUsageCheck({ fetchUsage: async () => usage(9_000, 10_000, byUser), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(texts()[0]).toContain('&lt;!channel&gt; &amp; &lt;https://evil.example|Help&gt; 9,000');
+    expect(texts()[0]).not.toContain('<!channel>');
+  });
+
   it('adds up across hourly checks, including quiet ones that send no alert', async () => {
     const { store, state } = fakeStore(null, earlier());
     const { texts } = stubSlack();
