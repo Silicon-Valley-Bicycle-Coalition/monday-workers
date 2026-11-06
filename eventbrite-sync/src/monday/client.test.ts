@@ -23,6 +23,22 @@ afterEach(() => {
 });
 
 describe('HttpMondayClient', () => {
+  it('creates and changes with create_labels_if_missing only when asked', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ({ ok: true, status: 200, json: async () => ({ data: { create_item: { id: '1' }, change_multiple_column_values: { id: '1' } } }) }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = newClient();
+    const sent = (n: number) => JSON.parse(fetchMock.mock.calls[n]![1].body as string);
+
+    await client.createItem(1, 'x', {}, { createLabelsIfMissing: true });
+    expect(sent(0).query).toContain('create_labels_if_missing: true');
+    await client.changeColumnValues(1, '2', {}, { createLabelsIfMissing: true });
+    expect(sent(1).query).toContain('create_labels_if_missing: true');
+    await client.createItem(1, 'x', {});
+    expect(sent(2).query).not.toContain('create_labels_if_missing');
+    await client.changeColumnValues(1, '2', {});
+    expect(sent(3).query).not.toContain('create_labels_if_missing');
+  });
+
   it('finds an item by column value', async () => {
     const fetchMock = mockFetchOnce({
       data: { items_page_by_column_values: { items: [{ id: '123' }] } },

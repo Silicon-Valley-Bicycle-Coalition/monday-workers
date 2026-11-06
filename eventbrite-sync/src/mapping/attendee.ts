@@ -1,4 +1,5 @@
 import type { EventbriteAttendee } from '../eventbrite/client';
+import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
 
 export type Incoming = 'Registered' | 'Attended' | 'Canceled';
@@ -34,9 +35,9 @@ export function mapAttendee(
   attendance: string
 ): { itemName: string; columnValues: Record<string, unknown> } {
   const cols = config.attendeeSync.registrations;
-  const name = nonEmpty(a.profile?.name);
-  const email = nonEmpty(a.profile?.email);
-  const firstName = nonEmpty(a.profile?.first_name);
+  const name = realName(a.profile?.name);
+  const email = realEmail(a.profile?.email);
+  const firstName = realName(a.profile?.first_name);
   const volunteer = eventFacts.program !== null && config.attendeeSync.volunteerPrograms.includes(eventFacts.program);
 
   const columnValues: Record<string, unknown> = {
@@ -53,8 +54,4 @@ export function mapAttendee(
   if (eventFacts.classLocation !== '') columnValues[cols.classLocationColumn] = eventFacts.classLocation;
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
-}
-
-function nonEmpty(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }

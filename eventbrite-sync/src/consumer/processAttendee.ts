@@ -1,4 +1,5 @@
 import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { realEmail, realName } from '../eventbrite/placeholder';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
 import { matchPerson } from '../matching/people';
@@ -7,6 +8,7 @@ import { isItemGone } from '../monday/itemGone';
 import { TERMINAL_PREFIX, type AttendeeQueueMessage, type ProcessBatchDeps } from './processBatch';
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 import { stampOf } from './messages';
+import { processPledge } from './processPledge';
 import { linkedItemId } from '../util/itemId';
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
@@ -19,6 +21,10 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   if (row === null) {
     throw new Error(`eventbrite-sync consumer: no attendees row for "${attendeeId}"`);
   }
+
+  // First, before the Events-item wait: a pledge has no Event link, so it doesn't need that item.
+  const pledgeEvent = config.pledge?.events[eventId];
+  if (pledgeEvent !== undefined) return processPledge(message, pledgeEvent, row, deps);
 
   const boardId = config.monday.boards['event-registrations'];
   if (boardId === null) {
@@ -112,7 +118,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     if (peopleBoardId === null) {
       throw new Error('config: monday.boards["people-live"] is not configured');
     }
-    const match = await matchPerson(mondayClient, peopleBoardId, config.attendeeSync.peopleEmailColumn, { email: attendee.profile?.email, name: attendee.profile?.name });
+    const match = await matchPerson(mondayClient, peopleBoardId, config.attendeeSync.peopleEmailColumn, { email: realEmail(attendee.profile?.email), name: realName(attendee.profile?.name) });
     if (match.donorItemId === null) {
       console.warn(`eventbrite-sync consumer: attendee "${attendeeId}" has no People link: ${match.reason}`);
     } else {
