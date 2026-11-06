@@ -52,6 +52,14 @@ describe('HttpEventbriteClient', () => {
     await expect(client.getOrder('1')).rejects.toThrow('unexpected body');
   });
 
+  it('keeps a malformed body out of the error, which is logged and stored, and retries', async () => {
+    const res = new Response('<html>call me at 408-555-0188', { status: 200 });
+    const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(res));
+    const err = await client.getAttendee('1', '2').catch((e: unknown) => e as Error);
+    expect((err as Error).message).toBe('eventbrite api: get attendee 1/2 returned an unexpected body');
+    expect(err).not.toBeInstanceOf(TerminalError);
+  });
+
   it('refuses a non-numeric order id without making a request', async () => {
     const fetchImpl = vi.fn();
     const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);

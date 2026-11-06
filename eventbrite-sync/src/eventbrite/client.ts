@@ -193,7 +193,14 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
     if (!res.ok) {
       throw new Error(`eventbrite api: ${what} failed with HTTP ${res.status}`);
     }
-    const body: unknown = await res.json();
+    // A parser's error can quote the body, which may hold attendee answers, and this message is
+    // logged and stored in D1.
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      throw new Error(`eventbrite api: ${what} returned an unexpected body`);
+    }
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       throw new Error(`eventbrite api: ${what} returned an unexpected body`);
     }
