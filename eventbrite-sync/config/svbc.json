@@ -68,6 +68,7 @@
       "attendeeIdColumn": "text_mm8ng6d5",
       "attendeeNameColumn": "text_mm8nwtqq",
       "attendeeEmailColumn": "email_mm8npjmg",
+      "attendeePhoneColumn": "text_mm8vqj7w",
       "firstNameColumn": "text_mm8rrr6v",
       "attendanceColumn": "color_mm8nkvhy",
       "sourceColumn": "color_mm8nkkbc",

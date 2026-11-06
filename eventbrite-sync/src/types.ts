@@ -187,6 +187,8 @@ export interface EventbriteSyncConfig {
       attendeeIdColumn: string;
       attendeeNameColumn: string;
       attendeeEmailColumn: string;
+      // A text column: phones are free text and kept as entered. The placeholder writes no phone.
+      attendeePhoneColumn: string;
       firstNameColumn: string;
       attendanceColumn: string;
       sourceColumn: string;
