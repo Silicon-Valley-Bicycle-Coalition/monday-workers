@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runUsageCheck, type DailyUsage, type UsageAlertStore } from './usage';
+import { runUsageCheck, type DailyUsage, type UsageAlertStore, type UsageTracking } from './usage';
 import type { SkipContext } from './flags';
 
-function fakeStore(init: { day: string; level: number } | null = null) {
-  const state = { last: init };
+function fakeStore(init: { day: string; level: number } | null = null, tracking: UsageTracking | null = null) {
+  const state = { last: init, tracking };
   const store: UsageAlertStore = {
+    usageTracking: async () => state.tracking,
+    saveUsageTracking: async (next) => {
+      state.tracking = next;
+    },
     lastUsageAlert: async () => state.last,
     recordUsageAlert: async (day, level) => {
       state.last = { day, level };
@@ -13,9 +17,10 @@ function fakeStore(init: { day: string; level: number } | null = null) {
   return { store, state };
 }
 
-function usage(today: number, limit = 10_000): DailyUsage {
+function usage(today: number, limit = 10_000, byUser: Record<string, number> = {}): DailyUsage {
   return {
     limit,
+    byUser,
     lastUpdated: '2026-10-27T11:50:00.000Z',
     byDay: [
       { day: '2026-10-27', usage: today },
@@ -74,14 +79,24 @@ describe('runUsageCheck', () => {
     expect(state.last).toEqual({ day: '2026-10-27', level: 80 });
   });
 
-  it('jumps straight to 80% when the first check already finds it over', async () => {
+  it('jumps straight to 100% when the first check already finds it over, showing the real percent', async () => {
     const { store, state } = fakeStore();
     const { texts } = stubSlack();
-    await runUsageCheck({ fetchUsage: async () => usage(10_499), store, slackWebhookUrl: hook, now: () => NOW });
+    await runUsageCheck({ fetchUsage: async () => usage(23_940), store, slackWebhookUrl: hook, now: () => NOW });
     expect(texts()).toHaveLength(1);
-    expect(texts()[0]).toContain('80%');
-    expect(texts()[0]).toContain('105%');
-    expect(state.last).toEqual({ day: '2026-10-27', level: 80 });
+    expect(texts()[0]).toContain('passed 100%');
+    expect(texts()[0]).toContain('239%');
+    expect(state.last).toEqual({ day: '2026-10-27', level: 100 });
+  });
+
+  it('escalates from 80% to 100% the same day, then stays quiet', async () => {
+    const { store, state } = fakeStore({ day: '2026-10-27', level: 80 });
+    const { texts } = stubSlack();
+    await runUsageCheck({ fetchUsage: async () => usage(10_000), store, slackWebhookUrl: hook, now: () => NOW });
+    await runUsageCheck({ fetchUsage: async () => usage(30_000), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(texts()).toHaveLength(1);
+    expect(texts()[0]).toContain('passed 100%');
+    expect(state.last).toEqual({ day: '2026-10-27', level: 100 });
   });
 
   it('alerts again on a new UTC day', async () => {
@@ -119,5 +134,70 @@ describe('runUsageCheck', () => {
     expect(state.last).toBeNull();
     const line = JSON.parse(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('writeSwitch'))!);
     expect(line).toMatchObject({ writeSwitch: 'skipped', sink: 'Slack alert', operation: 'sendFailureAlert' });
+  });
+});
+
+describe('who used today\'s calls', () => {
+  const earlier = (over: Partial<UsageTracking> = {}): UsageTracking => ({
+    day: '2026-10-27',
+    since: '2026-10-27T00:30:00.000Z',
+    totals: { 'Sandbox Integration': 300_000, 'SVBC Integration': 100_000 },
+    today: {},
+    ...over,
+  });
+
+  it('names the users whose 14-day totals grew today, biggest first', async () => {
+    const { store } = fakeStore(null, earlier());
+    const { texts } = stubSlack();
+    const byUser = { 'SVBC Integration': 100_010, 'Sandbox Integration': 317_000 };
+    await runUsageCheck({ fetchUsage: async () => usage(23_940, 10_000, byUser), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(texts()[0]).toContain('Most calls since 00:30 UTC: Sandbox Integration 17,000; SVBC Integration 10.');
+  });
+
+  it('adds up across hourly checks, including quiet ones that send no alert', async () => {
+    const { store, state } = fakeStore(null, earlier());
+    const { texts } = stubSlack();
+    const check = (today: number, sandbox: number) =>
+      runUsageCheck({ fetchUsage: async () => usage(today, 10_000, { 'Sandbox Integration': sandbox }), store, slackWebhookUrl: hook, now: () => NOW });
+    await check(1_000, 301_000);
+    expect(texts()).toHaveLength(0);
+    expect(state.tracking?.today).toEqual({ 'Sandbox Integration': 1_000 });
+    await check(5_000, 305_000);
+    expect(texts()[0]).toContain('Sandbox Integration 5,000.');
+  });
+
+  it('counts a total that shrank as zero: an old day just left Monday\'s window', async () => {
+    const { store, state } = fakeStore(null, earlier());
+    stubSlack();
+    await runUsageCheck({ fetchUsage: async () => usage(10, 10_000, { 'Sandbox Integration': 250_000 }), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(state.tracking?.today).toEqual({});
+    expect(state.tracking?.totals).toEqual({ 'Sandbox Integration': 250_000 });
+  });
+
+  it('starts over on a new UTC day, keeping the totals as the new baseline', async () => {
+    const { store, state } = fakeStore(null, earlier({ day: '2026-10-26', today: { 'Sandbox Integration': 9_000 } }));
+    stubSlack();
+    const byUser = { 'Sandbox Integration': 310_000 };
+    await runUsageCheck({ fetchUsage: async () => usage(10, 10_000, byUser), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(state.tracking).toEqual({ day: '2026-10-27', since: NOW.toISOString(), totals: byUser, today: {} });
+  });
+
+  it('says so when it has nothing to attribute yet', async () => {
+    const { store } = fakeStore();
+    const { texts } = stubSlack();
+    await runUsageCheck({ fetchUsage: async () => usage(5_000, 10_000, { 'Sandbox Integration': 300_000 }), store, slackWebhookUrl: hook, now: () => NOW });
+    expect(texts()[0]).toContain('No per-user figures yet today');
+    expect(texts()[0]).not.toContain('300,000');
+  });
+
+  it('keeps tracking under a dry run, since only the Slack alert is gated', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { store, state } = fakeStore();
+    stubSlack();
+    const dryRun: SkipContext = {
+      worker: 'monday-backup', environment: 'production', mode: 'off', logLevel: 'normal', deliveryId: 'cron', piiKeys: [],
+    };
+    await runUsageCheck({ fetchUsage: async () => usage(10, 10_000, { A: 1 }), store, slackWebhookUrl: hook, now: () => NOW, dryRun });
+    expect(state.tracking?.totals).toEqual({ A: 1 });
   });
 });

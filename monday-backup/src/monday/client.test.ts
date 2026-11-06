@@ -438,13 +438,18 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     expect((init.headers as Record<string, string>)['API-Version']).toBe('2026-07');
   });
 
-  it('reads the account daily limit and per-day usage from platform_api', async () => {
+  it('reads the account daily limit, per-day usage and per-user totals from platform_api', async () => {
     const fetchMock = mockFetchSequence([
       {
         data: {
           platform_api: {
             daily_limit: { total: 10_000 },
-            daily_analytics: { last_updated: '2026-10-27T18:57:20.555Z', by_day: [{ day: '2026-10-27', usage: 10_499 }] },
+            daily_analytics: {
+              last_updated: '2026-10-27T18:57:20.555Z',
+              by_day: [{ day: '2026-10-27', usage: 10_499 }],
+              // A deactivated user can come back without a user object.
+              by_user: [{ user: { name: 'Sandbox Integration' }, usage: 300 }, { user: null, usage: 2 }, { user: null, usage: 3 }],
+            },
           },
         },
       },
@@ -454,6 +459,7 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
       limit: 10_000,
       lastUpdated: '2026-10-27T18:57:20.555Z',
       byDay: [{ day: '2026-10-27', usage: 10_499 }],
+      byUser: { 'Sandbox Integration': 300, 'Unknown user': 5 },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
