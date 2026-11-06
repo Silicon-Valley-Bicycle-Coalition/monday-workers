@@ -62,6 +62,7 @@ describe('Event Registrations class roster', () => {
 
   it('creates every per-attendee column eventbrite-sync writes that the load does not', () => {
     expect(spec.columns).toEqual([
+      { title: 'Attendee Phone', type: 'text' },
       { title: 'First Name', type: 'text' },
       { title: 'Class Date', type: 'date' },
       { title: 'Class Day', type: 'text' },

@@ -172,6 +172,25 @@ describe('HttpEventbriteClient', () => {
     });
   });
 
+  describe('countAttendees', () => {
+    const client = (body: unknown) => new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(200, body)));
+
+    it('reads the total from one page of the attendee list', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { pagination: { object_count: 2911 }, attendees: [] }));
+      expect(await new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl).countAttendees('55')).toBe(2911);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/55/attendees/');
+    });
+
+    it('refuses a non-numeric event id', async () => {
+      await expect(client({}).countAttendees('abc')).rejects.toThrow(/non-numeric/);
+    });
+
+    it('throws when the total is missing', async () => {
+      await expect(client({ pagination: {} }).countAttendees('55')).rejects.toThrow(/object_count/);
+    });
+  });
+
   describe('listMyOrganizationIds', () => {
     it("returns the token's organization ids as strings", async () => {
       const fetchImpl = vi.fn().mockResolvedValue(response(200, { organizations: [{ id: '4242' }, { id: 7 }] }));

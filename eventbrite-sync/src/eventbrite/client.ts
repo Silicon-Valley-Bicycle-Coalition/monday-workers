@@ -61,6 +61,14 @@ export interface EventbriteEvent {
   } | null;
 }
 
+// One answer on an attendee. `answer` is absent when blank; a multi-select's values are joined by " | ".
+export interface EventbriteAnswer {
+  question_id?: string | null;
+  question?: string | null;
+  type?: string | null;
+  answer?: string | null;
+}
+
 // Attendee (object), `GET /events/{event_id}/attendees/{attendee_id}/`.
 export interface EventbriteAttendee {
   id: string;
@@ -69,10 +77,12 @@ export interface EventbriteAttendee {
   cancelled?: boolean | null;
   refunded?: boolean | null;
   status?: string | null;
-  profile?: { name?: string | null; first_name?: string | null; email?: string | null } | null;
+  // The phones are present only when the event's order form collects them.
+  profile?: { name?: string | null; first_name?: string | null; email?: string | null; cell_phone?: string | null; work_phone?: string | null } | null;
   ticket_class_name?: string | null;
-  // Custom question answers. Only mapping/homeZip.ts reads them; nothing else may carry one on.
-  answers?: { question?: string | null; question_id?: string | null; type?: string | null; answer?: unknown }[] | null;
+  created?: string | null;
+  order_id?: string | null;
+  answers?: EventbriteAnswer[] | null;
 }
 
 export interface EventbriteClient {
@@ -93,6 +103,11 @@ export interface EventbriteOrderLister {
   listMyOrganizationIds(): Promise<string[]>;
 }
 
+// The daily pledge count check's read (src/pledgeCounts/check.ts), kept off EventbriteClient for the same reason.
+export interface EventbriteAttendeeCounter {
+  countAttendees(eventId: string): Promise<number>;
+}
+
 // Bounds one check's Eventbrite reads: 50 orders a page, so 20 pages is 1,000 orders changed in a
 // day, far past SVBC's busiest (tens a day at a Summit peak).
 const MAX_ORDER_PAGES = 20;
@@ -101,7 +116,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
-export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLister {
+export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLister, EventbriteAttendeeCounter {
   constructor(
     private baseUrl: string,
     private token: string,
@@ -150,6 +165,17 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
     const list = (body as { organizations?: unknown }).organizations;
     if (!Array.isArray(list)) throw new Error('eventbrite api: list my organizations returned no "organizations" array');
     return list.map((org) => String((org as { id?: unknown })?.id ?? '')).filter((id) => id !== '');
+  }
+
+  // pagination.object_count on one page of the list: the total, canceled attendees included.
+  async countAttendees(eventId: string): Promise<number> {
+    if (!/^\d+$/.test(eventId)) {
+      throw new Error(`eventbrite api: refusing to count attendees for non-numeric event id "${eventId}"`);
+    }
+    const body = await this.getJson(`count attendees for event ${eventId}`, `${this.baseUrl}/events/${eventId}/attendees/`);
+    const total = (body as { pagination?: { object_count?: unknown } }).pagination?.object_count;
+    if (typeof total !== 'number') throw new Error(`eventbrite api: count attendees for event ${eventId} returned no pagination.object_count`);
+    return total;
   }
 
   // One GET with the shared error handling: digits-only ids, 404 -> null, 401/403 name the token.

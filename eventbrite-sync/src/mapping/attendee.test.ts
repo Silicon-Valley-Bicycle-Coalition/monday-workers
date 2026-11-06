@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from './attendee';
-import { testConfig } from '../test/testConfig';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { testConfig } from '../test/testConfig';
+import { dryRunMondayClient, piiKeysFor } from '../writeSwitch';
+import productionConfig from '../../config/svbc.json';
 import type { EventbriteAttendee } from '../eventbrite/client';
+import type { MondayClient } from '../monday/client';
 
 const config = testConfig();
 const facts = { classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Public' as string | null };
@@ -53,6 +56,14 @@ describe('mapAttendee', () => {
     });
   });
 
+  it('maps a placeholder attendee with no name or email columns', () => {
+    const m = mapAttendee(attendee({ id: 'a9', profile: { name: 'Info Requested Info Requested', first_name: 'Info Requested', email: 'Info Requested' } }), facts, config, 'Registered');
+    expect(m.itemName).toBe('Eventbrite attendee a9');
+    expect(m.columnValues).not.toHaveProperty('att_email_col');
+    expect(m.columnValues).not.toHaveProperty('att_name_col');
+    expect(m.columnValues).not.toHaveProperty('att_first_col');
+  });
+
   it('sets Role = Volunteer for a volunteer program', () => {
     const m = mapAttendee(attendee(), { ...facts, program: 'Volunteering' }, config, 'Attended');
     expect(m.columnValues.att_role_col).toBe('Volunteer');
@@ -64,6 +75,83 @@ describe('mapAttendee', () => {
     expect(m.columnValues).not.toHaveProperty('att_email_col');
   });
 
+  describe('Attendee Phone', () => {
+    const answer = (question: string, value?: string) => ({ question_id: 'q1', question, type: 'text', answer: value });
+
+    it('writes the order form cell phone, as entered', () => {
+      const m = mapAttendee(attendee({ profile: { name: 'Jane Rider', cell_phone: ' (408) 555-0100 ' } }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('(408) 555-0100');
+    });
+
+    it('falls back to a custom phone question', () => {
+      const answers = [answer('Emergency contact name', 'Sam'), answer('Teléfono / Phone number', '408-555-0101 ext 2')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('408-555-0101 ext 2');
+    });
+
+    it('prefers the built-in field over a custom question', () => {
+      const m = mapAttendee(attendee({ profile: { cell_phone: '4085550100' }, answers: [answer('Phone', '4085550101')] }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550100');
+    });
+
+    it('takes the first question with a number, past one that has none', () => {
+      const answers = [answer('Do you have a cell phone?', 'Yes'), answer('Mobile number', '4085550102')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550102');
+    });
+
+    it('ignores a number answering a question that is not about a phone', () => {
+      const m = mapAttendee(attendee({ answers: [answer('Zip code', '95112'), answer('Membership number', '4085550103')] }), facts, config, 'Registered');
+      expect(m.columnValues).not.toHaveProperty('att_phone_col');
+    });
+
+    it("never writes someone else's number as the attendee's", () => {
+      for (const question of ['Emergency contact phone', 'Teléfono de contacto de emergencia', 'Parent or guardian phone number']) {
+        const m = mapAttendee(attendee({ answers: [answer(question, '4085550105')] }), facts, config, 'Registered');
+        expect(m.columnValues, question).not.toHaveProperty('att_phone_col');
+      }
+    });
+
+    it("still finds the attendee's own number past an emergency contact's", () => {
+      const answers = [answer('Emergency contact phone', '4085550105'), answer('Your phone number', '4085550106')];
+      const m = mapAttendee(attendee({ answers }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550106');
+    });
+
+    it('falls back to the work phone', () => {
+      const m = mapAttendee(attendee({ profile: { cell_phone: '', work_phone: '4085550104' } }), facts, config, 'Registered');
+      expect(m.columnValues.att_phone_col).toBe('4085550104');
+    });
+
+    it('writes nothing until the column exists (a sandbox config still holding the placeholder)', () => {
+      const unset = testConfig();
+      unset.attendeeSync.registrations.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
+      const m = mapAttendee(attendee({ profile: { cell_phone: '4085550100' } }), facts, unset, 'Registered');
+      expect(m.columnValues).not.toHaveProperty(PLACEHOLDER_COLUMN_ID);
+    });
+
+    it("keeps a phone out of debug skip lines, under the real column's id", async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const real = { createItem: vi.fn(), changeColumnValues: vi.fn() } as unknown as MondayClient;
+      const ctx = { worker: 'eventbrite-sync', environment: 'sandbox', mode: 'off' as const, logLevel: 'debug' as const, deliveryId: 'd', piiKeys: piiKeysFor(config) };
+      const client = dryRunMondayClient(real, config.monday.boards, ctx);
+      await client.changeColumnValues(config.monday.boards['event-registrations']!, '1', { [productionConfig.attendeeSync.registrations.attendeePhoneColumn]: '4085550100' });
+      const logged = log.mock.calls.flat().join(' ');
+      expect(logged).toContain('changeColumnValues');
+      expect(logged).not.toContain('4085550100');
+      log.mockRestore();
+    });
+
+    it('never writes the Info Requested placeholder or a blank', () => {
+      for (const cell_phone of ['Info Requested', '', null]) {
+        const m = mapAttendee(attendee({ profile: { cell_phone } }), facts, config, 'Registered');
+        expect(m.columnValues).not.toHaveProperty('att_phone_col');
+      }
+      const m = mapAttendee(attendee({ answers: [answer('Phone')] }), facts, config, 'Registered');
+      expect(m.columnValues).not.toHaveProperty('att_phone_col');
+    });
+  });
+
   it('copes with no profile and no class facts', () => {
     const m = mapAttendee({ id: 'a2' }, { classDate: null, classDay: null, classLocation: '', program: null }, config, 'Registered');
     expect(m.itemName).toBe('Eventbrite attendee a2');
@@ -73,7 +161,7 @@ describe('mapAttendee', () => {
   });
 
   describe('Home Zip', () => {
-    const answers = (answer: unknown) => [{ question: 'Home ZIP code', question_id: '9', type: 'text', answer }];
+    const answers = (answer: unknown) => [{ question: 'Home ZIP code', question_id: '9', type: 'text', answer: answer as string | null }];
 
     it('writes Home Zip for a program in zipPrograms', () => {
       const m = mapAttendee(attendee({ answers: answers(' 95112-1234 ') }), facts, config, 'Registered');

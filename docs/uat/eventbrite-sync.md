@@ -162,3 +162,16 @@ Sequence's 7 AM–5 PM Pacific window.
 
 **Not exercised live:** the Held path (no event in the window had zero check-ins; covered by unit
 tests) and a real Eventbrite webhook delivery (deliveries were posted directly).
+
+## Pledge to Ride: try it (sandbox, once the board exists there)
+
+The board holds real pledges replayed from 2026, so treat it as private.
+
+1. Open the **Pledge to Ride** board. There's one row per pledge, with Year, County, Days Pledged, Rider Type and Heard About It filled in.
+2. Find a row where Details says **Buyer only**. Its name and email are the buyer's, County is Unknown, and Contact Consent is blank. That's expected: Eventbrite gave us no answers for that pledge.
+3. Open the dashboard. Compare the total and county figures with what you expected from Eventbrite.
+
+## Pledge to Ride: don't report these
+
+- Unknown is separate from Outside on purpose. Past reports counted the two together, so Outside looks much smaller.
+- 2025's total on the dashboard is lower than the 3,758 in its report, because that figure includes pledges from outside Eventbrite.

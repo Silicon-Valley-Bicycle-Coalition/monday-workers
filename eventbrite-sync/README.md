@@ -348,6 +348,14 @@ only once the attendee is Attended and never overwrites a link staff set. Item n
 Eventbrite: rename a class or attendee there, since a rename in Monday is overwritten by the next
 delivery.
 
+**Attendee Phone** comes from the event's order form: the built-in Cell Phone or Work Phone field, or
+else the first answered custom question whose wording mentions a phone (English or Spanish), skipping
+questions about someone else, such as "Emergency contact phone". An event whose form doesn't ask stays
+blank. It's a text column holding what the person typed, because Monday's
+phone column refuses a value it can't parse, and that would fail the whole registration write.
+Pledges don't get it: they go to their own board. `scripts/backfill-attendees.mjs` fills it for
+people who registered before this column, one event at a time.
+
 ### Prerequisites
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
@@ -373,6 +381,20 @@ stays empty until the attendee webhook is registered, and a class that was alrea
 `scripts/backfill-attendees.mjs` before its existing registrants appear. Check-ins and cancellations
 drop people off the view; a class leaves it the day after it runs.
 
+**Registrants on the event's card.** A registration also has a **Registrants link**, a second connect
+to the same event whose reverse column, **Registrants**, lists the registrations on the event. The
+Events board's **Item Card** opens by default and shows them in a Connected boards widget. It's a
+separate column because Monday refuses to make the existing Event link two-way
+(`cell_limit_exceeded`), most likely because of the 2,557 Pledge to Ride 2026 rows on that board. So:
+
+* The Worker writes it after the registration, in its own call, and only logs if Monday refuses, so it
+  can never fail a registration. A miss is retried on the attendee's next update.
+* `attendeeSync.registrantsLinkExcludedEventIds` lists events too large for it. Tested up to 303
+  registrations on one event; the real limit isn't known.
+* Everything else that reads the event uses the Event column, as before.
+* `scripts/backfill-registrants-link.mjs` fills it for older registrations. It needs a
+  `MONDAY_API_TOKEN` that can reach the board, skips what's linked, and is safe to re-run.
+
 In production the view and columns were created directly on the board on 2026-11-03 rather than
 with `configure`, which would also have re-applied the board's five existing views.
 
@@ -382,7 +404,8 @@ Funders ask for name, email, class date, zip, checked in, canceled and no show, 
 pull that from a **Grant report** view on Event Registrations, filtered by Grant and date and
 exported to Excel. Design:
 [`docs/superpowers/specs/2026-11-04-eventbrite-grant-report-design.md`](../docs/superpowers/specs/2026-11-04-eventbrite-grant-report-design.md).
-**Home Zip** is the only custom answer the Worker reads; every other answer is ignored.
+This feature reads only the zip answer. The Attendee Phone column and the Pledge to Ride board read
+answers of their own (see their sections).
 
 **What the Worker writes.** The consumer writes Home Zip with the rest of the registration when:
 
@@ -395,7 +418,7 @@ exported to Excel. Design:
 
 Anything else counts as no answer and its text is discarded. With no valid answer the column is left
 out of the write, so a later bad edit can't erase a good zip. It also means a zip someone deletes in
-Eventbrite stays in Monday. Nothing from an answer goes in D1 or the logs.
+Eventbrite stays in Monday. The zip goes in neither D1 nor the logs.
 
 **Set up in Monday, with no Worker code:**
 
@@ -514,6 +537,73 @@ backfill does: flags `--event-id`, `--worker-url`, `--env`, `--pause-ms`, `--dry
 class that predates the webhook. Nothing is emailed automatically: a backfill only fills the boards,
 and mail goes out when a coordinator uses the send page, which hands out only people no one has been
 sent to for that kind.
+
+## Pledge to Ride
+
+Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 3,000 pledges a year.
+Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
+**Status:** built, not configured in production. The sandbox config still holds placeholders until the
+board is created there.
+
+An attendee of an event in `pledge.events` goes to the private **Pledge to Ride** board **instead of**
+Event Registrations, with its answers. Everything before that (webhook, ledger, queue, write switch) is
+the same. The dashboard sits on that board. The 2,557 Event Registrations rows linked to the 2026 event
+stay where they are; they leave out the placeholders described next, so 2,906 is the figure to quote.
+
+**Placeholders.** Eventbrite returns the literal text `Info Requested` for the name and email of some
+attendees, with no answers (352 of 2026's 2,906). Their order has a real buyer, so the consumer fetches
+it, writes that name and address, and sets Details to `Buyer only`, County to `Unknown` and consent
+blank. They count as pledges, as they always have in the MTC report. On every other event the text is
+treated as blank.
+
+**County.** From the zip answer and `pledge.zipCounty`: on neither list is `Outside`, blank or malformed
+is `Unknown`. Past reports counted `Unknown` as Outside. 94303 straddles both counties and counts as San Mateo.
+
+**Labels.** Writes to this board create a missing label, so a new year's choice appears by itself. Only
+an answer of Eventbrite's `multiple_choice` type or one with a label in config can do that. Typed text
+goes to Other Answers.
+
+**Nothing from a pledge reaches the logs:** a debug skip line under the write switch leaves its values
+out, since the key-based redaction can't recognize free text under a column id.
+
+### A new year's pledge
+
+1. Staff create the event as a **draft** on Eventbrite, with its questions.
+2. `node scripts/pledge-event-config.mjs --event-id <id> --year <n>` prints its `pledge.events` block and
+   what to review. Paste it into `config/svbc.json`, and **deploy before the event is published**.
+3. Update the dashboard's Year filter.
+4. After publishing, make one test pledge, see the item appear, cancel it, and see it read `Canceled`.
+   Whether a cancellation sends `attendee.updated` hasn't been observed. If it doesn't, re-run the backfill
+   before reading report figures.
+
+**If step 2 gets missed,** the pledges go to Event Registrations, and `processEvent` logs an error for
+any event whose name contains `pledge.nameMatch` and isn't configured. To recover, in order: add the
+config and deploy; clear that event's ledger ids, since a stored id points at Event Registrations
+(`update attendees set monday_item_id = null where event_id = '<id>'`); replay with
+`scripts/backfill-attendees.mjs`; delete the stray rows by hand.
+
+### Daily count check
+
+On the missed-order check's hour, `src/pledgeCounts/check.ts` compares Eventbrite's attendee total with the
+`attendees` ledger for each configured event, up to 30 days after it ends, and logs an error on a difference
+(canceled attendees are in both). A small difference may be a pledge still in flight. Otherwise, check the
+webhook, then replay. It finds an event's end date from its `events` row, which `backfill-attendees.mjs`
+creates, so a newly configured past event raises this daily until it's been replayed.
+
+### Setting it up
+
+`scripts/setup-pledge-board.mjs` creates the board, private, and prints its config (dry run without
+`--apply`; `--subscribe` the integration user and `monday-backup`'s, or neither can see it). Add the board to
+`requiredBoardIds` in `monday-backup/config/backup.json`, and run `scripts/mark-read-only-columns.mjs`.
+
+**Don't create a test event to rehearse.** There's one Eventbrite organization and production's webhook
+covers all of it, so a test event writes to production boards. Replay a slice of a real past event to the
+sandbox with `backfill-attendees.mjs --env sandbox` instead, and delete the sandbox board's data afterward.
+
+**Backfill pace:** each attendee costs one Eventbrite read, plus one for a placeholder, and Eventbrite
+publishes a limit of 2,000 calls an hour that the Worker's other traffic shares. Confirm it, and use
+`--pause-ms 2000` or slower. Check the ledger first: the same `monday_item_id` problem as the recovery above
+applies to any configured event that already has rows.
 
 ## Resetting for new board ids
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig, PLACEHOLDER_COLUMN_ID } from './config';
-import { testConfig } from './test/testConfig';
+import { testConfig, withPledge } from './test/testConfig';
 
 const valid = () => JSON.parse(JSON.stringify(testConfig())) as Record<string, any>;
 
@@ -215,4 +215,29 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('attendeeSync.volunteerPrograms');
     });
   });
+});
+
+describe('validateConfig: pledge', () => {
+  const pledged = () => JSON.parse(JSON.stringify(withPledge(testConfig()))) as Record<string, any>;
+  const rejects = (mutate: (cfg: Record<string, any>) => void, message: string) => {
+    const cfg = pledged();
+    mutate(cfg);
+    expect(() => validateConfig(cfg)).toThrow(message);
+  };
+
+  it('accepts a config with no pledge block', () => expect(() => validateConfig(valid())).not.toThrow());
+  it('accepts a complete pledge block', () => expect(validateConfig(pledged()).pledge?.nameMatch).toBe('Pledge to Ride'));
+  it('rejects a blank nameMatch', () => rejects((c) => { c.pledge.nameMatch = ''; }, 'pledge.nameMatch'));
+  it('rejects a blank column id', () => rejects((c) => { c.pledge.columns.zipColumn = ''; }, 'pledge.columns.zipColumn'));
+  it('rejects a missing pledge board', () => rejects((c) => { delete c.monday.boards['pledge-to-ride']; }, 'monday.boards.pledge-to-ride'));
+  it('rejects a non-numeric event id', () => rejects((c) => { c.pledge.events.abc = c.pledge.events['9100']; }, 'pledge.events.abc'));
+  it('rejects a non-numeric question id', () => rejects((c) => { c.pledge.events['9100'].questions.abc = 'zip'; }, 'pledge.events.9100.questions.abc'));
+  it('rejects an unknown field', () => rejects((c) => { c.pledge.events['9100'].questions['1'] = 'shoeSize'; }, 'pledge.events.9100.questions.1'));
+  it('rejects a non-integer year', () => rejects((c) => { c.pledge.events['9100'].year = '2026'; }, 'pledge.events.9100.year'));
+  it('rejects a bad ignoreQuestions', () => rejects((c) => { c.pledge.events['9100'].ignoreQuestions = 'x'; }, 'pledge.events.9100.ignoreQuestions'));
+  it('rejects a blank choice label', () => rejects((c) => { c.pledge.events['9100'].choices.Yes = ''; }, 'pledge.events.9100.choices'));
+  it('rejects a bad consentValues', () => rejects((c) => { c.pledge.events['9100'].consentValues = [1]; }, 'pledge.events.9100.consentValues'));
+  it('rejects a zip that is not 5 digits', () => rejects((c) => { c.pledge.zipCounty['San Mateo'].push('9401'); }, 'pledge.zipCounty.San Mateo'));
+  it('rejects a zip under two counties', () => rejects((c) => { c.pledge.zipCounty['San Mateo'].push('95014'); }, '95014'));
+  it('rejects a county named like a fallback', () => rejects((c) => { c.pledge.zipCounty.Outside = ['10001']; }, 'pledge.zipCounty.Outside'));
 });

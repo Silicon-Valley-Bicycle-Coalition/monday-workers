@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { homeZipFromAnswers } from './homeZip';
 
-const zip = (question: string, answer: unknown, type = 'text') => ({ question, question_id: '1', type, answer });
+const zip = (question: string, answer: unknown, type = 'text') => ({ question, question_id: '1', type, answer: answer as string | null });
 
 describe('homeZipFromAnswers', () => {
   it.each(['What is your home ZIP code?', 'Home Zip Code', 'Mailing Zip Code', 'Your zipcode'])('reads "%s"', (w) => {

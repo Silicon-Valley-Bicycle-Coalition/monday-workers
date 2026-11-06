@@ -545,6 +545,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     // Written per attendee by eventbrite-sync. The load leaves them blank, so migrated history
     // has no Class Date and stays out of the Class roster view.
     columns: [
+      { title: 'Attendee Phone', type: 'text' },
       { title: 'First Name', type: 'text' },
       { title: 'Class Date', type: 'date' },
       { title: 'Class Day', type: 'text' },
@@ -564,7 +565,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     views: [
       { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
-      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
+      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Attendee Phone', 'Role', 'Attendance', 'Class Date', 'Class Location'],
         filter: { rules: [
           { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
           { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },

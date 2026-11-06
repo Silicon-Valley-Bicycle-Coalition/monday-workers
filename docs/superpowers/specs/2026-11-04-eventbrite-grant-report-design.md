@@ -27,7 +27,7 @@ Event Registrations already holds nearly all of this. Two things are missing: th
 
 ## Non-goals
 
-* Other custom answers in Monday. Only the zip comes over, however many questions a form asks. A new
+* Other custom answers in Monday. This feature brings over only the zip, however many questions a form asks. A new
   question stays in Eventbrite until someone decides to bring it over.
 * Counts per question, and an Answer Counts board (see "Dropped").
 * Classes before November 2026.
@@ -59,7 +59,8 @@ and added to `MARKED_COLUMNS` as locked.
 
 Zip is stored against a named person, on a board every CRM seat can read. David accepted this on 2026-11-04,
 reversing the draft's "no answer stored against a person": funders require it, the same row already holds
-name and email, and it stays the only custom answer stored per person.
+name and email, and this feature stores no other answer. (The Attendee Phone column and the Pledge to Ride
+board, added separately, read answers of their own.)
 
 Nothing new goes in D1. The zip stays out of log lines and debug skip lines.
 

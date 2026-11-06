@@ -271,6 +271,19 @@ describe('D1GiftsStore — acting_for', () => {
     ]));
   });
 
+  it('organizationalGivingAll keeps one total for a person whose affiliations name two boards', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-a','p-moved','b1','A','2026-01-01T00:00:00Z')`).run();
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-b','p-moved','b2','B','2026-01-01T00:00:00Z')`).run();
+    await store.refreshFacts([
+      gift({ mondayItemId: 'g-a', amountCents: 5000, actingForItemId: 'af-a' }),
+      gift({ mondayItemId: 'g-b', amountCents: 2500, actingForItemId: 'af-b' }),
+    ], 'import', '2026-01-01T00:00:00Z');
+    const row = (await store.organizationalGivingAll('Received')).get('p-moved');
+    expect(row?.cents).toBe(7500);
+    expect(await store.organizationalGivingTotals('p-moved', 'Received')).toMatchObject({ cents: 7500 });
+  });
+
   it('a person whose affiliation(s) have no attributed gifts still appears with cents: 0 (finding 2)', async () => {
     const store = new D1GiftsStore(env.DB);
     await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-lonely','p-lonely','b1','Lonely @ Org','2026-01-01T00:00:00Z')`).run();

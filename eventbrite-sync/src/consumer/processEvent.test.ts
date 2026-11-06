@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { processEvent } from './processEvent';
 import { consumeWriteBatch } from './processBatch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
-import { testConfig } from '../test/testConfig';
+import { testConfig, withPledge } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
 import type { ProcessBatchDeps, WriteQueueMessage } from './processBatch';
 import type { EventbriteEvent } from '../eventbrite/client';
@@ -311,5 +311,59 @@ describe('event messages under the write switch', () => {
     const { deps, sent } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
     await processEvent({ ...message, writeStamp: 'dropped' }, deps);
     expect(sent()).toEqual([{ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated', writeStamp: 'dropped' }]);
+  });
+});
+
+describe('processEvent: pledge event moved', () => {
+  it('does not fan out to its pledges, which copy nothing from the event', async () => {
+    const cfg = withPledge(testConfig());
+    cfg.pledge!.events['9001'] = cfg.pledge!.events['9100']!;
+    const { deps, queue, attendeeStore } = setup({
+      row: eventRow({ mondayItemId: 'item-9', startsAt: '2020-01-01T00:00:00.000Z' }),
+      attendees: [attendeeRow('a1')],
+      config: cfg,
+    });
+    await processEvent({ kind: 'event', eventId: '9001', action: 'event.updated' }, deps);
+    expect(attendeeStore.listByEvent).not.toHaveBeenCalled();
+    expect(queue.sendBatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('processEvent: pledge event missing from config', () => {
+  const message = { kind: 'event' as const, eventId: '9001', action: 'event.updated' };
+  const pledged = withPledge(testConfig());
+  const run = async (name: string, cfg = pledged) => {
+    const { deps, mondayClient } = setup({ event: event({ name: { text: name } }) });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await processEvent(message, { ...deps, config: cfg });
+    const lines = error.mock.calls.map((c) => String(c[0]));
+    error.mockRestore();
+    return { lines, mondayClient };
+  };
+
+  it('raises one error naming the event, and still writes the Events item', async () => {
+    const { lines, mondayClient } = await run('Pledge to Ride: Bike to Wherever Days 2027');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('9001');
+    expect(lines[0]).toContain('pledge.events');
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches regardless of case', async () => {
+    expect((await run('pledge to ride 2027')).lines).toHaveLength(1);
+  });
+
+  it('is quiet for a configured event', async () => {
+    const cfg = withPledge(testConfig());
+    cfg.pledge!.events['9001'] = cfg.pledge!.events['9100']!;
+    expect((await run('Pledge to Ride 2027', cfg)).lines).toHaveLength(0);
+  });
+
+  it('is quiet with no pledge config', async () => {
+    expect((await run('Pledge to Ride 2027', testConfig())).lines).toHaveLength(0);
+  });
+
+  it('is quiet for another event', async () => {
+    expect((await run('Learn to Ride')).lines).toHaveLength(0);
   });
 });

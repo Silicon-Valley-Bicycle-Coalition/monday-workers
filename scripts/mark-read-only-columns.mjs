@@ -89,9 +89,14 @@ export const MARKED_COLUMNS = {
     locked: ['Fiscal Year Ending', 'Total Received', 'Gift Count', 'By Gift Type', 'Restated'],
     history: [],
   },
-  'Events': { locked: ['Eventbrite ID', 'Send class email'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
+  'Pledge to Ride': {
+    locked: ['Eventbrite Attendee ID', 'Year', 'Status', 'Pledge Date', 'Email', 'Details', 'Zip', 'County', 'Days Pledged',
+      'Rider Type', 'Heard About It', 'Who Asked', 'Contact Consent', 'Other Answers'],
+    history: [],
+  },
+  'Events': { locked: ['Eventbrite ID', 'Send class email', 'Registrants'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Home Zip'],
+    locked: ['Eventbrite Attendee ID', 'Attendee Phone', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Registrants link', 'Home Zip'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).

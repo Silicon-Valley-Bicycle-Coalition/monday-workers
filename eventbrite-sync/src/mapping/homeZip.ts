@@ -7,7 +7,7 @@ const ZIP = /^\d{5}(-\d{4})?$/;
 /**
  * The attendee's home ZIP from their custom answers: the first text question asking for a ZIP
  * whose answer is a ZIP (or ZIP+4, reduced to 5 digits). Anything else, including text a person
- * typed into the field, is discarded: no other answer ever reaches Monday, D1 or a log line.
+ * typed into the field, is discarded.
  */
 export function homeZipFromAnswers(answers: EventbriteAttendee['answers']): string | null {
   if (!Array.isArray(answers)) return null;

@@ -13,6 +13,7 @@ import { tokenProviderFor } from './monday/graphql';
 import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
 import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/sweep';
+import { checkPledgeCounts, logPledgeCounts } from './pledgeCounts/check';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
@@ -127,19 +128,20 @@ export async function runScheduled(
   env: Env,
   ctx: ExecutionContext,
   check: typeof checkMissedOrders = checkMissedOrders,
-  sweep: typeof sweepEndedEvents = sweepEndedEvents
+  sweep: typeof sweepEndedEvents = sweepEndedEvents,
+  pledgeCounts: typeof checkPledgeCounts = checkPledgeCounts
 ): Promise<void> {
   const config = configFor(env);
   const now = new Date(controller.scheduledTime);
   // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them;
-  // `off` dry-runs the sweep (each queue send logged, none made) and runs the check, which only reads
-  // Eventbrite and the orders ledger and logs, so its dry run is the live run; `hold` or an unreadable
+  // `off` dry-runs the sweep (each queue send logged, none made) and runs the checks, which only read
+  // Eventbrite and the ledgers and log, so their dry run is the live run; `hold` or an unreadable
   // switch skips them with one line.
   const gate = await skipContext(env);
   const disposition = runDisposition(gate.mode);
   const isCheck = isCheckHour(now);
   if (disposition === 'skip') {
-    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping ${isCheck ? 'the ended-event sweep and the missed-order check' : 'the ended-event sweep'}`);
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping ${isCheck ? 'the ended-event sweep and the daily checks' : 'the ended-event sweep'}`);
     return;
   }
 
@@ -170,5 +172,18 @@ export async function runScheduled(
     })
       .then(logMissedOrders)
       .catch((err) => console.error(`eventbrite-sync missed orders: check failed: ${errorMessage(err)}`))
+  );
+
+  const pledgeEventIds = Object.keys(config.pledge?.events ?? {});
+  if (pledgeEventIds.length === 0) return;
+  ctx.waitUntil(
+    pledgeCounts(now, {
+      counter: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
+      ledger: new D1AttendeeStore(env.DB),
+      events: new D1EventStore(env.DB),
+      eventIds: pledgeEventIds,
+    })
+      .then(logPledgeCounts)
+      .catch((err) => console.error(`eventbrite-sync pledge counts: check failed: ${errorMessage(err)}`))
   );
 }

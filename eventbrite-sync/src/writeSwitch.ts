@@ -32,6 +32,7 @@ const SINK_NAMES: Record<keyof MondayBoards, string> = {
   'people-live': 'People',
   events: 'Events',
   'event-registrations': 'Event Registrations',
+  'pledge-to-ride': 'Pledge to Ride',
 };
 
 // The ledger writes a dry run must not make: a placeholder item id stored here (matched_donor_item_id
@@ -57,6 +58,9 @@ export const DRY_RUN_EVENT_ITEM_ID = 'dry-run-event';
  */
 export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, ctx: SkipContext): MondayClient {
   const proxies = new Map<string, MondayClient>();
+  // A pledge's values are free text and home zips under ids the key-based redaction can't recognize,
+  // so even a debug skip line leaves them out.
+  const isPledgeBoard = (boardId: number) => boards['pledge-to-ride'] === boardId;
   const sinkFor = (boardId: number): MondayClient => {
     const key = (Object.keys(SINK_NAMES) as (keyof MondayBoards)[]).find((k) => boards[k] === boardId);
     const sink = key ? SINK_NAMES[key] : `Monday board ${boardId}`;
@@ -83,8 +87,10 @@ export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, c
     getItems: (boardId, itemIds, columnIds) => client.getItems(boardId, itemIds, columnIds),
     postUpdate: (itemId, body) => updates.postUpdate(itemId, body),
     createTimelineItem: (input) => timeline.createTimelineItem(input),
-    createItem: (boardId, itemName, columnValues) => sinkFor(boardId).createItem(boardId, itemName, columnValues),
-    changeColumnValues: (boardId, itemId, columnValues) => sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues),
+    createItem: (boardId, itemName, columnValues, options) =>
+      isPledgeBoard(boardId) ? sinkFor(boardId).createItem(boardId, '', {}) : sinkFor(boardId).createItem(boardId, itemName, columnValues, options),
+    changeColumnValues: (boardId, itemId, columnValues, options) =>
+      isPledgeBoard(boardId) ? sinkFor(boardId).changeColumnValues(boardId, itemId, {}) : sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues, options),
   };
 }
 

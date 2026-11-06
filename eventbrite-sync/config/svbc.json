@@ -72,6 +72,7 @@
       "attendeeIdColumn": "text_mm8ng6d5",
       "attendeeNameColumn": "text_mm8nwtqq",
       "attendeeEmailColumn": "email_mm8npjmg",
+      "attendeePhoneColumn": "text_mm8vqj7w",
       "firstNameColumn": "text_mm8rrr6v",
       "attendanceColumn": "color_mm8nkvhy",
       "sourceColumn": "color_mm8nkkbc",
@@ -81,8 +82,10 @@
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
       "classLocationColumn": "text_mm8rpb9h",
-      "homeZipColumn": "REPLACE_WITH_COLUMN_ID"
+      "homeZipColumn": "REPLACE_WITH_COLUMN_ID",
+      "registrantsLinkColumn": "board_relation_mm8svmgy"
     },
+    "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {
       "pageUrl": "https://script.google.com/a/macros/bikesiliconvalley.org/s/AKfycbwF1OXrt89F3p6V2sPg__6L6fLzIg1kd4DJ8wODWSyem1J-jucCw7PT96ROpHaTMejP/exec",
       "sandboxRecipient": null,
