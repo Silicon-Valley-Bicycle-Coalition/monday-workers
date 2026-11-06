@@ -87,7 +87,7 @@
       "classDateColumn": "date_mm8gggwd",
       "classDayColumn": "text_mm8gkw96",
       "classLocationColumn": "text_mm8gmxsr",
-      "homeZipColumn": "REPLACE_WITH_COLUMN_ID",
+      "homeZipColumn": "text_mm8vtg12",
       "registrantsLinkColumn": "board_relation_mm8sz574"
     },
     "registrantsLinkExcludedEventIds": [
