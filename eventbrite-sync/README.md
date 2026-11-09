@@ -426,8 +426,11 @@ Eventbrite stays in Monday. The zip goes in neither D1 nor the logs.
    `scripts/mark-read-only-columns.mjs` to lock it.
 2. **Grant**, a dropdown on Events, with labels VTA and SMCTA to begin with. Staff set it once per class.
 3. A mirror of Grant on Event Registrations, through the Event link.
-4. The **Grant report** table view with Name, Attendee Email, Class Date, Home Zip, Attendance and
-   Grant, and a dashboard if wanted.
+4. The **Grant report** table view with Name, Attendee Email, Event, Class Date, Home Zip, Attendance
+   and Grant, every other column hidden. It is filtered to Grant is not empty, grouped by Grant, and
+   sorted by Class Date newest first. Staff add a Class Date filter for the reporting period, then
+   export. A dashboard is optional. The sandbox copy is view 291176794, created 2026-11-09. Build
+   production's to the same settings.
 
 **No Show** isn't automatic: staff or the class email page set it, so a class nobody marks counts no
 no-shows. Eventbrite records check-ins, not absences, and a class with no check-ins may just be one
