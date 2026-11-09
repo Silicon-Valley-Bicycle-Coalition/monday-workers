@@ -38,7 +38,7 @@ function stubMondayUsage() {
       data: {
         platform_api: {
           daily_limit: { total: 10_000 },
-          daily_analytics: { last_updated: null, by_day: [{ day: new Date().toISOString().slice(0, 10), usage: 10 }] },
+          daily_analytics: { last_updated: null, by_day: [{ day: new Date().toISOString().slice(0, 10), usage: 10 }], by_user: [] },
         },
       },
     }),

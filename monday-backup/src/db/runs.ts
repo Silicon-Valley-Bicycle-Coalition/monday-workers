@@ -1,4 +1,4 @@
-import type { UsageAlertStore } from '../usage';
+import type { UsageAlertStore, UsageTracking } from '../usage';
 import type { WatchdogStore } from '../watchdog';
 
 export interface RunResult {
@@ -138,6 +138,20 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
     await this.db
       .prepare(`UPDATE run_alert_state SET last_usage_alert_day = ?1, last_usage_alert_level = ?2 WHERE id = 1`)
       .bind(day, level)
+      .run();
+  }
+
+  async usageTracking(): Promise<UsageTracking | null> {
+    const row = await this.db
+      .prepare(`SELECT usage_tracking_json FROM run_alert_state WHERE id = 1`)
+      .first<{ usage_tracking_json: string | null }>();
+    return row?.usage_tracking_json == null ? null : (JSON.parse(row.usage_tracking_json) as UsageTracking);
+  }
+
+  async saveUsageTracking(tracking: UsageTracking): Promise<void> {
+    await this.db
+      .prepare(`UPDATE run_alert_state SET usage_tracking_json = ?1 WHERE id = 1`)
+      .bind(JSON.stringify(tracking))
       .run();
   }
 }

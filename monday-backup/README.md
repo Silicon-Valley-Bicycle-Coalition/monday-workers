@@ -168,8 +168,8 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   from an admin's own token.
 * **Monday API daily usage.** The same hourly cron reads the account's API usage
   (`platform_api { daily_limit daily_analytics }`; this works on Pro, not only Enterprise) and
-  alerts Slack once when today's calls pass **50%**, and again at **80%**, of the daily limit
-  (`src/usage.ts`, at most two alerts per UTC day, tracked in D1 by migration 0003). Monday caps
+  alerts Slack once each when today's calls pass **50%**, **80%** and **100%** of the daily limit
+  (`src/usage.ts`, at most three alerts per UTC day, tracked in D1 by migration 0003). Monday caps
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
   cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 1,500–2,000
@@ -178,9 +178,12 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   read is `total`, so a purchased API add-on
   raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
   account-wide and the sandbox shares the production account, only the deployment whose config
-  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. When an alert
-  fires, `daily_analytics { by_user { user { name } usage } }` shows which user, and so which
-  Worker, is using the calls.
+  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. An alert names
+  the users with the most calls that day, and so which Workers made them (Sandbox Integration
+  means a sandbox Worker). Monday's `by_user` only totals its whole 14-day window, so each hourly
+  check stores those totals and adds up the growth (migration 0004). The count starts at the
+  00:30 UTC check, so it misses the first half hour, and it is empty until the second check after
+  this is deployed.
 
 ## Sandbox environment — inbound only, no outbound data
 

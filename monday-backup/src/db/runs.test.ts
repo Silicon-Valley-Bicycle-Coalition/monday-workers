@@ -133,4 +133,12 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     await store.recordUsageAlert('2026-10-27', 80);
     expect(await store.lastUsageAlert()).toEqual({ day: '2026-10-27', level: 80 });
   });
+
+  it('round-trips the per-user usage tracking, null until one is saved', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.usageTracking()).toBeNull();
+    const tracking = { day: '2026-10-27', since: '2026-10-27T00:30:00.000Z', totals: { A: 5 }, today: { A: 2 } };
+    await store.saveUsageTracking(tracking);
+    expect(await store.usageTracking()).toEqual(tracking);
+  });
 });
