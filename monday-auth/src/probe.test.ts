@@ -13,7 +13,7 @@ interface Seen {
 }
 
 // Fake Monday GraphQL. `failing` names a query fragment whose request gets a GraphQL error.
-function fakeMonday(failing?: string) {
+function fakeMonday(failing?: string, boardRead: unknown = { boards: [] }) {
   const seen: Seen[] = [];
   const fetchFn = (async (_url: RequestInfo | URL, init?: RequestInit) => {
     const query = (JSON.parse(String(init?.body)) as { query: string }).query;
@@ -24,6 +24,7 @@ function fakeMonday(failing?: string) {
     if (query.includes('complexity')) {
       return Response.json({ data: { complexity: { before: 100, after: 90, reset_in_x_seconds: 30 }, me: { id: '42' } } });
     }
+    if (query.includes('boards(ids')) return Response.json({ data: boardRead });
     if (query.includes('boards(')) {
       return Response.json({ data: { boards: [{ id: '1', workspace_id: '7', board_kind: 'public', permissions: 'everyone', state: 'active' }] } });
     }
@@ -187,5 +188,82 @@ describe('/oauth/probe/:app', () => {
     const text = await res.text();
     expect(text).not.toContain(TOKEN);
     expect(JSON.parse(text).bareHeader.ok).toBe(false);
+  });
+
+  describe('the optional board read', () => {
+    const fields = { key: 'the-start-key', workspace: '7', board: '18437342592' };
+    const boardQueries = (seen: Seen[]) => seen.filter((s) => s.query.includes('boards(ids'));
+
+    it('reports empty when the token gets nothing back for that id', async () => {
+      const { fetchFn, seen } = fakeMonday();
+      const res = await probe(appWith(fetchFn), fields);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, any>;
+      expect(body.board).toEqual({ id: '18437342592', empty: true });
+      expect(boardQueries(seen).map((s) => s.query)).toEqual(['{ boards(ids: [18437342592]) { id } }']);
+      expect(boardQueries(seen)[0]!.auth).toBe(TOKEN);
+    });
+
+    it('reports not empty when the board comes back, and nothing about the board', async () => {
+      const { fetchFn } = fakeMonday(undefined, { boards: [{ id: '18437342592', name: 'SECRET-BOARD-NAME' }] });
+      const res = await probe(appWith(fetchFn), fields);
+      const text = await res.text();
+      expect((JSON.parse(text) as Record<string, any>).board).toEqual({ id: '18437342592', empty: false });
+      expect(text).not.toContain('SECRET-BOARD-NAME');
+    });
+
+    it('does not read an unexpected answer or an error as empty', async () => {
+      const odd = await probe(appWith(fakeMonday(undefined, { boards: null }).fetchFn), fields);
+      expect(((await odd.json()) as Record<string, any>).board.ok).toBe(false);
+      const denied = await probe(appWith(fakeMonday('boards(ids').fetchFn), fields);
+      const body = (await denied.json()) as Record<string, any>;
+      expect(body.board.ok).toBe(false);
+      expect(body.board.error).toContain('denied');
+      expect(body.bareHeader).toEqual({ ok: true });
+    });
+
+    it('scrubs the token from a failed read', async () => {
+      const fetchFn = (async (_u: RequestInfo | URL, init?: RequestInit) => {
+        const q = (JSON.parse(String(init?.body)) as { query: string }).query;
+        if (q.includes('boards(ids')) return Response.json({ errors: [{ message: `no ${TOKEN}` }] });
+        return fakeMonday().fetchFn(_u, init);
+      }) as typeof fetch;
+      const text = await (await probe(appWith(fetchFn), fields)).text();
+      expect(text).not.toContain(TOKEN);
+      expect((JSON.parse(text) as Record<string, any>).board.ok).toBe(false);
+    });
+
+    it('sends no board read and adds no board key when the field is absent or blank', async () => {
+      for (const extra of [{}, { board: '' }] as Record<string, string>[]) {
+        const { fetchFn, seen } = fakeMonday();
+        const res = await probe(appWith(fetchFn), { key: 'the-start-key', workspace: '7', ...extra });
+        expect(res.status).toBe(200);
+        expect('board' in ((await res.json()) as Record<string, any>)).toBe(false);
+        expect(boardQueries(seen)).toEqual([]);
+      }
+    });
+
+    it('refuses a non-numeric id before any Monday call or token', async () => {
+      for (const board of ['abc', '1) { id name } #', '1,2', '-1', ' 12']) {
+        let brokerCalls = 0;
+        const { fetchFn, seen } = fakeMonday();
+        const app = appWith(fetchFn, { token: async () => (brokerCalls++, TOKEN) });
+        expect((await probe(app, { key: 'the-start-key', workspace: '7', board })).status, board).toBe(400);
+        expect(seen).toEqual([]);
+        expect(brokerCalls).toBe(0);
+      }
+    });
+
+    it('keeps the key gate and the PROBE_ENABLED gate', async () => {
+      const { fetchFn, seen } = fakeMonday();
+      expect((await probe(appWith(fetchFn), { workspace: '7', board: '1' })).status).toBe(403);
+      expect((await probe(appWith(fetchFn, undefined, { PROBE_ENABLED: 'false' }), fields)).status).toBe(404);
+      expect(seen).toEqual([]);
+    });
+
+    it('offers the field on the form', async () => {
+      const get = await appWith(fakeMonday().fetchFn).request(PROBE);
+      expect(await get.text()).toContain('name="board"');
+    });
   });
 });

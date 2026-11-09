@@ -16,6 +16,9 @@ export interface ProbeReport {
   bearerHeader: Check;
   platformApi: Check;
   complexity: { before: number; after: number; resetInSeconds: number } | { ok: false; error: string };
+  // Only when a board id was asked for. `empty` is all it says about the board: that this app's
+  // token got nothing back for that id. An error is not empty.
+  board?: { id: string; empty: boolean } | { ok: false; error: string };
 }
 
 // Direct fetch, not MondayGraphQL: sending the token bare and as a Bearer is the point.
@@ -36,7 +39,8 @@ async function gql<T>(fetchFn: FetchFn, authorization: string, query: string): P
 
 // Runs each check on its own, so one failing never hides the others. Errors are the Monday
 // message or HTTP status with any occurrence of the token scrubbed; the token is never returned.
-export async function runProbe(app: AppKey, token: string, workspace: string, fetchFn: FetchFn): Promise<ProbeReport> {
+// `boardId` must already be validated as numeric: it goes into the query text.
+export async function runProbe(app: AppKey, token: string, workspace: string, fetchFn: FetchFn, boardId?: string): Promise<ProbeReport> {
   const scrub = (err: unknown): { ok: false; error: string } => {
     const message = err instanceof Error ? err.message : 'error';
     return { ok: false, error: message.split(token).join('[token]').slice(0, 300) };
@@ -69,7 +73,13 @@ export async function runProbe(app: AppKey, token: string, workspace: string, fe
     };
   });
 
-  const [me, scope, bareHeader, bearerHeader, platformApi] = await Promise.all([
+  const readBoard = async (id: string) => {
+    const data = await gql<{ boards: { id: string }[] | null }>(fetchFn, token, `{ boards(ids: [${id}]) { id } }`);
+    if (!Array.isArray(data.boards)) throw new Error('unexpected answer: boards was not a list');
+    return { id, empty: data.boards.length === 0 };
+  };
+
+  const [me, scope, bareHeader, bearerHeader, platformApi, board] = await Promise.all([
     attempt(async () => (await gql<{ me: { id: string; name: string } }>(fetchFn, token, '{ me { id name } }')).me),
     attempt(async () => summarizeScope(await listBoards((q) => gql(fetchFn, token, q)), [workspace])),
     header(token),
@@ -78,6 +88,7 @@ export async function runProbe(app: AppKey, token: string, workspace: string, fe
       await gql(fetchFn, token, '{ platform_api { daily_limit { base } } }');
       return { ok: true as const };
     }),
+    boardId === undefined ? undefined : attempt(() => readBoard(boardId)),
   ]);
-  return { app, me, scope, bareHeader, bearerHeader, platformApi, complexity };
+  return { app, me, scope, bareHeader, bearerHeader, platformApi, complexity, ...(board === undefined ? {} : { board }) };
 }

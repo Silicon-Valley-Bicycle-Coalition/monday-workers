@@ -553,34 +553,13 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   payload so `load` creates it — Salesforce never stored the id, so the Worker's first upload
   must be the first disbursement after the data freeze. See the plan's Benevity section and
   `../benevity-import/README.md`.
-* **Windfall wealth screening — decided 2026-10-26.** Windfall, a wealth-screening service SVBC
-  no longer subscribes to, left 54 `wf_*` fields on 14,131 Contacts (monday-migration `docs/09`,
-  `docs/34` §6). The data is now static but useful, so the Contact extract pulls the fields in
-  `WINDFALL_FIELDS`, and `transform/windfall.ts` writes them onto both People boards for any
-  Contact with a Windfall ID. The column choices:
-  * **Real columns:** Net Worth, Net Worth Low and Net Worth High (currency; Windfall's
-    `low/high_confidence_net_worth` are the estimate's lower and upper bounds), Net Worth Date,
-    Philanthropic Giver (checkbox), Job Title, Windfall Company (kept apart from Employer Name),
-    LinkedIn (link), and Windfall ID.
-  * **Windfall Priority** (numbers): a snapshot of Salesforce's `Windfall_Priority__c` formula,
-    which works out to 1, plus 50 when net worth tops $10M, plus Opportunities closed last year
-    (its `Philanthropic_Giver_Score__c` term is `IF(…,1,1)`, so it's always 1). The giving term
-    freezes at load.
-  * **Windfall Profile** (long text): everything else that's kept, one `Label: value` line each:
-    job level and function, job start, company category, size, revenue, NAICS, domain, phone and
-    address, the match confidences and employment-data date, NTEE codes, regional focus, and a
-    `Flags:` line listing the property, life-event and affiliation flags that are true.
-  * **Not migrated:** Political Party, Political Donor and Top Political Donor (not extracted at
-    all), and `wf_last_updated__c` (empty everywhere). The 386 Leads with Windfall data stay in
-    Salesforce, because Leads don't migrate to a board.
-
-  Only Contacts that pass the People inclusion rule carry it: in a dry run over the 2026-09-08
-  extract with Windfall fields merged in, 6,585 of the 14,131 (3,663 live, 2,922 historical).
-  The rest are on no board and keep their Windfall data only in the raw `contacts` extract;
-  Windfall data alone deliberately doesn't qualify a Contact for People (decided 2026-10-26).
-  `load` creates the columns from the payloads; `configure` describes them on both People
-  boards, adds a **Wealth screening** view to People, and lists Windfall ID as plumbing.
-  **Needs a re-extract**, since the Contact query gained the fields.
+* **Windfall wealth screening — decided 2026-11-06: not loaded onto People.** SVBC no longer
+  subscribes to Windfall, and its data (net worth estimates, employment, life-event flags) now
+  lives on a private Wealth Screening board that three staff can open. `salesforce-import` no
+  longer extracts the `wf_*` fields, writes Windfall columns, or describes them in `configure`,
+  so re-running `extract`, `load` or `configure` can't put them back on People. This replaces the
+  2026-10-26 decision to load them as People columns. The move and its runbook:
+  `../docs/runbooks/windfall-private-board.md`.
 
 ## Write failures during the run
 

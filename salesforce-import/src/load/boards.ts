@@ -45,10 +45,6 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
   'Employer Name': 'text', 'Salesforce Owner': 'text', 'Relationship Owner': 'people',
-  // Windfall wealth screening on People (transform/windfall.ts).
-  'Windfall ID': 'text', 'Net Worth': 'numbers', 'Net Worth Low': 'numbers', 'Net Worth High': 'numbers',
-  'Net Worth Date': 'date', 'Philanthropic Giver': 'checkbox', 'Job Title': 'text', 'Windfall Company': 'text',
-  'LinkedIn': 'link', 'Windfall Priority': 'numbers', 'Windfall Profile': 'long_text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Matched By', 'Soft Credit', 'Recurring Gift',
   'Campaign', 'Attendee', 'Event', 'Payment', 'Volunteer', 'Person', 'Acting for', 'Affiliations']);
@@ -107,7 +103,7 @@ const TRAILING_COLUMNS = new Set([...DEBUG_COLUMNS, SF_ID_COLUMN]);
 // 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
 export const CURRENCY_COLUMNS = new Set(['Lifetime Giving', 'Amount', 'Installment Amount',
   'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount',
-  'Organizational Giving', 'Attributed Giving', 'Net Worth', 'Net Worth Low', 'Net Worth High']);
+  'Organizational Giving', 'Attributed Giving']);
 const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
 
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`

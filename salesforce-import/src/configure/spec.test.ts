@@ -265,3 +265,12 @@ describe('report-subscription views (docs/35 §3.6)', () => {
       [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }]);
   });
 });
+
+describe('Windfall wealth screening', () => {
+  it('is described by no board or dashboard spec, so configure and load cannot recreate it on People', () => {
+    const banned = /Windfall|Net Worth|Philanthropic|Job Title|LinkedIn|Wealth screening/;
+    expect(JSON.stringify(BOARD_SPECS)).not.toMatch(banned);
+    expect(JSON.stringify(DASHBOARD_SPECS)).not.toMatch(banned);
+    expect(PLUMBING).not.toContain('Windfall ID');
+  });
+});

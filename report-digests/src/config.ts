@@ -15,7 +15,7 @@ export interface DigestConfig {
   view: string;         // the board view the email links to, by name (configure creates it)
   skipWhenEmpty: boolean;
   days: number | null;      // look-back window, for the digests that have one
-  minAmount: number | null; // recent-gifts's "$400 and up" floor
+  minAmount: number | null; // the recent-gifts digest's "$400 and up" floor
 }
 
 export interface DigestsConfig {

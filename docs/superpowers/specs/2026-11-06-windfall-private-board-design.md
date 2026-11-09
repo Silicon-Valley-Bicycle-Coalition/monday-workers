@@ -1,6 +1,6 @@
 # Move Windfall data to a private board
 
-Status: design, awaiting approval. From
+Status: approved 2026-11-06. From
 [#81](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/work_items/81) and
 finding 4 of the [privacy policy review](../../reviews/2026-11-03-privacy-policy-review.md).
 

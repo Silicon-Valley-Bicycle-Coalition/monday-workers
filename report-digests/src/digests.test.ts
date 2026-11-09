@@ -47,10 +47,20 @@ describe('recent-gifts', () => {
   it('lists received gifts of $400 and up, largest first, with giving from the donor', async () => {
     const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('2', '50', '2026-10-02'), gift('4', '900', '2026-10-04', { status: 'Failed' })], donors);
     const d = await buildDigest('recent-gifts', monday, config, monday8);
+    expect(monday.queries[0]!.rules).toEqual([
+      { column_id: 'date', operator: 'greater_than_or_equals', compare_value: ['EXACT', '2026-08-27'] },
+      { column_id: 'date', operator: 'lower_than_or_equal', compare_value: ['EXACT', '2026-10-26'] },
+    ]);
     expect(d.sections).toHaveLength(1);
     expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 1']);
     expect(d.sections[0]!.table!.rows[0]!.slice(-2)).toEqual(['$2,500', 'Major']);
     expect(d.count).toBe(1);
+  });
+  it('puts the largest of two qualifying gifts first', async () => {
+    const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('3', '900', '2026-10-03')]);
+    const d = await buildDigest('recent-gifts', monday, config, monday8);
+    expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 3', 'Donor 1']);
+    expect(d.count).toBe(2);
   });
   it('never carries a Windfall value or title', async () => {
     const d = await buildDigest('recent-gifts', new FakeMonday([gift('1', '500', '2026-10-01')], donors), config, monday8);

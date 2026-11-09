@@ -414,7 +414,7 @@ Read Development — weekly pulse (dashboard 40266055) for widgets using these c
 
 - [ ] **Step 5: Hold moves, and confirm the backup**
 
-Run `node scripts/flags.mjs people-reclassification writes hold`. Then confirm the latest nightly `monday-backup` snapshot, taken after Step 2, holds both People boards with the 11 columns, by counting non-empty values in its files without printing them.
+Run `node scripts/flags.mjs people-reclassification writes hold --env production`. Then confirm the latest nightly `monday-backup` snapshot, taken after Step 2, holds both People boards with the 11 columns, by counting non-empty values in its files without printing them.
 Expected: counts match `verify`'s `perColumn`.
 
 - [ ] **Step 6: David deletes the columns**
@@ -424,4 +424,4 @@ Expected: exit 0. A person on People shows no Windfall column to any staff membe
 
 - [ ] **Step 7: Resume, and finish up**
 
-Run `node scripts/flags.mjs people-reclassification writes on`. Re-run `mark-read-only-columns.mjs --workspace 18201685 --apply`. Confirm the next reclassification pass moves people without a blocked-move error. Report the activity-log and restore findings to David, and leave #81 open for the policy update.
+Run `node scripts/flags.mjs people-reclassification writes on --env production`. Re-run `mark-read-only-columns.mjs --workspace 18201685 --apply`. Confirm the next reclassification pass moves people without a blocked-move error. Report the activity-log and restore findings to David, and leave #81 open for the policy update.
