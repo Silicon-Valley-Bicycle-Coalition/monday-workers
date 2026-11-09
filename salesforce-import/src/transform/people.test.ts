@@ -193,6 +193,26 @@ describe('contactToPayload', () => {
     expect(none.columns['Do Not Mail Reason']).toBe('');
   });
 
+  it('marks a Fundraise Opt Out contact Do Not Solicit only, joining any existing reason (#86)', () => {
+    const fo = contactToPayload({ Id: 'c19', FirstName: 'A', LastName: 'B', Fundraise_Opt_Out__c: true },
+      'people-live', { consent: new Map() });
+    expect(fo.columns['Do Not Solicit']).toEqual({ checked: 'true' });
+    expect(fo.columns['Do Not Solicit Reason']).toBe('Fundraise Opt Out (Salesforce)');
+    // A fundraising opt-out, not a postal one: Do Not Mail stays as Salesforce had it.
+    expect(fo.columns['Do Not Mail']).toBeNull();
+    expect(fo.columns['Do Not Mail Reason']).toBe('');
+    const all = contactToPayload({ Id: 'c20', FirstName: 'A', LastName: 'B', Fundraise_Opt_Out__c: true,
+      npsp__Do_Not_Contact__c: true, Deceased__c: true,
+      Account: { Do_Not_Solicit__c: true, Do_Not_Solicit_What__c: 'Mail' } }, 'people-live', { consent: new Map() });
+    expect(all.columns['Do Not Solicit Reason'])
+      .toBe('Deceased; Do Not Contact (Salesforce); Fundraise Opt Out (Salesforce); Mail');
+    expect(all.columns['Do Not Mail Reason']).toBe('Do Not Contact (Salesforce)');
+    const off = contactToPayload({ Id: 'c21', FirstName: 'A', LastName: 'B', Fundraise_Opt_Out__c: false },
+      'people-live', { consent: new Map() });
+    expect(off.columns['Do Not Solicit']).toBeNull();
+    expect(off.columns['Do Not Solicit Reason']).toBe('');
+  });
+
   it('prefers Employer__c over the empty 360MatchPro dtd__company__c for Employer Name', () => {
     const p = contactToPayload({ Id: 'c1', FirstName: 'A', LastName: 'B', Employer__c: 'Google',
       dtd__company__c: null, CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
