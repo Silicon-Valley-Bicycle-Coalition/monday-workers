@@ -342,14 +342,16 @@ export class D1GiftsStore implements GiftsStore {
 
   // Same reasoning as attributedTotalsAll, grouped by person instead: a person whose
   // affiliation(s) currently have no attributed gifts still appears with cents: 0, so
-  // reconcile leg 6 catches a stale non-zero Organizational Giving column.
+  // reconcile leg 6 catches a stale non-zero Organizational Giving column. Grouped by person
+  // alone, like organizationalGivingTotals: a person who moved boards can have affiliation rows
+  // naming each, and the board D1 holds is only a hint (see runReconcile), so MAX just picks one.
   async organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>> {
     const res = await this.db
-      .prepare(`SELECT a.person_item_id, a.person_board_id,
+      .prepare(`SELECT a.person_item_id, MAX(a.person_board_id) AS person_board_id,
                        COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents
                 FROM affiliations a LEFT JOIN gifts g
                   ON g.acting_for_item_id = a.affiliation_item_id AND g.removed_at IS NULL
-                GROUP BY a.person_item_id, a.person_board_id`)
+                GROUP BY a.person_item_id`)
       .bind(statusLabel)
       .all<{ person_item_id: string; person_board_id: string; cents: number }>();
     const out = new Map<string, { cents: number; personBoardId: string }>();

@@ -457,4 +457,42 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  // boards(ids:) returns only active boards unless told otherwise, so an archived board that
+  // listBoards (state: all) had found came back as "not found" when its schema was read.
+  describe('an archived board', () => {
+    const answerLikeMonday = () =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: string, init: RequestInit) => {
+          const { query } = JSON.parse(init.body as string) as { query: string };
+          const board = query.includes('settings_str')
+            ? { columns: [], groups: [] }
+            : query.includes('items_page')
+              ? { items_page: { cursor: null, items: [{ id: 'i1', name: 'Item', state: 'active', group: null, parent_item: null, column_values: [], assets: [] }] } }
+              : { updates: [{ id: 'u1', item_id: 'i1', body: '', text_body: null, created_at: null, updated_at: null, creator_id: null, replies: [], assets: [] }] };
+          return Response.json({ data: { boards: query.includes('state: all') ? [board] : [] } });
+        }),
+      );
+    const client = () => new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+
+    it('has its schema read', async () => {
+      answerLikeMonday();
+      await expect(client().getBoardSchema('7')).resolves.toEqual({ columns: [], groups: [] });
+    });
+
+    it('has its items paged', async () => {
+      answerLikeMonday();
+      const ids: string[] = [];
+      for await (const page of client().boardItemPages('7')) ids.push(...page.map((i) => i.id));
+      expect(ids).toEqual(['i1']);
+    });
+
+    it('has its updates paged', async () => {
+      answerLikeMonday();
+      const ids: string[] = [];
+      for await (const page of client().boardUpdatePages('7')) ids.push(...page.map((u) => u.id));
+      expect(ids).toEqual(['u1']);
+    });
+  });
 });

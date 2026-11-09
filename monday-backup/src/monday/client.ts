@@ -262,6 +262,8 @@ export class HttpMondayClient implements MondayClient {
     return out;
   }
 
+  // `state: all` in the three queries below: boards(ids:) returns only active boards by default, and
+  // listBoards hands us archived ones too.
   async getBoardSchema(boardId: string): Promise<BoardSchema> {
     const data = await this.graphql<{
       boards: {
@@ -270,7 +272,7 @@ export class HttpMondayClient implements MondayClient {
       }[];
     }>(
       `query ($boardId: [ID!]) {
-        boards(ids: $boardId) {
+        boards(ids: $boardId, state: all) {
           columns { id title type settings_str description }
           groups { id title color position }
         }
@@ -298,7 +300,7 @@ export class HttpMondayClient implements MondayClient {
   async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
     const first = await this.graphql<{ boards: { items_page: ItemsPage }[] }>(
       `query ($boardId: [ID!], $limit: Int!) {
-        boards(ids: $boardId) {
+        boards(ids: $boardId, state: all) {
           items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
         }
       }`,
@@ -324,7 +326,7 @@ export class HttpMondayClient implements MondayClient {
     for (let page = 1; ; page++) {
       const data = await this.graphql<{ boards: { updates: RawUpdate[] | null }[] }>(
         `query ($boardId: [ID!], $limit: Int!, $page: Int!) {
-          boards(ids: $boardId) {
+          boards(ids: $boardId, state: all) {
             updates(limit: $limit, page: $page) {
               id
               item_id

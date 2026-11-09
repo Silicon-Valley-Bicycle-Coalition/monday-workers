@@ -9,7 +9,11 @@ Read-only app, a Google service account as a member (**Contributor**, not Conten
 `destinationParentFolderId` set to it. **The first 09:00 UTC run (2026-11-04) captured 19 of about
 262 boards and no docs:** a complete run takes about an hour and a cron invocation gets 15 minutes,
 so the snapshot now runs as a Workflow, one step per board or doc (design:
-`../docs/superpowers/specs/2026-11-04-monday-backup-complete-snapshot-design.md`). Requires **Workers
+`../docs/superpowers/specs/2026-11-04-monday-backup-complete-snapshot-design.md`). **First complete
+snapshot 2026-11-04 (run 3):** 264 boards, 24 docs, 63,380 items, 782 updates and 816 doc blocks in
+43 minutes, with no errors or retries; Drive checked against the manifest. Not covered: 41 private
+copies in the sandbox workspaces, and 4 legacy or scratch boards, none of which SVBC Integration is
+subscribed to. Requires **Workers
 Paid** (see Cloudflare config below). The restore mutations in `src/restore/api.ts` have not been
 exercised against a live account yet.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
@@ -132,8 +136,8 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
   `subrequests: 50000`; a complete run makes roughly 3,000.
 * **Why a Workflow.** A cron invocation is killed at 15 minutes, and a complete run takes about an
-  hour: roughly 2–3 s per 100 items, and at least 5–8 s per board even when it's empty, across about
-  262 boards. Each board fits easily in a step (the largest takes about 4 minutes), and a Workflow step has no
+  hour (43 minutes on 2026-11-04): roughly 2–4 s per 100 items, and about 4 s per board even when
+  it's empty, across about 264 boards and 24 docs. Each board fits easily in a step (the largest, People, took about 5.5 minutes), and a Workflow step has no
   wall-time limit. A step gets three tries; one that still fails is recorded in the manifest and the
   run carries on, unless 10 fail in a row, when it stops and alerts rather than spend 14 hours on an
   outage (rerun it once that's fixed). A step can run twice, so it first looks for its file in the run folder: Drive

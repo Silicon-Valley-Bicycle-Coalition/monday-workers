@@ -1,4 +1,6 @@
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
+import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
 
 export type Incoming = 'Registered' | 'Attended' | 'Canceled';
@@ -27,6 +29,33 @@ export function mergeAttendance(current: string | null, incoming: Incoming): str
   return current;
 }
 
+const PHONE_QUESTION = /phone|\bcell\b|celular|mobile|\bm[oó]vil\b|tel[eé]fono/i;
+// A phone question about someone else: never the attendee's own number. Class forms ask for an
+// emergency contact's, so a match here would show that person's number as the attendee's.
+const OTHER_PERSON_QUESTION = /emergenc|guardian|parent|padre|madre|tutor/i;
+// Enough digits to be a number: rules out "Info Requested" and "Yes" to "Do you have a cell phone?".
+const MIN_PHONE_DIGITS = 7;
+
+function realPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.replace(/\D/g, '').length >= MIN_PHONE_DIGITS ? trimmed : null;
+}
+
+// An order form collects a phone as a built-in field (on the profile) or as a custom question (in
+// answers), and each event's form is its own, so read both. Kept as entered, for a text column:
+// Monday's phone column refuses what it can't parse, which would fail the whole registration write.
+function attendeePhone(a: EventbriteAttendee): string | null {
+  const answers = (a.answers ?? [])
+    .filter((answer) => PHONE_QUESTION.test(answer.question ?? '') && !OTHER_PERSON_QUESTION.test(answer.question ?? ''))
+    .map((answer) => answer.answer);
+  for (const value of [a.profile?.cell_phone, a.profile?.work_phone, ...answers]) {
+    const phone = realPhone(value);
+    if (phone !== null) return phone;
+  }
+  return null;
+}
+
 export function mapAttendee(
   a: EventbriteAttendee,
   eventFacts: EventFacts,
@@ -34,9 +63,9 @@ export function mapAttendee(
   attendance: string
 ): { itemName: string; columnValues: Record<string, unknown> } {
   const cols = config.attendeeSync.registrations;
-  const name = nonEmpty(a.profile?.name);
-  const email = nonEmpty(a.profile?.email);
-  const firstName = nonEmpty(a.profile?.first_name);
+  const name = realName(a.profile?.name);
+  const email = realEmail(a.profile?.email);
+  const firstName = realName(a.profile?.first_name);
   const volunteer = eventFacts.program !== null && config.attendeeSync.volunteerPrograms.includes(eventFacts.program);
 
   const columnValues: Record<string, unknown> = {
@@ -47,14 +76,12 @@ export function mapAttendee(
   };
   if (name !== null) columnValues[cols.attendeeNameColumn] = name;
   if (email !== null) columnValues[cols.attendeeEmailColumn] = { email, text: email };
+  const phone = attendeePhone(a);
+  if (phone !== null && cols.attendeePhoneColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.attendeePhoneColumn] = phone;
   if (firstName !== null) columnValues[cols.firstNameColumn] = firstName;
   if (eventFacts.classDate !== null) columnValues[cols.classDateColumn] = { date: eventFacts.classDate };
   if (eventFacts.classDay !== null) columnValues[cols.classDayColumn] = eventFacts.classDay;
   if (eventFacts.classLocation !== '') columnValues[cols.classLocationColumn] = eventFacts.classLocation;
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
-}
-
-function nonEmpty(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }

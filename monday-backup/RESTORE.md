@@ -45,6 +45,9 @@ In the backup Shared Drive, each run is a folder named `YYYY-MM-DD run-N`. Open 
 * `errors` is empty — otherwise the snapshot is partial and the listed boards/docs are missing
   from it (the restore also warns about this);
 * `itemCountsByBoard`, `updateCountsByBoard`, `blockCountsByDoc` look plausible for the date.
+  Monday's `items_count` can be higher than the manifest's count: on 2026-11-04 it was on 9 of 264
+  boards (74 against 11 on one), and `items_page` itself returned the lower number. It's most likely
+  counting archived items, which aren't in a snapshot.
 
 A folder with no `manifest.json` is a run that didn't finish, or that the write switch stopped —
 don't use it. A file can't be half-written: uploads only appear in Drive once they close.

@@ -6,7 +6,7 @@ import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
 import { D1RollCallCreditsStore } from '../db/rollCallCredits';
-import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN,
+import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN, RECONCILE_PERSONS_PER_RUN,
   type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage, SponsorshipsConfig } from '../types';
 import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
@@ -373,6 +373,7 @@ describe('sweep duty', () => {
     expect(report.ok).toBe(true);
     expect(sent).toHaveLength(2);
     expect(new Set(sent.map((m) => m.donationItemId))).toEqual(new Set(['d1', 'd3']));
+    expect(sent.every((m) => m.sweep === true)).toBe(true);
   });
 });
 
@@ -537,6 +538,47 @@ describe('reconcile duty', () => {
     ]);
   });
 
+  describe('an owner who moved boards after D1 recorded their gifts', () => {
+    const MOVED_CFG: DonationRollupsConfig = {
+      ...testConfig(),
+      donationRollups: {
+        ...testConfig().donationRollups,
+        ownerColumnsByBoard: {
+          b1: OWNER_COLS,
+          b2: { ...OWNER_COLS, lifetimeGiving: 'col_lt2', giftLedgerJson: 'col_glj2' },
+        },
+      },
+    };
+
+    it('reconciles against the columns of the board they are on now', async () => {
+      await seedGift(env.DB, 'mv1', { owner: 'oA', cents: 5000 });
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+        ['oA', { col_lt2: '50', col_glj2: glj([['mv1', 5000]]) }],
+      ]) };
+      expect((await runDuty('reconcile', deps(state, [], MOVED_CFG))).ok).toBe(true);
+    });
+
+    it('still flags real drift on the new board', async () => {
+      await seedGift(env.DB, 'mv2', { owner: 'oA', cents: 5000 });
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+        ['oA', { col_lt2: '49', col_glj2: glj([['mv2', 4900]]) }],
+      ]) };
+      const detail = (await runDuty('reconcile', deps(state, [], MOVED_CFG))).detail as {
+        mismatches: unknown[]; projectionMismatches: unknown[];
+      };
+      expect(detail.mismatches).toEqual([{ ownerItemId: 'oA', ledgerCents: 5000, mondayCents: 4900 }]);
+      expect(detail.projectionMismatches).toEqual([{ ownerItemId: 'oA', ledgerCents: 5000, projectionCents: 4900 }]);
+    });
+
+    it('still flags an owner whose columns are empty on every board', async () => {
+      await seedGift(env.DB, 'mv3', { owner: 'oA', cents: 5000 });
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([['oA', {}]]) };
+      const report = await runDuty('reconcile', deps(state, [], MOVED_CFG));
+      expect(report.ok).toBe(false);
+      expect((report.detail as { mismatches: unknown[] }).mismatches).toEqual([{ ownerItemId: 'oA', ledgerCents: 5000, mondayCents: null }]);
+    });
+  });
+
   const AFFIL_CFG: DonationRollupsConfig = {
     ...testConfig(),
     affiliations: { boardId: 500, columns: { personLink: 'pl', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } },
@@ -589,6 +631,114 @@ describe('reconcile duty', () => {
     };
     expect(detail.affiliationMismatches).toEqual([{ affiliationItemId: 'af-1', ledgerCents: 52500, mondayCents: 52400 }]);
     expect(detail.organizationalMismatches).toEqual([{ personItemId: 'p-1', ledgerCents: 52500, mondayCents: 52400 }]);
+  });
+
+  // Parks the owner walk at its only owner ('oA') so legs 5/6 run on the next duty call.
+  const parkedOnOwner = (d: ReturnType<typeof deps>) => d.gifts.recordRun({ duty: 'reconcile',
+    ranAt: '2026-07-31T00:00:00Z', ok: true, report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
+
+  it('reads an empty attributed or Organizational Giving column as $0 when the ledger is also $0', async () => {
+    await seedGift(env.DB, 'ag-empty', { owner: 'oA', cents: 5000 });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag-empty', 5000]]) }],
+      ['af-1', { n_ag: null }],
+      ['p-1', { col_og: null }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+    await parkedOnOwner(d);
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true);
+    const detail = report.detail as { affiliationMismatchCount: number; organizationalMismatchCount: number };
+    expect(detail.affiliationMismatchCount).toBe(0);
+    expect(detail.organizationalMismatchCount).toBe(0);
+  });
+
+  it('still flags an empty column against a non-zero ledger, and a non-zero column against a $0 ledger', async () => {
+    await seedGift(env.DB, 'ag-real', { owner: 'oA', cents: 5000, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-2','b1','Bo @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag-real', 5000]]) }],
+      ['af-1', { n_ag: null }],
+      ['af-2', { n_ag: '7' }],
+      ['p-1', { col_og: null }],
+      ['p-2', { col_og: '7' }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+    await parkedOnOwner(d);
+
+    const detail = (await runDuty('reconcile', d)).detail as {
+      affiliationMismatches: unknown[]; organizationalMismatches: unknown[];
+    };
+    expect(detail.affiliationMismatches).toEqual([
+      { affiliationItemId: 'af-1', ledgerCents: 5000, mondayCents: null },
+      { affiliationItemId: 'af-2', ledgerCents: 0, mondayCents: 700 },
+    ]);
+    expect(detail.organizationalMismatches).toEqual([
+      { personItemId: 'p-1', ledgerCents: 5000, mondayCents: null },
+      { personItemId: 'p-2', ledgerCents: 0, mondayCents: 700 },
+    ]);
+  });
+
+  describe('a person who moved boards after D1 recorded their affiliation', () => {
+    const TWO_BOARDS: DonationRollupsConfig = {
+      ...AFFIL_CFG,
+      donationRollups: {
+        ...AFFIL_CFG.donationRollups,
+        ownerColumnsByBoard: {
+          b1: { ...OWNER_COLS, organizationalGiving: 'col_og' },
+          b2: { ...OWNER_COLS, organizationalGiving: 'col_og2' },
+        },
+      },
+    };
+
+    it('compares against whichever board column holds the value, not the one D1 names', async () => {
+      await seedGift(env.DB, 'ag-moved', { owner: 'oA', cents: 5000, actingFor: 'af-1' });
+      await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+        ['oA', { col_lt: '50', col_glj: glj([['ag-moved', 5000]]) }],
+        ['af-1', { n_ag: '50' }],
+        ['p-1', { col_og2: '50' }], // really on b2, whose column is the only one the item has
+      ]) };
+      const d = deps(state, [], TWO_BOARDS);
+      await parkedOnOwner(d);
+
+      expect((await runDuty('reconcile', d)).ok).toBe(true);
+    });
+
+    it('catches a stale value in the other board\'s column for a moved person with a $0 ledger', async () => {
+      await seedGift(env.DB, 'ag-none', { owner: 'oA', cents: 5000 });
+      await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+        ['oA', { col_lt: '50', col_glj: glj([['ag-none', 5000]]) }],
+        ['af-1', { n_ag: null }],
+        ['p-1', { col_og2: '12' }],
+      ]) };
+      const d = deps(state, [], TWO_BOARDS);
+      await parkedOnOwner(d);
+
+      const detail = (await runDuty('reconcile', d)).detail as { organizationalMismatches: unknown[] };
+      expect(detail.organizationalMismatches).toEqual([{ personItemId: 'p-1', ledgerCents: 0, mondayCents: 1200 }]);
+    });
+
+    it('sums a person whose affiliations name two boards into one total', async () => {
+      await seedGift(env.DB, 'ag-b1', { owner: 'oA', cents: 5000, actingFor: 'af-1' });
+      await seedGift(env.DB, 'ag-b2', { owner: 'oA', cents: 2500, actingFor: 'af-2' });
+      await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+      await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-1','b2','Ada @ Beta','now')`).run();
+      const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+        ['oA', { col_lt: '75', col_glj: glj([['ag-b1', 5000], ['ag-b2', 2500]]) }],
+        ['af-1', { n_ag: '50' }],
+        ['af-2', { n_ag: '25' }],
+        ['p-1', { col_og2: '75' }],
+      ]) };
+      const d = deps(state, [], TWO_BOARDS);
+      await parkedOnOwner(d);
+
+      expect((await runDuty('reconcile', d)).ok).toBe(true);
+    });
   });
 
   it('warns (review finding 13) when leg 6 skips a person whose board has no organizationalGiving column', async () => {
@@ -692,6 +842,68 @@ describe('reconcile duty', () => {
     expect(detail2.personRemaining).toBe(0);
     expect(detail2.remaining).toBe(0);
   }, 30_000);
+
+  it('does not restart leg 5 while leg 6 still has people outstanding', async () => {
+    const total = RECONCILE_PERSONS_PER_RUN + 1;
+    const db = env.DB;
+    const stmts = [];
+    const columnText = new Map<string, Record<string, string | null>>();
+    for (let i = 0; i < total; i++) {
+      const n = String(i).padStart(4, '0');
+      stmts.push(db.prepare(`INSERT INTO affiliations VALUES (?1, ?2, 'b1', ?3, 'now')`).bind(`af-${n}`, `p-${n}`, `Person ${i}`));
+      columnText.set(`af-${n}`, { n_ag: null });
+      columnText.set(`p-${n}`, { col_og: null });
+    }
+    for (let i = 0; i < stmts.length; i += 500) await db.batch(stmts.slice(i, i + 500));
+    const state: FakeClientState = { archived: [], updates: [], columnText, calls: [] };
+    const d = deps(state, [], AFFIL_CFG);
+    const runAt = async (iso: string) => {
+      d.now = new Date(iso);
+      const before = state.calls!.length;
+      const report = await runDuty('reconcile', d);
+      return { detail: report.detail as { affiliationRemaining: number; personRemaining: number; remaining: number; personCursor: string },
+        calls: state.calls!.slice(before) };
+    };
+
+    // No gifts, so no owner slice: this run finishes 2,000 affiliations and leaves one.
+    const run1 = await runAt('2026-08-01T00:00:00Z');
+    expect(run1.detail.affiliationRemaining).toBe(1);
+    expect(run1.calls.some((c) => c.columnIds.includes('col_og'))).toBe(false);
+
+    // Leg 5 finishes, so leg 6 starts in the same invocation and leaves one person.
+    const run2 = await runAt('2026-08-02T00:00:00Z');
+    expect(run2.detail.affiliationRemaining).toBe(0);
+    expect(run2.detail.personRemaining).toBe(1);
+
+    // Leg 5 is done for this pass: no re-read of affiliations while leg 6 finishes.
+    const run3 = await runAt('2026-08-03T00:00:00Z');
+    expect(run3.calls.some((c) => c.columnIds.includes('n_ag'))).toBe(false);
+    expect(run3.calls.some((c) => c.columnIds.includes('col_og'))).toBe(true);
+    expect(run3.detail.remaining).toBe(0);
+
+    // The pass is over, so the next run starts a new one from the first affiliation.
+    const run4 = await runAt('2026-08-04T00:00:00Z');
+    expect(run4.calls[0]!.itemIds[0]).toBe('af-0000');
+  }, 30_000);
+
+  it('never runs leg 6 alongside an owner slice, even with leg 5 already finished', async () => {
+    await seedGift(env.DB, 'ag-new', { owner: 'oB', cents: 5000 });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], calls: [], columnText: new Map([
+      ['oB', { col_lt: '50', col_glj: glj([['ag-new', 5000]]) }],
+      ['af-1', { n_ag: null }],
+      ['p-1', { col_og: null }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+    // oB sorts after the parked cursor, as an owner created mid-pass would.
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true, report: { ok: true, summary: 'parked',
+      detail: { remaining: 1, cursor: 'oA', affiliationRemaining: 0, affiliationCursor: 'af-1', personRemaining: 1, personCursor: '' } } });
+
+    const report = await runDuty('reconcile', d);
+    expect(state.calls!.some((c) => c.columnIds.includes('col_lt'))).toBe(true);
+    expect(state.calls!.some((c) => c.columnIds.includes('col_og'))).toBe(false);
+    expect((report.detail as { personRemaining: number }).personRemaining).toBe(1);
+  });
 });
 
 // Fix 5: rows the queue never finished (messages expired unconsumed, or a batch that died
