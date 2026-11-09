@@ -6,7 +6,7 @@
       "people-live": 18431577220,
       "events": 18431577282,
       "event-registrations": 18431577302,
-      "pledge-to-ride": null
+      "pledge-to-ride": 18439163372
     }
   },
   "eventbrite": {
@@ -98,20 +98,20 @@
   "pledge": {
     "nameMatch": "Pledge to Ride",
     "columns": {
-      "attendeeIdColumn": "REPLACE_WITH_COLUMN_ID",
-      "yearColumn": "REPLACE_WITH_COLUMN_ID",
-      "statusColumn": "REPLACE_WITH_COLUMN_ID",
-      "dateColumn": "REPLACE_WITH_COLUMN_ID",
-      "emailColumn": "REPLACE_WITH_COLUMN_ID",
-      "detailsColumn": "REPLACE_WITH_COLUMN_ID",
-      "zipColumn": "REPLACE_WITH_COLUMN_ID",
-      "countyColumn": "REPLACE_WITH_COLUMN_ID",
-      "daysPledgedColumn": "REPLACE_WITH_COLUMN_ID",
-      "riderTypeColumn": "REPLACE_WITH_COLUMN_ID",
-      "heardAboutColumn": "REPLACE_WITH_COLUMN_ID",
-      "whoAskedColumn": "REPLACE_WITH_COLUMN_ID",
-      "consentColumn": "REPLACE_WITH_COLUMN_ID",
-      "otherAnswersColumn": "REPLACE_WITH_COLUMN_ID"
+      "attendeeIdColumn": "text_mm8yw0af",
+      "yearColumn": "color_mm8ypec1",
+      "statusColumn": "color_mm8y9ycj",
+      "dateColumn": "date_mm8ysfkt",
+      "emailColumn": "email_mm8yc0je",
+      "detailsColumn": "color_mm8yn2df",
+      "zipColumn": "text_mm8y4psc",
+      "countyColumn": "color_mm8ypntn",
+      "daysPledgedColumn": "color_mm8y3ps6",
+      "riderTypeColumn": "dropdown_mm8y2eyh",
+      "heardAboutColumn": "dropdown_mm8yjpps",
+      "whoAskedColumn": "text_mm8yvejp",
+      "consentColumn": "boolean_mm8y4hf6",
+      "otherAnswersColumn": "long_text_mm8y1af"
     },
     "zipCounty": {
       "Santa Clara": ["94022", "94023", "94024", "94035", "94039", "94040", "94041", "94042", "94043", "94085", "94086", "94087", "94088", "94089", "94301", "94302", "94304", "94305", "94306", "94309", "95002", "95008", "95009", "95011", "95013", "95014", "95015", "95020", "95021", "95026", "95030", "95031", "95032", "95035", "95036", "95037", "95038", "95042", "95044", "95046", "95050", "95051", "95052", "95053", "95054", "95055", "95056", "95070", "95071", "95101", "95102", "95103", "95106", "95108", "95109", "95110", "95111", "95112", "95113", "95114", "95115", "95116", "95117", "95118", "95119", "95120", "95121", "95122", "95123", "95124", "95125", "95126", "95127", "95128", "95129", "95130", "95131", "95132", "95133", "95134", "95135", "95136", "95137", "95138", "95139", "95140", "95141", "95148", "95150", "95151", "95152", "95153", "95154", "95155", "95156", "95157", "95158", "95159", "95160", "95161", "95164", "95170", "95172", "95173", "95190", "95191", "95192", "95193", "95194", "95196"],
