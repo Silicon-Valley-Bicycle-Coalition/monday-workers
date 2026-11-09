@@ -1,8 +1,9 @@
 # Eventbrite grant report — Design
 
 **Date:** 2026-11-04
-**Status:** Approved by David 2026-11-04. Built 2026-11-06. Deployed to the sandbox 2026-11-09: one VTA class backfilled, 23 of 23 valid zips
-written; not yet in production. Replaces a counts-only draft (see "Dropped").
+**Status:** Approved by David 2026-11-04. Built 2026-11-06. Accepted in the sandbox 2026-11-09: one VTA class backfilled (23 of 23 valid zips),
+and a test event with a live registration (`95112`), a ZIP+4 (`95112-1234` written as `95112`), and an
+answer edited to `call me` (zip kept, text absent). Not yet in production. Replaces a counts-only draft (see "Dropped").
 **Worker:** `eventbrite-sync` (extends the attendee feed from
 `2026-10-26-eventbrite-attendees-class-emails-design.md`).
 
@@ -98,6 +99,8 @@ Commute.org class, 80 attendees), keeping tallies only:
 * The two classes' zip entries were all valid or blank: 36 valid, 6 blank, 0 invalid.
 * The ride's "Mailing Zip Code" had 7 valid, 26 blank and 5 invalid: 4 with no digits, and 1 with digits but no
   5-digit run. The rule rejects these as intended.
+* Editing an answer in Eventbrite (organizer side, 2026-11-09) sends no `attendee.updated` and leaves the
+  attendee's `changed` time as it was, so a corrected zip waits for the attendee's next change or a backfill.
 * Classes do record check-ins (17 of 25, and 9 of 17), but the ride recorded none, which is why an automatic
   No Show would be unsafe.
 

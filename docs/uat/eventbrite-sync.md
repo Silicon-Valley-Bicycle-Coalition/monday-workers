@@ -104,8 +104,10 @@ the sandbox, every email goes to the sandbox address, whoever is on the list.
 1. Register for a test class on a Public or Group Rides event, entering a real 5-digit zip when asked.
    Within a few minutes, **Home Zip** on your row in Event Registrations should show it.
 2. Register again with a 9-digit zip (`95112-1234`). Only the first 5 digits should appear.
-3. Edit your Eventbrite answer to something that isn't a zip, like `call me`. Home Zip should keep the
-   good value, and `call me` should appear nowhere in Monday.
+3. Edit your Eventbrite answer to something that isn't a zip, like `call me`, then re-send the event with
+   `scripts/backfill-attendees.mjs --event-id <id>`. Home Zip should keep the good value, and `call me`
+   should appear nowhere in Monday. Editing an answer doesn't send a webhook (below), so the backfill is
+   what picks the edit up.
 4. Set **Grant** on the class in Events. Every registration for that class should show it straight away.
 5. Open the **Grant report** view, filter to that Grant and date, and export it to Excel.
 
@@ -119,6 +121,9 @@ the sandbox, every email goes to the sandbox address, whoever is on the list.
 
 - No Show stays blank until staff or the class email page mark it. It isn't automatic.
 - Zip is empty when someone left it blank or typed something that isn't a zip.
+- A zip corrected in Eventbrite after registering doesn't reach Monday on its own: editing an answer
+  sends no webhook and doesn't change the attendee's `changed` time (tested 2026-11-09). It arrives with
+  the attendee's next change, such as check-in, or a backfill of the event.
 - Events on the volunteering, bike parking and private Eventbrite accounts get no zip.
 - A class needs Grant set by hand. Until then it won't appear under any grant.
 
