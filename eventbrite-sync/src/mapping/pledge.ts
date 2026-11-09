@@ -45,12 +45,14 @@ export function mapPledge(
   }
 
   const zip = normalizeZip(fields.get('zip'));
+  // Status values go as { label }: a bare string that looks like a number ("2026") is read by Monday
+  // as a label index, and the whole write is refused (ColumnValueException, sandbox 2026-11-09).
   const columnValues: Record<string, unknown> = {
     [cols.attendeeIdColumn]: attendee.id,
-    [cols.yearColumn]: String(event.year),
-    [cols.statusColumn]: attendee.cancelled || attendee.refunded ? 'Canceled' : 'Pledged',
-    [cols.detailsColumn]: isPlaceholderAttendee(attendee.profile) ? 'Buyer only' : 'Complete',
-    [cols.countyColumn]: countyForZip(zip, pledge.zipCounty),
+    [cols.yearColumn]: { label: String(event.year) },
+    [cols.statusColumn]: { label: attendee.cancelled || attendee.refunded ? 'Canceled' : 'Pledged' },
+    [cols.detailsColumn]: { label: isPlaceholderAttendee(attendee.profile) ? 'Buyer only' : 'Complete' },
+    [cols.countyColumn]: { label: countyForZip(zip, pledge.zipCounty) },
   };
   if (date !== null) columnValues[cols.dateColumn] = { date };
   if (email !== null) columnValues[cols.emailColumn] = { email, text: email };
@@ -58,7 +60,7 @@ export function mapPledge(
 
   const label = (questionField: PledgeField, choice: string) => choiceLabel(choice, questionField, attendee, event);
   const days = fields.get('daysPledged');
-  if (days !== undefined) columnValues[cols.daysPledgedColumn] = label('daysPledged', days);
+  if (days !== undefined) columnValues[cols.daysPledgedColumn] = { label: label('daysPledged', days) };
   const rider = fields.get('riderType');
   if (rider !== undefined) columnValues[cols.riderTypeColumn] = { labels: rider.split(MULTI_SELECT_SEPARATOR).map((c) => label('riderType', c)) };
   const heard = fields.get('heardAbout');
