@@ -441,18 +441,27 @@ export class HttpMondayClient implements MondayClient {
     const data = await this.graphql<{
       platform_api: {
         daily_limit: { total: number };
-        daily_analytics: { last_updated: string | null; by_day: { day: string; usage: number }[] };
+        daily_analytics: {
+          last_updated: string | null;
+          by_day: { day: string; usage: number }[];
+          by_user: { user: { name: string } | null; usage: number }[];
+        };
       };
     }>(
       `query {
         platform_api {
           daily_limit { total }
-          daily_analytics { last_updated by_day { day usage } }
+          daily_analytics { last_updated by_day { day usage } by_user { user { name } usage } }
         }
       }`,
       {},
     );
     const { daily_limit, daily_analytics } = data.platform_api;
-    return { limit: daily_limit.total, lastUpdated: daily_analytics.last_updated, byDay: daily_analytics.by_day };
+    const byUser: Record<string, number> = {};
+    for (const { user, usage } of daily_analytics.by_user) {
+      const name = user?.name ?? 'Unknown user';
+      byUser[name] = (byUser[name] ?? 0) + usage;
+    }
+    return { limit: daily_limit.total, lastUpdated: daily_analytics.last_updated, byDay: daily_analytics.by_day, byUser };
   }
 }

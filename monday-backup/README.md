@@ -155,7 +155,10 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and alerts
   if a run is stuck in `running` for over 12 hours (marked `abandoned` in D1) or if no **complete**
   snapshot has landed in 36 hours. A partial run doesn't reset that clock, so one board failing
-  nightly gets both alerts, on purpose.
+  nightly gets both alerts, on purpose. A clean run posts nothing, so silence is the healthy state.
+  Production Slack alerts verified 2026-11-03/04: real API usage and partial-backup alerts arrived.
+  The watchdog uses the same webhook but hasn't fired yet. Production alerts go to a private staff
+  channel (#52).
 * **Boards the token can't see.** The token never lists a private board its user isn't subscribed
   to, so a run can't report what it can't see. This hid Activities and Campaigns from the first run.
   `requiredBoardIds` in `config/backup.json` names the CRM boards a complete run must hold: when a
@@ -165,8 +168,8 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   from an admin's own token.
 * **Monday API daily usage.** The same hourly cron reads the account's API usage
   (`platform_api { daily_limit daily_analytics }`; this works on Pro, not only Enterprise) and
-  alerts Slack once when today's calls pass **50%**, and again at **80%**, of the daily limit
-  (`src/usage.ts`, at most two alerts per UTC day, tracked in D1 by migration 0003). Monday caps
+  alerts Slack once each when today's calls pass **50%**, **80%** and **100%** of the daily limit
+  (`src/usage.ts`, at most three alerts per UTC day, tracked in D1 by migration 0003). Monday caps
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
   cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 1,500–2,000
@@ -175,9 +178,12 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   read is `total`, so a purchased API add-on
   raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
   account-wide and the sandbox shares the production account, only the deployment whose config
-  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. When an alert
-  fires, `daily_analytics { by_user { user { name } usage } }` shows which user, and so which
-  Worker, is using the calls.
+  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. An alert names
+  the users with the most calls that day, and so which Workers made them (Sandbox Integration
+  means a sandbox Worker). Monday's `by_user` only totals its whole 14-day window, so each hourly
+  check stores those totals and adds up the growth (migration 0004). The count starts at the
+  00:30 UTC check, so it misses the first half hour, and it is empty until the second check after
+  this is deployed.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -188,9 +194,7 @@ Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENV
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
 Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
-because production already reports the shared account's API usage. Until production is
-deployed, set it to `true` in `config/backup.sandbox.json` if you want the usage alert from the
-sandbox instead; any token on the account can read the figure. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
+because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
 sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder
 (also as Contributor), the
 sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`

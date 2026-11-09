@@ -83,7 +83,7 @@ the invocation, so it shows as an error in the Worker's cron events.
 | `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok` with `expiresAt` (plus `lastRefreshErrorAt` while refreshes are failing), `needs_consent` or `missing`. No tokens. |
 | `GET`/`POST /oauth/start/:app` | Key form, then redirect to Monday's authorize URL (PKCE S256). The key is posted, never in the URL. |
 | `GET /oauth/callback` | Checks `state`, exchanges the code, verifies the authorizing user id, stores the tokens. |
-| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (on in sandbox, off in production). |
+| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (on in sandbox, off in production). |
 
 ## Secrets and vars
 
@@ -138,4 +138,8 @@ so the next ordinary deploy turns it off again:
 3. `npm run deploy`, which restores `"false"`.
 4. Confirm it is off: `curl -s -o /dev/null -w '%{http_code}\n' https://svbc-monday-auth.svbc-account.workers.dev/oauth/probe/portal`
    prints `404`.
+
+To check that an app can't read one private board, also enter its id in step 2's optional board
+field. `"board": { "id": "...", "empty": true }` means that app's token got nothing back. The
+report never says more about the board than that.
 

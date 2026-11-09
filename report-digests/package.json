@@ -1,7 +1,7 @@
 {
   "name": "report-digests",
   "version": "0.1.0",
-  "description": "Scheduled email digests of Monday board views, replacing SVBC's Salesforce report subscriptions: unmatched gifts, membership renewals, recent gifts with wealth screening, the fiscal year by gift size, and last week's gifts.",
+  "description": "Scheduled email digests of Monday board views, replacing SVBC's Salesforce report subscriptions: unmatched gifts, membership renewals, recent gifts of $400 and up, the fiscal year by gift size, and last week's gifts.",
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",

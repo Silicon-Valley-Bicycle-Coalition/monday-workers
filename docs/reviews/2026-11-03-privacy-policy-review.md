@@ -49,7 +49,7 @@ details, and giving indicators. "Public sources" wouldn't lead a reader to expec
 
 ### 2. Sensitive life-event flags are held on donors
 
-`salesforce-import/src/transform/windfall.ts:31` copies these flags into each person's Windfall
+`salesforce-import/src/transform/windfall.ts:31` (removed 2026-11-06) copied these flags into each person's Windfall
 Profile when true, among others: **Recently Divorced**, **Recent Death in Family**, Recent Mortgage,
 Recent Mover, Recently Retired, Multi-property Owner and Trust Association. Political party and
 donor fields were deliberately not migrated to Monday, but they remain in the retained Salesforce
@@ -83,6 +83,12 @@ keeps out non-staff, but it doesn't limit access by role among staff.
 
 Column permissions on the Windfall columns, or moving them to a restricted board, would make the
 sentence true. Otherwise the text needs softening to something like "staff who need it for their work".
+
+**Update 2026-11-06:** the Windfall columns are being moved off both People boards to a private
+Wealth Screening board that three staff can open, and the draft wording below now says "a small
+number of staff". People's activity log may show the old values for up to a year (accepted by
+David). The move is in `docs/runbooks/windfall-private-board.md`; #81 stays open for the policy
+update.
 
 ### 5. The donor portal isn't covered
 
@@ -142,7 +148,7 @@ Everything here depends on the decisions above; bracketed text marks what isn't 
 > commercial wealth-screening provider, including estimated net worth, employment details, and
 > indicators of charitable giving [and property ownership]. These figures are estimates and may be
 > wrong. We no longer buy this data, and what we hold has not been updated since [month year]. We use
-> it only to plan our fundraising, and our staff can see it in our donor records and in internal
+> it only to plan our fundraising, and a small number of staff can see it in our donor records and in internal
 > reports. To ask about or remove information we hold about you, email svbc@bikesiliconvalley.org.
 
 **Replace the third-party sentence in Use and Disclosure:**

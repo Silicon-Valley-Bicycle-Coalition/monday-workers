@@ -77,7 +77,7 @@
       "attendeeIdColumn": "text_mm79bmyb",
       "attendeeNameColumn": "text_mm79qtdt",
       "attendeeEmailColumn": "email_mm8gk8v0",
-      "attendeePhoneColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeePhoneColumn": "text_mm8yxbzh",
       "firstNameColumn": "text_mm8g8fhj",
       "attendanceColumn": "color_mm79pht5",
       "sourceColumn": "color_mm791rf",

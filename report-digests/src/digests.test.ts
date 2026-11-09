@@ -40,27 +40,39 @@ describe('renewals', () => {
   });
 });
 
-describe('recent-gifts-wealth', () => {
-  it('splits at the floor, keeps only screened donors below it, and reads Windfall from the donor', async () => {
-    const monday = new FakeMonday(
-      [gift('1', '500', '2026-10-01'), gift('2', '50', '2026-10-02'), gift('3', '75', '2026-10-03'), gift('4', '900', '2026-10-04', { status: 'Failed' })],
-      [
-        { id: 'p1', name: 'A', boardId: '1', byTitle: new Map([['Net Worth', '2500000'], ['Job Title', 'CEO']]) },
-        { id: 'p2', name: 'B', boardId: '1', byTitle: new Map([['Net Worth', '800000']]) },
-        { id: 'p3', name: 'C', boardId: '1', byTitle: new Map() },
-      ],
-    );
-    const d = await buildDigest('recent-gifts-wealth', monday, config, monday8);
+describe('recent-gifts', () => {
+  const donors = [
+    { id: 'p1', name: 'A', boardId: '1', byTitle: new Map([['Lifetime Giving', '2500'], ['Donor Level', 'Major'], ['Net Worth', '2500000'], ['Job Title', 'CEO']]) },
+  ];
+  it('lists received gifts of $400 and up, largest first, with giving from the donor', async () => {
+    const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('2', '50', '2026-10-02'), gift('4', '900', '2026-10-04', { status: 'Failed' })], donors);
+    const d = await buildDigest('recent-gifts', monday, config, monday8);
     expect(monday.queries[0]!.rules).toEqual([
       { column_id: 'date', operator: 'greater_than_or_equals', compare_value: ['EXACT', '2026-08-27'] },
       { column_id: 'date', operator: 'lower_than_or_equal', compare_value: ['EXACT', '2026-10-26'] },
     ]);
-    const [big, small] = d.sections;
-    expect(big!.table!.rows).toHaveLength(1);
-    expect(big!.table!.rows[0]!.slice(2, 7)).toEqual(['$500', 'Donation', '$2,500,000', '', 'CEO']);
-    expect(small!.table!.rows.map((r) => r[1])).toEqual(['Donor 2']);
+    expect(d.sections).toHaveLength(1);
+    expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 1']);
+    expect(d.sections[0]!.table!.rows[0]!.slice(-2)).toEqual(['$2,500', 'Major']);
+    expect(d.count).toBe(1);
+  });
+  it('puts the largest of two qualifying gifts first', async () => {
+    const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('3', '900', '2026-10-03')]);
+    const d = await buildDigest('recent-gifts', monday, config, monday8);
+    expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 3', 'Donor 1']);
     expect(d.count).toBe(2);
-    expect(d.subject).toContain('1 of $400+');
+  });
+  it('never carries a Windfall value or title', async () => {
+    const d = await buildDigest('recent-gifts', new FakeMonday([gift('1', '500', '2026-10-01')], donors), config, monday8);
+    expect(JSON.stringify(d)).not.toMatch(/Net Worth|Windfall|Philanthropic|Job Title|wealth|CEO|2,500,000/i);
+  });
+  it('includes exactly $400 and excludes $399.99', async () => {
+    const d = await buildDigest('recent-gifts', new FakeMonday([gift('1', '400', '2026-10-01'), gift('2', '399.99', '2026-10-01')]), config, monday8);
+    expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 1']);
+  });
+  it('leaves giving blank for a gift with no linked donor', async () => {
+    const d = await buildDigest('recent-gifts', new FakeMonday([item('9', 'Gift 9', { amount: '500', date: '2026-10-01', status: 'Received', gift_type: 'Donation', donor: '', stream: 'Individual', size: '$500+' })]), config, monday8);
+    expect(d.sections[0]!.table!.rows[0]!.slice(-2)).toEqual(['', '']);
   });
 });
 

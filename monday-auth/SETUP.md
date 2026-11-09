@@ -85,12 +85,12 @@ npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # optional; see below
 ```
 
 `SLACK_WEBHOOK_URL` is optional: without it, "needs consent" alerts only reach the Worker's logs.
-Fine for sandbox; **required before production**. No webhook existed as of 2026-10-30
-(`monday-backup` isn't deployed yet). Create one Slack app, *SVBC Integration Alerts*, from
+Fine for sandbox; **required before production**. SVBC's production `monday-auth`, `monday-backup`
+and `mailchimp-sync` share one webhook to a private staff channel (set 2026-11-04). A fork creates
+one Slack app, *SVBC Integration Alerts*, from
 [`slack-app-manifest.yml`](slack-app-manifest.yml) (api.slack.com/apps → Create New App → From a
-manifest), then add a webhook for `#crm-sandbox` and one for the production alerts channel
-(Incoming Webhooks → Add New Webhook to Workspace), and use them for both `monday-auth` and
-`monday-backup`.
+manifest), then adds a webhook for `#crm-sandbox` and one for the production alerts channel
+(Incoming Webhooks → Add New Webhook to Workspace), and uses them for those Workers.
 
 Then, in a private browser window **logged into Monday as the right user** — **Sandbox
 Integration** for sandbox, **SVBC Integration** for production — open each of these and click
