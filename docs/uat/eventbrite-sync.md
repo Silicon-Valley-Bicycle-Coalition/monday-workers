@@ -59,7 +59,7 @@ column to write to. See `eventbrite-sync/README.md` "Deploy".
 ## Class emails: try it (sandbox)
 
 For the Bike Education coordinator. Everything here uses a test class and **staff email addresses
-only**; never register a real attendee. Each email is a Gmail draft you write. The **Send class
+only**; never register a real attendee. Each email is a Gmail draft you write. The **Send event
 email** link on the class's Events item opens a page that sends it from your Gmail as `learn@`. In
 the sandbox, every email goes to the sandbox address, whoever is on the list.
 
@@ -68,7 +68,7 @@ the sandbox, every email goes to the sandbox address, whoever is on the list.
    location filled in.
 2. **Write a draft.** In Gmail, write the email From `learn@`, with `{{First Name}}` in the greeting
    and mail merge off.
-3. **Send a reminder.** Before the class starts, click **Send class email** on the test class. Choose
+3. **Send a reminder.** Before the class starts, click **Send event email** on the test class. Choose
    **Reminder** and your draft, check From, subject and the list of people, then click **Send a test
    to me**. Check the test in your inbox, then click **Send to 3 people**. The page shows the result,
    and an update on the Events item gives the kind, sender and count.

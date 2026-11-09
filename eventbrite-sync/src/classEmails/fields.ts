@@ -1,4 +1,4 @@
-// The class details a class email can use as placeholders, from what the feed already keeps from
+// The event details an event email can use as placeholders, from what the feed already keeps from
 // Eventbrite: the start and end times and the online flag in D1, the venue on the Events item. Pure.
 
 import { pacificWeekday } from '../mapping/event';
@@ -15,7 +15,10 @@ export type ClassFields = Record<
   | 'Spanish Date'
   | 'Spanish Time'
   | 'Spanish Arrival Time'
-  | 'Class Location',
+  | 'Class Location'
+  | 'Event Day'
+  | 'Event Date'
+  | 'Event Location',
   string | null
 >;
 
@@ -42,9 +45,14 @@ function formatTime(format: Intl.DateTimeFormat, time: Date | null): string | nu
 export function classFields(event: Pick<EventRow, 'startsAt' | 'endsAt' | 'locationKey'>, venue: string, address: string): ClassFields {
   const start = parseTime(event.startsAt);
   const arrival = start && new Date(start.getTime() - ARRIVAL_LEAD_MS);
+  const day = start && pacificWeekday.format(start);
+  const date = start && pacificDate.format(start);
+  const location = event.locationKey === 'online'
+    ? 'online'
+    : [venue.trim(), address.trim()].filter((s) => s !== '').join(', ') || null;
   return {
-    'Class Day': start && pacificWeekday.format(start),
-    'Class Date': start && pacificDate.format(start),
+    'Class Day': day,
+    'Class Date': date,
     'Start Time': formatTime(pacificTime, start),
     'End Time': formatTime(pacificTime, parseTime(event.endsAt)),
     'Arrival Time': formatTime(pacificTime, arrival),
@@ -52,8 +60,11 @@ export function classFields(event: Pick<EventRow, 'startsAt' | 'endsAt' | 'locat
     'Spanish Date': start && spanishDate.format(start),
     'Spanish Time': formatTime(spanishTime, start),
     'Spanish Arrival Time': formatTime(spanishTime, arrival),
-    'Class Location': event.locationKey === 'online'
-      ? 'online'
-      : [venue.trim(), address.trim()].filter((s) => s !== '').join(', ') || null,
+    'Class Location': location,
+    // The same values under event names, for drafts that aren't for a class. The Class names stay
+    // for the Bike Education templates already saved in staff Gmail.
+    'Event Day': day,
+    'Event Date': date,
+    'Event Location': location,
   };
 }
