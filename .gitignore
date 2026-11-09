@@ -15,6 +15,11 @@ worker-configuration.d.ts
 # to track.
 .claude/worktrees/
 
+# Claude Code's per-user permission allowlist. "Yes, and don't ask again" saves the exact
+# approved command here, so a secret typed into a command lands in this file. Claude Code
+# only adds it to the user's *global* gitignore, which contributors and forks may not have.
+.claude/settings.local.json
+
 # superpowers:brainstorming visual-companion mockups (ephemeral scratch, not deliverables)
 .superpowers/
 
