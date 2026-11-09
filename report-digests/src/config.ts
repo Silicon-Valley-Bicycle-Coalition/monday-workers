@@ -2,7 +2,7 @@
 // silent Monday morning. Board ids of 0 are allowed (the production file until cutover) — a digest
 // against a 0 board fails loudly at the board read instead.
 
-export const DIGEST_KEYS = ['unmatched-gifts', 'renewals', 'recent-gifts-wealth', 'fiscal-year-by-size', 'last-week'] as const;
+export const DIGEST_KEYS = ['unmatched-gifts', 'renewals', 'recent-gifts', 'fiscal-year-by-size', 'last-week'] as const;
 export type DigestKey = (typeof DIGEST_KEYS)[number];
 
 // Pacific wall-clock schedule. weekdays: 0 = Sunday … 6 = Saturday. monthDays: 1–31. A digest
@@ -15,7 +15,7 @@ export interface DigestConfig {
   view: string;         // the board view the email links to, by name (configure creates it)
   skipWhenEmpty: boolean;
   days: number | null;      // look-back window, for the digests that have one
-  minAmount: number | null; // recent-gifts-wealth's "$400 and up" section
+  minAmount: number | null; // recent-gifts's "$400 and up" floor
 }
 
 export interface DigestsConfig {
@@ -114,10 +114,10 @@ export function validateConfig(raw: unknown): DigestsConfig {
     boards: { donations: int(boards, 'donations', 'boards', 0), people: int(boards, 'people', 'boards', 0) },
     digests: Object.fromEntries(DIGEST_KEYS.map((key) => [key, digest(digests[key], `digests.${key}`)])) as Record<DigestKey, DigestConfig>,
   };
-  for (const key of ['recent-gifts-wealth', 'last-week'] as const) {
+  for (const key of ['recent-gifts', 'last-week'] as const) {
     if (config.digests[key].days === null) throw new Error(`config: digests.${key}.days is required`);
   }
-  if (config.digests['recent-gifts-wealth'].minAmount === null) throw new Error('config: digests.recent-gifts-wealth.minAmount is required');
+  if (config.digests['recent-gifts'].minAmount === null) throw new Error('config: digests.recent-gifts.minAmount is required');
   // Throws on an unknown zone, here rather than at the first cron.
   new Intl.DateTimeFormat('en-US', { timeZone: config.timeZone });
   return config;
