@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processAttendee } from './processAttendee';
 import { consumeWriteBatch } from './processBatch';
+import { piiKeysFor } from '../writeSwitch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
@@ -523,5 +524,77 @@ describe('attendee messages under the write switch', () => {
     const { deps, queue } = setup({ evRow: null });
     await expect(processAttendee({ ...message, writeStamp: 'dropped' }, deps)).rejects.toThrow('no Events item yet');
     expect(queue.send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'attendee.updated', writeStamp: 'dropped' });
+  });
+});
+
+// Spec 2026-11-04: of everything a form asks, only a valid zip goes anywhere.
+describe('Home Zip through the consumer', () => {
+  const SENSITIVE = ['Jordan Contact', '408-555-0188', 'asthma, carries inhaler', '12 Hidden Street', 'please call me first'];
+  const answers = (zip: string) => [
+    { question: 'Emergency contact name', question_id: '1', type: 'text', answer: SENSITIVE[0] },
+    { question: 'Emergency Contact Phone Number', question_id: '2', type: 'text', answer: SENSITIVE[1] },
+    { question: 'Are there any conditions?', question_id: '3', type: 'text', answer: SENSITIVE[2] },
+    { question: 'Mailing Street', question_id: '4', type: 'text', answer: SENSITIVE[3] },
+    { question: 'What is your home zip code?', question_id: '5', type: 'text', answer: zip },
+  ];
+  const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
+  const gate = (mode: 'on' | 'off') => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'debug' as const, piiKeys: piiKeysFor(config) });
+  const msg = () => ({ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() });
+
+  // Everything the consumer printed, and everything it asked the ledger to store.
+  async function captured(run: () => Promise<void>, stores: { updateStatus: unknown }): Promise<string> {
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
+    try {
+      await run();
+      return JSON.stringify([spies.map((spy) => spy.mock.calls), (stores.updateStatus as ReturnType<typeof vi.fn>).mock.calls]);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  }
+
+  it('writes the zip and nothing else from the form on a create', async () => {
+    const { deps, mondayClient } = setup({ att: attendee({ answers: answers('95112') }) });
+    await processAttendee(message, deps);
+    const [, , values] = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(values.att_zip_col).toBe('95112');
+    for (const text of SENSITIVE) expect(JSON.stringify(values)).not.toContain(text);
+  });
+
+  it('writes the zip and nothing else from the form on an update', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ answers: answers('95112-1234') }) });
+    await processAttendee(message, deps);
+    const [, item, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(item).toBe('reg-9');
+    expect(values.att_zip_col).toBe('95112');
+    for (const text of SENSITIVE) expect(JSON.stringify(values)).not.toContain(text);
+  });
+
+  it('leaves the column out of an update when the zip answer is not a zip, so a good value stays', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ answers: answers(SENSITIVE[4]!) }) });
+    await processAttendee(message, deps);
+    const [, , values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(values).not.toHaveProperty('att_zip_col');
+    expect(JSON.stringify(values)).not.toContain(SENSITIVE[4]);
+  });
+
+  it('prints and stores no answer in a debug dry run', async () => {
+    const { deps, attendeeStore } = setup({ att: attendee({ answers: answers('95112') }) });
+    const m = msg();
+    const output = await captured(() => consumeWriteBatch([m], full(deps), gate('off')), attendeeStore);
+    expect(m.ack).toHaveBeenCalled();
+    expect(output).toContain('createItem');
+    for (const text of [...SENSITIVE, '95112']) expect(output).not.toContain(text);
+  });
+
+  it('prints and stores no answer when the Monday write fails', async () => {
+    const { deps, attendeeStore } = setup({
+      att: attendee({ answers: answers('95112') }),
+      monday: { createItem: vi.fn().mockRejectedValue(new Error('monday down')) },
+    });
+    const m = msg();
+    const output = await captured(() => consumeWriteBatch([m], full(deps), gate('on')), attendeeStore);
+    expect(m.retry).toHaveBeenCalled();
+    expect(output).toContain('monday down');
+    for (const text of [...SENSITIVE, '95112']) expect(output).not.toContain(text);
   });
 });

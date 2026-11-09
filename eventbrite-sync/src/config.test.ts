@@ -187,6 +187,20 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('monday.boards.events');
     });
 
+    it('requires homeZipColumn and rejects a non-array zipPrograms', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.registrations.homeZipColumn;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.registrations.homeZipColumn');
+      const cfg2 = valid();
+      cfg2.attendeeSync.registrations.homeZipColumn = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg2)).not.toThrow();
+      for (const bad of ['Public', undefined, [''], [7]]) {
+        const c = valid();
+        c.attendeeSync.zipPrograms = bad;
+        expect(() => validateConfig(c)).toThrow('attendeeSync.zipPrograms');
+      }
+    });
+
     it('requires well-formed actions, string-to-string programByOrganizer and string volunteerPrograms', () => {
       const cfg = valid();
       cfg.attendeeSync.actions = [];

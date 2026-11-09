@@ -42,6 +42,7 @@ export function testConfig(
       actions: ['attendee.updated', 'attendee.checked_in', 'attendee.checked_out', 'event.created', 'event.published', 'event.updated', 'event.unpublished'],
       programByOrganizer: { 'org-volunteering': 'Volunteering' },
       volunteerPrograms: ['Volunteering'],
+      zipPrograms: ['Public', 'Group Rides'],
       events: {
         eventbriteIdColumn: 'ev_id_col', dateColumn: 'ev_date_col', endColumn: 'ev_end_col', venueColumn: 'ev_venue_col',
         addressColumn: 'ev_address_col', cityColumn: 'ev_city_col', programColumn: 'ev_program_col', eventStatusColumn: 'ev_status_col',
@@ -52,6 +53,7 @@ export function testConfig(
         attendanceColumn: 'att_attendance_col', sourceColumn: 'att_source_col', roleColumn: 'att_role_col', eventLinkColumn: 'att_event_col',
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
         classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',
+        homeZipColumn: 'att_zip_col',
       },
       registrantsLinkExcludedEventIds: ['8888'],
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },

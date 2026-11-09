@@ -24,7 +24,7 @@ const ATTENDEE_EVENT_COLUMN_KEYS = [
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'attendeePhoneColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
-  'classLocationColumn', 'registrantsLinkColumn',
+  'classLocationColumn', 'homeZipColumn', 'registrantsLinkColumn',
 ] as const;
 
 const PLEDGE_COLUMN_KEYS = [
@@ -144,6 +144,9 @@ function validateAttendeeSync(raw: unknown): void {
   }
   if (!Array.isArray(a.volunteerPrograms) || a.volunteerPrograms.some((v) => !isNonEmptyString(v))) {
     throw new Error('config: "attendeeSync.volunteerPrograms" must be an array of Program labels');
+  }
+  if (!Array.isArray(a.zipPrograms) || a.zipPrograms.some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.zipPrograms" must be an array of Program labels');
   }
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);

@@ -11,12 +11,15 @@ import type { MondayClient, MondayItem } from './monday/client';
 import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
 import type { EndedEventSweepDeps } from './endedEvents/sweep';
 import type { EventbriteSyncConfig, EventRow, MondayBoards } from './types';
+import { PLACEHOLDER_COLUMN_ID } from './config';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 
 // Debug skip lines key Monday values by column id, which DEFAULT_PII_KEYS can't recognize as names.
 export function piiKeysFor(config: EventbriteSyncConfig): readonly string[] {
   const { donorFirstNameColumn, donorLastNameColumn } = config.eventbriteSync;
-  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase()];
+  const { homeZipColumn } = config.attendeeSync.registrations;
+  const zip = homeZipColumn === PLACEHOLDER_COLUMN_ID ? [] : [homeZipColumn.toLowerCase()];
+  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase(), ...zip];
 }
 
 // Everything a skip line needs except the delivery, which is per message.

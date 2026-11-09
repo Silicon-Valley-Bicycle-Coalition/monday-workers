@@ -299,7 +299,7 @@ creates what landed after the extract.
 **Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
 closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
-has no `REPLACE_WITH_COLUMN_ID` left; the Worker is deployed and the webhook registered; then
+has no `REPLACE_WITH_COLUMN_ID` left, apart from `homeZipColumn` (see "Grant report"); the Worker is deployed and the webhook registered; then
 `--dry-run`, compare its order count with the Eventbrite attendee/orders report, then the real
 run. If the Worker cannot be in production by then, `--dry-run` still needs only the read-only
 token and lists the paid orders (ids and statuses, no PII) — use it as the checklist for a
@@ -360,7 +360,7 @@ people who registered before this column, one event at a time.
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
   `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
-  since 2026-11-04; the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  since 2026-11-04, except `homeZipColumn`, which stays off until set (see "Grant report"); the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -397,6 +397,47 @@ separate column because Monday refuses to make the existing Event link two-way
 
 In production the view and columns were created directly on the board on 2026-11-03 rather than
 with `configure`, which would also have re-applied the board's five existing views.
+
+### Grant report
+
+Funders ask for name, email, class date, zip, checked in, canceled and no show, per person. Staff
+pull that from a **Grant report** view on Event Registrations, filtered by Grant and date and
+exported to Excel. Design:
+[`docs/superpowers/specs/2026-11-04-eventbrite-grant-report-design.md`](../docs/superpowers/specs/2026-11-04-eventbrite-grant-report-design.md).
+This feature reads only the zip answer. The Attendee Phone column and the Pledge to Ride board read
+answers of their own (see their sections).
+
+**What the Worker writes.** The consumer writes Home Zip with the rest of the registration when:
+
+* the program is in `attendeeSync.zipPrograms` (`Public` and `Group Rides`). Program follows the
+  Eventbrite organizer account, and the main account is `Public`, so a ticketed event there, like the
+  Bike Summit, gets a zip if its form asks;
+* `attendeeSync.registrations.homeZipColumn` isn't the placeholder, so a deploy can precede the column;
+* a `text` question whose wording has the whole word `zip` or `zipcode` holds a value that matches
+  `^\d{5}(-\d{4})?$` after trimming. The first valid answer wins, and only its first 5 digits are kept.
+
+Anything else counts as no answer and its text is discarded. With no valid answer the column is left
+out of the write, so a later bad edit can't erase a good zip. It also means a zip someone deletes in
+Eventbrite stays in Monday. The zip goes in neither D1 nor the logs.
+
+**Set up in Monday, with no Worker code:**
+
+1. **Home Zip**, a text column on Event Registrations. Put its id in `homeZipColumn`, then run
+   `scripts/mark-read-only-columns.mjs` to lock it.
+2. **Grant**, a dropdown on Events, with labels VTA and SMCTA to begin with. Staff set it once per class.
+3. A mirror of Grant on Event Registrations, through the Event link.
+4. The **Grant report** table view with Name, Attendee Email, Event, Class Date, Home Zip, Attendance
+   and Grant, every other column hidden. It is filtered to Grant is not empty, grouped by Grant, and
+   sorted by Class Date newest first. Staff add a Class Date filter for the reporting period, then
+   export. A dashboard is optional. The sandbox copy is view 291176794, created 2026-11-09. Build
+   production's to the same settings.
+
+**No Show** isn't automatic: staff or the class email page set it, so a class nobody marks counts no
+no-shows. Eventbrite records check-ins, not absences, and a class with no check-ins may just be one
+where nobody took attendance.
+
+**Classes already written** get their zips from `scripts/backfill-attendees.mjs`, which re-drives each
+attendee. The report runs from November 2026 forward; earlier data is already captured.
 
 ### Registering it
 

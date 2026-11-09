@@ -169,6 +169,8 @@ export interface EventbriteSyncConfig {
     programByOrganizer: Record<string, string>;
     // Programs whose attendees get Role = Volunteer.
     volunteerPrograms: string[];
+    // Programs whose registrations get a Home Zip from the attendee's custom answers.
+    zipPrograms: string[];
     events: {
       eventbriteIdColumn: string;
       dateColumn: string;
@@ -198,6 +200,7 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
+      homeZipColumn: string;
       // Second link to the event, two-way, so its registrants show on the event's card.
       registrantsLinkColumn: string;
     };
