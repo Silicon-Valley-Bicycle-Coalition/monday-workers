@@ -504,8 +504,10 @@ sent to for that kind.
 
 Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 3,000 pledges a year.
 Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
-**Status:** built, not configured in production. The sandbox config still holds placeholders until the
-board is created there.
+**Status:** live in both environments, with no event configured in production yet. Production's board is
+18439165954 (created 2026-11-09, private, backed up); `pledge.events` is empty, so for now the block only
+arms the unconfigured-pledge alarm below. The sandbox board is 18439163372, rehearsed 2026-11-09 with three
+real 2026 attendees (complete, placeholder, canceled). The 2027 pledge is due to publish 2027-01-15.
 
 An attendee of an event in `pledge.events` goes to the private **Pledge to Ride** board **instead of**
 Event Registrations, with its answers. Everything before that (webhook, ledger, queue, write switch) is
@@ -529,6 +531,10 @@ goes to Other Answers.
 out, since the key-based redaction can't recognize free text under a column id.
 
 ### A new year's pledge
+
+**For staff, in short:** create next year's Pledge to Ride on Eventbrite as a **draft**, then ask whoever
+runs these Workers to configure and deploy it **before you publish**. Publishing first sends the early
+pledges, with their answers and phones, to Event Registrations, which all staff can read.
 
 1. Staff create the event as a **draft** on Eventbrite, with its questions.
 2. `node scripts/pledge-event-config.mjs --event-id <id> --year <n>` prints its `pledge.events` block and
@@ -557,6 +563,8 @@ creates, so a newly configured past event raises this daily until it's been repl
 `scripts/setup-pledge-board.mjs` creates the board, private, and prints its config (dry run without
 `--apply`; `--subscribe` the integration user and `monday-backup`'s, or neither can see it). Add the board to
 `requiredBoardIds` in `monday-backup/config/backup.json`, and run `scripts/mark-read-only-columns.mjs`.
+Monday puts a default "Task 1" item on a new board; delete it. Status columns are written as
+`{ label }`: a bare `"2026"` is read as a label index and the whole write refused (found in the sandbox).
 
 **Don't create a test event to rehearse.** There's one Eventbrite organization and production's webhook
 covers all of it, so a test event writes to production boards. Replay a slice of a real past event to the
