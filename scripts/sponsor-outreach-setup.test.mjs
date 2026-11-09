@@ -308,18 +308,18 @@ describe('prospects command', () => {
   const args = { command: 'prospects', organizations: ORGS, input: '/tmp/x/data/p.csv', out: '/tmp/x/data/pr.csv', apply: false };
   it('--apply ticks and writes notes; exit 1 for review', async () => {
     const m = fakeMonday(boards());
-    const code = await run({ ...args, apply: true }, { gql: m.gql, ...sink(), readFile: () => csv, writeFile: () => {} });
+    const code = await run({ ...args, apply: true }, { gql: m.gql, ...sink(), readFile: (p) => { if (p.includes('applied-')) throw Object.assign(new Error('x'), { code: 'ENOENT' }); return csv; }, writeFile: () => {} });
     assert.equal(code, 1);
     assert.deepEqual(m.mutations.map((x) => [x.vars.item, JSON.parse(x.vars.values)]), [['501', { sp: { checked: 'true' }, pn: 'warm' }]]);
   });
   it('a dry run sends nothing', async () => {
     const m = fakeMonday(boards());
-    await run(args, { gql: m.gql, ...sink(), readFile: () => csv, writeFile: () => {} });
+    await run(args, { gql: m.gql, ...sink(), readFile: (p) => { if (p.includes('applied-')) throw Object.assign(new Error('x'), { code: 'ENOENT' }); return csv; }, writeFile: () => {} });
     assert.equal(m.mutations.length, 0);
   });
 });
 
-import { planContacts } from './sponsor-outreach-setup.mjs';
+import { planContacts, sheetSources } from './sponsor-outreach-setup.mjs';
 
 describe('planContacts', () => {
   const affiliations = [
@@ -417,7 +417,7 @@ describe('contacts command', () => {
   };
   const deps = (m, written) => ({
     gql: m.gql, ...sink(),
-    readFile: (p) => files[p],
+    readFile: (p) => { if (!(p in files)) throw Object.assign(new Error('x'), { code: 'ENOENT' }); return files[p]; },
     listDir: (p) => Object.keys(files).filter((f) => f.startsWith(p + '/')).map((f) => f.slice(p.length + 1)),
     writeFile: (p, c) => (written[p] = c),
   });
@@ -447,5 +447,61 @@ describe('planContacts review rows', () => {
   it('lists one review row per source, key and reason', () => {
     const p = planContacts([{ kind: 'email', email: 'x@y.com' }, { kind: 'email', email: 'x@y.com' }], [], new Map(), new Map());
     assert.equal(p.review.length, 1);
+  });
+});
+
+describe('final review fixes', () => {
+  it('a Work Email on several people\'s Current affiliations is reviewed, not ticked', () => {
+    const affs = [
+      { id: 'a1', personId: 'p1', orgId: 'o1', status: 'Current', workEmail: 'info@acme.com', sponsorContact: false },
+      { id: 'a2', personId: 'p2', orgId: 'o1', status: 'Current', workEmail: 'info@acme.com', sponsorContact: false },
+    ];
+    const p = planContacts([{ kind: 'email', email: 'info@acme.com' }], affs, new Map(), new Map());
+    assert.deepEqual([p.tick, p.review.map((r) => r.reason)], [[], ['several people share this email']]);
+  });
+
+  it('prospects fills empty notes on an already-ticked Organization', () => {
+    const idx = buildOrgIndex([{ id: '1', name: 'AECOM' }]);
+    const p = planProspects([{ company: 'AECOM', notes: 'warm' }], idx, new Map([['1', { prospect: true, notes: '' }]]));
+    assert.deepEqual([p.set, p.already], [[{ orgId: '1', notes: 'warm', notesOnly: true }], 0]);
+  });
+
+  it('an --apply never re-writes an id an earlier --apply recorded, even after Martha undid it', async () => {
+    const boards = {
+      [ORGS]: { columns: [{ id: 'sf', title: '📜 Salesforce ID', type: 'text' }], items: [{ id: '501', name: 'Waymo LLC' }] },
+      [SPONS]: {
+        columns: [{ id: 'emp', title: 'Employer', type: 'text' }, { id: 'org', title: 'Organization', type: 'board_relation' }],
+        items: [{ id: 'i1', name: 'Waymo', values: { emp: { text: null }, org: { linked: [] } } }],
+      },
+    };
+    const files = {};
+    const deps = (m) => ({ gql: m.gql, ...sink(), readFile: (p) => { if (!(p in files)) throw Object.assign(new Error('x'), { code: 'ENOENT' }); return files[p]; }, writeFile: (p, c) => (files[p] = c) });
+    const args = { command: 'link-pipeline', organizations: ORGS, sponsorships: SPONS, out: '/t/data/l.csv', apply: true };
+    const first = fakeMonday(boards);
+    await run(args, deps(first));
+    assert.equal(first.mutations.length, 1);
+    const second = fakeMonday(boards); // Martha cleared the link; the item reads unlinked again
+    await run(args, deps(second));
+    assert.equal(second.mutations.length, 0);
+  });
+
+  it('contacts stops when the sheet directory is missing', async () => {
+    const m = fakeMonday({});
+    const ctx = { readFile: () => '', listDir: () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }); } };
+    assert.throws(() => sheetSources({ ...ctx, out: () => {} }, '/d/data/so', new Map()), /sheet/);
+    void m;
+  });
+
+  it('contacts reads sheet headers case-insensitively and reports each tab', () => {
+    const lines = [];
+    const ctx = {
+      out: (l) => lines.push(l),
+      listDir: () => ['Lapsed.csv', 'Dinner Focused.csv'],
+      readFile: (p) => (p.endsWith('Lapsed.csv') ? 'company,EMAIL\nAcme,a@acme.com\n' : 'Sponsor Names:,Events\nGoogle,Dinner\n'),
+    };
+    const s = sheetSources(ctx, '/d/data/so', buildOrgIndex([{ id: '1', name: 'Acme' }]));
+    assert.deepEqual(s, [{ kind: 'email', email: 'a@acme.com', orgId: '1' }]);
+    assert.ok(lines.some((l) => /Lapsed\.csv: 1 address/.test(l)));
+    assert.ok(lines.some((l) => /Dinner Focused\.csv: skipped, no email column/.test(l)));
   });
 });

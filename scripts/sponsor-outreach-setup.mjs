@@ -370,6 +370,45 @@ async function setColumnValues(gql, boardId, itemId, values) {
   );
 }
 
+/**
+ * Ids an earlier --apply of this command already wrote, kept beside --out. A later --apply skips
+ * them, so it never re-ticks a box or re-links an item Martha has since undone by hand.
+ */
+function appliedLedger(ctx, args) {
+  const path = join(dirname(args.out), `applied-${args.command}.json`);
+  let ids = [];
+  try {
+    ids = JSON.parse(ctx.readFile(path));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw new Stopped(`Can't read the applied ledger beside --out (applied-${args.command}.json).`);
+  }
+  const done = new Set(ids.map(String));
+  return {
+    has: (id) => done.has(String(id)),
+    record: (id) => {
+      done.add(String(id));
+      writeReview(path, JSON.stringify([...done]), ctx.writeFile);
+    },
+  };
+}
+
+/** Write each planned id that an earlier --apply hasn't, recording it once Monday accepts. */
+async function applyEach(ctx, args, ids, write) {
+  const ledger = appliedLedger(ctx, args);
+  let written = 0;
+  let skipped = 0;
+  for (const id of ids) {
+    if (ledger.has(id)) {
+      skipped += 1;
+      continue;
+    }
+    await write(id);
+    ledger.record(id);
+    written += 1;
+  }
+  return { written, skipped };
+}
+
 async function cmdLinkPipeline(args, ctx) {
   const { gql, out } = ctx;
   const cols = await columnsByTitle(gql, args.sponsorships);
@@ -394,8 +433,10 @@ async function cmdLinkPipeline(args, ctx) {
   if (!args.apply) {
     out(`DRY RUN${orgCol ? '' : ' (the Organization column doesn\'t exist yet)'}: nothing was changed.`);
   } else {
-    for (const l of plan.link) await setColumnValues(gql, args.sponsorships, l.itemId, { [orgCol.id]: { item_ids: [Number(l.orgId)] } });
-    out(`Linked ${plan.link.length} item(s).`);
+    const orgOf = new Map(plan.link.map((l) => [l.itemId, l.orgId]));
+    const r = await applyEach(ctx, args, [...orgOf.keys()], (itemId) =>
+      setColumnValues(gql, args.sponsorships, itemId, { [orgCol.id]: { item_ids: [Number(orgOf.get(itemId))] } }));
+    out(`Linked ${r.written} item(s); ${r.skipped} skipped because an earlier --apply already linked them.`);
   }
   if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} item(s) need review; see the --out file.`);
   return 0;
@@ -431,11 +472,13 @@ export function planProspects(rows, index, current) {
     if (seen.has(m.orgId)) continue;
     seen.add(m.orgId);
     const now = current.get(m.orgId) ?? { prospect: false, notes: '' };
+    const fillNotes = !now.notes.trim() && notes.trim() ? notes.trim() : null;
     if (now.prospect) {
-      already += 1;
+      if (fillNotes) set.push({ orgId: m.orgId, notes: fillNotes, notesOnly: true });
+      else already += 1;
       continue;
     }
-    set.push({ orgId: m.orgId, notes: now.notes.trim() || !notes.trim() ? null : notes.trim() });
+    set.push({ orgId: m.orgId, notes: fillNotes });
   }
   return { set, review, already };
 }
@@ -465,16 +508,22 @@ async function cmdProspects(args, ctx) {
     toCsv(['Company', 'Reason', 'Candidate Organization IDs'], plan.review.map((r) => [r.company, r.reason, r.candidates.join(' ')])),
     ctx.writeFile,
   );
-  out(`${records.length} row(s) against ${count} Organization(s): ${plan.set.length} to mark, ${plan.already} already marked, ${plan.review.length} for review.`);
+  const notesOnly = plan.set.filter((x) => x.notesOnly).length;
+  out(`${records.length} row(s) against ${count} Organization(s): ${plan.set.length - notesOnly} to mark, ${notesOnly} already marked whose empty notes the sheet fills, ${plan.already} already marked, ${plan.review.length} for review.`);
+  if (records.length > 0 && records.every((r) => !r[PROSPECT_HEADERS.notes].trim())) {
+    out('Warning: every Notes cell in the input is blank. If the tab has notes, re-export it with File → Download → CSV.');
+  }
   if (!args.apply) {
     out('DRY RUN: nothing was changed.');
   } else {
-    for (const s of plan.set) {
-      const values = { [prospect.id]: { checked: 'true' } };
-      if (s.notes !== null) values[notesCol.id] = s.notes;
-      await setColumnValues(gql, args.organizations, s.orgId, values);
-    }
-    out(`Marked ${plan.set.length} Organization(s).`);
+    const byOrg = new Map(plan.set.map((x) => [x.orgId, x]));
+    const r = await applyEach(ctx, { ...args, command: 'prospects' }, [...byOrg.keys()], (orgId) => {
+      const x = byOrg.get(orgId);
+      const values = x.notesOnly ? {} : { [prospect.id]: { checked: 'true' } };
+      if (x.notes !== null) values[notesCol.id] = x.notes;
+      return setColumnValues(gql, args.organizations, orgId, values);
+    });
+    out(`Wrote ${r.written} Organization(s); ${r.skipped} skipped because an earlier --apply already wrote them.`);
   }
   if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} row(s) need review; see the --out file.`);
   return 0;
@@ -517,6 +566,10 @@ export function planContacts(sources, affiliations, people, orgsBySfId) {
       continue;
     }
     const byWork = affiliations.filter((a) => a.workEmail === src.email);
+    if (new Set(byWork.filter((a) => a.status === 'Current').map((a) => a.personId)).size > 1) {
+      review.push({ source: 'email', key: src.email, reason: 'several people share this email' });
+      continue;
+    }
     if (byWork.length > 0) {
       choose(byWork, 'email', src.email);
       continue;
@@ -537,9 +590,9 @@ export function planContacts(sources, affiliations, people, orgsBySfId) {
   return { tick, review: unique, already: alreadySeen.size };
 }
 
-// Sheet columns that may hold contact addresses, and the ones that name the company.
-const SHEET_EMAIL_HEADERS = ['Email', 'Email Address', 'other contacts', 'Additional Contact Names'];
-const SHEET_COMPANY_HEADERS = ['Company', 'Name of your organization, business, or advocacy group:'];
+// Sheet columns that may hold contact addresses, and the ones that name the company (any case).
+const SHEET_EMAIL_HEADERS = ['email', 'email address', 'other contacts', 'additional contact names'];
+const SHEET_COMPANY_HEADERS = ['company', 'name of your organization, business, or advocacy group:'];
 
 // Salesforce ids compare on their case-sensitive 15-character form (an 18-character id adds a
 // checksum), so an export and the migrated 📜 Salesforce ID agree whichever length each kept.
@@ -576,27 +629,41 @@ async function readPeople(gql, boardIds) {
   return people;
 }
 
-/** Email sources from every sheet tab exported under <dir>/sheet/. A tab without an email column is skipped. */
-function sheetSources(ctx, dir, index) {
+/**
+ * Email sources from every sheet tab exported under <dir>/sheet/. Each tab gets a console line
+ * (its file name and address count, or why it was skipped), so a missing tab is visible. A missing
+ * sheet/ directory, or one with no CSV, stops the run.
+ */
+export function sheetSources(ctx, dir, index) {
   const sources = [];
   const sheetDir = join(dir, 'sheet');
-  let names = [];
+  let names;
   try {
-    names = ctx.listDir(sheetDir).filter((n) => n.endsWith('.csv'));
+    names = ctx.listDir(sheetDir).filter((n) => n.endsWith('.csv')).sort();
   } catch {
-    return sources;
+    throw new Stopped(`No sheet/ directory under --dir. Export each tab of the sponsor list there first.`);
   }
+  if (names.length === 0) throw new Stopped('The sheet/ directory under --dir holds no .csv files.');
   for (const name of names) {
     const [header = [], ...rows] = parseCsv(ctx.readFile(join(sheetDir, name)));
-    const keys = header.map((h) => h.trim());
+    const keys = header.map((h) => h.trim().toLowerCase());
     const emailIdx = keys.map((k, i) => (SHEET_EMAIL_HEADERS.includes(k) ? i : -1)).filter((i) => i >= 0);
+    if (emailIdx.length === 0) {
+      ctx.out(`  sheet ${name}: skipped, no email column`);
+      continue;
+    }
     const companyIdx = keys.findIndex((k) => SHEET_COMPANY_HEADERS.includes(k));
+    let n = 0;
     for (const row of rows) {
       const m = companyIdx >= 0 ? matchOrg(index, row[companyIdx]) : { status: 'unmatched' };
       for (const i of emailIdx) {
-        for (const email of splitEmails(row[i])) sources.push({ kind: 'email', email, orgId: m.status === 'matched' ? m.orgId : undefined });
+        for (const email of splitEmails(row[i])) {
+          sources.push({ kind: 'email', email, orgId: m.status === 'matched' ? m.orgId : undefined });
+          n += 1;
+        }
       }
     }
+    ctx.out(`  sheet ${name}: ${n} address(es)${companyIdx >= 0 ? '' : ', no company column'}`);
   }
   return sources;
 }
@@ -657,8 +724,8 @@ async function cmdContacts(args, ctx) {
   if (!args.apply) {
     out(`DRY RUN${sc ? '' : " (the Sponsor Contact column doesn't exist yet)"}: nothing was changed.`);
   } else {
-    for (const id of plan.tick) await setColumnValues(gql, args.affiliations, id, { [sc.id]: { checked: 'true' } });
-    out(`Ticked ${plan.tick.length} Affiliation(s).`);
+    const r = await applyEach(ctx, args, plan.tick, (id) => setColumnValues(gql, args.affiliations, id, { [sc.id]: { checked: 'true' } }));
+    out(`Ticked ${r.written} Affiliation(s); ${r.skipped} skipped because an earlier --apply already ticked them.`);
   }
   if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} source(s) need review; see the --out file.`);
   return 0;

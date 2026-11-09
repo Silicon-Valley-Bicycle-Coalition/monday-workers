@@ -18,8 +18,13 @@ Everything runs from the repo root with David's own Monday token, never a Worker
 * **Dry run by default.** Each command reports what it would do and changes nothing. Add `--apply`
   to write. Re-running is safe:
   * a link or tick already in place is left alone
-  * Martha's edits are never overwritten
   * nothing is ever unticked
+  * each `--apply` records the ids it wrote in `applied-<command>.json`, beside `--out`. A later
+    `--apply` never writes those ids again, so a tick or link Martha removes by hand stays removed.
+    Keep these files with the review files, and don't delete them.
+  * `prospects` fills an empty Prospect Notes on a company that's already ticked, so re-running
+    with a better export carries Martha's notes over. It warns when every Notes cell in the input
+    is blank.
 * **Review files live under `data/`.** They hold names and emails, and the script refuses to write
   them anywhere else. `data/` is gitignored, so never commit or email them. They go to Martha's
   restricted Box folder.
@@ -131,7 +136,9 @@ node scripts/sponsor-outreach-setup.mjs contacts --organizations 18437909779 \
 It ticks Sponsor Contact on **Current** affiliations found from three sources:
 * Salesforce sponsorship primary contacts, matched by 📜 Salesforce ID on the person and the
   Organization.
-* Every email column on the sheet tabs. A tab with no email column is skipped.
+* Every email column on the sheet tabs. Headers are matched in any case. Each tab prints a line
+  with its address count, or "skipped, no email column". A missing `sheet/` directory stops the
+  run.
 * The Sponsorships board's Email column.
 
 An email matches an affiliation's Work Email first. Failing that, it matches a People email, but
@@ -145,7 +152,7 @@ only at the company the row names.
 | `no organization` | The row's company didn't match an Organization, or the Sponsorships item isn't linked yet |
 | `former only` | The only affiliation found is Former |
 | `no current affiliation` | The person has no affiliation at that company |
-| `several people share this email` | Two or more People share the address |
+| `several people share this email` | Two or more People share the address, or it's the Work Email on more than one person's Current affiliation (such as `info@`), so it's never ticked twice |
 
 It also writes **`fundraise-opt-out.csv`**: the sponsor contacts Salesforce marked Fundraise Opt
 Out, which weren't migrated. Each row has its People item and whether Do Not Solicit is already
