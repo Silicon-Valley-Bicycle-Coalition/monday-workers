@@ -1,7 +1,8 @@
 # Eventbrite grant report — Design
 
 **Date:** 2026-11-04
-**Status:** Approved by David 2026-11-04. Built 2026-11-06, not deployed. Replaces a counts-only draft (see "Dropped").
+**Status:** Approved by David 2026-11-04. Built 2026-11-06. Deployed to the sandbox 2026-11-09: one VTA class backfilled, 23 of 23 valid zips
+written; not yet in production. Replaces a counts-only draft (see "Dropped").
 **Worker:** `eventbrite-sync` (extends the attendee feed from
 `2026-10-26-eventbrite-attendees-class-emails-design.md`).
 
