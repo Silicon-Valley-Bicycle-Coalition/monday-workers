@@ -22,7 +22,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { assertDataPath, buildOrgIndex, ledgerGifts, mapEvent, matchOrg, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
+import { assertDataPath, buildOrgIndex, ledgerGifts, mapEvent, matchOrg, parseCsv, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const EVENT_NAMES_PATH = new URL('sponsor-outreach/config/event-names.json', ROOT);
@@ -56,12 +56,14 @@ const COMMANDS = {
   columns: { required: ['--organizations', '--affiliations', '--sponsorships'], optional: ['--apply'] },
   cycles: { required: ['--organizations', '--donations', '--sponsorships', '--out'], optional: [] },
   'link-pipeline': { required: ['--organizations', '--sponsorships', '--out'], optional: ['--apply'] },
+  prospects: { required: ['--organizations', '--input', '--out'], optional: ['--apply'] },
 };
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/sponsor-outreach-setup.mjs <command>
   columns --organizations <id> --affiliations <id> --sponsorships <id> [--apply]
   cycles --organizations <id> --donations <id> --sponsorships <id> --out data/<file>.csv
-  link-pipeline --organizations <id> --sponsorships <id> --out data/<file>.csv [--apply]`;
+  link-pipeline --organizations <id> --sponsorships <id> --out data/<file>.csv [--apply]
+  prospects --organizations <id> --input data/<Prospects tab>.csv --out data/<file>.csv [--apply]`;
 
 const flagKey = (flag) => flag.slice(2);
 
@@ -393,7 +395,86 @@ async function cmdLinkPipeline(args, ctx) {
   return 0;
 }
 
-const HANDLERS = { columns: cmdColumns, cycles: cmdCycles, 'link-pipeline': cmdLinkPipeline };
+export const PROSPECT_HEADERS = { company: 'Company', notes: 'Notes for Outreach (EX: Hold or Remove etc)' };
+
+/** Rows of a CSV as objects keyed by header (trimmed). A required header that's missing stops the run. */
+export function csvRecords(text, required) {
+  const [header = [], ...rows] = parseCsv(text);
+  const keys = header.map((h) => h.trim());
+  for (const r of required) if (!keys.includes(r)) throw new Stopped(`The input CSV has no "${r}" column.`);
+  return rows.map((row) => Object.fromEntries(keys.map((k, i) => [k, row[i] ?? ''])));
+}
+
+/** Which Organizations to mark Sponsor Prospect, with notes only where none exist yet. */
+export function planProspects(rows, index, current) {
+  const set = [];
+  const review = [];
+  let already = 0;
+  const seen = new Set();
+  for (const { company, notes } of rows) {
+    if (!company.trim()) continue;
+    if (/remove/i.test(notes)) {
+      review.push({ company, reason: 'marked remove', candidates: [] });
+      continue;
+    }
+    const m = matchOrg(index, company);
+    if (m.status !== 'matched') {
+      review.push({ company, reason: m.status, candidates: m.candidates ?? [] });
+      continue;
+    }
+    if (seen.has(m.orgId)) continue;
+    seen.add(m.orgId);
+    const now = current.get(m.orgId) ?? { prospect: false, notes: '' };
+    if (now.prospect) {
+      already += 1;
+      continue;
+    }
+    set.push({ orgId: m.orgId, notes: now.notes.trim() || !notes.trim() ? null : notes.trim() });
+  }
+  return { set, review, already };
+}
+
+const checked = (cell) => cell?.text === 'v' || /"checked"\s*:\s*"?true/.test(cell?.value ?? '');
+
+async function cmdProspects(args, ctx) {
+  const { gql, out } = ctx;
+  const records = csvRecords(ctx.readFile(args.input), [PROSPECT_HEADERS.company, PROSPECT_HEADERS.notes]);
+  const cols = await columnsByTitle(gql, args.organizations);
+  const prospect = optionalColumn(cols, args.organizations, 'Sponsor Prospect', args.apply);
+  const notesCol = optionalColumn(cols, args.organizations, 'Prospect Notes', args.apply);
+  const { index, count } = await organizationIndex(gql, args.organizations);
+  const current = new Map();
+  if (prospect && notesCol) {
+    for (const o of await readItems(gql, args.organizations, [prospect.id, notesCol.id])) {
+      current.set(o.id, { prospect: checked(o.values[prospect.id]), notes: o.values[notesCol.id].text ?? '' });
+    }
+  }
+  const plan = planProspects(
+    records.map((r) => ({ company: r[PROSPECT_HEADERS.company], notes: r[PROSPECT_HEADERS.notes] })),
+    index,
+    current,
+  );
+  writeReview(
+    args.out,
+    toCsv(['Company', 'Reason', 'Candidate Organization IDs'], plan.review.map((r) => [r.company, r.reason, r.candidates.join(' ')])),
+    ctx.writeFile,
+  );
+  out(`${records.length} row(s) against ${count} Organization(s): ${plan.set.length} to mark, ${plan.already} already marked, ${plan.review.length} for review.`);
+  if (!args.apply) {
+    out('DRY RUN: nothing was changed.');
+  } else {
+    for (const s of plan.set) {
+      const values = { [prospect.id]: { checked: 'true' } };
+      if (s.notes !== null) values[notesCol.id] = s.notes;
+      await setColumnValues(gql, args.organizations, s.orgId, values);
+    }
+    out(`Marked ${plan.set.length} Organization(s).`);
+  }
+  if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} row(s) need review; see the --out file.`);
+  return 0;
+}
+
+const HANDLERS = { columns: cmdColumns, cycles: cmdCycles, 'link-pipeline': cmdLinkPipeline, prospects: cmdProspects };
 
 export async function run(args, deps) {
   const ctx = {

@@ -103,3 +103,15 @@ describe('parseCycles', () => {
   it('returns nothing without any year', () => assert.deepEqual(parseCycles('Jersey'), []));
   it('returns nothing for null', () => assert.deepEqual(parseCycles(null), []));
 });
+
+import { parseCsv } from './sponsor-outreach-setup.mjs';
+
+describe('parseCsv', () => {
+  it('reads quoted cells, doubled quotes, commas and newlines', () =>
+    assert.deepEqual(parseCsv('a,b\n"x, y","say ""hi"""\n"two\nlines",\n'), [['a', 'b'], ['x, y', 'say "hi"'], ['two\nlines', '']]));
+  it('handles CRLF and a missing final newline', () => assert.deepEqual(parseCsv('a,b\r\n1,2'), [['a', 'b'], ['1', '2']]));
+  it('round-trips toCsv', () => {
+    const rows = [['h1', 'h2'], ['a "q"', 'b,c'], ['', 'x\ny']];
+    assert.deepEqual(parseCsv(toCsv(rows[0], rows.slice(1))), rows);
+  });
+});

@@ -268,3 +268,53 @@ describe('link-pipeline command', () => {
     assert.equal(m.mutations.length, 0);
   });
 });
+
+import { planProspects } from './sponsor-outreach-setup.mjs';
+
+describe('planProspects', () => {
+  const idx = buildOrgIndex([{ id: '1', name: 'AECOM' }, { id: '2', name: 'Adobe Systems, Inc.' }, { id: '3', name: 'Meta' }, { id: '4', name: 'Dup' }, { id: '5', name: 'Dup LLC' }, { id: '6', name: 'Gilead' }]);
+  const current = new Map([['3', { prospect: true, notes: '' }], ['2', { prospect: false, notes: 'Called in May' }]]);
+  const p = planProspects(
+    [
+      { company: 'AECOM', notes: 'warm' },
+      { company: 'Adobe Systems', notes: 'Hold' },
+      { company: 'Meta', notes: '' },
+      { company: 'Gilead', notes: 'REMOVE - no budget' },
+      { company: 'Dup', notes: '' },
+      { company: 'Nowhere Co', notes: '' },
+      { company: '', notes: '' },
+    ],
+    idx,
+    current,
+  );
+  it('ticks matches, keeping existing notes', () => assert.deepEqual(p.set, [{ orgId: '1', notes: 'warm' }, { orgId: '2', notes: null }]));
+  it('counts already-ticked', () => assert.equal(p.already, 1));
+  it('reviews remove, ambiguous and unmatched; skips blank rows', () =>
+    assert.deepEqual(p.review.map((r) => [r.company, r.reason]), [['Gilead', 'marked remove'], ['Dup', 'ambiguous'], ['Nowhere Co', 'unmatched']]));
+});
+
+describe('prospects command', () => {
+  const boards = () => ({
+    [ORGS]: {
+      columns: [
+        { id: 'sf', title: '📜 Salesforce ID', type: 'text' },
+        { id: 'sp', title: 'Sponsor Prospect', type: 'checkbox' },
+        { id: 'pn', title: 'Prospect Notes', type: 'text' },
+      ],
+      items: [{ id: '501', name: 'AECOM', values: { sp: { text: '' }, pn: { text: '' } } }],
+    },
+  });
+  const csv = 'Notes for Outreach (EX: Hold or Remove etc),Type of sponsorship,Company\nwarm,all,AECOM\n,all,Nowhere\n';
+  const args = { command: 'prospects', organizations: ORGS, input: '/tmp/x/data/p.csv', out: '/tmp/x/data/pr.csv', apply: false };
+  it('--apply ticks and writes notes; exit 1 for review', async () => {
+    const m = fakeMonday(boards());
+    const code = await run({ ...args, apply: true }, { gql: m.gql, ...sink(), readFile: () => csv, writeFile: () => {} });
+    assert.equal(code, 1);
+    assert.deepEqual(m.mutations.map((x) => [x.vars.item, JSON.parse(x.vars.values)]), [['501', { sp: { checked: 'true' }, pn: 'warm' }]]);
+  });
+  it('a dry run sends nothing', async () => {
+    const m = fakeMonday(boards());
+    await run(args, { gql: m.gql, ...sink(), readFile: () => csv, writeFile: () => {} });
+    assert.equal(m.mutations.length, 0);
+  });
+});
