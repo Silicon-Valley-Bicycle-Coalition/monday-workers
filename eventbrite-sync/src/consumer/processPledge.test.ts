@@ -110,7 +110,7 @@ describe('processAttendee for a pledge event', () => {
     const [, name, values] = createCall(mondayClient);
     expect(name).toBe('Sam Buyer');
     expect(values.p_email).toEqual({ email: 'sam@example.com', text: 'sam@example.com' });
-    expect(values.p_details).toBe('Buyer only');
+    expect(values.p_details).toEqual({ label: 'Buyer only' });
   });
 
   it('does not fetch the order of a complete pledge', async () => {

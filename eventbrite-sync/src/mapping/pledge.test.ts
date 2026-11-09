@@ -38,36 +38,36 @@ describe('mapPledge', () => {
     expect(m.itemName).toBe('Pat Rider');
     expect(m.columnValues).toEqual({
       p_id: 'a1',
-      p_year: '2026',
-      p_status: 'Pledged',
-      p_details: 'Complete',
+      p_year: { label: '2026' },
+      p_status: { label: 'Pledged' },
+      p_details: { label: 'Complete' },
       p_date: { date: '2026-04-30' },
       p_email: { email: 'pat@example.com', text: 'pat@example.com' },
       p_zip: '95014',
-      p_county: 'Santa Clara',
+      p_county: { label: 'Santa Clara' },
     });
   });
 
   it('cuts zip+4 and trims', () => {
     const m = map(attendee({ answers: [answer('11', ' 95014-1234 ')] }));
     expect(m.columnValues.p_zip).toBe('95014');
-    expect(m.columnValues.p_county).toBe('Santa Clara');
+    expect(m.columnValues.p_county).toEqual({ label: 'Santa Clara' });
   });
 
   it('keeps a malformed zip as typed', () => {
     const m = map(attendee({ answers: [answer('11', 'abc')] }));
     expect(m.columnValues.p_zip).toBe('abc');
-    expect(m.columnValues.p_county).toBe('Unknown');
+    expect(m.columnValues.p_county).toEqual({ label: 'Unknown' });
   });
 
   it('is Unknown with no zip answer, and writes no Zip', () => {
     const m = map(attendee({ answers: [answer('11')] }));
     expect(m.columnValues).not.toHaveProperty('p_zip');
-    expect(m.columnValues.p_county).toBe('Unknown');
+    expect(m.columnValues.p_county).toEqual({ label: 'Unknown' });
   });
 
   it('maps a single choice', () => {
-    expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días ')] })).columnValues.p_days).toBe('Multiple days');
+    expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días ')] })).columnValues.p_days).toEqual({ label: 'Multiple days' });
   });
 
   it('sends a typed answer with no label to Other Answers, never to a label column', () => {
@@ -89,12 +89,12 @@ describe('mapPledge', () => {
   it('finds a label despite stray spaces around a choice', () => {
     const m = map(attendee({ answers: [{ question_id: '14', question: 'Heard', type: 'multiple_choice', answer: 'Friend/ Amigos  |  Banner/Flyer/Poster/Letrero/folleto ' }] }));
     expect(m.columnValues.p_heard).toEqual({ labels: ['Friend', 'Flyer'] });
-    expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días')] })).columnValues.p_days).toBe('Multiple days');
+    expect(map(attendee({ answers: [answer('12', 'Multiple days/Varios días')] })).columnValues.p_days).toEqual({ label: 'Multiple days' });
   });
 
   it('keeps a mapped label for a typed answer', () => {
     const m = map(attendee({ answers: [{ question_id: '12', question: 'Days', type: 'text', answer: 'Multiple days/Varios días ' }] }));
-    expect(m.columnValues.p_days).toBe('Multiple days');
+    expect(m.columnValues.p_days).toEqual({ label: 'Multiple days' });
   });
 
   it('splits multi-select only on the pipe, so a choice with slashes stays whole', () => {
@@ -110,7 +110,7 @@ describe('mapPledge', () => {
   it('writes an unmapped multiple-choice answer as it arrives, and warns without the answer', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const m = map(attendee({ answers: [{ ...answer('12', ' Some days '), type: 'multiple_choice' }] }));
-    expect(m.columnValues.p_days).toBe('Some days');
+    expect(m.columnValues.p_days).toEqual({ label: 'Some days' });
     const text = warn.mock.calls.flat().join(' ');
     expect(text).toContain('12');
     expect(text).not.toContain('Some days');
@@ -141,8 +141,8 @@ describe('mapPledge', () => {
     const m = map(attendee({ profile: placeholder, answers: [answer('11'), answer('16')] }), { name: 'Sam Buyer', email: 'sam@example.com' });
     expect(m.itemName).toBe('Sam Buyer');
     expect(m.columnValues.p_email).toEqual({ email: 'sam@example.com', text: 'sam@example.com' });
-    expect(m.columnValues.p_details).toBe('Buyer only');
-    expect(m.columnValues.p_county).toBe('Unknown');
+    expect(m.columnValues.p_details).toEqual({ label: 'Buyer only' });
+    expect(m.columnValues.p_county).toEqual({ label: 'Unknown' });
     expect(m.columnValues).not.toHaveProperty('p_consent');
     expect(m.columnValues).not.toHaveProperty('p_other');
   });
@@ -151,7 +151,7 @@ describe('mapPledge', () => {
     const m = map(attendee({ profile: placeholder, answers: [] }), null);
     expect(m.itemName).toBe('Pledge a1');
     expect(m.columnValues).not.toHaveProperty('p_email');
-    expect(m.columnValues.p_details).toBe('Buyer only');
+    expect(m.columnValues.p_details).toEqual({ label: 'Buyer only' });
   });
 
   it('writes a placeholder whose buyer is also a placeholder', () => {
@@ -161,8 +161,8 @@ describe('mapPledge', () => {
   });
 
   it('is Canceled when cancelled or refunded', () => {
-    expect(map(attendee({ cancelled: true })).columnValues.p_status).toBe('Canceled');
-    expect(map(attendee({ refunded: true })).columnValues.p_status).toBe('Canceled');
+    expect(map(attendee({ cancelled: true })).columnValues.p_status).toEqual({ label: 'Canceled' });
+    expect(map(attendee({ refunded: true })).columnValues.p_status).toEqual({ label: 'Canceled' });
   });
 
   it('collapses whitespace and cuts free text', () => {
