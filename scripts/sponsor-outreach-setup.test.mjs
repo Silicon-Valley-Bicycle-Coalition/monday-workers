@@ -15,6 +15,18 @@ export function fakeMonday(boards) {
       return { create_column: { id: 'new' }, change_multiple_column_values: { id: vars.item } };
     }
     if (query.includes('next_items_page')) throw new Error('fake has one page');
+    if (query.includes('items(ids')) {
+      const want = new Set((vars.ids ?? []).map(String));
+      const cols = vars.cols ?? [];
+      const found = Object.values(boards).flatMap((b) => b.items ?? []).filter((it) => want.has(String(it.id)));
+      return {
+        items: found.map((it) => ({
+          id: it.id,
+          name: it.name,
+          column_values: cols.map((id) => ({ id, text: it.values?.[id]?.text ?? null, value: null, linked_item_ids: [] })),
+        })),
+      };
+    }
     const board = boards[vars.ids?.[0]];
     if (!board) return { boards: [] };
     if (query.includes('items_page')) {
@@ -106,5 +118,89 @@ describe('columns', () => {
     const m = fakeMonday(b);
     assert.equal(await run({ ...args, apply: true }, { gql: m.gql, ...sink() }), 1);
     assert.equal(m.mutations.length, 0);
+  });
+});
+
+import { cycleReport } from './sponsor-outreach-setup.mjs';
+
+describe('cycleReport', () => {
+  const types = ['Sponsorship', 'In Kind Donation / Sponsorship'];
+  const rows = [
+    { cycle: '2014 Dinner', giftType: 'Sponsorship' },
+    { cycle: '2015 dinner', giftType: 'In Kind Donation / Sponsorship' },
+    { cycle: '2011 Bike Ride', giftType: 'Sponsorship' },
+    { cycle: '2020 Gala', giftType: 'Membership' },
+    { cycle: null, giftType: 'Sponsorship' },
+  ];
+  const r = cycleReport(rows, { Dinner: 'Annual Gala' }, types);
+  it('groups one event across years and case', () =>
+    assert.deepEqual(r.byEvent.find((e) => e.event === 'Dinner'), { event: 'Dinner', label: 'Annual Gala', years: [2014, 2015], count: 2 }));
+  it('leaves an unmapped event with a null label', () =>
+    assert.equal(r.byEvent.find((e) => e.event === 'Bike Ride').label, null));
+  it('ignores other gift types', () => assert.equal(r.byEvent.some((e) => e.event === 'Gala'), false));
+  it('counts rows without a year', () => assert.equal(r.noYear, 1));
+});
+
+describe('cycles command', () => {
+  const DON = '400';
+  const ledger = (rows) => ({ text: JSON.stringify(rows) });
+  const boards = {
+    [ORGS]: {
+      columns: [{ id: 'gl', title: '🔒 Gift Ledger (JSON)', type: 'text' }],
+      items: [
+        { id: 'o1', name: 'Org', values: { gl: ledger([['1', '2014-05-01', 500000, 'Sponsorship', 'Received', ''], ['9', '2014-01-01', 100, 'Membership', 'Received', '']]) } },
+        { id: 'o2', name: 'Org2', values: { gl: ledger([['2', '2012-05-01', 100000, 'Sponsorship', 'Failed', '']]) } },
+        { id: 'o3', name: 'No gifts', values: { gl: { text: null } } },
+      ],
+    },
+    [DON]: {
+      columns: [{ id: 'gt', title: 'Gift Type', type: 'text' }, { id: 'cy', title: 'Sponsorship Cycle', type: 'text' }],
+      items: [
+        { id: '1', name: 'g1', values: { gt: { text: 'Sponsorship' }, cy: { text: '2014 Dinner' } } },
+        { id: '2', name: 'g2', values: { gt: { text: 'Sponsorship' }, cy: { text: '2012 Mystery Event' } } },
+        { id: '9', name: 'g9', values: { gt: { text: 'Membership' }, cy: { text: '2014 Not A Sponsorship' } } },
+      ],
+    },
+    [SPONS]: {
+      columns: [{ id: 'ev', title: 'Event', type: 'status', settings_str: JSON.stringify({ labels: { 1: 'Annual Gala', 2: 'BTWD' } }) }],
+    },
+  };
+  const args = { command: 'cycles', organizations: ORGS, donations: DON, sponsorships: SPONS, out: '/tmp/x/data/cycles.csv' };
+  it('reads every ledgered sponsorship, archived or not, and exits 1 while anything is unmapped', async () => {
+const m = fakeMonday(boards);
+    const files = {};
+    const s = sink();
+    const code = await run(
+      args,
+      { gql: m.gql, ...s, eventNames: { Dinner: 'Annual Gala' }, writeFile: (p, c) => (files[p] = c) },
+    );
+    assert.equal(code, 1);
+    assert.match(files['/tmp/x/data/cycles.csv'], /^Event,Label,Years,Count\n/);
+    assert.match(files['/tmp/x/data/cycles.csv'], /Mystery Event,,2012,1/);
+    assert.doesNotMatch(files['/tmp/x/data/cycles.csv'], /Not A Sponsorship/);
+    assert.equal(m.mutations.length, 0);
+  });
+  it('treats a label the board lacks as unmapped', async () => {
+    const m = fakeMonday(boards);
+    const code = await run(
+      args,
+      { gql: m.gql, ...sink(), eventNames: { Dinner: 'Dinner Party', 'Mystery Event': 'BTWD' }, writeFile: () => {} },
+    );
+    assert.equal(code, 1);
+  });
+  it('exits 0 when everything maps to a real label', async () => {
+    const m = fakeMonday(boards);
+    const code = await run(
+      args,
+      { gql: m.gql, ...sink(), eventNames: { Dinner: 'Annual Gala', 'Mystery Event': 'BTWD' }, writeFile: () => {} },
+    );
+    assert.equal(code, 0);
+  });
+});
+
+describe('cycleReport with combined cycles', () => {
+  it('counts each part of a combined cycle under its own event', () => {
+    const r = cycleReport([{ cycle: '2016 Dinner / 2017 BTWD', giftType: 'Sponsorship' }], {}, ['Sponsorship']);
+    assert.deepEqual(r.byEvent.map((e) => [e.event, e.years]).sort(), [['BTWD', [2017]], ['Dinner', [2016]]]);
   });
 });

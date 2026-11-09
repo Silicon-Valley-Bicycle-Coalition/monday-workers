@@ -68,3 +68,38 @@ describe('assertDataPath', () => {
   it('refuses elsewhere', () => assert.throws(() => assertDataPath('/tmp/review.csv')));
   it('refuses a file merely named data', () => assert.throws(() => assertDataPath('/tmp/data')));
 });
+
+import { ledgerGifts } from './sponsor-outreach-setup.mjs';
+
+describe('ledgerGifts', () => {
+  const json = JSON.stringify([
+    ['11', '2024-10-30', 1000000, 'Sponsorship', 'Received', '5'],
+    ['12', '2024-04-26', 10000, 'Contracts', 'Received', ''],
+  ]);
+  it('keeps the gifts of the given types', () =>
+    assert.deepEqual(ledgerGifts(json, ['Sponsorship']), [
+      { itemId: '11', date: '2024-10-30', cents: 1000000, type: 'Sponsorship', status: 'Received' },
+    ]));
+  it('reads blank or broken JSON as no gifts', () => {
+    assert.deepEqual(ledgerGifts(null, ['Sponsorship']), []);
+    assert.deepEqual(ledgerGifts('not json', ['Sponsorship']), []);
+  });
+});
+
+import { parseCycles } from './sponsor-outreach-setup.mjs';
+
+describe('parseCycles', () => {
+  it('splits a multi-select value', () =>
+    assert.deepEqual(parseCycles('2024 BTWD; 2024 Fundraising Ride; 2024 Advocacy Summit'), [
+      { year: 2024, event: 'BTWD' },
+      { year: 2024, event: 'Fundraising Ride' },
+      { year: 2024, event: 'Advocacy Summit' },
+    ]));
+  it('splits a combined cycle with its own years', () =>
+    assert.deepEqual(parseCycles('2016 Dinner / 2017 BTWD'), [{ year: 2016, event: 'Dinner' }, { year: 2017, event: 'BTWD' }]));
+  it('lets a part without a year inherit the one before', () =>
+    assert.deepEqual(parseCycles('2013 BTWD / Dinner'), [{ year: 2013, event: 'BTWD' }, { year: 2013, event: 'Dinner' }]));
+  it('drops a bare year', () => assert.deepEqual(parseCycles('2011 / 2012 Combined'), [{ year: 2012, event: 'Combined' }]));
+  it('returns nothing without any year', () => assert.deepEqual(parseCycles('Jersey'), []));
+  it('returns nothing for null', () => assert.deepEqual(parseCycles(null), []));
+});

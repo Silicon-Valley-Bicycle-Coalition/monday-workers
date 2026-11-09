@@ -1,0 +1,16 @@
+{
+  "eventNames": {
+    "BTWD": "BTWD",
+    "BTWD only": "BTWD",
+    "Regional BTWD": "Regional BTWD",
+    "Advocacy Summit": "Bike Summit",
+    "Dinner": "Annual Gala",
+    "Dinner only": "Annual Gala",
+    "Fundraising Ride": "Bike to the Future Ride",
+    "Ride": "Bike to the Future Ride",
+    "Misc": "Miscellaneous",
+    "Combined": "Miscellaneous",
+    "Jersey": "Miscellaneous",
+    "Winter Party": "Miscellaneous"
+  }
+}

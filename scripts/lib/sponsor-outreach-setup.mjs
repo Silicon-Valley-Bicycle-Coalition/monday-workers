@@ -63,13 +63,49 @@ export function splitEmails(cell) {
   return out;
 }
 
+/**
+ * The gifts of the given types from an owner's 🔒 Gift Ledger (JSON): donation-rollups writes it
+ * from its D1 ledger, so it includes archived gifts, which items_page can't see. Tuples are
+ * [itemId, dateISO, cents, type, status, actingForItemId].
+ */
+export function ledgerGifts(json, types) {
+  let rows;
+  try {
+    rows = JSON.parse(json ?? '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(rows)) return [];
+  const want = new Set(types);
+  return rows
+    .filter((r) => Array.isArray(r) && want.has(r[3]))
+    .map(([itemId, date, cents, type, status]) => ({ itemId: String(itemId), date, cents, type, status }));
+}
+
 /** "2022 Regional BTWD" → { year: 2022, event: "Regional BTWD" }; null without a leading year. */
 export function parseCycle(text) {
   const m = /^\s*(\d{4})\s+(.+?)\s*$/.exec(String(text ?? ''));
   return m ? { year: Number(m[1]), event: m[2] } : null;
 }
 
-const eventKey = (s) => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
+/**
+ * Every cycle in a Sponsorship Cycle cell. Salesforce's field was multi-select ("2024 BTWD; 2024
+ * Advocacy Summit") and older values combine two events ("2016 Dinner / 2017 BTWD", "2013 BTWD /
+ * Dinner"), so the cell splits on ";" and "/". A part without its own year takes the previous
+ * part's; a part that's only a year is dropped.
+ */
+export function parseCycles(text) {
+  const out = [];
+  let year = null;
+  for (const part of String(text ?? '').split(/[;/]/)) {
+    const m = /^\s*(\d{4})?\s*(.*?)\s*$/.exec(part);
+    if (m[1]) year = Number(m[1]);
+    if (year !== null && m[2]) out.push({ year, event: m[2] });
+  }
+  return out;
+}
+
+const eventKey =(s) => String(s).trim().replace(/\s+/g, ' ').toLowerCase();
 
 /** Look a cycle's event text up in the table, ignoring case and spacing. */
 export function mapEvent(event, table) {

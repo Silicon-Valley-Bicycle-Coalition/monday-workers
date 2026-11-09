@@ -22,7 +22,17 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { assertDataPath } from './lib/sponsor-outreach-setup.mjs';
+import { assertDataPath, ledgerGifts, mapEvent, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
+
+const ROOT = new URL('..', import.meta.url);
+const EVENT_NAMES_PATH = new URL('sponsor-outreach/config/event-names.json', ROOT);
+const ROLLUPS_CONFIG_PATH = new URL('donation-rollups/config/svbc.json', ROOT);
+
+/** Cash and in-kind sponsorship Gift Types: donation-rollups' list, not a second copy of it. */
+export function sponsorshipGiftTypes(readFile) {
+  const s = JSON.parse(readFile(ROLLUPS_CONFIG_PATH)).donationRollups.sponsorships;
+  return [...s.giftTypes, ...s.inKindGiftTypes];
+}
 
 const API_URL = 'https://api.monday.com/v2';
 const ITEM_PAGE_SIZE = 500;
@@ -44,10 +54,12 @@ const PATH_FLAGS = ['--out', '--input', '--dir'];
 
 const COMMANDS = {
   columns: { required: ['--organizations', '--affiliations', '--sponsorships'], optional: ['--apply'] },
+  cycles: { required: ['--organizations', '--donations', '--sponsorships', '--out'], optional: [] },
 };
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/sponsor-outreach-setup.mjs <command>
-  columns --organizations <id> --affiliations <id> --sponsorships <id> [--apply]`;
+  columns --organizations <id> --affiliations <id> --sponsorships <id> [--apply]
+  cycles --organizations <id> --donations <id> --sponsorships <id> --out data/<file>.csv`;
 
 const flagKey = (flag) => flag.slice(2);
 
@@ -90,18 +102,56 @@ function describeFailure(error) {
   return `Monday call failed${facts.length > 0 ? ` (${facts.join(', ')})` : ''}; its message is withheld because it can echo a value.`;
 }
 
-/** title (bare) → { id, type } for one board. Two columns with one bare title stop the run. */
+/** title (bare) → { id, type, settingsStr } for one board. Two columns with one bare title stop the run. */
 export async function columnsByTitle(gql, boardId) {
-  const data = await gql(`query ($ids: [ID!]) { boards(ids: $ids) { id columns { id title type } } }`, { ids: [boardId] });
+  const data = await gql(`query ($ids: [ID!]) { boards(ids: $ids) { id columns { id title type settings_str } } }`, { ids: [boardId] });
   const board = data.boards?.[0];
   if (!board) throw new Stopped(`Board ${boardId} not found, or the token can't see it.`);
   const map = new Map();
   for (const c of board.columns ?? []) {
     const title = bareTitle(c.title);
     if (map.has(title)) throw new Stopped(`Board ${boardId} has two columns titled "${title}".`);
-    map.set(title, { id: String(c.id), type: c.type });
+    map.set(title, { id: String(c.id), type: c.type, settingsStr: c.settings_str ?? null });
   }
   return map;
+}
+
+/** A status column's label texts, from settings_str ({ labels: { "1": "BTWD", … } } or an array). */
+export function statusLabels(column) {
+  let labels;
+  try {
+    labels = JSON.parse(column.settingsStr ?? '{}').labels ?? {};
+  } catch {
+    throw new Stopped('A status column has unreadable settings.');
+  }
+  const list = Array.isArray(labels) ? labels.map((l) => (typeof l === 'string' ? l : l?.label)) : Object.values(labels);
+  return list.filter((l) => typeof l === 'string' && l.trim() !== '');
+}
+
+/** Group sponsorship rows by the event text of their Sponsorship Cycle, with the mapped label. */
+export function cycleReport(rows, table, sponsorshipGiftTypes) {
+  const types = new Set(sponsorshipGiftTypes);
+  const groups = new Map();
+  let noYear = 0;
+  for (const row of rows) {
+    if (!types.has((row.giftType ?? '').trim())) continue;
+    const parts = parseCycles(row.cycle);
+    if (parts.length === 0) {
+      noYear += 1;
+      continue;
+    }
+    for (const parsed of parts) {
+      const key = parsed.event.replace(/\s+/g, ' ').toLowerCase();
+      const g = groups.get(key) ?? { event: parsed.event, label: mapEvent(parsed.event, table), years: new Set(), count: 0 };
+      g.years.add(parsed.year);
+      g.count += 1;
+      groups.set(key, g);
+    }
+  }
+  const byEvent = [...groups.values()]
+    .map((g) => ({ event: g.event, label: g.label, years: [...g.years].sort((a, b) => a - b), count: g.count }))
+    .sort((a, b) => b.count - a.count || a.event.localeCompare(b.event));
+  return { byEvent, noYear };
 }
 
 /** The column for a title, or a stop naming what's missing. */
@@ -148,6 +198,29 @@ export async function readItems(gql, boardId, cols) {
     }
     return { id: String(item.id), name: item.name ?? '', values };
   });
+}
+
+const IDS_CHUNK = 100;
+
+/**
+ * Items by id, archived ones included (items_page skips those; items(ids:) doesn't). An archived
+ * item's board_relation cells read empty, so only use this for text-like columns.
+ */
+export async function readItemsByIds(gql, ids, cols) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += IDS_CHUNK) {
+    const chunk = ids.slice(i, i + IDS_CHUNK);
+    const data = await gql(
+      `query ($ids: [ID!], $cols: [String!]) { items(ids: $ids, limit: ${IDS_CHUNK}) { id name column_values(ids: $cols) { id text value } } }`,
+      { ids: chunk, cols },
+    );
+    for (const item of data.items ?? []) {
+      const values = {};
+      for (const c of item.column_values ?? []) values[c.id] = { text: c.text ?? null, value: c.value ?? null, linked: [] };
+      out.push({ id: String(item.id), name: item.name ?? '', values });
+    }
+  }
+  return out;
 }
 
 /** Which wanted columns to create, and which exist under the title with the wrong type. */
@@ -202,7 +275,48 @@ async function cmdColumns(args, { gql, out }) {
   return 0;
 }
 
-const HANDLERS = { columns: cmdColumns };
+/**
+ * giftItemId → { orgId, ...gift } for every sponsorship gift on any Organization's 🔒 Gift Ledger
+ * (JSON). The ledger comes from donation-rollups' D1 ledger, so archived gifts are included.
+ */
+export async function organizationSponsorshipGifts(gql, organizationsBoard, types) {
+  const cols = await columnsByTitle(gql, organizationsBoard);
+  const ledger = needColumn(cols, organizationsBoard, 'Gift Ledger (JSON)');
+  const orgs = await readItems(gql, organizationsBoard, [ledger.id]);
+  const gifts = new Map();
+  for (const org of orgs) {
+    for (const g of ledgerGifts(org.values[ledger.id].text, types)) gifts.set(g.itemId, { orgId: org.id, ...g });
+  }
+  return gifts;
+}
+
+async function cmdCycles(args, ctx) {
+  const { gql, out } = ctx;
+  const types = sponsorshipGiftTypes(ctx.readFile);
+  const gifts = await organizationSponsorshipGifts(gql, args.organizations, types);
+  const donCols = await columnsByTitle(gql, args.donations);
+  const cycle = needColumn(donCols, args.donations, 'Sponsorship Cycle');
+  const spCols = await columnsByTitle(gql, args.sponsorships);
+  const boardLabels = new Set(statusLabels(needColumn(spCols, args.sponsorships, 'Event')));
+  const items = await readItemsByIds(gql, [...gifts.keys()], [cycle.id]);
+  const rows = items.map((it) => ({ giftType: gifts.get(it.id).type, cycle: it.values[cycle.id]?.text ?? null }));
+  const missing = gifts.size - items.length;
+  const report = cycleReport(rows, ctx.eventNames(), types);
+  for (const e of report.byEvent) if (e.label !== null && !boardLabels.has(e.label)) e.label = null;
+  const unmapped = report.byEvent.filter((e) => e.label === null);
+  writeReview(
+    args.out,
+    toCsv(['Event', 'Label', 'Years', 'Count'], report.byEvent.map((e) => [e.event, e.label ?? '', e.years.join(' '), String(e.count)])),
+    ctx.writeFile,
+  );
+  out(`${report.byEvent.length} event name(s) across ${report.byEvent.reduce((n, e) => n + e.count, 0)} sponsorship(s); ${unmapped.length} unmapped; ${report.noYear} with no year in Sponsorship Cycle.`);
+  out(`Read ${items.length} of ${gifts.size} ledgered sponsorship gift(s), archived included; ${missing} no longer exist in Monday.`);
+  out('Wrote the list to the --out file.');
+  if (unmapped.length > 0) throw new CheckFailed(`${unmapped.length} event name(s) don't map to a Sponsorships Event label; see the --out file.`);
+  return 0;
+}
+
+const HANDLERS = { columns: cmdColumns, cycles: cmdCycles };
 
 export async function run(args, deps) {
   const ctx = {
@@ -210,6 +324,7 @@ export async function run(args, deps) {
     err: deps.err ?? deps.out,
     gql: deps.gql,
     readFile: deps.readFile ?? ((p) => readFileSync(p, 'utf8')),
+    eventNames: () => deps.eventNames ?? JSON.parse(readFileSync(EVENT_NAMES_PATH, 'utf8')).eventNames,
     writeFile: deps.writeFile ?? ((p, s) => {
       mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, s);
