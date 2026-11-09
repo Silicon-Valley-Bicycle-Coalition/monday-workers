@@ -17,12 +17,12 @@
 //
 // Exit 0: nothing wrong. Exit 1: review items, or a check failed. Exit 2: usage or API error.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { assertDataPath, buildOrgIndex, ledgerGifts, mapEvent, matchOrg, parseCsv, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
+import { assertDataPath, buildOrgIndex, ledgerGifts, mapEvent, matchOrg, parseCsv, parseCycles, splitEmails, toCsv } from './lib/sponsor-outreach-setup.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const EVENT_NAMES_PATH = new URL('sponsor-outreach/config/event-names.json', ROOT);
@@ -57,13 +57,19 @@ const COMMANDS = {
   cycles: { required: ['--organizations', '--donations', '--sponsorships', '--out'], optional: [] },
   'link-pipeline': { required: ['--organizations', '--sponsorships', '--out'], optional: ['--apply'] },
   prospects: { required: ['--organizations', '--input', '--out'], optional: ['--apply'] },
+  contacts: {
+    required: ['--organizations', '--affiliations', '--people', '--historical', '--sponsorships', '--dir', '--out'],
+    optional: ['--apply'],
+  },
 };
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/sponsor-outreach-setup.mjs <command>
   columns --organizations <id> --affiliations <id> --sponsorships <id> [--apply]
   cycles --organizations <id> --donations <id> --sponsorships <id> --out data/<file>.csv
   link-pipeline --organizations <id> --sponsorships <id> --out data/<file>.csv [--apply]
-  prospects --organizations <id> --input data/<Prospects tab>.csv --out data/<file>.csv [--apply]`;
+  prospects --organizations <id> --input data/<Prospects tab>.csv --out data/<file>.csv [--apply]
+  contacts --organizations <id> --affiliations <id> --people <id> --historical <id> --sponsorships <id>
+           --dir data/sponsor-outreach --out data/<file>.csv [--apply]`;
 
 const flagKey = (flag) => flag.slice(2);
 
@@ -474,7 +480,191 @@ async function cmdProspects(args, ctx) {
   return 0;
 }
 
-const HANDLERS = { columns: cmdColumns, cycles: cmdCycles, 'link-pipeline': cmdLinkPipeline, prospects: cmdProspects };
+/**
+ * Which Affiliations to tick Sponsor Contact. Sources are Salesforce sponsorship primary contacts
+ * ({ kind: 'salesforce', personSfId, orgSfId }) and addresses ({ kind: 'email', email, orgId? }).
+ * Only a Current affiliation is ever ticked; everything else is a review row with its reason.
+ */
+export function planContacts(sources, affiliations, people, orgsBySfId) {
+  const personBySfId = new Map();
+  const personsByEmail = new Map();
+  for (const [id, p] of people) {
+    if (p.sfId) personBySfId.set(p.sfId, id);
+    for (const e of p.emails) personsByEmail.set(e, [...(personsByEmail.get(e) ?? []), id]);
+  }
+  const tick = [];
+  const alreadySeen = new Set();
+  const review = [];
+  const choose = (affs, source, key) => {
+    const current = affs.filter((a) => a.status === 'Current');
+    if (current.length === 0) {
+      review.push({ source, key, reason: affs.length > 0 ? 'former only' : 'no current affiliation' });
+      return;
+    }
+    for (const a of current) {
+      if (a.sponsorContact) alreadySeen.add(a.id);
+      else if (!tick.includes(a.id)) tick.push(a.id);
+    }
+  };
+  const at = (personId, orgId) => affiliations.filter((a) => a.personId === personId && a.orgId === orgId);
+  for (const src of sources) {
+    if (src.kind === 'salesforce') {
+      const personId = personBySfId.get(src.personSfId);
+      const orgId = orgsBySfId.get(src.orgSfId);
+      if (!personId) review.push({ source: 'salesforce', key: src.personSfId, reason: 'no person' });
+      else if (!orgId) review.push({ source: 'salesforce', key: src.personSfId, reason: 'no organization' });
+      else choose(at(personId, orgId), 'salesforce', src.personSfId);
+      continue;
+    }
+    const byWork = affiliations.filter((a) => a.workEmail === src.email);
+    if (byWork.length > 0) {
+      choose(byWork, 'email', src.email);
+      continue;
+    }
+    const persons = [...new Set(personsByEmail.get(src.email) ?? [])];
+    if (persons.length === 0) review.push({ source: 'email', key: src.email, reason: 'no person' });
+    else if (persons.length > 1) review.push({ source: 'email', key: src.email, reason: 'several people share this email' });
+    else if (!src.orgId) review.push({ source: 'email', key: src.email, reason: 'no organization' });
+    else choose(at(persons[0], src.orgId), 'email', src.email);
+  }
+  const seen = new Set();
+  const unique = review.filter((r) => {
+    const k = `${r.source}\u0000${r.key}\u0000${r.reason}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return { tick, review: unique, already: alreadySeen.size };
+}
+
+// Sheet columns that may hold contact addresses, and the ones that name the company.
+const SHEET_EMAIL_HEADERS = ['Email', 'Email Address', 'other contacts', 'Additional Contact Names'];
+const SHEET_COMPANY_HEADERS = ['Company', 'Name of your organization, business, or advocacy group:'];
+
+// Salesforce ids compare on their case-sensitive 15-character form (an 18-character id adds a
+// checksum), so an export and the migrated 📜 Salesforce ID agree whichever length each kept.
+const sf15 = (id) => String(id ?? '').trim().slice(0, 15);
+
+/** An email column's address, from its JSON value (its text can carry a display label). */
+function emailOf(cell) {
+  try {
+    const v = JSON.parse(cell?.value ?? 'null');
+    if (v?.email) return String(v.email).trim().toLowerCase();
+  } catch {
+    // fall through to the text
+  }
+  return splitEmails(cell?.text)[0] ?? null;
+}
+
+/** Person id → { sfId, emails, dns, boardId } across the People and Historical boards. */
+async function readPeople(gql, boardIds) {
+  const people = new Map();
+  for (const boardId of boardIds) {
+    const cols = await columnsByTitle(gql, boardId);
+    const sf = needColumn(cols, boardId, 'Salesforce ID');
+    const dns = needColumn(cols, boardId, 'Do Not Solicit');
+    const emailCols = [...cols.values()].filter((c) => c.type === 'email').map((c) => c.id);
+    for (const p of await readItems(gql, boardId, [sf.id, dns.id, ...emailCols])) {
+      people.set(p.id, {
+        sfId: sf15(p.values[sf.id].text) || null,
+        emails: emailCols.map((c) => emailOf(p.values[c])).filter(Boolean),
+        dns: checked(p.values[dns.id]),
+        boardId,
+      });
+    }
+  }
+  return people;
+}
+
+/** Email sources from every sheet tab exported under <dir>/sheet/. A tab without an email column is skipped. */
+function sheetSources(ctx, dir, index) {
+  const sources = [];
+  const sheetDir = join(dir, 'sheet');
+  let names = [];
+  try {
+    names = ctx.listDir(sheetDir).filter((n) => n.endsWith('.csv'));
+  } catch {
+    return sources;
+  }
+  for (const name of names) {
+    const [header = [], ...rows] = parseCsv(ctx.readFile(join(sheetDir, name)));
+    const keys = header.map((h) => h.trim());
+    const emailIdx = keys.map((k, i) => (SHEET_EMAIL_HEADERS.includes(k) ? i : -1)).filter((i) => i >= 0);
+    const companyIdx = keys.findIndex((k) => SHEET_COMPANY_HEADERS.includes(k));
+    for (const row of rows) {
+      const m = companyIdx >= 0 ? matchOrg(index, row[companyIdx]) : { status: 'unmatched' };
+      for (const i of emailIdx) {
+        for (const email of splitEmails(row[i])) sources.push({ kind: 'email', email, orgId: m.status === 'matched' ? m.orgId : undefined });
+      }
+    }
+  }
+  return sources;
+}
+
+async function cmdContacts(args, ctx) {
+  const { gql, out } = ctx;
+  const { index, bySfId } = await organizationIndex(gql, args.organizations);
+  const orgsBySfId = new Map([...bySfId].map(([k, v]) => [sf15(k), v]));
+
+  const aCols = await columnsByTitle(gql, args.affiliations);
+  const status = needColumn(aCols, args.affiliations, 'Status');
+  const work = needColumn(aCols, args.affiliations, 'Work Email');
+  const person = needColumn(aCols, args.affiliations, 'Person');
+  const org = needColumn(aCols, args.affiliations, 'Organization');
+  const sc = optionalColumn(aCols, args.affiliations, 'Sponsor Contact', args.apply);
+  const affiliations = (await readItems(gql, args.affiliations, [status.id, work.id, person.id, org.id, ...(sc ? [sc.id] : [])])).map((a) => ({
+    id: a.id,
+    personId: a.values[person.id].linked[0] ?? null,
+    orgId: a.values[org.id].linked[0] ?? null,
+    status: a.values[status.id].text,
+    workEmail: emailOf(a.values[work.id]),
+    sponsorContact: sc ? checked(a.values[sc.id]) : false,
+  }));
+  const people = await readPeople(gql, [args.people, args.historical]);
+
+  const sources = [];
+  for (const r of csvRecords(ctx.readFile(join(args.dir, 'sf-primary-contacts.csv')), ['npsp__Primary_Contact__c', 'AccountId'])) {
+    sources.push({ kind: 'salesforce', personSfId: sf15(r.npsp__Primary_Contact__c), orgSfId: sf15(r.AccountId) });
+  }
+  sources.push(...sheetSources(ctx, args.dir, index));
+  const spCols = await columnsByTitle(gql, args.sponsorships);
+  const spEmail = needColumn(spCols, args.sponsorships, 'Email');
+  const spOrg = spCols.get('Organization') ?? null;
+  for (const it of await readItems(gql, args.sponsorships, [spEmail.id, ...(spOrg ? [spOrg.id] : [])])) {
+    const orgId = spOrg ? it.values[spOrg.id].linked[0] : undefined;
+    for (const email of splitEmails(it.values[spEmail.id].text)) sources.push({ kind: 'email', email, orgId });
+  }
+
+  const plan = planContacts(sources, affiliations, people, orgsBySfId);
+  writeReview(args.out, toCsv(['Source', 'Salesforce ID or Email', 'Reason'], plan.review.map((r) => [r.source, r.key, r.reason])), ctx.writeFile);
+
+  const optOut = csvRecords(ctx.readFile(join(args.dir, 'sf-fundraise-opt-out.csv')), ['Id']).map((r) => r.Id.trim());
+  const bySf = new Map([...people].filter(([, p]) => p.sfId).map(([id, p]) => [p.sfId, { id, ...p }]));
+  writeReview(
+    join(dirname(args.out), 'fundraise-opt-out.csv'),
+    toCsv(
+      ['People Item ID', 'Monday Link', 'Do Not Solicit', 'Salesforce ID'],
+      optOut.map((id) => {
+        const p = bySf.get(sf15(id));
+        return p ? [p.id, itemLink(p.boardId, p.id), p.dns ? 'yes' : 'no', id] : ['', '', 'not in Monday', id];
+      }),
+    ),
+    ctx.writeFile,
+  );
+
+  out(`${sources.length} contact source(s) against ${affiliations.length} Affiliation(s): ${plan.tick.length} to tick, ${plan.already} already ticked, ${plan.review.length} for review. ${ARCHIVED_NOTE}`);
+  out(`Fundraise Opt Out: ${optOut.length} contact(s) listed in fundraise-opt-out.csv; nothing is written for them.`);
+  if (!args.apply) {
+    out(`DRY RUN${sc ? '' : " (the Sponsor Contact column doesn't exist yet)"}: nothing was changed.`);
+  } else {
+    for (const id of plan.tick) await setColumnValues(gql, args.affiliations, id, { [sc.id]: { checked: 'true' } });
+    out(`Ticked ${plan.tick.length} Affiliation(s).`);
+  }
+  if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} source(s) need review; see the --out file.`);
+  return 0;
+}
+
+const HANDLERS = { columns: cmdColumns, cycles: cmdCycles, 'link-pipeline': cmdLinkPipeline, prospects: cmdProspects, contacts: cmdContacts };
 
 export async function run(args, deps) {
   const ctx = {
@@ -482,6 +672,7 @@ export async function run(args, deps) {
     err: deps.err ?? deps.out,
     gql: deps.gql,
     readFile: deps.readFile ?? ((p) => readFileSync(p, 'utf8')),
+    listDir: deps.listDir ?? ((p) => readdirSync(p)),
     eventNames: () => deps.eventNames ?? JSON.parse(readFileSync(EVENT_NAMES_PATH, 'utf8')).eventNames,
     writeFile: deps.writeFile ?? ((p, s) => {
       mkdirSync(dirname(p), { recursive: true });

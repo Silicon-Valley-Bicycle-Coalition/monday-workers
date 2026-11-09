@@ -318,3 +318,134 @@ describe('prospects command', () => {
     assert.equal(m.mutations.length, 0);
   });
 });
+
+import { planContacts } from './sponsor-outreach-setup.mjs';
+
+describe('planContacts', () => {
+  const affiliations = [
+    { id: 'a1', personId: 'p1', orgId: 'o1', status: 'Current', workEmail: 'ann@acme.com', sponsorContact: false },
+    { id: 'a2', personId: 'p2', orgId: 'o1', status: 'Former', workEmail: 'bob@acme.com', sponsorContact: false },
+    { id: 'a3', personId: 'p3', orgId: 'o2', status: 'Current', workEmail: null, sponsorContact: false },
+    { id: 'a4', personId: 'p4', orgId: 'o2', status: 'Current', workEmail: 'dee@beta.com', sponsorContact: true },
+  ];
+  const people = new Map([
+    ['p1', { sfId: 'SF1', emails: ['ann@home.com'] }],
+    ['p2', { sfId: 'SF2', emails: [] }],
+    ['p3', { sfId: 'SF3', emails: ['cat@home.com'] }],
+    ['p5', { sfId: null, emails: ['shared@home.com'] }],
+    ['p6', { sfId: null, emails: ['shared@home.com'] }],
+  ]);
+  const orgsBySfId = new Map([['ACC1', 'o1'], ['ACC2', 'o2']]);
+  const plan = (sources) => planContacts(sources, affiliations, people, orgsBySfId);
+  it('ticks a Salesforce contact with a Current affiliation', () =>
+    assert.deepEqual(plan([{ kind: 'salesforce', personSfId: 'SF1', orgSfId: 'ACC1' }]).tick, ['a1']));
+  it('reviews a Salesforce contact with only a Former affiliation', () =>
+    assert.equal(plan([{ kind: 'salesforce', personSfId: 'SF2', orgSfId: 'ACC1' }]).review[0].reason, 'former only'));
+  it('reviews an unknown Salesforce contact or account', () => {
+    assert.equal(plan([{ kind: 'salesforce', personSfId: 'SFX', orgSfId: 'ACC1' }]).review[0].reason, 'no person');
+    assert.equal(plan([{ kind: 'salesforce', personSfId: 'SF1', orgSfId: 'ACCX' }]).review[0].reason, 'no organization');
+  });
+  it('ticks by Work Email', () => assert.deepEqual(plan([{ kind: 'email', email: 'ann@acme.com' }]).tick, ['a1']));
+  it('reviews a Work Email on a Former affiliation', () =>
+    assert.equal(plan([{ kind: 'email', email: 'bob@acme.com' }]).review[0].reason, 'former only'));
+  it('falls back to the People email at the known organization', () =>
+    assert.deepEqual(plan([{ kind: 'email', email: 'cat@home.com', orgId: 'o2' }]).tick, ['a3']));
+  it('needs an organization for a People-only email', () =>
+    assert.equal(plan([{ kind: 'email', email: 'cat@home.com' }]).review[0].reason, 'no organization'));
+  it('reviews an email two People share', () =>
+    assert.equal(plan([{ kind: 'email', email: 'shared@home.com', orgId: 'o1' }]).review[0].reason, 'several people share this email'));
+  it('reviews an email nobody has', () => assert.equal(plan([{ kind: 'email', email: 'x@y.com' }]).review[0].reason, 'no person'));
+  it('counts an already-ticked affiliation once and never re-ticks it', () => {
+    const p = plan([{ kind: 'email', email: 'dee@beta.com' }, { kind: 'email', email: 'dee@beta.com' }]);
+    assert.deepEqual([p.tick, p.already], [[], 1]);
+  });
+  it('ticks once when two sources reach one affiliation', () =>
+    assert.deepEqual(plan([{ kind: 'salesforce', personSfId: 'SF1', orgSfId: 'ACC1' }, { kind: 'email', email: 'ann@acme.com' }]).tick, ['a1']));
+});
+
+describe('contacts command', () => {
+  const PEOPLE = '600';
+  const HIST = '700';
+  const email = (e) => ({ text: e, value: JSON.stringify({ email: e, text: e }) });
+  const boards = () => ({
+    [ORGS]: {
+      columns: [{ id: 'sf', title: '📜 Salesforce ID', type: 'text' }],
+      items: [{ id: '501', name: 'Acme Inc', values: { sf: { text: '001000000000001AAA' } } }],
+    },
+    [AFFS]: {
+      columns: [
+        { id: 'st', title: 'Status', type: 'status' },
+        { id: 'we', title: 'Work Email', type: 'email' },
+        { id: 'pe', title: 'Person', type: 'board_relation' },
+        { id: 'or', title: 'Organization', type: 'board_relation' },
+        { id: 'sc', title: 'Sponsor Contact', type: 'checkbox' },
+      ],
+      items: [
+        { id: '801', name: 'Ann at Acme', values: { st: { text: 'Current' }, we: email('Ann@Acme.com'), pe: { linked: ['601'] }, or: { linked: ['501'] }, sc: { text: '' } } },
+        { id: '802', name: 'Cy at Acme', values: { st: { text: 'Current' }, we: { text: null }, pe: { linked: ['701'] }, or: { linked: ['501'] }, sc: { text: '' } } },
+      ],
+    },
+    [PEOPLE]: {
+      columns: [
+        { id: 'psf', title: '📜 Salesforce ID', type: 'text' },
+        { id: 'pem', title: 'Personal Email', type: 'email' },
+        { id: 'dns', title: 'Do Not Solicit', type: 'checkbox' },
+      ],
+      items: [{ id: '601', name: 'Ann', values: { psf: { text: '003000000000001AAA' }, pem: email('ann@home.com'), dns: { text: '' } } }],
+    },
+    [HIST]: {
+      columns: [
+        { id: 'hsf', title: '📜 Salesforce ID', type: 'text' },
+        { id: 'hem', title: 'Personal Email', type: 'email' },
+        { id: 'hdns', title: 'Do Not Solicit', type: 'checkbox' },
+      ],
+      items: [{ id: '701', name: 'Cy', values: { hsf: { text: '003000000000002AAA' }, hem: email('cy@home.com'), hdns: { text: 'v' } } }],
+    },
+    [SPONS]: {
+      columns: [{ id: 'em', title: 'Email', type: 'text' }, { id: 'org', title: 'Organization', type: 'board_relation' }],
+      items: [{ id: '901', name: 'Acme', values: { em: { text: 'cy@home.com' }, org: { linked: ['501'] } } }],
+    },
+  });
+  const files = {
+    '/d/data/so/sf-primary-contacts.csv': 'npsp__Primary_Contact__c,AccountId\n003000000000001AAA,001000000000001AAA\n',
+    '/d/data/so/sf-fundraise-opt-out.csv': 'Id\n003000000000002\n003000000000009AAA\n',
+    '/d/data/so/sheet/Lapsed Donors.csv': 'Company,Email Address,other contacts\nAcme,ann@acme.com; nobody@acme.com,\n',
+  };
+  const args = {
+    command: 'contacts', organizations: ORGS, affiliations: AFFS, people: PEOPLE, historical: HIST, sponsorships: SPONS,
+    dir: '/d/data/so', out: '/d/data/so/contacts-review.csv', apply: true,
+  };
+  const deps = (m, written) => ({
+    gql: m.gql, ...sink(),
+    readFile: (p) => files[p],
+    listDir: (p) => Object.keys(files).filter((f) => f.startsWith(p + '/')).map((f) => f.slice(p.length + 1)),
+    writeFile: (p, c) => (written[p] = c),
+  });
+  it('ticks from Salesforce, the sheet and the Sponsorships board, and reviews the rest', async () => {
+    const m = fakeMonday(boards());
+    const written = {};
+    assert.equal(await run(args, deps(m, written)), 1);
+    assert.deepEqual(m.mutations.map((x) => [x.vars.item, JSON.parse(x.vars.values)]).sort(), [
+      ['801', { sc: { checked: 'true' } }],
+      ['802', { sc: { checked: 'true' } }],
+    ]);
+    assert.match(written['/d/data/so/contacts-review.csv'], /nobody@acme\.com,no person/);
+  });
+  it('lists Fundraise Opt Out contacts with their Do Not Solicit state, never writing it', async () => {
+    const m = fakeMonday(boards());
+    const written = {};
+    await run({ ...args, apply: false }, deps(m, written));
+    const csv = written['/d/data/so/fundraise-opt-out.csv'];
+    assert.match(csv, /^People Item ID,Monday Link,Do Not Solicit,Salesforce ID\n/);
+    assert.match(csv, /701,https:\/\/bikesiliconvalley\.monday\.com\/boards\/700\/pulses\/701,yes,003000000000002/);
+    assert.match(csv, /,,not in Monday,003000000000009AAA/);
+    assert.equal(m.mutations.length, 0);
+  });
+});
+
+describe('planContacts review rows', () => {
+  it('lists one review row per source, key and reason', () => {
+    const p = planContacts([{ kind: 'email', email: 'x@y.com' }, { kind: 'email', email: 'x@y.com' }], [], new Map(), new Map());
+    assert.equal(p.review.length, 1);
+  });
+});
