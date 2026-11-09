@@ -22,7 +22,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { assertDataPath, ledgerGifts, mapEvent, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
+import { assertDataPath, buildOrgIndex, ledgerGifts, mapEvent, matchOrg, parseCycles, toCsv } from './lib/sponsor-outreach-setup.mjs';
 
 const ROOT = new URL('..', import.meta.url);
 const EVENT_NAMES_PATH = new URL('sponsor-outreach/config/event-names.json', ROOT);
@@ -55,11 +55,13 @@ const PATH_FLAGS = ['--out', '--input', '--dir'];
 const COMMANDS = {
   columns: { required: ['--organizations', '--affiliations', '--sponsorships'], optional: ['--apply'] },
   cycles: { required: ['--organizations', '--donations', '--sponsorships', '--out'], optional: [] },
+  'link-pipeline': { required: ['--organizations', '--sponsorships', '--out'], optional: ['--apply'] },
 };
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/sponsor-outreach-setup.mjs <command>
   columns --organizations <id> --affiliations <id> --sponsorships <id> [--apply]
-  cycles --organizations <id> --donations <id> --sponsorships <id> --out data/<file>.csv`;
+  cycles --organizations <id> --donations <id> --sponsorships <id> --out data/<file>.csv
+  link-pipeline --organizations <id> --sponsorships <id> --out data/<file>.csv [--apply]`;
 
 const flagKey = (flag) => flag.slice(2);
 
@@ -316,7 +318,82 @@ async function cmdCycles(args, ctx) {
   return 0;
 }
 
-const HANDLERS = { columns: cmdColumns, cycles: cmdCycles };
+/** Which Sponsorships items to link to which Organization: item name first, then Employer. */
+export function planPipelineLinks(items, index) {
+  const link = [];
+  const review = [];
+  let already = 0;
+  for (const item of items) {
+    if (item.linked.length > 0) {
+      already += 1;
+      continue;
+    }
+    const m = matchOrg(index, item.name, item.employer);
+    if (m.status === 'matched') link.push({ itemId: item.id, orgId: m.orgId });
+    else review.push({ itemId: item.id, reason: m.status, candidates: m.candidates ?? [] });
+  }
+  return { link, review, already };
+}
+
+/** The organization index from every Organizations item's name, plus Salesforce ID → item id. */
+async function organizationIndex(gql, organizationsBoard) {
+  const sf = needColumn(await columnsByTitle(gql, organizationsBoard), organizationsBoard, 'Salesforce ID');
+  const orgs = await readItems(gql, organizationsBoard, [sf.id]);
+  const bySfId = new Map();
+  for (const o of orgs) if (o.values[sf.id].text) bySfId.set(o.values[sf.id].text.trim(), o.id);
+  return { index: buildOrgIndex(orgs.map((o) => ({ id: o.id, name: o.name }))), count: orgs.length, bySfId };
+}
+
+/** A column that may not exist yet: a dry run proceeds without it, --apply stops. */
+function optionalColumn(columns, boardId, title, apply) {
+  const col = columns.get(title);
+  if (!col && apply) throw new Stopped(`Board ${boardId} has no "${title}" column. Run the columns command with --apply first.`);
+  return col ?? null;
+}
+
+const itemLink = (boardId, itemId) => `https://bikesiliconvalley.monday.com/boards/${boardId}/pulses/${itemId}`;
+
+async function setColumnValues(gql, boardId, itemId, values) {
+  await gql(
+    `mutation ($board: ID!, $item: ID!, $values: JSON!) {
+       change_multiple_column_values(board_id: $board, item_id: $item, column_values: $values) { id }
+     }`,
+    { board: boardId, item: itemId, values: JSON.stringify(values) },
+  );
+}
+
+async function cmdLinkPipeline(args, ctx) {
+  const { gql, out } = ctx;
+  const cols = await columnsByTitle(gql, args.sponsorships);
+  const employer = needColumn(cols, args.sponsorships, 'Employer');
+  const orgCol = optionalColumn(cols, args.sponsorships, 'Organization', args.apply);
+  const { index, count } = await organizationIndex(gql, args.organizations);
+  const items = await readItems(gql, args.sponsorships, orgCol ? [employer.id, orgCol.id] : [employer.id]);
+  const plan = planPipelineLinks(
+    items.map((it) => ({ id: it.id, name: it.name, employer: it.values[employer.id].text, linked: orgCol ? it.values[orgCol.id].linked : [] })),
+    index,
+  );
+  const byId = new Map(items.map((it) => [it.id, it]));
+  writeReview(
+    args.out,
+    toCsv(
+      ['Item ID', 'Monday Link', 'Item Name', 'Employer', 'Reason', 'Candidate Organization IDs'],
+      plan.review.map((r) => [r.itemId, itemLink(args.sponsorships, r.itemId), byId.get(r.itemId).name, byId.get(r.itemId).values[employer.id].text ?? '', r.reason, r.candidates.join(' ')]),
+    ),
+    ctx.writeFile,
+  );
+  out(`${items.length} Sponsorships item(s) against ${count} Organization(s): ${plan.link.length} to link, ${plan.already} already linked, ${plan.review.length} for review. ${ARCHIVED_NOTE}`);
+  if (!args.apply) {
+    out(`DRY RUN${orgCol ? '' : ' (the Organization column doesn\'t exist yet)'}: nothing was changed.`);
+  } else {
+    for (const l of plan.link) await setColumnValues(gql, args.sponsorships, l.itemId, { [orgCol.id]: { item_ids: [Number(l.orgId)] } });
+    out(`Linked ${plan.link.length} item(s).`);
+  }
+  if (plan.review.length > 0) throw new CheckFailed(`${plan.review.length} item(s) need review; see the --out file.`);
+  return 0;
+}
+
+const HANDLERS = { columns: cmdColumns, cycles: cmdCycles, 'link-pipeline': cmdLinkPipeline };
 
 export async function run(args, deps) {
   const ctx = {

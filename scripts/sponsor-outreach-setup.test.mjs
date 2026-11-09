@@ -204,3 +204,67 @@ describe('cycleReport with combined cycles', () => {
     assert.deepEqual(r.byEvent.map((e) => [e.event, e.years]).sort(), [['BTWD', [2017]], ['Dinner', [2016]]]);
   });
 });
+
+import { planPipelineLinks } from './sponsor-outreach-setup.mjs';
+import { buildOrgIndex } from './lib/sponsor-outreach-setup.mjs';
+
+describe('planPipelineLinks', () => {
+  const idx = buildOrgIndex([
+    { id: 'o1', name: 'Waymo LLC' },
+    { id: 'o2', name: 'Cruise' },
+    { id: 'o3', name: 'Cruise, Inc.' },
+    { id: 'o4', name: 'Alta Planning + Design, Inc.' },
+  ]);
+  const p = planPipelineLinks(
+    [
+      { id: 'i1', name: 'Waymo', employer: null, linked: [] },
+      { id: 'i2', name: 'Alta Planning and Design Group', employer: 'Alta Planning + Design', linked: [] },
+      { id: 'i3', name: 'Veo', employer: null, linked: [] },
+      { id: 'i4', name: 'Cruise', employer: null, linked: [] },
+      { id: 'i5', name: 'Whatever', employer: null, linked: ['o9'] },
+    ],
+    idx,
+  );
+  it('links by name, then Employer', () => assert.deepEqual(p.link, [{ itemId: 'i1', orgId: 'o1' }, { itemId: 'i2', orgId: 'o4' }]));
+  it('reviews unmatched and ambiguous', () =>
+    assert.deepEqual(p.review, [
+      { itemId: 'i3', reason: 'unmatched', candidates: [] },
+      { itemId: 'i4', reason: 'ambiguous', candidates: ['o2', 'o3'] },
+    ]));
+  it('leaves an already-linked item alone', () => assert.equal(p.already, 1));
+});
+
+describe('link-pipeline command', () => {
+  const boards = () => ({
+    [ORGS]: { columns: [{ id: 'sf', title: '📜 Salesforce ID', type: 'text' }], items: [{ id: '501', name: 'Waymo LLC' }, { id: '502', name: 'Veo Inc' }] },
+    [SPONS]: {
+      columns: [{ id: 'emp', title: 'Employer', type: 'text' }, { id: 'org', title: 'Organization', type: 'board_relation' }],
+      items: [
+        { id: 'i1', name: 'Waymo', values: { emp: { text: null }, org: { linked: [] } } },
+        { id: 'i2', name: 'Nobody', values: { emp: { text: null }, org: { linked: [] } } },
+        { id: 'i3', name: 'Veo', values: { emp: { text: null }, org: { linked: ['502'] } } },
+      ],
+    },
+  });
+  const args = { command: 'link-pipeline', organizations: ORGS, sponsorships: SPONS, out: '/tmp/x/data/links.csv', apply: false };
+  it('a dry run writes the review file, no mutation, exit 1 for review items', async () => {
+    const m = fakeMonday(boards());
+    const files = {};
+    assert.equal(await run(args, { gql: m.gql, ...sink(), writeFile: (p, c) => (files[p] = c) }), 1);
+    assert.equal(m.mutations.length, 0);
+    assert.match(files['/tmp/x/data/links.csv'], /i2/);
+  });
+  it('--apply links exactly the matched, unlinked items', async () => {
+    const m = fakeMonday(boards());
+    await run({ ...args, apply: true }, { gql: m.gql, ...sink(), writeFile: () => {} });
+    assert.deepEqual(m.mutations.map((x) => [x.vars.item, JSON.parse(x.vars.values)]), [['i1', { org: { item_ids: [501] } }]]);
+  });
+  it('a dry run works before the column exists; --apply refuses', async () => {
+    const b = boards();
+    b[SPONS].columns = b[SPONS].columns.filter((c) => c.id !== 'org');
+    const m = fakeMonday(b);
+    assert.equal(await run(args, { gql: m.gql, ...sink(), writeFile: () => {} }), 1);
+    assert.equal(await run({ ...args, apply: true }, { gql: m.gql, ...sink(), writeFile: () => {} }), 2);
+    assert.equal(m.mutations.length, 0);
+  });
+});
