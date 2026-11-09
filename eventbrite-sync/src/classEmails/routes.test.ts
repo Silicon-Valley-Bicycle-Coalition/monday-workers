@@ -155,7 +155,22 @@ describe('GET /class-emails/:eventId', () => {
     expect((await get(harness({ event: null }))).status).toBe(404);
   });
 
-  it('returns the class fields, reading the venue and address from the Events item', async () => {
+  it('on a volunteer event, plans for the Volunteers, read from the Events item Program', async () => {
+    const ev = testConfig().attendeeSync.events;
+    const items = [
+      mondayItem('900', 'Summit volunteers', { [ev.programColumn]: 'Volunteering' }),
+      reg('10', { [rc.roleColumn]: 'Volunteer' }),
+      reg('11'),
+    ];
+    const h = harness({ items });
+    const body = (await (await get(h)).json()) as any;
+    expect(body.kinds.reminder.recipients.map((r: any) => r.registrationId)).toEqual(['10']);
+
+    const claim = (await (await post(h, 'claim', { kind: 'reminder' })).json()) as any;
+    expect(claim.recipients.map((r: any) => r.registrationId)).toEqual(['10']);
+  });
+
+  it('returns the event fields, reading the venue and address from the Events item', async () => {
     const ev = testConfig().attendeeSync.events;
     const items = [mondayItem('900', 'Learn to Ride', { [ev.venueColumn]: 'Millbrae Rec', [ev.addressColumn]: '477 Lincoln Cir' }), reg('10')];
     const h = harness({ items });
@@ -171,8 +186,11 @@ describe('GET /class-emails/:eventId', () => {
       'Spanish Time': '9:00 a.m.',
       'Spanish Arrival Time': '8:55 a.m.',
       'Class Location': 'Millbrae Rec, 477 Lincoln Cir',
+      'Event Day': 'Thursday',
+      'Event Date': 'November 12',
+      'Event Location': 'Millbrae Rec, 477 Lincoln Cir',
     });
-    expect(h.client.getItems).toHaveBeenCalledWith(expect.any(Number), ['900'], [ev.venueColumn, ev.addressColumn]);
+    expect(h.client.getItems).toHaveBeenCalledWith(expect.any(Number), ['900'], [ev.venueColumn, ev.addressColumn, ev.programColumn]);
   });
 
   it('returns null for a class field Eventbrite has not given', async () => {
@@ -386,7 +404,7 @@ describe('POST result', () => {
     const [itemId, text] = h.client.postUpdate.mock.calls[0] as unknown as [string, string];
     expect(itemId).toBe('900');
     expect(text.split('\n')).toEqual([
-      'Class email: Reminder, "See you soon". Sent by coach@svbc.org to 1 person.',
+      'Event email: Reminder, "See you soon". Sent by coach@svbc.org to 1 person.',
       'Failed: p11@real.org (Invalid recipient)',
       `Failed: p12@real.org (${'x'.repeat(200)})`,
     ]);
@@ -397,7 +415,7 @@ describe('POST result', () => {
     await post(h, 'result', sendResult('reminder', [{ registrationId: '12', status: 'sent' }]));
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
     expect((h.client.postUpdate.mock.calls[0] as unknown as [string, string])[1].split('\n')).toEqual([
-      'Class email: Reminder, "See you soon". Sent by coach@svbc.org to 0 people.',
+      'Event email: Reminder, "See you soon". Sent by coach@svbc.org to 0 people.',
       'Unconfirmed: p10@real.org, check Sent mail',
       'Unconfirmed: p11@real.org, check Sent mail',
       'Unconfirmed: registration 77, check Sent mail',
@@ -409,7 +427,7 @@ describe('POST result', () => {
     await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
     const text = (h.client.postUpdate.mock.calls[0] as unknown as [string, string])[1];
     expect(text.split('\n')).toEqual([
-      'Class email: Reminder, "See you soon". Sent by coach@svbc.org to 1 person.',
+      'Event email: Reminder, "See you soon". Sent by coach@svbc.org to 1 person.',
       'Unconfirmed: sink@svbc.org, check Sent mail',
     ]);
     expect(text).not.toContain('real.org');
@@ -424,7 +442,7 @@ describe('POST result', () => {
   it('says "people" for a plural count and omits Failed lines when none failed', async () => {
     const h = harness({ ledger: [row('thank-you', '10'), row('thank-you', '11')] });
     await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'sent' }], { subject: 'Thanks' }));
-    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Class email: Thank-you, "Thanks". Sent by coach@svbc.org to 2 people.');
+    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Event email: Thank-you, "Thanks". Sent by coach@svbc.org to 2 people.');
   });
 
   it("a failed update post doesn't lose the result", async () => {
@@ -529,7 +547,7 @@ describe('POST release', () => {
     expect(await res.json()).toEqual({ ok: true, released: 2, tooRecent: 0 });
     expect(h.store.rows.map((r) => `${r.kind}/${r.registrationId}=${r.status}`)).toEqual(['reminder/12=sent', 'thank-you/13=claimed']);
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
-    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Class email: Reminder. coach@svbc.org released 2 people who were not confirmed sent, so they can be emailed again.');
+    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Event email: Reminder. coach@svbc.org released 2 people who were not confirmed sent, so they can be emailed again.');
   });
 
   it('refuses a claim younger than 10 minutes and counts only what was released', async () => {
@@ -537,7 +555,7 @@ describe('POST release', () => {
     expect(await (await release(h, ['10', '11', '12'])).json()).toEqual({ ok: true, released: 1, tooRecent: 2 });
     expect(h.store.rows.map((r) => r.registrationId)).toEqual(['10', '12']);
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
-    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Class email: Reminder. coach@svbc.org released 1 person who was not confirmed sent, so they can be emailed again.');
+    expect(h.client.postUpdate).toHaveBeenCalledWith('900', 'Event email: Reminder. coach@svbc.org released 1 person who was not confirmed sent, so they can be emailed again.');
   });
 
   it('releases a failed row at any age', async () => {

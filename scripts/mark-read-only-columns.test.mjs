@@ -67,8 +67,8 @@ describe('MARKED_COLUMNS', () => {
     }
   });
 
-  it('locks the Send class email link on Events', () => {
-    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send class email'));
+  it('locks the Send event email link on Events', () => {
+    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send event email'));
   });
 
   it('locks what dtd-sync writes, on both People boards and Donations', () => {

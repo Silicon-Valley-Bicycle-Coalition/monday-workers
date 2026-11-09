@@ -1,4 +1,4 @@
-// Decides who gets each class email and when a send must be refused. Pure: no I/O, no logging.
+// Decides who gets each event email and when a send must be refused. Pure: no I/O, no logging.
 // Labels are compared exactly as Monday spells them.
 import type { ClassEmailKind, ClassEmailRow } from '../db/classEmails';
 
@@ -11,10 +11,15 @@ export interface RosterEntry {
   name: string;
 }
 
+export type AudienceRole = 'Participant' | 'Volunteer';
+
 export interface ClassFacts {
   startsAt: string | null;
   endsAt: string | null;
   eventbriteStatus: string | null;
+  // Who the event's emails are for: Volunteer on a volunteer event (a program in
+  // attendeeSync.volunteerPrograms), else Participant. Defaults to Participant.
+  audienceRole?: AudienceRole;
 }
 
 export interface Recipient {
@@ -39,7 +44,6 @@ export interface KindPlan {
 
 // An allowlist: draft, a missing status and anything Eventbrite adds later all refuse until listed.
 const SENDABLE_EVENT_STATUSES = ['live', 'started', 'ended', 'completed'];
-const ELIGIBLE_ROLE = 'Participant';
 const ELIGIBLE_ATTENDANCE: Record<ClassEmailKind, string[]> = {
   reminder: ['Registered'],
   'thank-you': ['Attended'],
@@ -48,19 +52,21 @@ const ELIGIBLE_ATTENDANCE: Record<ClassEmailKind, string[]> = {
 
 const normalize = (email: string): string => email.trim().toLowerCase();
 
-// Checked in, on a row that counts: a volunteer or a row with no address proves nothing about the
-// class, whether for the check-in guard or for "this address already came".
-const isCheckedIn = (e: RosterEntry): boolean => e.attendance === 'Attended' && e.role === ELIGIBLE_ROLE && normalize(e.email) !== '';
+// Checked in, on a row that counts: someone outside the audience (a volunteer at a class, a
+// participant on a volunteer shift) or a row with no address proves nothing about the event,
+// whether for the check-in guard or for "this address already came".
+const isCheckedIn = (role: AudienceRole) => (e: RosterEntry): boolean =>
+  e.attendance === 'Attended' && e.role === role && normalize(e.email) !== '';
 
 function toRecipient(e: RosterEntry): Recipient {
   return { registrationId: e.registrationId, email: e.email, firstName: e.firstName, name: e.name };
 }
 
 function statusRefusal(status: string | null): string | null {
-  if (status === null || status === '') return 'This class has no Eventbrite status yet, so no emails can be sent.';
+  if (status === null || status === '') return 'This event has no Eventbrite status yet, so no emails can be sent.';
   if (SENDABLE_EVENT_STATUSES.includes(status)) return null;
-  if (status === 'canceled' || status === 'deleted') return `This class is ${status} on Eventbrite, so no emails can be sent.`;
-  return `This class has the Eventbrite status "${status}", so no emails can be sent.`;
+  if (status === 'canceled' || status === 'deleted') return `This event is ${status} on Eventbrite, so no emails can be sent.`;
+  return `This event has the Eventbrite status "${status}", so no emails can be sent.`;
 }
 
 function refusalFor(kind: ClassEmailKind, facts: ClassFacts, roster: RosterEntry[], now: Date): string | null {
@@ -68,26 +74,28 @@ function refusalFor(kind: ClassEmailKind, facts: ClassFacts, roster: RosterEntry
   if (refused !== null) return refused;
   if (kind === 'reminder') {
     const startsAt = facts.startsAt === null ? NaN : Date.parse(facts.startsAt);
-    if (Number.isNaN(startsAt)) return 'This class has no start time, so the reminder cannot be sent.';
-    if (now.getTime() >= startsAt) return 'This class has already started, so the reminder can no longer be sent.';
+    if (Number.isNaN(startsAt)) return 'This event has no start time, so the reminder cannot be sent.';
+    if (now.getTime() >= startsAt) return 'This event has already started, so the reminder can no longer be sent.';
     return null;
   }
   const endsAt = facts.endsAt === null ? NaN : Date.parse(facts.endsAt);
-  if (Number.isNaN(endsAt)) return 'This class has no end time, so this email cannot be sent.';
-  if (now.getTime() < endsAt) return 'This class has not ended yet, so this email cannot be sent.';
-  if (!roster.some(isCheckedIn)) {
-    return 'Nobody has been checked in for this class, so this email cannot be sent.';
+  if (Number.isNaN(endsAt)) return 'This event has no end time, so this email cannot be sent.';
+  if (now.getTime() < endsAt) return 'This event has not ended yet, so this email cannot be sent.';
+  if (!roster.some(isCheckedIn(facts.audienceRole ?? 'Participant'))) {
+    return 'Nobody has been checked in for this event, so this email cannot be sent.';
   }
   return null;
 }
 
 export function planKind(kind: ClassEmailKind, facts: ClassFacts, roster: RosterEntry[], ledger: ClassEmailRow[], now: Date): KindPlan {
+  const role = facts.audienceRole ?? 'Participant';
+  const checkedInRow = isCheckedIn(role);
   const rows = ledger.filter((r) => r.kind === kind);
   const byId = new Map(roster.map((e) => [e.registrationId, e]));
 
   const sent = rows.filter((r) => r.status === 'sent').length;
 
-  const checkedIn = roster.filter(isCheckedIn).length;
+  const checkedIn = roster.filter(checkedInRow).length;
 
   const unresolved: UnresolvedRecipient[] = [];
   const seenUnresolved = new Set<string>();
@@ -108,14 +116,14 @@ export function planKind(kind: ClassEmailKind, facts: ClassFacts, roster: Roster
     if (e && normalize(e.email) !== '') taken.add(normalize(e.email));
   }
   // A person who attended on any registration of an address is not told they were missed.
-  const attendedAddresses = new Set(roster.filter(isCheckedIn).map((e) => normalize(e.email)));
+  const attendedAddresses = new Set(roster.filter(checkedInRow).map((e) => normalize(e.email)));
   const claimedIds = new Set(rows.map((r) => r.registrationId));
 
   const recipients: Recipient[] = [];
   for (const e of roster) {
     const address = normalize(e.email);
     if (address === '') continue;
-    if (e.role !== ELIGIBLE_ROLE) continue;
+    if (e.role !== role) continue;
     if (!ELIGIBLE_ATTENDANCE[kind].includes(e.attendance)) continue;
     if (claimedIds.has(e.registrationId) || taken.has(address)) continue;
     if (kind === 'missed-you' && attendedAddresses.has(address)) continue;

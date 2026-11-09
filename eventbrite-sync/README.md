@@ -316,6 +316,15 @@ issue #62). Eventbrite is the source of who registered and who checked in; Monda
 a coordinator sends the mail from Gmail through the send page. Design:
 [`docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md`](../docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
 
+**Any event, not only classes (2026-11-09).** Built for Bike Education, the send page now works for
+every Eventbrite event: the Events item's **Send event email** link is written whatever the program
+(it was Public only, labelled *Send class email*), refusals and Monday updates say "event", and a
+volunteer event's emails go to its Volunteers (see "Who gets each email"). Internal names stay as
+they were, because the deployed page and its secret use them: the `/class-emails` routes,
+`X-Class-Email-Secret`, `CLASS_EMAIL_SECRET`, `attendeeSync.classEmails` and the
+`class_email_recipients` table. `scripts/backfill-send-links.mjs` writes the new link on events the
+Worker won't process again (`--dry-run` first; needs a `MONDAY_API_TOKEN` that reaches Events).
+
 ```
 Eventbrite (SaaS)
   │  second webhook: attendee.updated, attendee.checked_in, attendee.checked_out,
@@ -488,14 +497,17 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 
 | Route | Does |
 |---|---|
-| `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `End Time`, `Arrival Time` (5 minutes before the start), `Spanish Day`, `Spanish Date`, `Spanish Time`, `Spanish Arrival Time`, `Class Location`), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
+| `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `End Time`, `Arrival Time` (5 minutes before the start), `Spanish Day`, `Spanish Date`, `Spanish Time`, `Spanish Arrival Time`, `Class Location`, and `Event Day`, `Event Date`, `Event Location` with the same values as their Class names), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
 | `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
 | `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then, under `waitUntil`, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. |
 | `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
 
-* **Who gets each email:** Role = Participant with an Attendee Email. Reminder: Registered, refused
-  once the class has started. Thank-you: Attended, refused until the class has ended or when no
-  Participant with an Attendee Email is Attended (a volunteer or a blank-email row doesn't count).
+* **Who gets each email:** the event's audience with an Attendee Email. The audience is Role =
+  Volunteer when the Events item's Program is one of `attendeeSync.volunteerPrograms` (the feed
+  writes every registration on such an event as a Volunteer), and Role = Participant otherwise.
+  Reminder: Registered, refused once the event has started. Thank-you: Attended, refused until the
+  event has ended or when no one in the audience with an Attendee Email is Attended (someone outside
+  it, such as a volunteer at a class, or a blank-email row doesn't count).
   Missed-you: Registered or No Show, same refusals. Canceled never. Only an Eventbrite status of
   `live`, `started`, `ended` or `completed` may send; anything else, including `draft`, `canceled`,
   `deleted` and no status, is refused for every kind. One email per address per kind, first
@@ -774,11 +786,13 @@ beyond the table above:
 
 ## Open
 
-0. **Production class emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
+0. **Production event emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
    (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
    `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
    Still open: a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
-   in `wrangler.jsonc`).
+   in `wrangler.jsonc`). After the 2026-11-09 generic change deploys: rename the column
+   `🔒 Send event email` (`MARKED_COLUMNS` already has the new title), run
+   `scripts/backfill-send-links.mjs`, and redeploy the page with its matching wording.
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.

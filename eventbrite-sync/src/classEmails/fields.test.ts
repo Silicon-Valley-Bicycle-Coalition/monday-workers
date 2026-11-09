@@ -67,7 +67,7 @@ describe('classFields', () => {
   it('returns null for what it does not know, never an empty or broken value', () => {
     const fields = classFields({ startsAt: null, endsAt: null, locationKey: null }, '', '');
     expect(Object.values(fields).every((value) => value === null)).toBe(true);
-    expect(Object.keys(fields)).toHaveLength(10);
+    expect(Object.keys(fields)).toHaveLength(13);
     const broken = classFields({ startsAt: 'not a date', endsAt: 'not a date', locationKey: null }, '', '');
     expect(broken['Class Date']).toBeNull();
     expect(broken['Arrival Time']).toBeNull();
@@ -78,5 +78,14 @@ describe('classFields', () => {
     const fields = classFields({ ...IN_PERSON, endsAt: null }, '', '');
     expect(fields['End Time']).toBeNull();
     expect(fields['Start Time']).toBe('10:00 AM');
+  });
+
+  it('gives the same Day, Date and Location under Event names, for drafts that are not classes', () => {
+    for (const event of [IN_PERSON, { ...IN_PERSON, locationKey: 'online' }]) {
+      const f = classFields(event, 'Millbrae Rec', '477 Lincoln Cir');
+      expect(f['Event Day']).toBe(f['Class Day']);
+      expect(f['Event Date']).toBe(f['Class Date']);
+      expect(f['Event Location']).toBe(f['Class Location']);
+    }
   });
 });
