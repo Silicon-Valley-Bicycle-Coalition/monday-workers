@@ -2,7 +2,6 @@ import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
 import { partnerTypeFor } from './partnerType.js';
-import { windfallColumns } from './windfall.js';
 import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, relationshipOwner, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
@@ -81,7 +80,12 @@ export function contactToPayload(
   // solicitation and postal mail, so it sets both flags and names itself in both reasons.
   const dnc = !!c['npsp__Do_Not_Contact__c'];
   const DNC_REASON = 'Do Not Contact (Salesforce)';
-  const dnsReason = [deceased ? 'Deceased' : '', dnc ? DNC_REASON : '', account?.Do_Not_Solicit_What__c ?? '']
+  // Fundraise Opt Out (1,351 contacts, #86) is the solicitation opt-out staff actually used —
+  // Account Do_Not_Solicit__c is set on 7. It is about fundraising only, so it sets Do Not
+  // Solicit and leaves Do Not Mail as Salesforce had it.
+  const fundraiseOptOut = !!c['Fundraise_Opt_Out__c'];
+  const dnsReason = [deceased ? 'Deceased' : '', dnc ? DNC_REASON : '',
+    fundraiseOptOut ? 'Fundraise Opt Out (Salesforce)' : '', account?.Do_Not_Solicit_What__c ?? '']
     .filter(Boolean).join('; ');
   const dnmReason = [(c['Do_Not_Mail_Reason__c'] ?? '') as string, dnc ? DNC_REASON : ''].filter(Boolean).join('; ');
   const columns: Record<string, unknown> = {
@@ -95,7 +99,7 @@ export function contactToPayload(
     'Funraise Profile': funraiseSupporterLink(c['funraise__fr_ID__c']),
     ...cityZip(deps.geo, c['MailingCity'], c['MailingPostalCode']),
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
-    'Do Not Solicit': account?.Do_Not_Solicit__c || deceased || dnc ? { checked: 'true' } : null,
+    'Do Not Solicit': account?.Do_Not_Solicit__c || deceased || dnc || fundraiseOptOut ?{ checked: 'true' } : null,
     'Do Not Solicit Reason': dnsReason,
     // Postal only (547 contacts): email consent comes from Mailchimp. Reason is "Opt out all mail"
     // or "Undeliverable" (a bad address to fix).
@@ -110,7 +114,6 @@ export function contactToPayload(
     // lookup, empty on every record (plan: Benevity in Integrations). Kept as a fallback only.
     'Employer Name': (c['Employer__c'] ?? c['dtd__company__c'] ?? '') as string,
     ...consentColumns(personal, household, deps.consent),
-    ...windfallColumns(c),
     ...salesforceDebug(c),
   };
   // A shared household address is one Mailchimp contact; this flag says whose merge fields it

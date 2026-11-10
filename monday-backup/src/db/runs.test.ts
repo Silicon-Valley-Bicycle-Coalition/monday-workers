@@ -91,7 +91,7 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     expect(await store.abandonStaleRuns('2026-08-25T10:00:00.000Z', '2026-08-25T11:00:00.000Z')).toEqual([]);
   });
 
-  it('lastSnapshotAt returns the latest success or partial finish, ignoring failures', async () => {
+  it('lastSnapshotAt returns the latest success, ignoring partial and failed runs', async () => {
     const store = new D1SnapshotRunStore(env.DB);
     expect(await store.lastSnapshotAt()).toBeNull();
     const a = await store.recordRunStart('2026-08-24T09:00:00.000Z');
@@ -100,7 +100,17 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     await store.recordRunFinish(b, '2026-08-25T09:05:00.000Z', { ...ok, status: 'partial', errorCount: 1, lastError: 'x' });
     const c = await store.recordRunStart('2026-08-26T09:00:00.000Z');
     await store.recordRunFailure(c, '2026-08-26T09:01:00.000Z', 'boom');
-    expect(await store.lastSnapshotAt()).toBe('2026-08-25T09:05:00.000Z');
+    expect(await store.lastSnapshotAt()).toBe('2026-08-24T09:05:00.000Z');
+  });
+
+  it('recordRunStopped marks the run stopped, without touching the failure streak', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    const id = await store.recordRunStart('2026-08-25T09:00:00.000Z');
+    await store.recordRunStopped(id, '2026-08-25T09:10:00.000Z', 'stopped by the write switch');
+    const row = await env.DB.prepare('SELECT * FROM snapshot_runs WHERE id = ?').bind(id).first();
+    expect(row).toMatchObject({ status: 'stopped', finished_at: '2026-08-25T09:10:00.000Z', last_error: 'stopped by the write switch' });
+    const state = await env.DB.prepare('SELECT consecutive_failures FROM run_alert_state WHERE id = 1').first<{ consecutive_failures: number }>();
+    expect(state?.consecutive_failures).toBe(0);
   });
 
   it('armWatchdog records the first arm time and keeps it', async () => {
@@ -122,5 +132,13 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     await store.recordUsageAlert('2026-10-27', 50);
     await store.recordUsageAlert('2026-10-27', 80);
     expect(await store.lastUsageAlert()).toEqual({ day: '2026-10-27', level: 80 });
+  });
+
+  it('round-trips the per-user usage tracking, null until one is saved', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.usageTracking()).toBeNull();
+    const tracking = { day: '2026-10-27', since: '2026-10-27T00:30:00.000Z', totals: { A: 5 }, today: { A: 2 } };
+    await store.saveUsageTracking(tracking);
+    expect(await store.usageTracking()).toEqual(tracking);
   });
 });

@@ -213,5 +213,8 @@ due November 5–7.
    in the first version.
 3. **Which events get the link?** Recommended: every Eventbrite event with Program = Public. Staff
    running other kinds simply won't click it. There's no class marker on production.
+   **Changed 2026-11-09:** every Eventbrite event, labelled *Send event email*, so the page serves
+   any program's emails (the 2026 Bike Summit was the first non-class need). A volunteer event's
+   emails go to its Volunteers; see the `eventbrite-sync` README.
 4. **Who owns the Apps Script project?** Recommended: `SVBC Integration`, or a Shared Drive if the
    Workspace allows it.

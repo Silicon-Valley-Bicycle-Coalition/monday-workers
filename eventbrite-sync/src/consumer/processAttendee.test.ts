@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processAttendee } from './processAttendee';
 import { consumeWriteBatch } from './processBatch';
+import { piiKeysFor } from '../writeSwitch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
@@ -45,7 +46,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     getItems: vi.fn().mockResolvedValue([]),
    
-    postUpdate: vi.fn(),
+    postUpdate: vi.fn(), createTimelineItem: vi.fn(),
     ...overrides,
   };
 }
@@ -100,6 +101,15 @@ describe('processAttendee', () => {
     expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].att_event_col).toEqual({ item_ids: [5551] });
   });
 
+  it('never creates a person from a checked-in placeholder attendee', async () => {
+    const { deps, mondayClient } = setup({
+      att: attendee({ checked_in: true, profile: { name: 'Info Requested Info Requested', first_name: 'Info Requested', email: 'Info Requested' } }),
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe(333);
+  });
+
   it('matches People and writes the Attendee link when checked in', async () => {
     const { deps, mondayClient, attendeeStore } = setup({
       att: attendee({ checked_in: true }),
@@ -120,7 +130,7 @@ describe('processAttendee', () => {
       monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'No Show' })]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
     });
     await processAttendee(message, deps);
-    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col']);
+    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col', 'att_registrants_col']);
     const [board, id, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect([board, id]).toEqual([333, 'reg-9']);
     expect(values.att_attendance_col).toBe('Attended');
@@ -359,6 +369,51 @@ describe('processAttendee', () => {
 });
 
 // Write switch (spec 2026-10-26): attendee messages go through consumeWriteBatch like orders.
+describe('registrants link', () => {
+  const registrantsWrite = (monday: MondayClient) =>
+    (monday.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls.filter(([, , v]) => 'att_registrants_col' in v);
+
+  it('links a new registration in its own write, after recording it', async () => {
+    const { deps, mondayClient, attendeeStore } = setup();
+    await processAttendee(message, deps);
+    const [, , created] = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(created.att_registrants_col).toBeUndefined();
+    expect(registrantsWrite(mondayClient)).toEqual([[333, 'reg-1', { att_registrants_col: { item_ids: [5551] } }]]);
+    const written = (attendeeStore.updateStatus as ReturnType<typeof vi.fn>).mock.invocationCallOrder.at(-1)!;
+    expect(written).toBeLessThan((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.invocationCallOrder.at(-1)!);
+  });
+
+  it('adds the link to an existing registration that lacks it', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered' });
+    await processAttendee(message, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([[333, 'reg-9', { att_registrants_col: { item_ids: [5551] } }]]);
+  });
+
+  it('does not write the link again when it is already set', async () => {
+    const getItems = vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_registrants_col: 'Adult Learn to Ride' })]);
+    const { deps, mondayClient } = setup({ ...existing, monday: { getItems } });
+    await processAttendee(message, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([]);
+  });
+
+  it('leaves out an excluded event', async () => {
+    const { deps, mondayClient, attendeeStore } = setup();
+    await processAttendee({ ...message, eventId: '8888' }, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([]);
+    expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.anything());
+  });
+
+  it('keeps the registration when Monday refuses the link: no throw, recorded as written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const changeColumnValues = vi.fn().mockRejectedValue(new MondayApiError('cell_limit_exceeded'));
+    const { deps, attendeeStore } = setup({ monday: { changeColumnValues } });
+    await expect(processAttendee(message, deps)).resolves.toBeUndefined();
+    expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.objectContaining({ mondayItemId: 'reg-1' }));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('registrants link not written'));
+    warn.mockRestore();
+  });
+});
+
 describe('attendee messages under the write switch', () => {
   // setup() builds only what this consumer reaches; the dry-run deps also wrap the orders ledger.
   const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
@@ -380,7 +435,10 @@ describe('attendee messages under the write switch', () => {
       expect(eventStore.recordDelivery).not.toHaveBeenCalled();
       expect(queue.send).not.toHaveBeenCalled();
       expect(m.ack).toHaveBeenCalled();
-      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([['Event Registrations', 'createItem', 'attendee:a1']]);
+      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([
+        ['Event Registrations', 'createItem', 'attendee:a1'],
+        ['Event Registrations', 'changeColumnValues', 'attendee:a1'],
+      ]);
     } finally {
       log.mockRestore();
     }
@@ -432,7 +490,7 @@ describe('attendee messages under the write switch', () => {
       // No placeholder person id reaches the ledger.
       expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
       const lines = skipLines(log);
-      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations']);
+      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations', 'Event Registrations']);
       expect(JSON.stringify(lines[1]!.payload)).toContain('"item_ids":["dry-run-1"]');
       expect(JSON.stringify(lines)).not.toContain('pat@example.com');
     } finally {
@@ -466,5 +524,77 @@ describe('attendee messages under the write switch', () => {
     const { deps, queue } = setup({ evRow: null });
     await expect(processAttendee({ ...message, writeStamp: 'dropped' }, deps)).rejects.toThrow('no Events item yet');
     expect(queue.send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'attendee.updated', writeStamp: 'dropped' });
+  });
+});
+
+// Spec 2026-11-04: of everything a form asks, only a valid zip goes anywhere.
+describe('Home Zip through the consumer', () => {
+  const SENSITIVE = ['Jordan Contact', '408-555-0188', 'asthma, carries inhaler', '12 Hidden Street', 'please call me first'];
+  const answers = (zip: string) => [
+    { question: 'Emergency contact name', question_id: '1', type: 'text', answer: SENSITIVE[0] },
+    { question: 'Emergency Contact Phone Number', question_id: '2', type: 'text', answer: SENSITIVE[1] },
+    { question: 'Are there any conditions?', question_id: '3', type: 'text', answer: SENSITIVE[2] },
+    { question: 'Mailing Street', question_id: '4', type: 'text', answer: SENSITIVE[3] },
+    { question: 'What is your home zip code?', question_id: '5', type: 'text', answer: zip },
+  ];
+  const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
+  const gate = (mode: 'on' | 'off') => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'debug' as const, piiKeys: piiKeysFor(config) });
+  const msg = () => ({ body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() });
+
+  // Everything the consumer printed, and everything it asked the ledger to store.
+  async function captured(run: () => Promise<void>, stores: { updateStatus: unknown }): Promise<string> {
+    const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
+    try {
+      await run();
+      return JSON.stringify([spies.map((spy) => spy.mock.calls), (stores.updateStatus as ReturnType<typeof vi.fn>).mock.calls]);
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  }
+
+  it('writes the zip and nothing else from the form on a create', async () => {
+    const { deps, mondayClient } = setup({ att: attendee({ answers: answers('95112') }) });
+    await processAttendee(message, deps);
+    const [, , values] = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(values.att_zip_col).toBe('95112');
+    for (const text of SENSITIVE) expect(JSON.stringify(values)).not.toContain(text);
+  });
+
+  it('writes the zip and nothing else from the form on an update', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ answers: answers('95112-1234') }) });
+    await processAttendee(message, deps);
+    const [, item, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(item).toBe('reg-9');
+    expect(values.att_zip_col).toBe('95112');
+    for (const text of SENSITIVE) expect(JSON.stringify(values)).not.toContain(text);
+  });
+
+  it('leaves the column out of an update when the zip answer is not a zip, so a good value stays', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ answers: answers(SENSITIVE[4]!) }) });
+    await processAttendee(message, deps);
+    const [, , values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(values).not.toHaveProperty('att_zip_col');
+    expect(JSON.stringify(values)).not.toContain(SENSITIVE[4]);
+  });
+
+  it('prints and stores no answer in a debug dry run', async () => {
+    const { deps, attendeeStore } = setup({ att: attendee({ answers: answers('95112') }) });
+    const m = msg();
+    const output = await captured(() => consumeWriteBatch([m], full(deps), gate('off')), attendeeStore);
+    expect(m.ack).toHaveBeenCalled();
+    expect(output).toContain('createItem');
+    for (const text of [...SENSITIVE, '95112']) expect(output).not.toContain(text);
+  });
+
+  it('prints and stores no answer when the Monday write fails', async () => {
+    const { deps, attendeeStore } = setup({
+      att: attendee({ answers: answers('95112') }),
+      monday: { createItem: vi.fn().mockRejectedValue(new Error('monday down')) },
+    });
+    const m = msg();
+    const output = await captured(() => consumeWriteBatch([m], full(deps), gate('on')), attendeeStore);
+    expect(m.retry).toHaveBeenCalled();
+    expect(output).toContain('monday down');
+    for (const text of [...SENSITIVE, '95112']) expect(output).not.toContain(text);
   });
 });

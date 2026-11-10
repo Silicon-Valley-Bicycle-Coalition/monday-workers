@@ -1,5 +1,5 @@
-// The routes the class email send page (a Google Apps Script web app) calls. They hand real
-// student addresses to that page and decide who may be emailed, so: every route checks the shared
+// The routes the event email send page (a Google Apps Script web app) calls. They hand real
+// attendee addresses to that page and decide who may be emailed, so: every route checks the shared
 // secret before anything else (including before the Monday client is built), the ledger is written
 // before any Monday write (and under any write mode, on `result`), and nothing personal reaches console.* (ids, counts and error class
 // names only; an `error` string from the page may hold an address, so it is never logged).
@@ -9,12 +9,12 @@ import type { ClassEmailKind, ClassEmailRow, ClassEmailStore } from '../db/class
 import type { EventStore } from '../db/events';
 import type { WriteMode } from '../flags';
 import { matchPerson } from '../matching/people';
-import { isActive, statusText, type MondayClient } from '../monday/client';
+import { isActive, statusText, type MondayClient, type MondayItemColumns } from '../monday/client';
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { linkedItemId } from '../util/itemId';
 import { secretsMatch } from '../webhook/route';
 import { classFields } from './fields';
-import { planKind, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
+import { planKind, type AudienceRole, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
 import { loadRoster, sandboxRecipients } from './roster';
 
 export const CLASS_EMAIL_SECRET_HEADER = 'X-Class-Email-Secret';
@@ -140,18 +140,24 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     }
   }
 
-  const writesRefusal = (c: Context) => fail(c, 503, 'Class email writes are not switched on, so nothing can be sent right now.');
+  const writesRefusal = (c: Context) => fail(c, 503, 'Event email writes are not switched on, so nothing can be sent right now.');
 
-  // The class: its ledger row, with a Monday item. Null is a 404.
+  // The event: its ledger row, with a Monday item. Null is a 404.
   async function findEvent(eventId: string): Promise<(EventRow & { mondayItemId: string }) | null> {
     const event = await deps.eventStore.getEvent(eventId);
     return event !== null && event.mondayItemId !== null ? { ...event, mondayItemId: event.mondayItemId } : null;
   }
 
-  const factsOf = (event: EventRow): ClassFacts => ({ startsAt: event.startsAt, endsAt: event.endsAt, eventbriteStatus: event.eventbriteStatus });
+  // A volunteer event's emails go to its Volunteers; every other event's to its Participants. The
+  // program is read from the Events item, as the feed wrote it (or as staff corrected it).
+  const audienceOf = (item: MondayItemColumns | undefined): AudienceRole =>
+    item !== undefined && config.attendeeSync.volunteerPrograms.includes(statusText(item, ev.programColumn)) ? 'Volunteer' : 'Participant';
+  const factsOf = (event: EventRow, item: MondayItemColumns | undefined): ClassFacts => ({
+    startsAt: event.startsAt, endsAt: event.endsAt, eventbriteStatus: event.eventbriteStatus, audienceRole: audienceOf(item),
+  });
 
-  const notFound = (c: Context) => fail(c, 404, 'No such class.');
-  const unconfigured = (c: Context) => fail(c, 503, 'Class emails are not set up for this environment.');
+  const notFound = (c: Context) => fail(c, 404, 'No such event.');
+  const unconfigured = (c: Context) => fail(c, 503, 'Event emails are not set up for this environment.');
   const configured = () => boards.events !== null && boards['event-registrations'] !== null;
 
   // Wraps a route body: validation errors are 400s, anything else is logged by class and answered
@@ -164,17 +170,17 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       } catch (err) {
         if (err instanceof BadRequest) return fail(c, 400, err.message);
         console.error(`eventbrite-sync class emails: ${route} failed for event "${idOf(c)}": ${errorKind(err)}`);
-        return fail(c, 502, 'The class email service could not finish that request.');
+        return fail(c, 502, 'The event email service could not finish that request.');
       }
     };
   }
 
   // Plans one kind against live roster and ledger, then swaps in the sandbox address (never before:
   // the one-address rule needs the real ones).
-  function planAll(kinds: ClassEmailKind[], event: EventRow, roster: RosterEntry[], ledger: ClassEmailRow[], at: Date): Record<string, KindPlan> {
+  function planAll(kinds: ClassEmailKind[], event: EventRow, item: MondayItemColumns, roster: RosterEntry[], ledger: ClassEmailRow[], at: Date): Record<string, KindPlan> {
     const out: Record<string, KindPlan> = {};
     for (const kind of kinds) {
-      const plan = planKind(kind, factsOf(event), roster, ledger, at);
+      const plan = planKind(kind, factsOf(event, item), roster, ledger, at);
       out[kind] = { ...plan, recipients: sandboxRecipients(plan.recipients, config), unresolved: sandboxRecipients(plan.unresolved, config) };
     }
     return out;
@@ -188,7 +194,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
     const client = deps.mondayClient();
     const [[item], roster, ledger, mode] = await Promise.all([
-      client.getItems(boards.events!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]),
+      client.getItems(boards.events!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn, ev.programColumn]),
       loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
       store.listByEvent(eventId),
       deps.writeMode(),
@@ -199,7 +205,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       event: { name: item.name, startsAt: event.startsAt, endsAt: event.endsAt, status: event.eventbriteStatus },
       fields: classFields(event, item.columns[ev.venueColumn] ?? '', item.columns[ev.addressColumn] ?? ''),
       writesOn: mode === 'on',
-      kinds: planAll(KINDS, event, roster, ledger, now()),
+      kinds: planAll(KINDS, event, item, roster, ledger, now()),
     });
   }));
 
@@ -215,12 +221,12 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     const client = deps.mondayClient();
     const at = now();
     const [[item], roster, ledger] = await Promise.all([
-      client.getItems(boards.events!, [event.mondayItemId], []),
+      client.getItems(boards.events!, [event.mondayItemId], [ev.programColumn]),
       loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
       store.listByEvent(eventId),
     ]);
     if (!isActive(item)) return notFound(c);
-    const plan = planKind(kind, factsOf(event), roster, ledger, at);
+    const plan = planKind(kind, factsOf(event, item), roster, ledger, at);
     if (plan.refusal !== null) return json(c, { refusal: plan.refusal, recipients: [] });
 
     // Only what this call newly claimed goes back; a concurrent claim keeps its own.
@@ -278,7 +284,10 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         // The update first: it is the record of the send, and a long Thank-you's People matching
         // must not be able to cost it. The follow-ups can outlive the response.
         await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed);
-        const work = followUp(client, kind, sentIds, eventId);
+        // Entries first: a thank-you's People link can create the person, and an entry shouldn't
+        // depend on that having happened.
+        const monday = client;
+        const work = logToTimeline(monday, event, eventId, kind, sender, subject, sentIds).then(() => followUp(monday, kind, sentIds, eventId));
         const ctx = executionContextOf(c);
         if (ctx === null) await work;
         else ctx.waitUntil(work);
@@ -305,7 +314,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
     if (released > 0) {
       const people = released === 1 ? 'person' : 'people';
-      await postUpdate(event.mondayItemId, eventId, `Class email: ${KIND_LABEL[kind]}. ${sender} released ${released} ${people} who ${released === 1 ? 'was' : 'were'} not confirmed sent, so they can be emailed again.`);
+      await postUpdate(event.mondayItemId, eventId, `Event email: ${KIND_LABEL[kind]}. ${sender} released ${released} ${people} who ${released === 1 ? 'was' : 'were'} not confirmed sent, so they can be emailed again.`);
     }
     return json(c, { ok: true, released, tooRecent });
   }));
@@ -315,6 +324,51 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       await (client ?? deps.mondayClient()).postUpdate(itemId, body);
     } catch (err) {
       console.error(`eventbrite-sync class emails: update on event "${eventId}" not posted: ${errorKind(err)}`);
+    }
+  }
+
+  // The email on each person's Emails & Activities timeline, because Monday's own logging doesn't
+  // pick up mail sent as a Google Group. On their People item when the address matches, else their
+  // registration; never creates a person. The email has gone, so a failure is reported on the Events
+  // item, not retried: an entry can't be looked up, so a retry could post it twice. Never rejects.
+  async function logToTimeline(
+    client: MondayClient, event: EventRow & { mondayItemId: string }, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[]
+  ): Promise<void> {
+    const customActivityId = config.attendeeSync.classEmails.timelineActivityId;
+    if (customActivityId === null || sentIds.length === 0) return;
+    const failed: string[] = [];
+    try {
+      const [classItem] = await client.getItems(boards['events']!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]);
+      const fields = classFields(event, classItem?.columns[ev.venueColumn] ?? '', classItem?.columns[ev.addressColumn] ?? '');
+      const className = classItem?.name ?? `Eventbrite event ${eventId}`;
+      const fresh = await client.getItems(boards['event-registrations']!, sentIds, [rc.attendeeEmailColumn, rc.firstNameColumn]);
+      const byId = new Map(fresh.map((item) => [item.id, item]));
+      const peopleBoard = boards['people-live'];
+      const timestamp = now().toISOString();
+      for (const id of sentIds) {
+        try {
+          const item = byId.get(id);
+          const email = (item?.columns[rc.attendeeEmailColumn] ?? '').trim();
+          const person = peopleBoard != null && email !== '' ? await client.findItemByColumnValue(peopleBoard, config.attendeeSync.peopleEmailColumn, email) : null;
+          const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': (item?.columns[rc.firstNameColumn] ?? '').trim() || null })).slice(0, MAX_TIMELINE_TEXT);
+          const summary = `${KIND_LABEL[kind]} for ${oneLine(className)}. Sent by ${sender}.`;
+          await client.createTimelineItem({
+            itemId: person?.id ?? id, customActivityId, title, timestamp,
+            summary: summary.slice(0, MAX_TIMELINE_TEXT),
+            content: `<p>${escapeHtml(title)}</p><p>${escapeHtml(summary)}</p>`,
+          });
+        } catch (err) {
+          failed.push(id);
+          console.error(`eventbrite-sync class emails: timeline entry for registration ${id} on event "${eventId}" failed: ${errorKind(err)}`);
+        }
+      }
+    } catch (err) {
+      failed.splice(0, failed.length, ...sentIds);
+      console.error(`eventbrite-sync class emails: timeline entries for event "${eventId}" failed: ${errorKind(err)}`);
+    }
+    if (failed.length > 0) {
+      const who = failed.length === 1 ? '1 person' : `${failed.length} people`;
+      await postUpdate(event.mondayItemId, eventId, `Event email: ${KIND_LABEL[kind]}. Sent, but not added to the timeline for ${who}: ${failed.map((id) => `registration ${id}`).join(', ')}`, client);
     }
   }
 
@@ -363,7 +417,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   async function postResultUpdate(
     client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sent: number, failed: SendResult[], unconfirmed: string[]
   ): Promise<void> {
-    const lines = [`Class email: ${KIND_LABEL[kind]}, "${oneLine(subject)}". Sent by ${sender} to ${sent} ${sent === 1 ? 'person' : 'people'}.`];
+    const lines = [`Event email: ${KIND_LABEL[kind]}, "${oneLine(subject)}". Sent by ${sender} to ${sent} ${sent === 1 ? 'person' : 'people'}.`];
     if (failed.length > 0 || unconfirmed.length > 0) {
       // Addresses come from Monday now, not from the page; in the sandbox they are the replaced one.
       let addresses = new Map<string, string>();
@@ -380,4 +434,16 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     }
     await postUpdate(itemId, eventId, lines.join('\n'), client);
   }
+}
+
+// create_timeline_item's limit on title and summary.
+const MAX_TIMELINE_TEXT = 255;
+
+// Fills what's known, and leaves anything else as typed so a mistake stays visible.
+function fillPlaceholders(text: string, values: Record<string, string | null>): string {
+  return text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (whole, name: string) => values[name] ?? whole);
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

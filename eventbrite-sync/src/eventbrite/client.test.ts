@@ -52,6 +52,14 @@ describe('HttpEventbriteClient', () => {
     await expect(client.getOrder('1')).rejects.toThrow('unexpected body');
   });
 
+  it('keeps a malformed body out of the error, which is logged and stored, and retries', async () => {
+    const res = new Response('<html>call me at 408-555-0188', { status: 200 });
+    const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(res));
+    const err = await client.getAttendee('1', '2').catch((e: unknown) => e as Error);
+    expect((err as Error).message).toBe('eventbrite api: get attendee 1/2 returned an unexpected body');
+    expect(err).not.toBeInstanceOf(TerminalError);
+  });
+
   it('refuses a non-numeric order id without making a request', async () => {
     const fetchImpl = vi.fn();
     const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
@@ -94,6 +102,17 @@ describe('HttpEventbriteClient', () => {
       const attendee = await client.getAttendee('1993885250458', '77');
 
       expect(attendee?.id).toBe('77');
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/attendees/77/');
+    });
+
+    it('keeps answers from the response, with its URL unchanged', async () => {
+      const answers = [{ question: 'Home ZIP code', question_id: '1', type: 'text', answer: '95112' }];
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { id: '77', answers }));
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
+
+      const attendee = await client.getAttendee('1993885250458', '77');
+
+      expect(attendee?.answers).toEqual(answers);
       expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/attendees/77/');
     });
 
@@ -150,6 +169,25 @@ describe('HttpEventbriteClient', () => {
       const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
       await expect(client.listOrganizationOrders('999', '2026-11-01T13:00:00Z')).rejects.toThrow('more than 20 pages');
       expect(fetchImpl).toHaveBeenCalledTimes(20);
+    });
+  });
+
+  describe('countAttendees', () => {
+    const client = (body: unknown) => new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(200, body)));
+
+    it('reads the total from one page of the attendee list', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { pagination: { object_count: 2911 }, attendees: [] }));
+      expect(await new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl).countAttendees('55')).toBe(2911);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/events/55/attendees/');
+    });
+
+    it('refuses a non-numeric event id', async () => {
+      await expect(client({}).countAttendees('abc')).rejects.toThrow(/non-numeric/);
+    });
+
+    it('throws when the total is missing', async () => {
+      await expect(client({ pagination: {} }).countAttendees('55')).rejects.toThrow(/object_count/);
     });
   });
 

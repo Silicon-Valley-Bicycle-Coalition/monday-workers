@@ -4,10 +4,15 @@ export interface MondayItem {
   id: string;
 }
 
+export interface WriteOptions {
+  // Monday's create_labels_if_missing: a status or dropdown label not on the column yet is created.
+  createLabelsIfMissing?: boolean;
+}
+
 export interface MondayClient {
   findItemByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem | null>;
-  createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<MondayItem>;
-  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>, options?: WriteOptions): Promise<MondayItem>;
+  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>, options?: WriteOptions): Promise<void>;
   // Item names, state, and the `text` (blank -> '') and raw stored `value` (JSON string, or null when
   // the cell is empty) of the requested columns. Read a status column with statusText, never its
   // text: Monday shows label id 5's text for an EMPTY status cell. items(ids:) also
@@ -17,6 +22,18 @@ export interface MondayClient {
   // An update (comment) on an item's page (create_update). Not retried: a retry after an
   // ambiguous failure could post it twice.
   postUpdate(itemId: string, body: string): Promise<void>;
+  // One Emails & Activities entry. Not idempotent, and an entry can't be looked up to dedupe.
+  createTimelineItem(input: TimelineItemInput): Promise<string>;
+}
+
+// One Emails & Activities entry (create_timeline_item).
+export interface TimelineItemInput {
+  itemId: string;
+  customActivityId: string;
+  title: string;
+  summary: string;
+  content: string;
+  timestamp: string;
 }
 
 export interface MondayItemColumns {
@@ -81,13 +98,13 @@ export class HttpMondayClient implements MondayClient {
     return items.length > 0 ? (items[0] as MondayItem) : null;
   }
 
-  async createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<MondayItem> {
+  async createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>, options: WriteOptions = {}): Promise<MondayItem> {
     // Not idempotent: a create that may have committed (5xx, timeout) throws AmbiguousWriteError
     // instead of retrying in-process; the consumer's retry re-runs the lookup-then-create path,
     // which adopts the item by its Eventbrite Order ID if the first create did land.
     const data = await this.transport.request<{ create_item: MondayItem }>(
       `mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
-        create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) {
+        create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues${options.createLabelsIfMissing ? ', create_labels_if_missing: true' : ''}) {
           id
         }
       }`,
@@ -97,10 +114,10 @@ export class HttpMondayClient implements MondayClient {
     return data.create_item;
   }
 
-  async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void> {
+  async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>, options: WriteOptions = {}): Promise<void> {
     await this.transport.request<{ change_multiple_column_values: MondayItem }>(
       `mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
-        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues${options.createLabelsIfMissing ? ', create_labels_if_missing: true' : ''}) {
           id
         }
       }`,
@@ -155,5 +172,18 @@ export class HttpMondayClient implements MondayClient {
       { itemId, body },
       { idempotent: false }
     );
+  }
+
+  async createTimelineItem(input: TimelineItemInput): Promise<string> {
+    const data = await this.transport.request<{ create_timeline_item: { id: string } }>(
+      `mutation ($itemId: ID!, $customActivityId: String!, $title: String!, $summary: String, $content: String, $timestamp: ISO8601DateTime!) {
+        create_timeline_item(item_id: $itemId, custom_activity_id: $customActivityId, title: $title, summary: $summary, content: $content, timestamp: $timestamp) {
+          id
+        }
+      }`,
+      { ...input },
+      { idempotent: false }
+    );
+    return data.create_timeline_item.id;
   }
 }

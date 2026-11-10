@@ -95,23 +95,6 @@ const PORTFOLIO_DESCRIPTIONS = {
   'Has Active Recurring Gift': 'Checked while this person has an Active item on Recurring Gifts. Set nightly by the ' +
     'donation-rollups integration; edits are overwritten. The Postal appeal list leaves these donors out.',
 } as const;
-// People boards only. Windfall wealth screening, loaded once from Salesforce (monday-migration
-// docs/09); SVBC's subscription has ended, so nothing refreshes these.
-const WINDFALL_FROZEN = 'From Windfall wealth screening, frozen at migration — the subscription has ended and nothing updates it.';
-const WINDFALL_DESCRIPTIONS = {
-  'Net Worth': `Windfall's estimated net worth. ${WINDFALL_FROZEN}`,
-  'Net Worth Low': `Lower bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
-  'Net Worth High': `Upper bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
-  'Net Worth Date': `When Windfall last calculated Net Worth. ${WINDFALL_FROZEN}`,
-  'Philanthropic Giver': `Windfall found charitable giving elsewhere. ${WINDFALL_FROZEN}`,
-  'Job Title': `Windfall's employment match. ${WINDFALL_FROZEN} Structured employment lives on Affiliations.`,
-  'Windfall Company': `Windfall's employment match; may differ from Employer Name. ${WINDFALL_FROZEN}`,
-  'LinkedIn': `Windfall's LinkedIn match. ${WINDFALL_FROZEN}`,
-  'Windfall ID': `The person's record in Windfall. ${WINDFALL_FROZEN}`,
-  'Windfall Priority': "Salesforce's Windfall Priority Score at migration: 1, plus 50 if Net Worth tops $10M, " +
-    'plus gifts closed in the prior year. Frozen; for current giving use the rollup columns.',
-  'Windfall Profile': `Remaining Windfall detail (employment, giving focus, property and life-event flags). ${WINDFALL_FROZEN}`,
-} as const;
 const ROLLUP_DESCRIPTION = 'Computed automatically from Donations by the donation-rollups integration. Edits are overwritten.';
 const DONOR_LEVEL_DESCRIPTION = 'Leadership ($5,000+ lifetime), Major ($500+ lifetime or a single gift of $200+), or Donor. ' +
   ROLLUP_DESCRIPTION;
@@ -143,7 +126,7 @@ const POSSIBLE_DUPLICATES_VIEW: ViewSpec = {
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
   'Funraise Event ID', 'Eventbrite ID', 'Eventbrite Attendee ID', 'Benevity Transaction ID',
-  'Eventbrite Order ID', 'Windfall ID',
+  'Eventbrite Order ID',
 ] as const;
 
 const dnsViews = (contactColumn: string): ViewSpec[] => [
@@ -188,7 +171,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     groupTitle: 'People',
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS,
       ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
@@ -293,10 +276,6 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'City' } },
       { name: 'Stakeholders', tag: 'Reference', columns: ['Stakeholder Type', 'Organization', 'City', 'Zip', 'Personal Email'],
         filter: { rules: [{ columnTitle: 'Stakeholder Type', operator: 'any_of', labelValues: ['City or Agency Staff', 'Elected Official'] }] } },
-      { name: 'Wealth screening', tag: 'Report',
-        columns: ['Net Worth', 'Philanthropic Giver', 'Job Title', 'Windfall Company', 'LinkedIn', 'Lifetime Giving', 'Donor Level'],
-        filter: { rules: [{ columnTitle: 'Net Worth', operator: 'is_not_empty' }, NOT_DNS] },
-        sort: [{ columnTitle: 'Net Worth', direction: 'desc' }] },
       { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
         filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
@@ -313,7 +292,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     groupTitle: 'People',
     columns: PEOPLE_COLUMNS,
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS,
       ...POSSIBLE_DUPLICATE_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
@@ -431,8 +410,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Recent gifts', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
         groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
-      // These two are emailed weekly by the report-digests Worker (monday-migration docs/35 §3.6);
-      // its 60-day email adds each donor's Windfall columns from People.
+      // These two are emailed weekly by the report-digests Worker (monday-migration docs/35 §3.6).
       { name: 'Gifts, last 7 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
         filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 7] }] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
@@ -545,6 +523,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     // Written per attendee by eventbrite-sync. The load leaves them blank, so migrated history
     // has no Class Date and stays out of the Class roster view.
     columns: [
+      { title: 'Attendee Phone', type: 'text' },
       { title: 'First Name', type: 'text' },
       { title: 'Class Date', type: 'date' },
       { title: 'Class Day', type: 'text' },
@@ -564,7 +543,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     views: [
       { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
-      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
+      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Attendee Phone', 'Role', 'Attendance', 'Class Date', 'Class Location'],
         filter: { rules: [
           { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
           { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },

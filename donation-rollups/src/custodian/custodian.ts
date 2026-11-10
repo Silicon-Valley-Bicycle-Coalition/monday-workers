@@ -290,7 +290,7 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
   const slice = owners.slice(0, SWEEP_BATCHES_PER_RUN * 100);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
-      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId })));
+      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId, sweep: true })));
   }
   const remaining = owners.length - slice.length; // >0 means at least one more slice exists
   return {
@@ -373,62 +373,58 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   const slice = startIdx < 0 ? [] : allOwners.slice(startIdx, startIdx + RECONCILE_OWNERS_PER_RUN);
   const ownerRemaining = startIdx < 0 ? 0 : allOwners.length - startIdx - slice.length;
 
-  const byBoard = new Map<string, string[]>();
-  for (const ownerId of slice) {
-    const boardId = ledger.get(ownerId)!.ownerBoardId;
-    const list = byBoard.get(boardId) ?? [];
-    list.push(ownerId);
-    byBoard.set(boardId, list);
-  }
+  // Every configured board's columns, not just the one D1 names: an owner who moved boards keeps
+  // a stale owner_board_id until their next recompute. An item only has its own board's columns,
+  // and a column id from another board just reads back empty.
+  const boardColumns = Object.values(ownerColumnsByBoard);
+  const lifetimeColumns = [...new Set(boardColumns.map((c) => c.lifetimeGiving))];
+  const projectionColumns = [...new Set(boardColumns.map((c) => c.giftLedgerJson))];
+  // An owner board outside config would already fail recompute loudly.
+  const ownerIds = slice.filter((ownerId) => ownerColumnsByBoard[ledger.get(ownerId)!.ownerBoardId]);
 
   const mismatches: { ownerItemId: string; ledgerCents: number; mondayCents: number | null }[] = [];
   const projectionMismatches: { ownerItemId: string; ledgerCents: number; projectionCents: number | null }[] = [];
   let truncatedProjections = 0;
   let compared = 0;
-  for (const [boardId, ownerIds] of byBoard) {
-    const columns = ownerColumnsByBoard[boardId];
-    if (!columns) continue; // an owner board outside config would already fail recompute loudly
-    const monday = await deps.mondayClient.getItemsColumnsText(
-      ownerIds, [columns.lifetimeGiving, columns.giftLedgerJson]);
-    for (const ownerId of ownerIds) {
-      compared++;
-      const cols = monday.get(ownerId);
-      const ledgerCents = ledger.get(ownerId)!.cents;
+  const monday = ownerIds.length === 0 ? new Map<string, Map<string, string | null>>()
+    : await deps.mondayClient.getItemsColumnsText(ownerIds, [...lifetimeColumns, ...projectionColumns]);
+  for (const ownerId of ownerIds) {
+    compared++;
+    const cols = monday.get(ownerId);
+    const ledgerCents = ledger.get(ownerId)!.cents;
 
-      // Leg 1: the Lifetime Giving column. Rows written before issue #27 hold float noise
-      // (714.9300000000001) — parseAmountCents rounds it to cents from the decimal string.
-      const lifetimeText = cols?.get(columns.lifetimeGiving) ?? null;
-      const mondayCents = parseAmountCents(lifetimeText);
-      if (mondayCents !== ledgerCents) mismatches.push({ ownerItemId: ownerId, ledgerCents, mondayCents });
+    // Leg 1: the Lifetime Giving column. Rows written before issue #27 hold float noise
+    // (714.9300000000001) — parseAmountCents rounds it to cents from the decimal string.
+    const mondayCents = parseAmountCents(firstValue(cols, lifetimeColumns));
+    if (mondayCents !== ledgerCents) mismatches.push({ ownerItemId: ownerId, ledgerCents, mondayCents });
 
-      // Leg 2: the Gift Ledger JSON projection. Sum its Received entries the way
-      // ownerTotals does; an empty or unparseable column is drift too (projectionCents
-      // null), since every recompute rewrites it.
-      const ledgerText = cols?.get(columns.giftLedgerJson) ?? null;
-      const parsed = ledgerText === null ? null : parseGiftLedgerJson(ledgerText);
-      if (parsed === null) {
-        projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents: null });
-        continue;
+    // Leg 2: the Gift Ledger JSON projection. Sum its Received entries the way
+    // ownerTotals does; an empty or unparseable column is drift too (projectionCents
+    // null), since every recompute rewrites it.
+    const ledgerText = firstValue(cols, projectionColumns);
+    const parsed = ledgerText === null ? null : parseGiftLedgerJson(ledgerText);
+    if (parsed === null) {
+      projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents: null });
+      continue;
+    }
+    const received = parsed.entries.filter((e) => e.status === receivedStatusLabel);
+    const projectionCents = received.reduce((sum, e) => sum + e.amountCents, 0);
+    if (!parsed.truncated) {
+      if (projectionCents !== ledgerCents) {
+        projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents });
       }
-      const received = parsed.entries.filter((e) => e.status === receivedStatusLabel);
-      const projectionCents = received.reduce((sum, e) => sum + e.amountCents, 0);
-      if (!parsed.truncated) {
-        if (projectionCents !== ledgerCents) {
-          projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents });
-        }
-      } else {
-        // A truncated projection (Finding-1 marker) deliberately omits older gifts, so
-        // comparing its sum to the full ledger total would always false-positive.
-        // Instead compare the entries it DOES contain against D1's rows for those same
-        // gifts — one D1 read per truncated owner, and truncation is rare by design.
-        truncatedProjections++;
-        const d1ByItem = new Map((await deps.gifts.giftsForOwner(ownerId))
-          .filter((g) => g.status === receivedStatusLabel)
-          .map((g) => [g.mondayItemId, g.amountCents]));
-        const d1Cents = received.reduce((sum, e) => sum + (d1ByItem.get(e.mondayItemId) ?? 0), 0);
-        if (projectionCents !== d1Cents) {
-          projectionMismatches.push({ ownerItemId: ownerId, ledgerCents: d1Cents, projectionCents });
-        }
+    } else {
+      // A truncated projection (Finding-1 marker) deliberately omits older gifts, so
+      // comparing its sum to the full ledger total would always false-positive.
+      // Instead compare the entries it DOES contain against D1's rows for those same
+      // gifts — one D1 read per truncated owner, and truncation is rare by design.
+      truncatedProjections++;
+      const d1ByItem = new Map((await deps.gifts.giftsForOwner(ownerId))
+        .filter((g) => g.status === receivedStatusLabel)
+        .map((g) => [g.mondayItemId, g.amountCents]));
+      const d1Cents = received.reduce((sum, e) => sum + (d1ByItem.get(e.mondayItemId) ?? 0), 0);
+      if (projectionCents !== d1Cents) {
+        projectionMismatches.push({ ownerItemId: ownerId, ledgerCents: d1Cents, projectionCents });
       }
     }
   }
@@ -500,7 +496,9 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
       // resumed from affiliationCursor when the last run left work outstanding.
       const ledgerByAffiliation = await deps.gifts.attributedTotalsAll(receivedStatusLabel);
       const affiliationIds = [...ledgerByAffiliation.keys()].sort();
-      const affiliationCursorIn = (last?.detail?.affiliationRemaining ?? 0) > 0
+      // Leg 5 keeps its cursor while leg 6 finishes too: resetting it as soon as leg 5 caught
+      // up restarted leg 5 on the next run, and leg 6 only advanced once per whole leg 5 pass.
+      const affiliationCursorIn = (last?.detail?.affiliationRemaining ?? 0) > 0 || (last?.detail?.personRemaining ?? 0) > 0
         ? (last?.detail?.affiliationCursor ?? '') : '';
       const affSliced = sliceByCursor(affiliationIds, affiliationCursorIn,
         slice.length === 0 ? RECONCILE_AFFILIATIONS_PER_RUN : 0);
@@ -508,46 +506,46 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
       affiliationCursor = affSliced.cursorOut;
       if (affSliced.slice.length > 0) {
         const affResults = await compareCents(
-          deps.mondayClient, affSliced.slice, columns.attributedGiving,
+          deps.mondayClient, affSliced.slice, [columns.attributedGiving],
           (id) => ledgerByAffiliation.get(id)!.cents);
         affiliationMismatches.push(...affResults.map((m) =>
           ({ affiliationItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
       }
 
-      // Leg 6: every person's Organizational Giving vs their own board's organizationalGiving
-      // column — grouped by board since that column id (and its existence) is per-board.
-      // Only spends Monday subrequests once leg 5 has fully caught up THIS run; otherwise it
-      // waits for a later run (same subrequest-budget reasoning as above).
+      // Leg 6: every person's Organizational Giving vs that column on Monday. People move
+      // between boards and D1's person_board_id only updates on the affiliation's next
+      // recompute, so read every configured board's column: an item only has its own board's,
+      // and a column id from another board just reads back empty. Only spends Monday subrequests
+      // once the owner slice is empty and leg 5 has fully caught up THIS run; otherwise it waits
+      // for a later run (same subrequest-budget reasoning as above).
       const ledgerByPerson = await deps.gifts.organizationalGivingAll(receivedStatusLabel);
       const personIds = [...ledgerByPerson.keys()].sort();
       const personCursorIn = (last?.detail?.personRemaining ?? 0) > 0
         ? (last?.detail?.personCursor ?? '') : '';
       const personSliced = sliceByCursor(personIds, personCursorIn,
-        affiliationRemaining === 0 ? RECONCILE_PERSONS_PER_RUN : 0);
+        slice.length === 0 && affiliationRemaining === 0 ? RECONCILE_PERSONS_PER_RUN : 0);
       personRemaining = personSliced.remaining;
       personCursor = personSliced.cursorOut;
       if (personSliced.slice.length > 0) {
-        const personIdsByBoard = new Map<string, string[]>();
+        const personColumns = [...new Set(Object.values(ownerColumnsByBoard)
+          .flatMap((c) => c.organizationalGiving ?? []))];
+        const skippedBoards = new Set<string>();
+        const comparable: string[] = [];
         for (const personId of personSliced.slice) {
           const boardId = ledgerByPerson.get(personId)!.personBoardId;
-          const list = personIdsByBoard.get(boardId) ?? [];
-          list.push(personId);
-          personIdsByBoard.set(boardId, list);
+          if (ownerColumnsByBoard[boardId]?.organizationalGiving) comparable.push(personId);
+          else skippedBoards.add(boardId);
         }
-        for (const [personBoardId, personIdsForBoard] of personIdsByBoard) {
-          const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
-          if (!column) {
-            // e.g. an Organizations board, which has no driven-giving concept — warn once per
-            // run rather than silently skipping, matching the consumer's own warning for the
-            // same condition (processBatch.ts recomputeAffiliations).
-            console.warn(`donation-rollups custodian: no organizationalGiving column for board "${personBoardId}" — reconcile leg 6 skipped it`);
-            continue;
-          }
-          const results = await compareCents(
-            deps.mondayClient, personIdsForBoard, column, (id) => ledgerByPerson.get(id)!.cents);
-          organizationalMismatches.push(...results.map((m) =>
-            ({ personItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+        for (const boardId of skippedBoards) {
+          // e.g. an Organizations board, which has no driven-giving concept — warn once per
+          // run rather than silently skipping, matching the consumer's own warning for the
+          // same condition (processBatch.ts recomputeAffiliations).
+          console.warn(`donation-rollups custodian: no organizationalGiving column for board "${boardId}" — reconcile leg 6 skipped it`);
         }
+        const results = await compareCents(
+          deps.mondayClient, comparable, personColumns, (id) => ledgerByPerson.get(id)!.cents);
+        organizationalMismatches.push(...results.map((m) =>
+          ({ personItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
       }
     }
   }
@@ -595,23 +593,31 @@ function sliceByCursor(ids: string[], cursorIn: string, cap: number): { slice: s
   return { slice, remaining: available.length - slice.length, cursorOut: slice.at(-1) ?? cursorIn };
 }
 
-// Shared by legs 5 and 6: read one Monday column for a batch of item ids (chunked at 100,
-// Monday's items(ids:) cap) and diff it in rounded cents against the ledger side.
+function firstValue(cols: Map<string, string | null> | undefined, columnIds: string[]): string | null {
+  return columnIds.map((c) => cols?.get(c) ?? null).find((t) => t !== null) ?? null;
+}
+
+// Shared by legs 5 and 6: read a batch of item ids (chunked at 100, Monday's items(ids:) cap) and
+// diff each in rounded cents against the ledger side, taking the first of columnIds with a value.
+// Empty against a $0 ledger is no drift: the consumer only writes these columns once an
+// affiliation recomputes, so most zero-total rows have never been written.
 async function compareCents(
   mondayClient: CustodianMondayClient,
   ids: string[],
-  columnId: string,
+  columnIds: string[],
   ledgerCentsOf: (id: string) => number,
 ): Promise<{ id: string; ledgerCents: number; mondayCents: number | null }[]> {
   const mismatches: { id: string; ledgerCents: number; mondayCents: number | null }[] = [];
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const monday = await mondayClient.getItemsColumnsText(chunk, [columnId]);
+    const monday = await mondayClient.getItemsColumnsText(chunk, columnIds);
     for (const id of chunk) {
-      const text = monday.get(id)?.get(columnId) ?? null;
+      const text = firstValue(monday.get(id), columnIds);
       const mondayCents = parseAmountCents(text);
       const ledgerCents = ledgerCentsOf(id);
-      if (mondayCents !== ledgerCents) mismatches.push({ id, ledgerCents, mondayCents });
+      if (mondayCents !== ledgerCents && !(text === null && ledgerCents === 0)) {
+        mismatches.push({ id, ledgerCents, mondayCents });
+      }
     }
   }
   return mismatches;

@@ -3,11 +3,11 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 
 // Issue #29: a 100ms cpu_ms cap killed every nightly run mid-snapshot. A CPU-limit kill is not an
-// exception — the `catch` in runBackup never runs, the D1 row stays `running`, and nobody is
+// exception — the `catch` in runSnapshot never runs, the D1 row stays `running`, and nobody is
 // alerted. A full-account snapshot parses and stringifies megabytes of JSON and RS256-signs a JWT,
 // so the cap has to be in minutes, not milliseconds. 300,000ms (5 min) is the documented maximum
-// `cpu_ms` accepts (developers.cloudflare.com/workers/wrangler/configuration/#limits); the cron's
-// own 15-minute wall-time limit is handled separately by runBackup's deadline.
+// `cpu_ms` accepts (developers.cloudflare.com/workers/wrangler/configuration/#limits). Wall time
+// isn't a limit here: the snapshot runs as a Workflow, whose steps have none.
 
 type Json = Record<string, unknown>;
 const wrangler = parseJsonc(wranglerText) as Json;

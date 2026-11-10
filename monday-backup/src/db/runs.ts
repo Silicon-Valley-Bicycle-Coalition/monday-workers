@@ -1,4 +1,4 @@
-import type { UsageAlertStore } from '../usage';
+import type { UsageAlertStore, UsageTracking } from '../usage';
 import type { WatchdogStore } from '../watchdog';
 
 export interface RunResult {
@@ -17,6 +17,8 @@ export interface SnapshotRunStore {
   // The run aborted entirely (e.g. Drive auth failed before any upload happened) — no
   // snapshot was produced at all. Returns the new consecutive-failure count for alerting.
   recordRunFailure(runId: number, finishedAtUtc: string, errorMessage: string): Promise<number>;
+  // The write switch stopped the run partway through, on purpose. Neither a snapshot nor a failure.
+  recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void>;
 }
 
 export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, UsageAlertStore {
@@ -65,12 +67,19 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
     return result.consecutive_failures;
   }
 
+  async recordRunStopped(runId: number, finishedAtUtc: string, reason: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE snapshot_runs SET finished_at = ?2, status = 'stopped', last_error = ?3 WHERE id = ?1`)
+      .bind(runId, finishedAtUtc, reason)
+      .run();
+  }
+
   async abandonStaleRuns(cutoffUtc: string, finishedAtUtc: string): Promise<{ id: number; startedAt: string }[]> {
     const { results } = await this.db
       .prepare(
         `UPDATE snapshot_runs
          SET status = 'abandoned', finished_at = ?2, error_count = 1,
-             last_error = 'run never finished — killed by the runtime (CPU/wall-time limit) or crashed before recording a result'
+             last_error = 'run never finished — the Workflow died or hung before recording a result'
          WHERE status = 'running' AND started_at < ?1
          RETURNING id, started_at`,
       )
@@ -87,7 +96,7 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
 
   async lastSnapshotAt(): Promise<string | null> {
     const row = await this.db
-      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status IN ('success', 'partial')`)
+      .prepare(`SELECT MAX(finished_at) AS at FROM snapshot_runs WHERE status = 'success'`)
       .first<{ at: string | null }>();
     return row?.at ?? null;
   }
@@ -129,6 +138,20 @@ export class D1SnapshotRunStore implements SnapshotRunStore, WatchdogStore, Usag
     await this.db
       .prepare(`UPDATE run_alert_state SET last_usage_alert_day = ?1, last_usage_alert_level = ?2 WHERE id = 1`)
       .bind(day, level)
+      .run();
+  }
+
+  async usageTracking(): Promise<UsageTracking | null> {
+    const row = await this.db
+      .prepare(`SELECT usage_tracking_json FROM run_alert_state WHERE id = 1`)
+      .first<{ usage_tracking_json: string | null }>();
+    return row?.usage_tracking_json == null ? null : (JSON.parse(row.usage_tracking_json) as UsageTracking);
+  }
+
+  async saveUsageTracking(tracking: UsageTracking): Promise<void> {
+    await this.db
+      .prepare(`UPDATE run_alert_state SET usage_tracking_json = ?1 WHERE id = 1`)
+      .bind(JSON.stringify(tracking))
       .run();
   }
 }

@@ -49,7 +49,7 @@ details, and giving indicators. "Public sources" wouldn't lead a reader to expec
 
 ### 2. Sensitive life-event flags are held on donors
 
-`salesforce-import/src/transform/windfall.ts:31` copies these flags into each person's Windfall
+`salesforce-import/src/transform/windfall.ts:31` (removed 2026-11-06) copied these flags into each person's Windfall
 Profile when true, among others: **Recently Divorced**, **Recent Death in Family**, Recent Mortgage,
 Recent Mover, Recently Retired, Multi-property Owner and Trust Association. Political party and
 donor fields were deliberately not migrated to Monday, but they remain in the retained Salesforce
@@ -73,6 +73,25 @@ and Windfall.
 SVBC not selling data can stay as it is. The fix is an added exception for service providers acting
 on SVBC's behalf.
 
+**Update 2026-11-10: Monday's own sub-processors.** Monday's sub-processor update of 2026-11-04
+([notice](https://monday.com/l/uncategorized/sub-processors-page-update/),
+[full list](https://monday.com/terms/subprocessors)) added ElevenLabs (speech-to-text and
+text-to-speech) and TypeSafe AI ("Jev AI" module), and widened Cloudflare's role to cover AI
+features. All three apply to AI-enabled accounts only. It also added PostHog, for WorkCanvas only,
+and removed Foundever, an outsourced support provider.
+
+- **Whether this reaches donor data depends on Monday AI.** If staff use AI Blocks, Sidekick, Agents
+  or voice features on the People or Wealth Screening boards, donor records can go to these vendors,
+  Windfall fields included. Confirm whether AI is enabled on the account. If no one needs it yet,
+  turning it off at the account level is the simplest control.
+- **The notice is thin.** It gives no processing locations, data categories, or go-live dates, and it
+  says "No action is required" without mentioning an objection right. Check the objection window in
+  Monday's DPA, and ask Monday's sub-processor team what TypeSafe AI receives and where it processes it.
+- **Don't name a vendor's sub-processors in the policy.** Monday changes the list every few months.
+  The draft wording below covers them generically.
+- Make sure a staff member, not only a contractor, receives these notices and records the DPA
+  objection deadline each time.
+
 ### 4. "Those employees who need to know" is wider in practice
 
 The policy says SVBC "restricts access to personal information to those employees who need to know".
@@ -83,6 +102,12 @@ keeps out non-staff, but it doesn't limit access by role among staff.
 
 Column permissions on the Windfall columns, or moving them to a restricted board, would make the
 sentence true. Otherwise the text needs softening to something like "staff who need it for their work".
+
+**Update 2026-11-06:** the Windfall columns are being moved off both People boards to a private
+Wealth Screening board that three staff can open, and the draft wording below now says "a small
+number of staff". People's activity log may show the old values for up to a year (accepted by
+David). The move is in `docs/runbooks/windfall-private-board.md`; #81 stays open for the policy
+update.
 
 ### 5. The donor portal isn't covered
 
@@ -142,15 +167,15 @@ Everything here depends on the decisions above; bracketed text marks what isn't 
 > commercial wealth-screening provider, including estimated net worth, employment details, and
 > indicators of charitable giving [and property ownership]. These figures are estimates and may be
 > wrong. We no longer buy this data, and what we hold has not been updated since [month year]. We use
-> it only to plan our fundraising, and our staff can see it in our donor records and in internal
+> it only to plan our fundraising, and a small number of staff can see it in our donor records and in internal
 > reports. To ask about or remove information we hold about you, email svbc@bikesiliconvalley.org.
 
 **Replace the third-party sentence in Use and Disclosure:**
 
 > We don't sell or trade your personal information. We share it with service providers who work on our
 > behalf, such as our donor database, email, payment, event registration, accounting, and hosting
-> providers, and they may use it only to provide those services to us. Otherwise, we disclose it only
-> as described in this policy or at the time we request it.
+> providers, and their own subcontractors, and they may use it only to provide those services to us.
+> Otherwise, we disclose it only as described in this policy or at the time we request it.
 
 **Add a Member Portal section:**
 
@@ -173,4 +198,6 @@ Add an effective date at the top.
 - [ ] Check the advertising and demographics statements against the website (finding 6)
 - [ ] Agree a process for access and removal requests (finding 7)
 - [ ] Record what the Double the Donation widget sets, from the pending browser check (finding 5)
+- [ ] Decide whether Monday AI features may touch donor boards, and check whether AI is enabled on the account (finding 3)
+- [ ] Check the sub-processor objection window in Monday's DPA, and name a staff recipient for these notices (finding 3)
 - [ ] Publish the update before the portal's production deploy

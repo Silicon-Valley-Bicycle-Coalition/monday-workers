@@ -65,6 +65,47 @@ export interface MondayBoards {
   'people-live': number | null;
   events: number | null;
   'event-registrations': number | null;
+  // Set when the config has a pledge block. Here, not in the block, so the write switch's dry run names it.
+  'pledge-to-ride'?: number | null;
+}
+
+export type PledgeField = 'zip' | 'daysPledged' | 'riderType' | 'heardAbout' | 'whoAsked' | 'consent';
+
+// One pledge campaign. Questions change every year, so everything keys on this event's own ids.
+export interface PledgeEventConfig {
+  year: number;
+  // Eventbrite question id to field. An answered question in neither this nor ignoreQuestions goes to Other Answers.
+  questions: Record<string, PledgeField>;
+  ignoreQuestions: string[];
+  // Eventbrite's exact answer text to the label; answers are bilingual and can't be split reliably.
+  choices: Record<string, string>;
+  // The exact answers that tick Contact Consent. Anything else leaves it blank.
+  consentValues: string[];
+}
+
+export interface PledgeConfig {
+  // An event whose name contains this and isn't in `events` raises an alarm (processEvent).
+  nameMatch: string;
+  columns: {
+    attendeeIdColumn: string;
+    yearColumn: string;
+    statusColumn: string;
+    dateColumn: string;
+    emailColumn: string;
+    detailsColumn: string;
+    zipColumn: string;
+    countyColumn: string;
+    daysPledgedColumn: string;
+    riderTypeColumn: string;
+    heardAboutColumn: string;
+    whoAskedColumn: string;
+    consentColumn: string;
+    otherAnswersColumn: string;
+  };
+  // County label to 5-digit zips. A well-formed zip on no list is Outside; blank or malformed is Unknown.
+  zipCounty: Record<string, string[]>;
+  // Eventbrite event id to its setup. An attendee of one of these goes to the pledge board only.
+  events: Record<string, PledgeEventConfig>;
 }
 
 export type AmountSource = 'gross' | 'base_price';
@@ -128,6 +169,8 @@ export interface EventbriteSyncConfig {
     programByOrganizer: Record<string, string>;
     // Programs whose attendees get Role = Volunteer.
     volunteerPrograms: string[];
+    // Programs whose registrations get a Home Zip from the attendee's custom answers.
+    zipPrograms: string[];
     events: {
       eventbriteIdColumn: string;
       dateColumn: string;
@@ -146,6 +189,8 @@ export interface EventbriteSyncConfig {
       attendeeIdColumn: string;
       attendeeNameColumn: string;
       attendeeEmailColumn: string;
+      // A text column: phones are free text and kept as entered. The placeholder writes no phone.
+      attendeePhoneColumn: string;
       firstNameColumn: string;
       attendanceColumn: string;
       sourceColumn: string;
@@ -155,16 +200,24 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
+      homeZipColumn: string;
+      // Second link to the event, two-way, so its registrants show on the event's card.
+      registrantsLinkColumn: string;
     };
+    // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
+    registrantsLinkExcludedEventIds: string[];
     // The class email send page. pageUrl is the page's https URL (null until deployed);
     // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).
     classEmails: {
       pageUrl: string | null;
       sandboxRecipient: string | null;
+    // The "Logged email" custom activity, or null to post no Emails & Activities entries.
+    timelineActivityId: string | null;
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;
   };
+  pledge?: PledgeConfig;
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env

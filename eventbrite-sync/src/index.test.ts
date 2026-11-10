@@ -89,6 +89,27 @@ describe('scheduled (daily missed-order check)', () => {
     expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
   });
 
+  it('runs the pledge count check at the check hour for a config with pledges, and not otherwise', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const counts = vi.fn().mockResolvedValue([]);
+    const { ctx, waited } = context();
+    const sandboxEnv = { ...withToken, ENVIRONMENT: 'sandbox' } as unknown as Env;
+    await runScheduled(offHour, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
+    expect(counts).not.toHaveBeenCalled();
+    await runScheduled(checkController, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
+    await Promise.all(waited);
+    expect(counts.mock.calls[0]![1].eventIds).toEqual(['1977741403778']);
+  });
+
+  it('skips the pledge count check under hold', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const counts = vi.fn().mockResolvedValue([]);
+    const { ctx, waited } = context();
+    await runScheduled(checkController, flags(async () => 'hold'), ctx, quietCheck(), idleSweep(), counts);
+    await Promise.all(waited);
+    expect(counts).not.toHaveBeenCalled();
+  });
+
   it('runs the ended-event sweep every hour', async () => {
     const sweep = idleSweep();
     const { ctx, waited } = context();
@@ -210,7 +231,7 @@ describe('scheduled (daily missed-order check)', () => {
       expect(waited).toHaveLength(0);
       expect(check).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the missed-order check`);
+      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the daily checks`);
     });
   });
 });

@@ -21,6 +21,7 @@ export interface AttendeeStore {
   updateStatus(attendeeId: string, status: LedgerStatus, patch?: AttendeeStatusPatch): Promise<void>;
   getAttendee(attendeeId: string): Promise<AttendeeRow | null>;
   listByEvent(eventId: string): Promise<AttendeeRow[]>;
+  countByEvent(eventId: string): Promise<number>;
 }
 
 interface D1AttendeeRecord {
@@ -104,5 +105,10 @@ export class D1AttendeeStore implements AttendeeStore {
   async listByEvent(eventId: string): Promise<AttendeeRow[]> {
     const { results } = await this.db.prepare(`SELECT ${COLUMNS} FROM attendees WHERE event_id = ?1 ORDER BY received_at, attendee_id`).bind(eventId).all<D1AttendeeRecord>();
     return results.map(toAttendeeRow);
+  }
+
+  async countByEvent(eventId: string): Promise<number> {
+    const record = await this.db.prepare('SELECT COUNT(*) AS n FROM attendees WHERE event_id = ?1').bind(eventId).first<{ n: number }>();
+    return record?.n ?? 0;
   }
 }

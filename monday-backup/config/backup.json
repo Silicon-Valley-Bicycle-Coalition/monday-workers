@@ -1,5 +1,20 @@
 {
   "destinationParentFolderId": "0APxUo0qOV4okUk9PVA",
   "excludeBoardIds": [],
-  "apiUsageAlerts": true
+  "apiUsageAlerts": true,
+  "priorityWorkspaceIds": ["18201685"],
+  "requiredBoardIds": [
+    "18437909781",
+    "18437909784",
+    "18437909779",
+    "18437909794",
+    "18437909798",
+    "18437909788",
+    "18437909792",
+    "18437909790",
+    "18437909797",
+    "18437909787",
+    "18437909789",
+    "18439165954"
+  ]
 }

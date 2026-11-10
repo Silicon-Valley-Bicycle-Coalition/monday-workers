@@ -42,18 +42,21 @@ export function testConfig(
       actions: ['attendee.updated', 'attendee.checked_in', 'attendee.checked_out', 'event.created', 'event.published', 'event.updated', 'event.unpublished'],
       programByOrganizer: { 'org-volunteering': 'Volunteering' },
       volunteerPrograms: ['Volunteering'],
+      zipPrograms: ['Public', 'Group Rides'],
       events: {
         eventbriteIdColumn: 'ev_id_col', dateColumn: 'ev_date_col', endColumn: 'ev_end_col', venueColumn: 'ev_venue_col',
         addressColumn: 'ev_address_col', cityColumn: 'ev_city_col', programColumn: 'ev_program_col', eventStatusColumn: 'ev_status_col',
         sourceColumn: 'ev_source_col', urlColumn: 'ev_url_col', sendLinkColumn: 'ev_send_col',
       },
       registrations: {
-        attendeeIdColumn: 'att_col', attendeeNameColumn: 'att_name_col', attendeeEmailColumn: 'att_email_col', firstNameColumn: 'att_first_col',
+        attendeeIdColumn: 'att_col', attendeeNameColumn: 'att_name_col', attendeeEmailColumn: 'att_email_col', attendeePhoneColumn: 'att_phone_col', firstNameColumn: 'att_first_col',
         attendanceColumn: 'att_attendance_col', sourceColumn: 'att_source_col', roleColumn: 'att_role_col', eventLinkColumn: 'att_event_col',
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
-        classLocationColumn: 'att_class_loc_col',
+        classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',
+        homeZipColumn: 'att_zip_col',
       },
-      classEmails: { pageUrl: null, sandboxRecipient: null },
+      registrantsLinkExcludedEventIds: ['8888'],
+      classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },
       peopleEmailColumn: 'people_email_col',
     },
   };
@@ -82,5 +85,35 @@ export function testOrder(overrides: Record<string, unknown> = {}) {
     },
     event: { id: '17937020110', name: { text: 'Bike Summit 2026', html: 'Bike Summit 2026' } },
     ...overrides,
+  };
+}
+
+// testConfig plus a pledge block, for the suites that exercise pledges. Event 9100 is the pledge event.
+export function withPledge(config: EventbriteSyncConfig): EventbriteSyncConfig {
+  return {
+    ...config,
+    monday: { ...config.monday, boards: { ...config.monday.boards, 'pledge-to-ride': 444 } },
+    pledge: {
+      nameMatch: 'Pledge to Ride',
+      columns: {
+        attendeeIdColumn: 'p_id', yearColumn: 'p_year', statusColumn: 'p_status', dateColumn: 'p_date', emailColumn: 'p_email',
+        detailsColumn: 'p_details', zipColumn: 'p_zip', countyColumn: 'p_county', daysPledgedColumn: 'p_days', riderTypeColumn: 'p_rider',
+        heardAboutColumn: 'p_heard', whoAskedColumn: 'p_who', consentColumn: 'p_consent', otherAnswersColumn: 'p_other',
+      },
+      zipCounty: { 'Santa Clara': ['95014'], 'San Mateo': ['94002', '94303'] },
+      events: {
+        '9100': {
+          year: 2026,
+          questions: { '11': 'zip', '12': 'daysPledged', '13': 'riderType', '14': 'heardAbout', '15': 'whoAsked', '16': 'consent' },
+          ignoreQuestions: ['19'],
+          choices: {
+            'Multiple days/Varios días ': 'Multiple days',
+            'Banner/Flyer/Poster/Letrero/folleto': 'Flyer',
+            'Friend/ Amigos': 'Friend',
+          },
+          consentValues: ['Yes/Si'],
+        },
+      },
+    },
   };
 }

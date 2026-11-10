@@ -1,12 +1,12 @@
-// A run-wide wall-clock deadline shared by the backup and its API clients (issue #29).
+// A wall-clock deadline shared by the backup and its API clients (issue #29).
 //
-// Cron invocations are killed at 15 minutes of wall time, uncatchably. Checking the budget only
-// between pages isn't enough: one Monday or Drive call retrying through timeouts and advised waits
-// could otherwise run for minutes past it. Clients cap every attempt's timeout and every retry
-// sleep to the time remaining, and throw BudgetExhaustedError instead of crossing the deadline.
+// Checking a budget only between pages isn't enough: one Monday or Drive call retrying through
+// timeouts and advised waits could otherwise run for minutes past it. Clients cap every attempt's
+// timeout and every retry sleep to the time remaining, and throw BudgetExhaustedError instead of
+// crossing the deadline.
 //
-// It is mutable on purpose: runBackup tightens it for the snapshot work, then extends it for the
-// finalize phase (manifest upload) so a run that ran out of budget can still record itself.
+// It is mutable on purpose: runSnapshot gives each Workflow step its own window, so a call stuck in
+// one board fails with a clear message and the next board starts fresh.
 
 export const BUDGET_EXHAUSTED = 'wall-time budget exhausted';
 

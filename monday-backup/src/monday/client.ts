@@ -262,6 +262,8 @@ export class HttpMondayClient implements MondayClient {
     return out;
   }
 
+  // `state: all` in the three queries below: boards(ids:) returns only active boards by default, and
+  // listBoards hands us archived ones too.
   async getBoardSchema(boardId: string): Promise<BoardSchema> {
     const data = await this.graphql<{
       boards: {
@@ -270,7 +272,7 @@ export class HttpMondayClient implements MondayClient {
       }[];
     }>(
       `query ($boardId: [ID!]) {
-        boards(ids: $boardId) {
+        boards(ids: $boardId, state: all) {
           columns { id title type settings_str description }
           groups { id title color position }
         }
@@ -294,11 +296,11 @@ export class HttpMondayClient implements MondayClient {
   }
 
   // First page through boards { items_page }, then the cheaper root next_items_page with the
-  // cursor (cursors stay valid for 60 minutes — far longer than one run's budget).
+  // cursor (cursors stay valid for 60 minutes — far longer than one board takes).
   async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
     const first = await this.graphql<{ boards: { items_page: ItemsPage }[] }>(
       `query ($boardId: [ID!], $limit: Int!) {
-        boards(ids: $boardId) {
+        boards(ids: $boardId, state: all) {
           items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
         }
       }`,
@@ -324,7 +326,7 @@ export class HttpMondayClient implements MondayClient {
     for (let page = 1; ; page++) {
       const data = await this.graphql<{ boards: { updates: RawUpdate[] | null }[] }>(
         `query ($boardId: [ID!], $limit: Int!, $page: Int!) {
-          boards(ids: $boardId) {
+          boards(ids: $boardId, state: all) {
             updates(limit: $limit, page: $page) {
               id
               item_id
@@ -439,18 +441,27 @@ export class HttpMondayClient implements MondayClient {
     const data = await this.graphql<{
       platform_api: {
         daily_limit: { total: number };
-        daily_analytics: { last_updated: string | null; by_day: { day: string; usage: number }[] };
+        daily_analytics: {
+          last_updated: string | null;
+          by_day: { day: string; usage: number }[];
+          by_user: { user: { name: string } | null; usage: number }[];
+        };
       };
     }>(
       `query {
         platform_api {
           daily_limit { total }
-          daily_analytics { last_updated by_day { day usage } }
+          daily_analytics { last_updated by_day { day usage } by_user { user { name } usage } }
         }
       }`,
       {},
     );
     const { daily_limit, daily_analytics } = data.platform_api;
-    return { limit: daily_limit.total, lastUpdated: daily_analytics.last_updated, byDay: daily_analytics.by_day };
+    const byUser: Record<string, number> = {};
+    for (const { user, usage } of daily_analytics.by_user) {
+      const name = user?.name ?? 'Unknown user';
+      byUser[name] = (byUser[name] ?? 0) + usage;
+    }
+    return { limit: daily_limit.total, lastUpdated: daily_analytics.last_updated, byDay: daily_analytics.by_day, byUser };
   }
 }

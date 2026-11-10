@@ -3,6 +3,9 @@ node_modules/
 .wrangler/
 .dev.vars
 .env
+# .env.production, .env.sandbox, etc. hold real tokens; only the blank template is tracked
+.env.*
+!.env.example
 
 # generated per-machine by `wrangler types` (can absorb local .env vars) — regenerate, don't commit
 worker-configuration.d.ts
@@ -11,6 +14,11 @@ worker-configuration.d.ts
 # main checkout, instead of as siblings — these are live `git worktree` checkouts, never content
 # to track.
 .claude/worktrees/
+
+# Claude Code's per-user permission allowlist. "Yes, and don't ask again" saves the exact
+# approved command here, so a secret typed into a command lands in this file. Claude Code
+# only adds it to the user's *global* gitignore, which contributors and forks may not have.
+.claude/settings.local.json
 
 # superpowers:brainstorming visual-companion mockups (ephemeral scratch, not deliverables)
 .superpowers/

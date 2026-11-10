@@ -20,12 +20,17 @@
   // env.sandbox); every in-scope Worker carries the same two ids, which
   // scripts/check-worker-flags.mjs verifies.
   "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // The snapshot itself: one step per board or doc (src/workflow.ts). A complete run takes about an
+  // hour, which no single cron invocation gets. Trigger one by hand with
+  // `npx wrangler workflows trigger svbc-monday-backup-snapshot`.
+  "workflows": [{ "name": "svbc-monday-backup-snapshot", "binding": "SNAPSHOT", "class_name": "SnapshotWorkflow" }],
   "triggers": {
     // Daily at 09:00 UTC (1am/2am Pacific depending on DST) — after Monday's own nightly
     // processing settles, well before SVBC staff start their day. Adjust if a different
     // time is preferred once this is actually scheduled.
-    // Second entry: the hourly staleness watchdog (src/watchdog.ts, issue #29) — alerts when a
-    // run was killed mid-flight (row stuck 'running' > 1h) or no snapshot succeeded in 36h.
+    // This only starts the Workflow. Second entry: the hourly staleness watchdog (src/watchdog.ts,
+    // issue #29) — alerts when a run died mid-flight (row stuck 'running' > 12h) or no complete
+    // snapshot landed in 36h.
     // Keep in sync with BACKUP_CRON / WATCHDOG_CRON in src/index.ts (index.test.ts checks).
     "crons": ["0 9 * * *", "30 * * * *"]
   },
@@ -33,11 +38,10 @@
   // fit this Worker — issue #29. A full-account snapshot parses and re-serializes megabytes of
   // Monday JSON and RS256-signs a Google JWT; at 100ms the runtime kills the invocation, which is
   // not a catchable exception (no D1 finish row, no alert). 300,000ms (5 min) is the maximum
-  // `cpu_ms` accepts. The cron's 15-minute *wall-time* cap is separate and is enforced in code by
-  // runBackup's deadline so a slow run still writes its manifest and alerts. Subrequests: every
-  // Monday page, Drive upload chunk and D1 call counts; 50,000 leaves ample headroom over the
-  // 10,000 Paid default. Requires Workers Paid — Free caps crons at 10ms CPU / 50 subrequests,
-  // which no real snapshot fits in.
+  // `cpu_ms` accepts, and these limits also apply to the Workflow's steps, which have no wall-time
+  // cap. Subrequests: every Monday page, Drive upload chunk and D1 call counts; a full run makes
+  // roughly 3,000, and 50,000 leaves ample headroom over the 10,000 Paid default. Requires Workers
+  // Paid — Free caps crons at 10ms CPU / 50 subrequests, which no real snapshot fits in.
   "limits": { "cpu_ms": 300000, "subrequests": 50000 },
   "observability": { "enabled": true, "issues": { "enabled": true } },
 
@@ -48,8 +52,9 @@
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-monday-backup-sandbox,
   // which snapshots the boards in the workspace named by config/backup.sandbox.json's workspaceIds
-  // into the Drive folder named there, alerting a sandbox Slack channel. Rule: inbound data only, no outbound data — the Drive folder and Slack channel
-  // are staff-only sinks, and config/split.test.ts fails if the two configs ever share the folder.
+  // into the Drive folder named there, alerting a sandbox Slack channel. Rule: inbound data only,
+  // no outbound data — the Drive folder and Slack channel are staff-only sinks, and
+  // config/split.test.ts fails if the two configs ever share the folder.
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
   // GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (a service account that is a
@@ -71,6 +76,7 @@
       ],
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "workflows": [{ "name": "svbc-monday-backup-snapshot-sandbox", "binding": "SNAPSHOT", "class_name": "SnapshotWorkflow" }],
       "triggers": {
         "crons": ["0 9 * * *", "30 * * * *"]
       },

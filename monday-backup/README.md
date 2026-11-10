@@ -6,10 +6,16 @@
 crons, `writes on`, D1 migrations applied, `MONDAY_AUTH` bound to the `monday-auth` broker's
 Read-only app, a Google service account as a member (**Contributor**, not Content manager — see
 "Service account key" below) of the destination **Shared Drive**, and `config/backup.json`'s
-`destinationParentFolderId` set to it. **The first 09:00 UTC snapshot is still to be confirmed.**
-Requires **Workers Paid** (see Cloudflare config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
-paginated `Doc.blocks`) nor the restore mutations in `src/restore/api.ts` have been exercised
-against a live account yet, so the first production run is their first real test.
+`destinationParentFolderId` set to it. **The first 09:00 UTC run (2026-11-04) captured 19 of about
+262 boards and no docs:** a complete run takes about an hour and a cron invocation gets 15 minutes,
+so the snapshot now runs as a Workflow, one step per board or doc (design:
+`../docs/superpowers/specs/2026-11-04-monday-backup-complete-snapshot-design.md`). **First complete
+snapshot 2026-11-04 (run 3):** 264 boards, 24 docs, 63,380 items, 782 updates and 816 doc blocks in
+43 minutes, with no errors or retries; Drive checked against the manifest. Not covered: 41 private
+copies in the sandbox workspaces, and 4 legacy or scratch boards, none of which SVBC Integration is
+subscribed to. Requires **Workers
+Paid** (see Cloudflare config below). The restore mutations in `src/restore/api.ts` have not been
+exercised against a live account yet.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
 [`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
 outstanding** (it needs the provisioned sandbox, issue #14).
@@ -51,10 +57,10 @@ after it's live.
 ## Data flow
 
 ```
-Cloudflare Cron Trigger (proposed: daily)
+Cloudflare Cron Trigger (daily), which only starts the Workflow
   │
   ▼
-Cloudflare Worker
+Cloudflare Workflow (src/workflow.ts), one retried step per board or doc, about an hour in all
   │  1. Enumerate every board across every workspace (Monday GraphQL API), active and archived,
   │     with its metadata (kind, description, folder, permissions, state, type)
   │  2. Per board: its schema (columns with settings, groups), then every item, paginated —
@@ -68,9 +74,9 @@ Cloudflare Worker
   │     `doc-<id>.jsonl`) into a Drive resumable upload — memory holds one page, never a board
   │  5. …into one folder per run inside the Shared Drive, named for the date and D1 run id
   │     (e.g. `SVBC Monday Backups/2026-08-25 run-17/`), so a same-day rerun never collides
-  │  6. Write a manifest alongside the snapshot (format, run id, item counts per board, block
-  │     counts per doc, any errors) so a stale or partial backup is obvious at a glance, not
-  │     discovered at restore time
+  │  6. Write a manifest alongside the snapshot (format, run id, the capture window, when each
+  │     board and doc was captured, item counts per board, block counts per doc, any errors) so a
+  │     stale or partial backup is obvious at a glance, not discovered at restore time
   ▼
 Google Drive, one snapshot folder per run, kept indefinitely (see Retention below)
 ```
@@ -128,31 +134,56 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 * **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50
   subrequests; no real snapshot fits. On Paid, `wrangler.jsonc` sets `cpu_ms: 300000` (the
   configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
-  `subrequests: 50000`. The hard constraint is the cron trigger's **15-minute wall-time** limit:
-  `runBackup` stops starting new boards/docs at 12 minutes (`DEFAULT_WALL_TIME_BUDGET_MS` in
-  `src/backup.ts`); a shared deadline (`src/deadline.ts`) makes any Monday or Drive call still
-  retrying give up at 13 minutes — every request timeout and retry wait is capped to the time
-  left — and is then extended to 14.5 minutes for the manifest upload. Whatever was skipped is
-  recorded in the manifest, so an oversized run ends as a visible *partial* snapshot with an
-  alert, not a silent kill. If real runs start hitting that
-  budget, the next step is splitting the snapshot across invocations (a Workflow step per board),
-  not a bigger single run.
-* **Failure visibility.** Any partial run and any total failure alerts Slack immediately. A
-  second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and
-  alerts if a run is stuck in `running` for over an hour (the runtime killed it — marked
-  `abandoned` in D1) or if no snapshot has succeeded in 36 hours.
+  `subrequests: 50000`; a complete run makes roughly 3,000.
+* **Why a Workflow.** A cron invocation is killed at 15 minutes, and a complete run takes about an
+  hour (43 minutes on 2026-11-04): roughly 2–4 s per 100 items, and about 4 s per board even when
+  it's empty, across about 264 boards and 24 docs. Each board fits easily in a step (the largest, People, took about 5.5 minutes), and a Workflow step has no
+  wall-time limit. A step gets three tries; one that still fails is recorded in the manifest and the
+  run carries on, unless 10 fail in a row, when it stops and alerts rather than spend 14 hours on an
+  outage (rerun it once that's fixed). A step can run twice, so it first looks for its file in the run folder: Drive
+  allows duplicate names and a Contributor can't delete one. Each step has a 25-minute deadline
+  (`src/deadline.ts`) inside its 30-minute timeout. Start a run by hand with:
+
+  ```sh
+  npx wrangler workflows trigger svbc-monday-backup-snapshot
+  ```
+
+  Each file logs one line with its counts, duration, requests and retries.
+* **Failure visibility.** `success` means complete: nothing failed, and every board in
+  `requiredBoardIds` was captured. Any partial run and any total failure alerts Slack immediately
+  (if the very first step can't write to D1, there's no run to report, and the watchdog catches it). A
+  second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and alerts
+  if a run is stuck in `running` for over 12 hours (marked `abandoned` in D1) or if no **complete**
+  snapshot has landed in 36 hours. A partial run doesn't reset that clock, so one board failing
+  nightly gets both alerts, on purpose. A clean run posts nothing, so silence is the healthy state.
+  Production Slack alerts verified 2026-11-03/04: real API usage and partial-backup alerts arrived.
+  The watchdog uses the same webhook but hasn't fired yet. Production alerts go to a private staff
+  channel (#52).
+* **Boards the token can't see.** The token never lists a private board its user isn't subscribed
+  to, so a run can't report what it can't see. This hid Activities and Campaigns from the first run.
+  `requiredBoardIds` in `config/backup.json` names the CRM boards a complete run must hold: when a
+  new board matters, subscribe SVBC Integration to it and add it there. All three OAuth apps act as
+  that one user, so subscribing it also opens the board to `member-portal`'s read-only token (see the
+  root README). Listings differ by token too, so to audit coverage, compare the manifest with a list
+  from an admin's own token.
 * **Monday API daily usage.** The same hourly cron reads the account's API usage
   (`platform_api { daily_limit daily_analytics }`; this works on Pro, not only Enterprise) and
-  alerts Slack once when today's calls pass **50%**, and again at **80%**, of the daily limit
-  (`src/usage.ts`, at most two alerts per UTC day, tracked in D1 by migration 0003). Monday caps
+  alerts Slack once each when today's calls pass **50%**, **80%** and **100%** of the daily limit
+  (`src/usage.ts`, at most three alerts per UTC day, tracked in D1 by migration 0003). Monday caps
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
-  cap may fail with `DAILY_LIMIT_EXCEEDED`. The limit read is `total`, so a purchased API add-on
+  cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 1,500–2,000
+  calls, and once the cap is enforced, hitting it fails each remaining board at once rather than
+  retrying (`priorityWorkspaceIds` means the CRM workspace is already captured by then). The limit
+  read is `total`, so a purchased API add-on
   raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
   account-wide and the sandbox shares the production account, only the deployment whose config
-  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. When an alert
-  fires, `daily_analytics { by_user { user { name } usage } }` shows which user, and so which
-  Worker, is using the calls.
+  sets `apiUsageAlerts: true` runs it: production does, and the sandbox doesn't. An alert names
+  the users with the most calls that day, and so which Workers made them (Sandbox Integration
+  means a sandbox Worker). Monday's `by_user` only totals its whole 14-day window, so each hourly
+  check stores those totals and adds up the growth (migration 0004). The count starts at the
+  00:30 UTC check, so it misses the first half hour, and it is empty until the second check after
+  this is deployed.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -163,9 +194,7 @@ Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENV
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
 Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
-because production already reports the shared account's API usage. Until production is
-deployed, set it to `true` in `config/backup.sandbox.json` if you want the usage alert from the
-sandbox instead; any token on the account can read the figure. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
+because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
 sandbox`): a service account that is a Contributor on the sandbox Shared Drive only, and the
 sandbox Slack webhook. Monday access comes from the `MONDAY_AUTH` binding, so no Monday secret is
 needed. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
@@ -180,16 +209,10 @@ dashboard refuses two connections on one root directory, fall back to the
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
 `workspaceIds: ["18210301"]` in `config/backup.sandbox.json` is the guard against a sandbox run
-copying production boards or docs: `runBackup` skips any board or doc whose `workspaceId` isn't in
+copying production boards or docs: `runSnapshot` skips any board or doc whose `workspaceId` isn't in
 the list. The token doesn't provide this. Sandbox Integration can read Main boards in every open
 workspace (#18), so don't remove the filter. `workspaceIds` is optional — absent or empty (as in
 `config/backup.json`) means no filter, "snapshot everything the token can see".
-
-`excludeBoardIds` leaves out the five largest v4 boards (Activities, Volunteers, Event
-Registrations, Affiliations, People (Historical)), because all of v4 doesn't fit the 12-minute
-wall-time budget and a partial snapshot can't be used for the restore rehearsal. Links to those
-boards are dropped and reported on restore. Empty the list once a snapshot can finish without
-that budget.
 
 ## Service account key
 
@@ -221,9 +244,12 @@ Contributor under **Manage members**.
 ## Write switch
 
 The `FLAGS` KV key `monday-backup:writes` (`on` | `hold` | `off`; missing or unrecognized means
-`off`, a KV read error acts like `hold`) gates both crons, read once per run. Anything but `on`
+`off`, a KV read error acts like `hold`) gates both crons. Anything but `on`
 makes the nightly backup log one skip line and return, with no `snapshot_runs` row, so the watchdog
-does not count it as a failure. The watchdog always computes and keeps its D1 bookkeeping, but its
+does not count it as a failure. A run already under way reads the switch before each board and doc, because it
+lasts an hour and `hold` has to take effect: an explicit `hold` or `off` stops it, recorded as
+`stopped` in D1, with no manifest and no alert. A KV read error instead retries the step, so a blip
+can't silently end a night's backup. The watchdog always computes and keeps its D1 bookkeeping, but its
 Slack alerts are logged as skips unless the mode is `on` (and a suppressed stale-snapshot alert is
 not marked as sent, so it fires once the switch is on). After a long `off`/`hold`, expect the
 36-hour staleness alert on the first watchdog run after flipping to `on`, until the next backup
@@ -244,8 +270,7 @@ once there's a real base of snapshots to look at, not before.
   file's name, extension, size, upload time, uploader and Monday URL are in the snapshot; the
   bytes are not. Monday's `public_url` expires after an hour, so a durable copy would mean
   downloading every file and re-uploading it to Drive *every night* — with indefinite retention
-  that is N full copies of every attachment, and the transfer competes with the board data for
-  the cron's 15-minute wall-time budget. It also cuts against the Attachment & Note Migration
+  that is N full copies of every attachment. It also cuts against the Attachment & Note Migration
   Workstream (`migration-plan.md`, private planning repo): real documents are moving *out* of
   Monday into Google Drive directly (linked from items, not stored as Monday files), so file
   columns should be minimal. If a board turns out to rely on File columns for something that

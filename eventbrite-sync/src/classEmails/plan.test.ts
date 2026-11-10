@@ -38,6 +38,29 @@ describe('planKind', () => {
     expect(ids(planKind('reminder', facts, roster, [], BEFORE))).toEqual(['a']);
   });
 
+  describe('on a volunteer event', () => {
+    const volunteerFacts: ClassFacts = { ...facts, audienceRole: 'Volunteer' };
+
+    it('goes to Volunteers, not Participants', () => {
+      const roster = [entry('v', 'Registered', { role: 'Volunteer' }), entry('p', 'Registered')];
+      expect(ids(planKind('reminder', volunteerFacts, roster, [], BEFORE))).toEqual(['v']);
+    });
+
+    it('counts checked-in Volunteers for the check-in guard', () => {
+      const roster = [entry('v', 'Attended', { role: 'Volunteer' }), entry('w', 'Registered', { role: 'Volunteer' })];
+      const thanks = planKind('thank-you', volunteerFacts, roster, [], AFTER);
+      expect(thanks.refusal).toBeNull();
+      expect(thanks.checkedIn).toBe(1);
+      expect(ids(thanks)).toEqual(['v']);
+      expect(ids(planKind('missed-you', volunteerFacts, roster, [], AFTER))).toEqual(['w']);
+    });
+
+    it('a checked-in Participant does not open a missed-you to the volunteers', () => {
+      const roster = [entry('p', 'Attended'), entry('w', 'Registered', { role: 'Volunteer' })];
+      expect(planKind('missed-you', volunteerFacts, roster, [], AFTER).refusal).not.toBeNull();
+    });
+  });
+
   it('reminder refused once the class has started', () => {
     const roster = [entry('a', 'Registered')];
     for (const now of [new Date(STARTS), DURING, AFTER]) {
@@ -142,7 +165,7 @@ describe('planKind', () => {
 
   it('canceled and deleted keep their plain wording', () => {
     for (const eventbriteStatus of ['canceled', 'deleted']) {
-      expect(planKind('reminder', { ...facts, eventbriteStatus }, [entry('a', 'Registered')], [], BEFORE).refusal).toBe(`This class is ${eventbriteStatus} on Eventbrite, so no emails can be sent.`);
+      expect(planKind('reminder', { ...facts, eventbriteStatus }, [entry('a', 'Registered')], [], BEFORE).refusal).toBe(`This event is ${eventbriteStatus} on Eventbrite, so no emails can be sent.`);
     }
   });
 

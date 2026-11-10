@@ -19,6 +19,7 @@ export function fakeAttendeeStore(overrides: Partial<AttendeeStore> = {}): Atten
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getAttendee: vi.fn().mockResolvedValue(null),
     listByEvent: vi.fn().mockResolvedValue([]),
+    countByEvent: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }

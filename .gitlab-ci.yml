@@ -191,6 +191,11 @@ eventbrite-sync:
   extends: .worker_job
   variables:
     WORKER_DIR: eventbrite-sync
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+        - scripts/mark-read-only-columns.mjs
 
 member-portal:
   extends: .worker_job

@@ -62,6 +62,7 @@ describe('Event Registrations class roster', () => {
 
   it('creates every per-attendee column eventbrite-sync writes that the load does not', () => {
     expect(spec.columns).toEqual([
+      { title: 'Attendee Phone', type: 'text' },
       { title: 'First Name', type: 'text' },
       { title: 'Class Date', type: 'date' },
       { title: 'Class Day', type: 'text' },
@@ -262,5 +263,14 @@ describe('report-subscription views (docs/35 §3.6)', () => {
   it('the renewals view spans this calendar month and next', () => {
     expect(view('people-live', 'Renewals this month and next')!.filter!.rules).toEqual(
       [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }]);
+  });
+});
+
+describe('Windfall wealth screening', () => {
+  it('is described by no board or dashboard spec, so configure and load cannot recreate it on People', () => {
+    const banned = /Windfall|Net Worth|Philanthropic|Job Title|LinkedIn|Wealth screening/;
+    expect(JSON.stringify(BOARD_SPECS)).not.toMatch(banned);
+    expect(JSON.stringify(DASHBOARD_SPECS)).not.toMatch(banned);
+    expect(PLUMBING).not.toContain('Windfall ID');
   });
 });

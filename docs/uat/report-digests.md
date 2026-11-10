@@ -8,7 +8,7 @@ again, try step 1 below and skip step 2.
 ## What it does
 
 In Salesforce, some of you got report emails on a schedule: unmatched Funraise gifts, renewals
-coming up, recent gifts with the donor's wealth screening, this fiscal year by gift size, and
+coming up, recent gifts of $400 and up, this fiscal year by gift size, and
 last week's donations. Those subscriptions stop being useful at cutover, because Salesforce's
 numbers freeze. This integration replaces them with five emails built from the Monday boards:
 
@@ -16,7 +16,7 @@ numbers freeze. This integration replaces them with five emails built from the M
 |---|---|---|---|
 | **Gifts with no donor** | Mondays 1 pm, **only if there are any** | Felicia | Funraise Opps with no Account |
 | **Renewals this month and next** | 1st and 15th, 9 am | Felicia | Renewals for Current and Next Month |
-| **Recent gifts with wealth screening** | Mondays 8 am | Clarrissa | $400+ Donations + Windfall Last 60 Days, and Wealth Screen on Donations-Last 60 Days (now one email) |
+| **Recent gifts of $400 and up** | Mondays 8 am | Clarrissa | $400+ Donations + Windfall Last 60 Days (without the Windfall columns) |
 | **This fiscal year by gift size** | Mondays 8 am | Clarrissa, Deanna | Current FY Opps (no contacts) |
 | **Last week's gifts** | Mondays 8 am | Felicia | Donations Made in the Last Week |
 
@@ -27,7 +27,7 @@ the view always agree:
 |---|---|
 | Gifts with no donor | Donations › **Needs a donor** |
 | Renewals this month and next | People › **Renewals this month and next** |
-| Recent gifts with wealth screening | Donations › **Gifts, last 60 days** |
+| Recent gifts of $400 and up | Donations › **Gifts, last 60 days** |
 | This fiscal year by gift size | Donations › **By gift size** |
 | Last week's gifts | Donations › **Gifts, last 7 days** |
 
@@ -49,10 +49,8 @@ is addressed to, with the intended recipient noted in it.
    - The subject line carries the count (and the total, where there is one). Does it look right
      against the linked view?
    - Does the link open the right view?
-3. **Recent gifts with wealth screening** (Clarrissa): each gift row should show the donor's
-   Net Worth, Philanthropic Giver, Job Title, Windfall Company, Lifetime Giving and Donor Level.
-   The email has two sections: gifts of $400 and up, then smaller gifts from donors with a
-   Windfall Net Worth on file. Is that split the one you want?
+3. **Recent gifts of $400 and up** (Clarrissa): each gift row should show the donor's Lifetime
+   Giving and Donor Level, and no wealth-screening columns. Is the $400 floor the one you want?
 4. **Renewals** (Felicia): it covers Member Until dates from the 1st of this month to the end of
    next month, so someone who lapsed earlier this month is still on it. Is that the window you
    want?
@@ -62,8 +60,6 @@ is addressed to, with the intended recipient noted in it.
 
 - **Long lists stop at 150 rows** with a link to the view for the rest.
 - **A pledge dated in the future isn't listed yet.** Each date window ends today.
-- **Windfall data doesn't change.** It is what Salesforce had at the migration; nothing updates
-  it now.
 - **Missed sends aren't caught up.** If an email didn't come because the system was paused, ask
   for a resend on IT Requests rather than waiting for the next one.
 - **The recipients are a decision, not a bug.** If someone else should get an email, or you

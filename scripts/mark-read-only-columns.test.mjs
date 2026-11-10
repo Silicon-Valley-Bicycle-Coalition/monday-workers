@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   MARKED_COLUMNS, MondayError, applyRenames, isTransient, parseArgs, planRenames, withRetry,
 } from './mark-read-only-columns.mjs';
+import { WINDFALL_TITLES } from './lib/windfall-board.mjs';
 
 const col = (id, title, type = 'text') => ({ id, title, type });
 const board = (id, name, columns) => ({ id, name, columns });
@@ -66,8 +67,8 @@ describe('MARKED_COLUMNS', () => {
     }
   });
 
-  it('locks the Send class email link on Events', () => {
-    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send class email'));
+  it('locks the Send event email link on Events', () => {
+    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send event email'));
   });
 
   it('locks what dtd-sync writes, on both People boards and Donations', () => {
@@ -85,6 +86,21 @@ describe('MARKED_COLUMNS', () => {
 
   it('marks both People boards identically, so people-reclassification moves keep matching', () => {
     assert.deepEqual(MARKED_COLUMNS['People (Historical)'], MARKED_COLUMNS.People);
+  });
+});
+
+describe('Wealth Screening', () => {
+  it('marks all 11 Windfall columns on Wealth Screening and none on People', () => {
+    assert.deepEqual(MARKED_COLUMNS['Wealth Screening'].history.toSorted(), [...WINDFALL_TITLES].toSorted());
+    assert.deepEqual(MARKED_COLUMNS['Wealth Screening'].locked, []);
+    for (const board of ['People', 'People (Historical)'])
+      for (const t of WINDFALL_TITLES) assert.ok(!MARKED_COLUMNS[board].history.includes(t), t);
+  });
+
+  it('reports, and does not fail on, a workspace that has no Wealth Screening board', () => {
+    const plan = planRenames([board('1', 'People', [col('a', 'Salesforce ID')])]);
+    assert.deepEqual(plan.renames.map((r) => r.to), ['📜 Salesforce ID']);
+    assert.ok(!plan.missing.some((m) => m.boardName === 'Wealth Screening'));
   });
 });
 

@@ -32,6 +32,7 @@
 import { fileURLToPath } from 'node:url';
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
 import { LOCKED, HISTORY, bareTitle, markedTitle } from './lib/column-titles.mjs';
+import { WINDFALL_TITLES } from './lib/windfall-board.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 const PAGE_SIZE = 100;
@@ -50,19 +51,18 @@ const MEMBERSHIP = [
   'Member Type', 'Lapse Count', 'Last Lapsed',
 ];
 const SALESFORCE = ['Salesforce ID', 'Salesforce Debug'];
-const WINDFALL = [
-  'Windfall ID', 'Net Worth', 'Net Worth Low', 'Net Worth High', 'Net Worth Date',
-  'Philanthropic Giver', 'Windfall Company', 'Windfall Priority', 'Windfall Profile',
-];
 const PEOPLE = {
   locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On',
     'DTD Company ID', 'DTD Company', 'DTD match link'],
-  history: [...SALESFORCE, 'Salesforce Owner', ...WINDFALL],
+  history: [...SALESFORCE, 'Salesforce Owner'],
 };
 
 export const MARKED_COLUMNS = {
   'People': PEOPLE,
   'People (Historical)': PEOPLE,
+  // Wealth screening moved off People on 2026-11-06 (docs/runbooks/windfall-private-board.md).
+  // Loaded once from Windfall, whose subscription has ended, so all 11 are history.
+  'Wealth Screening': { locked: [], history: [...WINDFALL_TITLES] },
   'Organizations': { locked: OWNER_ROLLUPS, history: [...SALESFORCE, 'Salesforce Owner'] },
   'Donations': {
     locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Funraise ID',
@@ -89,9 +89,14 @@ export const MARKED_COLUMNS = {
     locked: ['Fiscal Year Ending', 'Total Received', 'Gift Count', 'By Gift Type', 'Restated'],
     history: [],
   },
-  'Events': { locked: ['Eventbrite ID', 'Send class email'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
+  'Pledge to Ride': {
+    locked: ['Eventbrite Attendee ID', 'Year', 'Status', 'Pledge Date', 'Email', 'Details', 'Zip', 'County', 'Days Pledged',
+      'Rider Type', 'Heard About It', 'Who Asked', 'Contact Consent', 'Other Answers'],
+    history: [],
+  },
+  'Events': { locked: ['Eventbrite ID', 'Send event email', 'Registrants'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
+    locked: ['Eventbrite Attendee ID', 'Attendee Phone', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Registrants link', 'Home Zip'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).
