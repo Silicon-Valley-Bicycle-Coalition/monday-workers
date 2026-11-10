@@ -73,6 +73,25 @@ and Windfall.
 SVBC not selling data can stay as it is. The fix is an added exception for service providers acting
 on SVBC's behalf.
 
+**Update 2026-11-10: Monday's own sub-processors.** Monday's sub-processor update of 2026-11-04
+([notice](https://monday.com/l/uncategorized/sub-processors-page-update/),
+[full list](https://monday.com/terms/subprocessors)) added ElevenLabs (speech-to-text and
+text-to-speech) and TypeSafe AI ("Jev AI" module), and widened Cloudflare's role to cover AI
+features. All three apply to AI-enabled accounts only. It also added PostHog, for WorkCanvas only,
+and removed Foundever, an outsourced support provider.
+
+- **Whether this reaches donor data depends on Monday AI.** If staff use AI Blocks, Sidekick, Agents
+  or voice features on the People or Wealth Screening boards, donor records can go to these vendors,
+  Windfall fields included. Confirm whether AI is enabled on the account. If no one needs it yet,
+  turning it off at the account level is the simplest control.
+- **The notice is thin.** It gives no processing locations, data categories, or go-live dates, and it
+  says "No action is required" without mentioning an objection right. Check the objection window in
+  Monday's DPA, and ask Monday's sub-processor team what TypeSafe AI receives and where it processes it.
+- **Don't name a vendor's sub-processors in the policy.** Monday changes the list every few months.
+  The draft wording below covers them generically.
+- Make sure a staff member, not only a contractor, receives these notices and records the DPA
+  objection deadline each time.
+
 ### 4. "Those employees who need to know" is wider in practice
 
 The policy says SVBC "restricts access to personal information to those employees who need to know".
@@ -155,8 +174,8 @@ Everything here depends on the decisions above; bracketed text marks what isn't 
 
 > We don't sell or trade your personal information. We share it with service providers who work on our
 > behalf, such as our donor database, email, payment, event registration, accounting, and hosting
-> providers, and they may use it only to provide those services to us. Otherwise, we disclose it only
-> as described in this policy or at the time we request it.
+> providers, and their own subcontractors, and they may use it only to provide those services to us.
+> Otherwise, we disclose it only as described in this policy or at the time we request it.
 
 **Add a Member Portal section:**
 
@@ -179,4 +198,6 @@ Add an effective date at the top.
 - [ ] Check the advertising and demographics statements against the website (finding 6)
 - [ ] Agree a process for access and removal requests (finding 7)
 - [ ] Record what the Double the Donation widget sets, from the pending browser check (finding 5)
+- [ ] Decide whether Monday AI features may touch donor boards, and check whether AI is enabled on the account (finding 3)
+- [ ] Check the sub-processor objection window in Monday's DPA, and name a staff recipient for these notices (finding 3)
 - [ ] Publish the update before the portal's production deploy
