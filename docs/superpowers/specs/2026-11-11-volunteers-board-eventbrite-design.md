@@ -164,6 +164,29 @@ My calls (mark these when reviewing):
   builder stops and brings that back rather than adding a mirror column that goes stale when staff
   re-point `Event`.
 
+**View-grouping spike (2026-11-11): YES.** On the sandbox Volunteers board (18431577321) a table view
+grouped by a `board_relation` column, filtered to Date within the last 90 days and sorted Date desc,
+was created in one `create_view_table` call and read back intact (`get_board_info`, view `settings`
+and `filter`/`sort`). No mirror column is needed. Working call (the board's own `Event` column id
+replaces the throwaway `board_relation_mm90fetf`; Date is `date_mm79agc0` on the sandbox board):
+
+```json
+{
+  "tool": "create_view_table",
+  "boardId": "18431577321",
+  "name": "Recent events",
+  "filter": { "operator": "and", "rules": [
+    { "column_id": "date_mm79agc0", "operator": "within_the_last", "compare_value": ["DAYS", 90] } ] },
+  "sort": [ { "column_id": "date_mm79agc0", "direction": "DESC" } ],
+  "settings": { "group_by": { "conditions": [ { "columnId": "board_relation_mm90fetf" } ], "hideEmptyGroups": true } }
+}
+```
+
+Gotchas: sort `direction` must be uppercase `DESC`; lowercase `desc` (as the tool docs show) was stored as
+ASC. `update_view_table` takes the same `filter`/`sort`/`settings` shape plus `viewId`. The stored
+filter operator reads back as `WITHIN_THE_LAST`. The throwaway column and both test views were deleted.
+Not checked: how the grouped view renders in the UI (group order, empty-relation group).
+
 ## Left to the builder
 
 Exact column ids/titles, board-relation vs mirror choice for grouping (see View), test layout, the
