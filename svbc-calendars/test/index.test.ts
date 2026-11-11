@@ -83,10 +83,10 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     const res = await call(req("/events"));
     expect(res.status).toBe(200);
     const data = await res.json<{ events: unknown[]; total: number }>();
-    // No organizer param means all 3 allowlisted organizers are fetched and merged (Task 11's
+    // No organizer param means all 2 allowlisted organizers are fetched and merged (Task 11's
     // multi-organizer fix); mockEventbrite() is organizer-agnostic and returns the same single
-    // event for every one of those 3 fetches, so the merged total is 3, not 1.
-    expect(data.events).toHaveLength(3);
+    // event for every one of those 2 fetches, so the merged total is 2, not 1.
+    expect(data.events).toHaveLength(2);
   });
 
   it("GET / also returns events", async () => {
@@ -161,7 +161,7 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     const res = await call(req(`/events?page_size=${value}`));
     expect(res.status).toBe(200);
     const data = await res.json<{ events: unknown[] }>();
-    expect(data.events).toHaveLength(3);
+    expect(data.events).toHaveLength(2);
     const version = env.CACHE_VERSION || "0";
     expect(await caches.default.match(new Request(`http://worker.test/events?page_size=NaN&organizer=all&v=${version}`))).toBeUndefined();
   });
@@ -229,7 +229,7 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
 });
 
 describe("multi-organizer merge (the fixed correctness gap)", () => {
-  it("GET /events with no organizer param fetches and merges all 3 allowlisted organizers", async () => {
+  it("GET /events with no organizer param fetches and merges all 2 allowlisted organizers", async () => {
     let calls = 0;
     fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
       calls += 1;
@@ -237,8 +237,11 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
     });
     const res = await call(req("/events"));
     expect(res.status).toBe(200);
-    expect(calls).toBe(3); // one organizer-scoped fetch per allowlisted organizer — cache was cleared in beforeEach, so this is a guaranteed MISS
+    expect(calls).toBe(2); // one organizer-scoped fetch per allowlisted organizer — cache was cleared in beforeEach, so this is a guaranteed MISS
   });
+
+  // A still-allowlisted organizer standing in for one deleted on Eventbrite.
+  const GONE = "17135810858";
 
   // Live 2026-09-30: Eventbrite 404'd the "bike parking" organizer, and Promise.all turned that one
   // failure into a 502 for the whole widget feed.
@@ -253,23 +256,24 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
   }
 
   it("serves the other organizers' events when one organizer fails, and logs the failure", async () => {
-    mockOneOrganizerGone("121346572357");
+    mockOneOrganizerGone(GONE);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await call(req("/events"));
     expect(res.status).toBe(200);
     const data = await res.json<{ events: unknown[] }>();
-    expect(data.events).toHaveLength(2);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("organizer 121346572357"));
+    expect(data.events).toHaveLength(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("organizer " + GONE));
   });
 
-  it("never caches a partial feed, so the next request retries every organizer live", async () => {
-    mockOneOrganizerGone("121346572357");
+  it("caches a partial feed briefly, so one failing organizer can't turn caching off", async () => {
+    mockOneOrganizerGone(GONE);
     vi.spyOn(console, "error").mockImplementation(() => {});
     const first = await call(req("/events"));
-    expect(first.headers.get("Cache-Control")).toBe("no-store");
+    expect(first.headers.get("Cache-Control")).toBe("public, max-age=60");
     expect(first.headers.get("X-Cache")).toBe("MISS");
     const second = await call(req("/events"));
-    expect(second.headers.get("X-Cache")).toBe("MISS");
+    expect(second.headers.get("X-Cache")).toBe("HIT");
+    expect(second.headers.get("Cache-Control")).toBe("public, max-age=60");
   });
 
   it("still returns 502 when every organizer fails, without upstream detail in the body", async () => {
@@ -281,8 +285,8 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
   });
 
   it("a single-organizer request still reports that organizer's failure as a 502", async () => {
-    mockOneOrganizerGone("121346572357");
-    const res = await call(req("/events?organizer=121346572357"));
+    mockOneOrganizerGone(GONE);
+    const res = await call(req(`/events?organizer=${GONE}`));
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "Eventbrite API error" });
   });
