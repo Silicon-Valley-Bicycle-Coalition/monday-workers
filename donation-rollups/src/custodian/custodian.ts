@@ -273,8 +273,9 @@ async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
 }
 
 // July sweep: recompute every owner once so This/Last Year splits roll over at the fiscal
-// boundary even for donors with no new gifts. The recompute queue is donation-keyed, so one
-// representative gift per owner triggers that owner's full recompute. Queue sends count
+// boundary even for donors with no new gifts. Messages are owner-keyed (issue #88: D1 already
+// knows the owner, so the consumer skips resolving it from a representative gift, which rides
+// along only for logs and the affiliation fan-out). Queue sends count
 // against the Worker's per-invocation subrequest budget (50 on the Free plan) and sendBatch
 // caps at 100 messages, so one invocation covers 3,500 owners and hands the next slice a
 // cursor — an incomplete sweep reports remaining>0 and the route is simply called again
@@ -290,7 +291,8 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
   const slice = owners.slice(0, SWEEP_BATCHES_PER_RUN * 100);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
-      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId, sweep: true })));
+      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId,
+        ownerItemId: o.ownerItemId, ownerBoardId: o.ownerBoardId, sweep: true })));
   }
   const remaining = owners.length - slice.length; // >0 means at least one more slice exists
   return {
