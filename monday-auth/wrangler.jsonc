@@ -25,8 +25,14 @@
     "EXPECTED_USER_ID": "120827741",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
   },
+  // Attempt limiter for POST /oauth/* (keyed on CF-Connecting-IP), so START_KEY can't be guessed online (#104).
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } }],
   "observability": { "enabled": true, "issues": { "enabled": true } },
 
+  // Secrets (wrangler secret put, per environment): the three apps' client id/secret pairs,
+  // START_KEY (at least 32 characters), TOKEN_ENC_KEY (AES-256-GCM key for the token columns in D1:
+  // `openssl rand -base64 32`; set it BEFORE deploying a build that reads it) and optionally
+  // SLACK_WEBHOOK_URL. See README.md.
   "env": {
     "sandbox": {
       "name": "svbc-monday-auth-sandbox",
@@ -43,11 +49,13 @@
       "triggers": { "crons": ["*/30 * * * *"] },
       "vars": {
         "ENVIRONMENT": "sandbox",
-        "PROBE_ENABLED": "true",
+        // Off by default, like production; turn it on only while verifying (README "Measuring ... probe").
+        "PROBE_ENABLED": "false",
         // Sandbox Integration
         "EXPECTED_USER_ID": "117112617",
         "MONDAY_SUBDOMAIN": "bikesiliconvalley"
       },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2102", "simple": { "limit": 10, "period": 60 } }],
       "observability": { "enabled": true, "issues": { "enabled": true } }
     }
   }

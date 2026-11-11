@@ -87,7 +87,9 @@ export interface AppDeps {
   writeGate: () => Promise<BatchSkipContext>;
 }
 
-const SESSION_COOKIE = 'session';
+// __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
+// subdomain can't plant a session cookie scoped to a longer path (#103).
+const SESSION_COOKIE = '__Host-session';
 export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
@@ -181,7 +183,7 @@ export function createApp(deps: AppDeps) {
       console.warn(`member-portal: rejected cross-origin ${c.req.method} ${c.req.path} (Origin: ${c.req.header('origin') ?? 'none'})`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 403);
     }
-    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`member-portal unhandled error: ${errorText(err)}`);
     return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 500);
   });
 
@@ -461,7 +463,7 @@ export function createApp(deps: AppDeps) {
         const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
         eventsByDonor = Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
       } catch (err) {
-        console.error(`member-portal dashboard events load failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
       }
     }
 
@@ -477,7 +479,7 @@ export function createApp(deps: AppDeps) {
           const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
           cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
         } catch (err) {
-          console.error(`member-portal dashboard card failed for donor "${donor.id}": ${err instanceof Error ? err.message : String(err)}`);
+          console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
         }
       }
     }
@@ -524,7 +526,7 @@ export function createApp(deps: AppDeps) {
     } catch (err) {
       // A Monday read failure here would otherwise fall through to the global onError, whose
       // generic "please try logging in again" copy is misleading — this isn't an auth problem.
-      console.error(`member-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal letters list failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale, { authenticated: true }), 500);
     }
     return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
@@ -554,7 +556,7 @@ export function createApp(deps: AppDeps) {
     } catch (err) {
       // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
       // problem, so it shouldn't fall through to the global onError's login-focused copy.
-      console.error(`member-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal letter load failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterLoadFailed', locale), locale, { authenticated: true }), 500);
     }
     if (data === null) {
@@ -593,7 +595,7 @@ export function createApp(deps: AppDeps) {
     } catch (err) {
       // Same reasoning as the letters routes above: a Monday read failure isn't an auth
       // problem, so it shouldn't fall through to the global onError's login-focused copy.
-      console.error(`member-portal events list failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal events list failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.eventsLoadFailed', locale), locale, { authenticated: true }), 500);
     }
     return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsListView(listings, locale), locale, { authenticated: true }));
@@ -617,7 +619,7 @@ export function createApp(deps: AppDeps) {
     const results = await Promise.allSettled(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
     const donors = results.flatMap((result, index) => {
       if (result.status === 'fulfilled') return [result.value];
-      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      const reason = errorText(result.reason);
       console.error(`member-portal change-request form load failed for donor "${donorItemIds[index]}": ${reason}`);
       return [];
     });
@@ -752,7 +754,7 @@ export function createApp(deps: AppDeps) {
     } catch (err) {
       // Same reasoning as the letters routes: a Monday read failure isn't an auth problem, so
       // it shouldn't fall through to the global onError's login-focused copy.
-      console.error(`member-portal pledges load failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal pledges load failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.pledgesLoadFailed', locale), locale, { authenticated: true }), 500);
     }
     return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesView(sections, locale), locale, { authenticated: true }));
@@ -826,7 +828,7 @@ export function createApp(deps: AppDeps) {
     try {
       await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
     } catch (err) {
-      console.error(`member-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal card token revoke failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale, { authenticated: true }), 500);
     }
     try {
@@ -840,7 +842,7 @@ export function createApp(deps: AppDeps) {
       // unrelated D1 outage would simply fail again on this re-read, and is reported with this
       // route's own copy below rather than falling through to the generic (and misleading,
       // login-flavored) app.onError handler.
-      console.error(`member-portal card token regenerate failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal card token regenerate failed, re-reading active token: ${errorText(err)}`);
       let token: string | null;
       try {
         token = await deps.cardTokenStore.getActiveToken(donorItemId);
@@ -891,7 +893,7 @@ export function createApp(deps: AppDeps) {
     try {
       donorItemId = await deps.cardTokenStore.findActiveDonorId(token);
     } catch (err) {
-      console.error(`member-portal verify lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal verify lookup failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
     }
     if (donorItemId === null) {
@@ -903,7 +905,7 @@ export function createApp(deps: AppDeps) {
       // The card needs name, tier, status and expiry only, so skip the Donations-board read.
       donor = await deps.monday.getMemberPortalData(donorItemId, { includeDonations: false });
     } catch (err) {
-      console.error(`member-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal verify load failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
     }
 
@@ -915,7 +917,8 @@ export function createApp(deps: AppDeps) {
     if (sessionToken) {
       await deps.sessionStore.deleteSession(await sha256Hex(sessionToken));
     }
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    // Secure is required: browsers ignore a __Host- Set-Cookie without it, even to expire it.
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true });
     return c.redirect('/');
   });
 
@@ -950,7 +953,7 @@ export function createApp(deps: AppDeps) {
     try {
       event = validateLetterWebhookBody(body);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorText(err);
       console.error(`member-portal webhook: rejected letter-send delivery: ${errMsg}`);
       return c.json({ ok: false, error: errMsg }, 200);
     }
@@ -978,7 +981,7 @@ export function createApp(deps: AppDeps) {
         now: deps.now,
       });
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = errorText(err);
       console.error(`member-portal webhook: letter-send trigger failed for donor "${event.donorItemId}": ${errMsg}`);
       return c.json({ ok: false }, 500);
     }

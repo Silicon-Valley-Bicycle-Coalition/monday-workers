@@ -8,8 +8,9 @@ export interface OwnerRecompute {
   ownerBoardId: string;
   fetchedAt: string; // ISO; taken immediately before the Monday donations fetch
   writtenAt: string; // ISO; after every required Monday write succeeded
-  // SHA-256 of what was last written to the owner's rollup columns / its description (issue #89);
-  // a recompute producing the same hash skips that write. Null = unknown, so write.
+  // Issue #88: SHA-256 of the owner column values / description last written to Monday. null =
+  // unknown (or the description write failed): the next recompute writes. A recompute whose
+  // values hash to the same skip that mutation.
   valuesHash?: string | null;
   descriptionHash?: string | null;
 }

@@ -80,11 +80,18 @@ export async function upsertRecord(db: D1Database, r: StoredRecord): Promise<voi
     .run();
 }
 
-/** Records still waiting for a Monday Donations item, longest-waiting first. */
-export async function listUnmatched(db: D1Database, limit: number): Promise<StoredRecord[]> {
+/**
+ * Records still waiting for a Monday Donations item, longest-waiting first. A record whose
+ * donation_datetime is before `donatedAfterISO` is dropped: its gift is too old to appear now, and
+ * an archived or deleted one never will. Records with no datetime are kept.
+ */
+export async function listUnmatched(db: D1Database, limit: number, donatedAfterISO: string): Promise<StoredRecord[]> {
   const { results } = await db
-    .prepare('SELECT * FROM dtd_records WHERE unmatched = 1 ORDER BY updated_seen_at ASC, donation_identifier ASC LIMIT ?')
-    .bind(limit)
+    .prepare(
+      `SELECT * FROM dtd_records WHERE unmatched = 1 AND (donation_datetime IS NULL OR donation_datetime >= ?)
+       ORDER BY updated_seen_at ASC, donation_identifier ASC LIMIT ?`,
+    )
+    .bind(donatedAfterISO, limit)
     .all<Row>();
   return results.map(fromRow);
 }

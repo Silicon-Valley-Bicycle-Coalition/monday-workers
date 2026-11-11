@@ -31,7 +31,8 @@ async function seed(id: string, datetime: string): Promise<void> {
 function setup(items: DonationItem[]) {
   const writes: { fy: string; values: Record<string, unknown> }[] = [];
   const monday: Partial<DtdMondayClient> = {
-    listDonationsDatedSince: async () => items,
+    listDonationsOfTypeDatedSince: async (type) => items.filter((i) => i.giftType === type),
+    getDonations: async (ids) => items.filter((i) => ids.includes(i.id)),
     getDonation: async (id) => items.find((i) => i.id === id) ?? null,
     upsertProgramSummary: async (fy, values) => { writes.push({ fy, values }); },
   };

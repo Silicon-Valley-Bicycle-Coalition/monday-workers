@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   "d1_databases": [
     {
@@ -42,6 +43,7 @@
   // Secrets exist twice — set the sandbox copy with `wrangler secret put DTD_PRIVATE_KEY --env sandbox`.
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       "d1_databases": [
         {

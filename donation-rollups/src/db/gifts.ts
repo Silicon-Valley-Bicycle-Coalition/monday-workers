@@ -84,7 +84,7 @@ export interface GiftsStore {
   // Distinct owners, for the July full-recompute sweep — paired with one linked donation id
   // each, since the recompute queue is donation-keyed and any one gift triggers the owner's
   // full recompute. Ordered by owner id with a cursor so the sweep can slice itself.
-  ownersWithOneGift(afterOwnerId?: string, limit?: number): Promise<{ ownerItemId: string; mondayItemId: string; donationBoardId: string }[]>;
+  ownersWithOneGift(afterOwnerId?: string, limit?: number): Promise<{ ownerItemId: string; ownerBoardId: string; mondayItemId: string; donationBoardId: string }[]>;
   // Per-owner counted totals over gifts with the given status label — reconciliation's
   // ledger side.
   ownerTotals(statusLabel: string): Promise<Map<string, { cents: number; count: number; ownerBoardId: string }>>;
@@ -408,19 +408,19 @@ export class D1GiftsStore implements GiftsStore {
       fiscalYear: r.fiscal_year, amountCents: r.amount_cents, status: r.status, giftType: r.gift_type }));
   }
 
-  async ownersWithOneGift(afterOwnerId = '', limit = 100_000): Promise<{ ownerItemId: string; mondayItemId: string; donationBoardId: string }[]> {
+  async ownersWithOneGift(afterOwnerId = '', limit = 100_000): Promise<{ ownerItemId: string; ownerBoardId: string; mondayItemId: string; donationBoardId: string }[]> {
     // donation_links carries the donation board id the queue message needs; gifts alone
     // doesn't. MIN() picks an arbitrary-but-stable representative gift per owner. Ordered +
     // cursored so the July sweep can slice itself under the Worker subrequest budget.
     const res = await this.db
-      .prepare(`SELECT owner_item_id, MIN(donation_item_id) AS donation_item_id,
+      .prepare(`SELECT owner_item_id, MIN(owner_board_id) AS owner_board_id, MIN(donation_item_id) AS donation_item_id,
                        MIN(donation_board_id) AS donation_board_id
                 FROM donation_links WHERE owner_item_id > ?1
                 GROUP BY owner_item_id ORDER BY owner_item_id LIMIT ?2`)
       .bind(afterOwnerId, limit)
-      .all<{ owner_item_id: string; donation_item_id: string; donation_board_id: string }>();
+      .all<{ owner_item_id: string; owner_board_id: string; donation_item_id: string; donation_board_id: string }>();
     return res.results.map((r) => ({
-      ownerItemId: r.owner_item_id, mondayItemId: r.donation_item_id, donationBoardId: r.donation_board_id,
+      ownerItemId: r.owner_item_id, ownerBoardId: r.owner_board_id, mondayItemId: r.donation_item_id, donationBoardId: r.donation_board_id,
     }));
   }
 

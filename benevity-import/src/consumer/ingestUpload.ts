@@ -8,6 +8,7 @@ import { blockWorklistKey, ensureWorklistItem } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
 import type { BenevityQueueMessage } from './processBatch';
+import { errorClass } from '../logSafe';
 
 // A real monthly report is tens of KB. Anything this large is not one, and parsing it could blow
 // the Worker's CPU limit (wrangler.jsonc `limits.cpu_ms`) on every retry, so it is refused
@@ -93,7 +94,7 @@ export async function ingestUpload(assetId: string, deps: IngestDeps): Promise<v
   } catch (err) {
     if (!(err instanceof ReportTooLargeError)) throw err; // a failed fetch is worth a retry
     await deps.uploadStore.markError(upload.id);
-    console.error(`benevity consumer: asset "${assetId}" refused: larger than ${MAX_REPORT_LENGTH} characters (${err.message})`);
+    console.error(`benevity consumer: asset "${assetId}" refused: larger than ${MAX_REPORT_LENGTH} characters`);
     return;
   }
 
@@ -102,7 +103,7 @@ export async function ingestUpload(assetId: string, deps: IngestDeps): Promise<v
     blocks = parseBenevityReport(csvText);
   } catch (err) {
     await deps.uploadStore.markError(upload.id);
-    console.error(`benevity consumer: asset "${assetId}" failed to parse: ${errorMessage(err)}`);
+    console.error(`benevity consumer: asset "${assetId}" failed to parse: ${errorClass(err)}`);
     return;
   }
 
@@ -245,7 +246,7 @@ async function ensureBlockWorklistItem(
     try {
       await deps.mondayClient.archiveItem(worklistItemId);
     } catch (err) {
-      console.error(`benevity consumer: could not archive duplicate worklist item "${worklistItemId}": ${errorMessage(err)}`);
+      console.error(`benevity consumer: could not archive duplicate worklist item "${worklistItemId}": ${errorClass(err)}`);
     }
   }
 }

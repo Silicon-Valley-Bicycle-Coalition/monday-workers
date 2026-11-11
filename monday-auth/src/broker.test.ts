@@ -4,6 +4,7 @@ import type { AppKey } from './apps';
 import { TokenBroker } from './broker';
 import type { Env } from './env';
 import { D1AppTokenStore } from './tokenStore';
+import { TEST_ENC_KEY } from '../test/enc-key';
 
 const TOKEN_URL = 'https://auth.monday.com/oauth_ms/oauth/token';
 const NOW = new Date('2026-10-30T10:00:00.000Z');
@@ -41,7 +42,7 @@ async function until(cond: () => boolean): Promise<void> {
 // the gate, so a test holds the winner mid-refresh until the loser is polling. After the gate
 // opens each poll sleeps 20 ms: a 200 ms budget, far longer than the winner's D1 write.
 function harness(opts: { responder?: Responder; gate?: Promise<void>; env?: Env } = {}) {
-  const store = new D1AppTokenStore(env.DB);
+  const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
   const tokenCalls: URLSearchParams[] = [];
   const alerts: string[] = [];
   let sleeps = 0;

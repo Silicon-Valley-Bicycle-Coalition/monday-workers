@@ -291,6 +291,12 @@ async function resolveRecurringGiftItem(rawPayload: Record<string, unknown>, dep
   const raw = getPath(rawPayload, SUBSCRIPTION_ID_FIELD);
   const subscriptionId = typeof raw === 'number' && Number.isFinite(raw) ? String(raw) : typeof raw === 'string' && raw !== '' ? raw : null;
   if (subscriptionId === null) return null;
+  // The id comes from the webhook payload and ends up in a Funraise API path, so accept only
+  // what Funraise issues (digits); `..` would otherwise resolve to a different endpoint.
+  if (!/^\d+$/.test(subscriptionId)) {
+    console.warn('funraise-sync consumer: subscription id is not numeric; leaving the Recurring Gift link unset');
+    return null;
+  }
 
   const { subscriptionStore, funraiseClient, mondayClient, config } = deps;
   if (!subscriptionStore || !funraiseClient) {

@@ -901,6 +901,25 @@ describe('owner recompute coalescing (fix 3)', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
+  it('skips the column and description writes when their hashes match the last write, and records the hashes (issue #88)', async () => {
+    const first = fakeMondayClient();
+    const rs1 = fakeRecomputesStore(null);
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: rs1, volunteerStore: fakeVolunteerStore(), mondayClient: first, config });
+    expect(first.changeColumnValues).toHaveBeenCalledTimes(1);
+    expect(first.setItemDescription).toHaveBeenCalledTimes(1);
+    const row = (rs1.record as ReturnType<typeof vi.fn>).mock.calls[0]![0] as OwnerRecompute;
+    expect(row.valuesHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(row.descriptionHash).toMatch(/^[0-9a-f]{64}$/);
+
+    const second = fakeMondayClient();
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore({ ...row, fetchedAt: '2000-01-01T00:00:00Z' }), volunteerStore: fakeVolunteerStore(), mondayClient: second, config });
+    expect(second.getDonationsByIds).toHaveBeenCalled();
+    expect(second.changeColumnValues).not.toHaveBeenCalled();
+    expect(second.setItemDescription).not.toHaveBeenCalled();
+  });
+
   it('a successful recompute records the owner with fetched_at taken before the Monday fetch and written_at after the write', async () => {
     const order: string[] = [];
     const mondayClient = fakeMondayClient({
@@ -1814,52 +1833,4 @@ describe('fewer Monday calls per gift (issue #89)', () => {
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.any(Object));
   });
-
-  describe('write skipping by hash', () => {
-    async function recompute(last: OwnerRecompute | null, sweep = false) {
-      const recomputesStore = fakeRecomputesStore(last);
-      const mondayClient = fakeMondayClient();
-      const message = { body: { donationItemId: 'dn1', donationBoardId: '1', ...(sweep ? { sweep: true } : {}) }, ack: vi.fn(), retry: vi.fn() };
-      await processRecomputeBatch([message],
-        { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient, config });
-      return { recomputesStore, mondayClient };
-    }
-
-    it('writes first, records the hashes, and skips both writes when the next recompute is identical', async () => {
-      const first = await recompute(null);
-      expect(first.mondayClient.changeColumnValues).toHaveBeenCalled();
-      expect(first.mondayClient.setItemDescription).toHaveBeenCalled();
-      const recorded = vi.mocked(first.recomputesStore.record).mock.calls[0]![0];
-      expect(recorded.valuesHash).toMatch(/^[0-9a-f]{64}$/);
-      expect(recorded.descriptionHash).toMatch(/^[0-9a-f]{64}$/);
-
-      const second = await recompute({ ...fresh0(), valuesHash: recorded.valuesHash, descriptionHash: recorded.descriptionHash });
-      expect(second.mondayClient.changeColumnValues).not.toHaveBeenCalled();
-      expect(second.mondayClient.setItemDescription).not.toHaveBeenCalled();
-      expect(second.recomputesStore.record).toHaveBeenCalledWith(expect.objectContaining({ valuesHash: recorded.valuesHash, descriptionHash: recorded.descriptionHash }));
-    });
-
-    it('writes when the stored hash differs, and a sweep always writes', async () => {
-      const first = await recompute(null);
-      const recorded = vi.mocked(first.recomputesStore.record).mock.calls[0]![0];
-      const stale = { ...fresh0(), valuesHash: 'x', descriptionHash: 'y' };
-      expect((await recompute(stale)).mondayClient.changeColumnValues).toHaveBeenCalled();
-      const same = { ...fresh0(), valuesHash: recorded.valuesHash, descriptionHash: recorded.descriptionHash };
-      const swept = await recompute(same, true);
-      expect(swept.mondayClient.changeColumnValues).toHaveBeenCalled();
-      expect(swept.mondayClient.setItemDescription).toHaveBeenCalled();
-    });
-
-    it('leaves the description hash null when the description write fails, so the next recompute retries it', async () => {
-      const recomputesStore = fakeRecomputesStore(null);
-      const mondayClient = fakeMondayClient({ setItemDescription: vi.fn().mockRejectedValue(new Error('no widget')) });
-      await processRecomputeBatch([fakeMessage('dn1')],
-        { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient, config });
-      expect(recomputesStore.record).toHaveBeenCalledWith(expect.objectContaining({ descriptionHash: null }));
-    });
-  });
 });
-
-function fresh0(): OwnerRecompute {
-  return { ownerItemId: 'donor-1', ownerBoardId: '2', fetchedAt: '2000-01-01T00:00:00.000Z', writtenAt: '2000-01-01T00:00:01.000Z' };
-}

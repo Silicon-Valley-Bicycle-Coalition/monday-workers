@@ -118,6 +118,16 @@ describe('HttpMondayClient', () => {
     await expect(client.fetchAsset('missing')).rejects.toThrow(/not found/);
   });
 
+  it("fetches an item's board and attached asset ids", async () => {
+    mockFetchOnce({ data: { items: [{ board: { id: '777' }, assets: [{ id: 'a1' }, { id: 'a2' }] }] } });
+    expect(await newClient().fetchItemAssets('5')).toEqual({ boardId: '777', assetIds: ['a1', 'a2'] });
+  });
+
+  it('returns null for an item that does not exist', async () => {
+    mockFetchOnce({ data: { items: [] } });
+    expect(await newClient().fetchItemAssets('5')).toBeNull();
+  });
+
   it('throws with the server message when the API returns GraphQL errors', async () => {
     mockFetchOnce({ errors: [{ message: 'Invalid board id' }] });
     const client = newClient();

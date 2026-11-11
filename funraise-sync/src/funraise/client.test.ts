@@ -48,7 +48,16 @@ describe('HttpFunraiseClient', () => {
 
   it('returns null for a 404 on a single subscription, so a deleted one is not an error', async () => {
     const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(404, { message: 'Not found' }));
-    expect(await client.getSubscription('gone')).toBeNull();
+    expect(await client.getSubscription('999')).toBeNull();
+  });
+
+  it('rejects a non-numeric subscription id without making a request', async () => {
+    const fetchImpl = fetchReturning(200, {});
+    const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchImpl);
+    for (const id of ['..', '../x', '12/3', '', ' 1']) {
+      await expect(client.getSubscription(id)).rejects.toThrow(/numeric/);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('throws with the status on any other non-2xx, so the cron retries next run', async () => {

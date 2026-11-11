@@ -449,8 +449,7 @@ if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are
 writes, and the gift stamps, are compare-before-write, so a stamp's own webhook triggers one idle
 recompute and stops. That recompute also writes nothing to the owner: the rollup values and the
 description are each hashed (`owner_recomputes.values_hash` / `description_hash`, migration 0014)
-and a write identical to the last one that landed is skipped. A custodian sweep forces the write,
-so a hand edit to a rollup column is repaired there rather than on the next gift.
+and a write identical to the last one that landed is skipped (issue #88).
 
 Per-gift Monday cost (issue #89): the Donor link and its owner's board come back in one query; a
 webhook for a non-link column carries its `columnId`, so when D1 already links the gift and the

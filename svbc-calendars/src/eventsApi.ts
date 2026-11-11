@@ -36,6 +36,9 @@ function validateOrganizers(raw: unknown): EventbriteOrganizerConfig[] {
  * sources.json, to avoid turning "bike parking" into a 10th public calendar feed + listing entry
  * for a change that's purely about not hardcoding organizer ids in source.
  */
+/** Seconds a partial (organizer missing) merged feed is cached. */
+const PARTIAL_FEED_TTL = 60;
+
 export const ALLOWED_ORGANIZERS: string[] = validateOrganizers(rawOrganizers).map((o) => o.id);
 
 interface EventVenue {
@@ -95,7 +98,7 @@ async function fetchOrganizerEvents(organizerId: string, token: string): Promise
 
 export async function fetchEventsResponse(env: Env, organizerId: string | null, pageSize: number, cacheTTL: number): Promise<Response> {
   let events: NormalizedEvent[];
-  // True when the merged feed is missing an organizer that failed: still served, never cached.
+  // True when the merged feed is missing an organizer that failed: still served, but cached only briefly.
   let partial = false;
   if (organizerId) {
     try {
@@ -130,8 +133,9 @@ export async function fetchEventsResponse(env: Env, organizerId: string | null, 
     .slice(0, pageSize)
     .map(toEventItem);
 
-  // A partial feed is marked no-store so withCache (index.ts) doesn't pin it for the full TTL: a
-  // transient failure of the main organizer would otherwise hide its events for 15 minutes.
-  const cacheControl = partial ? 'no-store' : `public, max-age=${cacheTTL}`;
+  // A partial feed gets a short TTL, not the full one: a transient failure of the main organizer
+  // would otherwise hide its events for 15 minutes. It is still cached, so one persistently failing
+  // organizer can't turn caching (and the per-IP rate limit's HIT exemption) off for every view.
+  const cacheControl = `public, max-age=${partial ? Math.min(PARTIAL_FEED_TTL, cacheTTL) : cacheTTL}`;
   return jsonResponse({ events: items, total: items.length }, 200, { 'Cache-Control': cacheControl });
 }

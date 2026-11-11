@@ -374,6 +374,8 @@ describe('sweep duty', () => {
     expect(sent).toHaveLength(2);
     expect(new Set(sent.map((m) => m.donationItemId))).toEqual(new Set(['d1', 'd3']));
     expect(sent.every((m) => m.sweep === true)).toBe(true);
+    // Issue #88: owner-keyed, so the consumer needn't resolve the owner from the gift.
+    expect(sent.map((m) => [m.ownerItemId, m.ownerBoardId])).toEqual([['oA', 'b1'], ['oB', 'b1']]);
   });
 });
 

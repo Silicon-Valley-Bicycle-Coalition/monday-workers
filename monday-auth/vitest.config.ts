@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin';
+import { TEST_ENC_KEY } from './test/enc-key.ts';
 import { defineConfig, defineProject } from 'vitest/config';
 
 export default defineConfig(async () => {
@@ -10,7 +11,7 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: { TEST_MIGRATIONS: migrations, TOKEN_ENC_KEY: TEST_ENC_KEY },
         },
       }),
     ],

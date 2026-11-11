@@ -33,7 +33,7 @@ function gateFor(mode: 'on' | 'hold' | 'off' | 'unknown') {
   return { worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] } as const;
 }
 
-const UPLOAD_EVENT = { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } };
+const UPLOAD_EVENT = { event: { pulseId: 1, boardId: 777, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } };
 
 function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   const uploadStore: UploadStore = {
@@ -69,6 +69,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn().mockResolvedValue(undefined),
     fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
+    fetchItemAssets: vi.fn().mockResolvedValue({ boardId: '777', assetIds: ['a1', 'a2'] }),
   };
   return {
     mondayClient,
@@ -130,7 +131,7 @@ describe('webhook route', () => {
     const deps = fakeDeps();
     const app = createApp(deps);
     const res = await post(app, {
-      event: { pulseId: 1, columnId: 'some_other_column', value: { files: [{ assetId: 'a1' }] } },
+      event: { pulseId: 1, boardId: 777, columnId: 'some_other_column', value: { files: [{ assetId: 'a1' }] } },
     });
     expect(res.status).toBe(200);
     expect(deps.mondayClient.fetchAsset).not.toHaveBeenCalled();
@@ -148,9 +149,44 @@ describe('webhook route', () => {
 
   it('enqueues every asset of a multi-file change in one sendBatch call', async () => {
     const deps = fakeDeps();
-    await post(createApp(deps), { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }, { assetId: 'a2' }] } } });
+    await post(createApp(deps), { event: { pulseId: 1, boardId: 777, columnId: 'file_col', value: { files: [{ assetId: 'a1' }, { assetId: 'a2' }] } } });
     expect(deps.queue.sendBatch).toHaveBeenCalledTimes(1);
     expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ assetId: 'a1' }, { assetId: 'a2' }]);
+  });
+
+  it('refuses an event from a board other than the Uploads board, without calling Monday', async () => {
+    const deps = fakeDeps();
+    const res = await post(createApp(deps), { event: { ...UPLOAD_EVENT.event, boardId: 999 } });
+    expect(res.status).toBe(200);
+    expect(deps.mondayClient.fetchItemAssets).not.toHaveBeenCalled();
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses when Monday says the item is on another board or does not exist', async () => {
+    for (const found of [{ boardId: '999', assetIds: ['a1'] }, null]) {
+      const deps = fakeDeps();
+      (deps.mondayClient.fetchItemAssets as ReturnType<typeof vi.fn>).mockResolvedValue(found);
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.uploadStore.createUpload).not.toHaveBeenCalled();
+      expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    }
+  });
+
+  it('drops an asset id that is not attached to the item and enqueues the rest', async () => {
+    const deps = fakeDeps();
+    (deps.mondayClient.fetchItemAssets as ReturnType<typeof vi.fn>).mockResolvedValue({ boardId: '777', assetIds: ['a2'] });
+    await post(createApp(deps), { event: { ...UPLOAD_EVENT.event, value: { files: [{ assetId: 'a1' }, { assetId: 'a2' }] } } });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ assetId: 'a2' }]);
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalledWith('a1', expect.anything());
+  });
+
+  it('answers 500 so Monday redelivers when the item lookup fails', async () => {
+    const deps = fakeDeps();
+    (deps.mondayClient.fetchItemAssets as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    const res = await post(createApp(deps), UPLOAD_EVENT);
+    expect(res.status).toBe(500);
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('is a no-op for an asset already ingested', async () => {

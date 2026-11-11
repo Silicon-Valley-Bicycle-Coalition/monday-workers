@@ -12,6 +12,7 @@ import { errorMessage } from '../util/errorMessage';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import { ingestUpload, type IngestDeps } from './ingestUpload';
+import { errorClass } from '../logSafe';
 
 // Two kinds share the write queue: an uploaded report to fetch and parse (#74), sent by the upload
 // webhook, and a row to write, sent once the report is ingested (or by a staff Retry). The
@@ -75,7 +76,7 @@ export async function processBenevityQueueBatch(
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`benevity consumer: failed to process "${transactionId}": ${errMsg}`);
+      console.error(`benevity consumer: failed to process "${transactionId}": ${errorClass(err)}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
       // retry+DLQ handles it (once retries run out, src/consumer/deadLetters.ts puts it on the
       // worklist) — this is an unexpected/transient failure, not a business
@@ -85,7 +86,7 @@ export async function processBenevityQueueBatch(
       try {
         await deps.rowStore.updateStatus(transactionId, 'ingested', { error: errMsg });
       } catch (recordErr) {
-        console.error(`benevity consumer: could not record failure for "${transactionId}": ${errorMessage(recordErr)}`);
+        console.error(`benevity consumer: could not record failure for "${transactionId}": ${errorClass(recordErr)}`);
       }
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
@@ -99,7 +100,7 @@ async function processUpload(assetId: string, message: QueueMessageLike<Benevity
   } catch (err) {
     // ingestUpload has already marked the upload 'error' if it got as far as recording it; the
     // retry resumes the same asset from its first unfinished block.
-    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorMessage(err)}`);
+    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorClass(err)}`);
     message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }

@@ -30,6 +30,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
+    fetchItemAssets: vi.fn(),
     ...overrides,
   };
 }

@@ -79,6 +79,6 @@
       "Redacted": "Redacted"
     },
     "funraiseLinkBase": "https://platform.funraise.io/transaction/",
-    "maxPagesPerRun": 1
+    "maxPagesPerRun": 20
   }
 }

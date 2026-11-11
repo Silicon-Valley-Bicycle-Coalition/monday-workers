@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   // Write-switch flags (scripts/flags.mjs). Every Monday mutation (moves, the IT Requests alert) is
   // off unless `people-reclassification:writes` is `on`. The namespace is `FLAGS` (`sandbox-FLAGS`
@@ -48,6 +49,7 @@
   // secret.
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],

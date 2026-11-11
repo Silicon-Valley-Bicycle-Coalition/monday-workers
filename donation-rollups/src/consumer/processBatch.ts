@@ -285,8 +285,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     await enqueueOwnerRecompute(deps, message, link.previousOwner);
   }
 
-  // A custodian sweep forces the write: it exists to repair an owner even when nothing changed.
-  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId, new Set(), message.sweep === true);
+  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
@@ -447,7 +446,7 @@ async function enqueueOwnerRecompute(
 // the stale one would overwrite the fresh totals with nothing left to repair them.
 async function recomputeOwner(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
-  extraAffiliations: Set<string> = new Set(), force = false,
+  extraAffiliations: Set<string> = new Set(),
 ): Promise<void> {
   const holder = crypto.randomUUID();
   const now = Date.now();
@@ -455,7 +454,7 @@ async function recomputeOwner(
     new Date(now).toISOString(), new Date(now + OWNER_LEASE_TTL_MS).toISOString());
   if (!leased) throw new OwnerBusyError(`owner ${ownerItemId} is being recomputed by another message`);
   try {
-    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations, force);
+    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations);
   } finally {
     // A failed release leaves the lease to expire; it must not turn a good recompute into a retry.
     try {
@@ -464,15 +463,6 @@ async function recomputeOwner(
       console.warn(`donation-rollups consumer: could not release the lease on owner ${ownerItemId} (it expires on its own): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-}
-
-// SHA-256 hex of a value's JSON with object keys sorted, so key order never changes the hash.
-async function hashOf(value: unknown): Promise<string> {
-  const json = JSON.stringify(value, (_k, v) => v !== null && typeof v === 'object' && !Array.isArray(v)
-    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-    : v);
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // The per-board read columns; the three sponsorship columns ride along only when the feature is on.
@@ -484,7 +474,7 @@ function readColumns(columns: DonationBoardConfig['columns'], sponsorships: bool
 
 async function recomputeOwnerLeased(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
-  extraAffiliations: Set<string>, force: boolean,
+  extraAffiliations: Set<string>,
 ): Promise<void> {
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
@@ -597,13 +587,12 @@ async function recomputeOwnerLeased(
     ...membershipValues,
   };
 
-  // Skip a write identical to the last one that landed (issue #89): the gift term stamps below
-  // come back as this Worker's own webhooks, and the recompute they trigger would otherwise
-  // rewrite the same rollups. The hash is only trusted if that write completed — record() below
-  // runs after it — and a sweep (force) always writes.
-  const previous = await deps.recomputesStore.get(ownerItemId);
-  const valuesHash = await hashOf(columnValues);
-  if (force || previous?.valuesHash !== valuesHash) {
+  // Issue #88: skip the two mutations when what we'd write hashes the same as the last write.
+  // The columns are read-only for staff (🔒), so a hand edit drifting past this is the accepted
+  // cost; the hash is cleared whenever a write doesn't land.
+  const lastRecompute = await deps.recomputesStore.get(ownerItemId);
+  const valuesHash = await sha256Hex(JSON.stringify(columnValues));
+  if (lastRecompute?.valuesHash !== valuesHash) {
     await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
   }
   // Gift term columns, owner first (spec §"Writes and idempotency"): if one of these fails the
@@ -620,7 +609,6 @@ async function recomputeOwnerLeased(
   // Review finding 12: driven-for-organizations gets its own try, separate from the
   // description write below — a D1 hiccup computing it must not cost the whole gift-history
   // markdown (the description write has its own non-fatal handling for its own failure modes).
-  let descriptionHash: string | null = null; // stays null if the description fails: the next recompute retries it
   let driven: { affiliationName: string; cents: number; count: number }[] | undefined;
   if (affiliationsCfg !== null) {
     try {
@@ -629,6 +617,7 @@ async function recomputeOwnerLeased(
       console.warn(`donation-rollups consumer: driven-for-organizations skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  let descriptionHash: string | null = null;
   try {
     const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
       ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
@@ -639,8 +628,8 @@ async function recomputeOwnerLeased(
     const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven,
       DESCRIPTION_TABLE_ROW_BUDGET - countTableRows(sponsorshipsMd ?? ''));
     const description = sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd;
-    const hash = await hashOf(description);
-    if (force || previous?.descriptionHash !== hash) await mondayClient.setItemDescription(ownerItemId, description);
+    const hash = await sha256Hex(description);
+    if (lastRecompute?.descriptionHash !== hash) await mondayClient.setItemDescription(ownerItemId, description);
     descriptionHash = hash;
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
@@ -662,6 +651,11 @@ async function recomputeOwnerLeased(
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
   await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString(), valuesHash, descriptionHash });
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).

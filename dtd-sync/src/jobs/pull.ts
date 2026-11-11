@@ -21,6 +21,13 @@ export interface PullDeps {
 export interface PullResult { fetched: number; written: number; unmatched: number }
 
 const UNMATCHED_RETRY_LIMIT = 50;
+// An unmatched record whose gift is older than this stops being retried: a gift that old is either
+// archived or deleted and never will match.
+const UNMATCHED_RETRY_MAX_AGE_DAYS = 120;
+// The first pull walks DTD in windows this long, committing the watermark after each, so a long
+// history can't outrun one invocation and restart from record 1 the next hour.
+const FIRST_PULL_WINDOW_DAYS = 30;
+const DAY_MS = 86_400_000;
 const MONDAY_PREFIX = 'monday-';
 const MATCHED = 'Matched';
 
@@ -108,6 +115,10 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
     donorEmailHash: hash,
     donationAmount: d.donation_amount,
   };
+
+  // A verified record identical to what's stored needs no Monday calls: re-verifying it could only
+  // keep the row as it is.
+  if (prev && !prev.unmatched && prev.mondayItemId && !differs(prev, next)) return { written: false, unmatched: false };
 
   // A verified row changes only if the incoming record re-verifies against the very same item.
   // Anything else (no match, another item, mismatch, lookup error) leaves the row and Monday alone.
@@ -198,17 +209,59 @@ export function firstPullSince(now: Date): string {
 export async function runPull(deps: PullDeps, now: Date): Promise<PullResult> {
   const nowISO = now.toISOString();
   const watermark = await getWatermark(deps.db);
-  const since = watermark
-    ? new Date(new Date(watermark).getTime() - deps.config.dtd.pullOverlapMinutes * 60_000).toISOString()
-    : firstPullSince(now);
+  const seen = new Set<string>();
+  const totals = { fetched: 0, written: 0, unmatched: 0, failed: 0, retryFailed: 0 };
 
-  const donations = await deps.dtd.getUpdatedDonations(since, nowISO); // DtdAuthError propagates
+  if (watermark) {
+    const since = new Date(new Date(watermark).getTime() - deps.config.dtd.pullOverlapMinutes * 60_000).toISOString();
+    const r = await pullWindow(deps, since, nowISO, nowISO, seen);
+    totals.fetched += r.fetched; totals.written += r.written; totals.unmatched += r.unmatched; totals.failed += r.failed;
+  } else {
+    // First run: walk forward in windows, advancing the watermark after each clean one. A run cut off
+    // by the cron limit resumes from the last committed window rather than from the start.
+    let from = new Date(firstPullSince(now)).getTime();
+    while (from < now.getTime()) {
+      const to = Math.min(from + FIRST_PULL_WINDOW_DAYS * DAY_MS, now.getTime());
+      const toISOStr = new Date(to).toISOString();
+      const r = await pullWindow(deps, new Date(from).toISOString(), toISOStr, nowISO, seen);
+      totals.fetched += r.fetched; totals.written += r.written; totals.unmatched += r.unmatched; totals.failed += r.failed;
+      if (r.lost > 0) break; // watermark stays at the last clean window
+      from = to;
+    }
+  }
 
+  // Retry stored unmatched/failed records; these never block the watermark. Each retried row's
+  // updatedSeenAt moves to now, so listUnmatched (oldest first) rotates past rows that keep failing.
+  const donatedAfter = new Date(now.getTime() - UNMATCHED_RETRY_MAX_AGE_DAYS * DAY_MS).toISOString();
+  for (const r of await listUnmatched(deps.db, UNMATCHED_RETRY_LIMIT, donatedAfter)) {
+    if (seen.has(r.donationIdentifier)) continue;
+    try {
+      const out = await handle(deps, asDonation(r), null, nowISO, r.donorEmailHash);
+      if (out.written) totals.written++;
+      if (out.unmatched) totals.unmatched++;
+      if (out.error !== undefined) {
+        totals.retryFailed++;
+        logItemFailure('pull', r.donationIdentifier, out.error);
+      }
+    } catch (err) {
+      if (err instanceof DtdAuthError) throw err;
+      totals.retryFailed++;
+      logItemFailure('pull', r.donationIdentifier, err);
+    }
+  }
+
+  console.log(JSON.stringify({ job: 'pull', ...totals }));
+  return { fetched: totals.fetched, written: totals.written, unmatched: totals.unmatched };
+}
+
+/** Fetch DTD changes in [sinceISO, toISO], handle each, and commit the watermark at `toISO` if none were lost. */
+async function pullWindow(deps: PullDeps, sinceISO: string, toISO: string, nowISO: string, seen: Set<string>):
+  Promise<{ fetched: number; written: number; unmatched: number; failed: number; lost: number }> {
+  const donations = await deps.dtd.getUpdatedDonations(sinceISO, toISO); // DtdAuthError propagates
   let written = 0;
   let unmatched = 0;
   let failed = 0; // Monday failed; stored for retry
   let lost = 0; // couldn't be stored either; holds the watermark
-  const seen = new Set<string>();
   for (const d of donations) {
     seen.add(d.donation_identifier);
     try {
@@ -226,28 +279,6 @@ export async function runPull(deps: PullDeps, now: Date): Promise<PullResult> {
       logItemFailure('pull', d.donation_identifier, err);
     }
   }
-
-  // Retry stored unmatched/failed records; these never block the watermark. Each retried row's
-  // updatedSeenAt moves to now, so listUnmatched (oldest first) rotates past rows that keep failing.
-  let retryFailed = 0;
-  for (const r of await listUnmatched(deps.db, UNMATCHED_RETRY_LIMIT)) {
-    if (seen.has(r.donationIdentifier)) continue;
-    try {
-      const out = await handle(deps, asDonation(r), null, nowISO, r.donorEmailHash);
-      if (out.written) written++;
-      if (out.unmatched) unmatched++;
-      if (out.error !== undefined) {
-        retryFailed++;
-        logItemFailure('pull', r.donationIdentifier, out.error);
-      }
-    } catch (err) {
-      if (err instanceof DtdAuthError) throw err;
-      retryFailed++;
-      logItemFailure('pull', r.donationIdentifier, err);
-    }
-  }
-
-  if (lost === 0) await setWatermark(deps.db, nowISO);
-  console.log(JSON.stringify({ job: 'pull', fetched: donations.length, written, unmatched, failed, lost, retryFailed }));
-  return { fetched: donations.length, written, unmatched };
+  if (lost === 0) await setWatermark(deps.db, toISO);
+  return { fetched: donations.length, written, unmatched, failed, lost };
 }

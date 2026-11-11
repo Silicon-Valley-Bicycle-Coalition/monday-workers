@@ -120,6 +120,12 @@ doesn't re-fire the automation, which triggers only on `Ready to Send`; staff re
 failed send by setting it back to `Ready to Send`. A write-back failure is logged and never
 fails the webhook (the email already went out).
 
+**Resend guard (#105):** with `sendStatus` set, the item read also fetches that status column and
+the Worker skips the send (200, `{ "sent": false, "alreadySent": true }`, `bp-feedback-already-sent`)
+when it already reads `sentLabel`. Without it, anyone holding `WEBHOOK_SECRET` can loop the
+endpoint over item ids and re-email organizers, so enable `sendStatus` before relying on this.
+A failed send never writes `sent`, so a genuine retry still goes through.
+
 Confirmed on the sandbox board on 2026-09-21: the connection's challenge handshake succeeded, and
 a real status-change fired the webhook end-to-end (verified via `wrangler tail`). The only
 remaining failure at that point was the organizer email send itself, blocked on the Cloudflare

@@ -98,6 +98,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
+    fetchItemAssets: vi.fn(),
   };
   const uploadStore: UploadStore = {
     createUpload: vi.fn(),
@@ -165,6 +166,7 @@ describe('processBenevityQueueBatch', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -221,6 +223,7 @@ describe('processBenevityQueueBatch', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -244,6 +247,7 @@ describe('processBenevityQueueBatch', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -264,6 +268,7 @@ describe('processBenevityQueueBatch', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -287,6 +292,7 @@ describe('processBenevityQueueBatch', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -321,6 +327,7 @@ describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
         changeColumnValues: vi.fn(),
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
+        fetchItemAssets: vi.fn(),
       } as never,
     });
   }

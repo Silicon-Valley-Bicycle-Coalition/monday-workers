@@ -20,7 +20,7 @@ function fakeMonday(calls: string[]): DtdMondayClient {
   const none = async () => null;
   return {
     findDonationByFunraiseId: none, findDonationBySalesforceId: none, getDonation: none,
-    listDonationsDatedSince: async () => [], listGiftsForDonor: async () => [], getPeople: async () => [],
+    listDonationsDatedSince: async () => [], listDonationsOfTypeDatedSince: async () => [], getDonations: async () => [], listGiftsForDonor: async () => [], getPeople: async () => [],
     getOrganizationName: none,
     updateDonation: rec('updateDonation'), updatePerson: rec('updatePerson'), upsertProgramSummary: rec('upsertProgramSummary'),
   };

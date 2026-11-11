@@ -18,6 +18,12 @@ describe('D1OwnerRecomputesStore', () => {
     expect((await store.get('o1'))!.fetchedAt).toBe('2026-01-02T00:00:00Z');
   });
 
+  it('stores the written-values and description hashes (issue #88)', async () => {
+    const store = new D1OwnerRecomputesStore(env.DB);
+    await store.record({ ownerItemId: 'oh', ownerBoardId: '2', fetchedAt: 'f', writtenAt: 'w', valuesHash: 'vh', descriptionHash: 'dh' });
+    expect(await store.get('oh')).toMatchObject({ valuesHash: 'vh', descriptionHash: 'dh' });
+  });
+
   it('writtenSince returns the owners whose last successful recompute landed at/after the instant', async () => {
     const store = new D1OwnerRecomputesStore(env.DB);
     await store.record({ ownerItemId: 'ws-old', ownerBoardId: 'b', fetchedAt: '2026-10-17T00:00:00Z', writtenAt: '2026-10-17T00:01:00Z' });

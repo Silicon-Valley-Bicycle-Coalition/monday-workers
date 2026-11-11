@@ -136,6 +136,23 @@ monday-auth-bindings:
   script:
     - node scripts/check-monday-auth-bindings.mjs
 
+# Preview URLs default to on, which would expose non-main code with production bindings (#108).
+# Every wrangler*.jsonc with env.sandbox must set "preview_urls": false at the top level and in
+# env.sandbox.
+preview-urls:
+  stage: test
+  rules:
+    - changes:
+        - "*/wrangler*.jsonc"
+        - scripts/check-preview-urls.mjs
+        - scripts/check-preview-urls.test.mjs
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node --test scripts/check-preview-urls.test.mjs
+    - node scripts/check-preview-urls.mjs
+
 # Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
 # automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
 # rather than ESLint — typescript-eslint doesn't support the TypeScript 7 the Workers build with.

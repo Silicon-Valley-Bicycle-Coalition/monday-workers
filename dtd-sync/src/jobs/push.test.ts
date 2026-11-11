@@ -70,6 +70,17 @@ describe('noonLosAngeles', () => {
 });
 
 describe('runPush', () => {
+  it('fetches People only for gifts that pass every item-level check', async () => {
+    const h = harness();
+    h.items = [
+      item({ id: '1', donorItemId: '900' }),
+      item({ id: '2', donorItemId: '901', status: 'Pending' }),
+      item({ id: '3', donorItemId: '902', anonymous: true }),
+    ];
+    await runPush(h.deps, NOW);
+    expect(h.peopleCalls).toEqual([['900']]);
+  });
+
   it('registers an eligible gift and marks Sent to DTD', async () => {
     const h = harness();
     h.items = [item({ amount: 75.5, date: '2026-10-15' })];
