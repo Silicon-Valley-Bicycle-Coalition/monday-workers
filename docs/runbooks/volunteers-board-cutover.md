@@ -61,8 +61,9 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
 
    Restore, if the rollback needs it, is
    `npx wrangler d1 time-travel restore svbc-eventbrite-sync --bookmark <bookmark>` (or
-   `--timestamp`). It rewinds the whole database, so only do it on `hold` and with the previous
-   build deployed (see Rollback).
+   `--timestamp`). It rewinds the **whole** database, so it is acceptable only before step 7
+   (Worker on `hold`, the remap the only write since the bookmark), with the previous build
+   deployed. After step 7 never restore it (see Rollback).
 
 5. **Backfill, then remap, while the Worker is still on `hold`.** From `eventbrite-sync/`:
 
@@ -165,8 +166,11 @@ throughout.
 2. **Unarchive** the original registrations in Monday (ids are in the ledger, below).
 3. **Restore the eventbrite-sync D1 from the Time Travel bookmark taken before step 5.** This is
    the real recovery path for `attendees` and `class_email_recipients`:
-   `npx wrangler d1 time-travel restore svbc-eventbrite-sync --bookmark <bookmark>`. It also
-   rewinds anything else written to that DB since the bookmark, so do it while on `hold`. Pointing
+   `npx wrangler d1 time-travel restore svbc-eventbrite-sync --bookmark <bookmark>`. It rewinds
+   the whole database to the bookmark, so it is acceptable **only before step 7**, while the
+   Worker is on `hold` and the remap is the only write since the bookmark. **After step 7, never
+   restore the whole DB**: it would also erase legitimately received attendees and class-email
+   `sent` records, and cause duplicate emails. Use targeted fixes with staff review instead. Pointing
    the ids back by hand is **NOT scripted** and is only a fallback: the forward remap
    (step 5) merged some `class_email_recipients` rows and deleted the duplicates, including `sent`
    records, and those cannot be reconstructed; without the snapshot a second class email could
@@ -190,7 +194,9 @@ throughout.
    registrations (an attendee registered twice: what the script's `duplicateMoves` reports), so
    reversing on `registration_item_id = '<new>'` alone repoints every row to one old id; always
    key on `(event_id, kind)` too, and prefer the Time Travel restore for those.
-4. **Undo step 9** if it ran. Restore exactly the rows captured in step 9:
+4. **Undo step 9.** This applies only to a rollback after step 9, which is by definition past
+   the clean-rollback window (step 9 runs after step 7): read "After step 7" below for what that
+   means. Restore exactly the rows captured in step 9:
    `UPDATE volunteer_activity SET qualifies = 1 WHERE registration_item_id IN (<ids from
    data/pre-step-9-qualifying.json>)`. The blanket
    `UPDATE volunteer_activity SET qualifies = 1 WHERE source IN ('sweep','webhook')` is
@@ -198,7 +204,8 @@ throughout.
    now (that is, none of them had `qualifies = 0` beforehand).
 5. Leave `hold` with `on` only when the old build and the D1 ids agree.
 
-**After step 7 a rollback is not clean.** Attendees created only on the Volunteers board (new
+**After step 7 a rollback is not clean, and a Time Travel restore is off the table** (it would
+ erase attendees and `sent` records received since the bookmark; see item 3). Attendees created only on the Volunteers board (new
 sign-ups since writes went on) have no old registration to point back to. Do not delete them:
 they are not lost. Leave those items on the Volunteers board and leave their D1 ids pointing at
 them; decide with staff whether to copy them onto Event Registrations by hand. Re-running the
