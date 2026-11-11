@@ -222,7 +222,7 @@ it, Done, Stuck) alongside the real ones; they're stripped before cutover.
 
 ## Annual Giving Summary
 
-[Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18431966690),
+[Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437530607),
 18 items: one per closed fiscal year, FY2005 and FY2009 through FY2025, with Total Received, Gift
 Count, and a By Gift Type breakdown. Exists because dashboards and searches can't see archived
 gifts, so year-over-year comparisons read from here. Written automatically each July; hand edits

@@ -263,7 +263,7 @@ The `dashboards` step (`--only dashboards`) also creates the Development, Member
 Report dashboards with their chart/number widgets in `monday.workspaceId`. What it created is
 remembered in gitignored `data/load/dashboards.json`, so reruns skip existing dashboards and
 widgets (delete a widget's entry there to recreate it). One board outside the board map is read
-from gitignored `data/load/extra-boards.json`, e.g. `{ "annual-giving-summary": 18431966690 }`.
+from gitignored `data/load/extra-boards.json`, e.g. `{ "annual-giving-summary": 18437530607 }`.
 
 The `overviews` step (`--only overviews`, or a board key such as `--only people-live`) creates an
 **Overview** dashboard view on each board that has an entry in `src/configure/overviewSpecs.ts`.

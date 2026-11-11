@@ -210,7 +210,7 @@ dashboard refuses two connections on one root directory, fall back to the
 
 The sandbox token scoped to the CRM Sandbox workspace (design doc §4) is the primary guard
 against a sandbox run touching production boards or docs. `config/backup.sandbox.json` also sets
-`workspaceIds: ["17141226"]`, a config-level belt-and-braces check: `runSnapshot` skips any board
+`workspaceIds: ["18210301"]`, a config-level belt-and-braces check: `runSnapshot` skips any board
 or doc whose `workspaceId` isn't in the list, so a token that somehow gained broader access still
 wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
 in `config/backup.json`) means no filter, today's "snapshot everything the token can see"

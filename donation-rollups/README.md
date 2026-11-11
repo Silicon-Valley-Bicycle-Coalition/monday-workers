@@ -5,10 +5,7 @@
 **Status (2026-11-02):** the sandbox config targets the **CRM Sandbox v4** workspace (18210301)
 since 2026-10-28 (4fe2c97, !251). The production config was filled 2026-11-01 from
 `salesforce-import`'s production load (1526652; Donor Roll Call board added 2026-11-02, fdba786);
-this repo doesn't record a production deploy yet. Note the sandbox is split: `funraise-sync`,
-`benevity-import`, `eventbrite-sync`, `member-portal` and `report-digests` still name the
-`(sandbox v3)` Donations board (18431577310) in their `config/sandbox.json`, so their sandbox
-gifts don't reach the v4 board this Worker watches. Older history follows.
+this repo doesn't record a production deploy yet. The sandbox is one workspace (CRM Sandbox v4) since 2026-11-11; every Worker's `config/sandbox.json` names the v4 boards. Older history follows.
 **Running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
 environment** (`npm run deploy:sandbox`; own D1 `svbc-donation-rollups-sandbox`, queues
 `donation-rollups-recompute-sandbox` and `-sandbox-dlq`, secrets under `--env sandbox`; the
