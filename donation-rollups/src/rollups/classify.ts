@@ -59,6 +59,13 @@ function validDate(dateISO: string | null): string | null {
   return month >= 1 && month <= 12 ? d : null;
 }
 
+// Fiscal Year Ending, as the text the board column holds ("2026" for July 2025 – June 2026), or
+// null when the date is unusable. Same rule as salesforce-import and funraise-sync stamp.
+export function fiscalYearEnding(dateISO: string | null, fiscalYearStartMonth: number): string | null {
+  const date = validDate(dateISO);
+  return date ? String(fiscalYearFromDate(date, fiscalYearStartMonth)) : null;
+}
+
 export function classifyGift(g: GiftFacts, fiscalYearStartMonth: number): GiftClassification {
   const fundingStream = (g.giftType && STREAM_BY_TYPE.get(norm(g.giftType))) || 'Individual Giving';
   const date = validDate(g.dateISO);

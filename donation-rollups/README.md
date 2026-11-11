@@ -628,7 +628,8 @@ ticket as the sink, and don't close the production item.
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
   verification" above).
 * **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
-  plus Acknowledgment Tier where configured (see "Chartable gift labels" below). Capped per run;
+  plus Acknowledgment Tier where configured (see "Chartable gift labels" below), and a blank Fiscal
+  Year Ending (see "A blank Fiscal Year Ending cell" above). Capped per run;
   re-run until `detail.remaining` is `0`.
 * **recurring** (nightly) — keeps People's **Has Active Recurring Gift** checkbox in step with the
   Recurring Gifts board, which the Postal appeal list filters on (monday-migration docs/35 §3.1).
@@ -1107,7 +1108,12 @@ new gift. The column exists for staff (board views/filters grouped by fiscal yea
 **the writer that creates the item should stamp it** — `funraise-sync` does, on create, from the
 transaction's `createdAt` with the same July rule (see its README, "Field mapping"). Hand-entered
 gifts, and any Funraise gift whose `createdAt` couldn't be parsed, roll up correctly via this
-fallback but show a blank Fiscal Year Ending on the board.
+fallback but show a blank Fiscal Year Ending on the board **until the nightly `classify` duty fills
+it** (added 2026-11-11, for the manual entry form: it has no writer to stamp the column). `classify`
+fills only a blank (or whitespace) cell, from the date by the same July rule, and never overwrites a
+stamped value, so the Decision above (rollups themselves don't backfill) stands. The write fires the
+board's `change_column_value` webhook like any other edit, which queues one cheap recompute for that
+donor.
 
 ## Config
 
