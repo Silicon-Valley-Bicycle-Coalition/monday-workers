@@ -15,9 +15,24 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
 ## Before you start
 
-Take a D1 Time Travel bookmark of the `eventbrite-sync` production database immediately before
-step 5 (written out in step 4 below), and write it down. It is the real recovery path for
-`attendees` and `class_email_recipients`; the rollback depends on it. Time Travel keeps 30 days.
+- **Set these first**, in the shell you run the steps from: `MONDAY_API_TOKEN` (above),
+  `CUSTODIAN_SECRET` (the `donation-rollups` custodian Bearer secret, for step 10; its own
+  secret, never the webhook's: `donation-rollups/README.md`), and the `donation-rollups`
+  production URL for step 10 (`https://svbc-donation-rollups.svbc-account.workers.dev`).
+- **Note the counts to compare against, before step 3**: for every volunteer event, the number
+  of Event Registrations items with Role = Volunteer (the step 5 count check compares the
+  Volunteers board against these); and, for three volunteer events, the class-email roster and
+  sent counts from the send page (`GET /class-emails/:eventId`). They are not recoverable
+  afterwards except from D1.
+- **Take a D1 Time Travel bookmark** of the `eventbrite-sync` production database immediately
+  before step 5 (written out in step 4 below), and write it down. It is the real recovery path
+  for `attendees` and `class_email_recipients`; the rollback depends on it. Time Travel keeps 30
+  days.
+- **Do not deploy `donation-rollups` from `main` before step 6.** Its config on `main` already
+  has `volunteerBoards: []`, so an early deploy stops counting new Event Registrations volunteer
+  check-ins until the cutover (the Volunteers board is not fed yet). A full recompute
+  (step 10) recovers them. A deploy of `eventbrite-sync` from `main` before step 2 is safe: it
+  stays on Event Registrations until the five column ids are filled.
 
 ## Order (do not reorder)
 
@@ -25,17 +40,20 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    `eventbrite-sync/`, dry run first and read what it plans:
 
    ```sh
-   MONDAY_API_TOKEN=... node scripts/setup-volunteers-board.mjs --board 18437909797 --events-board <production Events board id>
+   MONDAY_API_TOKEN=... node scripts/setup-volunteers-board.mjs --board 18437909797 --events-board 18437909790
    ```
 
-   Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
+   `18437909790` is the production Events board (`monday.boards.events` in
+   `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
    Attendee Name and Attendee Email (each only if missing) and the view (grouped by Event, Date within the
    last 90 days, newest first), and prints the column ids. Then, from the repo root, add the 🔒
-   markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`):
+   markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
+   `18201685` is the production Donors & Contacts workspace, per
+   `docs/production-deploy-checklist.md`):
 
    ```sh
-   MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace <id>
-   MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace <id> --apply
+   MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace 18201685
+   MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace 18201685 --apply
    ```
 
 2. **Put the production column ids in `eventbrite-sync/config/svbc.json`**, under
@@ -50,7 +68,7 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
    splitting volunteers across two boards.
 
-3. **Hold `eventbrite-sync`.**
+3. **Hold `eventbrite-sync`** (repo root).
 
    ```sh
    node scripts/flags.mjs eventbrite-sync writes hold --env production
@@ -88,12 +106,20 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    Registrations item, and a merge could overwrite a `claimed` class-email row mid-send. The SQL is
    idempotent, so re-running it is safe. `--apply` is resumable and idempotent on Eventbrite
    Attendee ID (ledger `data/backfill-volunteers-production.jsonl`). **Verify, per event:** the
-   number of Volunteers items for the event equals the number of volunteer registrations it had;
-   and for three volunteer events the class-email roster and the sent counts (the send page,
-   `GET /class-emails/:eventId`) are unchanged from before the cutover. Note the three counts
-   *before* step 3 if you want a comparison; they are not recoverable afterwards except from D1.
+   number of Volunteers items for the event equals the number of volunteer registrations it had
+   (the counts noted in "Before you start"); and for the three volunteer events noted there, the
+   class-email roster and the sent counts (the send page, `GET /class-emails/:eventId`) are
+   unchanged.
 
-6. **Deploy `donation-rollups`** (`cd donation-rollups && npm run deploy`) **after** the
+6. **First, check for Volunteers rows that would start counting without hours.** On the
+   Volunteers board (18437909797) in Monday, filter **Historical** is empty (unchecked) and
+   **Eventbrite Attendee ID** is empty (that excludes the rows the step 5 backfill created). The
+   expected count is **0**: every row that predates the cutover is a migrated Historical row.
+   From this deploy, a non-Historical `Completed` row counts towards membership with no Hours, so
+   any row this filter shows would start counting. If it shows any, stop and resolve them with
+   staff (check Historical on migrated rows) before deploying.
+
+   **Then deploy `donation-rollups`** (`cd donation-rollups && npm run deploy`) **after** the
    backfill, so no membership sweep runs while volunteer rows are in neither source. Its config
    already has `volunteerBoards: []` and the Volunteers board under `historicalVolunteerBoards`,
    with the optional `historical` checkbox column; the new nightly membership load pages the
@@ -106,8 +132,8 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    meantime still counting. Run steps 9 and 10 the same day as this step, before the 09:00 UTC
    nightly cron if practical.
 
-7. **Turn `eventbrite-sync` writes on.** Set `on` before relying on writes (a missing key or any
-   other value reads as `off`):
+7. **Turn `eventbrite-sync` writes on** (repo root). Set `on` before relying on writes (a missing
+   key or any other value reads as `off`):
 
    ```sh
    node scripts/flags.mjs eventbrite-sync writes on --env production
@@ -133,6 +159,7 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    `0009_membership_activity.sql`):
 
    ```sh
+   mkdir -p data
    npx wrangler d1 execute svbc-donation-rollups --remote --command "SELECT COUNT(*) AS qualifying FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1"
    npx wrangler d1 execute svbc-donation-rollups --remote --json --command "SELECT registration_item_id FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1" > data/pre-step-9-qualifying.json
    ```
@@ -151,7 +178,7 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
 
     ```sh
     curl -m 3600 -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
-      "https://<donation-rollups worker URL>/custodian/run/membership?all=true"
+      "https://svbc-donation-rollups.svbc-account.workers.dev/custodian/run/membership?all=true"
     ```
 
     Repeat until `detail.remaining` is `0` (see `donation-rollups/README.md`, "The `membership`
@@ -196,7 +223,8 @@ throughout.
      WHERE registration_item_id = '<new volunteerItemId>' AND event_id = '<event id>' AND kind = '<kind>';
    ```
 
-   Two traps. The primary key is `(event_id, kind, registration_item_id)`, so without `OR IGNORE`
+   Two traps, in this hand fallback only (pointing ids back by hand before step 7, when the
+   Time Travel restore is unavailable; never a step to run otherwise). The primary key is `(event_id, kind, registration_item_id)`, so without `OR IGNORE`
    a row whose old id already exists for the same event and kind aborts with UNIQUE; with it the
    row is silently left on the new id. And one new `volunteerItemId` can map to **several** old
    registrations (an attendee registered twice: what the script's `duplicateMoves` reports), so
@@ -204,17 +232,26 @@ throughout.
    key on `(event_id, kind)` too, and prefer the Time Travel restore for those.
 4. **Undo step 9.** This applies only to a rollback after step 9, which is by definition past
    the clean-rollback window (step 9 runs after step 7): read "After step 7" below for what that
-   means. Restore exactly the rows captured in step 9:
-   `UPDATE volunteer_activity SET qualifies = 1 WHERE registration_item_id IN (<ids from
-   data/pre-step-9-qualifying.json>)`. The blanket
+   means. Restore exactly the rows captured in step 9. `data/pre-step-9-qualifying.json` is
+   wrangler's `--json` output (an array whose first element's `results` holds the rows), and the
+   ids are TEXT, so each needs single quotes. From `donation-rollups/`, turn it into a reviewable
+   SQL file and run that:
+
+   ```sh
+   node -e "const r = JSON.parse(require('fs').readFileSync('data/pre-step-9-qualifying.json', 'utf8'))[0].results; console.log('UPDATE volunteer_activity SET qualifies = 1 WHERE registration_item_id IN (' + r.map((x) => \"'\" + x.registration_item_id + \"'\").join(',') + ');')" > data/undo-step-9.sql
+   npx wrangler d1 execute svbc-donation-rollups --remote --file data/undo-step-9.sql
+   ```
+
+   The blanket
    `UPDATE volunteer_activity SET qualifies = 1 WHERE source IN ('sweep','webhook')` is
    equivalent only if the count recorded in step 9 equals the number of `sweep`/`webhook` rows
    now (that is, none of them had `qualifies = 0` beforehand).
 5. Leave `hold` with `on` only when the old build and the D1 ids agree.
 
 **After step 7 a rollback is not clean, and a Time Travel restore is off the table** (it would
- erase attendees and `sent` records received since the bookmark; see item 3). Attendees created only on the Volunteers board (new
-sign-ups since writes went on) have no old registration to point back to. Do not delete them:
+erase attendees and `sent` records received since the bookmark; see item 3). Attendees created
+only on the Volunteers board (new sign-ups since writes went on) have no old registration to
+point back to. Do not delete them:
 they are not lost. Leave those items on the Volunteers board and leave their D1 ids pointing at
 them; decide with staff whether to copy them onto Event Registrations by hand. Re-running the
 forward remap SQL is safe (it is idempotent), but that is for finishing step 5, not a rollback
@@ -246,9 +283,16 @@ step. Never delete the Volunteers items the backfill created.
 - A Volunteers item deleted in Monday is never removed from `volunteer_activity` (archiving is
   the supported route), so a deleted row keeps counting until its D1 row is removed by hand.
 - Staff unchecking Historical on a migrated row would change history counts (see "For staff").
-- The sandbox rehearsal boards differ: `eventbrite-sync` sandbox writes to Volunteers v3
-  (18431577321), `donation-rollups` sandbox reads v4 (18437342662). An end-to-end sandbox
-  rehearsal needs the two configs pointed at the same board first.
+- **Sandbox rehearsal.** The sandbox boards differ: `eventbrite-sync` sandbox writes Volunteers
+  v3 (18431577321), `donation-rollups` sandbox reads v4 (18437342662). Point both
+  `config/sandbox.json` files at the same Volunteers board (and its column ids) before an
+  end-to-end rehearsal. A sandbox deploy then needs its own sequence, the same as production's
+  with `--env sandbox` throughout: `flags.mjs eventbrite-sync writes hold --env sandbox`, deploy
+  (`npm run deploy:sandbox`), `backfill-volunteers.mjs --env sandbox` (dry run, `--apply`,
+  `--remap-out`), the remap on `svbc-eventbrite-sync-sandbox`
+  (`npx wrangler d1 execute svbc-eventbrite-sync-sandbox --env sandbox --remote --file ...`),
+  then `writes on --env sandbox`. The sandbox config is already `ready` (all five column ids set),
+  so its next deploy writes to the Volunteers board.
 - The first nightly catch-up after cutover is capped at `ENQUEUE_PER_RUN` owners per night; step 10
   avoids that.
 - How the grouped view renders in the Monday UI (group order, empty-relation group) is not

@@ -136,23 +136,29 @@ move readers → production columns → production backfill → remove Registrat
 
 Answered by the code:
 
-- **Rollups on non-Historical items.** `pageHistoricalShifts` (`donation-rollups/src/monday/client.ts`)
-  pages the whole board and reads only Volunteer link, Date, Hours and Status. It never filters on
-  `Historical`, so new items are counted by `Completed` + `Date` with no config beyond removing the
-  old `volunteerBoards` entry. It runs in the custodian sweep, not per-webhook, so a Volunteers change
-  is picked up at the next sweep (as the historical rows are today). Builder: confirm the per-day
-  counting in `custodian/membership.ts` is acceptable for several same-day shifts.
+- **Rollups on non-Historical items** (superseded during the build; owner-approved rulings, see
+  `donation-rollups/README.md`). `historicalShiftQualifies` required Hours >= 1, and Eventbrite
+  items have no hours, so `historicalVolunteerBoards[].columns` gained an optional `historical`
+  column (the Historical checkbox). With it configured, a non-Historical row counts on `Completed`
+  + Volunteer link + `Date` alone, while a Historical row (the migrated 2014-2020 shifts) still
+  needs Hours >= 1; without it every row needs Hours >= 1, as before. The board was read only by
+  an `all=true` membership recompute and has no webhook, so the **nightly** membership run now
+  pages the Volunteers board, upserts the rows that are new or changed and enqueues only their
+  owners (capped at `ENQUEUE_PER_RUN` = 3,500 a night, the rest the next night): new volunteering
+  counts by the next morning, not per webhook. Several same-day shifts extend a term once.
 - **Status labels.** Production Volunteers Status has `Completed`, `Canceled`, `RSVP`, `No-Show`,
   `Prospect`, `Confirmed`. The sync's attendance vocabulary says "No Show" (Event Registrations), so
   the mapping translates `No Show` ↔ `No-Show`; no label is created.
 
 My calls (mark these when reviewing):
 
-- **Cutover order.** The write switch is per Worker, so hold the whole `eventbrite-sync` Worker
-  (`flags.mjs eventbrite-sync writes hold`) until the readers (class emails, rollups) are deployed and
-  the backfill has run, then flip it to `on` in the same session. `hold` keeps
-  queued sign-ups, and leaving `hold` with `on` processes them, so none are lost and nothing is
-  double-counted.
+- **Cutover order** (as run: `docs/runbooks/volunteers-board-cutover.md`). The write switch is per
+  Worker, so hold the whole `eventbrite-sync` Worker (`flags.mjs eventbrite-sync writes hold`),
+  deploy `eventbrite-sync` (class emails move with it), backfill and remap its D1 ledger while it
+  is still on `hold`, then deploy `donation-rollups` **after** the backfill, so no membership run
+  sees volunteer rows in neither source, and only then flip `eventbrite-sync` to `on`, in the same
+  session. `hold` keeps queued sign-ups, and leaving `hold` with `on` processes them, so none are
+  lost and nothing is double-counted.
 - **Unmatched people.** A volunteer with no People match still gets an item, with `Volunteer` blank and
   name/email filled; the backfill report lists them. They earn no membership activity credit, as today
   (an unlinked registration doesn't count now either).
