@@ -174,6 +174,15 @@ testing item moves in the sandbox.
    re-create every existing link on the new column with `link-board-items.mjs`, update every
    Worker, script and config that references the old column id (in both repos), and keep the old
    column until the new one is verified. Prefer in place whenever it works.
+   **Answer (sandbox probe, 2026-11-11): it works in place.** On Donations (sandbox v4,
+   18437342657) the existing `Donor` column (`board_relation_mm8hhdk7`), updated with
+   `update_column(board_id, id, revision, column_type: board_relation, settings: {...existing,
+   allowCreateReflectionColumn: true})` (settings passed as a JSON object, `revision` read from
+   the column first), created a reverse `link to Donations (sandbox v4)` column on each of its
+   three targets (People, People Historical, Organizations) with no replacement and the column id
+   unchanged. So "turn on", not "replace and re-link". Probe: `scripts/probe-reflection.mjs` in
+   `monday-migration`. Side effect: the reflection columns are named `link to <board>` and need
+   renaming.
 2. **Decided by the user: links and merge together** (one project, one sandbox rehearsal, one
    production cutover), not links first. Consequence: the merged board's stage vocabulary
    (svbc-monday-migration#109, Clarrissa's Leads / Deals stage bar) and the board name need
