@@ -7,7 +7,7 @@ import { MONDAY_WEBHOOK_PATH } from '../rateLimit'; // one path, so the limiter 
 import { stampFor, type WriteMode } from '../flags';
 
 export interface QueueLike {
-  send(message: RecomputeQueueMessage): Promise<void>;
+  send(message: RecomputeQueueMessage, opts?: { delaySeconds: number }): Promise<void>;
 }
 
 export interface AppDeps {
@@ -43,6 +43,8 @@ export interface AppDeps {
   // consumer dry-runs it even if writes are back `on` by the time it is consumed.
   writeMode: () => Promise<WriteMode>;
 }
+
+export const WEBHOOK_DELAY_SECONDS = 20;
 
 // Ingest-and-enqueue only, same division of labor as every other webhook-driven
 // Worker in this monorepo: resolving the owner and writing to Monday both happen in
@@ -108,7 +110,15 @@ export function createApp(deps: AppDeps) {
 
     const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ ...(kind !== 'donation' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
+      // The delay (issue #89) lets a burst of edits land — each one re-stamps received_at on the
+      // pending row — before the first message reads Monday, so the rest coalesce on that read.
+      // columnId lets the consumer coalesce a non-link edit from the D1 link, with no Monday call.
+      await deps.queue.send({
+        ...(kind !== 'donation' ? { kind } : {}),
+        donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId,
+        ...(kind === 'donation' && donationEvent.columnId !== null ? { columnId: donationEvent.columnId } : {}),
+        ...stamp,
+      }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
       // A delivery stamped dropped is a dry run from the start: recorded as 'dropped', not
       // 'queued', so the nightly requeue never re-sends it as a live recompute later.
       await deps.pendingStore.updateStatus(donationEvent.donationItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');

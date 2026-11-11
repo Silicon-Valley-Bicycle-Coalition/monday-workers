@@ -114,6 +114,10 @@ export interface DonationRollupsMondayClient {
   // The owner (Donor or Organization) a Donation item's connect column currently points
   // at — null if the Donation is unlinked (nothing to recompute).
   getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null>;
+  // The same link plus the owner's board in ONE query (issue #89), replacing the
+  // getDonorLinkForDonation + getItemBoardId pair on the hot path. ownerBoardId is null when the
+  // owner is deleted or no longer returned — what getItemBoardId reads as gone.
+  getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null>;
   // Why a Donation's Donor link read back empty (issue #26): 'archived' (board_relation reads
   // empty on archived items — the gift still counts), 'deleted' (gone, or no longer returned),
   // or 'active' (staff genuinely cleared the link — it no longer counts for anyone).
@@ -297,6 +301,30 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     if (data.items[0]?.state === 'deleted') return null;
     const linked = data.items[0]?.column_values[0]?.linked_item_ids ?? [];
     return linked.length > 0 ? linked[0]! : null;
+  }
+
+  async getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null> {
+    const data = await this.graphql<{
+      items: { state?: string | null; column_values: { id: string; linked_item_ids?: string[];
+        linked_items?: { id: string; state?: string | null; board?: { id: string } | null }[] }[] }[];
+    }>(
+      `query ($itemId: ID!, $columnId: [String!]) {
+        items(ids: [$itemId]) {
+          state
+          column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids linked_items { id state board { id } } } }
+        }
+      }`,
+      { itemId: donationItemId, columnId: [donorLinkColumnId] },
+    );
+    if (data.items[0]?.state === 'deleted') return null;
+    const column = data.items[0]?.column_values[0];
+    const ownerItemId = column?.linked_item_ids?.[0];
+    if (ownerItemId === undefined) return null;
+    // A trashed owner keeps its board in items(ids:) (see getItemBoardId); treat it, and one that
+    // linked_items doesn't return at all, as gone — the caller detaches rather than writing to it.
+    const owner = column?.linked_items?.find((i) => i.id === ownerItemId);
+    const ownerBoardId = owner === undefined || owner.state === 'deleted' ? null : owner.board?.id ?? null;
+    return { ownerItemId, ownerBoardId };
   }
 
   async getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'> {

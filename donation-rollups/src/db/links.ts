@@ -19,7 +19,7 @@ export interface DonationLinksStore {
   // The owner D1 already knows for one donation — the fallback when Monday's
   // board_relation reads back empty because the item is archived (see
   // projections/giftHistory.ts and consumer/processBatch.ts).
-  getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string } | null>;
+  getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string; updatedAt?: string } | null>;
   bulkUpsert(links: (DonationLink & { updatedAt: string })[]): Promise<number>;
   // Drops a donation from the reverse index — deleted on Monday, or its Donor link cleared.
   deleteLink(donationItemId: string): Promise<void>;
@@ -81,12 +81,12 @@ export class D1DonationLinksStore implements DonationLinksStore {
     return byBoard;
   }
 
-  async getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string } | null> {
+  async getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string; updatedAt?: string } | null> {
     const row = await this.db
-      .prepare(`SELECT owner_item_id, owner_board_id FROM donation_links WHERE donation_item_id = ?1`)
+      .prepare(`SELECT owner_item_id, owner_board_id, updated_at FROM donation_links WHERE donation_item_id = ?1`)
       .bind(donationItemId)
-      .first<{ owner_item_id: string; owner_board_id: string }>();
-    return row === null ? null : { ownerItemId: row.owner_item_id, ownerBoardId: row.owner_board_id };
+      .first<{ owner_item_id: string; owner_board_id: string; updated_at: string }>();
+    return row === null ? null : { ownerItemId: row.owner_item_id, ownerBoardId: row.owner_board_id, updatedAt: row.updated_at };
   }
 
   // Batched (D1 has a per-statement bind-parameter ceiling) — used by the one-time

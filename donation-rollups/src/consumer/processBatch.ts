@@ -214,7 +214,16 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     throw new NonRetryableError(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
-  let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
+  // Non-link column change on a donation D1 already links (issue #89): coalesce from the D1 link
+  // alone, with no Monday call. A miss falls through to the full path below.
+  if (message.columnId !== undefined && message.columnId !== sourceBoard.columns.donorLink && message.sweep !== true) {
+    const known = await deps.linksStore.getLinkForDonation(donationItemId);
+    if (known?.updatedAt !== undefined && await coalesceIfCovered(deps, donationItemId, known, false, known.updatedAt)) return;
+  }
+
+  const donorLink = await mondayClient.getDonorLinkWithBoard(donationItemId, sourceBoard.columns.donorLink);
+  let ownerItemId = donorLink?.ownerItemId ?? null;
+  let ownerBoardId = donorLink?.ownerBoardId ?? null;
   if (ownerItemId === null) {
     // An empty link means one of three things (issue #26), and only one of them keeps the gift
     // on its owner. An archived item's board_relation reads back empty (see
@@ -228,7 +237,9 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
       await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
       return;
     }
-    ownerItemId = (await deps.linksStore.getLinkForDonation(donationItemId))?.ownerItemId ?? null;
+    const fallback = await deps.linksStore.getLinkForDonation(donationItemId);
+    ownerItemId = fallback?.ownerItemId ?? null;
+    ownerBoardId = fallback === null ? null : await mondayClient.getItemBoardId(fallback.ownerItemId);
   }
   if (ownerItemId === null) {
     // Legitimately nothing to recompute — an archived donation unknown to D1 isn't a transient
@@ -237,7 +248,6 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
-  const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
   if (ownerBoardId === null) {
     // The owner was deleted (getItemBoardId reads a trashed item as gone). Retrying can't bring it
     // back, and a gift whose owner is gone counts for no one — the same as a cleared link.
@@ -263,19 +273,8 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   // (or one rewritten after the fetch) can't have been covered. A custodian sweep message, no
   // pending row, or no prior recompute means recompute: a sweep's representative gift can still
   // have an old open row, and skipping would leave that owner out of the sweep.
-  const [last, pending] = await Promise.all([
-    deps.recomputesStore.get(ownerItemId),
-    deps.pendingStore.getPending(donationItemId),
-  ]);
-  if (message.sweep !== true && last !== null && pending !== null
-    && last.fetchedAt >= pending.receivedAt
-    && !link.changed && link.updatedAt <= last.fetchedAt) {
-    console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
-    await deps.pendingStore.updateStatus(donationItemId, 'written', {
-      ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
-    });
-    return;
-  }
+  if (message.sweep !== true && await coalesceIfCovered(deps, donationItemId,
+    { ownerItemId, ownerBoardId }, link.changed, link.updatedAt)) return;
 
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
@@ -286,11 +285,31 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     await enqueueOwnerRecompute(deps, message, link.previousOwner);
   }
 
-  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
+  // A custodian sweep forces the write: it exists to repair an owner even when nothing changed.
+  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId, new Set(), message.sweep === true);
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
+}
+
+// The coalescing rule above, shared by the D1-only shortcut (issue #89) and the full path. True
+// when the donation was acked as covered by an earlier recompute of its owner.
+async function coalesceIfCovered(
+  deps: ProcessBatchDeps, donationItemId: string, owner: { ownerItemId: string; ownerBoardId: string },
+  linkChanged: boolean, linkUpdatedAt: string,
+): Promise<boolean> {
+  const [last, pending] = await Promise.all([
+    deps.recomputesStore.get(owner.ownerItemId),
+    deps.pendingStore.getPending(donationItemId),
+  ]);
+  if (last === null || pending === null || last.fetchedAt < pending.receivedAt
+    || linkChanged || linkUpdatedAt > last.fetchedAt) return false;
+  console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${owner.ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
+  await deps.pendingStore.updateStatus(donationItemId, 'written', {
+    ownerItemId: owner.ownerItemId, ownerBoard: owner.ownerBoardId, writtenAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 // Issue #26: a deleted donation, or an active one whose Donor link was cleared, must stop counting
@@ -428,7 +447,7 @@ async function enqueueOwnerRecompute(
 // the stale one would overwrite the fresh totals with nothing left to repair them.
 async function recomputeOwner(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
-  extraAffiliations: Set<string> = new Set(),
+  extraAffiliations: Set<string> = new Set(), force = false,
 ): Promise<void> {
   const holder = crypto.randomUUID();
   const now = Date.now();
@@ -436,7 +455,7 @@ async function recomputeOwner(
     new Date(now).toISOString(), new Date(now + OWNER_LEASE_TTL_MS).toISOString());
   if (!leased) throw new OwnerBusyError(`owner ${ownerItemId} is being recomputed by another message`);
   try {
-    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations);
+    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations, force);
   } finally {
     // A failed release leaves the lease to expire; it must not turn a good recompute into a retry.
     try {
@@ -445,6 +464,15 @@ async function recomputeOwner(
       console.warn(`donation-rollups consumer: could not release the lease on owner ${ownerItemId} (it expires on its own): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+// SHA-256 hex of a value's JSON with object keys sorted, so key order never changes the hash.
+async function hashOf(value: unknown): Promise<string> {
+  const json = JSON.stringify(value, (_k, v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    : v);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // The per-board read columns; the three sponsorship columns ride along only when the feature is on.
@@ -456,7 +484,7 @@ function readColumns(columns: DonationBoardConfig['columns'], sponsorships: bool
 
 async function recomputeOwnerLeased(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
-  extraAffiliations: Set<string>,
+  extraAffiliations: Set<string>, force: boolean,
 ): Promise<void> {
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
@@ -569,7 +597,15 @@ async function recomputeOwnerLeased(
     ...membershipValues,
   };
 
-  await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  // Skip a write identical to the last one that landed (issue #89): the gift term stamps below
+  // come back as this Worker's own webhooks, and the recompute they trigger would otherwise
+  // rewrite the same rollups. The hash is only trusted if that write completed — record() below
+  // runs after it — and a sweep (force) always writes.
+  const previous = await deps.recomputesStore.get(ownerItemId);
+  const valuesHash = await hashOf(columnValues);
+  if (force || previous?.valuesHash !== valuesHash) {
+    await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  }
   // Gift term columns, owner first (spec §"Writes and idempotency"): if one of these fails the
   // owner is already right and the retry re-derives the missing stamps. Each write fires this
   // Worker's own webhook; the resulting recompute finds nothing changed and writes nothing.
@@ -584,6 +620,7 @@ async function recomputeOwnerLeased(
   // Review finding 12: driven-for-organizations gets its own try, separate from the
   // description write below — a D1 hiccup computing it must not cost the whole gift-history
   // markdown (the description write has its own non-fatal handling for its own failure modes).
+  let descriptionHash: string | null = null; // stays null if the description fails: the next recompute retries it
   let driven: { affiliationName: string; cents: number; count: number }[] | undefined;
   if (affiliationsCfg !== null) {
     try {
@@ -601,8 +638,10 @@ async function recomputeOwnerLeased(
     // what's left of the budget. The largest sandbox sponsor renders 22 rows, so no cut of its own.
     const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven,
       DESCRIPTION_TABLE_ROW_BUDGET - countTableRows(sponsorshipsMd ?? ''));
-    await mondayClient.setItemDescription(ownerItemId,
-      sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
+    const description = sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd;
+    const hash = await hashOf(description);
+    if (force || previous?.descriptionHash !== hash) await mondayClient.setItemDescription(ownerItemId, description);
+    descriptionHash = hash;
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
@@ -622,7 +661,7 @@ async function recomputeOwnerLeased(
   // failed partway is retried in full rather than coalesced away (the retry's webhook time
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
-  await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
+  await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString(), valuesHash, descriptionHash });
 }
 
 // YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).

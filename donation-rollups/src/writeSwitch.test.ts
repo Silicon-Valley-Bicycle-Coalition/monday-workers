@@ -59,7 +59,7 @@ const deliver = (app: ReturnType<typeof createApp>, pulseId: number) => app.requ
 // so the only Monday traffic is the two reads, and a live run ends with the row 'written'.
 function consumerDeps(pendingStore = pending()): ProcessBatchDeps {
   const mondayClient = {
-    getDonorLinkForDonation: vi.fn(async () => null),
+    getDonorLinkWithBoard: vi.fn(async () => null),
     getDonationState: vi.fn(async () => 'deleted' as const),
   } as unknown as DonationRollupsMondayClient;
   return {

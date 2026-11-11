@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createApp } from './route';
+import { createApp, WEBHOOK_DELAY_SECONDS } from './route';
 import type { PendingStore } from '../db/pending';
 import type { WriteMode } from '../flags';
 
@@ -88,7 +88,7 @@ describe('POST /webhooks/monday/donations', () => {
     expect(pendingStore.upsertPending).toHaveBeenCalledWith(
       expect.objectContaining({ donationItemId: '555', donationBoardId: '18427756119' }),
     );
-    expect(send).toHaveBeenCalledWith({ donationItemId: '555', donationBoardId: '18427756119' });
+    expect(send).toHaveBeenCalledWith({ donationItemId: '555', donationBoardId: '18427756119' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('555', 'queued');
   });
 
@@ -183,7 +183,7 @@ describe('Event Registrations webhooks', () => {
     const { app, send, pendingStore } = regApp();
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 41, boardId: 7 } });
     expect(res.status).toBe(200);
-    expect(send).toHaveBeenCalledWith({ kind: 'registration', donationItemId: '41', donationBoardId: '7' });
+    expect(send).toHaveBeenCalledWith({ kind: 'registration', donationItemId: '41', donationBoardId: '7' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
     expect(pendingStore.upsertPending).toHaveBeenCalledWith(expect.objectContaining({ donationItemId: '41', donationBoardId: '7', kind: 'registration' }));
   });
   it('enqueues for a change to an accepted column, item deletion and item restore', async () => {
@@ -220,7 +220,7 @@ describe('write switch', () => {
     const { app, send, pendingStore } = switchApp('off');
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 1 } });
     expect(res.status).toBe(200);
-    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1', writeStamp: 'dropped' });
+    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1', writeStamp: 'dropped' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
     expect(pendingStore.upsertPending).toHaveBeenCalledOnce();
     // Recorded 'dropped', not 'queued': the nightly requeue must never re-send it as live work.
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('5', 'dropped');
@@ -236,7 +236,7 @@ describe('write switch', () => {
   it.each([['on'], ['hold'], ['unknown']] as const)('leaves the message unstamped under %s', async (mode) => {
     const { app, send } = switchApp(mode);
     await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 1 } });
-    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1' });
+    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
   });
 
   it('reads the mode only for a delivery it enqueues — not for the handshake or an ignored board', async () => {
@@ -256,7 +256,7 @@ describe('Affiliations webhooks', () => {
     const { app, send, pendingStore } = affApp();
     const res = await post(app, { event: { type: 'update_column_value', pulseId: 41, boardId: 555, columnId: 'br_o' } });
     expect(res.status).toBe(200);
-    expect(send).toHaveBeenCalledWith({ kind: 'affiliation', donationItemId: '41', donationBoardId: '555' });
+    expect(send).toHaveBeenCalledWith({ kind: 'affiliation', donationItemId: '41', donationBoardId: '555' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
     expect(pendingStore.upsertPending).toHaveBeenCalledWith(expect.objectContaining({ donationItemId: '41', donationBoardId: '555', kind: 'affiliation' }));
   });
   it('enqueues for a new item', async () => {
