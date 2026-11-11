@@ -20,7 +20,7 @@ if (!token || !/^\d+$/.test(boardId ?? '')) {
 const labels = (list) => JSON.stringify({ labels: Object.fromEntries(list.map((l, i) => [i < 5 ? i : i + 1, l])) });
 const FIELDS = {
   fundingStream: { title: 'Funding Stream', defaults: labels(['Individual Giving', 'Membership', 'Sponsorships', 'Grants & Contracts', 'Matching Donations', 'Other Program Revenue', 'Donor Advised Funds']) },
-  giftSize: { title: 'Gift Size', defaults: labels(['< $100', '$100–249', '$250–999', '$1k–4.9k', '$5k+']) },
+  giftSize: { title: 'Gift Size', defaults: labels(['< $100', '$100–199', '$200–999', '$1k–4.9k', '$5k+']) },
   fiscalQuarter: { title: 'Fiscal Quarter' },
   giftFiscalYear: { title: 'Gift Fiscal Year' },
 };

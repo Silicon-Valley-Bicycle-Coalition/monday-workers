@@ -683,7 +683,7 @@ so the custodian's `classify` duty writes four status columns on each Donations 
 `donationBoards[].columns.classification` configured: **Funding Stream** (Individual Giving,
 Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue, Donor
 Advised Funds),
-**Gift Size** (`< $100`, `$100–249`, `$250–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
+**Gift Size** (`< $100`, `$100–199`, `$200–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
 **Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
 gift's amount, date and type. It runs nightly and on demand
 (`POST /custodian/run/classify` with the custodian Bearer secret), skips gifts already correct, and writes at most

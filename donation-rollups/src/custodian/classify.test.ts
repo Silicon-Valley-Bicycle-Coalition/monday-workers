@@ -40,7 +40,7 @@ describe('runClassify', () => {
     const { client, writes } = fakeClient([{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership' }]);
     const report = await runClassify(client, config);
     expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true },
-      values: { fs: { label: 'Membership' }, gs: { label: '$250–999' }, fq: { label: 'FY26 Q2' }, gfy: { label: 'FY2026' } } }]);
+      values: { fs: { label: 'Membership' }, gs: { label: '$200–999' }, fq: { label: 'FY26 Q2' }, gfy: { label: 'FY2026' } } }]);
     expect(report).toMatchObject({ ok: true, detail: { scanned: 1, changed: 1, written: 1, remaining: 0 } });
   });
 
@@ -57,7 +57,7 @@ describe('runClassify', () => {
     // Monday returns label id 5's text for an EMPTY status cell. With "Membership" at id 5 on
     // Funding Stream, a blank gift's text already says "Membership" — only the value shows it's empty.
     const { client, writes } = fakeClient(
-      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$200–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
       2, { '1': { fs: null } });
     await runClassify(client, config);
     expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true }, values: { fs: { label: 'Membership' } } }]);
@@ -65,10 +65,10 @@ describe('runClassify', () => {
 
   it('treats a stored value without a numeric index as blank', async () => {
     const { client, writes } = fakeClient(
-      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$200–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
       2, { '1': { fs: '{}', gs: '' } });
     await runClassify(client, config);
-    expect(writes[0]!.values).toEqual({ fs: { label: 'Membership' }, gs: { label: '$250–999' } });
+    expect(writes[0]!.values).toEqual({ fs: { label: 'Membership' }, gs: { label: '$200–999' } });
   });
 
   it("doesn't clear a blank cell whose text reads as a label", async () => {
@@ -139,8 +139,8 @@ describe('runClassify', () => {
 
     it('sets Major at $200 and Standard below, alongside the other labels', async () => {
       const { client, writes } = fakeClient([
-        { id: '1', am: '200', ...labelled, gs: '$100–249' },
-        { id: '2', am: '199.99', ...labelled, gs: '$100–249' },
+        { id: '1', am: '200', ...labelled, gs: '$200–999' },
+        { id: '2', am: '199.99', ...labelled, gs: '$100–199' },
       ]);
       await runClassify(client, tierConfig);
       expect(writes.map((w) => [w.itemId, w.values])).toEqual([
@@ -151,8 +151,8 @@ describe('runClassify', () => {
 
     it('fixes a wrong tier and skips a right one', async () => {
       const { client, writes } = fakeClient([
-        { id: '1', am: '250', ...labelled, gs: '$250–999', at: 'Standard' },
-        { id: '2', am: '250', ...labelled, gs: '$250–999', at: 'Major' },
+        { id: '1', am: '250', ...labelled, gs: '$200–999', at: 'Standard' },
+        { id: '2', am: '250', ...labelled, gs: '$200–999', at: 'Major' },
       ]);
       await runClassify(client, tierConfig);
       expect(writes.map((w) => [w.itemId, w.values])).toEqual([['1', { at: { label: 'Major' } }]]);
@@ -165,7 +165,7 @@ describe('runClassify', () => {
     });
 
     it('reads the tier only when it is configured', async () => {
-      const { client, writes } = fakeClient([{ id: '1', am: '250', ...labelled, gs: '$250–999' }]);
+      const { client, writes } = fakeClient([{ id: '1', am: '250', ...labelled, gs: '$200–999' }]);
       const report = await runClassify(client, config);
       expect(writes).toEqual([]);
       expect(report.detail).toMatchObject({ changed: 0 });
