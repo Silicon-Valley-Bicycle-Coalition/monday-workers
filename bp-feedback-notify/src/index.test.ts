@@ -110,7 +110,7 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(SPOOFED_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(200);
-    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), expect.any(Function), VALID_BODY.itemId);
+    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), expect.any(Function), VALID_BODY.itemId, null);
     // The token reaches the Monday helpers as a provider (src/mondayApi.ts tokenProviderFor).
     expect(await (readFeedbackItem.mock.calls[0]![1] as () => Promise<string>)()).toBe(TOKEN);
     const sent = (env.EMAIL.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -145,6 +145,22 @@ describe('POST /webhook/bp-feedback', () => {
     expect(writeSendStatus).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-item-refused'));
     errorSpy.mockRestore();
+  });
+
+  it('already-sent item: 200, no send, no status write (#105)', async () => {
+    readFeedbackItem.mockResolvedValue({ kind: 'already-sent' });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const env = fakeEnv();
+    const ctx = fakeCtx();
+    writeSendStatus.mockClear();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, ctx);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sent: false, alreadySent: true, itemId: VALID_BODY.itemId });
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+    logSpy.mockRestore();
   });
 
   it('no address on the item: 422, no send, writes Failed back', async () => {

@@ -115,7 +115,12 @@ app.post('/webhook/bp-feedback', async (c) => {
   // The recipient and event name come from the board, never the request body (#66).
   let item;
   try {
-    item = await readFeedbackItem(config.board, token, itemId);
+    item = await readFeedbackItem(
+      config.board,
+      token,
+      itemId,
+      config.sendStatus && { columnId: config.sendStatus.columnId, sentLabel: config.sendStatus.sentLabel },
+    );
   } catch (error) {
     // Transient or not, nothing was sent: a 502 lets monday retry.
     const message = error instanceof Error ? error.message : String(error);
@@ -126,6 +131,12 @@ app.post('/webhook/bp-feedback', async (c) => {
     // Not an item on the configured board: send nothing and write nothing back to it.
     console.error(JSON.stringify({ event: 'bp-feedback-item-refused', environment, itemId, reason: item.kind }));
     return c.json({ sent: false, itemId }, 404);
+  }
+  if (item.kind === 'already-sent') {
+    // A replayed or looped webhook must not email the organizer again (#105). 200, not an error,
+    // so monday doesn't retry; staff re-send by moving the status back to Ready to Send.
+    console.log(JSON.stringify({ event: 'bp-feedback-already-sent', environment, itemId }));
+    return c.json({ sent: false, alreadySent: true, itemId });
   }
   if (item.kind === 'no-email') {
     console.error(JSON.stringify({ event: 'bp-feedback-no-email', environment, itemId }));
