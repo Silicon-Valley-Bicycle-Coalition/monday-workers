@@ -13,9 +13,9 @@ integration, not part of the cutover.
 ## Where it stands
 
 The sandbox copy is deployed and its three boards exist in the CRM Sandbox workspace:
-[QuickBooks Customers (sandbox)](https://bikesiliconvalley.monday.com/boards/18433278706),
-[QuickBooks Invoices (sandbox)](https://bikesiliconvalley.monday.com/boards/18433278710), and
-[QuickBooks Products (sandbox)](https://bikesiliconvalley.monday.com/boards/18433278721). They are
+[QuickBooks Customers (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574444),
+[QuickBooks Invoices (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574447), and
+[QuickBooks Products (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574450). They are
 empty. The integration can't do anything until SVBC's QuickBooks side is set up: an Intuit
 sandbox company, development keys, and a one-time sign-in that seeds its access token. Those are
 staff prerequisites, listed in the production deploy checklist.

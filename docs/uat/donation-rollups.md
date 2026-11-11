@@ -1,7 +1,7 @@
 # UAT script: donation rollups
 
 **Status 2026-11-02: testable now, on the `(sandbox v4)` boards.** The integration moved there on
-2026-10-28. A gift added on the older `(sandbox v3)` Donations board no longer updates anyone's
+2026-10-28. A gift added on the older `(sandbox v4)` Donations board no longer updates anyone's
 totals, so use the v4 links below.
 
 ## What it does

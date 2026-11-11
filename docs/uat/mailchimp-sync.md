@@ -24,7 +24,7 @@ cannot reach the real SVBC audience.
 ## Try it
 
 You need a person whose **Personal Email** on
-[People (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577220) is also a contact
+[People (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342592) is also a contact
 in the SVBC Sandbox audience. Ask the migration team for one if you don't know which to use.
 
 1. **Monday to Mailchimp.** Change that person's Membership Status, Membership Tier, Member Since,
@@ -44,7 +44,7 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
    should update to list the groups they are now in.
 6. **The campaign list.** Add or rename an interest group in the SVBC Sandbox audience. After the
    daily pass (8 am Pacific) the
-   [Mailchimp Campaigns (sandbox)](https://bikesiliconvalley.monday.com/boards/18431818836) board
+   [Mailchimp Campaigns (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574436) board
    should show the change.
 
 ## Don't report these

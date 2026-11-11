@@ -3,13 +3,9 @@
 **Last refreshed 2026-11-02** against the Workers deployed to the sandbox. Each script below says
 when it was last checked.
 
-**The sandbox now has two sets of boards.** Most integrations still run against the
-`(sandbox v3)` boards in
-[CRM Sandbox (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/17141226).
-Donation rollups (giving totals, Donor Level, membership dates) moved on 2026-10-28 to the
-`(sandbox v4)` boards in [CRM Sandbox v4](https://bikesiliconvalley.monday.com/workspaces/18210301),
-and so did People board housekeeping. So a gift you add on Donations (sandbox v3) no longer updates
-that donor's totals; test totals on v4. Each script links the boards it uses.
+**The sandbox is one set of boards:** the `(sandbox v4)` boards in
+[CRM Sandbox v4](https://bikesiliconvalley.monday.com/workspaces/18210301). Every integration
+below runs against it (the earlier v3 workspace is retired). Each script links the boards it uses.
 
 This folder holds the User Acceptance Testing scripts for the parts of SVBC's new CRM that stay
 around after the migration: the Monday.com boards you will work in every day, and the integrations

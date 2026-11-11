@@ -61,12 +61,12 @@ can safely use any real donor's email address while testing.
 - **Open the digital membership card** — does it show and look right?
 - **Submit a change** — try updating an address, email, or phone number through the portal and
   confirm you get a confirmation message. Then open the
-  [Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18431948024) board
+  [Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18439574429) board
   in the CRM Sandbox: the request should be there as a new item with the donor, the field, and
   the old and new values. Staff apply changes from that board; the portal never edits a donor's
   record directly.
 - **Check a partner discount end to end** — on
-  [Organizations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577213), set
+  [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579), set
   **Discount Offered** and tick **Discount Active** on a bike shop, then log in as a current
   member and confirm the discount shows.
 - **Open a giving/tax letter** — it's expected to say **"SANDBOX TEST"** prominently on it. That's

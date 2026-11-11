@@ -1,7 +1,7 @@
 # UAT script: the Monday.com boards
 
-**Last checked 2026-10-06** against the `(sandbox v3)` boards in
-[CRM Sandbox (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/17141226).
+**Last checked 2026-10-06** against the `(sandbox v4)` boards in
+[CRM Sandbox v4 (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/18210301).
 Item counts are from that day.
 
 This script is about the *boards*: are the views the lists you actually need, is the information
@@ -42,7 +42,7 @@ Two things to try on **every** board, before the per-board steps:
 
 ## People
 
-[People (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577220), 8,044 items:
+[People (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342592), 8,044 items:
 everyone with real activity since about 2019. Replaces Salesforce Contacts, with membership
 status right on the record instead of tracked separately.
 
@@ -100,7 +100,7 @@ confirm** with nothing in it is a leftover from the load and will be removed.
 
 ## People (Historical)
 
-[People (Historical) (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577228),
+[People (Historical) (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342607),
 8,062 items, same shape as People: everyone with **no** activity since about 2019. The split is
 by recency, not importance, so People stays focused on people you're likely to work with. It
 was first made to fit a 10,000-item board limit; SVBC's real limit is 100,000. Nothing is lost.
@@ -117,7 +117,7 @@ moved by hand (their gift links would need re-pointing).
 
 ## Organizations
 
-[Organizations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577213), 1,888
+[Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579), 1,888
 items: bike shops, corporate partners, funders, cities and agencies. Replaces Salesforce Accounts.
 
 **Tabs:** **Organizations** (opens here; grouped by Donor Level) · **Untyped** (Worklist:
@@ -139,7 +139,7 @@ organizations with no Partner Type) · **Municipal** · **Funders and matching c
 
 ## Affiliations
 
-[Affiliations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577240), 6,278
+[Affiliations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342615), 6,278
 items: one row per person-at-organization relationship, with Affiliation Role, Start and End,
 Primary, a Work Email with its own consent, and **Attributed Giving** (gifts the person gave on
 that organization's behalf). This is new; Salesforce hid these links inside Contact and
@@ -160,7 +160,7 @@ that a person should confirm or reject) · **Current** · **By organization**.
 
 ## Donations
 
-[Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), about 3,880 active
+[Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657), about 3,880 active
 items (FY2026 and FY2027 to date, growing as Funraise gifts arrive) plus about 44,800 archived (FY2025 and earlier, on the same
 board). Replaces Salesforce Opportunities: one board for the whole history, with the current and
 previous fiscal year (July to June) active and everything older archived in place.
@@ -206,7 +206,7 @@ Funraise and Benevity gifts aren't reaching this board yet (see the README).
 
 ## Recurring Gifts
 
-[Recurring Gifts (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577263), 1,176
+[Recurring Gifts (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342630), 1,176
 items, one per recurring plan or multi-year pledge. Replaces Salesforce's Subscription object.
 
 **Tabs:** **Active** (opens here; sorted by Next Payment; Failed rows red) · **Failed** ·
@@ -222,7 +222,7 @@ it, Done, Stuck) alongside the real ones; they're stripped before cutover.
 
 ## Annual Giving Summary
 
-[Annual Giving Summary (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431966690),
+[Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18431966690),
 18 items: one per closed fiscal year, FY2005 and FY2009 through FY2025, with Total Received, Gift
 Count, and a By Gift Type breakdown. Exists because dashboards and searches can't see archived
 gifts, so year-over-year comparisons read from here. Written automatically each July; hand edits
@@ -233,7 +233,7 @@ get overwritten.
 
 ## Campaigns
 
-[Campaigns (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577253), 2,425 items:
+[Campaigns (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342623), 2,425 items:
 the Salesforce Campaigns, kept so every migrated gift's Campaign link still resolves. Reference
 only; you won't work here day to day. Going forward, tagging a person to an outreach effort is the
 **Campaign** tag column on People.
@@ -242,8 +242,8 @@ only; you won't work here day to day. Going forward, tagging a person to an outr
 
 ## Events and Event Registrations
 
-[Events (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577282), 247 items, and
-[Event Registrations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577302),
+[Events (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342639), 247 items, and
+[Event Registrations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342649),
 6,913 items: the historical Eventbrite and Funraise events and who attended, migrated from
 Salesforce. Ongoing Eventbrite check-ins flow to the live workspace's Event Participation board
 (below), not here, until the Eventbrite automation is repointed at cutover.
@@ -261,7 +261,7 @@ you match a few to People?
 
 ## Volunteers
 
-[Volunteers (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577321), 3,936 items:
+[Volunteers (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342662), 3,936 items:
 logged volunteer hours (Job, Hours, Date, Status, the Volunteer link), including the 2014 to 2020
 records from the old separate system, marked **Historical**.
 
@@ -272,7 +272,7 @@ through the live workspace's Volunteer registration management board (below).
 
 ## Activities
 
-[Activities (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577339), 9,000
+[Activities (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342671), 9,000
 items: the last two years of calls, meetings, and logged emails. A searchable "who did we talk
 to, and about what" log, replacing free-text Salesforce notes.
 
@@ -311,8 +311,8 @@ views, not charts, because Monday can't chart text columns.
 
 ## Donor portal boards
 
-[Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18431948024) and
-[Donor Portal Letter Settings (sandbox)](https://bikesiliconvalley.monday.com/boards/18428114991)
+[Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18439574429) and
+[Donor Portal Letter Settings (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574433)
 are written and read by the donor portal. They're covered in the [donor portal](member-portal.md)
 script.
 
