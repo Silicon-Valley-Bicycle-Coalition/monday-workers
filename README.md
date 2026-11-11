@@ -81,7 +81,7 @@ production is each Worker's `config/split.test.ts` (the two configs share no id)
 `monday-backup`'s `workspaceIds`, not the token. To see what a token really reaches:
 
 ```sh
-MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
+MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 18210301
 ```
 
 (`MONDAY_API_TOKEN` here is the operator tool's own environment variable, not a Worker secret. The

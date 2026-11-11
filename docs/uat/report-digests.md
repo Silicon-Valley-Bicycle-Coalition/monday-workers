@@ -39,8 +39,8 @@ is addressed to, with the intended recipient noted in it.
 ## Try it
 
 1. **The views first.** On
-   [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310) and
-   [People (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577220), open each
+   [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657) and
+   [People (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342592), open each
    view in the second table above. Is it the list you'd want each week? Is anything you relied on
    in the Salesforce report missing (a column, a filter)?
 2. **The emails.** After a scheduled send (or ask for one on IT Requests, naming the email),

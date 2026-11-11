@@ -36,7 +36,7 @@ describe('validateConfig', () => {
 
   it('rejects a board id that is not an integer', () => {
     const cfg = valid();
-    cfg.monday.boards['donations:live'] = '18431577310';
+    cfg.monday.boards['donations:live'] = '18437342657';
     expect(() => validateConfig(cfg)).toThrow('must be a Monday board id number');
   });
 

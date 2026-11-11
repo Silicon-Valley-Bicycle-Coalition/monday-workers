@@ -149,11 +149,11 @@ contact ID** text column mirroring the existing Salesforce ID column pattern. Re
 identifier scheme.
 
 In practice the sandbox People board carries that id as a **link** column, `Funraise Profile`
-(`link_mm79dag0` on sandbox v3, `https://platform.funraise.io/supporter/<id>` with the bare id as
+(`link_mm8ha5g0` on sandbox v3, `https://platform.funraise.io/supporter/<id>` with the bare id as
 the link text), because `salesforce-import` writes it that way — not as a text column. Verified
 live 2026-09-17 (on the v2 board; same column shapes on v3): `items_page_by_column_values` on
 that column matches the bare id (`3682773` found its person; the display text and the url did
-not), and on `Personal Email` (`email_mm79m5qa`) it matches the address. So the two lookups in `matchDonor` pass the bare id and the bare address.
+not), and on `Personal Email` (`email_mm8h4kkb`) it matches the address. So the two lookups in `matchDonor` pass the bare id and the bare address.
 The *create* path writes the shapes those columns require — `{url, text}` with the supporter
 URL for the link column and `{email, text}` for the email column (Monday rejects bare strings on
 both; see `salesforce-import`'s `load/columnValues.ts`) — so a donor this Worker creates looks
@@ -173,30 +173,30 @@ too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
-| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18431577310` | webhook consumer's only target |
-| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v3) | `18431577263` | subscriptions poller's target |
-| `monday.boards["people-live"]` | People (sandbox v3) | `18431577220` | People (Historical) is not a match target |
-| `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm79nz8b` | Funraise nests amount and status under `transaction` |
-| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm79q3b3` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
-| `columnMap.donationDate` | Donations → Date (date) | `date_mm7938jk` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
-| `entityIdColumn` | Donations → Funraise ID (link) | `link_mm79jtzp` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
-| `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm7ddybs` | |
-| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm79fzs3` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
-| `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm7973ah` | |
-| `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm79pphw` | set on every write of an installment |
-| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm79dag0` | lookup by bare id; create writes `{url, text}` |
-| `donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by address; create writes `{email, text}` |
-| `donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8swwq5` / `text_mm8s1f86` | written from `donorFirstNameField` / `donorLastNameField` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
-| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | connects to People, People (Historical) and Organizations |
-| `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm79bx08` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
-| `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm792b0c` | |
-| `subscriptionsPoll.columns.installmentAmount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm79vnnj` | per-installment, per docs/03 |
-| `subscriptionsPoll.columns.annualizedValue` | Recurring Gifts → Annualized Value (numbers) | `numeric_mm79zpt1` | computed: amount × `frequencyMultiplier[frequency]` (Monthly 12, Quarterly 4, Yearly 1) |
-| `subscriptionsPoll.columns.frequency` | Recurring Gifts → Frequency (status) | `color_mm793249` | labels: Monthly / Yearly / Quarterly; a frequency missing from `frequencyMultiplier` leaves this and Annualized Value unset, with a warning |
-| `subscriptionsPoll.columns.status` | Recurring Gifts → Status (status) | `color_mm79tvkt` | labels: Redacted / Active / Cancelled / Failed; via `statusLabelMap`, unmapped → unset with a warning |
-| `subscriptionsPoll.columns.nextPayment` | Recurring Gifts → Next Payment (date) | `date_mm79de3c` | epoch ms in; cleared when the subscription has none (cancelled) |
-| `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm79gmge` | from the subscription's `form.name` |
-| `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm79pqy4` / `text_mm79rpky` | from `companyMatch.companyName` |
+| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18437342657` | webhook consumer's only target |
+| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v3) | `18437342630` | subscriptions poller's target |
+| `monday.boards["people-live"]` | People (sandbox v3) | `18437342592` | People (Historical) is not a match target |
+| `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm8hn1b2` | Funraise nests amount and status under `transaction` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm8hshet` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
+| `columnMap.donationDate` | Donations → Date (date) | `date_mm8hfsvm` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
+| `entityIdColumn` | Donations → Funraise ID (link) | `link_mm8hqhsx` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
+| `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | |
+| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm8h238c` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
+| `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | |
+| `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm8h60g2` | set on every write of an installment |
+| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm8ha5g0` | lookup by bare id; create writes `{url, text}` |
+| `donorEmailColumn` | People → Personal Email (email) | `email_mm8h4kkb` | lookup by address; create writes `{email, text}` |
+| `donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written from `donorFirstNameField` / `donorLastNameField` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
+| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm8hhdk7` | connects to People, People (Historical) and Organizations |
+| `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm8hy820` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
+| `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm8hb8th` | |
+| `subscriptionsPoll.columns.installmentAmount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm8hg1w7` | per-installment, per docs/03 |
+| `subscriptionsPoll.columns.annualizedValue` | Recurring Gifts → Annualized Value (numbers) | `numeric_mm8h96hn` | computed: amount × `frequencyMultiplier[frequency]` (Monthly 12, Quarterly 4, Yearly 1) |
+| `subscriptionsPoll.columns.frequency` | Recurring Gifts → Frequency (status) | `color_mm8hv1sa` | labels: Monthly / Yearly / Quarterly; a frequency missing from `frequencyMultiplier` leaves this and Annualized Value unset, with a warning |
+| `subscriptionsPoll.columns.status` | Recurring Gifts → Status (status) | `color_mm8hk16a` | labels: Redacted / Active / Cancelled / Failed; via `statusLabelMap`, unmapped → unset with a warning |
+| `subscriptionsPoll.columns.nextPayment` | Recurring Gifts → Next Payment (date) | `date_mm8hnmya` | epoch ms in; cleared when the subscription has none (cancelled) |
+| `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm8ht6a9` | from the subscription's `form.name` |
+| `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm8htq0v` / `text_mm8hjgnj` | from `companyMatch.companyName` |
 
 One id is deliberately absent:
 
@@ -285,8 +285,8 @@ write only, including adoption of an orphaned item, never a later update that co
 staff correction; a missing or unparseable `donationDate` logs a warning and leaves the cell
 blank, and leaves the Date column out too rather than writing a raw number (rollups then derive
 from whatever Date holds). Set `fiscalYearColumn` to `null`
-for a board without the column. `config/sandbox.json` points it at `text_mm7973ah`, the text column
-titled "Fiscal Year Ending" on the Donations (sandbox v3) board (`18431577310`, read live
+for a board without the column. `config/sandbox.json` points it at `text_mm8hpk76`, the text column
+titled "Fiscal Year Ending" on the Donations (sandbox v3) board (`18437342657`, read live
 2026-09-30) — the same one `donation-rollups` reads. (The v2 board also had an older numbers
 column titled "Fiscal Year" that `salesforce-import` no longer stamps; v3 doesn't.) The date is the **Pacific**
 calendar day of `donationDate` (#25): it used to be the UTC day, which put a gift made between

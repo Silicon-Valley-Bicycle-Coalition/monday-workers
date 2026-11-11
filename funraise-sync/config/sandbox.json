@@ -2,38 +2,38 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": 18431577310,
-      "recurring-gifts": 18431577263,
-      "people-live": 18431577220
+      "donations:live": 18437342657,
+      "recurring-gifts": 18437342630,
+      "people-live": 18437342592
     }
   },
   "funraiseSync": {
     "columnMap": {
-      "transaction.amount": "numeric_mm79nz8b",
-      "transaction.status": "color_mm79q3b3",
-      "donationDate": "date_mm7938jk"
+      "transaction.amount": "numeric_mm8hn1b2",
+      "transaction.status": "color_mm8hshet",
+      "donationDate": "date_mm8hfsvm"
     },
     "itemNameField": "description",
     "entityIdField": "id",
-    "entityIdColumn": "link_mm79jtzp",
-    "thankYouSentColumn": "boolean_mm7ddybs",
-    "giftTypeColumn": "text_mm79fzs3",
+    "entityIdColumn": "link_mm8hqhsx",
+    "thankYouSentColumn": "boolean_mm8j82yw",
+    "giftTypeColumn": "text_mm8h238c",
     "giftTypeValue": "Donation",
     "eventGiftTypeValue": "Event Ticket",
     "oldestActiveFiscalYear": 2026,
-    "fiscalYearColumn": "text_mm7973ah",
-    "recurringGiftLinkColumn": "board_relation_mm79pphw",
+    "fiscalYearColumn": "text_mm8hpk76",
+    "recurringGiftLinkColumn": "board_relation_mm8h60g2",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "supporter.id",
-    "donorExternalIdColumn": "link_mm79dag0",
-    "donorEmailColumn": "email_mm79m5qa",
+    "donorExternalIdColumn": "link_mm8ha5g0",
+    "donorEmailColumn": "email_mm8h4kkb",
     "donorNameField": "supporter.name",
     "donorFirstNameField": "supporter.firstName",
     "donorLastNameField": "supporter.lastName",
-    "donorFirstNameColumn": "text_mm8swwq5",
-    "donorLastNameColumn": "text_mm8s1f86",
-    "donorLinkColumn": "board_relation_mm795r2d",
+    "donorFirstNameColumn": "text_mm8sz56r",
+    "donorLastNameColumn": "text_mm8s4jbf",
+    "donorLinkColumn": "board_relation_mm8hhdk7",
     "emailFieldPrecedence": ["supporter.email"],
     "statusField": "transaction.status",
     "statusValueMap": {
@@ -54,16 +54,16 @@
   "subscriptionsPoll": {
     "enabled": true,
     "columns": {
-      "funraiseId": "link_mm79bx08",
-      "donor": "board_relation_mm792b0c",
-      "installmentAmount": "numeric_mm79vnnj",
-      "annualizedValue": "numeric_mm79zpt1",
-      "frequency": "color_mm793249",
-      "status": "color_mm79tvkt",
-      "nextPayment": "date_mm79de3c",
-      "designation": "text_mm79gmge",
-      "companyMatch": "boolean_mm79pqy4",
-      "matchEmployer": "text_mm79rpky"
+      "funraiseId": "link_mm8hy820",
+      "donor": "board_relation_mm8hb8th",
+      "installmentAmount": "numeric_mm8hg1w7",
+      "annualizedValue": "numeric_mm8h96hn",
+      "frequency": "color_mm8hv1sa",
+      "status": "color_mm8hk16a",
+      "nextPayment": "date_mm8hnmya",
+      "designation": "text_mm8ht6a9",
+      "companyMatch": "boolean_mm8htq0v",
+      "matchEmployer": "text_mm8hjgnj"
     },
     "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
     "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },

@@ -178,18 +178,18 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
-| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18431577310` | the only write target |
-| `monday.boards["people-live"]` | People (sandbox v3) | `18431577220` | People (Historical) is not a match target |
+| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18437342657` | the only write target |
+| `monday.boards["people-live"]` | People (sandbox v3) | `18437342592` | People (Historical) is not a match target |
 | `eventbriteSync.orderIdColumn` | Donations → **Eventbrite Order ID** (text) | **missing — prerequisite** | bare order id; the adopt-before-create key |
-| `eventbriteSync.amountColumn` | Donations → Amount (numbers) | `numeric_mm79nz8b` | `costs.gross.major_value` as a number — see "Amount" |
-| `eventbriteSync.statusColumn` | Donations → Status (status) | `color_mm79q3b3` | `placed → Received`, `refunded → Refunded` via `statusLabelMap`; **`Refunded` is not yet a label on the board** (funraise-sync's open item) |
-| `eventbriteSync.dateColumn` | Donations → Date (date) | `date_mm7938jk` | the Pacific calendar day of the order's `created` |
-| `eventbriteSync.thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm7ddybs` | first write only; Eventbrite sends the buyer its own confirmation |
-| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (text) | `text_mm79fzs3` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
-| `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm7973ah` | first write only, derived from the same date as the Date column |
-| `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by bare address; create writes `{ email, text }` |
-| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8swwq5` / `text_mm8s1f86` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
-| `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | `{ item_ids: [n] }` |
+| `eventbriteSync.amountColumn` | Donations → Amount (numbers) | `numeric_mm8hn1b2` | `costs.gross.major_value` as a number — see "Amount" |
+| `eventbriteSync.statusColumn` | Donations → Status (status) | `color_mm8hshet` | `placed → Received`, `refunded → Refunded` via `statusLabelMap`; **`Refunded` is not yet a label on the board** (funraise-sync's open item) |
+| `eventbriteSync.dateColumn` | Donations → Date (date) | `date_mm8hfsvm` | the Pacific calendar day of the order's `created` |
+| `eventbriteSync.thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | first write only; Eventbrite sends the buyer its own confirmation |
+| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (text) | `text_mm8h238c` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
+| `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | first write only, derived from the same date as the Date column |
+| `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm8h4kkb` | lookup by bare address; create writes `{ email, text }` |
+| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
+| `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm8hhdk7` | `{ item_ids: [n] }` |
 
 ## Field mapping
 
@@ -590,7 +590,7 @@ Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 
 Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
 **Status:** live in both environments, with no event configured in production yet. Production's board is
 18439165954 (created 2026-11-09, private, backed up); `pledge.events` is empty, so for now the block only
-arms the unconfigured-pledge alarm below. The sandbox board is 18439163372, rehearsed 2026-11-09 with three
+arms the unconfigured-pledge alarm below. The sandbox board is 18439574443, rehearsed 2026-11-09 with three
 real 2026 attendees (complete, placeholder, canceled). The 2027 pledge is due to publish 2027-01-15.
 
 An attendee of an event in `pledge.events` goes to the private **Pledge to Ride** board **instead of**

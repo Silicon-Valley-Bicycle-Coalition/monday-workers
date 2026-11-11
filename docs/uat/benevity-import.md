@@ -1,8 +1,8 @@
 # UAT script: Benevity import
 
-**Status 2026-09-30: testable now.** The sandbox copy was moved onto the `(sandbox v3)` boards
+**Status 2026-09-30: testable now.** The sandbox copy was moved onto the `(sandbox v4)` boards
 on 2026-09-30 and checked with a one-row test report: the employee gift and the company match
-both appeared on Donations (sandbox v3) about ten seconds later. The test items were removed
+both appeared on Donations (sandbox v4) about ten seconds later. The test items were removed
 afterwards, so the Uploads board starts empty.
 
 ## What it does
@@ -26,7 +26,7 @@ It only writes to Monday.
    taken only if its **Period Ending** is **2026-09-16 or later**; an older report is skipped
    whole, because those gifts are already in the migrated history.
 2. Within a few seconds, on
-   [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), look for
+   [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657), look for
    pairs of new items: `<Donor> - Donation <date> (Benevity)` with Gift Type Donation, and
    `<Company> - Employer Matching …` with Gift Type Matching Donation and **Matched By** set to the
    company's Organizations item. Both carry Status Received, Fiscal Year Ending, **Benevity

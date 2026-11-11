@@ -4,7 +4,7 @@
 
 **Status 2026-11-02: nothing to test yet for orders.** The sandbox copy has been deployed since
 2026-10-26, but it can't write a gift until the **Eventbrite Order ID** column exists on
-Donations (sandbox v3) and its id is in the sandbox config, and a refund can't be recorded until
+Donations (sandbox v4) and its id is in the sandbox config, and a refund can't be recorded until
 someone adds the **Refunded** Status label there. Production went live on 2026-11-02. This
 script will be updated when the sandbox can take an order.
 
@@ -24,7 +24,7 @@ create Event Registrations items; that is a separate, later integration.
 ## Try it (once it is live in the sandbox)
 
 1. **A paid order.** Buy a ticket on the sandbox test event. Within about ten seconds a new item
-   should appear on [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310),
+   should appear on [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657),
    named `<your name> - <event name>`, with Amount (what you paid, fees included), Date, Status
    **Received**, Gift Type **Event Ticket**, Fiscal Year Ending, Thank You Sent, Eventbrite Order
    ID, and a Donor link to your People item.

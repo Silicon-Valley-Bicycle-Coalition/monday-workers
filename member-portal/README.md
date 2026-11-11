@@ -448,8 +448,8 @@ Operator setup, in addition to v1/v2/v2.1 steps:
    "Letter emails" settings item with the built-in template, deletes Monday's board-template
    default items, and prints the `letterCron` config block to paste into `config/svbc.json`.
    A fresh board also gets the nine per-locale template columns. Already run against the CRM
-   Sandbox: board `18428114991` ("Member Portal Letter Settings (sandbox)", locale columns added
-   via `--add-locale-columns 18428114991` — the idempotent upgrade mode for boards created
+   Sandbox: board `18439574433` ("Member Portal Letter Settings (sandbox)", locale columns added
+   via `--add-locale-columns 18439574433` — the idempotent upgrade mode for boards created
    before those columns existed); re-run the same command against the production workspace at
    rollout.
 2. Grant the portal's integration user **read** access to the new board (it never writes to it).

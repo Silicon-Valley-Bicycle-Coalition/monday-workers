@@ -39,7 +39,7 @@ describe('config split: the Drive sink', () => {
 
   it('the sandbox config scopes to the CRM Sandbox workspace only; production names none', () => {
     // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4).
-    expect((sandbox as Json).workspaceIds).toEqual(['17141226']);
+    expect((sandbox as Json).workspaceIds).toEqual(['18210301']);
     expect((production as Json).workspaceIds).toBeUndefined();
   });
 });

@@ -9,7 +9,7 @@
 // before trusting it as scoped: the shared sandbox token, and each production integration token
 // at cutover.
 //
-//   MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
+//   MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 18210301
 //   MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 111 --workspace 222
 //
 // Exit 0: every board the token reaches is in an allowed workspace. Exit 1: it reaches boards

@@ -243,7 +243,7 @@ column.
 
 **To turn it on** (not done as of this change). Deploy, then register a second Monday webhook,
 `create_item` + `change_column_value`, on the Historical board, with the same URL and secret as
-the People one: sandbox board `18431577228`, production `18437909784`. SVBC Integration and
+the People one: sandbox board `18437342607`, production `18437909784`. SVBC Integration and
 Sandbox Integration already subscribe to those private boards (checked 2026-11-03). Then have
 `nearby-search` drop its "won't get the email yet" note (`src/page.ts`).
 

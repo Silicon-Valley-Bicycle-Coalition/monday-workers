@@ -7,8 +7,8 @@
 // size the limit is per-request latency; if retries/backoff dominate, Monday is rejecting
 // concurrent requests. Archives the scratch boards at the end. Never hard-deletes anything.
 //
-//   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 17141226 --check
-//   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 17141226 --run [--n 60] [--out probe.json]
+//   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 18210301 --check
+//   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 18210301 --run [--n 60] [--out probe.json]
 //   ... --run --real [--donations "Donations (sandbox v3)"] [--people "People (sandbox v3)"] [--n 30]
 //                            times single vs aliased(10) link and archive writes on a REAL
 //                            full-size Donations board (its connect columns into People, its real

@@ -148,19 +148,19 @@ describe('config split: board and column ids', () => {
   });
 
   it('sandbox.json targets the CRM Sandbox (sandbox v3) Donations and People boards — the same ones funraise-sync writes', () => {
-    expect(sandbox.monday.boards['donations:live']).toBe(18431577310);
-    expect(sandbox.monday.boards['people-live']).toBe(18431577220);
+    expect(sandbox.monday.boards['donations:live']).toBe(18437342657);
+    expect(sandbox.monday.boards['people-live']).toBe(18437342592);
   });
 
   it('sandbox.json targets the Events and Event Registrations (sandbox v3) boards; production never shares them', () => {
-    expect(sandbox.monday.boards['events']).toBe(18431577282);
-    expect(sandbox.monday.boards['event-registrations']).toBe(18431577302);
-    expect(production.monday.boards['events']).not.toBe(18431577282);
-    expect(production.monday.boards['event-registrations']).not.toBe(18431577302);
+    expect(sandbox.monday.boards['events']).toBe(18437342639);
+    expect(sandbox.monday.boards['event-registrations']).toBe(18437342649);
+    expect(production.monday.boards['events']).not.toBe(18437342639);
+    expect(production.monday.boards['event-registrations']).not.toBe(18437342649);
   });
 
   it('sandbox.json maps the People email column', () => {
-    expect(sandbox.attendeeSync.peopleEmailColumn).toBe('email_mm79m5qa');
+    expect(sandbox.attendeeSync.peopleEmailColumn).toBe('email_mm8h4kkb');
   });
 
   it('both configs subscribe the three order actions and map placed/refunded to the labels funraise-sync writes', () => {

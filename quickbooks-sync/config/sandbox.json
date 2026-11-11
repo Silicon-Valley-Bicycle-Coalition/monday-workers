@@ -2,9 +2,9 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "customers": 18433278706,
-      "invoices": 18433278710,
-      "products": 18433278721
+      "customers": 18439574444,
+      "invoices": 18439574447,
+      "products": 18439574450
     }
   },
   "quickbooks": {
