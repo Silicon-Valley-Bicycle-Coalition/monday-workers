@@ -14,6 +14,8 @@ export interface EventMapping {
   classDate: string | null;
   classDay: string | null;
   classLocation: string;
+  // The event's name (its item name), for the attendee consumer's eventFacts.
+  eventName: string;
   // The Program label written to columnValues, for the attendee consumer's eventFacts.
   program: string;
 }
@@ -96,8 +98,9 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, n
     columnValues[cols.sendLinkColumn] = { url: `${pageUrl}${sep}event=${encodeURIComponent(event.id)}`, text: 'Send event email' };
   }
 
+  const itemName = nonEmpty(event.name?.text) ?? `Eventbrite event ${event.id}`;
   return {
-    itemName: nonEmpty(event.name?.text) ?? `Eventbrite event ${event.id}`,
+    itemName,
     columnValues,
     startsAt,
     endsAt,
@@ -105,6 +108,7 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, n
     classDate,
     classDay,
     classLocation,
+    eventName: itemName,
     program,
   };
 }

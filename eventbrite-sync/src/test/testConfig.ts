@@ -55,6 +55,11 @@ export function testConfig(
         classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',
         homeZipColumn: 'att_zip_col',
       },
+      volunteers: {
+        attendeeIdColumn: 'vol_att_col', attendeeNameColumn: 'vol_name_col', attendeeEmailColumn: 'vol_email_col', jobColumn: 'vol_job_col',
+        dateColumn: 'vol_date_col', statusColumn: 'vol_status_col', historicalColumn: 'vol_hist_col', volunteerLinkColumn: 'vol_person_col',
+        eventColumn: 'vol_event_col', listingColumn: 'vol_listing_col',
+      },
       registrantsLinkExcludedEventIds: ['8888'],
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },
       peopleEmailColumn: 'people_email_col',

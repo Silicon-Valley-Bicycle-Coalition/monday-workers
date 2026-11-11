@@ -8,7 +8,7 @@ import type { EventbriteAttendee } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 
 const config = testConfig();
-const facts = { classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Public' as string | null };
+const facts = { eventName: 'Bike Class', classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Public' as string | null };
 
 function attendee(overrides: Partial<EventbriteAttendee> = {}): EventbriteAttendee {
   return { id: 'a1', profile: { name: 'Jane Rider', first_name: 'Jane', email: 'jane@example.com' }, ...overrides };
@@ -153,7 +153,7 @@ describe('mapAttendee', () => {
   });
 
   it('copes with no profile and no class facts', () => {
-    const m = mapAttendee({ id: 'a2' }, { classDate: null, classDay: null, classLocation: '', program: null }, config, 'Registered');
+    const m = mapAttendee({ id: 'a2' }, { eventName: 'Bike Class', classDate: null, classDay: null, classLocation: '', program: null }, config, 'Registered');
     expect(m.itemName).toBe('Eventbrite attendee a2');
     expect(m.columnValues).not.toHaveProperty('att_class_date_col');
     expect(m.columnValues).not.toHaveProperty('att_first_col');
