@@ -900,7 +900,8 @@ export function createApp(deps: AppDeps) {
 
     let donor;
     try {
-      donor = await deps.monday.getMemberPortalData(donorItemId);
+      // The card needs name, tier, status and expiry only, so skip the Donations-board read.
+      donor = await deps.monday.getMemberPortalData(donorItemId, { includeDonations: false });
     } catch (err) {
       console.error(`member-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
