@@ -447,8 +447,14 @@ Tier (never downgrades), so a staff-granted comp or Lifetime is never shortened;
 if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are derived facts
 **written outright** — a staff edit to them is overwritten on the next recompute. All eight
 writes, and the gift stamps, are compare-before-write, so a stamp's own webhook triggers one idle
-recompute and stops (that recompute still writes the owner rollups and descriptions; only the
-membership keys and stamps are compared away).
+recompute and stops. That recompute also writes nothing to the owner: the rollup values and the
+description are each hashed (`owner_recomputes.values_hash` / `description_hash`, migration 0014)
+and a write identical to the last one that landed is skipped (issue #88).
+
+Per-gift Monday cost (issue #89): the Donor link and its owner's board come back in one query; a
+webhook for a non-link column carries its `columnId`, so when D1 already links the gift and the
+owner was fetched since, it is coalesced with no Monday call; and each webhook is enqueued with a
+20 s delay so a burst of edits lands before the first read and the rest coalesce on it.
 
 * **Enabling — order matters.** Migration `0009_membership_activity.sql` (`volunteer_activity`,
   `gifts.term_start`, `pending_recomputes.kind`) must be applied **before deploying the build

@@ -214,7 +214,16 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     throw new NonRetryableError(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
-  let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
+  // Non-link column change on a donation D1 already links (issue #89): coalesce from the D1 link
+  // alone, with no Monday call. A miss falls through to the full path below.
+  if (message.columnId !== undefined && message.columnId !== sourceBoard.columns.donorLink && message.sweep !== true) {
+    const known = await deps.linksStore.getLinkForDonation(donationItemId);
+    if (known?.updatedAt !== undefined && await coalesceIfCovered(deps, donationItemId, known, false, known.updatedAt)) return;
+  }
+
+  const donorLink = await mondayClient.getDonorLinkWithBoard(donationItemId, sourceBoard.columns.donorLink);
+  let ownerItemId = donorLink?.ownerItemId ?? null;
+  let ownerBoardId = donorLink?.ownerBoardId ?? null;
   if (ownerItemId === null) {
     // An empty link means one of three things (issue #26), and only one of them keeps the gift
     // on its owner. An archived item's board_relation reads back empty (see
@@ -228,7 +237,9 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
       await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
       return;
     }
-    ownerItemId = (await deps.linksStore.getLinkForDonation(donationItemId))?.ownerItemId ?? null;
+    const fallback = await deps.linksStore.getLinkForDonation(donationItemId);
+    ownerItemId = fallback?.ownerItemId ?? null;
+    ownerBoardId = fallback === null ? null : await mondayClient.getItemBoardId(fallback.ownerItemId);
   }
   if (ownerItemId === null) {
     // Legitimately nothing to recompute — an archived donation unknown to D1 isn't a transient
@@ -237,7 +248,6 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
-  const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
   if (ownerBoardId === null) {
     // The owner was deleted (getItemBoardId reads a trashed item as gone). Retrying can't bring it
     // back, and a gift whose owner is gone counts for no one — the same as a cleared link.
@@ -263,19 +273,8 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   // (or one rewritten after the fetch) can't have been covered. A custodian sweep message, no
   // pending row, or no prior recompute means recompute: a sweep's representative gift can still
   // have an old open row, and skipping would leave that owner out of the sweep.
-  const [last, pending] = await Promise.all([
-    deps.recomputesStore.get(ownerItemId),
-    deps.pendingStore.getPending(donationItemId),
-  ]);
-  if (message.sweep !== true && last !== null && pending !== null
-    && last.fetchedAt >= pending.receivedAt
-    && !link.changed && link.updatedAt <= last.fetchedAt) {
-    console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
-    await deps.pendingStore.updateStatus(donationItemId, 'written', {
-      ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
-    });
-    return;
-  }
+  if (message.sweep !== true && await coalesceIfCovered(deps, donationItemId,
+    { ownerItemId, ownerBoardId }, link.changed, link.updatedAt)) return;
 
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
@@ -291,6 +290,25 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
+}
+
+// The coalescing rule above, shared by the D1-only shortcut (issue #89) and the full path. True
+// when the donation was acked as covered by an earlier recompute of its owner.
+async function coalesceIfCovered(
+  deps: ProcessBatchDeps, donationItemId: string, owner: { ownerItemId: string; ownerBoardId: string },
+  linkChanged: boolean, linkUpdatedAt: string,
+): Promise<boolean> {
+  const [last, pending] = await Promise.all([
+    deps.recomputesStore.get(owner.ownerItemId),
+    deps.pendingStore.getPending(donationItemId),
+  ]);
+  if (last === null || pending === null || last.fetchedAt < pending.receivedAt
+    || linkChanged || linkUpdatedAt > last.fetchedAt) return false;
+  console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${owner.ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
+  await deps.pendingStore.updateStatus(donationItemId, 'written', {
+    ownerItemId: owner.ownerItemId, ownerBoard: owner.ownerBoardId, writtenAt: new Date().toISOString(),
+  });
+  return true;
 }
 
 // Issue #26: a deleted donation, or an active one whose Donor link was cleared, must stop counting

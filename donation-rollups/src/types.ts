@@ -281,6 +281,10 @@ export interface RecomputeQueueMessage extends WriteStamp {
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).
   donationBoardId: string;
+  // The column whose change raised the webhook (donation kind only; absent for item-level events
+  // and for messages enqueued before this field existed). A non-Donor-link column on a donation D1
+  // already links lets the consumer coalesce with no Monday call (issue #89).
+  columnId?: string;
   // Set when this message recomputes a specific OWNER rather than resolving one from the
   // donation: the owner a gift just moved away from (issue #26). donationItemId is then the gift
   // that left, kept for logs. Always recomputed — never coalesced away.

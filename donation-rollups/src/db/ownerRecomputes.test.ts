@@ -13,7 +13,8 @@ describe('D1OwnerRecomputesStore', () => {
     await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T00:00:05Z' });
     expect(await store.get('o1')).toEqual({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T00:00:05Z', valuesHash: null, descriptionHash: null });
 
-    await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-02T00:00:00Z', writtenAt: '2026-01-02T00:00:03Z' });
+    await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-02T00:00:00Z', writtenAt: '2026-01-02T00:00:03Z', valuesHash: 'v1', descriptionHash: 'd1' });
+    expect((await store.get('o1'))!.valuesHash).toBe('v1');
     expect((await store.get('o1'))!.fetchedAt).toBe('2026-01-02T00:00:00Z');
   });
 

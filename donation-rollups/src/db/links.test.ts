@@ -34,7 +34,7 @@ describe('D1DonationLinksStore', () => {
     // The owner it left comes back too — it must be recomputed (issue #26).
     expect(result).toEqual({ changed: true, updatedAt: '2026-01-05T00:00:00Z',
       previousOwner: { ownerItemId: 'o-old', ownerBoardId: '2' } });
-    expect(await store.getLinkForDonation('d-move')).toEqual({ ownerItemId: 'o-new', ownerBoardId: '3' });
+    expect(await store.getLinkForDonation('d-move')).toEqual({ ownerItemId: 'o-new', ownerBoardId: '3', updatedAt: expect.any(String) });
   });
 
   it('upsertLink reports no previousOwner for a new link or a board-only change', async () => {
@@ -72,7 +72,7 @@ describe('D1DonationLinksStore', () => {
   it('looks up the stored owner for one donation, null when unknown', async () => {
     const store = new D1DonationLinksStore(env.DB);
     await store.upsertLink({ donationItemId: 'd9', donationBoardId: '1', ownerItemId: 'o9', ownerBoardId: '2' }, '2026-01-01T00:00:00Z');
-    expect(await store.getLinkForDonation('d9')).toEqual({ ownerItemId: 'o9', ownerBoardId: '2' });
+    expect(await store.getLinkForDonation('d9')).toEqual({ ownerItemId: 'o9', ownerBoardId: '2', updatedAt: expect.any(String) });
     expect(await store.getLinkForDonation('never-seen')).toBeNull();
   });
 

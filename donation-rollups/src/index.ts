@@ -102,7 +102,7 @@ export default {
         ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) =>
           b.columns.classification ? Object.values(b.columns.classification).map((col) => `${b.boardId}:${col}`) : [])),
         queue: {
-          send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
+          send: (message: RecomputeQueueMessage, opts?: { delaySeconds: number }) => env.RECOMPUTE_QUEUE.send(message, opts).then(() => undefined),
         },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
         writeMode: () => readWriteMode(env, WORKER),
