@@ -154,6 +154,12 @@ describe('webhook route', () => {
     expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ assetId: 'a1' }, { assetId: 'a2' }]);
   });
 
+  it('asks Monday about the file column the event named', async () => {
+    const deps = fakeDeps();
+    await post(createApp(deps), UPLOAD_EVENT);
+    expect(deps.mondayClient.fetchItemAssets).toHaveBeenCalledWith('1', 'file_col');
+  });
+
   it('refuses an event from a board other than the Uploads board, without calling Monday', async () => {
     const deps = fakeDeps();
     const res = await post(createApp(deps), { event: { ...UPLOAD_EVENT.event, boardId: 999 } });
