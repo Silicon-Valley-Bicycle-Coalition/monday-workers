@@ -153,6 +153,22 @@ preview-urls:
     - node --test scripts/check-preview-urls.test.mjs
     - node scripts/check-preview-urls.mjs
 
+# Rate-limit bindings that share a namespace_id share per-IP counters even with different limits,
+# so one Worker's traffic can 429 another's (#113). Every ratelimits[].namespace_id must be unique.
+rate-limit-namespaces:
+  stage: test
+  rules:
+    - changes:
+        - "*/wrangler*.jsonc"
+        - scripts/check-rate-limit-namespaces.mjs
+        - scripts/check-rate-limit-namespaces.test.mjs
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node --test scripts/check-rate-limit-namespaces.test.mjs
+    - node scripts/check-rate-limit-namespaces.mjs
+
 # Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
 # automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
 # rather than ESLint — typescript-eslint doesn't support the TypeScript 7 the Workers build with.

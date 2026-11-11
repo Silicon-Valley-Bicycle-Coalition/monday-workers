@@ -22,7 +22,8 @@ both the tests and the check below).
 
 - CI checks: `check-log-safety.mjs` fails on `console.*()` calls that could log an email address
   (the pre-commit hook also runs it with `--staged`; by hand, `node scripts/check-log-safety.mjs`),
-  `check-worker-flags.mjs` and `check-monday-auth-bindings.mjs`.
+  `check-worker-flags.mjs`, `check-monday-auth-bindings.mjs` and `check-rate-limit-namespaces.mjs`
+  (every `ratelimits[].namespace_id` unique across `wrangler*.jsonc`; #113).
 - Operator tools, not CI checks: `flags.mjs`, `mark-read-only-columns.mjs`,
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
   really reach, #18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
