@@ -58,6 +58,15 @@ production's apps cannot be reused there. Setup, consent and re-consent are in
 in [the broker design](docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md). The
 sandbox design's [section 4](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) predates the broker.
 
+**Mute the integration users' Monday email.** Monday emails a user every time someone subscribes
+them to a board, so setting up sandbox boards sends a burst of "[You're subscribed]" mail to the
+Sandbox Integration address (a plus-alias of an operator's inbox). No Worker sends these and the
+API has no switch for them: sign in to Monday as the integration user and turn the email
+notifications off under the profile's Notifications settings, or filter that subject in the
+receiving mailbox. Keep any mail filter that narrow, because sign-in and verification mail for the
+user arrives at the same address. Subscribe an integration user only to the private boards its
+Workers need; it already reaches every Main board without being subscribed (#18, below).
+
 **A Monday user's "access" is wider than it looks — measure a token before calling it scoped
 (#18).** Monday shows every *Main* board in every open workspace to every team member, and by
 default lets them edit it, whether or not they were ever added to the board or the workspace;
