@@ -46,8 +46,8 @@ create Event Registrations items; that is a separate, later integration.
 
 - **Refunded** is not yet a Status label on the Donations board, so a refund write fails until
   someone adds it. Already on the pre-cutover list (shared with the Funraise sync).
-- Bike Summit 2026 tickets sold before this goes live will be added in one batch after the
-  Summit (Oct 22), not as they are sold.
+- Bike Summit 2026 tickets sold before this went live are added in one batch by the post-Summit
+  backfill (`scripts/backfill-orders.mjs`), not as they were sold.
 - A ticket's gift has no link to an Event Registrations item. Known limit until the
   registrations integration exists.
 
@@ -62,6 +62,10 @@ For the Bike Education coordinator. Everything here uses a test class and **staf
 only**; never register a real attendee. Each email is a Gmail draft you write. The **Send event
 email** link on the class's Events item opens a page that sends it from your Gmail as `learn@`. In
 the sandbox, every email goes to the sandbox address, whoever is on the list.
+
+**Not testable in the sandbox yet:** the send page and its Events link are configured only in
+production (`attendeeSync.classEmails.pageUrl` is null in `config/sandbox.json`), so the steps
+below wait until the sandbox gets them.
 
 1. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
    should appear on Event Registrations with Attendance **Registered** and the class date, day and

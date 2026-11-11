@@ -23,7 +23,8 @@ will not receive anything.
    uses; nothing else on the item matters.
 2. Set its **Post-Event Feedback** column to **Ready to Send**.
 3. Within a few seconds, check `sandbox@bikesiliconvalley.org`. Expect an email from **SVBC Bike
-   Valet (sandbox)** addressed to the organizer's name, with a link to the feedback form. Open
+   Valet (sandbox)** naming the event (Event Name, or the item name if that is blank), with a link
+   to the feedback form. Open
    the link and confirm the form loads. Is the wording what you'd want an organizer to read?
 4. Set the column to **Sent to Organizer** yourself. See the first note below.
 5. Set it back to Ready to Send. A second email arrives. That is expected today (no duplicate
@@ -42,8 +43,8 @@ will not receive anything.
 ## Not testable yet
 
 - The automatic Sent / Failed write-back to the item.
-- The production version: it needs the feedback column and automation added to the live
-  **BP Request Form** board by someone with write access, which happens after cutover.
+- The production version is live (2026-11-03), but no real organizer email has gone out through
+  it yet.
 
 ---
 

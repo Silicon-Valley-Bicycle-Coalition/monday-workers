@@ -283,10 +283,9 @@ step. Never delete the Volunteers items the backfill created.
 - A Volunteers item deleted in Monday is never removed from `volunteer_activity` (archiving is
   the supported route), so a deleted row keeps counting until its D1 row is removed by hand.
 - Staff unchecking Historical on a migrated row would change history counts (see "For staff").
-- **Sandbox rehearsal.** The sandbox boards differ: `eventbrite-sync` sandbox writes Volunteers
-  v3 (18431577321), `donation-rollups` sandbox reads v4 (18437342662). Point both
-  `config/sandbox.json` files at the same Volunteers board (and its column ids) before an
-  end-to-end rehearsal. A sandbox deploy then needs its own sequence, the same as production's
+- **Sandbox rehearsal.** Both sandbox configs (`eventbrite-sync` and `donation-rollups`) point at
+  Volunteers (sandbox v4) 18437342662, so an end-to-end rehearsal needs no config change. A
+  sandbox deploy then needs its own sequence, the same as production's
   with `--env sandbox` throughout: `flags.mjs eventbrite-sync writes hold --env sandbox`, deploy
   (`npm run deploy:sandbox`), `backfill-volunteers.mjs --env sandbox` (dry run, `--apply`,
   `--remap-out`), the remap on `svbc-eventbrite-sync-sandbox`

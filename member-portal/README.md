@@ -185,9 +185,8 @@ can therefore request a login link as any real donor to test the portal end to e
 production and sandbox configs are kept apart by `config/split.test.ts`, which fails if they ever
 share a sink, a board id, or a column id (the id checks are latent until production boards exist
 and start biting at cutover). What the sandbox cannot exercise today, because the CRM Sandbox has
-no board or column for it: change requests (no Change Requests board, so the `CHANGE_QUEUE`
-consumer idles in `svbc-member-portal-writer-sandbox`), volunteer history, event registrations, pledges, and the
-communication-preference checkboxes — each stays hidden by its own config gate. Design:
+no board or column for it: event registrations, pledges, and the communication-preference
+checkboxes — each stays hidden by its own config gate. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Sandbox provisioned and verified 2026-09-22**: `svbc-member-portal-sandbox` is deployed and

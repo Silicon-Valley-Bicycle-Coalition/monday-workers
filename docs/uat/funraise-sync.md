@@ -40,7 +40,7 @@ to Monday. It sends no email and touches nothing in Funraise.
    morning the gift's Funding Stream, Gift Size, Fiscal Quarter, and Gift Fiscal Year columns fill
    in.
 4. **A new donor.** If the giver isn't matched to anyone on People by Funraise profile or personal
-   email, a new People item is created with their name, email, address, and Funraise Profile link.
+   email, a new People item is created with their name, email, and Funraise Profile link.
    Check it looks like a record you'd be happy to keep.
 5. **Recurring plans.** Open
    [Recurring Gifts (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342630),
@@ -48,8 +48,8 @@ to Monday. It sends no email and touches nothing in Funraise.
    within about an hour of being created in Funraise, with Installment Amount, **Annualized
    Value** (monthly × 12, quarterly × 4), Frequency, Status, Next Payment, Designation, and the
    Donor link. Cancelling a plan in Funraise turns Status to **Cancelled** and clears Next Payment
-   on the next hourly pass. If many plans changed at once it can take a few hours, since each pass
-   handles ten.
+   on the next hourly pass. If very many plans changed at once it can take more than one hourly pass,
+   since each pass handles about 200.
 6. **A refund.** Refunding a gift in Funraise should flip its Donations item to Status
    **Refunded**. See the first item under Don't report these.
 
