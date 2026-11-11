@@ -2,25 +2,9 @@ import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
 import type { EventFacts } from './attendee';
+import { toVolunteerStatus } from './volunteerStatus';
 
-export type VolunteerStatus = 'RSVP' | 'Completed' | 'Canceled' | 'No-Show';
-
-// The Volunteers board's Status vocabulary against the sync's attendance words (Registered, Attended,
-// Canceled, No Show). Prospect and Confirmed are staff-only labels with no attendance equivalent.
-const STATUS_BY_ATTENDANCE: Record<string, VolunteerStatus> = {
-  Registered: 'RSVP', Attended: 'Completed', Canceled: 'Canceled', 'No Show': 'No-Show',
-};
-const ATTENDANCE_BY_STATUS: Record<string, string> = {
-  RSVP: 'Registered', Completed: 'Attended', Canceled: 'Canceled', 'No-Show': 'No Show',
-};
-
-export function toVolunteerStatus(attendance: string): VolunteerStatus {
-  return STATUS_BY_ATTENDANCE[attendance] ?? 'RSVP';
-}
-
-export function toAttendance(status: string): string | null {
-  return ATTENDANCE_BY_STATUS[status] ?? null;
-}
+export { toAttendance, toVolunteerStatus, type VolunteerStatus } from './volunteerStatus';
 
 // Event, Eventbrite Listing and Volunteer are links the consumer sets, so they are never written here.
 export function mapVolunteer(
