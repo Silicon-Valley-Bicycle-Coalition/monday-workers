@@ -22,6 +22,9 @@ export interface VolunteerActivityStore {
   // inside the per-invocation subrequest budget.
   upsertMany(rows: VolunteerActivityRow[], now: string): Promise<void>;
   forOwner(ownerItemId: string): Promise<VolunteerActivityRow[]>;
+  // Every stored row of one board, qualifying or not — the nightly Volunteers-board load compares
+  // what Monday says now against it to find the rows that are new or changed.
+  forBoard(boardId: string): Promise<VolunteerActivityRow[]>;
   // A deleted registration: keep the row, stop it counting, and say who it counted for.
   markRemoved(registrationItemId: string, now: string): Promise<{ ownerItemId: string; ownerBoardId: string } | null>;
   // Distinct owners with at least one qualifying row, cursored by owner id — the membership
@@ -83,6 +86,15 @@ export class D1VolunteerActivityStore implements VolunteerActivityStore {
                 FROM volunteer_activity WHERE owner_item_id = ?1 AND qualifies = 1
                 ORDER BY activity_date, registration_item_id`)
       .bind(ownerItemId)
+      .all<D1Row>();
+    return res.results.map(fromRow);
+  }
+
+  async forBoard(boardId: string): Promise<VolunteerActivityRow[]> {
+    const res = await this.db
+      .prepare(`SELECT registration_item_id, board_id, owner_item_id, owner_board_id, activity_date, hours, qualifies, source
+                FROM volunteer_activity WHERE board_id = ?1`)
+      .bind(boardId)
       .all<D1Row>();
     return res.results.map(fromRow);
   }

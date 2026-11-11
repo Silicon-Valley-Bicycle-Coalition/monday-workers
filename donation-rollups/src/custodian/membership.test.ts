@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { runMembership, ENQUEUE_PER_RUN, type MembershipDetail } from './membership';
 import type { CustodianDeps, CustodianMondayClient } from './custodian';
@@ -8,6 +8,8 @@ import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
 import { D1RollCallCreditsStore } from '../db/rollCallCredits';
 import { buildRuns } from '../membership/derive';
+import { custodianDepsFor } from '../writeSwitch';
+import { DEFAULT_PII_KEYS } from '../flags';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const MEMBERSHIP = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
@@ -285,5 +287,85 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
     const done: MembershipDetail = { ...PASS, cursor: 'zzz', remaining: 0, enqueued: 9 };
     const report = await runMembership(d, d.now!, { all: true, since: '2026-10-18T00:00:00Z' }, done);
     expect(report.detail).toMatchObject({ all: true, since: '2026-10-18T00:00:00Z', loaded: 0 });
+  });
+});
+
+describe('membership duty — nightly load of the Volunteers board', () => {
+  beforeEach(async () => {
+    await env.DB.batch(['volunteer_activity', 'owner_recomputes', 'gifts', 'custodian_runs'].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+  });
+  type Shift = NonNullable<Fake['shifts']>[number];
+  const shift = (over: Partial<Shift> = {}): Shift =>
+    ({ id: 'n1', volunteerItemId: 'nv', dateISO: '2026-09-01', hours: null, statusLabel: 'Completed', historical: false, ...over });
+  const nightly = (shifts: Shift[], sent: RecomputeQueueMessage[], wrap?: (d: CustodianDeps) => CustodianDeps) => {
+    const d = deps({ shifts, boardOf: { nv: '20', nw: '28' } }, sent);
+    d.config.donationRollups.volunteerBoards = [];
+    d.config.donationRollups.historicalVolunteerBoards = [{ ...HIST_BOARD, columns: { ...HIST_BOARD.columns, historical: 'hist' } }];
+    return wrap ? wrap(d) : d;
+  };
+  const run = (d: CustodianDeps) => runMembership(d, d.now!, { all: false, since: null }, null);
+  const owners = (sent: RecomputeQueueMessage[]) => sent.map((m) => [m.ownerItemId, m.ownerBoardId]);
+
+  it('loads a new Completed row and enqueues exactly its owner; a second run, and an unchanged board, enqueue nothing', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = nightly([shift(), shift({ id: 'n2', volunteerItemId: 'nw', statusLabel: 'RSVP' })], sent);
+    const first = await run(d);
+    expect(owners(sent)).toEqual([['nv', '20']]);   // the RSVP row is stored, but counts for no one
+    expect(first.summary).toContain('2 volunteer row(s) changed, enqueued 1 owner(s)');
+    const store = new D1VolunteerActivityStore(env.DB);
+    expect(await store.forOwner('nv')).toEqual([expect.objectContaining({ registrationItemId: 'n1', activityDateISO: '2026-09-01', qualifies: true, source: 'historical' })]);
+    sent.length = 0;
+    await run(d);
+    expect(sent).toEqual([]);
+  });
+
+  it('a row that turns from RSVP to Completed enqueues its owner; one that turns to Canceled enqueues the owner it counted for', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    await run(nightly([shift({ statusLabel: 'RSVP' })], sent));
+    expect(sent).toEqual([]);
+    await run(nightly([shift({ statusLabel: 'Completed' })], sent));
+    expect(owners(sent)).toEqual([['nv', '20']]);
+    sent.length = 0;
+    await run(nightly([shift({ statusLabel: 'Canceled' })], sent));
+    expect(owners(sent)).toEqual([['nv', '20']]);
+  });
+
+  it('a row re-pointed to another person enqueues both people', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    await run(nightly([shift()], sent));
+    sent.length = 0;
+    await run(nightly([shift({ volunteerItemId: 'nw' })], sent));
+    expect(owners(sent).sort()).toEqual([['nv', '20'], ['nw', '28']]);
+  });
+
+  it('under the write switch off it computes but stores and enqueues nothing', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const d = nightly([shift()], sent, (live) => custodianDepsFor('dry-run', live,
+      { worker: 'donation-rollups', environment: 'production', mode: 'off', logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS, deliveryId: 'custodian:test' }));
+    const report = await run(d);
+    log.mockRestore();
+    expect(sent).toEqual([]);
+    expect(report.summary).toContain('1 volunteer row(s) changed');
+    expect(await new D1VolunteerActivityStore(env.DB).forOwner('nv')).toEqual([]);
+  });
+
+  it('a failed enqueue leaves the row unloaded-looking, so the next night enqueues it again', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = nightly([shift()], sent);
+    d.queue = { sendBatch: async () => { throw new Error('queue down'); } };
+    const report = await run(d);
+    expect(report.ok).toBe(false);
+    d.queue = { sendBatch: async (m) => { sent.push(...m); } };
+    await run(d);
+    expect(owners(sent)).toEqual([['nv', '20']]);
+  });
+
+  it('an all=true pass still loads and enqueues as before (the nightly load does not run on it)', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = nightly([shift()], sent);
+    const report = await runMembership(d, d.now!, { all: true, since: null }, null);
+    expect(owners(sent)).toEqual([['nv', '20']]);
+    expect(report.summary).not.toContain('volunteer row(s) changed');
   });
 });

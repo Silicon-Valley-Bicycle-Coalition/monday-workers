@@ -9,6 +9,8 @@ import { addMonths } from '../membership/derive';
 import { registrationQualifies, historicalShiftQualifies } from '../membership/volunteer';
 import type { CustodianDeps, DutyReport } from './custodian';
 import type { RecomputeQueueMessage } from '../types';
+import type { VolunteerActivityRow } from '../db/volunteerActivity';
+import type { HistoricalShiftRecord } from '../monday/client';
 
 export interface MembershipDutyOptions { all: boolean; since: string | null }
 export type MembershipPhase = 'anniversaries' | 'load-volunteers' | 'backfill-terms' | 'enqueue';
@@ -71,13 +73,82 @@ export async function runMembership(
   // An unfinished all=true pass is continued by whoever runs next (the nightly cron, or the
   // route again); a fresh all=true starts over at the first phase.
   const continuing = lastDetail !== null && lastDetail.all && lastDetail.remaining > 0;
-  if (!opts.all && !continuing) return anniversaries;
+  if (!opts.all && !continuing) return loadNightlyVolunteers(deps, now, anniversaries);
   const start: MembershipDetail = continuing
     ? { ...lastDetail!, loadedAtISO: lastDetail!.loadedAtISO ?? null }
     : { all: true, since: opts.since, phase: 'load-volunteers', cursor: '', remaining: 1,
       scanned: 0, enqueued: 0, loaded: 0, backfilled: 0, anniversariesThroughISO: '', loadedAtISO: null };
   const all = await runAll(deps, now, start);
   return { ok: all.ok, summary: `${anniversaries.summary}; ${all.summary}`, detail: all.detail };
+}
+
+// The nightly share of the Volunteers board: new Eventbrite sign-ups reach volunteer_activity
+// here (the board has no webhook), so a Completed row earns credit by the next morning's run
+// rather than waiting for an all=true pass. Pages the board, upserts only the rows that differ
+// from what D1 holds, and enqueues just the people whose counted activity changed — a second run
+// the same night changes and enqueues nothing. The rows are stored before the owners are
+// enqueued (the recompute reads them); if the enqueue fails they are put back as they were, so
+// the next night still sees them as changed and nothing is lost between the two writes.
+async function loadNightlyVolunteers(deps: CustodianDeps, now: Date, anniversaries: DutyReport): Promise<DutyReport> {
+  const boardsCfg = deps.config.donationRollups.historicalVolunteerBoards;
+  if (boardsCfg.length === 0) return anniversaries;
+  const membership = new Set(membershipBoards(deps).map((b) => b.boardId));
+  const nowISO = now.toISOString();
+  let changed = 0;
+  const targets = new Map<string, string>();   // owner item id -> its board
+  const queued: VolunteerActivityRow[] = [];   // the rows written, for the rollback
+  const before: VolunteerActivityRow[] = [];   // what D1 held for them (changed rows that already existed)
+  try {
+    for (const board of boardsCfg) {
+      const known = new Map((await deps.volunteers.forBoard(String(board.boardId))).map((r) => [r.registrationItemId, r]));
+      const diff: { s: HistoricalShiftRecord; old: VolunteerActivityRow | undefined; qualifies: boolean }[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = await deps.mondayClient.pageHistoricalShifts(board, cursor);
+        for (const s of page.items) {
+          const old = known.get(s.id);
+          const qualifies = historicalShiftQualifies(s, board);
+          if (old === undefined ? true
+            : old.qualifies !== qualifies || old.ownerItemId !== s.volunteerItemId || old.activityDateISO !== s.dateISO || old.hours !== s.hours) {
+            diff.push({ s, old, qualifies });
+          }
+        }
+        cursor = page.cursor;
+      } while (cursor !== null);
+      if (diff.length === 0) continue;
+      const boardOf = await deps.mondayClient.getItemsBoardIds(diff.flatMap(({ s }) => (s.volunteerItemId ? [s.volunteerItemId] : [])));
+      const rows = diff.map(({ s, qualifies }): VolunteerActivityRow => ({ registrationItemId: s.id, boardId: String(board.boardId),
+        ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boardOf.get(s.volunteerItemId) ?? null : null,
+        activityDateISO: s.dateISO, hours: s.hours, qualifies, source: 'historical' }));
+      changed += rows.length;
+      for (const [i, row] of rows.entries()) {
+        const { old } = diff[i]!;
+        // Whoever counted before, and whoever counts now, needs a fresh recompute — unless the
+        // row counted for no one either way (an RSVP going to Canceled).
+        if (old?.qualifies && old.ownerItemId !== null && old.ownerBoardId !== null && membership.has(old.ownerBoardId)) targets.set(old.ownerItemId, old.ownerBoardId);
+        if (row.qualifies && row.ownerItemId !== null && row.ownerBoardId !== null && membership.has(row.ownerBoardId)) targets.set(row.ownerItemId, row.ownerBoardId);
+        if (old !== undefined) before.push(old);
+      }
+      await deps.volunteers.upsertMany(rows, nowISO);
+      queued.push(...rows);
+    }
+    if (changed === 0) return anniversaries;
+    try {
+      await sendAll(deps, [...targets].map(([id, boardId]) => ownerMessage(id, boardId)));
+    } catch (err) {
+      const prior = new Set(before.map((r) => r.registrationItemId));
+      // Existing rows go back as they were; new ones as a non-qualifying shell that differs from
+      // the board, so the next run finds them changed again.
+      await deps.volunteers.upsertMany([...before, ...queued.filter((r) => !prior.has(r.registrationItemId))
+        .map((r): VolunteerActivityRow => ({ ...r, ownerItemId: null, ownerBoardId: null, activityDateISO: null, qualifies: false }))], nowISO);
+      throw err;
+    }
+  } catch (err) {
+    return { ok: false, detail: anniversaries.detail,
+      summary: `${anniversaries.summary}; Volunteers board load failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  return { ok: anniversaries.ok, detail: anniversaries.detail,
+    summary: `${anniversaries.summary}; ${changed} volunteer row(s) changed, enqueued ${targets.size} owner(s)` };
 }
 
 // Everyone whose anniversary — Current Term Start + termMonths — falls after lastThroughISO and
@@ -127,8 +198,8 @@ async function runAll(deps: CustodianDeps, now: Date, detail: MembershipDetail):
   }
 }
 
-// Phase 1: the 2014-2020 Volunteers board, then every Event Registrations item, into
-// volunteer_activity. Reads only on Monday; upserts are idempotent, so a crash mid-phase is
+// Phase 1: the Volunteers board (the 2014-2020 history and new Eventbrite sign-ups), then every
+// Event Registrations item of a fork that configures them, into volunteer_activity. Reads only on Monday; upserts are idempotent, so a crash mid-phase is
 // simply re-run.
 async function loadVolunteers(deps: CustodianDeps, now: Date): Promise<number> {
   const nowISO = now.toISOString();

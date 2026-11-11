@@ -1163,9 +1163,13 @@ sandbox gets rebuilt before cutover:
 * `donationRollups.historicalVolunteerBoards` — the Volunteers board(s): `boardId`,
   `columns` (`volunteer`, `date`, `hours`, `status`, and optional `historical`) and
   `countedStatusLabels` (`["Completed"]`). Required (may be `[]`) whenever `membership` is on.
-  Read by the `membership` duty's `load-volunteers` phase; **no webhook**, so new Eventbrite
-  volunteering (a `Completed` row, dated by its Date column) counts at the next custodian
-  sweep, not per webhook. Canceled, RSVP and No-Show rows, and rows with no Volunteer link, add
+  Read by the `membership` duty's `load-volunteers` phase on an `all=true` pass (the full
+  recompute), and **every night** by the nightly membership run, which upserts the rows that
+  are new or changed and enqueues only their owners (nothing, when the board is unchanged). There
+  is **no webhook**, so new Eventbrite volunteering (a `Completed` row, dated by its Date column)
+  counts by the next morning's run, up to a day later, not per webhook; a manual
+  `all=true` remains the full recompute. Under write switch `off` the nightly load only computes
+  and logs; under `hold` the duties are skipped. Canceled, RSVP and No-Show rows, and rows with no Volunteer link, add
   nothing; several same-day rows extend a term once. With `columns.historical` (the Historical
   checkbox) configured, a row that is not Historical qualifies on status + Volunteer link + date
   with no Hours (Eventbrite has none), while a Historical row (the migrated 2014–2020 shifts)
