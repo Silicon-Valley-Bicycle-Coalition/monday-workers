@@ -86,6 +86,7 @@ function fakeDeps(overrides: Partial<DeadLetterDeps> = {}) {
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
+    fetchItemAssets: vi.fn(),
   };
   const uploadStore = {
     createUpload: vi.fn(),
