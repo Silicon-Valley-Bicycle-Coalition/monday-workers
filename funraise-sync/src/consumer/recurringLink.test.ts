@@ -136,6 +136,27 @@ describe('Recurring Gift link on installments', () => {
     expect(monday.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({ rg_link_col: { item_ids: [5560] } }));
   });
 
+  it('never looks up a non-numeric subscription id from the payload', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const funraise = fakeFunraise(null);
+      const store = fakeSubscriptionStore(null);
+
+      await processFunraiseQueueBatch([message], {
+        eventStore: fakeStore(eventRow({ ...installment, subscription: { id: '..', sequence: 3 } })),
+        mondayClient: fakeMonday(),
+        config,
+        subscriptionStore: store,
+        funraiseClient: funraise,
+      });
+
+      expect(funraise.getSubscription).not.toHaveBeenCalled();
+      expect(store.getByFunraiseId).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('leaves the column unset, with a warning, when Funraise no longer has the subscription', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
