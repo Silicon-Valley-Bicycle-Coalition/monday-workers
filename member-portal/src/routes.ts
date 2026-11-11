@@ -87,7 +87,9 @@ export interface AppDeps {
   writeGate: () => Promise<BatchSkipContext>;
 }
 
-const SESSION_COOKIE = 'session';
+// __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
+// subdomain can't plant a session cookie scoped to a longer path (#103).
+const SESSION_COOKIE = '__Host-session';
 export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
@@ -915,7 +917,8 @@ export function createApp(deps: AppDeps) {
     if (sessionToken) {
       await deps.sessionStore.deleteSession(await sha256Hex(sessionToken));
     }
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    // Secure is required: browsers ignore a __Host- Set-Cookie without it, even to expire it.
+    deleteCookie(c, SESSION_COOKIE, { path: '/', secure: true });
     return c.redirect('/');
   });
 
