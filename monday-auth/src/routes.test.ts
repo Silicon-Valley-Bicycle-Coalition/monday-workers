@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from './env';
 import { createApp } from './routes';
 import { D1AppTokenStore } from './tokenStore';
+import { TEST_ENC_KEY } from '../test/enc-key';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -15,7 +16,7 @@ const testEnv: Env = {
   ENVIRONMENT: 'sandbox',
   EXPECTED_USER_ID: '42',
   MONDAY_SUBDOMAIN: 'bikesiliconvalley',
-  START_KEY: 'the-start-key',
+  START_KEY: 'the-start-key-is-at-least-32-chars',
   PORTAL_CLIENT_ID: 'portal-id',
   PORTAL_CLIENT_SECRET: 'portal-secret',
   SYNC_CLIENT_ID: 'sync-id',
@@ -46,7 +47,7 @@ function fakeMonday(meId: string, meName = 'Sam Integrator') {
 }
 
 function appWith(fetchFn: typeof fetch, over: Partial<Env> = {}) {
-  const store = new D1AppTokenStore(env.DB);
+  const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
   return { app: createApp({ store, env: { ...testEnv, ...over }, fetchFn, now: () => NOW }), store };
 }
 
@@ -60,14 +61,14 @@ function post(app: ReturnType<typeof createApp>, url: string, fields: Record<str
 }
 
 async function startAndGetState(app: ReturnType<typeof createApp>, name = 'sync'): Promise<string> {
-  const res = await post(app, `https://broker.test/oauth/start/${name}`, { key: 'the-start-key' });
+  const res = await post(app, `https://broker.test/oauth/start/${name}`, { key: 'the-start-key-is-at-least-32-chars' });
   return new URL(res.headers.get('location')!).searchParams.get('state')!;
 }
 
 describe('/oauth/start/:app', () => {
   it('GET shows the key form and never takes the key from the URL', async () => {
     const { app } = appWith(noFetch);
-    const res = await app.request('https://broker.test/oauth/start/sync?key=the-start-key');
+    const res = await app.request('https://broker.test/oauth/start/sync?key=the-start-key-is-at-least-32-chars');
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('method="post"');
@@ -99,15 +100,47 @@ describe('/oauth/start/:app', () => {
     expect((await post(app2, 'https://broker.test/oauth/start/sync', { key: 'undefined' })).status).toBe(403);
   });
 
+  it('refuses a START_KEY shorter than 32 characters, even when it matches', async () => {
+    const { app } = appWith(noFetch, { START_KEY: 'short-but-matching' });
+    expect((await post(app, 'https://broker.test/oauth/start/sync', { key: 'short-but-matching' })).status).toBe(403);
+    const exactly32 = 'k'.repeat(32);
+    const { app: ok } = appWith(noFetch, { START_KEY: exactly32 });
+    expect((await post(ok, 'https://broker.test/oauth/start/sync', { key: exactly32 })).status).toBe(303);
+  });
+
+  it('rate-limits POSTs per client IP before the key is checked', async () => {
+    const limit = vi.fn(async ({ key }: { key: string }) => ({ success: key !== '203.0.113.9' }));
+    const { app } = appWith(noFetch, { REQUEST_RATE_LIMITER: { limit } });
+    const attempt = (ip: string) =>
+      app.request('https://broker.test/oauth/start/sync', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': ip },
+        body: new URLSearchParams({ key: 'the-start-key-is-at-least-32-chars' }),
+      });
+    expect((await attempt('203.0.113.9')).status).toBe(429);
+    expect((await attempt('198.51.100.1')).status).toBe(303);
+    expect(limit).toHaveBeenCalledWith({ key: '203.0.113.9' });
+    // Viewing the form is not an attempt.
+    expect((await app.request('https://broker.test/oauth/start/sync', { headers: { 'CF-Connecting-IP': '203.0.113.9' } })).status).toBe(200);
+  });
+
+  it('a failing limiter does not lock the operator out', async () => {
+    const limit = vi.fn(async () => {
+      throw new Error('limiter down');
+    });
+    const { app } = appWith(noFetch, { REQUEST_RATE_LIMITER: { limit } });
+    expect((await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key-is-at-least-32-chars' })).status).toBe(303);
+  });
+
   it('a POSTed unknown app is 404, but only after the key check', async () => {
     const { app } = appWith(noFetch);
-    expect((await post(app, 'https://broker.test/oauth/start/nope', { key: 'the-start-key' })).status).toBe(404);
+    expect((await post(app, 'https://broker.test/oauth/start/nope', { key: 'the-start-key-is-at-least-32-chars' })).status).toBe(404);
     expect((await post(app, 'https://broker.test/oauth/start/nope', { key: 'bad' })).status).toBe(403);
   });
 
   it('start redirects to auth.monday.com with the stored state and S256 challenge', async () => {
     const { app, store } = appWith(noFetch);
-    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key' });
+    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key-is-at-least-32-chars' });
     expect(res.status).toBe(303);
     const location = new URL(res.headers.get('location')!);
     expect(location.origin + location.pathname).toBe('https://auth.monday.com/oauth2/authorize');
@@ -129,7 +162,7 @@ describe('/oauth/start/:app', () => {
 
   it('is 500 naming the variable, without storing anything, when the app has no client id', async () => {
     const { app } = appWith(noFetch, { SYNC_CLIENT_ID: '' });
-    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key' });
+    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key-is-at-least-32-chars' });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('SYNC_CLIENT_ID');
   });
@@ -244,7 +277,7 @@ describe('GET /oauth/callback', () => {
 
   it('when the store cannot save, revokes both tokens and returns a 500 page that leaks no token', async () => {
     const monday = fakeMonday('42');
-    const store = new D1AppTokenStore(env.DB);
+    const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
     vi.spyOn(store, 'save').mockRejectedValue(new Error(`db down ${SECRET_ACCESS}`));
     const logs: string[] = [];
     vi.spyOn(console, 'error').mockImplementation((...a) => void logs.push(a.join(' ')));
@@ -306,7 +339,7 @@ describe('GET /oauth/callback', () => {
 
 describe('GET /health', () => {
   it('/health never includes a token and reports each app', async () => {
-    const store = new D1AppTokenStore(env.DB);
+    const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
     await store.save({
       app: 'sync',
       accessToken: SECRET_ACCESS,
@@ -333,14 +366,14 @@ describe('GET /health', () => {
       alerts: 'unconfigured',
       apps: [
         { app: 'portal', status: 'needs_consent' },
-        { app: 'sync', status: 'ok', expiresAt: '2026-10-30T11:00:00.000Z', lastRefreshErrorAt: NOW.toISOString() },
+        { app: 'sync', status: 'ok' },
         { app: 'readonly', status: 'missing' },
       ],
     });
   });
 
   it('/health says alerts are configured without revealing the webhook URL', async () => {
-    const store = new D1AppTokenStore(env.DB);
+    const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
     const webhook = 'https://hooks.slack.test/services/T0/B0/HOOK-SECRET';
     const app = createApp({ store, env: { ...testEnv, SLACK_WEBHOOK_URL: webhook }, fetchFn: noFetch, now: () => NOW });
     const text = await (await app.request('https://broker.test/health')).text();

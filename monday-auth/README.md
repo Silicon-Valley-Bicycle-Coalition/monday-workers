@@ -80,10 +80,10 @@ the invocation, so it shows as an error in the Worker's cron events.
 
 | Route | Purpose |
 |---|---|
-| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok` with `expiresAt` (plus `lastRefreshErrorAt` while refreshes are failing), `needs_consent` or `missing`. No tokens. |
+| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok`, `needs_consent` or `missing`. No tokens, and no expiry or refresh-error times (unauthenticated; #104). Alerts and the cron's logs carry the failure detail. |
 | `GET`/`POST /oauth/start/:app` | Key form, then redirect to Monday's authorize URL (PKCE S256). The key is posted, never in the URL. |
 | `GET /oauth/callback` | Checks `state`, exchanges the code, verifies the authorizing user id, stores the tokens. |
-| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (on in sandbox, off in production). |
+| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (off in both environments; turn it on for one deploy while verifying). |
 
 ## Secrets and vars
 
@@ -94,7 +94,8 @@ Set with `npx wrangler secret put NAME [--env sandbox]` (values come from that e
 | `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET` | Portal app |
 | `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET` | Staff sync app |
 | `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET` | Read-only app |
-| `START_KEY` | Operator key for `/oauth/start` and `/oauth/probe`. Keep it in the password manager. |
+| `START_KEY` | Operator key for `/oauth/start` and `/oauth/probe`. At least 32 characters (`openssl rand -hex 32`); a shorter key is refused outright. Keep it in the password manager. |
+| `TOKEN_ENC_KEY` | AES-256-GCM key (`openssl rand -base64 32`) for the `access_token`/`refresh_token` columns in D1 (`enc:v1:` values, column name bound as associated data; `src/tokenCipher.ts`, from quickbooks-sync). **Set it before deploying** a build that reads it: without it every token read and write fails. Rows written earlier as plaintext still read, and the next refresh or consent encrypts them. Losing the key means re-running consent for each app. Use a different value per environment. |
 | `SLACK_WEBHOOK_URL` | The alerts above. Optional in sandbox (alerts then only reach the logs); **required in production**: `/health` must show `"alerts": "configured"`. |
 
 | Var (`wrangler.jsonc`) | Meaning |
@@ -103,6 +104,10 @@ Set with `npx wrangler secret put NAME [--env sandbox]` (values come from that e
 | `MONDAY_SUBDOMAIN` | `bikesiliconvalley`; pins the account on the authorize URL. |
 | `PROBE_ENABLED` | `"true"` turns on `/oauth/probe`; anything else makes it 404. |
 | `ENVIRONMENT` | `production` or `sandbox`. |
+
+`POST /oauth/*` is limited to 10 attempts a minute per client IP (the `REQUEST_RATE_LIMITER` binding,
+namespaces 2101 production / 2102 sandbox), so `START_KEY` can't be guessed online. The limiter fails open
+if it errors; the key check is the gate.
 
 ## Commands
 
@@ -126,7 +131,7 @@ must be applied before deploying any version that has it.
 
 ## Measuring production scope with the probe
 
-`/oauth/probe` is off in production (`PROBE_ENABLED` is `"false"` in `wrangler.jsonc`). To run the
+`/oauth/probe` is off in both environments (`PROBE_ENABLED` is `"false"` in `wrangler.jsonc`). To run the
 scope check there, turn it on for one deploy from the command line rather than editing the file,
 so the next ordinary deploy turns it off again:
 

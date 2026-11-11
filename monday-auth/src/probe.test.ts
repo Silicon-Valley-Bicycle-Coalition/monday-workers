@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { Env } from './env';
 import { createApp } from './routes';
 import { D1AppTokenStore } from './tokenStore';
+import { TEST_ENC_KEY } from '../test/enc-key';
 
 const TOKEN = 'PROBE-SECRET-TOKEN-VALUE';
-const testEnv = { ...(env as unknown as Env), START_KEY: 'the-start-key', PROBE_ENABLED: 'true' } as Env;
+const testEnv = { ...(env as unknown as Env), START_KEY: 'the-start-key-is-at-least-32-chars', PROBE_ENABLED: 'true' } as Env;
 
 interface Seen {
   auth: string | null;
@@ -35,12 +36,12 @@ function fakeMonday(failing?: string, boardRead: unknown = { boards: [] }) {
 }
 
 function appWith(fetchFn: typeof fetch, broker: { token(app: any): Promise<string> } | null = { token: async () => TOKEN }, over: Partial<Env> = {}) {
-  return createApp({ store: new D1AppTokenStore(env.DB), env: { ...testEnv, ...over }, fetchFn, now: () => new Date(), broker: broker ?? undefined });
+  return createApp({ store: new D1AppTokenStore(env.DB, TEST_ENC_KEY), env: { ...testEnv, ...over }, fetchFn, now: () => new Date(), broker: broker ?? undefined });
 }
 
 const PROBE = 'https://broker.test/oauth/probe/readonly';
 // START_KEY is posted as a form field (never in the URL).
-const probe = (app: ReturnType<typeof createApp>, fields: Record<string, string> = { key: 'the-start-key', workspace: '7' }, url = PROBE) =>
+const probe = (app: ReturnType<typeof createApp>, fields: Record<string, string> = { key: 'the-start-key-is-at-least-32-chars', workspace: '7' }, url = PROBE) =>
   app.request(url, { method: 'POST', body: new URLSearchParams(fields) });
 
 describe('/oauth/probe/:app', () => {
@@ -49,9 +50,9 @@ describe('/oauth/probe/:app', () => {
     const app = appWith(fetchFn);
     expect((await probe(app, { workspace: '7' })).status).toBe(403);
     expect((await probe(app, { key: 'wrong', workspace: '7' })).status).toBe(403);
-    expect((await probe(app, { key: 'the-start-key', workspace: '7' }, 'https://broker.test/oauth/probe/nope')).status).toBe(404);
+    expect((await probe(app, { key: 'the-start-key-is-at-least-32-chars', workspace: '7' }, 'https://broker.test/oauth/probe/nope')).status).toBe(404);
     // A key in the URL is ignored: GET only shows the form.
-    const get = await app.request(`${PROBE}?key=the-start-key&workspace=7`);
+    const get = await app.request(`${PROBE}?key=the-start-key-is-at-least-32-chars&workspace=7`);
     expect(get.status).toBe(200);
     expect(await get.text()).toContain('method="post"');
     expect(seen).toEqual([]);
@@ -59,8 +60,8 @@ describe('/oauth/probe/:app', () => {
 
   it('requires a numeric workspace', async () => {
     const app = appWith(fakeMonday().fetchFn);
-    expect((await probe(app, { key: 'the-start-key' })).status).toBe(400);
-    expect((await probe(app, { key: 'the-start-key', workspace: 'abc' })).status).toBe(400);
+    expect((await probe(app, { key: 'the-start-key-is-at-least-32-chars' })).status).toBe(400);
+    expect((await probe(app, { key: 'the-start-key-is-at-least-32-chars', workspace: 'abc' })).status).toBe(400);
   });
 
   it('reports every check on success and sends the token both ways', async () => {
@@ -191,7 +192,7 @@ describe('/oauth/probe/:app', () => {
   });
 
   describe('the optional board read', () => {
-    const fields = { key: 'the-start-key', workspace: '7', board: '18437342592' };
+    const fields = { key: 'the-start-key-is-at-least-32-chars', workspace: '7', board: '18437342592' };
     const boardQueries = (seen: Seen[]) => seen.filter((s) => s.query.includes('boards(ids'));
 
     it('reports empty when the token gets nothing back for that id', async () => {
@@ -236,7 +237,7 @@ describe('/oauth/probe/:app', () => {
     it('sends no board read and adds no board key when the field is absent or blank', async () => {
       for (const extra of [{}, { board: '' }] as Record<string, string>[]) {
         const { fetchFn, seen } = fakeMonday();
-        const res = await probe(appWith(fetchFn), { key: 'the-start-key', workspace: '7', ...extra });
+        const res = await probe(appWith(fetchFn), { key: 'the-start-key-is-at-least-32-chars', workspace: '7', ...extra });
         expect(res.status).toBe(200);
         expect('board' in ((await res.json()) as Record<string, any>)).toBe(false);
         expect(boardQueries(seen)).toEqual([]);
@@ -248,7 +249,7 @@ describe('/oauth/probe/:app', () => {
         let brokerCalls = 0;
         const { fetchFn, seen } = fakeMonday();
         const app = appWith(fetchFn, { token: async () => (brokerCalls++, TOKEN) });
-        expect((await probe(app, { key: 'the-start-key', workspace: '7', board })).status, board).toBe(400);
+        expect((await probe(app, { key: 'the-start-key-is-at-least-32-chars', workspace: '7', board })).status, board).toBe(400);
         expect(seen).toEqual([]);
         expect(brokerCalls).toBe(0);
       }
