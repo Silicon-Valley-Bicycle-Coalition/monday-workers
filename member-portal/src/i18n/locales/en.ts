@@ -191,6 +191,7 @@ export const en = {
   'matchingGifts.einLine': 'You may need our tax ID (EIN) for the matching form: {{ein}}',
   'matchingGifts.searchHint': 'Search for your employer below to check their matching-gift policy and find submission instructions.',
   'matchingGifts.searchUnavailable': 'An employer search will appear here once it is set up. In the meantime, your HR or payroll team can tell you whether your gifts are matched.',
+  'matchingGifts.searchFrameTitle': 'Employer matching-gift search',
 
   // Login email (src/email/cloudflareEmail.ts)
   'email.subject': 'Your SVBC member portal login link',

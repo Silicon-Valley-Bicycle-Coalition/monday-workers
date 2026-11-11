@@ -193,6 +193,7 @@ export const ko: Record<TranslationKey, string> = {
   'matchingGifts.einLine': '신청서에 저희 세금 ID(EIN)가 필요할 수 있습니다: {{ein}}',
   'matchingGifts.searchHint': '아래에서 고용주를 검색해 매칭 기프트 정책과 제출 방법을 확인하세요.',
   'matchingGifts.searchUnavailable': '고용주 검색 기능은 설정이 완료되면 여기에 표시됩니다. 그때까지는 인사 또는 급여 담당 부서에서 기부 매칭 여부를 알려 드릴 수 있습니다.',
+  'matchingGifts.searchFrameTitle': '고용주 매칭 기부 검색',
   'letterReady.subject': '{{year}}년 SVBC 기부 확인서가 준비되었습니다',
   'letterReady.greeting': '{{donorName}}님, 안녕하세요.',
   'letterReady.body': '{{year}}년 기부 확인서를 기부자 포털에서 확인하실 수 있습니다.',

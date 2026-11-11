@@ -39,7 +39,7 @@ import {
 } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
-import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
+import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
 import { selectImpact } from './impact/impact';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
@@ -771,19 +771,8 @@ export function createApp(deps: AppDeps) {
     if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
-    // Replaces the app-wide baseline CSP (securityHeaders.ts) on the only page that may run
-    // third-party JS, so it repeats the baseline's frame-ancestors/base-uri. The load-bearing part
-    // is connect-src excluding 'self': the DTD script executes on the authenticated portal
-    // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
-    // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
-    // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
-    // works under this policy on the sandbox deploy (matchingGiftViews.ts header comment).
-    c.header(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
-        "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
-        "connect-src https://doublethedonation.com; frame-ancestors 'none'; base-uri 'none'"
-    );
+    // This page keeps the app-wide baseline CSP: it runs no third-party JS itself. The DTD widget
+    // runs only inside the sandboxed /search document framed below (issue #102).
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
     return c.html(
@@ -791,6 +780,22 @@ export function createApp(deps: AppDeps) {
         authenticated: true,
       })
     );
+  });
+
+  // The Double the Donation employer search, framed by the page above. Its CSP `sandbox`
+  // directive (no allow-same-origin) gives it an opaque origin, so DTD's script never runs with
+  // the portal's origin — see matchingGiftViews.ts. Session-gated like every /portal page so the
+  // widget stays a donor-only feature; the session is read server-side, never by the document.
+  app.get('/:locale/portal/matching-gifts/search', async (c) => {
+    const locale = resolvePathLocale(c);
+    if (!matchingGiftsSearchEnabled(deps.config)) return c.notFound();
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.notFound();
+
+    c.header('Cache-Control', NO_STORE);
+    c.header('Content-Security-Policy', SEARCH_DOCUMENT_CSP);
+    c.header('X-Frame-Options', 'SAMEORIGIN');
+    return c.html(matchingGiftsSearchDocument(deps.config.matchingGifts.doubleTheDonationPublicKey as string, locale));
   });
 
   // The membership card used to be its own page — it's now a dashboard widget (see GET

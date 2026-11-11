@@ -2086,7 +2086,7 @@ describe('GET /:locale/portal/matching-gifts', () => {
     expect(res.headers.get('location')).toBe('/');
   });
 
-  it('renders the DTD widget when a public key is configured, with the signed-off EIN', async () => {
+  it('frames the sandboxed search when a public key is configured, with the signed-off EIN', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
@@ -2095,14 +2095,13 @@ describe('GET /:locale/portal/matching-gifts', () => {
     const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('id="dd-shadow-container"');
-    expect(html).toContain('"dtd-public-key", { isolated: true }');
+    expect(html).toContain('src="/en/portal/matching-gifts/search"');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
-    // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
-    const csp = res.headers.get('content-security-policy');
-    expect(csp).toContain("connect-src https://doublethedonation.com");
-    expect(csp).not.toContain("connect-src 'self'");
+    // Issue #102: the portal page itself runs no third-party JS, so it keeps the baseline CSP.
+    expect(html).not.toContain('ddplugin.js');
+    expect(res.headers.get('content-security-policy')).toBe(DEFAULT_CSP);
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
   it('still renders the guidance page, without the widget or EIN, when neither is configured', async () => {
@@ -2121,6 +2120,52 @@ describe('GET /:locale/portal/matching-gifts', () => {
     expect(html).not.toContain('doublethedonation.com');
     expect(html).not.toContain('REPLACE_AFTER_SIGNOFF');
     expect(html).not.toContain('tax ID (EIN)');
+  });
+});
+
+describe('GET /:locale/portal/matching-gifts/search', () => {
+  async function loggedIn(overrides: Partial<AppDeps> = {}) {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, ...overrides }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    return { app, cookie };
+  }
+
+  it('serves the DTD widget in an opaque-origin sandbox that only the portal may frame', async () => {
+    const { app, cookie } = await loggedIn();
+    const res = await app.request('/en/portal/matching-gifts/search', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('ddplugin.js');
+    expect(html).toContain('"dtd-public-key", { isolated: true }');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toMatch(/^sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox;/);
+    expect(csp).not.toContain('allow-same-origin');
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toContain("form-action 'none'");
+    expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it('is 404 without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/matching-gifts/search');
+    expect(res.status).toBe(404);
+    expect(await res.text()).not.toContain('ddplugin.js');
+  });
+
+  it('is 404 when no DTD key is configured', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.matchingGifts.doubleTheDonationPublicKey = null;
+    const { app, cookie } = await loggedIn({ config: gatedConfig });
+    const res = await app.request('/en/portal/matching-gifts/search', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
+  });
+
+  it('is 404 for an unsupported locale', async () => {
+    const { app, cookie } = await loggedIn();
+    const res = await app.request('/xx/portal/matching-gifts/search', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -2794,14 +2839,11 @@ describe('security headers', () => {
     expectBaseline(res);
   });
 
-  it("does not clobber the matching-gifts page's own CSP", async () => {
+  it("does not clobber the matching-gifts search document's sandbox CSP or SAMEORIGIN framing", async () => {
     const { app, cookie } = await loggedIn();
-    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
-    const csp = res.headers.get('content-security-policy') ?? '';
-    expect(csp).toContain('connect-src https://doublethedonation.com');
-    expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("base-uri 'none'");
-    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    const res = await app.request('/en/portal/matching-gifts/search', { headers: { Cookie: cookie } });
+    expect(res.headers.get('content-security-policy')).toMatch(/^sandbox /);
+    expect(res.headers.get('x-frame-options')).toBe('SAMEORIGIN');
   });
 
   it('lets webmail clients load the email logo cross-origin', async () => {
