@@ -130,7 +130,9 @@ Findings:
   the item's own Amount, i.e. always true; it was deleted. **Verified:** a $250 and a $40 form
   submission landed as Major and Standard within ~3 seconds. Always read back the generated
   threshold (a literal `200`, not an `item.<column>` reference) after `create_automation`.
-  Production needs the same two, plus the existing on-Amount-change ones its README mentions.
+  **Production already has them** (checked 2026-11-11): four board automations, on item created
+  and on Amount change, each with a Major rule at >= 200 and a Standard rule at <= 199.99, so only
+  the sandbox needed these two.
   The other blank fields (Fiscal Year Ending, Funding Stream, Gift Size, quarter/year labels) are
   still filled only by the nightly `classify`.
 - **The Donor picker is multi-select** (the chosen name appears as a removable chip and the
@@ -168,6 +170,23 @@ a Worker; not justified yet.
 3. Have Martha run it in sandbox UAT; add a section to `docs/uat/` if kept.
 4. Repeat on production Donations board; update `docs/06-staff-process-guide.md` "How to" in
    `monday-migration` to point at the form.
+
+## Production build (2026-11-11)
+
+Form view added to the production **Donations** board (18437909794, workspace Donors & Contacts),
+view 291640300, token `567223ac739c23567e56e9057d81dbf5`. Same configuration as the sandbox, with
+the production column ids, plus:
+
+- **Require login was OFF by default on this form** ("public and available to anyone with the
+  link"), unlike the sandbox one. It was turned on before anything else was configured. Check this
+  on every new form view.
+- Production has one extra question to hide (Benevity Disbursement Date) and two extra Status
+  options hidden (Refunded, Lost); Status offers Received, Failed, Pending.
+- Tier automations already exist (above); no new automations were added.
+- **No test submission was made** (it would write a real gift). The form was verified by loading
+  it and reading its questions.
+- The form is login-required but not otherwise shared; the view tab is named `Form` and is visible
+  to anyone who can see the board. Rename it (for example "Enter a gift") and tell Martha.
 
 ## Open questions
 
