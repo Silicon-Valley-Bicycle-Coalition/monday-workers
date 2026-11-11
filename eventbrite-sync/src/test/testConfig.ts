@@ -10,7 +10,7 @@ export function testConfig(
   return {
     monday: {
       apiUrl: 'https://api.monday.com/v2',
-      boards: { 'donations:live': 111, 'people-live': 42, events: 222, 'event-registrations': 333, ...boards },
+      boards: { 'donations:live': 111, 'people-live': 42, events: 222, 'event-registrations': 333, volunteers: 666, ...boards },
     },
     eventbrite: {
       apiUrl: 'https://www.eventbriteapi.com/v3',

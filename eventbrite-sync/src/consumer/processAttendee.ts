@@ -9,6 +9,7 @@ import { TERMINAL_PREFIX, type AttendeeQueueMessage, type ProcessBatchDeps } fro
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 import { stampOf } from './messages';
 import { processPledge } from './processPledge';
+import { processVolunteer } from './processVolunteer';
 import { linkedItemId } from '../util/itemId';
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
@@ -25,16 +26,6 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   // First, before the Events-item wait: a pledge has no Event link, so it doesn't need that item.
   const pledgeEvent = config.pledge?.events[eventId];
   if (pledgeEvent !== undefined) return processPledge(message, pledgeEvent, row, deps);
-
-  const boardId = config.monday.boards['event-registrations'];
-  if (boardId === null) {
-    throw new Error('config: monday.boards["event-registrations"] is not configured');
-  }
-  const cols = config.attendeeSync.registrations;
-  // The idempotency key: without it nothing may be created, as for orders and events.
-  if (cols.attendeeIdColumn === PLACEHOLDER_COLUMN_ID) {
-    throw new Error('config: attendeeSync.registrations.attendeeIdColumn is the placeholder — set the real "Eventbrite Attendee ID" column id on the Event Registrations board before any attendee can be written');
-  }
 
   // The registration links to its Events item, so that item must exist first. Ask for it and retry:
   // the event consumer writes it, and the retry finds it. recordDelivery first, because it is the
@@ -69,6 +60,23 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking attendee "${attendeeId}" failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
+  }
+
+  // A volunteer event's sign-ups live on the Volunteers board: hand off before any Event Registrations
+  // column is read, and never fall back to writing a registration row.
+  const program = mapEvent(event, config, new Date()).program;
+  if (program !== null && config.attendeeSync.volunteerPrograms.includes(program)) {
+    return processVolunteer(message, { row, attendee, event, eventRow }, deps);
+  }
+
+  const boardId = config.monday.boards['event-registrations'];
+  if (boardId === null) {
+    throw new Error('config: monday.boards["event-registrations"] is not configured');
+  }
+  const cols = config.attendeeSync.registrations;
+  // The idempotency key: without it nothing may be created, as for orders and events.
+  if (cols.attendeeIdColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: attendeeSync.registrations.attendeeIdColumn is the placeholder — set the real "Eventbrite Attendee ID" column id on the Event Registrations board before any attendee can be written');
   }
 
   // Adopt before create: the ledger's item id short-circuits the lookup; a miss on both means create.

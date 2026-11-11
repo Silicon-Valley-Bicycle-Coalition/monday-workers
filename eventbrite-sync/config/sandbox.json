@@ -6,6 +6,7 @@
       "people-live": 18431577220,
       "events": 18431577282,
       "event-registrations": 18431577302,
+      "volunteers": 18431577321,
       "pledge-to-ride": 18439163372
     }
   },
@@ -89,6 +90,18 @@
       "classLocationColumn": "text_mm8gmxsr",
       "homeZipColumn": "text_mm8vtg12",
       "registrantsLinkColumn": "board_relation_mm8sz574"
+    },
+    "volunteers": {
+      "attendeeIdColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeNameColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeEmailColumn": "REPLACE_WITH_COLUMN_ID",
+      "jobColumn": "text_mm79ax2j",
+      "dateColumn": "date_mm79agc0",
+      "statusColumn": "color_mm79bhta",
+      "historicalColumn": "boolean_mm79xq40",
+      "volunteerLinkColumn": "board_relation_mm79gsmx",
+      "eventColumn": "REPLACE_WITH_COLUMN_ID",
+      "listingColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrantsLinkExcludedEventIds": [
       "1977741403778"

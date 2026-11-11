@@ -65,6 +65,8 @@ export interface MondayBoards {
   'people-live': number | null;
   events: number | null;
   'event-registrations': number | null;
+  // The Volunteers board: sign-ups on a volunteer program's events land here, never on Event Registrations.
+  volunteers: number | null;
   // Set when the config has a pledge block. Here, not in the block, so the write switch's dry run names it.
   'pledge-to-ride'?: number | null;
 }

@@ -1,6 +1,6 @@
 import type { EventbriteSyncConfig } from './types';
 
-const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'] as const;
+const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations', 'volunteers'] as const;
 
 // The placeholder config/svbc.json ships with, and config/sandbox.json's orderIdColumn carries
 // until the Eventbrite Order ID column exists (README "Prerequisite column"). Validation accepts
@@ -25,6 +25,15 @@ const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'attendeePhoneColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
   'classLocationColumn', 'homeZipColumn', 'registrantsLinkColumn',
+] as const;
+
+// config/svbc.json and config/sandbox.json carry the placeholder in the Volunteers board's new columns
+// (attendeeId, name, email, event, listing) until they are created on the board. Validation accepts
+// it; processVolunteer refuses to write while attendeeIdColumn is the placeholder, so production
+// writes no volunteers (the Worker stays on write switch `hold`) until the real ids are set.
+const VOLUNTEER_COLUMN_KEYS = [
+  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'jobColumn', 'dateColumn', 'statusColumn',
+  'historicalColumn', 'volunteerLinkColumn', 'eventColumn', 'listingColumn',
 ] as const;
 
 const PLEDGE_COLUMN_KEYS = [
@@ -150,6 +159,7 @@ function validateAttendeeSync(raw: unknown): void {
   }
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
+  requireColumns(a.volunteers, 'attendeeSync.volunteers', VOLUNTEER_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
   if (!Array.isArray(a.registrantsLinkExcludedEventIds) || a.registrantsLinkExcludedEventIds.some((id) => typeof id !== 'string')) {
     throw new Error('config: "attendeeSync.registrantsLinkExcludedEventIds" must be an array of Eventbrite event ids');

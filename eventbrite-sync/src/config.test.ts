@@ -122,6 +122,30 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow('itemNameTemplate');
   });
 
+  describe('volunteers', () => {
+    it('requires monday.boards.volunteers to be present, and a board id or null', () => {
+      const cfg = valid();
+      cfg.monday.boards.volunteers = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      delete cfg.monday.boards.volunteers;
+      expect(() => validateConfig(cfg)).toThrow('monday.boards.volunteers');
+    });
+
+    it('requires every attendeeSync.volunteers column to be a column id string', () => {
+      const cfg = valid();
+      cfg.attendeeSync.volunteers.statusColumn = 7;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.volunteers.statusColumn" must be a Monday column id string');
+      delete cfg.attendeeSync.volunteers;
+      expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync.volunteers"');
+    });
+
+    it('accepts the placeholder for a column that does not exist yet', () => {
+      const cfg = valid();
+      cfg.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+  });
+
   describe('attendeeSync', () => {
     it('requires registrations.attendanceColumn to be a column id string', () => {
       const cfg = valid();
