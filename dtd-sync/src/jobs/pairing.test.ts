@@ -46,6 +46,7 @@ function setup(items: DonationItem[], failOn?: string) {
 
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM dtd_records').run();
+  await env.DB.prepare('DELETE FROM sync_state').run();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -78,8 +79,31 @@ describe('runPairing', () => {
     expect(await runPairing(first.deps, NOW)).toEqual({ linked: 0, review: 1 });
     expect(first.writes).toEqual([{ id: '50', values: { [D.matchPairing]: { label: 'Needs review' } } }]);
     const again = setup([matchItem({ matchPairing: 'Needs review' })]);
-    expect(await runPairing(again.deps, NOW)).toEqual({ linked: 0, review: 1 });
+    expect(await runPairing(again.deps, new Date(NOW.getTime() + 24 * 3_600_000))).toEqual({ linked: 0, review: 1 }); // next daily sweep
     expect(again.writes).toEqual([]);
+  });
+
+  it('re-evaluates Needs-review matches once a day, not every hour', async () => {
+    await seedCompany('1', 'Example Corp');
+    const reviewed = () => matchItem({ matchPairing: 'Needs review' });
+    const evaluated = (s: ReturnType<typeof setup>) => s.writes.some((w) => w.id === '50');
+    const first = setup([item(), reviewed()]);
+    await runPairing(first.deps, NOW); // first run sweeps
+    expect(evaluated(first)).toBe(true);
+    const hourLater = setup([item(), reviewed()]);
+    await runPairing(hourLater.deps, new Date(NOW.getTime() + 3_600_000));
+    expect(evaluated(hourLater)).toBe(false);
+    const dayLater = setup([item(), reviewed()]);
+    await runPairing(dayLater.deps, new Date(NOW.getTime() + 24 * 3_600_000));
+    expect(evaluated(dayLater)).toBe(true);
+  });
+
+  it('evaluates a new match every run even between sweeps', async () => {
+    await seedCompany('1', 'Example Corp');
+    await runPairing(setup([]).deps, NOW); // starts the sweep clock
+    const s = setup([item(), matchItem()]);
+    await runPairing(s.deps, new Date(NOW.getTime() + 3_600_000));
+    expect(s.writes.some((w) => w.id === '50')).toBe(true);
   });
 
   it('sends an anonymous match (no donor) to review', async () => {

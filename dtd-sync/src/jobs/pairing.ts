@@ -3,16 +3,20 @@ import type { DtdMondayClient } from '../monday/client';
 import { companyForItem } from '../db/records';
 import { MATCHING_GIFT_TYPE, monthsBefore, pairMatch } from '../pairing/pair';
 import { logItemFailure } from '../logSafe';
+import { getReviewSweep, setReviewSweep } from '../db/state';
 
 export interface PairingDeps { monday: DtdMondayClient; db: D1Database; config: DtdSyncConfig }
 
 const STAFF = 'Staff';
 const NEEDS_REVIEW = 'Needs review';
 const MATCHED = 'Matched';
+// Matches already in Needs review are re-evaluated (a candidate gift or a company name may have
+// turned up) at most this often; new matches are evaluated every run.
+const REVIEW_SWEEP_INTERVAL_MS = 24 * 3_600_000;
 
 /**
  * Link each unpaired employer match to the donor's gift it matched. Every run re-evaluates the open
- * matches; Monday is written only on a change. A `Staff` pairing is never touched.
+ * matches, except that matches already in Needs review wait for a daily sweep; Monday is written only on a change. A `Staff` pairing is never touched.
  *
  * Then, for every Matching Donation already linked to a gift (any pairing, Staff included), make sure
  * that gift's Match Status is `Matched`: this covers staff links and heals a Matched write that failed
@@ -23,7 +27,10 @@ export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked
   const d = config.donations;
   const since = monthsBefore(now.toISOString(), config.pairing.windowMonths);
   const matches = await monday.listDonationsOfTypeDatedSince(MATCHING_GIFT_TYPE, since);
-  const open = matches.filter((i) => i.matchesGiftItemId === null && i.matchPairing !== STAFF);
+  const unlinked = matches.filter((i) => i.matchesGiftItemId === null && i.matchPairing !== STAFF);
+  const lastSweep = await getReviewSweep(db);
+  const sweepDue = lastSweep === null || now.getTime() - new Date(lastSweep).getTime() >= REVIEW_SWEEP_INTERVAL_MS;
+  const open = unlinked.filter((i) => sweepDue || i.matchPairing !== NEEDS_REVIEW);
 
   let linked = 0;
   const pairedGiftIds: string[] = [];
@@ -76,6 +83,7 @@ export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked
   } catch (err) {
     logItemFailure('pairing', 'heal', err);
   }
+  if (sweepDue) await setReviewSweep(db, now.toISOString());
   console.log(JSON.stringify({ job: 'pairing', considered: open.length, linked, review, healed }));
   return { linked, review };
 }
