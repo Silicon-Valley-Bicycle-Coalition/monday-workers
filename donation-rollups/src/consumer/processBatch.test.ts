@@ -894,6 +894,25 @@ describe('owner recompute coalescing (fix 3)', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
+  it('skips the column and description writes when their hashes match the last write, and records the hashes (issue #88)', async () => {
+    const first = fakeMondayClient();
+    const rs1 = fakeRecomputesStore(null);
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: rs1, volunteerStore: fakeVolunteerStore(), mondayClient: first, config });
+    expect(first.changeColumnValues).toHaveBeenCalledTimes(1);
+    expect(first.setItemDescription).toHaveBeenCalledTimes(1);
+    const row = (rs1.record as ReturnType<typeof vi.fn>).mock.calls[0]![0] as OwnerRecompute;
+    expect(row.valuesHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(row.descriptionHash).toMatch(/^[0-9a-f]{64}$/);
+
+    const second = fakeMondayClient();
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore({ ...row, fetchedAt: '2000-01-01T00:00:00Z' }), volunteerStore: fakeVolunteerStore(), mondayClient: second, config });
+    expect(second.getDonationsByIds).toHaveBeenCalled();
+    expect(second.changeColumnValues).not.toHaveBeenCalled();
+    expect(second.setItemDescription).not.toHaveBeenCalled();
+  });
+
   it('a successful recompute records the owner with fetched_at taken before the Monday fetch and written_at after the write', async () => {
     const order: string[] = [];
     const mondayClient = fakeMondayClient({

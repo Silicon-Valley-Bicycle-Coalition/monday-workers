@@ -569,7 +569,14 @@ async function recomputeOwnerLeased(
     ...membershipValues,
   };
 
-  await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  // Issue #88: skip the two mutations when what we'd write hashes the same as the last write.
+  // The columns are read-only for staff (🔒), so a hand edit drifting past this is the accepted
+  // cost; the hash is cleared whenever a write doesn't land.
+  const lastRecompute = await deps.recomputesStore.get(ownerItemId);
+  const valuesHash = await sha256Hex(JSON.stringify(columnValues));
+  if (lastRecompute?.valuesHash !== valuesHash) {
+    await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  }
   // Gift term columns, owner first (spec §"Writes and idempotency"): if one of these fails the
   // owner is already right and the retry re-derives the missing stamps. Each write fires this
   // Worker's own webhook; the resulting recompute finds nothing changed and writes nothing.
@@ -592,6 +599,7 @@ async function recomputeOwnerLeased(
       console.warn(`donation-rollups consumer: driven-for-organizations skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  let descriptionHash: string | null = null;
   try {
     const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
       ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
@@ -601,8 +609,10 @@ async function recomputeOwnerLeased(
     // what's left of the budget. The largest sandbox sponsor renders 22 rows, so no cut of its own.
     const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven,
       DESCRIPTION_TABLE_ROW_BUDGET - countTableRows(sponsorshipsMd ?? ''));
-    await mondayClient.setItemDescription(ownerItemId,
-      sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
+    const description = sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd;
+    const hash = await sha256Hex(description);
+    if (lastRecompute?.descriptionHash !== hash) await mondayClient.setItemDescription(ownerItemId, description);
+    descriptionHash = hash;
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
@@ -622,7 +632,12 @@ async function recomputeOwnerLeased(
   // failed partway is retried in full rather than coalesced away (the retry's webhook time
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
-  await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
+  await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString(), valuesHash, descriptionHash });
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).
