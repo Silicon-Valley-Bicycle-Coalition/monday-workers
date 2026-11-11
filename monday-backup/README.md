@@ -18,7 +18,8 @@ Paid** (see Cloudflare config below). The restore mutations in `src/restore/api.
 exercised against a live account yet.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
 [`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
-outstanding** (it needs the provisioned sandbox, issue #14).
+outstanding**: the sandbox now backs up CRM Sandbox v4 (first complete snapshot 2026-11-10, run
+46), but it needs seeding first (RESTORE.md, "Restore rehearsal").
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
