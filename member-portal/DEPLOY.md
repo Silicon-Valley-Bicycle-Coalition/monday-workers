@@ -180,7 +180,7 @@ Phase 3 (Email Sending on `mail.bikesiliconvalley.org`) must already be done —
 sends from the same onboarded domain. Commit the `database_id`, then:
 
 Before deploying, open the sandbox "Member Portal Letter Settings (sandbox)" board
-(`18428114991`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
+(`18439574433`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
 config arms the letter cron (`letterCron` filled, `taxLetter` test text present), so a checked
 box with a past start date would queue up to `maxTriggersPerRun` (200) letter emails into the
 `sandbox@` group on the first 09:00 UTC run. Re-check after any sandbox board reshuffle.

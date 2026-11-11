@@ -23,7 +23,7 @@ describe('config split', () => {
   });
 
   it('sandbox boards are the CRM Sandbox v3 ones', () =>
-    expect(sandbox.boards).toEqual({ peopleLive: 18431577220, peopleHistorical: 18431577228, organizations: 18431577213 }));
+    expect(sandbox.boards).toEqual({ peopleLive: 18437342592, peopleHistorical: 18437342607, organizations: 18437342579 }));
 
   it('production shares no board id with sandbox, or is a placeholder 0', () => {
     const sandboxIds = new Set(Object.values(sandbox.boards));

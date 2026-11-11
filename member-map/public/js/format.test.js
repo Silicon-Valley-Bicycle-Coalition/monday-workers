@@ -19,8 +19,8 @@ describe('escapeHtml', () => {
 
 describe('mondayUrl', () => {
   it('builds the Monday link', () =>
-    expect(mondayUrl('https://bikesiliconvalley.monday.com', 18431577220, '123'))
-      .toBe('https://bikesiliconvalley.monday.com/boards/18431577220/pulses/123'));
+    expect(mondayUrl('https://bikesiliconvalley.monday.com', 18437342592, '123'))
+      .toBe('https://bikesiliconvalley.monday.com/boards/18437342592/pulses/123'));
   it('drops a trailing slash on the account URL', () =>
     expect(mondayUrl('https://bikesiliconvalley.monday.com/', 1, '2')).toBe('https://bikesiliconvalley.monday.com/boards/1/pulses/2'));
   it('returns null for a non-numeric id or board id', () => {
@@ -72,7 +72,7 @@ describe('statusLine', () => {
 
 describe('point popups', () => {
   const ACCOUNT = 'https://bikesiliconvalley.monday.com';
-  const point = { id: '123', boardId: 18431577220, name: '<b>x</b>', lat: 37.3, lng: -121.9, kind: 'lapsed', dns: false };
+  const point = { id: '123', boardId: 18437342592, name: '<b>x</b>', lat: 37.3, lng: -121.9, kind: 'lapsed', dns: false };
 
   it('labels each kind', () => {
     expect(kindLabel('member')).toBe('Member');
@@ -85,7 +85,7 @@ describe('point popups', () => {
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
     expect(html).not.toContain('<b>x</b>');
     expect(html).toContain('Lapsed member');
-    expect(html).toContain('<a href="https://bikesiliconvalley.monday.com/boards/18431577220/pulses/123" target="_blank" rel="noopener">Open in Monday</a>');
+    expect(html).toContain('<a href="https://bikesiliconvalley.monday.com/boards/18437342592/pulses/123" target="_blank" rel="noopener">Open in Monday</a>');
     expect(html).not.toContain('Do Not Solicit');
   });
   it('flags Do Not Solicit', () => expect(pointPopupHtml({ ...point, dns: true }, ACCOUNT)).toContain('Do Not Solicit'));

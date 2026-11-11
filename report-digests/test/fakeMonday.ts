@@ -1,7 +1,7 @@
 import type { Board, DigestsMondayClient, Item, LinkedItem, MondayUser, Rule } from '../src/monday/client';
 
 export const DONATIONS: Board = {
-  id: '18431577310', name: 'Donations',
+  id: '18437342657', name: 'Donations',
   columns: [
     ['amount', 'Amount'], ['date', 'Date'], ['status', 'Status'], ['gift_type', 'Gift Type'], ['donor', 'Donor'],
     ['anon', 'Anonymous Donor'], ['stream', 'Funding Stream'], ['size', 'Gift Size'],
@@ -10,7 +10,7 @@ export const DONATIONS: Board = {
 };
 
 export const PEOPLE: Board = {
-  id: '18431577220', name: 'People',
+  id: '18437342592', name: 'People',
   columns: [['email', 'Personal Email'], ['phone', 'Phone'], ['ms', 'Membership Status'], ['tier', 'Membership Tier'], ['until', 'Member Until']]
     .map(([id, title]) => ({ id: id!, title: title!, type: 'text' })),
   views: [],

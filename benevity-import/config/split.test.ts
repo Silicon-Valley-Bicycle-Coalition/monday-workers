@@ -29,11 +29,11 @@ describe('config split: board and column ids', () => {
   });
 
   it('sandbox.json targets the CRM Sandbox (sandbox v3) boards and the Uploads board', () => {
-    expect(sandbox.monday.boards.donations).toBe(18431577310);
-    expect(sandbox.monday.boards.organizations).toBe(18431577213);
-    expect(sandbox.monday.boards.people).toBe(18431577220);
-    expect(sandbox.monday.boards.affiliations).toBe(18431577240);
-    expect(sandbox.monday.boards.benevityUploads).toBe(18434850887);
+    expect(sandbox.monday.boards.donations).toBe(18437342657);
+    expect(sandbox.monday.boards.organizations).toBe(18437342579);
+    expect(sandbox.monday.boards.people).toBe(18437342592);
+    expect(sandbox.monday.boards.affiliations).toBe(18437342615);
+    expect(sandbox.monday.boards.benevityUploads).toBe(18439574423);
   });
 
   it('no sandbox column or group id string-appears anywhere in production', () => {

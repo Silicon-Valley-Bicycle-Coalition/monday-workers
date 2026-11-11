@@ -3,7 +3,7 @@ import sandbox from '../config/sandbox.json';
 import { validateConfig } from './config';
 
 describe('validateConfig', () => {
-  it('accepts the sandbox config', () => expect(validateConfig(sandbox).boards.peopleLive).toBe(18431577220));
+  it('accepts the sandbox config', () => expect(validateConfig(sandbox).boards.peopleLive).toBe(18437342592));
 
   it('rejects a missing column title', () => {
     const bad = structuredClone(sandbox);

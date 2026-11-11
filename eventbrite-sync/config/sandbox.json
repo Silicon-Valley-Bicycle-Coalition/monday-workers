@@ -2,12 +2,12 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": 18431577310,
-      "people-live": 18431577220,
-      "events": 18431577282,
-      "event-registrations": 18431577302,
-      "volunteers": 18431577321,
-      "pledge-to-ride": 18439163372
+      "donations:live": 18437342657,
+      "people-live": 18437342592,
+      "events": 18437342639,
+      "event-registrations": 18437342649,
+      "volunteers": 18437342662,
+      "pledge-to-ride": 18439574443
     }
   },
   "eventbrite": {
@@ -21,9 +21,9 @@
   },
   "eventbriteSync": {
     "orderIdColumn": "REPLACE_WITH_COLUMN_ID",
-    "amountColumn": "numeric_mm79nz8b",
-    "statusColumn": "color_mm79q3b3",
-    "dateColumn": "date_mm7938jk",
+    "amountColumn": "numeric_mm8hn1b2",
+    "statusColumn": "color_mm8hshet",
+    "dateColumn": "date_mm8hfsvm",
     "amountSource": "gross",
     "currency": "USD",
     "skipFreeOrders": true,
@@ -32,14 +32,14 @@
       "refunded": "Refunded"
     },
     "itemNameTemplate": "{buyer} - {event}",
-    "thankYouSentColumn": "boolean_mm7ddybs",
-    "giftTypeColumn": "text_mm79fzs3",
+    "thankYouSentColumn": "boolean_mm8j82yw",
+    "giftTypeColumn": "text_mm8h238c",
     "giftTypeValue": "Event Ticket",
-    "fiscalYearColumn": "text_mm7973ah",
-    "donorEmailColumn": "email_mm79m5qa",
-    "donorFirstNameColumn": "text_mm8swwq5",
-    "donorLastNameColumn": "text_mm8s1f86",
-    "donorLinkColumn": "board_relation_mm795r2d"
+    "fiscalYearColumn": "text_mm8hpk76",
+    "donorEmailColumn": "email_mm8h4kkb",
+    "donorFirstNameColumn": "text_mm8sz56r",
+    "donorLastNameColumn": "text_mm8s4jbf",
+    "donorLinkColumn": "board_relation_mm8hhdk7"
   },
   "attendeeSync": {
     "actions": [
@@ -62,34 +62,34 @@
       "Group Rides"
     ],
     "events": {
-      "eventbriteIdColumn": "text_mm795t6s",
-      "dateColumn": "date_mm79ek6s",
-      "endColumn": "date_mm79jnsz",
-      "venueColumn": "text_mm79dag5",
-      "addressColumn": "text_mm798hwr",
-      "cityColumn": "text_mm79zwes",
-      "programColumn": "color_mm79t0ga",
-      "eventStatusColumn": "color_mm79dkmj",
-      "sourceColumn": "color_mm799v1e",
-      "urlColumn": "link_mm79b6kx",
+      "eventbriteIdColumn": "text_mm8heq39",
+      "dateColumn": "date_mm8hmx37",
+      "endColumn": "date_mm8h22g7",
+      "venueColumn": "text_mm8htcns",
+      "addressColumn": "text_mm8hza8p",
+      "cityColumn": "text_mm8hytgc",
+      "programColumn": "color_mm8h5tvb",
+      "eventStatusColumn": "color_mm8hzm9d",
+      "sourceColumn": "color_mm8hkfvx",
+      "urlColumn": "link_mm8hs8v8",
       "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
-      "attendeeIdColumn": "text_mm79bmyb",
-      "attendeeNameColumn": "text_mm79qtdt",
-      "attendeeEmailColumn": "email_mm8gk8v0",
-      "attendeePhoneColumn": "text_mm8yxbzh",
-      "firstNameColumn": "text_mm8g8fhj",
-      "attendanceColumn": "color_mm79pht5",
-      "sourceColumn": "color_mm791rf",
-      "roleColumn": "color_mm79smj",
-      "eventLinkColumn": "board_relation_mm79jqs7",
-      "attendeeLinkColumn": "board_relation_mm794v4j",
-      "classDateColumn": "date_mm8gggwd",
-      "classDayColumn": "text_mm8gkw96",
-      "classLocationColumn": "text_mm8gmxsr",
-      "homeZipColumn": "text_mm8vtg12",
-      "registrantsLinkColumn": "board_relation_mm8sz574"
+      "attendeeIdColumn": "text_mm8hb9t7",
+      "attendeeNameColumn": "text_mm8hd1eq",
+      "attendeeEmailColumn": "email_mm8hdnew",
+      "attendeePhoneColumn": "text_mm90yvw6",
+      "firstNameColumn": "text_mm8srm0w",
+      "attendanceColumn": "color_mm8hbkcq",
+      "sourceColumn": "color_mm8hfv39",
+      "roleColumn": "color_mm8h1vf4",
+      "eventLinkColumn": "board_relation_mm8hn2w",
+      "attendeeLinkColumn": "board_relation_mm8hntry",
+      "classDateColumn": "date_mm90kezn",
+      "classDayColumn": "text_mm905mwp",
+      "classLocationColumn": "text_mm90kdzb",
+      "homeZipColumn": "text_mm908sem",
+      "registrantsLinkColumn": "board_relation_mm907b6n"
     },
     "volunteers": {
       "attendeeIdColumn": "text_mm90gh7x",
@@ -111,7 +111,7 @@
       "sandboxRecipient": "sandbox@bikesiliconvalley.org",
       "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
-    "peopleEmailColumn": "email_mm79m5qa"
+    "peopleEmailColumn": "email_mm8h4kkb"
   },
   "pledge": {
     "nameMatch": "Pledge to Ride",
