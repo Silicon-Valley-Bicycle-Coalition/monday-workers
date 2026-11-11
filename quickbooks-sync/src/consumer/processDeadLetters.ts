@@ -2,6 +2,7 @@ import type { MondayEventStore } from '../db/mondayEvents';
 import type { QbEventStore } from '../db/qbEvents';
 import type { QueueMessage } from '../types';
 import type { QueueMessageLike } from './processBatch';
+import { errorClass } from '../logSafe';
 
 // Consumer for quickbooks-sync-writes-dlq (#33), same shape as donation-rollups' and
 // funraise-sync's. Without it a message that exhausted its retries expired unseen in the DLQ
@@ -40,7 +41,7 @@ export async function processDeadLetters(messages: QueueMessageLike<QueueMessage
       dead.push(`${direction} ${eventId}`);
       message.ack();
     } catch (err) {
-      console.error(`quickbooks-sync dlq: could not mark ${direction} "${eventId}" failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`quickbooks-sync dlq: could not mark ${direction} "${eventId}" failed: ${errorClass(err)}`);
       // Delayed like funraise-sync's DLQ consumer (#35): a bare retry() comes straight back into
       // the same D1 failure and burns the DLQ's own retries in seconds.
       message.retry({ delaySeconds: 60 });

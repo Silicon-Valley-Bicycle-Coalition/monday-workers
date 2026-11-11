@@ -8,6 +8,7 @@ import type { QuickBooksClient } from '../quickbooks/client';
 import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import type { EntityType, MapEntry, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
+import { errorClass } from '../logSafe';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -82,7 +83,7 @@ export async function processSyncQueueBatch(
     } catch (err) {
       const terminal = isTerminalError(err);
       const error = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
-      console.error(`quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${error}`);
+      console.error(`quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${errorClass(err)} (full text in the row's error column)`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
       let recorded = false;
@@ -98,7 +99,7 @@ export async function processSyncQueueBatch(
         }
         recorded = true;
       } catch (recordErr) {
-        console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorMessage(recordErr)}`);
+        console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorClass(recordErr)}`);
       }
       // A terminal failure (#33 review) is acked once it's on the row: retrying the same request
       // can only fail the same way. If it couldn't be recorded, retry so it isn't lost silently.

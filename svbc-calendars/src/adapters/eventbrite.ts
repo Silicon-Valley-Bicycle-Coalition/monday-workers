@@ -38,8 +38,8 @@ const MAX_ERROR_DETAIL = 300;
 /**
  * Eventbrite names the bad argument or auth problem in its error body
  * (`{"error": "ARGUMENTS_ERROR", "error_description": "..."}`), which the
- * status line alone doesn't. The message ends up in status.json and the
- * /events error response, so a non-JSON body (an HTML error page) is capped.
+ * status line alone doesn't. Since #72 the message no longer reaches
+ * status.json or the /events response; a non-JSON body (an HTML error page) is capped.
  */
 async function errorDetail(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
