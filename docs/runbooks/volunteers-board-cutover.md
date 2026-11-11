@@ -72,6 +72,13 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    with the optional `historical` checkbox column; the new nightly membership load pages the
    Volunteers board and enqueues only owners whose rows changed.
 
+   **Overlap until step 9.** From this deploy, the old Event Registrations-sourced rows
+   (`source` `sweep`/`webhook`) still qualify alongside the new Volunteers rows. That is harmless
+   for correctness: the same person-day from both sources collapses when runs are built
+   (`buildRuns`). The only residual risk is an old registration cancelled in Monday in the
+   meantime still counting. Run steps 9 and 10 the same day as this step, before the 09:00 UTC
+   nightly cron if practical.
+
 7. **Turn `eventbrite-sync` writes on.** Set `on` before relying on writes (a missing key or any
    other value reads as `off`):
 
@@ -120,10 +127,42 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
 ## Rollback
 
-Keep `eventbrite-sync` on `hold`, redeploy the previous build, and unarchive the original
-registrations in Monday (the ledger lists their ids). The remap SQL is idempotent. The previous build reads
-the old registration ids, so before it leaves `hold` the D1 ids must point back at them (the
-ledger holds both sides of every move). Do not delete the Volunteers items the backfill created.
+Rollback is clean only **before step 7** (writes `on`). Keep `eventbrite-sync` on `hold`
+throughout.
+
+1. **Redeploy the previous `eventbrite-sync` build and, if step 6 ran, the previous
+   `donation-rollups` build** (re-deploy the prior commit from each Worker directory).
+2. **Unarchive** the original registrations in Monday (ids are in the ledger, below).
+3. **Point the D1 ids back at the old registrations. This is NOT scripted.** The remap in step 5
+   only goes forward. Two columns need the reverse update: `attendees.monday_item_id` and
+   `class_email_recipients.registration_item_id`. The ledger supplies both sides of every move:
+   `eventbrite-sync/data/backfill-volunteers-production.jsonl`, one JSON object per line,
+   `{"attendeeId":"...","registrationItemId":"<old>","volunteerItemId":"<new>"}` (a line without
+   `registrationItemId` has no old item to return to). The operator must write and review the
+   reverse statements before running them. Example for ONE id pair only, not a script to run
+   as is:
+
+   ```sql
+   -- EXAMPLE: one attendee. Substitute the ledger's values; review before use.
+   UPDATE attendees SET monday_item_id = '<old registrationItemId>' WHERE attendee_id = '<attendeeId>';
+   UPDATE class_email_recipients SET registration_item_id = '<old registrationItemId>' WHERE registration_item_id = '<new volunteerItemId>';
+   ```
+
+   Rows that the forward remap merged or deleted in `class_email_recipients` (a `claimed`/`sent`
+   duplicate) cannot be recreated by this; check those by hand against the send page.
+4. **Undo step 9** if it ran. `UPDATE volunteer_activity SET qualifies = 1 WHERE source IN
+   ('sweep','webhook')` is exact only if no row of those sources already had `qualifies = 0`
+   before step 9. Use the count and the `data/pre-step-9-qualifying.json` captured in step 9:
+   restore `qualifies = 1` for exactly those rows (or, if the count matches the number of
+   `sweep`/`webhook` rows now, the blanket statement is equivalent).
+5. Leave `hold` with `on` only when the old build and the D1 ids agree.
+
+**After step 7 a rollback is not clean.** Attendees created only on the Volunteers board (new
+sign-ups since writes went on) have no old registration to point back to. Do not delete them:
+they are not lost. Leave those items on the Volunteers board and leave their D1 ids pointing at
+them; decide with staff whether to copy them onto Event Registrations by hand. Re-running the
+forward remap SQL is safe (it is idempotent), but that is for finishing step 5, not a rollback
+step. Never delete the Volunteers items the backfill created.
 
 ## For staff
 
