@@ -58,6 +58,7 @@ export async function processVolunteer(message: AttendeeQueueMessage, ctx: Volun
   };
 
   let currentAttendance: string | null = null;
+  let staffOwnedStatus = false;
   let linkAlreadySet = false;
   if (mondayItemId !== null) {
     const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.statusColumn, cols.volunteerLinkColumn]);
@@ -66,7 +67,10 @@ export async function processVolunteer(message: AttendeeQueueMessage, ctx: Volun
       return;
     }
     // By stored value, not text: an empty status cell's text is label id 5's (statusText).
-    currentAttendance = toAttendance(statusText(current, cols.statusColumn));
+    const currentStatus = statusText(current, cols.statusColumn);
+    currentAttendance = toAttendance(currentStatus);
+    // Prospect/Confirmed are staff-only labels the sync doesn't map: never overwrite them with RSVP.
+    staffOwnedStatus = currentStatus !== '' && currentAttendance === null;
     // A link already on the item may be a staff relink: never match over it or overwrite it.
     linkAlreadySet = (current.columns[cols.volunteerLinkColumn] ?? '').trim() !== '';
   }
@@ -101,6 +105,7 @@ export async function processVolunteer(message: AttendeeQueueMessage, ctx: Volun
   if (mondayItemId !== null) {
     // No Event (staff re-point it) and no Historical (mapVolunteer's unchecked default is for new items).
     delete columnValues[cols.historicalColumn];
+    if (staffOwnedStatus && attendance === 'Registered') delete columnValues[cols.statusColumn];
     const rename = cols.attendeeNameColumn in mapping.columnValues ? { name: mapping.itemName } : {};
     try {
       await mondayClient.changeColumnValues(boardId, mondayItemId, { ...columnValues, [cols.listingColumn]: listing, ...rename });

@@ -133,6 +133,26 @@ describe('processAttendee on a volunteer event', () => {
     expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_status_col: 'No-Show' });
   });
 
+  it('leaves a staff Confirmed status alone on a Registered delivery', async () => {
+    const { deps, mondayClient } = setup({
+      ...existing,
+      monday: { getItems: vi.fn().mockResolvedValue([volItem({ vol_status_col: 'Confirmed' })]) },
+    });
+    await processAttendee(message, deps);
+    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).not.toHaveProperty('vol_status_col');
+  });
+
+  it('a check-in on a Prospect item still writes Completed', async () => {
+    const { deps, mondayClient } = setup({
+      ...existing, att: attendee({ checked_in: true }),
+      monday: {
+        getItems: vi.fn().mockResolvedValue([volItem({ vol_status_col: 'Prospect', vol_person_col: 'Someone' })]),
+      },
+    });
+    await processAttendee(message, deps);
+    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_status_col: 'Completed' });
+  });
+
   it('a cancellation with no existing item creates nothing and marks the ledger skipped', async () => {
     const { deps, mondayClient, attendeeStore } = setup({ att: attendee({ cancelled: true }) });
     await processAttendee(message, deps);
