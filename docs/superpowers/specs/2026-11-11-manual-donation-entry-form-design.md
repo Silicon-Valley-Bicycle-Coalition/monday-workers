@@ -218,6 +218,24 @@ View **Manual entries, last 14 days** on the Donations board (production 2916547
 - Limits: it relies on a person looking. A manual gift whose Donor is blank (anonymous) sorts
   first and duplicates there are only visible by amount and date.
 
+## Batch entry (2026-11-11)
+
+A deposit is often 10 to 30 checks, entered one form at a time. What the form can and cannot do,
+tested on the sandbox form (a production form carries the same two settings):
+
+- **Submit another: on.** The thank-you page shows a "Submit another" button that reopens the
+  form without a reload, titled "Gift saved". It resets **every** field, including the date.
+- **URL prefill works for Payment Method only.** `?method=Credit%20Card` on the form link fills
+  Payment Method (question setting `prefill`, source `QueryParam`, lookup `method`). Useful for a
+  bookmark of the form link per payment type.
+- **URL prefill does not work for Date received.** The date question ignores `?date=...` in both
+  `2026-11-05` and `2026/11/05` forms (with "default to today" on or off), so a deposit dated
+  before today needs the date picked on each entry. Left as default-to-today, the right default
+  for a single gift.
+- Not tried: Status or Donor prefill (Donor is a connected-boards question).
+- For a deposit of many checks, a bulk path (a board-level import) would be the real fix, but it
+  bypasses the form's required fields and the donor link; not built.
+
 ## Open questions
 
 1. (Resolved: yes, via a board dropdown then an item dropdown.)
