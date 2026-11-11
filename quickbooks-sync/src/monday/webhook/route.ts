@@ -4,6 +4,7 @@ import type { MondayEventStore } from '../../db/mondayEvents';
 import { stampFor, type WriteMode } from '../../flags';
 import type { QuickbooksSyncConfig } from '../../types';
 import { hasReachedQueue, type QueueLike } from '../../quickbooks/webhook/route';
+import { MONDAY_WEBHOOK_PATH } from '../../rateLimit';
 import { secretsMatch } from '../../secret';
 import { isChallengeRequest, validateMondayEvent } from './validate';
 
@@ -25,7 +26,7 @@ export interface MondayWebhookDeps {
 export function createMondayWebhookApp(deps: MondayWebhookDeps) {
   const app = new Hono();
 
-  app.post('/webhooks/monday', async (c) => {
+  app.post(MONDAY_WEBHOOK_PATH, async (c) => {
     // Auth first — even the one-time challenge handshake stays behind the secret, since the
     // secret is part of the URL Monday registers and so arrives with the challenge too. An
     // unauthenticated caller learns nothing and enqueues nothing.

@@ -20,7 +20,7 @@ import { runScheduledReconcile } from './campaigns/scheduled';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import { environmentOf } from './environment';
 import type { BatchSkipContext } from './writeSwitch';
-import { checkRequestRateLimit } from './rateLimit';
+import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import { sendAlert } from './alert';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
@@ -48,7 +48,12 @@ export default {
 
     // Checked before any routing, D1, or Monday/Mailchimp work — see README "Reliability:
     // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // A Monday webhook delivery that already passed verification skips it: Monday's own bulk-edit
+    // traffic must not be throttled.
+    return isVerifiedMondayWebhook(request, env.MONDAY_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
 
       const app = new Hono();
