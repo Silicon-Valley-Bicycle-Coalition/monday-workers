@@ -67,7 +67,7 @@ export interface CustodianDeps {
   recomputes: OwnerRecomputesStore;
   rollCallCredits: RollCallCreditsStore;
   mondayClient: CustodianMondayClient;
-  queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
+  queue: { sendBatch(messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> };
   config: DonationRollupsConfig;
   now?: Date;
 }

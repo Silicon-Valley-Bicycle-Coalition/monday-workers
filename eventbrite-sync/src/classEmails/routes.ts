@@ -13,6 +13,7 @@ import { isActive, statusText, type MondayClient, type MondayItemColumns } from 
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { linkedItemId } from '../util/itemId';
 import { secretsMatch } from '../webhook/route';
+import { audienceSource, type AudienceSource } from './audienceSource';
 import { classFields } from './fields';
 import { planKind, type AudienceRole, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
 import { loadRoster, sandboxRecipients } from './roster';
@@ -120,7 +121,6 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   const { store, config } = deps;
   const now = deps.now ?? (() => new Date());
   const boards = config.monday.boards;
-  const rc = config.attendeeSync.registrations;
   const ev = config.attendeeSync.events;
 
   const json =(c: Context, body: unknown, status: 200 | 400 | 401 | 404 | 502 | 503 = 200) => {
@@ -155,6 +155,14 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   const factsOf = (event: EventRow, item: MondayItemColumns | undefined): ClassFacts => ({
     startsAt: event.startsAt, endsAt: event.endsAt, eventbriteStatus: event.eventbriteStatus, audienceRole: audienceOf(item),
   });
+
+  // The Events item with the columns a route needs, and who the event's emails go to. Null when the
+  // item is gone. Which board the audience is read from is audienceSource's call (volunteerBoardMode).
+  async function loadEventItem(client: MondayClient, event: EventRow & { mondayItemId: string }, columns: string[]): Promise<{ item: MondayItemColumns; audience: AudienceRole } | null> {
+    const [item] = await client.getItems(boards.events!, [event.mondayItemId], [...columns, ev.programColumn]);
+    if (!isActive(item)) return null;
+    return { item, audience: audienceOf(item) };
+  }
 
   const notFound = (c: Context) => fail(c, 404, 'No such event.');
   const unconfigured = (c: Context) => fail(c, 503, 'Event emails are not set up for this environment.');
@@ -193,13 +201,15 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     if (event === null) return notFound(c);
 
     const client = deps.mondayClient();
-    const [[item], roster, ledger, mode] = await Promise.all([
-      client.getItems(boards.events!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn, ev.programColumn]),
-      loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
+    const found = await loadEventItem(client, event, [ev.venueColumn, ev.addressColumn]);
+    if (found === null) return notFound(c);
+    const { item, audience } = found;
+    if (audienceSource(config, audience).board === null) return unconfigured(c);
+    const [roster, ledger, mode] = await Promise.all([
+      loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }, audience),
       store.listByEvent(eventId),
       deps.writeMode(),
     ]);
-    if (!isActive(item)) return notFound(c);
 
     return json(c, {
       event: { name: item.name, startsAt: event.startsAt, endsAt: event.endsAt, status: event.eventbriteStatus },
@@ -220,12 +230,14 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     // Always re-planned from live data: what the page was shown earlier may be stale.
     const client = deps.mondayClient();
     const at = now();
-    const [[item], roster, ledger] = await Promise.all([
-      client.getItems(boards.events!, [event.mondayItemId], [ev.programColumn]),
-      loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }),
+    const found = await loadEventItem(client, event, []);
+    if (found === null) return notFound(c);
+    const { item, audience } = found;
+    if (audienceSource(config, audience).board === null) return unconfigured(c);
+    const [roster, ledger] = await Promise.all([
+      loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }, audience),
       store.listByEvent(eventId),
     ]);
-    if (!isActive(item)) return notFound(c);
     const plan = planKind(kind, factsOf(event, item), roster, ledger, at);
     if (plan.refusal !== null) return json(c, { refusal: plan.refusal, recipients: [] });
 
@@ -281,13 +293,32 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         console.error(`eventbrite-sync class emails: no Monday client after result for event "${eventId}": ${errorKind(err)}`);
       }
       if (client !== null) {
+        const monday = client;
+        // Which board the sent ids are items on, read once and only when something needs it, so the
+        // update never waits on it. Without it the update still goes out, but the address lookup and the
+        // follow-ups (which write to those items) are skipped. Never rejects.
+        let audienceLookup: Promise<AudienceRole | null> | null = null;
+        const audienceOnce = (): Promise<AudienceRole | null> => (audienceLookup ??= (async () => {
+          try {
+            return (await loadEventItem(monday, event, []))?.audience ?? null;
+          } catch (err) {
+            console.error(`eventbrite-sync class emails: could not read the Events item after result for event "${eventId}": ${errorKind(err)}`);
+            return null;
+          }
+        })());
         // The update first: it is the record of the send, and a long Thank-you's People matching
         // must not be able to cost it. The follow-ups can outlive the response.
-        await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed);
+        await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed, audienceOnce);
         // Entries first: a thank-you's People link can create the person, and an entry shouldn't
         // depend on that having happened.
-        const monday = client;
-        const work = logToTimeline(monday, event, eventId, kind, sender, subject, sentIds).then(() => followUp(monday, kind, sentIds, eventId));
+        const work = audienceOnce().then((audience) => {
+          const source = audience === null ? null : audienceSource(config, audience);
+          if (source === null || source.board === null) {
+            console.error(`eventbrite-sync class emails: timeline and follow-ups skipped after result for event "${eventId}": no board to read`);
+            return;
+          }
+          return logToTimeline(monday, event, eventId, kind, sender, subject, sentIds, source).then(() => followUp(monday, kind, sentIds, eventId, source));
+        });
         const ctx = executionContextOf(c);
         if (ctx === null) await work;
         else ctx.waitUntil(work);
@@ -332,7 +363,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   // registration; never creates a person. The email has gone, so a failure is reported on the Events
   // item, not retried: an entry can't be looked up, so a retry could post it twice. Never rejects.
   async function logToTimeline(
-    client: MondayClient, event: EventRow & { mondayItemId: string }, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[]
+    client: MondayClient, event: EventRow & { mondayItemId: string }, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[], source: AudienceSource
   ): Promise<void> {
     const customActivityId = config.attendeeSync.classEmails.timelineActivityId;
     if (customActivityId === null || sentIds.length === 0) return;
@@ -341,16 +372,17 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       const [classItem] = await client.getItems(boards['events']!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]);
       const fields = classFields(event, classItem?.columns[ev.venueColumn] ?? '', classItem?.columns[ev.addressColumn] ?? '');
       const className = classItem?.name ?? `Eventbrite event ${eventId}`;
-      const fresh = await client.getItems(boards['event-registrations']!, sentIds, [rc.attendeeEmailColumn, rc.firstNameColumn]);
+      const fresh = await client.getItems(source.board!, sentIds, [source.emailColumn, source.firstNameColumn]);
       const byId = new Map(fresh.map((item) => [item.id, item]));
       const peopleBoard = boards['people-live'];
       const timestamp = now().toISOString();
       for (const id of sentIds) {
         try {
           const item = byId.get(id);
-          const email = (item?.columns[rc.attendeeEmailColumn] ?? '').trim();
+          const email = (item?.columns[source.emailColumn] ?? '').trim();
+          const firstName = source.firstNameOf(item?.columns[source.firstNameColumn] ?? '');
           const person = peopleBoard != null && email !== '' ? await client.findItemByColumnValue(peopleBoard, config.attendeeSync.peopleEmailColumn, email) : null;
-          const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': (item?.columns[rc.firstNameColumn] ?? '').trim() || null })).slice(0, MAX_TIMELINE_TEXT);
+          const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': firstName || null })).slice(0, MAX_TIMELINE_TEXT);
           const summary = `${KIND_LABEL[kind]} for ${oneLine(className)}. Sent by ${sender}.`;
           await client.createTimelineItem({
             itemId: person?.id ?? id, customActivityId, title, timestamp,
@@ -375,28 +407,28 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   // What the ledger doesn't cover: a missed-you marks No Show and a thank-you links People. Each
   // item is independent and none of it can undo the ledger, so a failure is logged and skipped.
   // Runs under waitUntil, so it never rejects.
-  async function followUp(client: MondayClient, kind: ClassEmailKind, sentIds: string[], eventId: string): Promise<void> {
+  async function followUp(client: MondayClient, kind: ClassEmailKind, sentIds: string[], eventId: string, source: AudienceSource): Promise<void> {
     if (sentIds.length === 0 || kind === 'reminder') return;
     try {
-      const regBoard = boards['event-registrations']!;
+      const regBoard = source.board!;
       if (kind === 'missed-you') {
         // Fresh: staff may have checked someone in since the page was loaded.
-        const fresh = (await client.getItems(regBoard, sentIds, [rc.attendanceColumn])).filter(isActive);
+        const fresh = (await client.getItems(regBoard, sentIds, [source.statusColumn])).filter(isActive);
         for (const item of fresh) {
-          if (statusText(item, rc.attendanceColumn) !== 'Registered') continue;
-          await writeRegistration(client, regBoard, item.id, { [rc.attendanceColumn]: 'No Show' }, eventId);
+          if (statusText(item, source.statusColumn) !== source.signedUpStatus) continue;
+          await writeRegistration(client, regBoard, item.id, { [source.statusColumn]: source.noShowStatus }, eventId);
         }
         return;
       }
       const peopleBoard = boards['people-live'];
       if (peopleBoard === null) return;
-      const fresh = (await client.getItems(regBoard, sentIds, [rc.attendeeEmailColumn, rc.attendeeLinkColumn])).filter(isActive);
+      const fresh = (await client.getItems(regBoard, sentIds, [source.emailColumn, source.linkColumn])).filter(isActive);
       for (const item of fresh) {
-        if ((item.columns[rc.attendeeLinkColumn] ?? '').trim() !== '') continue; // never overwrite a link
+        if ((item.columns[source.linkColumn] ?? '').trim() !== '') continue; // never overwrite a link
         try {
-          const match = await matchPerson(client, peopleBoard, config.attendeeSync.peopleEmailColumn, { email: item.columns[rc.attendeeEmailColumn], name: item.name });
+          const match = await matchPerson(client, peopleBoard, config.attendeeSync.peopleEmailColumn, { email: item.columns[source.emailColumn], name: item.name });
           if (match.donorItemId === null) continue;
-          await writeRegistration(client, regBoard, item.id, { [rc.attendeeLinkColumn]: { item_ids: [linkedItemId(match.donorItemId)] } }, eventId);
+          await writeRegistration(client, regBoard, item.id, { [source.linkColumn]: { item_ids: [linkedItemId(match.donorItemId)] } }, eventId);
         } catch (err) {
           console.error(`eventbrite-sync class emails: People link for registration ${item.id} on event "${eventId}" failed: ${errorKind(err)}`);
         }
@@ -415,14 +447,16 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   }
 
   async function postResultUpdate(
-    client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sent: number, failed: SendResult[], unconfirmed: string[]
+    client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sent: number, failed: SendResult[], unconfirmed: string[], audienceOnce: () => Promise<AudienceRole | null>
   ): Promise<void> {
     const lines = [`Event email: ${KIND_LABEL[kind]}, "${oneLine(subject)}". Sent by ${sender} to ${sent} ${sent === 1 ? 'person' : 'people'}.`];
     if (failed.length > 0 || unconfirmed.length > 0) {
       // Addresses come from Monday now, not from the page; in the sandbox they are the replaced one.
       let addresses = new Map<string, string>();
       try {
-        const roster = await loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config });
+        const audience = await audienceOnce();
+        if (audience === null) throw new Error('audience unknown');
+        const roster = await loadRoster(eventId, { attendeeStore: deps.attendeeStore, mondayClient: client, config }, audience);
         const shown = sandboxRecipients(roster.map((e) => ({ registrationId: e.registrationId, email: e.email, firstName: e.firstName, name: e.name })), config);
         addresses = new Map(shown.map((r) => [r.registrationId, r.email]));
       } catch (err) {

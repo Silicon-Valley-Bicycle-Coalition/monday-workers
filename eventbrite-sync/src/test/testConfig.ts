@@ -10,7 +10,7 @@ export function testConfig(
   return {
     monday: {
       apiUrl: 'https://api.monday.com/v2',
-      boards: { 'donations:live': 111, 'people-live': 42, events: 222, 'event-registrations': 333, ...boards },
+      boards: { 'donations:live': 111, 'people-live': 42, events: 222, 'event-registrations': 333, volunteers: 666, ...boards },
     },
     eventbrite: {
       apiUrl: 'https://www.eventbriteapi.com/v3',
@@ -54,6 +54,11 @@ export function testConfig(
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
         classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',
         homeZipColumn: 'att_zip_col',
+      },
+      volunteers: {
+        attendeeIdColumn: 'vol_att_col', attendeeNameColumn: 'vol_name_col', attendeeEmailColumn: 'vol_email_col', jobColumn: 'vol_job_col',
+        dateColumn: 'vol_date_col', statusColumn: 'vol_status_col', historicalColumn: 'vol_hist_col', volunteerLinkColumn: 'vol_person_col',
+        eventColumn: 'vol_event_col', listingColumn: 'vol_listing_col',
       },
       registrantsLinkExcludedEventIds: ['8888'],
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },

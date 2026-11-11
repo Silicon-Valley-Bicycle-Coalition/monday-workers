@@ -55,8 +55,8 @@ function custodianDeps(env: Env): CustodianDeps {
     rollCallCredits: new D1RollCallCreditsStore(env.DB),
     mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
     queue: {
-      sendBatch: (messages: RecomputeQueueMessage[]) =>
-        env.RECOMPUTE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
+      sendBatch: (messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }) =>
+        env.RECOMPUTE_QUEUE.sendBatch(messages.map((body) => ({ body, ...(opts ? { delaySeconds: opts.delaySeconds } : {}) }))).then(() => undefined),
     },
     config,
   };

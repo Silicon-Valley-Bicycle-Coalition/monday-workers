@@ -214,7 +214,11 @@ export interface VolunteerBoardConfig {
 // A historical volunteer-hours board (one row per volunteer shift).
 export interface HistoricalVolunteerBoardConfig {
   boardId: number;
-  columns: { volunteer: string; date: string; hours: string; status: string };
+  // `historical` (optional) is the Historical checkbox. Configured: a row that is not Historical
+  // (a live Eventbrite sign-up, which has no hours) counts on status + Volunteer link + date
+  // alone, while a Historical row (migrated 2014-2020) still needs Hours >= 1. Absent: every row
+  // needs Hours >= 1, as before.
+  columns: { volunteer: string; date: string; hours: string; status: string; historical?: string };
   countedStatusLabels: string[];
 }
 

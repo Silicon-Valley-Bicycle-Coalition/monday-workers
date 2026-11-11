@@ -186,6 +186,14 @@ describe('validateConfig — membership activity rule (spec 2026-10-09)', () => 
     expect(off.donationRollups.volunteerBoards).toEqual([]);
     expect(off.donationRollups.historicalVolunteerBoards).toEqual([]);
   });
+  it('historicalVolunteerBoards[].columns.historical is optional, but a non-string or empty value is rejected', () => {
+    const withCol = (historical: unknown) => ({ ...base, donationRollups: { ...base.donationRollups,
+      historicalVolunteerBoards: [{ ...historicalVolunteerBoard, columns: { ...historicalVolunteerBoard.columns, historical } }] } });
+    expect(validateConfig(withCol('hist')).donationRollups.historicalVolunteerBoards[0]!.columns.historical).toBe('hist');
+    expect(validateConfig(base).donationRollups.historicalVolunteerBoards[0]!.columns.historical).toBeUndefined();
+    expect(() => validateConfig(withCol(7))).toThrow(/historicalVolunteerBoards\[0\]\.columns\.historical/);
+    expect(() => validateConfig(withCol(''))).toThrow(/historicalVolunteerBoards\[0\]\.columns\.historical/);
+  });
   it.each([
     ['columns.attendee', { ...volunteerBoard, columns: { ...volunteerBoard.columns, attendee: '' } }, /volunteerBoards\[0\]\.columns\.attendee/],
     ['eventBoard.columns.start', { ...volunteerBoard, eventBoard: { boardId: 8, columns: { start: '' } } }, /eventBoard\.columns\.start/],

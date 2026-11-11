@@ -3,7 +3,7 @@ import production from './svbc.json';
 import sandbox from './sandbox.json';
 import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
-import { validateConfig, PLACEHOLDER_COLUMN_ID } from '../src/config';
+import { validateConfig, volunteerBoardMode, PLACEHOLDER_COLUMN_ID } from '../src/config';
 import { queueBaseName } from '../src/environment';
 import { isDeadLetterBatch } from '../src/index';
 import { validateAttendeeDelivery } from '../src/webhook/validateAttendee';
@@ -114,6 +114,11 @@ describe('config split: board and column ids', () => {
   it('both shipped configs validate', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
+  });
+
+  it('the sandbox writes volunteers to the Volunteers board; production is never half-configured', () => {
+    expect(volunteerBoardMode(validateConfig(sandbox))).toBe('ready');
+    expect(['legacy', 'ready']).toContain(volunteerBoardMode(validateConfig(production)));
   });
 
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {

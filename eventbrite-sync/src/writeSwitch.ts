@@ -32,6 +32,7 @@ const SINK_NAMES: Record<keyof MondayBoards, string> = {
   'people-live': 'People',
   events: 'Events',
   'event-registrations': 'Event Registrations',
+  volunteers: 'Volunteers',
   'pledge-to-ride': 'Pledge to Ride',
 };
 

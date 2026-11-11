@@ -406,6 +406,8 @@ never touches the giving rollups.
 | volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
 | historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
 
+A blank Hours value counts only for the Event Registrations source and, when `columns.historical` is configured, for non-Historical Volunteers rows; it never counts for a Historical row, so migration 0009's `hours` comment ("NULL = blank = counts as 1 hour") does not hold for Historical rows.
+
 Migrated terms are trusted as stamped because Salesforce never booked membership revenue as
 Opportunity amounts and comp terms have no gift at all — an amount gate over history would
 un-member people who were members. `fromISO` (the cutover date) is therefore the boundary between
@@ -1165,18 +1167,32 @@ sandbox gets rebuilt before cutover:
 * `donationRollups.membership.minAmountCents` — the "given at least $1" gate (100): a Received
   Donation below it neither starts nor extends a run after `fromISO`. Migrated terms before
   `fromISO` ignore it.
-* `donationRollups.volunteerBoards` — the Event Registrations board(s) whose check-ins count as
-  volunteering: `boardId`; `columns` with `attendee` (the People link), `event` (the Event link),
+* `donationRollups.volunteerBoards` — **empty (`[]`) in SVBC's deployment**: volunteering is read
+  from the Volunteers board alone (`historicalVolunteerBoards`, below), where eventbrite-sync
+  writes Eventbrite volunteer sign-ups. The Event Registrations mechanism remains for forks:
+  the Event Registrations board(s) whose check-ins count as volunteering: `boardId`; `columns` with `attendee` (the People link), `event` (the Event link),
   `attendance`, `role` and `hours` (`null` until the Hours column exists — blank counts as 1
   hour); `eventBoard` (`boardId` and `columns.start`, the Events board's Start date, which dates
   the check-in); `volunteerRoleLabels` (`["Volunteer"]`) and `countedAttendanceLabels`
   (`["Attended"]`). Required (may be an empty array) whenever `membership` is on. **Every board
   here needs its own webhook subscription**, as with `donationBoards` — `setup-webhooks.mjs`
   covers both lists.
-* `donationRollups.historicalVolunteerBoards` — the 2014–2020 Volunteers board(s): `boardId`,
-  `columns` (`volunteer`, `date`, `hours`, `status`) and `countedStatusLabels` (`["Completed"]`).
-  Required (may be `[]`) whenever `membership` is on. Read once by the `membership` duty's
-  `load-volunteers` phase; **no webhook** — it is record-keeping.
+* `donationRollups.historicalVolunteerBoards` — the Volunteers board(s): `boardId`,
+  `columns` (`volunteer`, `date`, `hours`, `status`, and optional `historical`) and
+  `countedStatusLabels` (`["Completed"]`). Required (may be `[]`) whenever `membership` is on.
+  Read by the `membership` duty's `load-volunteers` phase on an `all=true` pass (the full
+  recompute), and **every night** by the nightly membership run, which upserts the rows that
+  are new or changed and enqueues only their owners (nothing, when the board is unchanged; at most
+  3,500 owners a night, the rest next night). Owners are enqueued (delayed 120 s) before the rows
+  are stored, so a failure re-sends rather than loses. There
+  is **no webhook**, so new Eventbrite volunteering (a `Completed` row, dated by its Date column)
+  counts by the next morning's run, up to a day later, not per webhook; a manual
+  `all=true` remains the full recompute. Under write switch `off` the nightly load only computes
+  and logs; under `hold` the duties are skipped. Canceled, RSVP and No-Show rows, and rows with no Volunteer link, add
+  nothing; several same-day rows extend a term once. With `columns.historical` (the Historical
+  checkbox) configured, a row that is not Historical qualifies on status + Volunteer link + date
+  with no Hours (Eventbrite has none), while a Historical row (the migrated 2014–2020 shifts)
+  still needs Hours >= 1. Without it, every row needs Hours >= 1.
 * `donationRollups.recurringGifts` — `null` or omitted keeps the `recurring` duty off. Otherwise
   `{ boardId, columns: { donorLink, status }, activeStatusLabel }`: the Recurring Gifts board, its
   Donor connect column and Status column, and the label that means active (`"Active"`). At least

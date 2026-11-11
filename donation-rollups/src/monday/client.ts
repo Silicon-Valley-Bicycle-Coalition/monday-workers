@@ -96,6 +96,8 @@ export interface HistoricalShiftRecord {
   dateISO: string | null;
   hours: number | null;
   statusLabel: string | null;
+  // The Historical checkbox is checked; false when the board config names no such column.
+  historical: boolean;
 }
 
 export type DonationReadColumns = {
@@ -489,7 +491,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
             items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
-        { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status], cursor },
+        { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status, ...(c.historical ? [c.historical] : [])], cursor },
       );
     const page = data.boards[0]?.items_page;
     if (page === undefined) return { items: [], cursor: null };
@@ -500,7 +502,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const text = (id: string): string | null => byId.get(id)?.text || null;
         return { id: item.id, volunteerItemId: byId.get(c.volunteer)?.linked_item_ids?.[0] ?? null,
           dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)),
-          statusLabel: statusLabel(byId.get(c.status)?.text, byId.get(c.status)?.value) };
+          statusLabel: statusLabel(byId.get(c.status)?.text, byId.get(c.status)?.value),
+          historical: c.historical ? checkboxChecked(byId.get(c.historical)?.value) : false };
       }),
     };
   }

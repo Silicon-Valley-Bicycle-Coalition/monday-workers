@@ -252,7 +252,14 @@ describe('registrations and events', () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'v1', column_values: [
       { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed', value: '{"index":1}' }] }] } }] } });
     expect(await client.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null))
-      .toEqual({ cursor: null, items: [{ id: 'v1', volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed' }] });
+      .toEqual({ cursor: null, items: [{ id: 'v1', volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed', historical: false }] });
+  });
+  it('pageHistoricalShifts reads the Historical checkbox when configured', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'v1', column_values: [{ id: 'hist', text: 'v', value: '{"checked":"true"}' }, { id: 'st', text: 'Completed', value: '{"index":1}' }] },
+      { id: 'v2', column_values: [{ id: 'hist', text: '', value: null }, { id: 'st', text: 'Completed', value: '{"index":1}' }] }] } }] } });
+    const page = await client.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st', historical: 'hist' }, countedStatusLabels: ['Completed'] }, null);
+    expect(page.items.map((i) => [i.id, i.historical])).toEqual([['v1', true], ['v2', false]]);
   });
   it('getItemsBoardIds maps ids to boards and omits missing items', async () => {
     const client = clientReturning({ data: { items: [{ id: 'p1', board: { id: '20' } }, { id: 'p2', board: { id: '28' } }] } });
