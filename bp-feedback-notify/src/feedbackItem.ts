@@ -18,6 +18,8 @@ export type FeedbackItem =
   | { kind: 'not-found' }
   // The item exists but isn't on the configured board — never email, never write status back.
   | { kind: 'wrong-board' }
+  // The send-status column already reads as sent (#105): don't email the organizer again.
+  | { kind: 'already-sent' }
   // On the right board, but the email column is empty or isn't one address.
   | { kind: 'no-email' };
 
@@ -27,20 +29,38 @@ interface ItemsResponse {
   items: { name: string; board: { id: string } | null; column_values: { id: string; text: string | null }[] }[];
 }
 
-/** Throws on a Monday API failure, so the caller can answer with a retryable status. */
-export async function readFeedbackItem(config: FeedbackBoardConfig, token: string | TokenProvider, itemId: number): Promise<FeedbackItem> {
+/** The status column the Worker writes `sentLabel` into after a send (config `sendStatus`). */
+export interface SentGuard {
+  columnId: string;
+  sentLabel: string;
+}
+
+/**
+ * Throws on a Monday API failure, so the caller can answer with a retryable status. With a
+ * `sentGuard`, an item whose status column already reads `sentLabel` is `already-sent` (#105);
+ * staff re-trigger a send by changing the column back, and a failed send never writes `sent`.
+ */
+export async function readFeedbackItem(
+  config: FeedbackBoardConfig,
+  token: string | TokenProvider,
+  itemId: number,
+  sentGuard: SentGuard | null = null,
+): Promise<FeedbackItem> {
+  const columnIds = [config.eventNameColumnId, config.organizerEmailColumnId];
+  if (sentGuard) columnIds.push(sentGuard.columnId);
   const data = await mondayRequest<ItemsResponse>(
     token,
     `query ($itemIds: [ID!], $columnIds: [String!]) {
       items(ids: $itemIds) { name board { id } column_values(ids: $columnIds) { id text } }
     }`,
-    { itemIds: [String(itemId)], columnIds: [config.eventNameColumnId, config.organizerEmailColumnId] },
+    { itemIds: [String(itemId)], columnIds },
   );
   const item = data.items[0];
   if (!item) return { kind: 'not-found' };
   if (item.board?.id !== config.boardId) return { kind: 'wrong-board' };
 
   const text = (columnId: string) => (item.column_values.find((c) => c.id === columnId)?.text ?? '').trim();
+  if (sentGuard && text(sentGuard.columnId) === sentGuard.sentLabel) return { kind: 'already-sent' };
   const organizerEmail = text(config.organizerEmailColumnId);
   if (!EMAIL_RE.test(organizerEmail)) return { kind: 'no-email' };
   return { kind: 'ok', eventName: text(config.eventNameColumnId) || item.name.trim(), organizerEmail };

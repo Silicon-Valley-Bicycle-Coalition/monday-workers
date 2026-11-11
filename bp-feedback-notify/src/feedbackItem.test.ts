@@ -17,13 +17,17 @@ function stubItems(items: unknown[] | Error | Response) {
   return fetchMock;
 }
 
-function item({ board = CONFIG.boardId, email = 'organizer@example.org', event = 'Fall Festival', name = 'Item name' } = {}) {
+const STATUS_COLUMN = 'color_status';
+const GUARD = { columnId: STATUS_COLUMN, sentLabel: 'Sent to Organizer' };
+
+function item({ status = '', board = CONFIG.boardId, email = 'organizer@example.org', event = 'Fall Festival', name = 'Item name' } = {}) {
   return {
     name,
     board: { id: board },
     column_values: [
       { id: CONFIG.eventNameColumnId, text: event },
       { id: CONFIG.organizerEmailColumnId, text: email },
+      { id: STATUS_COLUMN, text: status },
     ],
   };
 }
@@ -65,6 +69,25 @@ describe('readFeedbackItem', () => {
       expect(await readFeedbackItem(CONFIG, 'token', 42)).toEqual({ kind: 'no-email' });
     },
   );
+
+  it('reports already-sent when the status column holds the sent label (#105)', async () => {
+    const fetchMock = stubItems([item({ status: 'Sent to Organizer' })]);
+    expect(await readFeedbackItem(CONFIG, 'token', 42, GUARD)).toEqual({ kind: 'already-sent' });
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(init.body as string).variables.columnIds).toContain(STATUS_COLUMN);
+  });
+
+  it.each(['', 'Ready to Send', 'Send Failed'])('still reads the item when the status is %j', async (status) => {
+    stubItems([item({ status })]);
+    expect(await readFeedbackItem(CONFIG, 'token', 42, GUARD)).toMatchObject({ kind: 'ok' });
+  });
+
+  it('ignores the status column without a guard', async () => {
+    const fetchMock = stubItems([item({ status: 'Sent to Organizer' })]);
+    expect(await readFeedbackItem(CONFIG, 'token', 42)).toMatchObject({ kind: 'ok' });
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(init.body as string).variables.columnIds).not.toContain(STATUS_COLUMN);
+  });
 
   it('throws on a Monday API failure so the webhook can answer with a retryable status', async () => {
     stubItems(new Response(JSON.stringify({ errors: [{ message: 'Complexity budget exhausted' }] }), { status: 200 }));
