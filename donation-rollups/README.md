@@ -1150,18 +1150,26 @@ sandbox gets rebuilt before cutover:
 * `donationRollups.membership.minAmountCents` — the "given at least $1" gate (100): a Received
   Donation below it neither starts nor extends a run after `fromISO`. Migrated terms before
   `fromISO` ignore it.
-* `donationRollups.volunteerBoards` — the Event Registrations board(s) whose check-ins count as
-  volunteering: `boardId`; `columns` with `attendee` (the People link), `event` (the Event link),
+* `donationRollups.volunteerBoards` — **empty (`[]`) in SVBC's deployment**: volunteering is read
+  from the Volunteers board alone (`historicalVolunteerBoards`, below), where eventbrite-sync
+  writes Eventbrite volunteer sign-ups. The Event Registrations mechanism remains for forks:
+  the Event Registrations board(s) whose check-ins count as volunteering: `boardId`; `columns` with `attendee` (the People link), `event` (the Event link),
   `attendance`, `role` and `hours` (`null` until the Hours column exists — blank counts as 1
   hour); `eventBoard` (`boardId` and `columns.start`, the Events board's Start date, which dates
   the check-in); `volunteerRoleLabels` (`["Volunteer"]`) and `countedAttendanceLabels`
   (`["Attended"]`). Required (may be an empty array) whenever `membership` is on. **Every board
   here needs its own webhook subscription**, as with `donationBoards` — `setup-webhooks.mjs`
   covers both lists.
-* `donationRollups.historicalVolunteerBoards` — the 2014–2020 Volunteers board(s): `boardId`,
-  `columns` (`volunteer`, `date`, `hours`, `status`) and `countedStatusLabels` (`["Completed"]`).
-  Required (may be `[]`) whenever `membership` is on. Read once by the `membership` duty's
-  `load-volunteers` phase; **no webhook** — it is record-keeping.
+* `donationRollups.historicalVolunteerBoards` — the Volunteers board(s): `boardId`,
+  `columns` (`volunteer`, `date`, `hours`, `status`, and optional `historical`) and
+  `countedStatusLabels` (`["Completed"]`). Required (may be `[]`) whenever `membership` is on.
+  Read by the `membership` duty's `load-volunteers` phase; **no webhook**, so new Eventbrite
+  volunteering (a `Completed` row, dated by its Date column) counts at the next custodian
+  sweep, not per webhook. Canceled, RSVP and No-Show rows, and rows with no Volunteer link, add
+  nothing; several same-day rows extend a term once. With `columns.historical` (the Historical
+  checkbox) configured, a row that is not Historical qualifies on status + Volunteer link + date
+  with no Hours (Eventbrite has none), while a Historical row (the migrated 2014–2020 shifts)
+  still needs Hours >= 1. Without it, every row needs Hours >= 1.
 * `donationRollups.recurringGifts` — `null` or omitted keeps the `recurring` duty off. Otherwise
   `{ boardId, columns: { donorLink, status }, activeStatusLabel }`: the Recurring Gifts board, its
   Donor connect column and Status column, and the label that means active (`"Active"`). At least

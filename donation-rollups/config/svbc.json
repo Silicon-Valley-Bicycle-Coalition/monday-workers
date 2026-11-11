@@ -143,30 +143,7 @@
         "lifetime": "Lifetime"
       }
     },
-    "volunteerBoards": [
-      {
-        "boardId": 18437909792,
-        "columns": {
-          "attendee": "board_relation_mm8nbcw7",
-          "event": "board_relation_mm8n8a86",
-          "attendance": "color_mm8nkvhy",
-          "role": "color_mm8n69m6",
-          "hours": "numeric_mm8pmy4t"
-        },
-        "eventBoard": {
-          "boardId": 18437909790,
-          "columns": {
-            "start": "date_mm8nt4nf"
-          }
-        },
-        "volunteerRoleLabels": [
-          "Volunteer"
-        ],
-        "countedAttendanceLabels": [
-          "Attended"
-        ]
-      }
-    ],
+    "volunteerBoards": [],
     "historicalVolunteerBoards": [
       {
         "boardId": 18437909797,
@@ -174,7 +151,8 @@
           "volunteer": "board_relation_mm8n732t",
           "date": "date_mm8nyac2",
           "hours": "numeric_mm8nc22",
-          "status": "color_mm8neqqe"
+          "status": "color_mm8neqqe",
+          "historical": "boolean_mm8nd5tq"
         },
         "countedStatusLabels": [
           "Completed"

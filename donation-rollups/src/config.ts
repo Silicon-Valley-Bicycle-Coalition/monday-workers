@@ -380,6 +380,7 @@ function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean):
       columns: {
         volunteer: columnId(c.volunteer, `${path}.columns.volunteer`), date: columnId(c.date, `${path}.columns.date`),
         hours: columnId(c.hours, `${path}.columns.hours`), status: columnId(c.status, `${path}.columns.status`),
+        ...(c.historical === undefined ? {} : { historical: columnId(c.historical, `${path}.columns.historical`) }),
       },
       countedStatusLabels: nonEmptyLabels(v.countedStatusLabels, `${path}.countedStatusLabels`),
     };

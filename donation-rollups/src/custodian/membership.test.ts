@@ -7,6 +7,7 @@ import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
 import { D1RollCallCreditsStore } from '../db/rollCallCredits';
+import { buildRuns } from '../membership/derive';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const MEMBERSHIP = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
@@ -38,7 +39,7 @@ interface Fake {
   // board id -> items with column text, as pageItemsColumnsText pages them (one page)
   pages?: Record<string, { id: string; text: Record<string, string | null> }[]>;
   registrations?: { id: string; state?: 'active' | 'archived' | 'deleted'; attendeeItemId: string | null; eventItemId: string | null; attendanceLabel: string | null; roleLabel: string | null; hours: number | null }[];
-  shifts?: { id: string; volunteerItemId: string | null; dateISO: string | null; hours: number | null; statusLabel: string | null }[];
+  shifts?: { id: string; volunteerItemId: string | null; dateISO: string | null; hours: number | null; statusLabel: string | null; historical?: boolean }[];
   boardOf?: Record<string, string>;
   columnText?: Record<string, Record<string, string | null>>;
 }
@@ -56,7 +57,7 @@ function fakeClient(f: Fake): CustodianMondayClient {
       return out;
     },
     async pageRegistrations() { return { items: (f.registrations ?? []).map((r) => ({ state: 'active' as const, ...r })), cursor: null }; },
-    async pageHistoricalShifts() { return { items: f.shifts ?? [], cursor: null }; },
+    async pageHistoricalShifts() { return { items: (f.shifts ?? []).map((x) => ({ historical: false, ...x })), cursor: null }; },
     async getItemsBoardIds(ids) { return new Map(ids.flatMap((id) => (f.boardOf?.[id] ? [[id, f.boardOf[id]!] as [string, string]] : []))); },
     async pageRecurringGifts() { return { items: [], cursor: null }; },
     async pageDonationCredits() { return { items: [], cursor: null }; },
@@ -153,6 +154,30 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
     expect(await store.forOwner('pc')).toEqual([expect.objectContaining({ registrationItemId: 'v1', hours: 2, source: 'historical' })]);
     expect((report.detail as MembershipDetail).loaded).toBe(6);
     expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0 });   // the tiny fixture completes in one run
+  });
+
+  it('with volunteerBoards [] and the Historical column configured, the Volunteers board alone credits: Completed rows once per person-day, others nothing', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({
+      shifts: [
+        { id: 'n1', volunteerItemId: 'nv', dateISO: '2026-09-01', hours: null, statusLabel: 'Completed', historical: false },
+        { id: 'n2', volunteerItemId: 'nv', dateISO: '2026-09-01', hours: null, statusLabel: 'Completed', historical: false },
+        { id: 'n3', volunteerItemId: 'nv', dateISO: '2026-09-02', hours: null, statusLabel: 'Canceled', historical: false },
+        { id: 'n4', volunteerItemId: 'nv', dateISO: '2026-09-03', hours: null, statusLabel: 'RSVP', historical: false },
+        { id: 'n5', volunteerItemId: 'nv', dateISO: '2026-09-04', hours: null, statusLabel: 'No-Show', historical: false },
+        { id: 'n6', volunteerItemId: null, dateISO: '2026-09-05', hours: null, statusLabel: 'Completed', historical: false },
+        { id: 'n7', volunteerItemId: 'nv', dateISO: '2019-06-01', hours: null, statusLabel: 'Completed', historical: true } ],
+      boardOf: { nv: '20' },
+    }, sent);
+    d.config.donationRollups.volunteerBoards = [];
+    d.config.donationRollups.historicalVolunteerBoards = [{ ...HIST_BOARD, columns: { ...HIST_BOARD.columns, historical: 'hist' } }];
+    await runMembership(d, d.now!, { all: true, since: null }, null);
+    const rows = await new D1VolunteerActivityStore(env.DB).forOwner('nv');
+    expect(rows.filter((r) => r.qualifies).map((r) => [r.registrationItemId, r.activityDateISO]).sort()).toEqual([['n1', '2026-09-01'], ['n2', '2026-09-01']]);
+    // The two same-day rows build one run, identical to a single row's.
+    const runs = buildRuns(rows.filter((r) => r.qualifies).map((r) => ({ id: r.registrationItemId, kind: 'volunteer' as const, dateISO: r.activityDateISO!, lifetime: false })), 13);
+    expect(runs).toEqual([{ start: '2026-09-01', end: runs[0]!.end, activities: 2 }]);
+    expect(runs[0]!.end).toBe(buildRuns([{ id: 'x', kind: 'volunteer', dateISO: '2026-09-01', lifetime: false }], 13)[0]!.end);
   });
 
   it('phase 2 backfills migrated Term Starts from the board, blank as "", and skips post-cutover gifts', async () => {
