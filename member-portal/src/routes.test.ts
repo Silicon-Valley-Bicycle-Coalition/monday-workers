@@ -345,7 +345,10 @@ describe('full login flow', () => {
     const callbackRes = await completeLogin(app, { token });
     expect(callbackRes.status).toBe(303);
     const setCookie = callbackRes.headers.get('set-cookie') ?? '';
-    expect(setCookie).toContain('session=');
+    expect(setCookie).toMatch(/^__Host-session=/);
+    expect(setCookie).toContain('Secure');
+    expect(setCookie).toContain('Path=/;');
+    expect(setCookie).not.toMatch(/Domain=/i);
 
     const sessionCookie = setCookie.split(';')[0] ?? '';
     const portalRes = await app.request('/en/portal', { headers: { cookie: sessionCookie } });
@@ -876,7 +879,7 @@ describe('GET /:locale/portal error handling', () => {
     };
     const app = createApp(makeDeps({ sessionStore }));
 
-    const res = await app.request('/en/portal', { headers: { cookie: 'session=some-token' } });
+    const res = await app.request('/en/portal', { headers: { cookie: '__Host-session=some-token' } });
 
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('Something went wrong');
@@ -2813,7 +2816,7 @@ describe('security headers', () => {
   it('sets the baseline on the error page too', async () => {
     const deps = makeDeps();
     deps.sessionStore.getSession = vi.fn().mockRejectedValue(new Error('D1 down'));
-    const res = await createApp(deps).request('/en/portal', { headers: { Cookie: 'session=x' } });
+    const res = await createApp(deps).request('/en/portal', { headers: { Cookie: '__Host-session=x' } });
     expect(res.status).toBe(500);
     expectBaseline(res);
   });
