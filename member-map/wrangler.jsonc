@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   // Staff-only: reachable only through the custom domain, which sits behind Cloudflare Access.
   // The Worker verifies the Access JWT itself too. No ACCESS_DEV_BYPASS var belongs in this file
@@ -43,6 +44,7 @@
   // docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       "workers_dev": false,
       "routes": [{ "pattern": "map.sandbox.bikesiliconvalley.org", "custom_domain": true }],
