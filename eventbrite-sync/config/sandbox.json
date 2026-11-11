@@ -92,16 +92,16 @@
       "registrantsLinkColumn": "board_relation_mm8sz574"
     },
     "volunteers": {
-      "attendeeIdColumn": "REPLACE_WITH_COLUMN_ID",
-      "attendeeNameColumn": "REPLACE_WITH_COLUMN_ID",
-      "attendeeEmailColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeIdColumn": "text_mm90gh7x",
+      "attendeeNameColumn": "text_mm90w8d",
+      "attendeeEmailColumn": "email_mm903v9f",
       "jobColumn": "text_mm79ax2j",
       "dateColumn": "date_mm79agc0",
       "statusColumn": "color_mm79bhta",
       "historicalColumn": "boolean_mm79xq40",
       "volunteerLinkColumn": "board_relation_mm79gsmx",
-      "eventColumn": "REPLACE_WITH_COLUMN_ID",
-      "listingColumn": "REPLACE_WITH_COLUMN_ID"
+      "eventColumn": "board_relation_mm90fs0h",
+      "listingColumn": "board_relation_mm90hxmp"
     },
     "registrantsLinkExcludedEventIds": [
       "1977741403778"

@@ -168,7 +168,7 @@ My calls (mark these when reviewing):
 grouped by a `board_relation` column, filtered to Date within the last 90 days and sorted Date desc,
 was created in one `create_view_table` call and read back intact (`get_board_info`, view `settings`
 and `filter`/`sort`). No mirror column is needed. Working call (the board's own `Event` column id
-replaces the throwaway `board_relation_mm90fetf`; Date is `date_mm79agc0` on the sandbox board):
+replaces the throwaway `<EVENT_RELATION_COLUMN_ID>`; Date is `date_mm79agc0` on the sandbox board):
 
 ```json
 {
@@ -178,7 +178,7 @@ replaces the throwaway `board_relation_mm90fetf`; Date is `date_mm79agc0` on the
   "filter": { "operator": "and", "rules": [
     { "column_id": "date_mm79agc0", "operator": "within_the_last", "compare_value": ["DAYS", 90] } ] },
   "sort": [ { "column_id": "date_mm79agc0", "direction": "DESC" } ],
-  "settings": { "group_by": { "conditions": [ { "columnId": "board_relation_mm90fetf" } ], "hideEmptyGroups": true } }
+  "settings": { "group_by": { "conditions": [ { "columnId": "<EVENT_RELATION_COLUMN_ID>" } ], "hideEmptyGroups": true } }
 }
 ```
 
