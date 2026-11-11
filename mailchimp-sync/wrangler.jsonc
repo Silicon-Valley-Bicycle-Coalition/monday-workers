@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   // Secrets (set with `wrangler secret put <NAME>`, never committed):
   //   MONDAY_API_TOKEN         — fallback only while the OAuth cutover is under way: Monday access
@@ -106,6 +107,7 @@
   // and the optional SLACK_WEBHOOK_URL (point it at a sandbox channel, never production's).
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       "d1_databases": [
         {

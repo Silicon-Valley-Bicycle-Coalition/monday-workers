@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   // Secrets (set with `wrangler secret put <NAME>`, never committed):
   //   MONDAY_API_TOKEN          — fallback only while the OAuth cutover is under way: Monday access
@@ -94,6 +95,7 @@
   // access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // Same purge as production (the split test asserts they match).
       "triggers": {
