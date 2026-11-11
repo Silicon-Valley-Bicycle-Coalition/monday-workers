@@ -266,6 +266,24 @@ describe('report-subscription views (docs/35 §3.6)', () => {
   });
 });
 
+describe('Martha\'s reconciliation views', () => {
+  const views = BOARD_SPECS['donations']!.views!.filter((v) => v.name.startsWith('Reconciliation: '));
+
+  it('has the three views, each grouped and counting nothing but positive gifts', () => {
+    expect(views.map((v) => v.name)).toEqual(
+      ['Reconciliation: individual gifts', 'Reconciliation: matching gifts', 'Reconciliation: sponsorships']);
+    for (const v of views) {
+      expect(v.groupBy, v.name).toBeDefined();
+      expect(v.filter!.rules, v.name).toContainEqual({ columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 });
+    }
+  });
+
+  it('the individual view leaves out every other revenue stream', () => {
+    const excluded = views[0]!.filter!.rules.filter((r) => r.operator === 'not_contains_text').map((r) => r.compareValue);
+    expect(excluded).toEqual(expect.arrayContaining(['Sponsorship', 'Matching Donation', 'In Kind']));
+  });
+});
+
 describe('Windfall wealth screening', () => {
   it('is described by no board or dashboard spec, so configure and load cannot recreate it on People', () => {
     const banned = /Windfall|Net Worth|Philanthropic|Job Title|LinkedIn|Wealth screening/;
