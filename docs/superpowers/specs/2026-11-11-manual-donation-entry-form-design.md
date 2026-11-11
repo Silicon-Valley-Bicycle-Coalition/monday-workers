@@ -185,8 +185,8 @@ the production column ids, plus:
 - Tier automations already exist (above); no new automations were added.
 - **No test submission was made** (it would write a real gift). The form was verified by loading
   it and reading its questions.
-- The form is login-required but not otherwise shared; the view tab is named `Form` and is visible
-  to anyone who can see the board. Rename it (for example "Enter a gift") and tell Martha.
+- The form is login-required but not otherwise shared. The view tab is named **Enter a gift**
+  (renamed from `Form`) and is visible to anyone who can see the board. Tell Martha where it is.
 
 ## Open questions
 
