@@ -13,6 +13,12 @@ attendees, class emails), not only volunteers; keep the hold short. Leave a hold
 Volunteers, Events and Event Registrations boards; the backfill's data lives under
 `eventbrite-sync/data/` (gitignored: it holds attendee ids, never commit it).
 
+## Before you start
+
+Take a D1 Time Travel bookmark of the `eventbrite-sync` production database immediately before
+step 5 (written out in step 4 below), and write it down. It is the real recovery path for
+`attendees` and `class_email_recipients`; the rollback depends on it. Time Travel keeps 30 days.
+
 ## Order (do not reorder)
 
 1. **Create the production Volunteers columns and the "Recent events" view.** From
@@ -45,6 +51,18 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
 4. **Deploy `eventbrite-sync` only** (`cd eventbrite-sync && npm run deploy`). **Not
    `donation-rollups` yet.**
+
+   **Then, before step 5, record a Time Travel bookmark** for the production DB (read-only; run
+   from `eventbrite-sync/`, and write the bookmark down):
+
+   ```sh
+   npx wrangler d1 time-travel info svbc-eventbrite-sync          # current bookmark; --timestamp <RFC3339|unix> for a past one; --json
+   ```
+
+   Restore, if the rollback needs it, is
+   `npx wrangler d1 time-travel restore svbc-eventbrite-sync --bookmark <bookmark>` (or
+   `--timestamp`). It rewinds the whole database, so only do it on `hold` and with the previous
+   build deployed (see Rollback).
 
 5. **Backfill, then remap, while the Worker is still on `hold`.** From `eventbrite-sync/`:
 
@@ -99,13 +117,25 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
 9. **One-time statement on the `donation-rollups` D1**, by the operator, after confirming the
    Volunteers board holds those people. Without it, old Event Registrations-sourced rows keep
-   counting, and a registration later cancelled would still count:
+   counting, and a registration later cancelled would still count. Run from `donation-rollups/`.
+
+   **First capture what the undo needs**, before the UPDATE. Write down the count, and save the
+   ids (`volunteer_activity`'s primary key is `registration_item_id`; migration
+   `0009_membership_activity.sql`):
+
+   ```sh
+   npx wrangler d1 execute svbc-donation-rollups --remote --command "SELECT COUNT(*) AS qualifying FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1"
+   npx wrangler d1 execute svbc-donation-rollups --remote --json --command "SELECT registration_item_id FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1" > data/pre-step-9-qualifying.json
+   ```
+
+   The count is the number of `sweep`/`webhook` rows that qualify now: it is what step 9 will
+   turn off, and what the undo must turn back on. `data/pre-step-9-qualifying.json` lands in
+   `donation-rollups/data/`, which the repo-root `.gitignore` (`data/`, at any depth) ignores;
+   it holds registration item ids, so never commit it. Then run:
 
    ```sh
    npx wrangler d1 execute svbc-donation-rollups --remote --command "UPDATE volunteer_activity SET qualifies = 0 WHERE source IN ('sweep','webhook')"
    ```
-
-   (Run from `donation-rollups/`.)
 
 10. **Run the full recompute**, so membership reflects the Volunteers board now rather than over
     several nights (the nightly load enqueues at most `ENQUEUE_PER_RUN` = 3,500 owners a night):
@@ -133,28 +163,39 @@ throughout.
 1. **Redeploy the previous `eventbrite-sync` build and, if step 6 ran, the previous
    `donation-rollups` build** (re-deploy the prior commit from each Worker directory).
 2. **Unarchive** the original registrations in Monday (ids are in the ledger, below).
-3. **Point the D1 ids back at the old registrations. This is NOT scripted.** The remap in step 5
-   only goes forward. Two columns need the reverse update: `attendees.monday_item_id` and
-   `class_email_recipients.registration_item_id`. The ledger supplies both sides of every move:
+3. **Restore the eventbrite-sync D1 from the Time Travel bookmark taken before step 5.** This is
+   the real recovery path for `attendees` and `class_email_recipients`:
+   `npx wrangler d1 time-travel restore svbc-eventbrite-sync --bookmark <bookmark>`. It also
+   rewinds anything else written to that DB since the bookmark, so do it while on `hold`. Pointing
+   the ids back by hand is **NOT scripted** and is only a fallback: the forward remap
+   (step 5) merged some `class_email_recipients` rows and deleted the duplicates, including `sent`
+   records, and those cannot be reconstructed; without the snapshot a second class email could
+   go out. Two columns are involved, `attendees.monday_item_id` and
+   `class_email_recipients.registration_item_id`. The ledger supplies each old and new id:
    `eventbrite-sync/data/backfill-volunteers-production.jsonl`, one JSON object per line,
    `{"attendeeId":"...","registrationItemId":"<old>","volunteerItemId":"<new>"}` (a line without
-   `registrationItemId` has no old item to return to). The operator must write and review the
-   reverse statements before running them. Example for ONE id pair only, not a script to run
-   as is:
+   `registrationItemId` has no old item to return to). The operator must write and review any
+   reverse statements first. Example for ONE id pair only, not a script to run as is:
 
    ```sql
    -- EXAMPLE: one attendee. Substitute the ledger's values; review before use.
    UPDATE attendees SET monday_item_id = '<old registrationItemId>' WHERE attendee_id = '<attendeeId>';
-   UPDATE class_email_recipients SET registration_item_id = '<old registrationItemId>' WHERE registration_item_id = '<new volunteerItemId>';
+   UPDATE OR IGNORE class_email_recipients SET registration_item_id = '<old registrationItemId>'
+     WHERE registration_item_id = '<new volunteerItemId>' AND event_id = '<event id>' AND kind = '<kind>';
    ```
 
-   Rows that the forward remap merged or deleted in `class_email_recipients` (a `claimed`/`sent`
-   duplicate) cannot be recreated by this; check those by hand against the send page.
-4. **Undo step 9** if it ran. `UPDATE volunteer_activity SET qualifies = 1 WHERE source IN
-   ('sweep','webhook')` is exact only if no row of those sources already had `qualifies = 0`
-   before step 9. Use the count and the `data/pre-step-9-qualifying.json` captured in step 9:
-   restore `qualifies = 1` for exactly those rows (or, if the count matches the number of
-   `sweep`/`webhook` rows now, the blanket statement is equivalent).
+   Two traps. The primary key is `(event_id, kind, registration_item_id)`, so without `OR IGNORE`
+   a row whose old id already exists for the same event and kind aborts with UNIQUE; with it the
+   row is silently left on the new id. And one new `volunteerItemId` can map to **several** old
+   registrations (an attendee registered twice: what the script's `duplicateMoves` reports), so
+   reversing on `registration_item_id = '<new>'` alone repoints every row to one old id; always
+   key on `(event_id, kind)` too, and prefer the Time Travel restore for those.
+4. **Undo step 9** if it ran. Restore exactly the rows captured in step 9:
+   `UPDATE volunteer_activity SET qualifies = 1 WHERE registration_item_id IN (<ids from
+   data/pre-step-9-qualifying.json>)`. The blanket
+   `UPDATE volunteer_activity SET qualifies = 1 WHERE source IN ('sweep','webhook')` is
+   equivalent only if the count recorded in step 9 equals the number of `sweep`/`webhook` rows
+   now (that is, none of them had `qualifies = 0` beforehand).
 5. Leave `hold` with `on` only when the old build and the D1 ids agree.
 
 **After step 7 a rollback is not clean.** Attendees created only on the Volunteers board (new
