@@ -25,6 +25,9 @@ export interface MondayClient {
   // Archive, not delete: reversible from the board's archive if it was ever the wrong item.
   archiveItem(itemId: string): Promise<void>;
   fetchAsset(assetId: string): Promise<MondayAsset>;
+  // The board an item lives on and the ids of the assets attached to it; null when the item
+  // doesn't exist. Lets the upload webhook refuse an asset id that isn't on the Uploads board (#106).
+  fetchItemAssets(itemId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
 }
 
 // API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
@@ -131,5 +134,19 @@ export class HttpMondayClient implements MondayClient {
       throw new Error(`monday API: asset "${assetId}" not found`);
     }
     return { id: asset.id, name: asset.name, publicUrl: asset.public_url };
+  }
+
+  async fetchItemAssets(itemId: string): Promise<{ boardId: string; assetIds: string[] } | null> {
+    const data = await this.transport.request<{
+      items: { board: { id: string } | null; assets: { id: string }[] | null }[];
+    }>(
+      `query ($itemIds: [ID!]!) {
+        items(ids: $itemIds) { board { id } assets { id } }
+      }`,
+      { itemIds: [itemId] }
+    );
+    const item = data.items[0];
+    if (!item?.board) return null;
+    return { boardId: String(item.board.id), assetIds: (item.assets ?? []).map((a) => String(a.id)) };
   }
 }

@@ -16,18 +16,25 @@ describe('validateUploadEvent', () => {
     const body = {
       event: {
         pulseId: 12345,
+        boardId: 777,
         columnId: 'file_col',
         value: { files: [{ assetId: 999, name: 'report.csv' }] },
       },
     };
-    expect(validateUploadEvent(body)).toEqual({ itemId: '12345', columnId: 'file_col', assetIds: ['999'] });
+    expect(validateUploadEvent(body)).toEqual({ itemId: '12345', columnId: 'file_col', boardId: '777', assetIds: ['999'] });
   });
 
   it('collects multiple asset ids when more than one file was dropped at once', () => {
     const body = {
-      event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 1 }, { assetId: 2 }] } },
+      event: { pulseId: 1, boardId: 7, columnId: 'file_col', value: { files: [{ assetId: 1 }, { assetId: 2 }] } },
     };
-    expect(validateUploadEvent(body)).toEqual({ itemId: '1', columnId: 'file_col', assetIds: ['1', '2'] });
+    expect(validateUploadEvent(body)).toEqual({ itemId: '1', columnId: 'file_col', boardId: '7', assetIds: ['1', '2'] });
+  });
+
+  it('rejects an event without a boardId', () => {
+    expect(() =>
+      validateUploadEvent({ event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 1 }] } } })
+    ).toThrow(/missing "boardId"/);
   });
 
   it('throws when the payload has no event', () => {
@@ -35,11 +42,11 @@ describe('validateUploadEvent', () => {
   });
 
   it('throws when the event has no file assetIds', () => {
-    expect(() => validateUploadEvent({ event: { pulseId: 1, columnId: 'file_col', value: {} } })).toThrow(/no file assetIds/);
+    expect(() => validateUploadEvent({ event: { pulseId: 1, boardId: 7, columnId: 'file_col', value: {} } })).toThrow(/no file assetIds/);
   });
 
   it('throws when the event has no columnId', () => {
-    expect(() => validateUploadEvent({ event: { pulseId: 1, value: { files: [{ assetId: 1 }] } } })).toThrow(/missing "columnId"/);
+    expect(() => validateUploadEvent({ event: { pulseId: 1, boardId: 7, value: { files: [{ assetId: 1 }] } } })).toThrow(/missing "columnId"/);
   });
 });
 

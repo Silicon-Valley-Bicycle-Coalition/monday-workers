@@ -79,13 +79,38 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: true, ignored: true }, 200);
     }
 
+    // The payload is only as trustworthy as the URL secret (#106): don't ingest any asset id it
+    // names. The event must come from the Uploads board, and every asset must really be attached
+    // to that item there. Monday is asked, so a forged payload can't vouch for itself.
+    const uploadsBoardId = deps.config.monday.boards.benevityUploads;
+    if (uploadsBoardId === null || event.boardId !== String(uploadsBoardId)) {
+      console.error(`benevity webhook: refused item "${event.itemId}": event is not from the Uploads board`);
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+    let attached;
+    try {
+      attached = await deps.mondayClient.fetchItemAssets(event.itemId);
+    } catch (err) {
+      console.error(`benevity webhook: failed to verify item "${event.itemId}": ${errorMessage(err)}`);
+      return c.json({ ok: false }, 500); // Monday redelivers
+    }
+    if (attached === null || attached.boardId !== String(uploadsBoardId)) {
+      console.error(`benevity webhook: refused item "${event.itemId}": not an item on the Uploads board`);
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+    const onItem = new Set(attached.assetIds);
+    const assetIds = event.assetIds.filter((id) => onItem.has(id));
+    if (assetIds.length !== event.assetIds.length) {
+      console.error(`benevity webhook: item "${event.itemId}": ignored ${event.assetIds.length - assetIds.length} asset id(s) not attached to it`);
+    }
+
     // Record and enqueue; the consumer fetches, parses and ingests the file (#74), so a large
     // report costs this request a few D1 calls and one queue send, never a parse or a row loop.
     // Recording the upload here is what lets a redelivery of a fully ingested asset stop at once.
     const stamp = stampFor(gate.mode);
     const messages: BenevityQueueMessage[] = [];
     try {
-      for (const assetId of event.assetIds) {
+      for (const assetId of assetIds) {
         const existing = await deps.uploadStore.getUploadByAssetId(assetId);
         if (existing?.status === 'parsed') continue; // a redelivery of a fully ingested asset
         // Anything else is (re-)enqueued: a new upload, one whose earlier send never went
