@@ -31,8 +31,8 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
    or Member Until. In Mailchimp, open the contact in the SVBC Sandbox audience: the merge fields
    MEMBSINCE, MEMBUNTIL, MTIER, and MSTATUS should match, and the tags `active-member`,
    `lapsed-member`, or `lifetime-member` should follow the status and tier. Allow a minute.
-2. **Address.** Fill in all of Address, City, State, and Zip; the ADDRESS merge field updates.
-   With any of the four blank it is left alone.
+2. **Address.** Fill in Address, City, and Zip (State is worked out from the Zip if blank); the
+   ADDRESS merge field updates. With Address, City, or Zip blank it is left alone.
 3. **Total given.** After a gift rolls up (see [donation rollups](donation-rollups.md)), the
    TOTALGIVE merge field and the `has-donated` tag should reflect Lifetime Giving.
 4. **Do Not Solicit.** Check **Do Not Solicit** on the person: the contact gains the
@@ -43,7 +43,7 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
    profile) or unsubscribe them. Back on People, the person's **Mailchimp Campaigns** column
    should update to list the groups they are now in.
 6. **The campaign list.** Add or rename an interest group in the SVBC Sandbox audience. After the
-   daily pass (8 am Pacific) the
+   daily pass (8 am Pacific, 7 am in winter) the
    [Mailchimp Campaigns (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574436) board
    should show the change.
 

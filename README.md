@@ -416,7 +416,8 @@ object with an address in it), so it's a backstop, not a proof. A deliberate exc
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares
 one branded layout — dark SVBC-gold header with the logo, light/dark-mode-aware body, plain-text
 part — rather than each Worker sending bare, unstyled HTML. `member-portal/src/email/layout.ts` is
-the source of truth; `bp-feedback-notify/src/email/layout.ts` is a copy, same reasoning as every
+the source of truth; `bp-feedback-notify/src/email/layout.ts` and
+`report-digests/src/email/layout.ts` are copies, same reasoning as every
 other per-Worker copy in this repo (see "Concurrency" above). The logo itself is a PNG (email
 clients don't render the site's inline SVG logo) served by member-portal at `GET /email/logo.png`
 and referenced by every Worker's email config as an absolute URL — regenerate it from

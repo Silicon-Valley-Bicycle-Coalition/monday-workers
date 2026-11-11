@@ -1,7 +1,7 @@
 # committee-calendars: implementation design
 
 **Status:** Design complete, approved for implementation.
-**Builds on:** [`committee-calendars/README.md`](../../../committee-calendars/README.md), the
+**Builds on:** `committee-calendars/README.md` (since replaced by `svbc-calendars`; current spec: [`svbc-calendars/README.md`](../../../svbc-calendars/README.md)), the
 product/business spec. This document resolves that README's "Needed first" platform-confirmation
 gap and covers the implementation-level decisions the README leaves open.
 

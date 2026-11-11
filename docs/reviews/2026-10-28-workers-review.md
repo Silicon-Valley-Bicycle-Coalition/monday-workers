@@ -12,6 +12,13 @@ handling is solid. The issues are mostly at the edges: secrets and tokens that r
 query strings, a few missing timeouts, one lost-update race, one compliance ordering bug, and
 pre-public-release CI/repo hygiene. The staff-documentation gap is larger than the code gap.
 
+> **Point-in-time review.** Several findings below have since been fixed in code (as of
+> 2026-11-11: #5 root `.gitignore`, #7 benevity DLQ consumer, Bearer auth on the custodian and
+> reclassify routes, mailchimp's `secretsMatch`, quickbooks purge, svbc-calendars CORS, the
+> `node:22` pin, Windfall data out of report-digests, `docs/uat/report-digests.md`). The
+> `email-log` Worker and `log@` address it mentions were removed on 2026-11-04 (`1706453a`).
+> Check the code before acting on any item here.
+
 ## Fix before production / before the repo goes public
 
 Items 1–3 fixed on this branch (`e1f7553`, `74987e7`, `035da04`); item 2 needs migration

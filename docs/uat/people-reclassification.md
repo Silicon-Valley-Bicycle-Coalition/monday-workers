@@ -32,7 +32,7 @@ they stay for seven years. On someone already on People, it restarts their seven
 **Couldn't promote**, the item's Updates say why. If it still shows **Promote**, it hasn't run yet; that
 can happen when you promote many people at once or a pass is running, and it finishes the next morning.
 
-## Try it (once it is live in the sandbox)
+## Try it (sandbox)
 
 1. **A reactivated donor.** Find someone on
    [People (Historical) (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342607)
@@ -50,7 +50,8 @@ can happen when you promote many people at once or a pass is running, and it fin
    years old and set Promote to People to Promote. Within a few seconds they should be on People
    (sandbox v4), showing Promoted, with today's date in Promoted On and their gifts, organization
    and Updates intact. After the next pass, they should still be there.
-5. **Log a contact.** Log a Call on Activities (Logged) (sandbox), linked to another person on
+5. **Log a contact.** Log a Call on
+   [Activities (Logged) (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18438393347), linked to another person on
    People (Historical), dated today. By the next morning they should be on People.
 
 ## Don't report these

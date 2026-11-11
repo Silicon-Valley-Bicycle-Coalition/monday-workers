@@ -83,7 +83,7 @@
   // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "triggers": {
-    // Once daily, 15:00 UTC = 7am Pacific (PDT) / 8am Pacific (PST) — Campaigns-board
+    // Once daily, 15:00 UTC = 8am Pacific (PDT) / 7am Pacific (PST) — Campaigns-board
     // reconciliation only, see Task 10. Fire hour doesn't affect correctness.
     "crons": ["0 15 * * *"]
   },

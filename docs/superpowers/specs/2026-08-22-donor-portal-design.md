@@ -2,7 +2,7 @@
 
 **Status:** Approved for implementation (2026-08-22).
 **Owner:** dwk.
-**Builds on:** [`donor-portal/README.md`](../../../donor-portal/README.md), which is the decided
+**Builds on:** `donor-portal/README.md` (since renamed `member-portal`; current spec: [`member-portal/README.md`](../../../member-portal/README.md)), which is the decided
 product/business spec. This document covers the implementation-level decisions that README leaves
 open.
 
