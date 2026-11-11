@@ -14,7 +14,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "hono": "^4.13.3"
+    "hono": "^4.13.18"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",
