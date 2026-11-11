@@ -13,6 +13,11 @@
     "sonic.net", "mindspring.com", "juno.com"
   ],
   "placeholderDonorSfIds": ["003i000001breKtAAI", "001i000001Esfc1AAB"],
+  "organizationAccountSfIds": [
+    "001Pg00000CjkXdIAJ", "0016S00003K4J6vQAF", "0010H00002o3DvzQAE", "0010H00002nhmOxQAI",
+    "0010H00002bg7DtQAI", "001i000000alVBIAA2", "001i000000yFGZqAAO", "0016S000032qUChQAM",
+    "0016S0000390EqwQAE"
+  ],
   "salesforceInstanceUrl": "https://svbc.my.salesforce.com",
   "load": { "batchSize": 1, "concurrency": 1, "inlineLinks": false, "recoveryLookupDelayMs": 3000 },
   "monday": {

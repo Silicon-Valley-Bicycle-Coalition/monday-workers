@@ -475,6 +475,42 @@ describe('runTransform', () => {
     expect(report.warnings.some((w) => w.includes('1 person-named account'))).toBe(true);
   });
 
+  it('promotes configured One-to-One accounts that are really organizations, keeping their affiliations', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      // An organization typed in as a Contact: NPSP auto-made a One-to-One Account around it.
+      { Id: 'c-org', FirstName: null, LastName: 'Sample City Council', AccountId: 'a-co', ...prov },
+      // A real person at an org-like One-to-One Account (Account named for the org, not them).
+      { Id: 'c-pro', FirstName: 'Pat', LastName: 'Real', Email: 'p@b.c', AccountId: 'a-co2', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
+      { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-co', Name: 'Sample City Council', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-co2', Name: 'Good Works', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), []);
+    await writeNdjson(dataPath('extract', 'affiliations.ndjson'), [
+      { Id: 'af1', npe5__Contact__c: 'c1', npe5__Organization__c: 'a-co', npe5__Role__c: 'Mayor',
+        npe5__Status__c: 'Current', ...prov },
+      { Id: 'af2', npe5__Contact__c: 'c-pro', npe5__Organization__c: 'a-co2', npe5__Role__c: 'Director',
+        npe5__Status__c: 'Current', ...prov },
+    ]);
+    await writeJson('config/svbc.json', { ...JSON.parse(readFileSync(
+      new URL('../../config/svbc.json', import.meta.url), 'utf8')),
+      organizationAccountSfIds: ['a-co', 'a-co2'] });
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+
+    expect(bySf.get('a-co')!.board).toBe('organizations');
+    expect(bySf.get('a-co2')!.board).toBe('organizations');
+    expect(bySf.get('af1')!.columns['Affiliation Role']).toBe('Mayor');
+    expect(bySf.get('af2')!.columns['Affiliation Role']).toBe('Director');
+    expect(bySf.get('c-org')).toBeUndefined();                         // restates the org → no People item
+    expect(bySf.get('c-pro')).toBeDefined();                           // a real person stays a Person
+    expect(bySf.get('c1')!.links).toContainEqual({ column: 'Organization', targetSfIds: ['a-co'] });
+  });
+
   it('links One-to-One account gifts to the sole Person, lists the rest, and keeps referenced campaigns', async () => {
     await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
       { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
