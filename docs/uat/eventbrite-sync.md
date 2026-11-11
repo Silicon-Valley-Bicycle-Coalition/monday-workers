@@ -180,3 +180,12 @@ The board holds real pledges replayed from 2026, so treat it as private.
 
 - Unknown is separate from Outside on purpose. Past reports counted the two together, so Outside looks much smaller.
 - 2025's total on the dashboard is lower than the 3,758 in its report, because that figure includes pledges from outside Eventbrite.
+
+## Volunteers board: try it (staff)
+
+After the volunteer cutover (`docs/runbooks/volunteers-board-cutover.md`).
+
+1. **Recent events view.** Open the Volunteers board and choose the **Recent events** view. Volunteers should be grouped by **Event**, newest event first, with nothing older than about 90 days. Pick one group and confirm its people match who signed up on Eventbrite.
+2. **Stand-alone volunteer event.** Find a volunteer listing with no attendee event. Its volunteers should sit in a group named after the listing itself (Event defaults to it).
+3. **Re-point Event.** On one volunteer's item, change **Event** to the attendee event the shift belongs to. The item should move to that group. Do the same for the other volunteers on that shift so they share one group. After the next Eventbrite change for that person (or the next day), Event should still be the one you picked.
+4. **Hands off.** The 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email) should be marked read-only; leave Historical alone on old rows.

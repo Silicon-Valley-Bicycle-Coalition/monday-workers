@@ -189,7 +189,7 @@ Not checked: how the grouped view renders in the UI (group order, empty-relation
 
 ## Left to the builder
 
-Exact column ids/titles, board-relation vs mirror choice for grouping (see View), test layout, the
+Exact column ids/titles, grouping column (settled: the board-relation `Event` column; no mirror is used), test layout, the
 backfill script's CLI shape, how the sandbox/production configs split.
 
 ## Open risks
