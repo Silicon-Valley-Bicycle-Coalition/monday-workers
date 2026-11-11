@@ -188,6 +188,18 @@ the production column ids, plus:
 - The form is login-required but not otherwise shared. The view tab is named **Enter a gift**
   (renamed from `Form`) and is visible to anyone who can see the board. Tell Martha where it is.
 
+## New donors (2026-11-11)
+
+The Donor question only links an existing People, People (Historical) or Organizations item, so a
+check from someone not yet in the CRM needs the donor added first. Decision: **no companion
+intake form**. Adding a person is already a documented step (staff guide §1, "Add a new person":
+a new item on People, after checking People (Historical); Box protocol "Adding People and
+Organizations in Monday"), and a People form could not search for an existing record, so it would
+create duplicates; staff also cannot merge duplicates themselves. Instead the Donor question says:
+"Not found? Check People (Historical) too. If they are really new, add them on the People or
+Organizations board first, then come back." Applied to the sandbox and production forms. Revisit
+if Martha reports that new donors are common enough to want the form.
+
 ## Open questions
 
 1. (Resolved: yes, via a board dropdown then an item dropdown.)
