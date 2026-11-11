@@ -31,6 +31,10 @@
         // daily limit, defers to midnight UTC (capped at Queues' 12h); a Monday rate limit waits
         // at least its retry hint.
         "max_retries": 100,
+        // Floor for a retry that carries no delay of its own: a throw from queue() itself (a missing
+        // secret, a config error, a CPU kill) redelivers the whole batch, and without this it would do
+        // so at once and spend all 100 retries in minutes. Per-message retry({ delaySeconds }) overrides it.
+        "retry_delay": 60,
         // Concurrency is the real throughput lever: a recompute is ~3 s of mostly Monday I/O.
         // Three consumers drained the sandbox v4 post-sweep backlog at 40.4 owners/min (vs 14.2
         // with one), per-owner time unchanged and 0 failures, so a full sweep of ~11,300 owners
@@ -116,6 +120,7 @@
             // Same as production; measured here (see the production consumer's comments).
             "max_batch_size": 10,
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 3,
             "dead_letter_queue": "donation-rollups-recompute-sandbox-dlq"
           },

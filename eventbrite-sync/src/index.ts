@@ -117,8 +117,8 @@ export default {
 
   // Hourly (wrangler.jsonc triggers): the ended-event status sweep (src/endedEvents/sweep.ts), cheap
   // when idle at one D1 read, and once a day the missed-order check (src/missedOrders/check.ts).
-  scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    return runScheduled(controller, env, ctx);
+  scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    return runScheduled(controller, env);
   },
 };
 
@@ -126,7 +126,6 @@ export default {
 export async function runScheduled(
   controller: ScheduledController,
   env: Env,
-  ctx: ExecutionContext,
   check: typeof checkMissedOrders = checkMissedOrders,
   sweep: typeof sweepEndedEvents = sweepEndedEvents,
   pledgeCounts: typeof checkPledgeCounts = checkPledgeCounts
@@ -150,40 +149,47 @@ export async function runScheduled(
     eventStore: new D1EventStore(env.DB),
     queue: { send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined) },
   };
-  ctx.waitUntil(
+  // Awaited, not handed to ctx.waitUntil: the runtime gives an awaited scheduled() handler the
+  // full 15 minutes, while waitUntil work is only promised 30 seconds after the handler returns.
+  // Each job logs its own failure and resolves, so one failing never stops the others and
+  // Workers Issues still sees the error line.
+  const jobs: Promise<void>[] = [
     sweep(now, disposition === 'run' ? sweepDeps : dryRunEndedEventDeps(sweepDeps, sweepCtx))
       .then(logEndedEventSummary)
-      // A sweep-level throw (D1) must be logged, not become an unhandled waitUntil rejection.
-      .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`))
-  );
+      .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`)),
+  ];
 
-  if (!isCheck) return;
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
-  if (eventbriteToken === undefined || eventbriteToken === '') {
+  if (!isCheck) {
+    // Only the sweep runs outside the check hour.
+  } else if (eventbriteToken === undefined || eventbriteToken === '') {
     // Logged, not thrown, so Workers Issues shows it once a day until it's fixed.
     console.error('eventbrite-sync missed orders: EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); check skipped');
-    return;
-  }
-  ctx.waitUntil(
-    check(now, {
-      lister: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
-      ledger: new D1OrderStore(env.DB),
-      organizationId: config.eventbrite.organizationId,
-    })
-      .then(logMissedOrders)
-      .catch((err) => console.error(`eventbrite-sync missed orders: check failed: ${errorMessage(err)}`))
-  );
+  } else {
+    jobs.push(
+      check(now, {
+        lister: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
+        ledger: new D1OrderStore(env.DB),
+        organizationId: config.eventbrite.organizationId,
+      })
+        .then(logMissedOrders)
+        .catch((err) => console.error(`eventbrite-sync missed orders: check failed: ${errorMessage(err)}`))
+    );
 
-  const pledgeEventIds = Object.keys(config.pledge?.events ?? {});
-  if (pledgeEventIds.length === 0) return;
-  ctx.waitUntil(
-    pledgeCounts(now, {
-      counter: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
-      ledger: new D1AttendeeStore(env.DB),
-      events: new D1EventStore(env.DB),
-      eventIds: pledgeEventIds,
-    })
-      .then(logPledgeCounts)
-      .catch((err) => console.error(`eventbrite-sync pledge counts: check failed: ${errorMessage(err)}`))
-  );
+    const pledgeEventIds = Object.keys(config.pledge?.events ?? {});
+    if (pledgeEventIds.length > 0) {
+      jobs.push(
+        pledgeCounts(now, {
+          counter: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
+          ledger: new D1AttendeeStore(env.DB),
+          events: new D1EventStore(env.DB),
+          eventIds: pledgeEventIds,
+        })
+          .then(logPledgeCounts)
+          .catch((err) => console.error(`eventbrite-sync pledge counts: check failed: ${errorMessage(err)}`))
+      );
+    }
+  }
+
+  await Promise.all(jobs);
 }

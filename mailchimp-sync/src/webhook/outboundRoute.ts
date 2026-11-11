@@ -3,6 +3,7 @@ import type { PendingOutboundStore } from '../db/pendingOutbound';
 import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
 import { stampFor, type WriteMode } from '../flags';
+import { MONDAY_WEBHOOK_PATH } from '../rateLimit';
 import { secretsMatch } from '../secret';
 import { columnsForBoard, donorColumnIds } from '../monday/client';
 
@@ -33,7 +34,7 @@ export interface OutboundAppDeps {
 export function createOutboundApp(deps: OutboundAppDeps) {
   const app = new Hono();
 
-  app.post('/webhooks/monday/donors', async (c) => {
+  app.post(MONDAY_WEBHOOK_PATH, async (c) => {
     // Auth first — even the one-time challenge handshake stays behind the secret, since the
     // secret is part of the URL Monday registers and so arrives with the challenge too. An
     // unauthenticated caller learns nothing and enqueues nothing.

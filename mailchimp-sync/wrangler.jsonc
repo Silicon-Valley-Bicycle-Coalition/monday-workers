@@ -39,12 +39,17 @@
       {
         "queue": "mailchimp-sync-outbound",
         "max_retries": 100,
+        // Floor for a retry that carries no delay of its own: a throw from queue() itself (a missing
+        // secret, a config error, a CPU kill) redelivers the whole batch, and without this it would do
+        // so at once and spend all 100 retries in minutes. Per-message retry({ delaySeconds }) overrides it.
+        "retry_delay": 60,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-outbound-dlq"
       },
       {
         "queue": "mailchimp-sync-inbound",
         "max_retries": 100,
+        "retry_delay": 60,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
       },
@@ -121,12 +126,14 @@
           {
             "queue": "mailchimp-sync-outbound-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-outbound-sandbox-dlq"
           },
           {
             "queue": "mailchimp-sync-inbound-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
           },

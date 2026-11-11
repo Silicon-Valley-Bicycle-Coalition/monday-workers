@@ -220,7 +220,8 @@ API, since `wrangler queues info` prints neither. Runbook: `docs/runbooks/migrat
   placeholder ids. Leave `hold` with `on`; `hold` to `off` drops held messages.
 - **Outage retry policy (replaces the old 3-attempt default):** delay `min(60 x 2^(attempts-1),
   3600)` s, raised to any longer hint (Retry-After, midnight for a daily limit; hinted case capped
-  at 43,200 s), `max_retries: 100` on main queues (~4 days), DLQ consumers unchanged; queue and DLQ
+  at 43,200 s), `max_retries: 100` on main queues (~4 days) with `retry_delay: 60` as the floor for a
+  whole-batch redelivery (a throw from `queue()` carries no delay of its own), DLQ consumers unchanged; queue and DLQ
   retention 14 days, set by `flags.mjs retention` rather than `wrangler.jsonc`. Retryable/terminal
   classification stays per Worker.
 - `bp-feedback-notify` has no queue (503 under `hold`/`unknown`); `benevity-import` routes 503 under

@@ -273,6 +273,28 @@ describe('MondayGraphQL token provider', () => {
     expect(() => tokenProviderFor({})).toThrow(/neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN/);
   });
 
+  it('tokenProviderFor reuses the binding token for a minute, except after a rejection', async () => {
+    vi.useFakeTimers();
+    try {
+      const token = vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second').mockResolvedValueOnce('third');
+      const provider = tokenProviderFor({ MONDAY_AUTH: { token } });
+      expect(await provider()).toBe('first');
+      expect(await provider()).toBe('first');
+      expect(token).toHaveBeenCalledTimes(1);
+
+      // A rejected token goes back to the binding, and its answer is what gets reused next.
+      expect(await provider('first')).toBe('second');
+      expect(token).toHaveBeenLastCalledWith('first');
+      expect(await provider()).toBe('second');
+      expect(token).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(60_000);
+      expect(await provider()).toBe('third');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('tokenProviderFor treats an empty MONDAY_API_TOKEN as unset', async () => {
     // An empty secret would otherwise send an empty Authorization header.
     expect(() => tokenProviderFor({ MONDAY_API_TOKEN: '' })).toThrow(/neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN/);

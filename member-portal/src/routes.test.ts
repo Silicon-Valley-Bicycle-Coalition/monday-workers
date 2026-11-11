@@ -1911,6 +1911,9 @@ describe('GET /verify/:token', () => {
     expect(html).toContain('Status: Active');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
     expect(res.headers.get('x-robots-tag')).toBe('noindex');
+    // The card shows name, tier, status and expiry only; a public scan must not load the
+    // donor's donation history.
+    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
   });
 
   it('shows the not-valid state for an unknown token', async () => {
