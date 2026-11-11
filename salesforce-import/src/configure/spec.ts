@@ -434,11 +434,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Matching gifts', tag: 'Reference', columns: ['Donor', 'Amount', 'Date', 'Matched By'],
         filter: { rules: [{ columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       // Martha's month-end reconciliation reports, rebuilt from her private Salesforce reports
-      // (Individual / Matching / Sponsorship Reconciliation). Each grouped by Gift Size, as the
-      // reports were. They carry no date filter: she used to set a one-day or one-period range per
-      // run, so she adds a Date filter in the view when she opens it.
+      // (Individual / Matching / Sponsorship Reconciliation). Ungrouped on purpose (2026-11-11): the
+      // Amount footer's Sum is then one total for the whole view, which a grouped view splits per group;
+      // Gift Size is a column instead. The footer Sum itself is a UI setting the API can't set. No date
+      // filter: she used to set a one-day or one-period range per run, so she adds a Date filter in the view.
       { name: 'Reconciliation: individual gifts', tag: 'Report',
-        columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Recurring Gift'],
+        columns: ['Donor', 'Amount', 'Date', 'Gift Size', 'Gift Type', 'Recurring Gift'],
         filter: { rules: [
           { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
@@ -446,22 +447,22 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           ...['Sponsorship', 'Matching Donation', 'In Kind', 'Grants', 'Contracts', 'Commute Workshop', 'Driver Training', 'Event Ticket']
             .map((t) => ({ columnTitle: 'Gift Type', operator: 'not_contains_text', compareValue: t })),
         ] },
-        groupBy: { columnTitle: 'Gift Size' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Reconciliation: matching gifts', tag: 'Report',
-        columns: ['Donor', 'Amount', 'Date', 'Matched By', 'Recurring Gift'],
+        columns: ['Donor', 'Amount', 'Date', 'Gift Size', 'Matched By', 'Recurring Gift'],
         filter: { rules: [
           { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' },
         ] },
-        groupBy: { columnTitle: 'Gift Size' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Reconciliation: sponsorships', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Sponsorship Cycle', 'Status'],
         filter: { rules: [
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Sponsorship' },
         ] },
-        groupBy: { columnTitle: 'Sponsorship Cycle', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Needs a donor', tag: 'Worklist', columns: ['Amount', 'Date', 'Gift Type', 'Anonymous Donor'],
         filter: { rules: [{ columnTitle: 'Donor', operator: 'is_empty' }, { columnTitle: 'Anonymous Donor', operator: 'is_empty' }] } },
       { name: 'Failed and pending', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Status'],
