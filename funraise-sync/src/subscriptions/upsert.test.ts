@@ -116,6 +116,17 @@ describe('upsertSubscription', () => {
     }
   });
 
+  it('reuses the ledger donor instead of re-matching on an update (#94)', async () => {
+    const store = fakeStore({ funraiseId: '257753', mondayItemId: 'rg-1', donorItemId: '9001', status: 'Active', updtime: 1, writtenAt: 'x' });
+    const monday = fakeMonday();
+
+    await upsertSubscription(row, { subscriptionStore: store, mondayClient: monday, config });
+
+    expect(monday.findItemByColumnValue).not.toHaveBeenCalled();
+    expect(monday.changeColumnValues).toHaveBeenCalledWith(222, 'rg-1', expect.objectContaining({ rg_donor: { item_ids: [9001] } }));
+    expect(store.upsert).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: '9001' }));
+  });
+
   it('is a no-op when the row is older than the ledger — a stale page re-read never regresses the board', async () => {
     const store = fakeStore({ funraiseId: '257753', mondayItemId: 'rg-1', donorItemId: '9001', status: 'Cancelled', updtime: 1790000000000, writtenAt: 'x' });
     const monday = fakeMonday();
