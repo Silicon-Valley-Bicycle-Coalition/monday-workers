@@ -179,6 +179,16 @@ column reads as missing, and an idempotent setup script creates a duplicate unde
 A Worker that imports the module adds `scripts/lib/**/*` to its CI job rules, as `monday-auth` does.
 When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run the script.
 
+**The staff "Enter a gift" form shows every Donations column unless hidden.** A Monday form view
+lists all of its board's columns, visible by default, so a column a Worker adds later (a new 🔒
+rollup, an integration id) appears on the form and staff can overwrite it. A new form view also
+defaults to public, with "Require login" off. When you add a column to the Donations board, or
+create a form view, hide the new question in the form editor and run
+`node scripts/check-donation-form.mjs --form <token>` (token from the share link; production
+`567223ac739c23567e56e9057d81dbf5`, sandbox v4 `2325fd7745d3a2d425086d38358e4bd5`). The visible
+set is `EXPECTED_QUESTIONS` in `scripts/lib/donation-form.mjs`. Design:
+`docs/superpowers/specs/2026-11-11-manual-donation-entry-form-design.md`.
+
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`, `eventbrite-sync`, `people-reclassification`, `report-digests`,
