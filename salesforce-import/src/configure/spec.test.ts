@@ -269,13 +269,17 @@ describe('report-subscription views (docs/35 §3.6)', () => {
 describe('Martha\'s reconciliation views', () => {
   const views = BOARD_SPECS['donations']!.views!.filter((v) => v.name.startsWith('Reconciliation: '));
 
-  it('has the three views, each grouped and counting nothing but positive gifts', () => {
+  it('has the three views, each ungrouped (one footer total) and counting nothing but positive gifts', () => {
     expect(views.map((v) => v.name)).toEqual(
       ['Reconciliation: individual gifts', 'Reconciliation: matching gifts', 'Reconciliation: sponsorships']);
     for (const v of views) {
-      expect(v.groupBy, v.name).toBeDefined();
+      expect(v.groupBy, v.name).toBeUndefined();
       expect(v.filter!.rules, v.name).toContainEqual({ columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 });
     }
+  });
+
+  it('keeps Gift Size as a column where the view no longer groups by it', () => {
+    for (const v of views.slice(0, 2)) expect(v.columns, v.name).toContain('Gift Size');
   });
 
   it('the individual view leaves out every other revenue stream', () => {
