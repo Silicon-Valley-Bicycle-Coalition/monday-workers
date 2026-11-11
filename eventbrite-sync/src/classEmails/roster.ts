@@ -5,7 +5,7 @@ import type { AttendeeStore } from '../db/attendees';
 import { isActive, statusText, type MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
 import { toAttendance } from '../mapping/volunteer';
-import { audienceSource, firstWord } from './audienceSource';
+import { audienceSource } from './audienceSource';
 import type { AudienceRole, Recipient, RosterEntry } from './plan';
 
 export interface RosterDeps {
@@ -28,7 +28,7 @@ export async function loadRoster(eventId: string, deps: RosterDeps, audience: Au
   const itemIds = [...new Set((await deps.attendeeStore.listByEvent(eventId)).map((a) => a.mondayItemId).filter((id): id is string => id !== null))];
   if (itemIds.length === 0) return [];
   const columns = audience === 'Volunteer'
-    ? [source.statusColumn, source.emailColumn]
+    ? [source.statusColumn, source.emailColumn, source.firstNameColumn]
     : [rc.attendanceColumn, rc.roleColumn, rc.attendeeEmailColumn, rc.firstNameColumn];
   const fetched = await deps.mondayClient.getItems(source.board, itemIds, columns);
   // items(ids:) also returns archived and deleted items, and omits purged ones: all are gone.
@@ -40,7 +40,7 @@ export async function loadRoster(eventId: string, deps: RosterDeps, audience: Au
     if (audience === 'Volunteer') {
       return [{
         registrationId: item.id, attendance: toAttendance(statusText(item, source.statusColumn)) ?? '', role: 'Volunteer', email,
-        firstName: firstWord(item.name), name: item.name,
+        firstName: source.firstNameOf(item.columns[source.firstNameColumn] ?? ''), name: item.name,
       }];
     }
     return [{

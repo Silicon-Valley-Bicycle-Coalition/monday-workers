@@ -76,7 +76,7 @@ describe('loadRoster', () => {
 });
 
 function vol(id: string, name: string, status: string, email = `${id}@v.org`): MondayItemColumns {
-  return mondayItem(id, name, { [vc.statusColumn]: status, [vc.attendeeEmailColumn]: email });
+  return mondayItem(id, name, { [vc.statusColumn]: status, [vc.attendeeEmailColumn]: email, [vc.attendeeNameColumn]: name });
 }
 
 describe('loadRoster for a volunteer event', () => {
@@ -85,13 +85,21 @@ describe('loadRoster for a volunteer event', () => {
       vol('20', 'Ann Lee Smith', 'RSVP'), vol('21', 'Bob Jones', 'Completed'), vol('22', 'Cy Park', 'Canceled'), vol('23', 'Di Wu', 'Confirmed'),
     ]);
     const roster = await loadRoster('e1', d.deps, 'Volunteer');
-    expect(d.getItems).toHaveBeenCalledWith(666, ['20', '21', '22', '23'], [vc.statusColumn, vc.attendeeEmailColumn]);
+    expect(d.getItems).toHaveBeenCalledWith(666, ['20', '21', '22', '23'], [vc.statusColumn, vc.attendeeEmailColumn, vc.attendeeNameColumn]);
     expect(roster).toEqual([
       { registrationId: '20', attendance: 'Registered', role: 'Volunteer', email: '20@v.org', firstName: 'Ann', name: 'Ann Lee Smith' },
       { registrationId: '21', attendance: 'Attended', role: 'Volunteer', email: '21@v.org', firstName: 'Bob', name: 'Bob Jones' },
       { registrationId: '22', attendance: 'Canceled', role: 'Volunteer', email: '22@v.org', firstName: 'Cy', name: 'Cy Park' },
       { registrationId: '23', attendance: '', role: 'Volunteer', email: '23@v.org', firstName: 'Di', name: 'Di Wu' },
     ]);
+  });
+
+  it('takes the first name from the name column, and leaves it blank when that is blank', async () => {
+    const named = mondayItem('30', 'Eventbrite attendee 30', { [vc.statusColumn]: 'RSVP', [vc.attendeeEmailColumn]: 'a@v.org', [vc.attendeeNameColumn]: 'Dana Lee' });
+    const blank = mondayItem('31', 'Eventbrite attendee 123', { [vc.statusColumn]: 'RSVP', [vc.attendeeEmailColumn]: 'b@v.org' });
+    const d = deps([ledger('a1', '30'), ledger('a2', '31')], [named, blank]);
+    const roster = await loadRoster('e1', d.deps, 'Volunteer');
+    expect(roster.map((e) => [e.firstName, e.name])).toEqual([['Dana', 'Eventbrite attendee 30'], ['', 'Eventbrite attendee 123']]);
   });
 
   it('plans the same recipients as the equivalent registration roster', async () => {

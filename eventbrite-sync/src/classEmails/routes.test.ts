@@ -38,7 +38,7 @@ function reg(id: string, over: Record<string, string> = {}): MondayItemColumns {
 
 function vol(id: string, over: Record<string, string> = {}): MondayItemColumns {
   return mondayItem(id, NAMES[id] ?? `Person ${id}`, {
-    [vc.statusColumn]: 'RSVP', [vc.attendeeEmailColumn]: `v${id}@real.org`, [vc.volunteerLinkColumn]: '', ...over,
+    [vc.statusColumn]: 'RSVP', [vc.attendeeEmailColumn]: `v${id}@real.org`, [vc.attendeeNameColumn]: NAMES[id] ?? `Person ${id}`, [vc.volunteerLinkColumn]: '', ...over,
   });
 }
 const volunteerEvent = () => mondayItem('900', 'Summit volunteers', { [evc.programColumn]: 'Volunteering' });
@@ -169,7 +169,7 @@ describe('GET /class-emails/:eventId', () => {
     const h = harness({ items: [volunteerEvent(), vol('10'), vol('11', { [vc.statusColumn]: 'Canceled' })] });
     const body = (await (await get(h)).json()) as any;
     expect(body.kinds.reminder.recipients.map((r: any) => [r.registrationId, r.email, r.firstName])).toEqual([['10', 'v10@real.org', 'Al']]);
-    expect(h.client.getItems).toHaveBeenCalledWith(666, ['10', '11'], [vc.statusColumn, vc.attendeeEmailColumn]);
+    expect(h.client.getItems).toHaveBeenCalledWith(666, ['10', '11'], [vc.statusColumn, vc.attendeeEmailColumn, vc.attendeeNameColumn]);
     expect(h.client.getItems).not.toHaveBeenCalledWith(333, expect.anything(), expect.anything());
 
     const claim = (await (await post(h, 'claim', { kind: 'reminder' })).json()) as any;
@@ -403,9 +403,16 @@ describe('POST result', () => {
     it('timeline entries read the Volunteers board for the address and first name', async () => {
       const h = volHarness([vol('10', { [vc.statusColumn]: 'Completed' })], [row('thank-you', '10')], { timelineActivityId: 'act-1' });
       await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }], { subject: 'Thanks {{First Name}}' }));
-      expect(h.client.getItems).toHaveBeenCalledWith(666, ['10'], [vc.attendeeEmailColumn]);
+      expect(h.client.getItems).toHaveBeenCalledWith(666, ['10'], [vc.attendeeEmailColumn, vc.attendeeNameColumn]);
       expect(h.client.findItemByColumnValue).toHaveBeenCalledWith(42, 'people_email_col', 'v10@real.org');
       expect(h.client.createTimelineItem).toHaveBeenCalledWith(expect.objectContaining({ itemId: '50', title: 'Thanks Al' }));
+    });
+
+    it('a volunteer with no name column gets no first-name fill, not the placeholder item name', async () => {
+      const blank = mondayItem('10', 'Eventbrite attendee 123', { [vc.statusColumn]: 'Completed', [vc.attendeeEmailColumn]: 'v10@real.org' });
+      const h = volHarness([blank], [row('thank-you', '10')], { timelineActivityId: 'act-1' });
+      await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }], { subject: 'Thanks {{First Name}}' }));
+      expect(h.client.createTimelineItem).toHaveBeenCalledWith(expect.objectContaining({ title: 'Thanks {{First Name}}' }));
     });
 
     it('the result update names a failed volunteer by address, from the Volunteers board', async () => {

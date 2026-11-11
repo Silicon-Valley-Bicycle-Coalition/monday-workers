@@ -13,7 +13,7 @@ import { isActive, statusText, type MondayClient, type MondayItemColumns } from 
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { linkedItemId } from '../util/itemId';
 import { secretsMatch } from '../webhook/route';
-import { audienceSource, firstWord, type AudienceSource } from './audienceSource';
+import { audienceSource, type AudienceSource } from './audienceSource';
 import { classFields } from './fields';
 import { planKind, type AudienceRole, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
 import { loadRoster, sandboxRecipients } from './roster';
@@ -372,7 +372,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       const [classItem] = await client.getItems(boards['events']!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]);
       const fields = classFields(event, classItem?.columns[ev.venueColumn] ?? '', classItem?.columns[ev.addressColumn] ?? '');
       const className = classItem?.name ?? `Eventbrite event ${eventId}`;
-      const fresh = await client.getItems(source.board!, sentIds, [source.emailColumn, ...(source.firstNameColumn === null ? [] : [source.firstNameColumn])]);
+      const fresh = await client.getItems(source.board!, sentIds, [source.emailColumn, source.firstNameColumn]);
       const byId = new Map(fresh.map((item) => [item.id, item]));
       const peopleBoard = boards['people-live'];
       const timestamp = now().toISOString();
@@ -380,7 +380,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         try {
           const item = byId.get(id);
           const email = (item?.columns[source.emailColumn] ?? '').trim();
-          const firstName = (source.firstNameColumn === null ? firstWord(item?.name ?? '') : (item?.columns[source.firstNameColumn] ?? '').trim());
+          const firstName = source.firstNameOf(item?.columns[source.firstNameColumn] ?? '');
           const person = peopleBoard != null && email !== '' ? await client.findItemByColumnValue(peopleBoard, config.attendeeSync.peopleEmailColumn, email) : null;
           const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': firstName || null })).slice(0, MAX_TIMELINE_TEXT);
           const summary = `${KIND_LABEL[kind]} for ${oneLine(className)}. Sent by ${sender}.`;
