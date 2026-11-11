@@ -1,11 +1,13 @@
-import { acknowledgmentTier, classifyGift, type GiftClassification } from '../rollups/classify';
+import { acknowledgmentTier, classifyGift, fiscalYearEnding, type GiftClassification } from '../rollups/classify';
 import { parseAmountCents } from '../money';
 import { MondayRateLimitError, statusLabel, type ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, ClassificationColumns } from '../types';
 import type { DutyReport } from './custodian';
 
 // Nightly: keep Funding Stream / Gift Size / Fiscal Quarter / Gift Fiscal Year current on
-// every active gift (spec 2026-09-29 §10.1), and Acknowledgment Tier where it's configured. Reads are cheap (500 items a page); writes are
+// every active gift (spec 2026-09-29 §10.1), and Acknowledgment Tier where it's configured. Also
+// fills a BLANK Fiscal Year Ending (hand-entered gifts and the manual entry form have no writer
+// that stamps it; Funraise and the import do). A stamped value is never overwritten. Reads are cheap (500 items a page); writes are
 // diffed and capped per run, and the webhook ignores these columns (webhook/route.ts), so a
 // full backfill is a handful of runs rather than a recompute flood. Archived gifts aren't
 // returned by items_page and aren't visible to dashboards either — nothing to classify.
@@ -45,7 +47,8 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
     if (!cl) continue;
     const readCols = [board.columns.amount, board.columns.date,
       ...(board.columns.giftType ? [board.columns.giftType] : []), ...KEYS.map((k) => cl[k]),
-      ...(cl.acknowledgmentTier ? [cl.acknowledgmentTier] : [])];
+      ...(cl.acknowledgmentTier ? [cl.acknowledgmentTier] : []),
+      ...(board.columns.fiscalYear ? [board.columns.fiscalYear] : [])];
     let cursor: string | null = null;
     do {
       const page = await client.pageItemsColumnsText(board.boardId, readCols, cursor);
@@ -59,6 +62,12 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
           giftType: board.columns.giftType ? item.text.get(board.columns.giftType) ?? null : null,
         }, config.fiscalYear.startMonth);
         const values = diff(want, acknowledgmentTier(amountCents), cl, item);
+        // A text column: blank means empty or whitespace. Compared as text, never by stored value.
+        const fyCol = board.columns.fiscalYear;
+        if (fyCol && (item.text.get(fyCol) ?? '').trim() === '') {
+          const fy = fiscalYearEnding(item.text.get(board.columns.date) ?? null, config.fiscalYear.startMonth);
+          if (fy !== null) values[fyCol] = fy;
+        }
         if (Object.keys(values).length === 0) continue;
         changed++;
         if (written + failed.length < CLASSIFY_WRITES_PER_RUN) {

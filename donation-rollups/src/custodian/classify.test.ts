@@ -172,6 +172,50 @@ describe('runClassify', () => {
     });
   });
 
+  describe('Fiscal Year Ending', () => {
+    const fyConfig = { ...config, donationRollups: { donationBoards: [
+      { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', fiscalYear: 'fy', classification: CL } },
+    ] } } as unknown as DonationRollupsConfig;
+    const labelled = { gt: 'Donation', fs: 'Individual Giving', gs: '< $100', fq: 'FY26 Q1', gfy: 'FY2026' };
+
+    it('stamps a blank Fiscal Year Ending from the date, by the July rule', async () => {
+      const { client, writes } = fakeClient([
+        { id: '1', am: '50', dt: '2025-08-01', ...labelled },
+        { id: '2', am: '50', dt: '2026-06-30', ...labelled, fq: 'FY26 Q4' },
+        { id: '3', am: '50', dt: '2026-07-01', ...labelled, fq: 'FY27 Q1', gfy: 'FY2027' },
+      ]);
+      await runClassify(client, fyConfig);
+      expect(writes.map((w) => [w.itemId, w.values])).toEqual([
+        ['1', { fy: '2026' }], ['2', { fy: '2026' }], ['3', { fy: '2027' }],
+      ]);
+    });
+
+    it('treats a whitespace-only cell as blank', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled, fy: '  ' }]);
+      await runClassify(client, fyConfig);
+      expect(writes[0]!.values).toEqual({ fy: '2026' });
+    });
+
+    it('never overwrites a stamped value, even one that disagrees with the date', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled, fy: '2024' }]);
+      await runClassify(client, fyConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('leaves it blank on a gift with no usable date', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: null, ...labelled, fq: null, gfy: null }],
+        2, { '1': { fq: null, gfy: null } });
+      await runClassify(client, fyConfig);
+      expect(writes.every((w) => !('fy' in w.values))).toBe(true);
+    });
+
+    it('does nothing when the board has no Fiscal Year Ending column', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled }]);
+      await runClassify(client, config);
+      expect(writes).toEqual([]);
+    });
+  });
+
   it('rethrows a rate limit so the run stops', async () => {
     const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
     const { client, writes } = fakeClient(rows, 500);
