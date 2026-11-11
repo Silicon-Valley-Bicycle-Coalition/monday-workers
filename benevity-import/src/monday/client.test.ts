@@ -118,14 +118,18 @@ describe('HttpMondayClient', () => {
     await expect(client.fetchAsset('missing')).rejects.toThrow(/not found/);
   });
 
-  it("fetches an item's board and attached asset ids", async () => {
-    mockFetchOnce({ data: { items: [{ board: { id: '777' }, assets: [{ id: 'a1' }, { id: 'a2' }] }] } });
-    expect(await newClient().fetchItemAssets('5')).toEqual({ boardId: '777', assetIds: ['a1', 'a2'] });
+  it("fetches an item's board and the asset ids in its file column", async () => {
+    const fetchMock = mockFetchOnce({
+      data: { items: [{ board: { id: '777' }, column_values: [{ files: [{ asset_id: 'a1' }, { asset_id: 2 }, {}] }] }] },
+    });
+    expect(await newClient().fetchItemAssets('5', 'file_col')).toEqual({ boardId: '777', assetIds: ['a1', '2'] });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables).toEqual({ itemIds: ['5'], columnIds: ['file_col'] });
   });
 
   it('returns null for an item that does not exist', async () => {
     mockFetchOnce({ data: { items: [] } });
-    expect(await newClient().fetchItemAssets('5')).toBeNull();
+    expect(await newClient().fetchItemAssets('5', 'file_col')).toBeNull();
   });
 
   it('throws with the server message when the API returns GraphQL errors', async () => {
