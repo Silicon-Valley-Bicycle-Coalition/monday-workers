@@ -64,7 +64,19 @@ npm run cli -- validate --live      # also reads every board back from Monday (s
 npm run cli -- reconcile            # go/no-go gate: extract vs Monday, per fiscal year and per board
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
 npm run cli -- configure            # idempotent; --only key1,key2 scopes to specific boards
+npm run cli -- backfill-org-notes --board <Organizations id> --activity-id <id> [--dry-run]
+                                    # Account.Description → Emails & Activities entry, per Organization
 ```
+
+**Organization Descriptions** (`backfill-org-notes`). Salesforce staff used `Account.Description`
+as a running log on organizations, the way People use Emails & Activities; the main import never
+carried it. This command reads every non-person Account with a Description and posts it to that
+organization's Emails & Activities timeline (dated the Account's last-modified time). Monday's
+public API has no plain Note mutation, only `create_timeline_item`, which needs a custom activity
+type: create a **Salesforce note** custom activity once in the Monday UI (no API) and pass its id
+as `--activity-id`. Written entries are ledgered in `data/backfill/org-notes.ndjson`, so re-runs
+skip them; a failed write is ledgered and not retried (an entry can't be looked up to dedupe, so
+check Monday before clearing the failure row). One-to-One person Accounts are skipped.
 
 **Re-runs never duplicate items.** Every imported item carries its Salesforce Id in a plain-text
 `Salesforce ID` column (kept after the migration, unlike `Salesforce Debug` — it's the only

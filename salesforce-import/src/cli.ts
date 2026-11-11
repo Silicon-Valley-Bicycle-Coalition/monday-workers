@@ -9,5 +9,6 @@ import './load/index.js';
 import './validate/index.js';
 import './reconcile/index.js';
 import './configure/index.js';
+import './backfill/orgNotes.js';
 
 process.exitCode = await runCli(process.argv.slice(2));
