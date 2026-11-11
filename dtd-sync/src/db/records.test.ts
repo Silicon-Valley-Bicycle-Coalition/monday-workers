@@ -35,8 +35,8 @@ describe('records', () => {
     await upsertRecord(env.DB, rec({ donationIdentifier: 'a', unmatched: true, updatedSeenAt: '2026-03-03T00:00:00Z' }));
     await upsertRecord(env.DB, rec({ donationIdentifier: 'b', unmatched: true, updatedSeenAt: '2026-03-01T00:00:00Z' }));
     await upsertRecord(env.DB, rec({ donationIdentifier: 'c', unmatched: false }));
-    expect((await listUnmatched(env.DB, 10)).map((r) => r.donationIdentifier)).toEqual(['b', 'a']);
-    expect((await listUnmatched(env.DB, 1)).map((r) => r.donationIdentifier)).toEqual(['b']);
+    expect((await listUnmatched(env.DB, 10, '2000-01-01T00:00:00Z')).map((r) => r.donationIdentifier)).toEqual(['b', 'a']);
+    expect((await listUnmatched(env.DB, 1, '2000-01-01T00:00:00Z')).map((r) => r.donationIdentifier)).toEqual(['b']);
   });
   it('recordsForFiscalYear is half-open on donation_datetime', async () => {
     await upsertRecord(env.DB, rec({ donationIdentifier: 'before', donationDatetime: '2025-06-30T23:59:59Z' }));

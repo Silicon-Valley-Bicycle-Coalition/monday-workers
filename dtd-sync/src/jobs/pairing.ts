@@ -22,10 +22,11 @@ export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked
   const { monday, db, config } = deps;
   const d = config.donations;
   const since = monthsBefore(now.toISOString(), config.pairing.windowMonths);
-  const matches = (await monday.listDonationsDatedSince(since)).filter((i) => i.giftType === MATCHING_GIFT_TYPE);
+  const matches = await monday.listDonationsOfTypeDatedSince(MATCHING_GIFT_TYPE, since);
   const open = matches.filter((i) => i.matchesGiftItemId === null && i.matchPairing !== STAFF);
 
   let linked = 0;
+  const pairedGiftIds: string[] = [];
   let review = 0;
   for (const match of open) {
     try {
@@ -51,22 +52,29 @@ export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked
       });
       await monday.updateDonation(result.giftItemId, { [d.matchStatus]: { label: MATCHED } });
       linked++;
+      pairedGiftIds.push(result.giftItemId);
     } catch (err) {
       logItemFailure('pairing', match.id, err);
     }
   }
 
+  // Gifts linked by a Matching Donation, read 100 to a call. Skip matches this run just paired: it
+  // already wrote Matched for them.
   let healed = 0;
-  for (const match of matches) {
-    if (match.matchesGiftItemId === null) continue;
-    try {
-      const gift = await monday.getDonation(match.matchesGiftItemId); // null: gone, or not on Donations
-      if (gift === null || gift.matchStatus === MATCHED) continue;
-      await monday.updateDonation(gift.id, { [d.matchStatus]: { label: MATCHED } });
-      healed++;
-    } catch (err) {
-      logItemFailure('pairing', match.id, err);
+  const justPaired = new Set(pairedGiftIds);
+  const linkedGiftIds = matches.flatMap((m) => (m.matchesGiftItemId === null || justPaired.has(m.matchesGiftItemId) ? [] : [m.matchesGiftItemId]));
+  try {
+    for (const gift of await monday.getDonations(linkedGiftIds)) { // a gone gift, or one not on Donations, is absent
+      if (gift.matchStatus === MATCHED) continue;
+      try {
+        await monday.updateDonation(gift.id, { [d.matchStatus]: { label: MATCHED } });
+        healed++;
+      } catch (err) {
+        logItemFailure('pairing', gift.id, err);
+      }
     }
+  } catch (err) {
+    logItemFailure('pairing', 'heal', err);
   }
   console.log(JSON.stringify({ job: 'pairing', considered: open.length, linked, review, healed }));
   return { linked, review };

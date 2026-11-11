@@ -31,7 +31,8 @@ async function seedCompany(itemId: string, company: string): Promise<void> {
 function setup(items: DonationItem[], failOn?: string) {
   const writes: { id: string; values: Record<string, unknown> }[] = [];
   const monday: Partial<DtdMondayClient> = {
-    listDonationsDatedSince: async () => items,
+    listDonationsOfTypeDatedSince: async (type) => items.filter((i) => i.giftType === type),
+    getDonations: async (ids) => items.filter((i) => ids.includes(i.id)),
     listGiftsForDonor: async (donor) => items.filter((i) => i.donorItemId === donor),
     getDonation: async (id) => items.find((i) => i.id === id) ?? null,
     getOrganizationName: async () => 'Example Corp, Inc.',

@@ -14,7 +14,11 @@ export interface DtdMondayClient {
   findDonationByFunraiseId(id: string): Promise<DonationItem | null>;
   findDonationBySalesforceId(id: string): Promise<DonationItem | null>;
   getDonation(itemId: string): Promise<DonationItem | null>;
+  /** Donations items by id, 100 per call; ids that are gone or not on Donations are omitted. */
+  getDonations(itemIds: string[]): Promise<DonationItem[]>;
   listDonationsDatedSince(dateISO: string): Promise<DonationItem[]>;
+  /** Like listDonationsDatedSince, but the query itself is limited to this Gift Type. */
+  listDonationsOfTypeDatedSince(giftType: string, dateISO: string): Promise<DonationItem[]>;
   listGiftsForDonor(donorItemId: string, fromISO: string): Promise<DonationItem[]>;
   getPeople(ids: string[]): Promise<PersonItem[]>;
   getOrganizationName(itemId: string): Promise<string | null>;
@@ -174,6 +178,18 @@ export class HttpDtdMondayClient implements DtdMondayClient {
     return item && live(item) && onBoard(item, this.config.boards.donations) ? this.donationFrom(item) : null;
   }
 
+  async getDonations(itemIds: string[]): Promise<DonationItem[]> {
+    const out: DonationItem[] = [];
+    for (const chunk of chunksOf([...new Set(itemIds)], 100)) {
+      const data = await this.transport.request<{ items: RawItem[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { ${this.donationFields} } }`,
+        { ids: chunk },
+      );
+      out.push(...data.items.filter((i) => live(i) && onBoard(i, this.config.boards.donations)).map((i) => this.donationFrom(i)));
+    }
+    return out;
+  }
+
   // Runs a board query with `rules`, then follows next_items_page cursors to the end.
   private async pageDonations(
     variableDecls: string, rules: string, variables: Record<string, unknown>,
@@ -201,11 +217,27 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   }
 
   async listDonationsDatedSince(dateISO: string): Promise<DonationItem[]> {
+    return this.listDated(dateISO);
+  }
+
+  async listDonationsOfTypeDatedSince(giftType: string, dateISO: string): Promise<DonationItem[]> {
+    // contains_text works whether Gift Type is a text or a status column; the exact match is re-checked below.
+    const items = await this.listDated(dateISO, {
+      decl: '$giftType: CompareValue',
+      rule: `{ column_id: "${this.config.donations.giftType}", compare_value: [$giftType], operator: contains_text }`,
+      variables: { giftType },
+    });
+    return items.filter((d) => d.giftType === giftType);
+  }
+
+  private async listDated(
+    dateISO: string, extra?: { decl: string; rule: string; variables: Record<string, unknown> },
+  ): Promise<DonationItem[]> {
     const col = this.config.donations.date;
     const items = await this.pageDonations(
-      '$since: CompareValue!',
-      `{ column_id: "${col}", compare_value: $since, operator: greater_than_or_equals }`,
-      { since: ['EXACT', dateISO] },
+      `$since: CompareValue!${extra ? `, ${extra.decl}` : ''}`,
+      `{ column_id: "${col}", compare_value: $since, operator: greater_than_or_equals }${extra ? `, ${extra.rule}` : ''}`,
+      { since: ['EXACT', dateISO], ...extra?.variables },
     );
     // Don't trust the server-side date filter alone; an undated gift can't be placed in the window.
     return items.filter((d) => d.date !== null && d.date >= dateISO);

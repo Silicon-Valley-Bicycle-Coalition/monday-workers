@@ -144,6 +144,32 @@ describe('HttpDtdMondayClient donation lookups', () => {
     expect(calls[2]!.variables.cursor).toBe('c2');
   });
 
+  it('listDonationsOfTypeDatedSince adds a Gift Type rule to the query and re-checks the exact type', async () => {
+    const other = donationItem('1', { [D.giftType]: cv(D.giftType, 'Matching Donation Pledge') });
+    const match = donationItem('2', { [D.giftType]: cv(D.giftType, 'Matching Donation') });
+    const { client, calls } = mondayFetch([{ boards: [{ items_page: { cursor: null, items: [other, match] } }] }]);
+    const out = await client.listDonationsOfTypeDatedSince('Matching Donation', '2026-10-01');
+    expect(out.map((d) => d.id)).toEqual(['2']);
+    expect(calls[0]!.query).toContain(`column_id: "${D.giftType}"`);
+    expect(calls[0]!.query).toContain('contains_text');
+    expect(calls[0]!.variables.giftType).toBe('Matching Donation');
+  });
+
+  it('getDonations reads 100 ids to a call, dedupes, and drops deleted or off-board items', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => String(i + 1));
+    const off = { ...donationItem('2'), board: { id: '1' } };
+    const gone = { ...donationItem('3'), state: 'deleted' };
+    const { client, calls } = mondayFetch([
+      { items: [donationItem('1'), off, gone] },
+      { items: [donationItem('101')] },
+    ]);
+    const out = await client.getDonations([...ids, '1']);
+    expect(out.map((d) => d.id)).toEqual(['1', '101']);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.variables.ids).toHaveLength(100);
+    expect(calls[1]!.variables.ids).toHaveLength(50);
+  });
+
   it('listDonationsDatedSince drops items dated before the cutoff or undated', async () => {
     const old = donationItem('1', { [D.date]: cv(D.date, '2026-09-30') });
     const undated = donationItem('2', { [D.date]: cv(D.date, '') });
