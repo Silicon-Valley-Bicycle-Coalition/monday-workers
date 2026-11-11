@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  planBackfill, remapSql, reconcile, volunteerColumnValues, parseLedger, ledgerLine, statusLabel, isoDate,
+  planBackfill, remapSql, reconcile, volunteerColumnValues, parseLedger, ledgerLine, ledgerMoves, mergeMoves, duplicateMoves, statusLabel, isoDate,
 } from './backfill-volunteers-lib.mjs';
 import { testConfig } from '../src/test/testConfig';
 
@@ -68,6 +68,13 @@ describe('planBackfill', () => {
     expect(planBackfill([reg('1', { role: 'Participant' })], listings, new Set())).toEqual({ create: [], skipped: [] });
   });
 
+  it('never copies Eventbrite\'s "Info Requested" placeholders as a name or address', () => {
+    const [plan] = planBackfill([reg('1', { name: 'Info Requested', email: 'Info Requested' })], listings, new Set()).create;
+    expect(plan).toMatchObject({ name: null, email: null, itemName: 'Eventbrite attendee a1' });
+    expect(volunteerColumnValues(plan, vc)).not.toHaveProperty(vc.attendeeNameColumn);
+    expect(volunteerColumnValues(plan, vc)).not.toHaveProperty(vc.attendeeEmailColumn);
+  });
+
   it('names an unnamed attendee by id and leaves Date blank when the event has none', () => {
     const noDate = new Map([['900', { name: 'Shift', date: null, program: 'Volunteering' }]]);
     const [plan] = planBackfill([reg('1', { name: '', email: null })], noDate, new Set()).create;
@@ -108,7 +115,8 @@ describe('remapSql', () => {
   it('rewrites the attendee ledger by attendee id and the class-email ledger by old item id', () => {
     const sql = remapSql([{ attendeeId: 'a1', oldItemId: '100', newItemId: '200' }]);
     expect(sql).toContain("UPDATE attendees SET monday_item_id = '200' WHERE attendee_id = 'a1';");
-    expect(sql).toContain("UPDATE class_email_recipients SET registration_item_id = '200' WHERE registration_item_id = '100';");
+    expect(sql).toContain("UPDATE OR IGNORE class_email_recipients SET registration_item_id = '200' WHERE registration_item_id = '100';");
+    expect(sql).toMatch(/DELETE FROM class_email_recipients WHERE registration_item_id = '100' AND EXISTS \(.*registration_item_id = '200'\);/);
   });
 
   it('escapes a quote', () => {
@@ -120,8 +128,8 @@ describe('remapSql', () => {
   it('puts one statement per line, so D1 exec and wrangler --file both read it', () => {
     const lines = remapSql([{ attendeeId: 'a1', oldItemId: '1', newItemId: '2' }, { attendeeId: 'a2', oldItemId: '3', newItemId: '4' }])
       .split('\n').filter((l) => l.trim() !== '' && !l.startsWith('--'));
-    expect(lines).toHaveLength(4);
-    for (const line of lines) expect(line).toMatch(/^UPDATE .*;$/);
+    expect(lines).toHaveLength(8);
+    for (const line of lines) expect(line).toMatch(/^(UPDATE|DELETE) .*;$/);
   });
 });
 
@@ -156,6 +164,27 @@ describe('ledger', () => {
       + '\n' + ledgerLine({ attendeeId: 'a2', registrationItemId: '2', volunteerItemId: '502' }) + '{"attendeeId":"a3"';
     expect(parseLedger(text)).toEqual(new Map([['a1', '501'], ['a2', '502']]));
     expect(parseLedger('')).toEqual(new Map());
+  });
+});
+
+describe('moves from the ledger', () => {
+  it('reads every recorded move, so the remap survives archiving the originals', () => {
+    const text = ledgerLine({ attendeeId: 'a1', registrationItemId: '1', volunteerItemId: '501' }) + '{"attendeeId":"a9","volunteerItemId":"9"}\n';
+    expect(ledgerMoves(text)).toEqual([{ attendeeId: 'a1', oldItemId: '1', newItemId: '501' }]);
+  });
+
+  it('merges live and recorded moves once per old item id', () => {
+    const live = [{ attendeeId: 'a1', oldItemId: '1', newItemId: '501' }];
+    const recorded = [{ attendeeId: 'a1', oldItemId: '1', newItemId: '501' }, { attendeeId: 'a2', oldItemId: '2', newItemId: '502' }];
+    expect(mergeMoves(live, recorded).map((m) => m.oldItemId)).toEqual(['1', '2']);
+  });
+
+  it('lists Volunteers items that more than one registration moved onto', () => {
+    const moves = [
+      { attendeeId: 'a1', oldItemId: '1', newItemId: '501' }, { attendeeId: 'a1', oldItemId: '2', newItemId: '501' },
+      { attendeeId: 'a3', oldItemId: '3', newItemId: '503' },
+    ];
+    expect(duplicateMoves(moves)).toEqual([{ newItemId: '501', oldItemIds: ['1', '2'] }]);
   });
 });
 

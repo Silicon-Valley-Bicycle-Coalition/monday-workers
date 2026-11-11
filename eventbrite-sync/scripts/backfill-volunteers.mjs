@@ -20,17 +20,20 @@
 //   MONDAY_API_TOKEN=... node scripts/backfill-volunteers.mjs --apply         create the items
 //   MONDAY_API_TOKEN=... node scripts/backfill-volunteers.mjs --remap-out data/remap.sql
 //   npx wrangler d1 execute <db> --remote --file data/remap.sql [--env sandbox]
-//   MONDAY_API_TOKEN=... node scripts/backfill-volunteers.mjs --archive       archive the originals
+//   MONDAY_API_TOKEN=... node scripts/backfill-volunteers.mjs --archive --remap-out data/remap.sql
 //     [--env sandbox]    use config/sandbox.json (the token must reach that workspace)
 //     [--limit 50]       stop after this many creates
 //     [--pause-ms 100]   wait between writes
 // --archive archives (never deletes) the moved registrations, and only when every eligible attendee
-// is on the Volunteers board; otherwise it archives nothing and exits 1.
+// is on the Volunteers board; otherwise it archives nothing and exits 1. It also needs --remap-out in
+// the same run, and records every move in the ledger first: archived registrations drop out of the
+// board read, so the ledger is what lets a later --remap-out regenerate the SQL.
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
 import { readArg } from './backfill-orders-lib.mjs';
 import {
-  DEFAULT_VOLUNTEER_PROGRAMS, isoDate, ledgerLine, parseLedger, planBackfill, reconcile, remapSql, statusLabel, volunteerColumnValues,
+  DEFAULT_VOLUNTEER_PROGRAMS, duplicateMoves, isoDate, ledgerLine, ledgerMoves, mergeMoves, parseLedger, planBackfill, reconcile, remapSql,
+  statusLabel, volunteerColumnValues,
 } from './backfill-volunteers-lib.mjs';
 
 const PLACEHOLDER_COLUMN_ID = 'REPLACE_WITH_COLUMN_ID';
@@ -69,7 +72,8 @@ async function readRegistrations(client, boardId, rc) {
       attendance: statusLabel(attendance.text, attendance.value),
       eventItemId: linked(item, rc.eventLinkColumn)[0] ?? null,
       personItemId: linked(item, rc.attendeeLinkColumn)[0] ?? null,
-      name: cellText(item, rc.attendeeNameColumn) || item.name,
+      // The column only: a nameless registration's item name is the placeholder "Eventbrite attendee <id>".
+      name: cellText(item, rc.attendeeNameColumn) || null,
       email: cellText(item, rc.attendeeEmailColumn) || null,
     };
   });
@@ -121,6 +125,10 @@ export async function run({ argv, config, client, io }) {
     remapOut = readArg(argv, '--remap-out', null);
   } catch (err) {
     log(`backfill-volunteers: ${err.message}`);
+    return 1;
+  }
+  if (archive && remapOut === null) {
+    log('backfill-volunteers: --archive needs --remap-out <file> in the same run, so the D1 remap is written before the originals leave the board');
     return 1;
   }
 
@@ -182,14 +190,24 @@ export async function run({ argv, config, client, io }) {
   if (remapOut !== null || archive) {
     const r = reconcile(registrations, listings, await onBoard(), programs);
     log(`count check: eligible attendees ${r.eligible}, on the Volunteers board ${r.present}${r.missing.length > 0 ? `; registrations not yet moved${idList(r.missing)}` : ''}`);
+    const recorded = ledgerMoves(io.readLedger());
+    const moves = mergeMoves(r.moves, recorded);
+    for (const { newItemId, oldItemIds } of duplicateMoves(moves)) {
+      log(`duplicate attendee: volunteer ${newItemId} takes registrations ${oldItemIds.join(', ')} (class-email claims merged, highest status kept)`);
+    }
     if (remapOut !== null) {
-      io.writeFile(remapOut, remapSql(r.moves));
-      log(`wrote ${r.moves.length} ledger remaps to ${remapOut}; apply with: npx wrangler d1 execute <db> --remote --file ${remapOut}`);
+      io.writeFile(remapOut, remapSql(moves));
+      log(`wrote ${moves.length} ledger remaps to ${remapOut}; apply with: npx wrangler d1 execute <db> --remote --file ${remapOut}`);
     }
     if (archive) {
       if (!r.ok) {
         log('count check failed: nothing archived. Re-run --apply until every eligible registration is moved.');
         return 1;
+      }
+      // Every move into the ledger before any original is archived, so the remap stays reproducible.
+      const inLedger = new Set(recorded.map((m) => m.oldItemId));
+      for (const m of r.moves) {
+        if (!inLedger.has(m.oldItemId)) io.appendLedger(ledgerLine({ attendeeId: m.attendeeId, registrationItemId: m.oldItemId, volunteerItemId: m.newItemId }));
       }
       let archived = 0;
       for (const itemId of r.toArchive) {

@@ -12,13 +12,13 @@ const status = (id, label) => ({ id, text: label, value: label === '' ? null : J
 const text = (id, t) => ({ id, text: t, value: t === '' ? null : JSON.stringify(t) });
 const rel = (id, ids) => ({ id, text: '', value: null, linked_item_ids: ids });
 
-function registration(id, { attendeeId = `a${id}`, role = 'Volunteer', attendance = 'Registered', event = '900', person = null } = {}) {
+function registration(id, { attendeeId = `a${id}`, role = 'Volunteer', attendance = 'Registered', event = '900', person = null, name = `Secret Name ${id}`, email = `secret${id}@v.org` } = {}) {
   return {
     id, name: `Secret Name ${id}`,
     column_values: [
       text(rc.attendeeIdColumn, attendeeId), status(rc.roleColumn, role), status(rc.attendanceColumn, attendance),
       rel(rc.eventLinkColumn, event === null ? [] : [event]), rel(rc.attendeeLinkColumn, person === null ? [] : [person]),
-      text(rc.attendeeNameColumn, `Secret Name ${id}`), text(rc.attendeeEmailColumn, `secret${id}@v.org`),
+      text(rc.attendeeNameColumn, name), text(rc.attendeeEmailColumn, email),
     ],
   };
 }
@@ -44,6 +44,7 @@ function fakeMonday(registrations, volunteers = []) {
       }
       if (query.includes('archive_item')) {
         state.archived.push(String(vars.item));
+        state.registrations = state.registrations.filter((r) => r.id !== String(vars.item)); // items_page omits archived items
         return { archive_item: { id: vars.item } };
       }
       if (query.includes('items(ids:')) return { items: vars.ids.map((id) => events[id]).filter(Boolean) };
@@ -132,14 +133,14 @@ describe('backfill-volunteers CLI', () => {
     await run({ argv: ['--apply', '--remap-out', 'data/remap.sql'], config, client: m.client, io: o.io });
     const sql = o.files['data/remap.sql'];
     expect(sql).toContain("UPDATE attendees SET monday_item_id = '5000' WHERE attendee_id = 'a1';");
-    expect(sql).toContain("UPDATE class_email_recipients SET registration_item_id = '5001' WHERE registration_item_id = '2';");
+    expect(sql).toContain("UPDATE OR IGNORE class_email_recipients SET registration_item_id = '5001' WHERE registration_item_id = '2';");
   });
 
   it('--archive refuses when the count check fails, and archives nothing', async () => {
     const m = fakeMonday(regs());
     m.failCreateFor.add('a2');
     const o = io();
-    expect(await run({ argv: ['--apply', '--archive'], config, client: m.client, io: o.io })).toBe(1);
+    expect(await run({ argv: ['--apply', '--archive', '--remap-out', 'r.sql'], config, client: m.client, io: o.io })).toBe(1);
     expect(m.created).toHaveLength(1);
     expect(m.archived).toEqual([]);
     expect(o.text()).toContain('count check failed');
@@ -149,8 +150,50 @@ describe('backfill-volunteers CLI', () => {
   it('--archive archives only the moved originals once the count check passes', async () => {
     const m = fakeMonday(regs());
     const o = io();
-    expect(await run({ argv: ['--apply', '--archive'], config, client: m.client, io: o.io })).toBe(0);
+    expect(await run({ argv: ['--apply', '--archive', '--remap-out', 'r.sql'], config, client: m.client, io: o.io })).toBe(0);
     expect(m.archived).toEqual(['1', '2']);
+  });
+
+  it('--archive refuses without --remap-out in the same run', async () => {
+    const m = fakeMonday(regs());
+    const o = io();
+    await run({ argv: ['--apply'], config, client: m.client, io: o.io });
+    expect(await run({ argv: ['--archive'], config, client: m.client, io: o.io })).toBe(1);
+    expect(m.archived).toEqual([]);
+    expect(o.text()).toContain('--archive needs --remap-out');
+  });
+
+  it('regenerates the remap after the originals are archived, from the ledger', async () => {
+    // One attendee already on the board before the run (not in the ledger), one created by it.
+    const m = fakeMonday(regs(), [{ id: '4000', column_values: [text(vc.attendeeIdColumn, 'a1')] }]);
+    const o = io();
+    await run({ argv: ['--apply', '--archive', '--remap-out', 'first.sql'], config, client: m.client, io: o.io });
+    expect(m.archived).toEqual(['1', '2']);
+    expect(m.registrations.map((r) => r.id)).not.toContain('1');
+    await run({ argv: ['--remap-out', 'again.sql'], config, client: m.client, io: o.io });
+    const lines = (sql) => sql.split('\n').filter(Boolean).sort();
+    expect(lines(o.files['again.sql'])).toEqual(lines(o.files['first.sql']));
+    expect(o.files['again.sql']).toContain("WHERE attendee_id = 'a1';");
+    expect(o.files['again.sql']).toContain("WHERE registration_item_id = '2';");
+  });
+
+  it('reports every Volunteers item that more than one registration moves onto, by id', async () => {
+    const m = fakeMonday([registration('1'), registration('2', { attendeeId: 'a1' })]);
+    const o = io();
+    await run({ argv: ['--apply', '--remap-out', 'r.sql'], config, client: m.client, io: o.io });
+    expect(o.text()).toContain('duplicate attendee: volunteer 5000 takes registrations 1, 2');
+    expect(o.text()).not.toMatch(/Secret|secret|@/);
+  });
+
+  it('copies no placeholder name or address, and never the registration\'s item name', async () => {
+    const m = fakeMonday([registration('1', { name: '', email: 'Info Requested' }), registration('2', { name: 'Info Requested' })]);
+    m.registrations[0].name = 'Eventbrite attendee a1';
+    await run({ argv: ['--apply'], config, client: m.client, io: io().io });
+    for (const c of m.created) {
+      expect(c.values).not.toHaveProperty(vc.attendeeNameColumn);
+      expect(c.name).toMatch(/^Eventbrite attendee a[12]$/);
+    }
+    expect(m.created[0].values).not.toHaveProperty(vc.attendeeEmailColumn);
   });
 
   it('refuses when the Volunteers board or its attendee id column is not configured', async () => {

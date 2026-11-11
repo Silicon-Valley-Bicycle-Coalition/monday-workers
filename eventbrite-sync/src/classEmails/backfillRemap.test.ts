@@ -78,3 +78,68 @@ describe('volunteer backfill remap and the class-email ledger', () => {
     expect(plan.recipients.map((r) => r.registrationId)).toEqual(['200', '201']);
   });
 });
+
+// One attendee registered twice (old ids 100 and 102) moves onto one Volunteers item (200), and both
+// registrations hold a claim for the same (event, kind): the primary key allows only one under 200.
+describe('remap of a duplicate attendee onto one item', () => {
+  const dupMoves = [
+    { attendeeId: 'a1', oldItemId: '100', newItemId: '200' },
+    { attendeeId: 'a1', oldItemId: '102', newItemId: '200' },
+  ];
+  const rows = async () => (await new D1ClassEmailStore(env.DB).listByEvent('e1'))
+    .map((r) => [r.kind, r.registrationId, r.status, r.claimedAt, r.resolvedAt])
+    .sort((x, y) => String(x).localeCompare(String(y)));
+
+  async function seed(claims: [string, string, 'claimed' | 'sent' | 'failed'][]) {
+    await env.DB.exec('DELETE FROM attendees');
+    await env.DB.exec('DELETE FROM class_email_recipients');
+    for (const [kind, id, status] of claims) {
+      await env.DB.prepare(
+        "INSERT INTO class_email_recipients (event_id, kind, registration_item_id, status, claimed_at, resolved_at) VALUES ('e1', ?1, ?2, ?3, ?4, ?5)"
+      ).bind(kind, id, status, `claimed-${id}`, status === 'claimed' ? null : `resolved-${id}`).run();
+    }
+  }
+
+  it('keeps the sent record when the leftover is the one that was sent', async () => {
+    await seed([['thank-you', '100', 'failed'], ['thank-you', '102', 'sent']]);
+    await exec(remapSql(dupMoves));
+    expect(await rows()).toEqual([['thank-you', '200', 'sent', 'claimed-102', 'resolved-102']]);
+  });
+
+  it('keeps the sent record when it moved first, and never downgrades it', async () => {
+    await seed([['thank-you', '100', 'sent'], ['thank-you', '102', 'claimed']]);
+    await exec(remapSql(dupMoves));
+    expect(await rows()).toEqual([['thank-you', '200', 'sent', 'claimed-100', 'resolved-100']]);
+  });
+
+  it('prefers claimed over failed, and leaves other kinds alone', async () => {
+    await seed([['missed-you', '100', 'failed'], ['missed-you', '102', 'claimed'], ['reminder', '102', 'sent']]);
+    await exec(remapSql(dupMoves));
+    expect(await rows()).toEqual([
+      ['missed-you', '200', 'claimed', 'claimed-102', null],
+      ['reminder', '200', 'sent', 'claimed-102', 'resolved-102'],
+    ]);
+  });
+
+  it('is idempotent: running the same SQL twice changes nothing more', async () => {
+    await seed([['thank-you', '100', 'failed'], ['thank-you', '102', 'sent'], ['reminder', '100', 'sent']]);
+    await exec(remapSql(dupMoves));
+    const once = await rows();
+    await exec(remapSql(dupMoves));
+    expect(await rows()).toEqual(once);
+    expect(once).toEqual([['reminder', '200', 'sent', 'claimed-100', 'resolved-100'], ['thank-you', '200', 'sent', 'claimed-102', 'resolved-102']]);
+  });
+
+  it('is safe to stop part way: re-running the whole file after any prefix ends the same', async () => {
+    const sql = remapSql(dupMoves).split('\n').filter((l: string) => l.trim() !== '');
+    await seed([['thank-you', '100', 'failed'], ['thank-you', '102', 'sent']]);
+    await exec(sql.join('\n'));
+    const expected = await rows();
+    for (let k = 1; k < sql.length; k++) {
+      await seed([['thank-you', '100', 'failed'], ['thank-you', '102', 'sent']]);
+      await exec(sql.slice(0, k).join('\n'));
+      await exec(sql.join('\n'));
+      expect(await rows()).toEqual(expected);
+    }
+  });
+});

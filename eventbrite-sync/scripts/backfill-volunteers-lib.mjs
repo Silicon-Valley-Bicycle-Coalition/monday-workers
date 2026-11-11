@@ -7,6 +7,7 @@
 //               (attendance is the Attendance label, '' when blank; ids are strings or null)
 // ListingFacts: { name, date, program } for an Events item id (date YYYY-MM-DD or null)
 
+import { realEmail, realName } from '../src/eventbrite/placeholder.ts';
 import { toVolunteerStatus } from '../src/mapping/volunteerStatus.ts';
 
 export const DEFAULT_VOLUNTEER_PROGRAMS = ['Volunteering'];
@@ -43,8 +44,9 @@ export function planBackfill(registrations, listings, existingVolunteerAttendeeI
     }
     planned.add(attendeeId);
     const listing = listings.get(r.eventItemId);
-    const name = typeof r.name === 'string' && r.name.trim() !== '' ? r.name.trim() : null;
-    const email = typeof r.email === 'string' && r.email.trim() !== '' ? r.email.trim() : null;
+    // Eventbrite's "Info Requested" placeholders are never copied as a real name or address.
+    const name = realName(r.name);
+    const email = realEmail(r.email);
     create.push({
       registrationItemId: r.itemId,
       attendeeId,
@@ -101,13 +103,44 @@ export function reconcile(registrations, listings, volunteerItemIdByAttendeeId, 
 
 const sqlString = (s) => `'${String(s).replaceAll("'", "''")}'`;
 
-// One statement per line (wrangler d1 execute --file, and D1 exec, both read that). The attendee
-// ledger is keyed by attendee id; class-email claims by the registration item id they were made for.
+// Class-email statuses ranked for merging two claims of one (event, kind): sent > claimed > failed.
+const RANK = (col) => `CASE ${col} WHEN 'sent' THEN 3 WHEN 'claimed' THEN 2 ELSE 1 END`;
+
+// One statement per line (wrangler d1 execute --file, and D1 exec, both read that). Every statement
+// is safe to re-run and safe to stop after, because a --remote file may not apply atomically:
+//   1. the attendee ledger is keyed by attendee id (idempotent);
+//   2. class-email claims move from the old item id to the new one, except where the new id already
+//      has a row for that (event, kind) — two registrations of one attendee — which OR IGNORE leaves;
+//   3. such a leftover's status is merged into the surviving row when it ranks higher, so a sent
+//      record is never lost (its claimed_at/resolved_at come with it);
+//   4. only then is the leftover deleted, and only where the surviving row exists.
 export function remapSql(moves) {
-  return moves.flatMap(({ attendeeId, oldItemId, newItemId }) => [
-    `UPDATE attendees SET monday_item_id = ${sqlString(newItemId)} WHERE attendee_id = ${sqlString(attendeeId)};`,
-    `UPDATE class_email_recipients SET registration_item_id = ${sqlString(newItemId)} WHERE registration_item_id = ${sqlString(oldItemId)};`,
-  ]).join('\n') + '\n';
+  return moves.flatMap(({ attendeeId, oldItemId, newItemId }) => {
+    const oldId = sqlString(oldItemId);
+    const newId = sqlString(newItemId);
+    const leftover = `FROM class_email_recipients o WHERE o.event_id = class_email_recipients.event_id AND o.kind = class_email_recipients.kind AND o.registration_item_id = ${oldId}`;
+    return [
+      `UPDATE attendees SET monday_item_id = ${newId} WHERE attendee_id = ${sqlString(attendeeId)};`,
+      `UPDATE OR IGNORE class_email_recipients SET registration_item_id = ${newId} WHERE registration_item_id = ${oldId};`,
+      `UPDATE class_email_recipients SET status = (SELECT o.status ${leftover}), claimed_at = (SELECT o.claimed_at ${leftover}), resolved_at = (SELECT o.resolved_at ${leftover}) WHERE registration_item_id = ${newId} AND EXISTS (SELECT 1 ${leftover} AND ${RANK('o.status')} > ${RANK('class_email_recipients.status')});`,
+      `DELETE FROM class_email_recipients WHERE registration_item_id = ${oldId} AND EXISTS (SELECT 1 FROM class_email_recipients n WHERE n.event_id = class_email_recipients.event_id AND n.kind = class_email_recipients.kind AND n.registration_item_id = ${newId});`,
+    ];
+  }).join('\n') + '\n';
+}
+
+// Moves from live registrations and from the ledger, one per old item id. The ledger keeps them
+// once the originals are archived (items_page no longer returns archived registrations).
+export function mergeMoves(...lists) {
+  const byOld = new Map();
+  for (const m of lists.flat()) if (!byOld.has(m.oldItemId)) byOld.set(m.oldItemId, m);
+  return [...byOld.values()];
+}
+
+// Volunteers items that more than one registration moved onto (one attendee registered twice).
+export function duplicateMoves(moves) {
+  const byNew = new Map();
+  for (const m of moves) byNew.set(m.newItemId, [...(byNew.get(m.newItemId) ?? []), m.oldItemId]);
+  return [...byNew].filter(([, olds]) => olds.length > 1).map(([newItemId, oldItemIds]) => ({ newItemId, oldItemIds }));
 }
 
 // Resume ledger: one JSON object per line, appended after each confirmed create. Ids only.
@@ -115,8 +148,8 @@ export function ledgerLine({ attendeeId, registrationItemId, volunteerItemId }) 
   return JSON.stringify({ attendeeId, registrationItemId, volunteerItemId }) + '\n';
 }
 
-export function parseLedger(text) {
-  const byAttendee = new Map();
+function ledgerRows(text) {
+  const rows = [];
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
     let row;
@@ -125,9 +158,19 @@ export function parseLedger(text) {
     } catch {
       continue; // a line torn by an interrupted write; the board lookup covers it
     }
-    if (typeof row.attendeeId === 'string' && typeof row.volunteerItemId === 'string') byAttendee.set(row.attendeeId, row.volunteerItemId);
+    if (typeof row.attendeeId === 'string' && typeof row.volunteerItemId === 'string') rows.push(row);
   }
-  return byAttendee;
+  return rows;
+}
+
+export function parseLedger(text) {
+  return new Map(ledgerRows(text).map((r) => [r.attendeeId, r.volunteerItemId]));
+}
+
+export function ledgerMoves(text) {
+  return ledgerRows(text)
+    .filter((r) => typeof r.registrationItemId === 'string')
+    .map((r) => ({ attendeeId: r.attendeeId, oldItemId: r.registrationItemId, newItemId: r.volunteerItemId }));
 }
 
 // A status cell's label, or '' when blank: Monday's text for an EMPTY status cell is label 5's, so
