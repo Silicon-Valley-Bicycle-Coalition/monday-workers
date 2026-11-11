@@ -202,16 +202,21 @@ const TOKEN_REUSE_MS = 60_000;
 // The binding wins; the fixed MONDAY_API_TOKEN secret is the fallback during the OAuth cutover.
 // An empty MONDAY_API_TOKEN counts as unset, so it fails here instead of sending an empty
 // Authorization header.
+// The last answer per binding, at module scope so it spans requests and providers in one isolate.
+// Keyed by the binding object so two bindings (another environment, a test double) never share a
+// token. It holds the resolved token, never the pending promise: a promise shared between requests
+// would tie one request's I/O to another's.
+const reusedTokens = new WeakMap<object, { token: string; until: number }>();
+
 export function tokenProviderFor(env: { MONDAY_AUTH?: MondayTokenSource; MONDAY_API_TOKEN?: string }): TokenProvider {
   const auth = env.MONDAY_AUTH;
   if (auth !== undefined) {
-    // The resolved token, never the pending promise: a promise shared between requests would tie
-    // one request's I/O to another's. A rejected token always goes back to the binding.
-    let reused: { token: string; until: number } | undefined;
+    // A rejected token always goes back to the binding.
     return async (rejected) => {
+      const reused = reusedTokens.get(auth);
       if (rejected === undefined && reused !== undefined && Date.now() < reused.until) return reused.token;
       const token = await auth.token(rejected);
-      reused = { token, until: Date.now() + TOKEN_REUSE_MS };
+      reusedTokens.set(auth, { token, until: Date.now() + TOKEN_REUSE_MS });
       return token;
     };
   }
