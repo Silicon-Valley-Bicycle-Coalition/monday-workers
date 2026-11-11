@@ -15,8 +15,9 @@ export interface RosterDeps {
 }
 
 // Ledger order (received_at, then attendee_id) is the "first registration" order the planner
-// uses for the one-email-per-address rule, so it is kept. A volunteer event's ledger item ids are
-// Volunteers-board items; their Status is mapped to the attendance words plan.ts reads.
+// uses for the one-email-per-address rule, so it is kept. Once the Volunteers board is configured, a
+// volunteer event's ledger item ids are Volunteers-board items; their Status is mapped to the
+// attendance words plan.ts reads. Before then they are Event Registrations rows, read by Role.
 export async function loadRoster(eventId: string, deps: RosterDeps, audience: AudienceRole = 'Participant'): Promise<RosterEntry[]> {
   const { config } = deps;
   const source = audienceSource(config, audience);
@@ -27,7 +28,8 @@ export async function loadRoster(eventId: string, deps: RosterDeps, audience: Au
 
   const itemIds = [...new Set((await deps.attendeeStore.listByEvent(eventId)).map((a) => a.mondayItemId).filter((id): id is string => id !== null))];
   if (itemIds.length === 0) return [];
-  const columns = audience === 'Volunteer'
+  const onVolunteersBoard = source.boardName === 'volunteers';
+  const columns = onVolunteersBoard
     ? [source.statusColumn, source.emailColumn, source.firstNameColumn]
     : [rc.attendanceColumn, rc.roleColumn, rc.attendeeEmailColumn, rc.firstNameColumn];
   const fetched = await deps.mondayClient.getItems(source.board, itemIds, columns);
@@ -37,7 +39,7 @@ export async function loadRoster(eventId: string, deps: RosterDeps, audience: Au
     const item = byId.get(id);
     if (item === undefined) return [];
     const email = (item.columns[source.emailColumn] ?? '').trim();
-    if (audience === 'Volunteer') {
+    if (onVolunteersBoard) {
       return [{
         registrationId: item.id, attendance: toAttendance(statusText(item, source.statusColumn)) ?? '', role: 'Volunteer', email,
         firstName: source.firstNameOf(item.columns[source.firstNameColumn] ?? ''), name: item.name,

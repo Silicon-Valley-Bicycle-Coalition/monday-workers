@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processAttendee } from './processAttendee';
 import { processVolunteer } from './processVolunteer';
-import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { NEW_VOLUNTEER_COLUMN_KEYS, PLACEHOLDER_COLUMN_ID } from '../config';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
@@ -171,9 +171,10 @@ describe('processAttendee on a volunteer event', () => {
   });
 
   it.each([
-    ['null', testConfig({}, { volunteers: null })],
-    ['placeholder', (() => { const c = testConfig(); c.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID; return c; })()],
-  ])('throws before any write when the Volunteers board is not configured (%s) and never falls back to registrations', async (_name, cfg) => {
+    ['board null, columns real', testConfig({}, { volunteers: null })],
+    ['one placeholder', (() => { const c = testConfig(); c.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID; return c; })()],
+    ['two placeholders', (() => { const c = testConfig(); c.attendeeSync.volunteers.eventColumn = PLACEHOLDER_COLUMN_ID; c.attendeeSync.volunteers.listingColumn = PLACEHOLDER_COLUMN_ID; return c; })()],
+  ])('throws before any write when the Volunteers board is half-configured (%s) and never falls back to registrations', async (_name, cfg) => {
     const { deps, mondayClient } = setup({ config: cfg });
     await expect(processAttendee(message, deps)).rejects.toThrow(/volunteers/);
     expect(mondayClient.createItem).not.toHaveBeenCalled();
@@ -206,5 +207,40 @@ describe('processAttendee on a volunteer event', () => {
 
   it('processVolunteer is exported for direct use', () => {
     expect(typeof processVolunteer).toBe('function');
+  });
+
+  it('processVolunteer itself still refuses to write while attendeeIdColumn is the placeholder', async () => {
+    const cfg = testConfig();
+    cfg.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID;
+    const { deps, mondayClient } = setup({ config: cfg });
+    await expect(processVolunteer(message, { row: attendeeRow(), attendee: attendee(), event: event(), eventRow: eventRow() }, deps)).rejects.toThrow(/placeholder/);
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+});
+
+// Before the cutover (runbook step 2), production carries the Volunteers board id but the five new
+// columns are placeholders: a volunteer sign-up must keep taking the pre-branch path.
+describe('processAttendee on a volunteer event before the Volunteers board is configured (legacy)', () => {
+  const legacy = (board: number | null) => {
+    const c = testConfig({}, { volunteers: board });
+    for (const key of NEW_VOLUNTEER_COLUMN_KEYS) c.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
+    return c;
+  };
+
+  it.each([['board set', 666], ['board null', null]] as const)('writes an Event Registrations row with Role Volunteer (%s) and never touches the Volunteers board', async (_name, board) => {
+    const { deps, mondayClient, attendeeStore } = setup({ config: legacy(board) });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    const [boardId, , values] = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(boardId).toBe(333);
+    expect(values).toMatchObject({ att_role_col: 'Volunteer', att_col: 'a1' });
+    const boardsTouched = [
+      ...(mondayClient.findItemByColumnValue as ReturnType<typeof vi.fn>).mock.calls,
+      ...(mondayClient.getItems as ReturnType<typeof vi.fn>).mock.calls,
+      ...(mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls,
+    ].map((call) => call[0]);
+    expect(boardsTouched).not.toContain(666);
+    expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.objectContaining({ mondayItemId: 'vol-1' }));
   });
 });

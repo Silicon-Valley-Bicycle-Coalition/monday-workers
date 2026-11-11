@@ -27,14 +27,35 @@ const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'classLocationColumn', 'homeZipColumn', 'registrantsLinkColumn',
 ] as const;
 
-// config/svbc.json and config/sandbox.json carry the placeholder in the Volunteers board's new columns
-// (attendeeId, name, email, event, listing) until they are created on the board. Validation accepts
-// it; processVolunteer refuses to write while attendeeIdColumn is the placeholder, so production
-// writes no volunteers (the Worker stays on write switch `hold`) until the real ids are set.
 const VOLUNTEER_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'jobColumn', 'dateColumn', 'statusColumn',
   'historicalColumn', 'volunteerLinkColumn', 'eventColumn', 'listingColumn',
 ] as const;
+
+// The Volunteers board columns this Worker added (setup-volunteers-board.mjs creates them); the
+// other five attendeeSync.volunteers columns already existed. config/svbc.json carries the
+// placeholder in all five until the cutover (docs/runbooks/volunteers-board-cutover.md step 2).
+export const NEW_VOLUNTEER_COLUMN_KEYS = ['eventColumn', 'listingColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn'] as const;
+
+export type VolunteerBoardMode = 'legacy' | 'ready';
+
+// Where a volunteer event's sign-ups live, decided by config alone so a deploy from main before the
+// cutover changes nothing. legacy: all five new columns are the placeholder, so volunteer sign-ups
+// and their class emails stay on Event Registrations (Role = Volunteer), as before the Volunteers
+// board feed. ready: the board is set and all five are real. Anything in between throws: a
+// half-configured cutover must never quietly split one event's volunteers across two boards.
+export function volunteerBoardMode(config: EventbriteSyncConfig): VolunteerBoardMode {
+  const cols = config.attendeeSync.volunteers;
+  const placeholders = NEW_VOLUNTEER_COLUMN_KEYS.filter((key) => cols[key] === PLACEHOLDER_COLUMN_ID);
+  if (placeholders.length === NEW_VOLUNTEER_COLUMN_KEYS.length) return 'legacy';
+  if (placeholders.length > 0) {
+    throw new Error(`config: the Volunteers board is half-configured — attendeeSync.volunteers ${placeholders.join(', ')} still the placeholder; set all five new column ids (or none) before deploying`);
+  }
+  if (config.monday.boards.volunteers === null) {
+    throw new Error('config: the Volunteers board is half-configured — attendeeSync.volunteers columns are set but monday.boards.volunteers is null');
+  }
+  return 'ready';
+}
 
 const PLEDGE_COLUMN_KEYS = [
   'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
@@ -126,7 +147,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
   validateAttendeeSync(cfg.attendeeSync);
   if (cfg.pledge !== undefined) validatePledge(cfg.pledge, monday.boards);
 
-  return cfg as unknown as EventbriteSyncConfig;
+  const config = cfg as unknown as EventbriteSyncConfig;
+  volunteerBoardMode(config); // a half-configured Volunteers board fails here, at load (and in CI)
+  return config;
 }
 
 function requireColumns(group: unknown, path: string, keys: readonly string[]): void {

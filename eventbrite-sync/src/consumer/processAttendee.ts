@@ -1,4 +1,4 @@
-import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { PLACEHOLDER_COLUMN_ID, volunteerBoardMode } from '../config';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
@@ -62,10 +62,11 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     return;
   }
 
-  // A volunteer event's sign-ups live on the Volunteers board: hand off before any Event Registrations
-  // column is read, and never fall back to writing a registration row.
+  // Once the Volunteers board is configured, a volunteer event's sign-ups live there: hand off before
+  // any Event Registrations column is read, and never fall back to writing a registration row. Until
+  // then (legacy) they stay Event Registrations rows with Role = Volunteer; a half-configured board throws.
   const program = mapEvent(event, config, new Date()).program;
-  if (program !== null && config.attendeeSync.volunteerPrograms.includes(program)) {
+  if (program !== null && config.attendeeSync.volunteerPrograms.includes(program) && volunteerBoardMode(config) === 'ready') {
     return processVolunteer(message, { row, attendee, event, eventRow }, deps);
   }
 

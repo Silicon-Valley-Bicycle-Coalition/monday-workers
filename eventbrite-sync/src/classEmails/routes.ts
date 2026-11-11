@@ -157,7 +157,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   });
 
   // The Events item with the columns a route needs, and who the event's emails go to. Null when the
-  // item is gone. A volunteer event needs the Volunteers board too, or it is "not set up".
+  // item is gone. Which board the audience is read from is audienceSource's call (volunteerBoardMode).
   async function loadEventItem(client: MondayClient, event: EventRow & { mondayItemId: string }, columns: string[]): Promise<{ item: MondayItemColumns; audience: AudienceRole } | null> {
     const [item] = await client.getItems(boards.events!, [event.mondayItemId], [...columns, ev.programColumn]);
     if (!isActive(item)) return null;

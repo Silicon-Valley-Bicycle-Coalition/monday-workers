@@ -504,7 +504,8 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 
 * **Who gets each email:** the event's audience with an Attendee Email. For an event whose Events
   item's Program is one of `attendeeSync.volunteerPrograms`, the audience is its Volunteers-board
-  items (see "Volunteers board"); for every other event it is Role = Participant on Event
+  items once that board is configured (see "Volunteers board"), and Role = Volunteer on Event
+  Registrations before then; for every other event it is Role = Participant on Event
   Registrations.
   Reminder: Registered, refused once the event has started. Thank-you: Attended, refused until the
   event has ended or when no one in the audience with an Attendee Email is Attended (someone outside
@@ -564,6 +565,16 @@ moves earlier Role = Volunteer registrations over (`--apply`, `--remap-out`, `--
 `--env sandbox`, `--limit`, `--pause-ms`; dry run by default). `donation-rollups` counts the
 board as history. Cutover order, rollback and open gaps:
 [`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
+
+**Config is the switch** (`volunteerBoardMode`, `src/config.ts`). The five new column ids
+(`eventColumn`, `listingColumn`, `attendeeIdColumn`, `attendeeNameColumn`, `attendeeEmailColumn`)
+decide which path runs. While all five are `REPLACE_WITH_COLUMN_ID` (production until the
+runbook's step 2), the Worker behaves exactly as before the Volunteers board feed: volunteer
+sign-ups are Event Registrations rows with Role = Volunteer, and their class emails read and write
+Event Registrations. So a deploy from `main` before the cutover changes nothing. Once all five are
+real and `monday.boards.volunteers` is set, the next deploy switches to the Volunteers board. A
+half-filled set (some real, some placeholder, or real columns with a null board) fails config
+validation loudly, in `npm test` and at load; it never falls back to writing registrations.
 
 ### Backfill
 

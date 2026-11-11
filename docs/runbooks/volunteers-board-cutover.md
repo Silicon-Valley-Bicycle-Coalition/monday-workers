@@ -43,13 +43,21 @@ step 5 (written out in step 4 below), and write it down. It is the real recovery
    `attendeeNameColumn`, `attendeeEmailColumn` are `REPLACE_WITH_COLUMN_ID` until then
    (`monday.boards.volunteers` is already 18437909797). Commit and merge it.
 
+   **Filling all five is what switches the Worker to the Volunteers board**, at the next deploy
+   (step 4). While all five are the placeholder, `eventbrite-sync` keeps writing volunteer
+   sign-ups as Event Registrations rows (Role = Volunteer) and its class emails read them there,
+   exactly as before; so a deploy from `main` before this step is safe. Fill all five or none: a
+   half-filled set fails config validation (`npm test`, and the Worker at load) rather than
+   splitting volunteers across two boards.
+
 3. **Hold `eventbrite-sync`.**
 
    ```sh
    node scripts/flags.mjs eventbrite-sync writes hold --env production
    ```
 
-4. **Deploy `eventbrite-sync` only** (`cd eventbrite-sync && npm run deploy`). **Not
+4. **Deploy `eventbrite-sync` only** (`cd eventbrite-sync && npm run deploy`), from the commit
+   with the step 2 ids: this deploy is the switch to the Volunteers board. **Not
    `donation-rollups` yet.**
 
    **Then, before step 5, record a Time Travel bookmark** for the production DB (read-only; run

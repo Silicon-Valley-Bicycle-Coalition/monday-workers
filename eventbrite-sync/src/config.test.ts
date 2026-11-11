@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, PLACEHOLDER_COLUMN_ID } from './config';
+import { validateConfig, volunteerBoardMode, NEW_VOLUNTEER_COLUMN_KEYS, PLACEHOLDER_COLUMN_ID } from './config';
 import { testConfig, withPledge } from './test/testConfig';
 
 const valid = () => JSON.parse(JSON.stringify(testConfig())) as Record<string, any>;
@@ -126,6 +126,7 @@ describe('validateConfig', () => {
     it('requires monday.boards.volunteers to be present, and a board id or null', () => {
       const cfg = valid();
       cfg.monday.boards.volunteers = null;
+      for (const key of NEW_VOLUNTEER_COLUMN_KEYS) cfg.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
       expect(() => validateConfig(cfg)).not.toThrow();
       delete cfg.monday.boards.volunteers;
       expect(() => validateConfig(cfg)).toThrow('monday.boards.volunteers');
@@ -139,10 +140,54 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync.volunteers"');
     });
 
-    it('accepts the placeholder for a column that does not exist yet', () => {
+    it('accepts the placeholder in all five new columns (the pre-cutover production config)', () => {
+      const cfg = valid();
+      for (const key of NEW_VOLUNTEER_COLUMN_KEYS) cfg.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+
+    it('rejects a half-filled set of the five new columns', () => {
       const cfg = valid();
       cfg.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID;
-      expect(() => validateConfig(cfg)).not.toThrow();
+      expect(() => validateConfig(cfg)).toThrow(/half-configured/);
+    });
+  });
+
+  describe('volunteerBoardMode', () => {
+    const withPlaceholders = (keys: readonly string[], board: number | null = 666) => {
+      const cfg = testConfig({}, { volunteers: board });
+      for (const key of keys) (cfg.attendeeSync.volunteers as Record<string, string>)[key] = PLACEHOLDER_COLUMN_ID;
+      return cfg;
+    };
+
+    it('is legacy when the board is set but all five new columns are the placeholder', () => {
+      expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
+    });
+
+    it('is legacy when the board is null and all five new columns are the placeholder', () => {
+      expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS, null))).toBe('legacy');
+    });
+
+    it('is ready when the board is set and none of the five is the placeholder', () => {
+      expect(volunteerBoardMode(testConfig())).toBe('ready');
+    });
+
+    it('throws when three are real and two are the placeholder', () => {
+      expect(() => volunteerBoardMode(withPlaceholders(['eventColumn', 'listingColumn']))).toThrow(/half-configured.*eventColumn, listingColumn/);
+    });
+
+    it('throws when only one is the placeholder', () => {
+      expect(() => volunteerBoardMode(withPlaceholders(['attendeeEmailColumn']))).toThrow(/half-configured/);
+    });
+
+    it('throws when the columns are real but the board is null', () => {
+      expect(() => volunteerBoardMode(testConfig({}, { volunteers: null }))).toThrow(/monday\.boards\.volunteers/);
+    });
+
+    it('ignores the five existing production columns', () => {
+      const cfg = testConfig();
+      cfg.attendeeSync.volunteers.jobColumn = PLACEHOLDER_COLUMN_ID;
+      expect(volunteerBoardMode(cfg)).toBe('ready');
     });
   });
 
