@@ -92,16 +92,16 @@
       "registrantsLinkColumn": "board_relation_mm90prfq"
     },
     "volunteers": {
-      "attendeeIdColumn": "text_mm90gh7x",
-      "attendeeNameColumn": "text_mm90w8d",
-      "attendeeEmailColumn": "email_mm903v9f",
-      "jobColumn": "text_mm79ax2j",
-      "dateColumn": "date_mm79agc0",
-      "statusColumn": "color_mm79bhta",
-      "historicalColumn": "boolean_mm79xq40",
-      "volunteerLinkColumn": "board_relation_mm79gsmx",
-      "eventColumn": "board_relation_mm90fs0h",
-      "listingColumn": "board_relation_mm90hxmp"
+      "attendeeIdColumn": "text_mm90vwkf",
+      "attendeeNameColumn": "text_mm9044xq",
+      "attendeeEmailColumn": "email_mm90zx4q",
+      "jobColumn": "text_mm8h1bw8",
+      "dateColumn": "date_mm8h5rf2",
+      "statusColumn": "color_mm8hc3n7",
+      "historicalColumn": "boolean_mm8hyqth",
+      "volunteerLinkColumn": "board_relation_mm8hymp1",
+      "eventColumn": "board_relation_mm90etzt",
+      "listingColumn": "board_relation_mm90cgd7"
     },
     "registrantsLinkExcludedEventIds": [
       "1977741403778"
