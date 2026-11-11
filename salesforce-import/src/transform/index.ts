@@ -12,7 +12,7 @@ import { exactStaffMatcher, parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
-  rosterContactIds, soleContactAccountIds,
+  rosterContactIds, soleContactAccountIds, restatesAccountName,
   type InclusionInput } from './people.js';
 import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpGiftDay, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
@@ -98,8 +98,11 @@ export async function runTransform(args: string[]): Promise<number> {
   // against the Account (gifts, links) re-points at the person. One a contact merge left with no
   // Contact folds into the same-named Contact its gifts name.
   const personNamed = personNamedAccountIds(accounts, contacts, opportunities);
+  // Curated exception: One-to-One Accounts that are really organizations (config) are Organizations.
+  const orgLikeAccountIds = new Set(cfg.organizationAccountSfIds ?? []);
   const orgAccountIds = new Set(accounts
-    .filter((a) => !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string))
+    .filter((a) => orgLikeAccountIds.has(a['Id'] as string) ||
+      (!isOneToOneAccount(a) && !personNamed.has(a['Id'] as string)))
     .map((a) => a['Id'] as string));
 
   // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
@@ -195,6 +198,10 @@ export async function runTransform(args: string[]): Promise<number> {
   for (const c of sortedContacts) {
     const id = c['Id'] as string;
     if (placeholderDonorSfIds.has(id)) continue; // "Anonymous Person" is not a Person
+    // An organization typed in as a Contact is its Organizations item now, not also a Person.
+    const ownAccountId = c['AccountId'] as string | null;
+    if (ownAccountId && orgLikeAccountIds.has(ownAccountId) &&
+        restatesAccountName(c, accountById.get(ownAccountId)?.['Name'])) continue;
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
     boardOf.set(id, board);
@@ -282,9 +289,9 @@ export async function runTransform(args: string[]): Promise<number> {
   // Gifts whose donor falls through to a One-to-One Account (no Primary Contact, no Funraise
   // donor) credit its sole migrated Contact; the rest load donor-less and go to review
   // (decided 2026-10-26, monday-migration docs/24). Built from boardOf, so inclusion is unchanged.
-  const personAccounts = soleContactAccountIds(accounts, contacts, new Set(boardOf.keys()));
+  const personAccounts = soleContactAccountIds(accounts.filter((a) => !orgLikeAccountIds.has(a['Id'] as string)), contacts, new Set(boardOf.keys()));
   const donorAlias = new Map([...personNamed, ...personAccounts.alias]);
-  const personAccountIds = new Set(accounts.filter(isOneToOneAccount).map((a) => a['Id'] as string));
+  const personAccountIds = new Set(accounts.filter((a) => isOneToOneAccount(a) && !orgLikeAccountIds.has(a['Id'] as string)).map((a) => a['Id'] as string));
   let personAccountLinked = 0;
   const personAccountRows: string[] = [];
   const notePersonAccountGift = (accountId: string | null, sfId: unknown, amount: unknown, dateISO: unknown) => {
@@ -361,7 +368,7 @@ export async function runTransform(args: string[]): Promise<number> {
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
     const enrichedKey = enriched?.parts ? normalizeAddress(enriched.parts) : null;
     const geoKey = billingKey ?? enrichedKey;
-    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined);
+    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined, orgLikeAccountIds.has(a['Id'] as string));
     if (!p) continue;
     if (enriched) {
       if (!p.columns['Website'] && enriched.website) p.columns['Website'] = enriched.website;

@@ -150,6 +150,12 @@ export const isOneToOneAccount = (a: Record<string, unknown>): boolean =>
 // Letters only, lower-cased — "D'Entremont-Partelow" and "d'entremont partelow" compare equal.
 const nameKey = (s: unknown): string => String(s ?? '').toLowerCase().replace(/[^\p{L}]/gu, '');
 
+/** A Contact whose name only restates its Account's (an organization typed in as a Contact). */
+export const restatesAccountName = (c: Record<string, unknown>, accountName: unknown): boolean => {
+  const key = nameKey(accountName);
+  return key !== '' && nameKey(`${c['FirstName'] ?? ''}${c['LastName'] ?? ''}`) === key;
+};
+
 /**
  * Blank-type Accounts that are really one person: NPSP only stamps `One-to-One Individual`
  * when its own trigger creates the Account, so Accounts created first (the 2013 bulk load,
@@ -234,8 +240,10 @@ export function soleContactAccountIds(
   return { alias, unresolved };
 }
 
-export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): ItemPayload | null {
-  if (isOneToOneAccount(a)) return null;
+// `asOrganization` is for a One-to-One Account curated as a real organization (config
+// `organizationAccountSfIds`); every other One-to-One Account is a person and has no item.
+export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult, asOrganization = false): ItemPayload | null {
+  if (isOneToOneAccount(a) && !asOrganization) return null;
   return {
     board: 'organizations', sfId: a['Id'] as string, name: (a['Name'] as string) ?? '(no name)',
     columns: {
