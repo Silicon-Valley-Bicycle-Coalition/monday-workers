@@ -5,7 +5,7 @@ export function widgetResponse(url: URL, organizerId: string | null, webAnalytic
   const layout = url.searchParams.get('layout') === 'grid' ? 'grid' : 'list';
 
   const html = widgetHTML(maxEvents, showImages, showDescriptions, organizerId, layout, webAnalyticsToken);
-  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=3600' } });
 }
 
 function widgetHTML(

@@ -72,15 +72,18 @@ async function withCache(cacheKey: Request, ttlSeconds: number, ctx: ExecutionCo
   const fresh = await generate();
   const response = new Response(fresh.body, fresh);
   response.headers.set('X-Cache', 'MISS');
-  // A generator marks a successful-but-incomplete response no-store (eventsApi.ts's partial
-  // multi-organizer feed): serve it, but don't pin it for the TTL.
-  const noStore = /\bno-store\b/i.test(fresh.headers.get('Cache-Control') ?? '');
+  // A generator may shorten the TTL (eventsApi.ts's partial multi-organizer feed sets a short
+  // max-age) or opt out with no-store; it can never lengthen it.
+  const cacheControl = fresh.headers.get('Cache-Control') ?? '';
+  const noStore = /\bno-store\b/i.test(cacheControl);
+  const hinted = /\bmax-age=(\d+)/i.exec(cacheControl);
+  const ttl = hinted ? Math.min(ttlSeconds, parseInt(hinted[1], 10)) : ttlSeconds;
   if (fresh.ok && !noStore) {
     // Set on the response returned to THIS caller too, not just the cached copy — otherwise a
     // MISS response has no Cache-Control while the HIT response served from `cached` on the next
     // request does (it was stored with one), which is an inconsistent, confusing mismatch for
     // any downstream cache/browser respecting standard HTTP caching headers.
-    response.headers.set('Cache-Control', `public, max-age=${ttlSeconds}`);
+    response.headers.set('Cache-Control', `public, max-age=${ttl}`);
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
   return response;
