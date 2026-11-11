@@ -46,9 +46,12 @@ function isAppKey(name: string): name is AppKey {
   return Object.prototype.hasOwnProperty.call(APPS, name);
 }
 
+// A START_KEY shorter than this is refused outright: a short key could be guessed online (#104).
+export const MIN_START_KEY_LENGTH = 32;
+
 // Compares SHA-256 digests with a branch-free byte loop, so neither content nor length leaks.
 async function keyMatches(supplied: string, expected: string | undefined): Promise<boolean> {
-  if (!expected) return false; // unset or empty START_KEY locks the route
+  if (!expected || expected.length < MIN_START_KEY_LENGTH) return false; // unset, empty or short START_KEY locks the route
   const enc = new TextEncoder();
   const [a, b] = await Promise.all([
     crypto.subtle.digest('SHA-256', enc.encode(supplied)),
@@ -76,26 +79,27 @@ export function createApp(deps: RouteDeps): Hono {
   const { store, env, fetchFn, now, broker } = deps;
   const app = new Hono();
 
-  // Status only: no token, no error text, and whether alerts can be sent (never the webhook URL).
+  // Unauthenticated, so status only: no token, no error text, no expiry or refresh-error times
+  // (those are in D1 and the cron's logs), and whether alerts can be sent (never the webhook URL).
   app.get('/health', async (c) => {
-    type AppHealth = {
-      app: AppKey;
-      status: 'ok' | 'needs_consent' | 'missing';
-      expiresAt?: string;
-      lastRefreshErrorAt?: string;
-    };
+    type AppHealth = { app: AppKey; status: 'ok' | 'needs_consent' | 'missing' };
     const apps: AppHealth[] = [];
     for (const key of Object.keys(APPS) as AppKey[]) {
       const row = await store.get(key);
-      if (row === null) apps.push({ app: key, status: 'missing' });
-      else if (row.status === 'needs_consent') apps.push({ app: key, status: 'needs_consent' });
-      else {
-        const entry: AppHealth = { app: key, status: 'ok', expiresAt: row.accessTokenExpiresAt };
-        if (row.lastRefreshErrorAt !== null) entry.lastRefreshErrorAt = row.lastRefreshErrorAt;
-        apps.push(entry);
-      }
+      apps.push({ app: key, status: row === null ? 'missing' : row.status });
     }
     return c.json({ alerts: env.SLACK_WEBHOOK_URL ? 'configured' : 'unconfigured', apps });
+  });
+
+  // Caps attempts per client IP across every /oauth/* route, so a START_KEY can't be guessed
+  // online. Fails open if the limiter itself errors: it's a brake, not the gate (keyMatches is).
+  app.use('/oauth/*', async (c, next) => {
+    if (env.REQUEST_RATE_LIMITER && c.req.method === 'POST') {
+      const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+      const { success } = await env.REQUEST_RATE_LIMITER.limit({ key: ip }).catch(() => ({ success: true }));
+      if (!success) return c.text('too many attempts; wait a minute', 429);
+    }
+    await next();
   });
 
   // GET only shows the key form; nothing is checked or stored until it's posted.

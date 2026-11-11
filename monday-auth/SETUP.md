@@ -80,7 +80,8 @@ npx wrangler secret put SYNC_CLIENT_ID --env sandbox
 npx wrangler secret put SYNC_CLIENT_SECRET --env sandbox
 npx wrangler secret put READONLY_CLIENT_ID --env sandbox
 npx wrangler secret put READONLY_CLIENT_SECRET --env sandbox
-npx wrangler secret put START_KEY --env sandbox          # e.g. `openssl rand -hex 32`; keep it in the password manager
+npx wrangler secret put START_KEY --env sandbox          # at least 32 chars, e.g. `openssl rand -hex 32`; keep it in the password manager
+openssl rand -base64 32 | npx wrangler secret put TOKEN_ENC_KEY --env sandbox   # encrypts the token columns in D1; set before the first deploy
 npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # optional; see below
 ```
 
@@ -123,7 +124,7 @@ users and try again.
   until it expires, so this is urgent but not yet an outage.
 - **Slack alert "token refresh keeps failing"**: refreshes have failed for hours (Monday auth
   outage, network) and under 6 hours are left on the stored token. Check `wrangler tail` and
-  `/health` (`lastRefreshErrorAt`). When it expires, every Worker on that app fails until a
+  the refresh-failure alert (`/health` no longer shows times). When it expires, every Worker on that app fails until a
   refresh succeeds; their queues retry.
 - **Rotate a client secret**: regenerate it in the Developer Center, `wrangler secret put` the new
   value, then re-run consent for that app.

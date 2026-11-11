@@ -1,4 +1,5 @@
 import type { AppKey } from './apps';
+import { TokenCipher } from './tokenCipher';
 
 export interface StoredAppToken {
   app: AppKey;
@@ -48,9 +49,19 @@ const CLEAR_REFRESH_ERROR = 'refresh_failing_since = NULL, last_refresh_error_at
 // refresh, so two concurrent refreshers must not both write.
 export class D1AppTokenStore {
   private db: D1Database;
+  private encryptionKey: string | undefined;
+  private cipher: Promise<TokenCipher> | null = null;
 
-  constructor(db: D1Database) {
+  // `encryptionKey` is the TOKEN_ENC_KEY secret. Every read and write of a token column loads the
+  // cipher, so a missing or malformed key fails closed instead of storing plaintext (#104).
+  constructor(db: D1Database, encryptionKey: string | undefined) {
     this.db = db;
+    this.encryptionKey = encryptionKey;
+  }
+
+  private loadCipher(): Promise<TokenCipher> {
+    this.cipher ??= TokenCipher.load(this.encryptionKey);
+    return this.cipher;
   }
 
   async get(app: AppKey): Promise<StoredAppToken | null> {
@@ -63,10 +74,11 @@ export class D1AppTokenStore {
       .bind(app)
       .first<TokenRow>();
     if (row === null) return null;
+    const cipher = await this.loadCipher();
     return {
       app: row.app,
-      accessToken: row.access_token,
-      refreshToken: row.refresh_token,
+      accessToken: await cipher.decrypt(row.access_token, 'access_token'),
+      refreshToken: await cipher.decrypt(row.refresh_token, 'refresh_token'),
       accessTokenExpiresAt: row.access_token_expires_at,
       authorizedUserId: row.authorized_user_id,
       status: row.status,
@@ -80,6 +92,7 @@ export class D1AppTokenStore {
   // Seeds or replaces the pair outright (consent flow, manual re-seed): bumps the version, sets
   // status 'ok' and clears any lease and refresh-failure state.
   async save(token: NewAppToken): Promise<void> {
+    const cipher = await this.loadCipher();
     await this.db
       .prepare(
         `INSERT INTO oauth_tokens (app, access_token, refresh_token, access_token_expires_at, authorized_user_id, status, version, updated_at)
@@ -98,8 +111,8 @@ export class D1AppTokenStore {
       )
       .bind(
         token.app,
-        token.accessToken,
-        token.refreshToken,
+        await cipher.encrypt(token.accessToken, 'access_token'),
+        await cipher.encrypt(token.refreshToken, 'refresh_token'),
         token.accessTokenExpiresAt,
         token.authorizedUserId,
         new Date().toISOString()
@@ -123,6 +136,7 @@ export class D1AppTokenStore {
   // Compare-and-swap: writes only if the row is still at `expectedVersion` and `leaseToken`
   // still holds the lease; bumps the version and clears the lease and refresh-failure state.
   async saveRefreshed(app: AppKey, tokens: RefreshedTokens, expectedVersion: number, leaseToken: string): Promise<boolean> {
+    const cipher = await this.loadCipher();
     const result = await this.db
       .prepare(
         `UPDATE oauth_tokens SET
@@ -136,7 +150,15 @@ export class D1AppTokenStore {
            ${CLEAR_REFRESH_ERROR}
          WHERE app = ?5 AND version = ?6 AND refresh_lease_token = ?7`
       )
-      .bind(tokens.accessToken, tokens.refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString(), app, expectedVersion, leaseToken)
+      .bind(
+        await cipher.encrypt(tokens.accessToken, 'access_token'),
+        await cipher.encrypt(tokens.refreshToken, 'refresh_token'),
+        tokens.accessTokenExpiresAt,
+        new Date().toISOString(),
+        app,
+        expectedVersion,
+        leaseToken
+      )
       .run();
     return result.meta.changes === 1;
   }
