@@ -28,8 +28,10 @@
             "giftSize": "color_mm8pkjs4",
             "fiscalQuarter": "color_mm8pd404",
             "giftFiscalYear": "color_mm8p8asv",
-            "acknowledgmentTier": "color_mm8qwcbp"
+            "acknowledgmentTier": "color_mm8qwcbp",
+            "matchingCompany": "color_mm90qffq"
           },
+          "matchedBy": "board_relation_mm8nkc1g",
           "sponsorshipCycle": "text_mm8nnqf1",
           "inKindValue": "numeric_mm8n933h"
         }

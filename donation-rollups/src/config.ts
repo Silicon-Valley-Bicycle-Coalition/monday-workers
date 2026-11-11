@@ -40,7 +40,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
     throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
   }
-  for (const key of ['sponsorshipCycle', 'inKindValue'] as const) {
+  for (const key of ['sponsorshipCycle', 'inKindValue', 'matchedBy'] as const) {
     if (columns[key] !== undefined && columns[key] !== null
       && (typeof columns[key] !== 'string' || columns[key] === '')) {
       throw new Error(`config: donationRollups.donationBoards[${index}].columns.${key} must be a column id string, null, or omitted`);
@@ -64,9 +64,13 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     if (cl.acknowledgmentTier !== undefined && (typeof cl.acknowledgmentTier !== 'string' || cl.acknowledgmentTier === '')) {
       throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.acknowledgmentTier must be a Monday column id string or omitted`);
     }
+    if (cl.matchingCompany !== undefined && (typeof cl.matchingCompany !== 'string' || cl.matchingCompany === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.matchingCompany must be a Monday column id string or omitted`);
+    }
     classification = { fundingStream: cl.fundingStream as string, giftSize: cl.giftSize as string,
       fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string,
-      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}) };
+      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}),
+      ...(cl.matchingCompany !== undefined ? { matchingCompany: cl.matchingCompany as string } : {}) };
   }
   return {
     boardId: b.boardId,
@@ -81,6 +85,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       actingForLink: (columns.actingForLink ?? null) as string | null,
       ...(columns.sponsorshipCycle !== undefined ? { sponsorshipCycle: columns.sponsorshipCycle as string | null } : {}),
       ...(columns.inKindValue !== undefined ? { inKindValue: columns.inKindValue as string | null } : {}),
+      ...(columns.matchedBy !== undefined ? { matchedBy: columns.matchedBy as string | null } : {}),
       ...(links !== undefined ? { sponsorshipPipelineLinks: links as string[] } : {}),
       classification,
     },

@@ -25,6 +25,8 @@ export interface DonationBoardConfig {
     // Sponsorship audit history (spec 2026-11-02): optional, null/omitted = not configured.
     sponsorshipCycle?: string | null;
     inKindValue?: string | null;
+    // The Matched By relation, read by classify when classification.matchingCompany is set.
+    matchedBy?: string | null;
     sponsorshipPipelineLinks?: string[]; // Donations-side reverse connect columns, one per pipeline board
     // The four chartable labels the custodian's classify duty writes (spec 2026-09-29 §10.1).
     // null = classification off for this board. The webhook ignores changes to these columns.
@@ -36,6 +38,10 @@ export interface ClassificationColumns {
   fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string;
   // Optional: the Acknowledgment Tier status column, kept nightly as a backstop to its automations.
   acknowledgmentTier?: string;
+  // Optional: a status column the nightly classify fills with the name of the company behind a
+  // matching gift (read from the board's `matchedBy` relation). A relation can't be a chart axis;
+  // a status column can. Needs `columns.matchedBy`. Capped by Monday at 40 labels.
+  matchingCompany?: string;
 }
 
 export interface CustodianConfig {

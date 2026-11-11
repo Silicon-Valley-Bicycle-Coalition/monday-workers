@@ -691,6 +691,15 @@ gift's amount, date and type. It runs nightly and on demand
 `CLASSIFY_WRITES_PER_RUN` (300) gifts per run — repeat until `detail.remaining` is `0` (~13 runs
 for the first ~3,800 gifts). Provision with `scripts/setup-classification-columns.mjs <donationsBoardId>`.
 
+**Matched By Company (optional).** A relation column can't be a chart axis, but a status column can.
+With `classification.matchingCompany` (a status column id, titled *Matched By Company*) and the
+board's `columns.matchedBy` relation id both configured, classify copies the linked company's name
+into that column on each gift and clears it when the gift has no Matched By link, so a chart can
+group matching gifts by company. Create the column with no starter labels; classify creates one label
+per company on first write. **Monday caps a status column at 40 labels**: a 41st distinct company's
+write fails and is counted in the run's `failed` total, so watch that number as new matching
+companies appear (about 30 on production at the time of writing). Left off, nothing changes.
+
 **Acknowledgment Tier backstop.** With the optional `classification.acknowledgmentTier` column id
 set, `classify` also keeps Donations' **Acknowledgment Tier** at **Major** for an Amount of $200
 and up and **Standard** below (`acknowledgmentTier` in `rollups/classify.ts`). The board's own

@@ -302,6 +302,16 @@ describe('classification and donor level config', () => {
     expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toEqual({ ...classification, acknowledgmentTier: 'at' });
   });
 
+  it('accepts an optional matchingCompany column in the classification block', () => {
+    const cfg = validateConfig(withBoard({ classification: { ...classification, matchingCompany: 'mc' } }));
+    expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toEqual({ ...classification, matchingCompany: 'mc' });
+  });
+
+  it('rejects an empty matchingCompany column id', () => {
+    expect(() => validateConfig(withBoard({ classification: { ...classification, matchingCompany: '' } })))
+      .toThrow(/matchingCompany/);
+  });
+
   it('rejects an empty acknowledgmentTier column id', () => {
     expect(() => validateConfig(withBoard({ classification: { ...classification, acknowledgmentTier: '' } })))
       .toThrow(/classification\.acknowledgmentTier must be a Monday column id string or omitted/);

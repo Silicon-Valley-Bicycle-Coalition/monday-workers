@@ -172,6 +172,53 @@ describe('runClassify', () => {
     });
   });
 
+  describe('Matching Company', () => {
+    // The company behind a matching gift, copied from the Matched By relation's linked item name
+    // into a status column so charts can group by it (a relation can't be a chart axis).
+    const mcConfig = { ...config, donationRollups: { donationBoards: [
+      { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', matchedBy: 'mb', classification: { ...CL, matchingCompany: 'mc' } } },
+    ] } } as unknown as DonationRollupsConfig;
+    const labelled = { dt: '2025-08-01', gt: 'Matching Donation', fs: 'Matching Donations', gs: '$100–199', fq: 'FY26 Q1', gfy: 'FY2026' };
+
+    it('copies the linked company name, creating the label on first use', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Google, LLC' }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true },
+        values: { mc: { label: 'Google, LLC' } } }]);
+    });
+
+    it('skips a gift already labelled with the right company', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple', mc: 'Apple' }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('fixes a stale company', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple', mc: 'Google, LLC' }]);
+      await runClassify(client, mcConfig);
+      expect(writes.map((w) => w.values)).toEqual([{ mc: { label: 'Apple' } }]);
+    });
+
+    it('clears the label when the gift has no Matched By link', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: null, mc: 'Apple' }]);
+      await runClassify(client, mcConfig);
+      expect(writes.map((w) => w.values)).toEqual([{ mc: '' }]);
+    });
+
+    it('leaves an ordinary gift with no company alone', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, gt: 'Donation', fs: 'Individual Giving', mb: null }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('does nothing about companies unless both columns are configured', async () => {
+      const { client, writes, reads } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple' }]);
+      await runClassify(client, config);
+      expect(writes).toEqual([]);
+      expect(reads.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('Fiscal Year Ending', () => {
     const fyConfig = { ...config, donationRollups: { donationBoards: [
       { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', fiscalYear: 'fy', classification: CL } },
