@@ -36,8 +36,8 @@ const TRIGGER_ID = 'custodian:membership';
 const ownerMessage = (ownerItemId: string, ownerBoardId: string): RecomputeQueueMessage =>
   ({ donationItemId: TRIGGER_ID, donationBoardId: '', ownerItemId, ownerBoardId });
 
-async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[]): Promise<void> {
-  for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100));
+async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> {
+  for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100), opts);
 }
 
 function membershipBoards(deps: CustodianDeps): { boardId: string; currentTermStart: string }[] {
@@ -84,71 +84,80 @@ export async function runMembership(
 
 // The nightly share of the Volunteers board: new Eventbrite sign-ups reach volunteer_activity
 // here (the board has no webhook), so a Completed row earns credit by the next morning's run
-// rather than waiting for an all=true pass. Pages the board, upserts only the rows that differ
-// from what D1 holds, and enqueues just the people whose counted activity changed — a second run
-// the same night changes and enqueues nothing. The rows are stored before the owners are
-// enqueued (the recompute reads them); if the enqueue fails they are put back as they were, so
-// the next night still sees them as changed and nothing is lost between the two writes.
+// rather than waiting for an all=true pass.
+//
+// Order is the guarantee: (1) page and diff every board against D1, writing nothing; (2) enqueue
+// the affected owners' recomputes, delayed so the rows are stored before a recompute reads them;
+// (3) only then store the rows. A failure at any step leaves rows UNSTORED, so the next night
+// diffs them as changed again and re-sends — at-least-once enqueue, never rows stored with
+// their owners unsent. The duplicate recompute that can result is harmless: a recompute is a
+// full re-derivation from D1 plus a fresh Monday read, writing the same values again.
+//
+// Bounded like an all=true slice: at most ENQUEUE_PER_RUN owners (and rows) a night, the rest
+// left unstored for the next night's diff, so the first run after cutover cannot burst.
+export const VOLUNTEER_RECOMPUTE_DELAY_SECONDS = 120;
+
 async function loadNightlyVolunteers(deps: CustodianDeps, now: Date, anniversaries: DutyReport): Promise<DutyReport> {
   const boardsCfg = deps.config.donationRollups.historicalVolunteerBoards;
   if (boardsCfg.length === 0) return anniversaries;
+  const failed = (err: unknown): DutyReport => ({ ok: false, detail: anniversaries.detail,
+    summary: `${anniversaries.summary}; Volunteers board load failed: ${err instanceof Error ? err.message : String(err)}` });
   const membership = new Set(membershipBoards(deps).map((b) => b.boardId));
-  const nowISO = now.toISOString();
-  let changed = 0;
-  const targets = new Map<string, string>();   // owner item id -> its board
-  const queued: VolunteerActivityRow[] = [];   // the rows written, for the rollback
-  const before: VolunteerActivityRow[] = [];   // what D1 held for them (changed rows that already existed)
+  type Change = { boardId: string; s: HistoricalShiftRecord; old: VolunteerActivityRow | undefined; qualifies: boolean };
+  const diff: Change[] = [];
   try {
     for (const board of boardsCfg) {
       const known = new Map((await deps.volunteers.forBoard(String(board.boardId))).map((r) => [r.registrationItemId, r]));
-      const diff: { s: HistoricalShiftRecord; old: VolunteerActivityRow | undefined; qualifies: boolean }[] = [];
       let cursor: string | null = null;
       do {
         const page = await deps.mondayClient.pageHistoricalShifts(board, cursor);
         for (const s of page.items) {
           const old = known.get(s.id);
           const qualifies = historicalShiftQualifies(s, board);
-          if (old === undefined ? true
-            : old.qualifies !== qualifies || old.ownerItemId !== s.volunteerItemId || old.activityDateISO !== s.dateISO || old.hours !== s.hours) {
-            diff.push({ s, old, qualifies });
+          if (old === undefined || old.qualifies !== qualifies || old.ownerItemId !== s.volunteerItemId
+            || old.activityDateISO !== s.dateISO || old.hours !== s.hours) {
+            diff.push({ boardId: String(board.boardId), s, old, qualifies });
           }
         }
         cursor = page.cursor;
       } while (cursor !== null);
-      if (diff.length === 0) continue;
-      const boardOf = await deps.mondayClient.getItemsBoardIds(diff.flatMap(({ s }) => (s.volunteerItemId ? [s.volunteerItemId] : [])));
-      const rows = diff.map(({ s, qualifies }): VolunteerActivityRow => ({ registrationItemId: s.id, boardId: String(board.boardId),
-        ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boardOf.get(s.volunteerItemId) ?? null : null,
-        activityDateISO: s.dateISO, hours: s.hours, qualifies, source: 'historical' }));
-      changed += rows.length;
-      for (const [i, row] of rows.entries()) {
-        const { old } = diff[i]!;
-        // Whoever counted before, and whoever counts now, needs a fresh recompute — unless the
-        // row counted for no one either way (an RSVP going to Canceled).
-        if (old?.qualifies && old.ownerItemId !== null && old.ownerBoardId !== null && membership.has(old.ownerBoardId)) targets.set(old.ownerItemId, old.ownerBoardId);
-        if (row.qualifies && row.ownerItemId !== null && row.ownerBoardId !== null && membership.has(row.ownerBoardId)) targets.set(row.ownerItemId, row.ownerBoardId);
-        if (old !== undefined) before.push(old);
-      }
-      await deps.volunteers.upsertMany(rows, nowISO);
-      queued.push(...rows);
     }
-    if (changed === 0) return anniversaries;
-    try {
-      await sendAll(deps, [...targets].map(([id, boardId]) => ownerMessage(id, boardId)));
-    } catch (err) {
-      const prior = new Set(before.map((r) => r.registrationItemId));
-      // Existing rows go back as they were; new ones as a non-qualifying shell that differs from
-      // the board, so the next run finds them changed again.
-      await deps.volunteers.upsertMany([...before, ...queued.filter((r) => !prior.has(r.registrationItemId))
-        .map((r): VolunteerActivityRow => ({ ...r, ownerItemId: null, ownerBoardId: null, activityDateISO: null, qualifies: false }))], nowISO);
-      throw err;
+    if (diff.length === 0) return anniversaries;
+
+    // Tonight's slice: a stable order, as many changes as fit under the owner cap (an owner is
+    // someone who counted before or counts now) and the row cap.
+    diff.sort((a, b) => (a.boardId + a.s.id < b.boardId + b.s.id ? -1 : 1));
+    const slice: Change[] = [];
+    const counted = new Set<string>();
+    for (const c of diff) {
+      const mine = [c.old?.qualifies ? c.old.ownerItemId : null, c.qualifies ? c.s.volunteerItemId : null].filter((x): x is string => x !== null);
+      const next = new Set([...counted, ...mine]);
+      if (slice.length >= ENQUEUE_PER_RUN || next.size > ENQUEUE_PER_RUN) break;
+      slice.push(c);
+      for (const id of mine) counted.add(id);
     }
+    const remaining = diff.length - slice.length;
+
+    const boardOf = await deps.mondayClient.getItemsBoardIds(slice.flatMap(({ s }) => (s.volunteerItemId ? [s.volunteerItemId] : [])));
+    const rows = slice.map(({ boardId, s, qualifies }): VolunteerActivityRow => ({ registrationItemId: s.id, boardId,
+      ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boardOf.get(s.volunteerItemId) ?? null : null,
+      activityDateISO: s.dateISO, hours: s.hours, qualifies, source: 'historical' }));
+    const targets = new Map<string, string>();   // owner item id -> its board
+    for (const [i, row] of rows.entries()) {
+      const { old } = slice[i]!;
+      // Whoever counted before and whoever counts now — not a row that counted for no one either way.
+      if (old?.qualifies && old.ownerItemId !== null && old.ownerBoardId !== null && membership.has(old.ownerBoardId)) targets.set(old.ownerItemId, old.ownerBoardId);
+      if (row.qualifies && row.ownerItemId !== null && row.ownerBoardId !== null && membership.has(row.ownerBoardId)) targets.set(row.ownerItemId, row.ownerBoardId);
+    }
+
+    await sendAll(deps, [...targets].map(([id, boardId]) => ownerMessage(id, boardId)), { delaySeconds: VOLUNTEER_RECOMPUTE_DELAY_SECONDS });
+    await deps.volunteers.upsertMany(rows, now.toISOString());
+    return { ok: anniversaries.ok, detail: anniversaries.detail,
+      summary: `${anniversaries.summary}; ${rows.length} volunteer row(s) changed, enqueued ${targets.size} owner(s)` +
+        (remaining > 0 ? ` — ${remaining} more change(s) remain, continuing next run` : '') };
   } catch (err) {
-    return { ok: false, detail: anniversaries.detail,
-      summary: `${anniversaries.summary}; Volunteers board load failed: ${err instanceof Error ? err.message : String(err)}` };
+    return failed(err);
   }
-  return { ok: anniversaries.ok, detail: anniversaries.detail,
-    summary: `${anniversaries.summary}; ${changed} volunteer row(s) changed, enqueued ${targets.size} owner(s)` };
 }
 
 // Everyone whose anniversary — Current Term Start + termMonths — falls after lastThroughISO and

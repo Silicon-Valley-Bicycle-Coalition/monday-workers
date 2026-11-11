@@ -350,15 +350,77 @@ describe('membership duty — nightly load of the Volunteers board', () => {
     expect(await new D1VolunteerActivityStore(env.DB).forOwner('nv')).toEqual([]);
   });
 
-  it('a failed enqueue leaves the row unloaded-looking, so the next night enqueues it again', async () => {
+  const stored = (id: string) => new D1VolunteerActivityStore(env.DB).forOwner(id);
+
+  it('(a) a failed enqueue stores nothing and reports not ok; the next run re-detects and enqueues', async () => {
     const sent: RecomputeQueueMessage[] = [];
     const d = nightly([shift()], sent);
     d.queue = { sendBatch: async () => { throw new Error('queue down'); } };
-    const report = await run(d);
-    expect(report.ok).toBe(false);
+    expect((await run(d)).ok).toBe(false);
+    expect(await stored('nv')).toEqual([]);
     d.queue = { sendBatch: async (m) => { sent.push(...m); } };
     await run(d);
     expect(owners(sent)).toEqual([['nv', '20']]);
+    expect(await stored('nv')).toHaveLength(1);
+  });
+
+  it('owners are enqueued with a delay, so the rows are stored before a recompute reads them', async () => {
+    const calls: unknown[] = [];
+    const d = nightly([shift()], []);
+    d.queue = { sendBatch: async (_m, opts) => { calls.push(opts); } };
+    await run(d);
+    expect(calls).toEqual([{ delaySeconds: 120 }]);
+  });
+
+  it('(b) a Monday failure on the second board stores and enqueues nothing for the first either', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = nightly([shift()], sent);
+    d.config.donationRollups.historicalVolunteerBoards = [...d.config.donationRollups.historicalVolunteerBoards, { ...HIST_BOARD, boardId: 10 }];
+    const real = d.mondayClient.pageHistoricalShifts.bind(d.mondayClient);
+    d.mondayClient = { ...d.mondayClient, pageHistoricalShifts: async (board, cursor) => {
+      if (board.boardId === 10) throw new Error('monday down');
+      return real(board, cursor);
+    } };
+    const report = await run(d);
+    expect(report.ok).toBe(false);
+    expect(sent).toEqual([]);
+    expect(await stored('nv')).toEqual([]);
+  });
+
+  it('(c) an upsert failure after a successful enqueue leaves the rows unstored; the next run re-enqueues (a duplicate) and stores them', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = nightly([shift()], sent);
+    const real = d.volunteers;
+    d.volunteers = Object.assign(Object.create(real), { upsertMany: async () => { throw new Error('d1 down'); } });
+    expect((await run(d)).ok).toBe(false);
+    expect(owners(sent)).toEqual([['nv', '20']]);
+    expect(await stored('nv')).toEqual([]);
+    d.volunteers = real;
+    await run(d);
+    expect(owners(sent)).toEqual([['nv', '20'], ['nv', '20']]);
+    expect(await stored('nv')).toHaveLength(1);
+    await run(d);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('(d) more changed owners than the cap: exactly the cap is enqueued and stored tonight, the rest tomorrow, none lost or repeated', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const n = ENQUEUE_PER_RUN + 5;
+    const ids = Array.from({ length: n }, (_, i) => `c${String(i).padStart(5, '0')}`);
+    const d = deps({ shifts: ids.map((id) => shift({ id: `s-${id}`, volunteerItemId: id })), boardOf: Object.fromEntries(ids.map((id) => [id, '20'])) }, sent);
+    d.config.donationRollups.volunteerBoards = [];
+    d.config.donationRollups.historicalVolunteerBoards = [{ ...HIST_BOARD, columns: { ...HIST_BOARD.columns, historical: 'hist' } }];
+    const first = await run(d);
+    expect(sent).toHaveLength(ENQUEUE_PER_RUN);
+    expect(first.ok).toBe(true);
+    expect(first.summary).toContain('5 more change(s) remain');
+    expect((await d.volunteers.forBoard('9'))).toHaveLength(ENQUEUE_PER_RUN);
+    await run(d);
+    expect(sent).toHaveLength(n);
+    expect(new Set(sent.map((m) => m.ownerItemId)).size).toBe(n);
+    expect((await d.volunteers.forBoard('9'))).toHaveLength(n);
+    await run(d);
+    expect(sent).toHaveLength(n);
   });
 
   it('an all=true pass still loads and enqueues as before (the nightly load does not run on it)', async () => {

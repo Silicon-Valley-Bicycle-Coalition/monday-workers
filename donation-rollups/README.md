@@ -1165,7 +1165,9 @@ sandbox gets rebuilt before cutover:
   `countedStatusLabels` (`["Completed"]`). Required (may be `[]`) whenever `membership` is on.
   Read by the `membership` duty's `load-volunteers` phase on an `all=true` pass (the full
   recompute), and **every night** by the nightly membership run, which upserts the rows that
-  are new or changed and enqueues only their owners (nothing, when the board is unchanged). There
+  are new or changed and enqueues only their owners (nothing, when the board is unchanged; at most
+  3,500 owners a night, the rest next night). Owners are enqueued (delayed 120 s) before the rows
+  are stored, so a failure re-sends rather than loses. There
   is **no webhook**, so new Eventbrite volunteering (a `Completed` row, dated by its Date column)
   counts by the next morning's run, up to a day later, not per webhook; a manual
   `all=true` remains the full recompute. Under write switch `off` the nightly load only computes
