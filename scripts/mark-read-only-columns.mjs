@@ -65,7 +65,7 @@ export const MARKED_COLUMNS = {
   'Wealth Screening': { locked: [], history: [...WINDFALL_TITLES] },
   'Organizations': { locked: OWNER_ROLLUPS, history: [...SALESFORCE, 'Salesforce Owner'] },
   'Donations': {
-    locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Funraise ID',
+    locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Matched By Company', 'Funraise ID',
       'Eventbrite Order ID', 'Benevity Transaction ID', 'Match Status', 'DTD Status (raw)', 'Match Company',
       'Sent to DTD'],
     history: [...SALESFORCE, 'Salesforce Owner', 'Finance Class', 'Revenue Code', 'Sponsorship Cycle',
