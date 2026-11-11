@@ -29,6 +29,7 @@
 // the same run, and records every move in the ledger first: archived registrations drop out of the
 // board read, so the ledger is what lets a later --remap-out regenerate the SQL.
 
+import { fileURLToPath } from 'node:url';
 import { MondayGraphQL } from '../src/monday/graphql.ts';
 import { readArg } from './backfill-orders-lib.mjs';
 import {
@@ -229,7 +230,6 @@ export async function run({ argv, config, client, io }) {
 async function main() {
   const { readFileSync, appendFileSync, writeFileSync, mkdirSync, existsSync } = await import('node:fs');
   const { join, dirname } = await import('node:path');
-  const { fileURLToPath } = await import('node:url');
   const here = dirname(fileURLToPath(import.meta.url));
   const token = process.env.MONDAY_API_TOKEN;
   if (!token) {
@@ -258,4 +258,5 @@ async function main() {
   process.exit(await run({ argv: process.argv.slice(2), config, client, io }));
 }
 
-if (import.meta.main) await main();
+// The repo's entry-point idiom, not Node's newer main-module flag, which some type-stripping Node versions lack.
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

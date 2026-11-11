@@ -243,9 +243,6 @@ step. Never delete the Volunteers items the backfill created.
 - The setup script's live `--apply` path and the backfill's live run were not exercised against
   Monday before the first operator run: only dry-run, tests and an equivalent run through the
   Monday MCP on the sandbox v3 board 18431577321. Read each dry run before applying.
-- The backfill script's `import.meta.main` entry-point check should be verified on the operator's
-  Node version (it is slated for a code fix before first use); if the script exits silently
-  without output, that is the cause.
 - A Volunteers item deleted in Monday is never removed from `volunteer_activity` (archiving is
   the supported route), so a deleted row keeps counting until its D1 row is removed by hand.
 - Staff unchecking Historical on a migrated row would change history counts (see "For staff").

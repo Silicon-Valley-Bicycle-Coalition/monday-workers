@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { run } from './backfill-volunteers.mjs';
+import source from './backfill-volunteers.mjs?raw';
 import { testConfig } from '../src/test/testConfig';
 
 const config = testConfig();
@@ -203,5 +204,15 @@ describe('backfill-volunteers CLI', () => {
     const placeholder = testConfig();
     placeholder.attendeeSync.volunteers.attendeeIdColumn = 'REPLACE_WITH_COLUMN_ID';
     expect(await run({ argv: [], config: placeholder, client: fakeMonday([]).client, io: o.io })).toBe(1);
+  });
+});
+
+// The suite runs in workerd, which cannot spawn the script, so the entry-point check is read from
+// source. import.meta.main is missing on Node versions that already strip types (22.18+, 23.6-24.1),
+// where the script would exit 0 having done nothing; the repo idiom works on all of them.
+describe('entry point', () => {
+  it('runs main() by the repo idiom, never import.meta.main', () => {
+    expect(source).toContain('process.argv[1] === fileURLToPath(import.meta.url)');
+    expect(source).not.toMatch(/import\.meta\.main\b/);
   });
 });
