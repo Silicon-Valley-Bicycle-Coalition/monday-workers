@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { loadRoster, sandboxRecipients } from './roster';
-import type { Recipient } from './plan';
+import { planKind, type Recipient } from './plan';
 import type { MondayClient, MondayItemColumns } from '../monday/client';
 import type { AttendeeRow } from '../types';
 import { fakeAttendeeStore } from '../test/fakeStores';
@@ -9,6 +9,7 @@ import { testConfig } from '../test/testConfig';
 
 const config = testConfig();
 const rc = config.attendeeSync.registrations;
+const vc = config.attendeeSync.volunteers;
 
 function ledger(attendeeId: string, mondayItemId: string | null): AttendeeRow {
   return { attendeeId, eventId: 'e1', mondayItemId, matchedPersonItemId: null, status: 'written', lastAction: 'attendee.updated', error: null, deliveries: 1, receivedAt: '2026-11-01T00:00:00.000Z', writtenAt: null } as AttendeeRow;
@@ -71,6 +72,48 @@ describe('loadRoster', () => {
   it('throws when the event-registrations board is not configured', async () => {
     const cfg = testConfig({}, { 'event-registrations': null });
     await expect(loadRoster('e1', deps([ledger('a1', '10')], [], cfg).deps)).rejects.toThrow('event-registrations');
+  });
+});
+
+function vol(id: string, name: string, status: string, email = `${id}@v.org`): MondayItemColumns {
+  return mondayItem(id, name, { [vc.statusColumn]: status, [vc.attendeeEmailColumn]: email });
+}
+
+describe('loadRoster for a volunteer event', () => {
+  it('reads the Volunteers board, mapping Status to attendance', async () => {
+    const d = deps([ledger('a1', '20'), ledger('a2', '21'), ledger('a3', '22'), ledger('a4', '23')], [
+      vol('20', 'Ann Lee Smith', 'RSVP'), vol('21', 'Bob Jones', 'Completed'), vol('22', 'Cy Park', 'Canceled'), vol('23', 'Di Wu', 'Confirmed'),
+    ]);
+    const roster = await loadRoster('e1', d.deps, 'Volunteer');
+    expect(d.getItems).toHaveBeenCalledWith(666, ['20', '21', '22', '23'], [vc.statusColumn, vc.attendeeEmailColumn]);
+    expect(roster).toEqual([
+      { registrationId: '20', attendance: 'Registered', role: 'Volunteer', email: '20@v.org', firstName: 'Ann', name: 'Ann Lee Smith' },
+      { registrationId: '21', attendance: 'Attended', role: 'Volunteer', email: '21@v.org', firstName: 'Bob', name: 'Bob Jones' },
+      { registrationId: '22', attendance: 'Canceled', role: 'Volunteer', email: '22@v.org', firstName: 'Cy', name: 'Cy Park' },
+      { registrationId: '23', attendance: '', role: 'Volunteer', email: '23@v.org', firstName: 'Di', name: 'Di Wu' },
+    ]);
+  });
+
+  it('plans the same recipients as the equivalent registration roster', async () => {
+    const facts = { startsAt: '2026-11-12T17:00:00.000Z', endsAt: '2026-11-12T19:00:00.000Z', eventbriteStatus: 'live' };
+    const at = new Date('2026-11-10T12:00:00.000Z');
+    const v = await loadRoster('e1', deps([ledger('a1', '20'), ledger('a2', '21')], [vol('20', 'Ann Lee', 'RSVP'), vol('21', 'Bob Jones', 'Canceled')]).deps, 'Volunteer');
+    const r = await loadRoster('e1', deps([ledger('a1', '20'), ledger('a2', '21')], [
+      reg('20', 'Ann Lee', { [rc.roleColumn]: 'Volunteer' }), reg('21', 'Bob Jones', { [rc.attendanceColumn]: 'Canceled', [rc.roleColumn]: 'Volunteer' }),
+    ]).deps);
+    const ids = (roster: typeof v) => planKind('reminder', { ...facts, audienceRole: 'Volunteer' }, roster, [], at).recipients.map((x) => x.registrationId);
+    expect(ids(v)).toEqual(['20']);
+    expect(ids(v)).toEqual(ids(r));
+  });
+
+  it('drops archived items', async () => {
+    const d = deps([ledger('a1', '20'), ledger('a2', '21')], [vol('20', 'A B', 'RSVP'), mondayItem('21', 'C D', { [vc.statusColumn]: 'RSVP' }, { state: 'archived' })]);
+    expect((await loadRoster('e1', d.deps, 'Volunteer')).map((e) => e.registrationId)).toEqual(['20']);
+  });
+
+  it('throws when the volunteers board is not configured', async () => {
+    const cfg = testConfig({}, { volunteers: null });
+    await expect(loadRoster('e1', deps([ledger('a1', '20')], [], cfg).deps, 'Volunteer')).rejects.toThrow('volunteers');
   });
 });
 
