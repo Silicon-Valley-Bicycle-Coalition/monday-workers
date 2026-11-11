@@ -157,7 +157,11 @@ defaults to public, with "Require login" off. When you add a column to the Donat
 create a form view, hide the new question in the form editor and run
 `node scripts/check-donation-form.mjs --form <token>` (token from the share link; production
 `567223ac739c23567e56e9057d81dbf5`, sandbox v4 `2325fd7745d3a2d425086d38358e4bd5`). The visible
-set is `EXPECTED_QUESTIONS` in `scripts/lib/donation-form.mjs`. Design:
+set is `EXPECTED_QUESTIONS` in `scripts/lib/donation-form.mjs`. After changing the
+Donations board's automations or the rollups, `scripts/smoke-donation-entry.mjs --board <sandbox
+Donations id> --donor <sandbox People item id> [--rollups]` creates the items the form creates,
+checks Tier, Status and the donor link (and, with `--rollups`, that Lifetime Giving moves), and
+deletes them; it refuses any board not named sandbox. Design:
 `docs/superpowers/specs/2026-11-11-manual-donation-entry-form-design.md`.
 
 **Sandbox environment — inbound only, no outbound data.** Every deployed Worker except
