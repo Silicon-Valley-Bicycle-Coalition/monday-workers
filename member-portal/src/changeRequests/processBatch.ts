@@ -5,6 +5,7 @@ import { FIELD_LABELS, type ChangeQueueMessage } from './submitChangeRequest';
 import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 import { logDebug, messageDisposition } from '../flags';
 import { dryRunChangeDeps, type BatchSkipContext } from '../writeSwitch';
+import { errorText } from '../logSafe';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
@@ -74,9 +75,7 @@ async function handleMessage(message: QueueMessageLike<ChangeQueueMessage>, deps
     message.ack();
   } catch (err) {
     console.error(
-      `member-portal consumer: failed to process change request ${message.body.requestId}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+      `member-portal consumer: failed to process change request ${message.body.requestId}: ${errorText(err)}`
     );
     message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
