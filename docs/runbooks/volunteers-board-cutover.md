@@ -154,7 +154,23 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    Volunteers board holds those people. Without it, old Event Registrations-sourced rows keep
    counting, and a registration later cancelled would still count. Run from `donation-rollups/`.
 
-   **First capture what the undo needs**, before the UPDATE. Write down the count, and save the
+   **First check the precondition.** Step 9 removes credit from every owner whose only qualifying
+   volunteer rows are old Event Registrations ones, so confirm the Volunteers board already holds
+   those people. This counts owners with a qualifying `sweep`/`webhook` row and no qualifying
+   Volunteers-board (`historical`) row; it should be `0`:
+
+   ```sh
+   npx wrangler d1 execute svbc-donation-rollups --remote --command "SELECT COUNT(DISTINCT owner_item_id) AS uncovered FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1 AND owner_item_id IS NOT NULL AND owner_item_id NOT IN (SELECT owner_item_id FROM volunteer_activity WHERE source = 'historical' AND qualifies = 1 AND owner_item_id IS NOT NULL)"
+   ```
+
+   A non-zero count means step 9 would remove those people's credit. Find out why before going on
+   (the backfill in step 5 may have skipped them, or the nightly load has not reached them yet;
+   run step 10's recompute first, or fix the backfill report's skipped rows). Break it down with
+   `GROUP BY board_id` to see which registrations board the uncovered owners come from. On the
+   2026-11 sandbox rehearsal every uncovered owner came from the deleted v3 registrations board
+   (stale rehearsal data), and none from the current one.
+
+   **Then capture what the undo needs**, before the UPDATE. Write down the count, and save the
    ids (`volunteer_activity`'s primary key is `registration_item_id`; migration
    `0009_membership_activity.sql`):
 
@@ -170,8 +186,12 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    it holds registration item ids, so never commit it. Then run:
 
    ```sh
-   npx wrangler d1 execute svbc-donation-rollups --remote --command "UPDATE volunteer_activity SET qualifies = 0 WHERE source IN ('sweep','webhook')"
+   npx wrangler d1 execute svbc-donation-rollups --remote --command "UPDATE volunteer_activity SET qualifies = 0 WHERE source IN ('sweep','webhook') AND qualifies = 1"
    ```
+
+   The `AND qualifies = 1` writes only the rows being turned off (610 on the sandbox rehearsal)
+   instead of rewriting every `sweep`/`webhook` row (13,939 there), with the same end state. Its
+   `changes` count should equal the count you wrote down above.
 
 10. **Run the full recompute**, so membership reflects the Volunteers board now rather than over
     several nights (the nightly load enqueues at most `ENQUEUE_PER_RUN` = 3,500 owners a night):
