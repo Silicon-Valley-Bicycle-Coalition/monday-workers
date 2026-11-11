@@ -70,21 +70,14 @@ describe('scheduled (daily missed-order check)', () => {
   const flags = (get: () => Promise<string | null>) => ({ ...withToken, FLAGS: { get } }) as unknown as Env;
   const quietCheck = () => vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 0, missing: [] });
   const idleSweep = () => vi.fn<typeof sweepEndedEvents>().mockResolvedValue({ queued: [], failed: [] });
-  function context() {
-    const waited: Promise<unknown>[] = [];
-    return { ctx: { waitUntil: (p: Promise<unknown>) => { waited.push(p); } } as unknown as ExecutionContext, waited };
-  }
 
   it('runs the check only at the check hour', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const check = quietCheck();
-    const { ctx, waited } = context();
-    await runScheduled(offHour, withToken, ctx, check, idleSweep());
-    await Promise.all(waited);
+    await runScheduled(offHour, withToken, check, idleSweep());
     expect(check).not.toHaveBeenCalled();
 
-    await runScheduled(checkController, withToken, ctx, check, idleSweep());
-    await Promise.all(waited);
+    await runScheduled(checkController, withToken, check, idleSweep());
     expect(check.mock.calls[0]![0]).toEqual(new Date(checkTime));
     expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
   });
@@ -92,36 +85,43 @@ describe('scheduled (daily missed-order check)', () => {
   it('runs the pledge count check at the check hour for a config with pledges, and not otherwise', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const counts = vi.fn().mockResolvedValue([]);
-    const { ctx, waited } = context();
     const sandboxEnv = { ...withToken, ENVIRONMENT: 'sandbox' } as unknown as Env;
-    await runScheduled(offHour, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
+    await runScheduled(offHour, sandboxEnv, quietCheck(), idleSweep(), counts);
     expect(counts).not.toHaveBeenCalled();
-    await runScheduled(checkController, sandboxEnv, ctx, quietCheck(), idleSweep(), counts);
-    await Promise.all(waited);
+    await runScheduled(checkController, sandboxEnv, quietCheck(), idleSweep(), counts);
     expect(counts.mock.calls[0]![1].eventIds).toEqual(['1977741403778']);
   });
 
   it('skips the pledge count check under hold', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const counts = vi.fn().mockResolvedValue([]);
-    const { ctx, waited } = context();
-    await runScheduled(checkController, flags(async () => 'hold'), ctx, quietCheck(), idleSweep(), counts);
-    await Promise.all(waited);
+    await runScheduled(checkController, flags(async () => 'hold'), quietCheck(), idleSweep(), counts);
     expect(counts).not.toHaveBeenCalled();
   });
 
   it('runs the ended-event sweep every hour', async () => {
     const sweep = idleSweep();
-    const { ctx, waited } = context();
-    await runScheduled(offHour, flags(async () => 'on'), ctx, quietCheck(), sweep);
-    await Promise.all(waited);
+    await runScheduled(offHour, flags(async () => 'on'), quietCheck(), sweep);
     expect(sweep.mock.calls[0]![0]).toEqual(new Date(offHour.scheduledTime));
+  });
+
+  // An awaited scheduled() handler gets the full 15 minutes; work left in ctx.waitUntil is only
+  // promised 30 seconds after the handler returns.
+  it('does not resolve until its jobs have finished', async () => {
+    let finishSweep: (summary: { queued: string[]; failed: string[] }) => void = () => {};
+    const sweep = vi.fn<typeof sweepEndedEvents>().mockReturnValue(new Promise((resolve) => { finishSweep = resolve; }));
+    let settled = false;
+    const run = runScheduled(offHour, flags(async () => 'on'), quietCheck(), sweep).then(() => { settled = true; });
+    await vi.waitFor(() => expect(sweep).toHaveBeenCalled());
+    expect(settled).toBe(false);
+    finishSweep({ queued: [], failed: [] });
+    await run;
+    expect(settled).toBe(true);
   });
 
   it('names only the sweep when it skips outside the check hour', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { ctx } = context();
-    await runScheduled(offHour, flags(async () => 'hold'), ctx, quietCheck(), idleSweep());
+    await runScheduled(offHour, flags(async () => 'hold'), quietCheck(), idleSweep());
     expect(warn).toHaveBeenCalledWith('eventbrite-sync scheduled: write mode is "hold"; skipping the ended-event sweep');
   });
 
@@ -129,27 +129,22 @@ describe('scheduled (daily missed-order check)', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 3, missing: ['55'] });
-    const { ctx, waited } = context();
-    await runScheduled(checkController, withToken, ctx, check, idleSweep());
-    await Promise.all(waited);
+    await runScheduled(checkController, withToken, check, idleSweep());
     expect(error.mock.calls[0]![0]).toContain('1 of 3 orders');
   });
 
-  it('logs a check that throws and does not reject the waitUntil promise', async () => {
+  it('logs a check that throws and does not reject the run', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>().mockRejectedValue(new Error('HTTP 503'));
-    const { ctx, waited } = context();
-    await runScheduled(checkController, withToken, ctx, check, idleSweep());
-    await expect(Promise.all(waited)).resolves.toBeDefined();
+    await expect(runScheduled(checkController, withToken, check, idleSweep())).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith('eventbrite-sync missed orders: check failed: HTTP 503');
   });
 
   it('logs an unset EVENTBRITE_PRIVATE_TOKEN and does not run the check', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>();
-    const { ctx } = context();
-    await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, ctx, check, idleSweep());
+    await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, check, idleSweep());
     expect(check).not.toHaveBeenCalled();
     expect(error.mock.calls[0]![0]).toContain('EVENTBRITE_PRIVATE_TOKEN is not set');
   });
@@ -159,9 +154,7 @@ describe('scheduled (daily missed-order check)', () => {
     it.each(['on', 'off'] as const)('%s: runs the check (it only reads and logs, so a dry run is the live run)', async (mode) => {
       vi.spyOn(console, 'log').mockImplementation(() => {});
       const check = quietCheck();
-      const { ctx, waited } = context();
-      await runScheduled(checkController, flags(async () => mode), ctx, check, idleSweep());
-      await Promise.all(waited);
+      await runScheduled(checkController, flags(async () => mode), check, idleSweep());
       expect(check).toHaveBeenCalled();
     });
 
@@ -178,18 +171,14 @@ describe('scheduled (daily missed-order check)', () => {
     it('on: the ended-event sweep sends for real', async () => {
       vi.spyOn(console, 'log').mockImplementation(() => {});
       const { send, sweep } = sendingSweep();
-      const { ctx, waited } = context();
-      await runScheduled(offHour, { ...flags(async () => 'on'), WRITE_QUEUE: { send } } as unknown as Env, ctx, quietCheck(), sweep);
-      await Promise.all(waited);
+      await runScheduled(offHour, { ...flags(async () => 'on'), WRITE_QUEUE: { send } } as unknown as Env, quietCheck(), sweep);
       expect(send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'event.ended' });
     });
 
     it('off: the ended-event sweep is dry-run, its send only logged', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const { send, sweep } = sendingSweep();
-      const { ctx, waited } = context();
-      await runScheduled(offHour, { ...flags(async () => 'off'), WRITE_QUEUE: { send } } as unknown as Env, ctx, quietCheck(), sweep);
-      await Promise.all(waited);
+      await runScheduled(offHour, { ...flags(async () => 'off'), WRITE_QUEUE: { send } } as unknown as Env, quietCheck(), sweep);
       expect(sweep).toHaveBeenCalledTimes(1);
       expect(send).not.toHaveBeenCalled();
       expect(log.mock.calls.flat().join('\n')).toContain('Write queue');
@@ -198,8 +187,7 @@ describe('scheduled (daily missed-order check)', () => {
     it('hold: does not run the ended-event sweep', async () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {});
       const sweep = idleSweep();
-      const { ctx } = context();
-      await runScheduled(offHour, flags(async () => 'hold'), ctx, quietCheck(), sweep);
+      await runScheduled(offHour, flags(async () => 'hold'), quietCheck(), sweep);
       expect(sweep).not.toHaveBeenCalled();
     });
 
@@ -208,9 +196,7 @@ describe('scheduled (daily missed-order check)', () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
       const check = quietCheck();
       const sweep = vi.fn<typeof sweepEndedEvents>().mockRejectedValue(new Error('D1 unavailable'));
-      const { ctx, waited } = context();
-      await runScheduled(checkController, flags(async () => 'on'), ctx, check, sweep);
-      await expect(Promise.all(waited)).resolves.toBeDefined();
+      await expect(runScheduled(checkController, flags(async () => 'on'), check, sweep)).resolves.toBeUndefined();
       expect(check).toHaveBeenCalledTimes(1);
       expect(error).toHaveBeenCalledWith('eventbrite-sync ended events: sweep failed: D1 unavailable');
     });
@@ -225,10 +211,9 @@ describe('scheduled (daily missed-order check)', () => {
     ] as const)('%s: skips the check with one line', async (mode, get) => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const check = quietCheck();
-      const { ctx, waited } = context();
-      await runScheduled(checkController, flags(get), ctx, check, idleSweep());
-      await Promise.all(waited);
-      expect(waited).toHaveLength(0);
+      const sweep = idleSweep();
+      await runScheduled(checkController, flags(get), check, sweep);
+      expect(sweep).not.toHaveBeenCalled();
       expect(check).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the daily checks`);

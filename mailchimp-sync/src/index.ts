@@ -127,17 +127,21 @@ export default {
     throw new Error(`unknown queue: ${batch.queue}`);
   },
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  // Awaited, not handed to ctx.waitUntil: the runtime gives an awaited scheduled() handler the
+  // full 15 minutes, while waitUntil work is only promised 30 seconds after the handler returns.
+  // A failed run is logged, not thrown, so Workers Issues shows the error line.
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
     const config = configFor(env);
-    ctx.waitUntil(
-      skipContext(env)
-        .then((gate) => runScheduledReconcile(gate, {
-          mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
-          mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
-          campaignItemsStore: new D1CampaignItemsStore(env.DB),
-          config,
-        }, reconcileCampaigns))
-        .catch((err) => console.error(`mailchimp-sync reconcile: run failed: ${(err as Error).message}`)),
-    );
+    try {
+      const gate = await skipContext(env);
+      await runScheduledReconcile(gate, {
+        mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+        campaignItemsStore: new D1CampaignItemsStore(env.DB),
+        config,
+      }, reconcileCampaigns);
+    } catch (err) {
+      console.error(`mailchimp-sync reconcile: run failed: ${(err as Error).message}`);
+    }
   },
 };
