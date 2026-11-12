@@ -228,6 +228,13 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'Donor Level' } },
       // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/35 §3.1): gave in the
       // last five years, single gift of $25 or more, not already giving monthly or quarterly.
+      // Board Report figure (#22): the old "Opps over $200 from new Donors". First Gift inside the
+      // current fiscal year, resolved from the clock each time configure runs (rerun every July).
+      { name: 'New donors this FY, $200+', tag: 'Report',
+        columns: ['Personal Email', 'Phone', 'First Gift', 'This Year Amount', 'Largest Gift'],
+        filter: { rules: [{ columnTitle: 'First Gift', operator: 'between', compareValue: { fiscalYear: 'current' } },
+          { columnTitle: 'This Year Amount', operator: 'greater_than', compareValue: 199.99 }] },
+        sort: [{ columnTitle: 'This Year Amount', direction: 'desc' }] },
       { name: 'Postal appeal list', tag: 'Report',
         columns: ['Address', 'City', 'Zip', 'Last Gift Date', 'Largest Gift', 'Lifetime Giving'],
         filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
@@ -581,6 +588,13 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
+      // Quarterly active-volunteer count (#22). Class Date is written by eventbrite-sync only, so
+      // migrated history and Funraise tickets are missing from this view.
+      { name: 'Volunteers, last 12 months', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Class Date', 'Attendance'],
+        filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] },
+          { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] },
+          { columnTitle: 'Class Date', operator: 'within_the_last', compareValue: ['MONTHS', 12] }] },
+        sort: [{ columnTitle: 'Class Date', direction: 'desc' }] },
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role'],
         filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
       { name: 'Unlinked attendees', tag: 'Worklist', columns: ['Attendee Name', 'Attendee Email', 'Event'],
@@ -662,11 +676,18 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
     { name: 'Major gifts not yet thanked', kind: 'NUMBER', number: { boards: ['donations'], column: 'Amount', counter: 'sum', format: 'currency' },
       filter: { board: 'donations', rules: [{ columnTitle: 'Acknowledgment Tier', operator: 'any_of', labelValues: ['Major'] }, { columnTitle: 'Thank You Sent', operator: 'is_empty' }] } },
   ] },
-  { name: 'Membership', boards: ['people-live'], widgets: [
+  { name: 'Membership', boards: ['people-live', 'donations'], widgets: [
     { name: 'Members by status', kind: 'CHART', chart: { board: 'people-live', graphType: 'pie', x: 'Membership Status', xGroupBy: 'color', y: 'count' } },
     { name: 'Memberships ending, by month', kind: 'CHART', chart: { board: 'people-live', graphType: 'column', x: 'Member Until', xGroupBy: 'date', dateGroupBy: 'month', y: 'count' },
       filter: { board: 'people-live', rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
     { name: 'Members by tier', kind: 'CHART', chart: { board: 'people-live', graphType: 'pie', x: 'Membership Tier', xGroupBy: 'color', y: 'count' } },
+    // Renewal rate (#22): this fiscal year's membership payments by Membership Type. The column is
+    // text, so three counts (contains_text) stand in for a pie; renewal rate = (Continuing + Lapsed
+    // renewal) / all three.
+    ...['New', 'Continuing', 'Lapsed renewal'].map((type): WidgetSpec => ({
+      name: `Membership payments, ${type} (this FY)`, kind: 'NUMBER', number: { boards: ['donations'], count: true },
+      filter: { board: 'donations', rules: [{ columnTitle: 'Membership Type', operator: 'contains_text', compareValue: type },
+        { columnTitle: 'Gift Fiscal Year', operator: 'any_of', labelValues: ['@FY'] }] } })),
   ] },
   { name: 'Board Report — quarterly', boards: ['donations', 'people-live', 'people-historical', 'organizations', 'annual-giving-summary'], widgets: [
     { name: 'Raised this FY', kind: 'NUMBER', number: { boards: ['people-live', 'people-historical', 'organizations'], column: 'This Year Amount', counter: 'sum', format: 'currency' } },
