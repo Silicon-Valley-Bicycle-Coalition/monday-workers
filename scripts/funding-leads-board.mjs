@@ -24,10 +24,12 @@ const DEALS_BOARD_NAMES = ['Deals', 'Opportunities (Deals)'];
 const NEW_DEALS_BOARD_NAME = 'Opportunities (Deals)';
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/funding-leads-board.mjs <command>
-  build --workspace <id> --organizations <boardId> [--contacts <boardId>] [--apply]`;
+  build --workspace <id> --organizations <boardId> [--contacts <boardId>] [--apply]
+  convert --workspace <id> --leads <boardId> --deals <boardId> [--apply]`;
 
 const COMMANDS = {
   build: { required: ['--workspace', '--organizations'], optional: ['--contacts', '--apply'] },
+  convert: { required: ['--workspace', '--leads', '--deals'], optional: ['--apply'] },
 };
 
 const numeric = (v, flag) => {
@@ -54,6 +56,8 @@ export function parseArgs(argv) {
     workspace: seen.get('--workspace'),
     organizations: seen.get('--organizations') ?? null,
     contacts: seen.get('--contacts') ?? null,
+    leads: seen.get('--leads') ?? null,
+    deals: seen.get('--deals') ?? null,
     apply: seen.get('--apply') === true,
   };
 }
@@ -97,6 +101,121 @@ export function planBuild(existingBoards, _opts = {}) {
   for (const column of missing(leads, LEADS_COLUMNS)) steps.push({ kind: 'create_column', board: 'leads', column });
   for (const column of missing(deals, DEAL_EXTRA_COLUMNS)) steps.push({ kind: 'create_column', board: 'deals', column });
   return steps;
+}
+
+// ---- Hand-off: Pledged lead → Deal ------------------------------------------------------------
+
+const linkedIds = (value) => {
+  try {
+    return (JSON.parse(value)?.linkedPulseIds ?? []).map((l) => String(l.linkedPulseId));
+  } catch {
+    return [];
+  }
+};
+const labelsOf = (text) => (text ? text.split(',').map((t) => t.trim()).filter(Boolean) : []);
+
+/** One Leads item (id, name, column_values[{id,text,value}]) → the fields the hand-off reads. */
+export function leadFromItem(item, cols) {
+  const byId = new Map(item.column_values.map((c) => [c.id, c]));
+  const col = (title) => byId.get(cols[title]);
+  return {
+    id: String(item.id),
+    name: item.name,
+    stage: col('Stage')?.text ?? '',
+    dealLinked: linkedIds(col('Deal')?.value).length > 0,
+    organization: linkedIds(col('Organization')?.value),
+    contact: linkedIds(col('Contact')?.value),
+    amount: col('Amount')?.text || null,
+    owner: col('Owner')?.value ?? null,
+    types: labelsOf(col('Type')?.text),
+    events: labelsOf(col('Events of interest')?.text),
+  };
+}
+
+/** The Deals to create: Pledged leads whose Deal link is empty. The link is the dedupe key. */
+export function planConversions(leads) {
+  return leads
+    .filter((l) => l.stage === 'Pledged' && !l.dealLinked)
+    .map((l) => ({
+      leadId: l.id,
+      deal: {
+        name: l.name,
+        organization: l.organization,
+        contact: l.contact,
+        amount: l.amount,
+        owner: l.owner,
+        types: l.types,
+        events: l.events,
+      },
+    }));
+}
+
+const COLUMNS_BY_BOARD = `query ($ids: [ID!]) { boards(ids: $ids) { id columns { id title type } } }`;
+const LEAD_ITEMS = `query ($ids: [ID!]) {
+  boards(ids: $ids) { items_page(limit: 500) { items { id name column_values { id text value } } } }
+}`;
+const LEAD_DEAL_LINK = `query ($ids: [ID!], $col: [String!]) { items(ids: $ids) { id column_values(ids: $col) { value } } }`;
+const CREATE_ITEM = `mutation ($board: ID!, $name: String!, $cv: JSON) {
+  create_item(board_id: $board, item_name: $name, column_values: $cv) { id }
+}`;
+const SET_COLUMNS = `mutation ($board: ID!, $item: ID!, $cv: JSON!) {
+  change_multiple_column_values(board_id: $board, item_id: $item, column_values: $cv) { id }
+}`;
+
+function dealColumnValues(deal, leadId, dealCols) {
+  const cv = {};
+  const set = (title, value) => {
+    if (dealCols[title] && value !== null && value !== undefined && value !== '') cv[dealCols[title]] = value;
+  };
+  set('Lead', { item_ids: [leadId] });
+  if (deal.organization.length) set('Organization', { item_ids: deal.organization });
+  if (deal.contact.length) set('Contact', { item_ids: deal.contact });
+  set('Amount', deal.amount);
+  if (deal.owner) set('Owner', JSON.parse(deal.owner));
+  if (deal.types.length) set('Type', { labels: deal.types });
+  if (deal.events.length) set('Events of interest', { labels: deal.events });
+  return cv;
+}
+
+async function convert(args, { gql, out, err }) {
+  const meta = await gql(COLUMNS_BY_BOARD, { ids: [args.leads, args.deals] });
+  const colsOf = (id) =>
+    Object.fromEntries((meta.boards.find((b) => String(b.id) === String(id))?.columns ?? []).map((c) => [bareTitle(c.title), c.id]));
+  const leadCols = colsOf(args.leads);
+  const dealCols = colsOf(args.deals);
+  const items = (await gql(LEAD_ITEMS, { ids: [args.leads] })).boards[0].items_page.items;
+  const plan = planConversions(items.map((i) => leadFromItem(i, leadCols)));
+  out(`convert: ${plan.length} Pledged lead(s) without a Deal`);
+  if (!args.apply) {
+    out('dry run: nothing written. Re-run with --apply.');
+    return 0;
+  }
+  for (const c of plan) {
+    // Re-read the dedupe key right before writing, so a lead linked since the listing is skipped.
+    const fresh = await gql(LEAD_DEAL_LINK, { ids: [c.leadId], col: [leadCols.Deal] });
+    if (linkedIds(fresh.items?.[0]?.column_values?.[0]?.value).length) {
+      out(`skipped lead ${c.leadId}: already linked`);
+      continue;
+    }
+    const made = await gql(
+      CREATE_ITEM,
+      { board: args.deals, name: c.deal.name, cv: JSON.stringify(dealColumnValues(c.deal, c.leadId, dealCols)) },
+      { idempotent: false },
+    );
+    const dealId = String(made.create_item.id);
+    try {
+      await gql(
+        SET_COLUMNS,
+        { board: args.leads, item: c.leadId, cv: JSON.stringify({ [leadCols.Deal]: { item_ids: [dealId] } }) },
+        { idempotent: false },
+      );
+    } catch (e) {
+      err(`deal ${dealId} was created for lead ${c.leadId} but linking it failed (${errorLine(e)}); link them by hand, then re-run`);
+      return 2;
+    }
+    out(`converted lead ${c.leadId} → deal ${dealId}`);
+  }
+  return 0;
 }
 
 const BOARDS_QUERY = `query ($ws: [ID!]) {
@@ -160,6 +279,7 @@ export async function run(args, io) {
   }
   try {
     if (args.command === 'build') return await build(args, io);
+    if (args.command === 'convert') return await convert(args, io);
     io.err(`unknown command ${args.command}`);
     return 2;
   } catch (e) {

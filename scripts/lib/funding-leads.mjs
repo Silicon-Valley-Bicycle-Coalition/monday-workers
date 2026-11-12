@@ -43,6 +43,10 @@ export const LEADS_COLUMNS = [
 ];
 
 export const DEAL_EXTRA_COLUMNS = [
+  { title: 'Organization', type: 'board_relation' },
+  { title: 'Contact', type: 'board_relation' },
+  { title: 'Amount', type: 'numbers', settings: { unit: { symbol: '$', direction: 'left' } } },
+  { title: 'Owner', type: 'people' },
   { title: 'Type', type: 'dropdown', settings: { labels: labels(TYPES) } },
   { title: 'Events of interest', type: 'dropdown', settings: { labels: labels(EVENTS) } },
   { title: 'Lead', type: 'board_relation' },

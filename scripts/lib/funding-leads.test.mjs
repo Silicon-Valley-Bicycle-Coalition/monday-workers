@@ -43,6 +43,10 @@ describe('board spec', () => {
     for (const title of ['Invoice Status', 'PO Number'])
       assert.ok(DEAL_EXTRA_COLUMNS.some((c) => c.title === title), title);
   });
+  it('gives the Deal the columns the hand-off carries over', () => {
+    for (const title of ['Organization', 'Contact', 'Amount', 'Owner'])
+      assert.ok(DEAL_EXTRA_COLUMNS.some((c) => c.title === title), title);
+  });
   it('has a Deal link column, the hand-off dedupe key', () =>
     assert.equal(LEADS_COLUMNS.find((c) => c.title === 'Deal')?.type, 'board_relation'));
   it('lists the spec values', () => {
