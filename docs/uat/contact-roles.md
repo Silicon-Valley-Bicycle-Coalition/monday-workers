@@ -46,3 +46,5 @@ Boards: [Affiliations](https://bikesiliconvalley.monday.com/boards/18437342615),
 * Boards other than Sponsorships, Grants & Contracts and Donations having no **Contacts** yet;
   they switch on when they gain an Organization link.
 * An opportunity with no organization having no contacts.
+* Nothing changing at all while no affiliation has a confirmed role in **SVBC Roles**: the pass
+  deliberately leaves **Contacts** alone until at least one role exists.

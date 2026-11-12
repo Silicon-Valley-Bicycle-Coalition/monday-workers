@@ -272,7 +272,7 @@ Worker that should keep writing *before* deploying the build that reads the swit
 example, `member-portal` login returns 503). CI deploys the sandbox from `main`, so the first time:
 create the namespaces, put the sandbox keys `on` (with the real ids filled in locally), and only
 then commit the real ids — the runbook's "Merging / first deploy sequencing" has the steps. Set
-keys one Worker at a time, **never `all writes on`**: `contact-roles` stays `off` until its sandbox smoke tests pass, `people-reclassification` stays `off` until
+keys one Worker at a time, **never `all writes on`**: `contact-roles` stays `off` until its dry-run counts have been checked and its sandbox smoke tests pass, `people-reclassification` stays `off` until
 its staged one-item live check passes, and `donation-rollups` goes `on` only after its webhooks
 are subscribed.
 

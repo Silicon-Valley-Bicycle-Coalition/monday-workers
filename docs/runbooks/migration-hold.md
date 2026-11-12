@@ -11,8 +11,9 @@ The in-scope Workers, in five groups that this runbook treats differently:
   `monday-backup`, `report-digests`.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
-- **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout and smoke tests
-  (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
+- **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout: deployed while `off`,
+  its `run-complete` dry-run counts checked, the backfill run and staff roles confirmed, then
+  the smoke tests (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
   it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
   needs catching up, because the next `on` run recomputes every `Contacts` column.
 - **`people-reclassification`**: stays `off` until the staged one-item live check in its README

@@ -91,6 +91,16 @@ Behaviours worth knowing:
 * An enabled board whose role label is missing from `SVBC Roles` (a renamed or deleted label) is
   **skipped with a warning every 10 minutes, on purpose**, and its `Contacts` is left untouched,
   never blanked.
+* **Mass-removal guard:** if the Affiliations read holds no affiliation with a confirmed role at
+  all (the roles column cleared, renamed or read back empty), the run writes nothing, logs one
+  `no-confirmed-roles` warning (counts only) and reports every board `skipped:
+  "no-confirmed-roles"`. A legitimately empty roles state therefore leaves `Contacts` as it is
+  until a role exists.
+* One item whose write fails does not stop its board: it is logged once (`item-failed`, with the
+  item id and error class) and counted in the board's `failed`; the rest still write. A read error
+  fails the whole board (`failed: true`).
+* Every run ends with one `run-complete` log line: the mode and, per board, `items`, `updates`,
+  `written` and any `skipped`/`failed`. Under `off` it is the dry-run report.
 * The first large `on` run may hit the Workers subrequest cap and finish over later ticks; each
   tick only writes what still differs.
 * Logs carry counts and ids, never names or emails (`check-log-safety.mjs`).
@@ -108,8 +118,12 @@ run from the repo root with `MONDAY_API_TOKEN` in the environment (an operator's
 the other operator scripts). Both are dry runs unless given `--execute`.
 
 * `contact-roles/scripts/provision-contact-roles.mjs --env sandbox|production [--execute]`:
-  creates `SVBC Roles` and `Proposed Roles` on Affiliations and `Contacts` on every board in the
-  config, whatever is missing (idempotent by bare title). Prints the UI-only steps it cannot do.
+  creates `SVBC Roles` and `Proposed Roles` on Affiliations and each **enabled** board's
+  `contactsColumn` (`Contacts`), whatever is missing (idempotent by bare title). A disabled board is
+  listed as skipped: re-run it when that board is enabled. A same-titled column of the wrong type
+  is reported as skipped, never duplicated. After `--execute` it re-reads and exits 2 unless the
+  Affiliations role dropdowns really hold all five seed labels (Monday silently accepts a
+  malformed `defaults` payload and makes a dropdown with none). Prints the UI-only steps it cannot do.
 * `contact-roles/scripts/backfill-proposed-roles.mjs --env sandbox|production [--execute] [--report <file>]`:
   proposes roles into `Proposed Roles` only (merged with labels already there; `SVBC Roles` is
   never written; Current affiliations only). Prints counts, writes an ids-only report outside the repo.
@@ -122,26 +136,37 @@ the scripts' `node:test` files (Vitest is kept off them). Also `npm run typechec
 
 ## Deploy order and rollout checklist
 
-Each step needs the user's go-ahead. Set `contact-roles:writes on` **before** deploying a build
-that reads it, or the Worker comes up `off` (the root `CLAUDE.md` rule). CI deploys the sandbox
-Worker from `main` (`deploy-sandbox:contact-roles`), and a missing write-switch key reads as `off`,
-so a CI deploy before `writes on` is a harmless dry run. For the order of namespaces, keys and
-first deploy, see [`docs/runbooks/migration-hold.md`](../docs/runbooks/migration-hold.md) "Merging / first deploy sequencing".
+Each step needs the user's go-ahead. The Worker ships with the write switch **off** (an unset
+`contact-roles:writes` key reads as `off`), and it stays `off` until the dry-run counts look right
+and staff have confirmed roles: see "Write modes". CI deploys the sandbox Worker from `main`
+(`deploy-sandbox:contact-roles`), which is a harmless dry run for the same reason. Never use
+`all writes on` (root `README.md`, [`docs/runbooks/migration-hold.md`](../docs/runbooks/migration-hold.md)).
+For the order of namespaces, keys and first deploy, see the runbook's "Merging / first deploy sequencing".
 
 1. **Sandbox**
-   1. `node contact-roles/scripts/provision-contact-roles.mjs --env sandbox` (dry run), then `--execute`.
-   2. Inspect People and People (Historical) for an unwanted reflection column (the legacy
+   1. `MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 18210301`
+      before the first sandbox write, to see what the integration token can really reach (#18).
+   2. `node contact-roles/scripts/provision-contact-roles.mjs --env sandbox` (dry run), then `--execute`
+      (it verifies the role labels landed).
+   3. Inspect People and People (Historical) for an unwanted reflection column (the legacy
       `create_column` may ignore `allowCreateReflectionColumn: false`); remove it if present.
-   3. Create the `Roles to confirm` view on Affiliations (filter: `Proposed Roles` is not empty).
-   4. Hide `Contacts` on the sandbox "Enter a gift" form, then
+   4. Create the `Roles to confirm` view on Affiliations (filter: `Proposed Roles` is not empty).
+   5. Hide `Contacts` on the sandbox "Enter a gift" form, then
       `node scripts/check-donation-form.mjs --form 2325fd7745d3a2d425086d38358e4bd5`.
-   5. `node scripts/mark-read-only-columns.mjs --workspace 18210301 --suffix " (Sandbox)"` (dry run), then the same with `--apply` (puts 🔒 on `Contacts`). Production: `--workspace 18201685`, no `--suffix`.
-   6. `node scripts/flags.mjs contact-roles writes on --env sandbox`, **then** `npm run deploy:sandbox`.
-   7. Run the backfill dry run, then `--execute`.
-   8. Staff confirm a few roles; watch a reconcile ([UAT](../docs/uat/contact-roles.md)).
-   9. Run the smoke tests below.
-2. **Production**: the same steps with production ids (form token `567223ac739c23567e56e9057d81dbf5`, `npm run deploy`).
+   6. `node scripts/mark-read-only-columns.mjs --workspace 18210301 --suffix " (Sandbox)"` (dry run), then the same with `--apply` (puts 🔒 on `Contacts`). Production: `--workspace 18201685`, no `--suffix`.
+   7. `npm run deploy:sandbox` with the write switch left **off**. Read the `run-complete` log
+      line (`npx wrangler tail`, or Workers Logs): it carries each board's `items` and `updates`
+      counts. Confirm the counts are plausible, which proves the `is_not_empty` / `or` filters and
+      the label parsing behave. A board `skipped: "unknown-role"` or a `run-failed`/`board-failed`
+      line means fix that first. `skipped: "no-confirmed-roles"` is expected until roles exist.
+   8. Run the backfill dry run, then `--execute` (it writes `Proposed Roles` only).
+   9. Staff confirm a few roles into `SVBC Roles` ([UAT](../docs/uat/contact-roles.md)).
+   10. `node scripts/flags.mjs contact-roles writes on --env sandbox`, then watch the next
+       reconcile: `written` should equal the earlier `updates`, and a second run writes nothing.
+   11. Run the smoke tests below.
+2. **Production**: the same steps with production ids (form token `567223ac739c23567e56e9057d81dbf5`, `npm run deploy`, `--workspace 18201685`).
 3. **Enable more boards** as their Organization links appear; Leads when its redesign lands.
+   Re-run `provision-contact-roles.mjs` for each newly enabled board so it gets its `Contacts` column.
 4. **Later, separate:** retire the `Sponsor Contact` checkbox once staff have confirmed the backfill.
 
 ## Smoke tests (not provable by unit tests; verify in the sandbox first)
@@ -149,7 +174,7 @@ first deploy, see [`docs/runbooks/migration-hold.md`](../docs/runbooks/migration
 * `is_not_empty` with `compare_value: []` in `items_page` `query_params` works for board_relation
   and dropdown columns, including the `or` group the sparse read uses.
 * Writing `{"item_ids": []}` actually clears a connect-boards column (fallback: write null / `{}`).
-* The `DropdownValue { values { label } }` read shape and the dropdown write shape `{labels: [...]}`.
+* The `DropdownValue { values { label } }` item read shape (the column-level `settings_str` shape is `{labels: [{id, name}]}`) and the dropdown write shape `{labels: [...]}`.
 * `next_items_page` keeps `query_params` across pages.
 * The Status label text equals `Current`.
 * `create_column` accepts the dropdown `defaults` payload.

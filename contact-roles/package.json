@@ -1,7 +1,7 @@
 {
   "name": "contact-roles",
   "version": "0.1.0",
-  "description": "Keeps the Organization Contact Roles board in step with People: a periodic pass reconciles each organization contact's role links.",
+  "description": "Cron Worker that fills the Contacts column on organization-linked Monday boards from the confirmed SVBC Roles held by each organization's current Affiliations.",
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
