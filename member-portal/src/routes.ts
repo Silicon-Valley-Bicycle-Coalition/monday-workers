@@ -443,6 +443,21 @@ export function createApp(deps: AppDeps) {
       return c.redirect('/');
     }
 
+    // Same degrade-instead-of-fail treatment as volunteer history in loadPortalData: a Monday
+    // read failure here should cost the donor the Events tab, not the whole dashboard. Disabled
+    // and failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
+    // Started before loadPortalData and awaited after it (#99): the two are independent, and the
+    // catch is attached up front so a rejection is never unhandled when loadPortalData throws.
+    const eventsLeg: Promise<Record<string, EventRegistrationListing> | null> = eventsEnabled(deps.config)
+      ? loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now()).then(
+          (listings) => Object.fromEntries(listings.map((listing) => [listing.donorId, listing])),
+          (err: unknown) => {
+            console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
+            return null;
+          }
+        )
+      : Promise.resolve(null);
+
     const data = await loadPortalData(
       donorItemIds,
       deps.monday,
@@ -453,35 +468,26 @@ export function createApp(deps: AppDeps) {
       donationHistoryEnabled(deps.config, deps.now())
     );
     c.header('Cache-Control', NO_STORE);
-
-    // Same degrade-instead-of-fail treatment as volunteer history above: a Monday read failure
-    // here should cost the donor the Events tab, not the whole dashboard. Disabled and
-    // failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
-    let eventsByDonor: Record<string, EventRegistrationListing> | null = null;
-    if (eventsEnabled(deps.config)) {
-      try {
-        const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
-        eventsByDonor = Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
-      } catch (err) {
-        console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
-      }
-    }
+    const eventsByDonor = await eventsLeg;
 
     // The membership card is now a dashboard widget (one per donor), not a separate page — see
     // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
     // renders without a card widget; it must never take down the whole dashboard, since donation
     // history, discounts, and everything else on the page is still useful without it.
+    // The per-donor token reads are independent, so they run concurrently (#99).
     const cards: Record<string, PortalCard> = {};
     if (cardEnabled(deps.config)) {
-      for (const donor of data.donors) {
-        try {
-          const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
-          const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
-          cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
-        } catch (err) {
-          console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
-        }
-      }
+      await Promise.all(
+        data.donors.map(async (donor) => {
+          try {
+            const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
+            const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+            cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
+          } catch (err) {
+            console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
+          }
+        })
+      );
     }
 
     // "Your giving supported …" (v8): per donor, from the gifts already loaded for the Donations
