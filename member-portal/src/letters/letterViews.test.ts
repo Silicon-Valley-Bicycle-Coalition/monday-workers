@@ -91,6 +91,29 @@ describe('letterView', () => {
     expect(html).toContain('contact us');
   });
 
+  it('omits the EIN from the DAF-only letter but keeps the org name and address', () => {
+    const html = letterView(
+      { ...letter, gifts: [], totalFormatted: '$0.00', separateGifts: [{ date: '2025-03-01', amount: '$500.00' }] },
+      taxLetter,
+      'August 24, 2026',
+      'en'
+    );
+    expect(html).not.toContain('00-0000000');
+    expect(html).not.toContain('EIN');
+    expect(html).toContain('Silicon Valley Bicycle Coalition');
+    expect(html).toContain('123 Example St');
+  });
+
+  it('keeps the EIN on a mixed letter that has both ordinary and separate gifts', () => {
+    const html = letterView(
+      { ...letter, separateGifts: [{ date: '2025-03-01', amount: '$500.00' }] },
+      taxLetter,
+      'August 24, 2026',
+      'en'
+    );
+    expect(html).toContain('EIN: 00-0000000');
+  });
+
   it('escapes donor-sourced text', () => {
     const html = letterView(letter, taxLetter, 'August 24, 2026', 'en');
     expect(html).not.toContain('<script>');
