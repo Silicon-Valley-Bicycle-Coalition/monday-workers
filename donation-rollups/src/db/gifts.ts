@@ -96,6 +96,9 @@ export interface GiftsStore {
   getAnnualSummaries(): Promise<AnnualSummaryRow[]>;
   recordRun(run: CustodianRun): Promise<void>;
   lastRuns(): Promise<{ duty: string; ranAt: string; ok: boolean; report: unknown }[]>;
+  // Issue #90: deletes runs before the cutoff except each duty's latest, which carries its
+  // cursor and continuation state (lastRuns). Returns how many rows went.
+  pruneRuns(ranBeforeISO: string): Promise<number>;
 }
 
 const CHUNK = 50;
@@ -518,5 +521,14 @@ export class D1GiftsStore implements GiftsStore {
     return res.results.map((r) => ({
       duty: r.duty, ranAt: r.ran_at, ok: r.ok === 1, report: JSON.parse(r.report_json),
     }));
+  }
+
+  async pruneRuns(ranBeforeISO: string): Promise<number> {
+    const res = await this.db
+      .prepare(`DELETE FROM custodian_runs WHERE ran_at < ?1
+                AND ran_at < (SELECT MAX(ran_at) FROM custodian_runs latest WHERE latest.duty = custodian_runs.duty)`)
+      .bind(ranBeforeISO)
+      .run();
+    return res.meta.changes;
   }
 }

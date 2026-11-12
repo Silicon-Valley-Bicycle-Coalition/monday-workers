@@ -10,7 +10,8 @@ const BOARD_IDS = new Set(['1', '18427756119']);
 
 function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
   return {
-    upsertPending: vi.fn().mockResolvedValue('inserted'),
+    upsertPending: vi.fn().mockResolvedValue(undefined),
+    pruneFinished: vi.fn().mockResolvedValue(0),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockResolvedValue(null),
     listStuck: vi.fn().mockResolvedValue([]),

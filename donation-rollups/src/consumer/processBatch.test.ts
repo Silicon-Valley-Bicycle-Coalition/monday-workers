@@ -76,7 +76,8 @@ const renewalGift = { id: 'dn1', amountCents: 5000, dateISO: '2026-11-05', fisca
 
 function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
   return {
-    upsertPending: vi.fn().mockResolvedValue('inserted'),
+    upsertPending: vi.fn().mockResolvedValue(undefined),
+    pruneFinished: vi.fn().mockResolvedValue(0),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockResolvedValue(null),
     listStuck: vi.fn().mockResolvedValue([]),
@@ -131,6 +132,7 @@ function fakeGiftsStore(): GiftsStore {
     getAnnualSummaries: vi.fn().mockResolvedValue([]),
     recordRun: vi.fn().mockResolvedValue(undefined),
     lastRuns: vi.fn().mockResolvedValue([]),
+    pruneRuns: vi.fn().mockResolvedValue(0),
   };
 }
 

@@ -414,3 +414,30 @@ describe('sponsorship facts (sponsorship_event, in_kind_value_cents)', () => {
     expect(await find(store, 'sw-2')).toMatchObject({ sponsorshipEvent: 'BTWD 2026', inKindValueCents: 500 });
   });
 });
+
+// Issue #90: custodian_runs is pruned nightly, and the sponsorship backfill's scan has an index.
+describe('D1GiftsStore — run pruning and backfill index', () => {
+  beforeEach(async () => { await env.DB.prepare('DELETE FROM custodian_runs').run(); });
+
+  it('pruneRuns deletes runs before the cutoff but always keeps each duty\'s latest run', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.recordRun({ duty: 'sweep', ranAt: '2025-07-01T00:00:00Z', ok: true, report: { detail: { remaining: 0 } } });
+    await store.recordRun({ duty: 'reconcile', ranAt: '2025-01-01T00:00:00Z', ok: true, report: { n: 1 } });
+    await store.recordRun({ duty: 'reconcile', ranAt: '2025-01-02T00:00:00Z', ok: true, report: { n: 2 } });
+    await store.recordRun({ duty: 'reconcile', ranAt: '2026-06-01T00:00:00Z', ok: true, report: { n: 3 } });
+
+    expect(await store.pruneRuns('2026-01-01T00:00:00Z')).toBe(2);
+    const runs = await store.lastRuns();
+    expect(runs.find((r) => r.duty === 'sweep')?.ranAt).toBe('2025-07-01T00:00:00Z');
+    expect(runs.find((r) => r.duty === 'reconcile')?.report).toEqual({ n: 3 });
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM custodian_runs').first<{ n: number }>();
+    expect(count?.n).toBe(2);
+  });
+
+  it('giftsMissingSponsorshipFacts reads through a partial index rather than scanning the table', async () => {
+    const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN SELECT monday_item_id FROM gifts
+      WHERE (sponsorship_event IS NULL OR in_kind_value_cents IS NULL) AND removed_at IS NULL
+        AND gift_type IN (?3, ?4) AND monday_item_id > ?1 ORDER BY monday_item_id LIMIT ?2`).bind('', 1, 'a', 'b').all<{ detail: string }>();
+    expect(plan.results.map((r) => r.detail).join('; ')).toMatch(/USING (COVERING )?INDEX idx_gifts_missing_sponsorship/);
+  });
+});

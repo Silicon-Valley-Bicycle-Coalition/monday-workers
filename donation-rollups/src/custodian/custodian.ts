@@ -327,7 +327,15 @@ async function runSweep(deps: CustodianDeps, now: Date): Promise<DutyReport> {
 // sends count against the subrequest budget, sendBatch caps at 100.
 const REQUEUE_BATCHES_PER_RUN = 35;
 const REQUEUE_STUCK_AFTER_MS = 24 * 60 * 60 * 1000;
+// Issue #90: neither table was ever pruned. A finished pending row older than this has no
+// coalescing left to do (its next webhook inserts a fresh one); a custodian run older than this is
+// history, except each duty's latest, which carries its cursor.
+const PENDING_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const RUNS_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
+  const prunedPending = await deps.pending.pruneFinished(new Date(now.getTime() - PENDING_RETENTION_MS).toISOString());
+  const prunedRuns = await deps.gifts.pruneRuns(new Date(now.getTime() - RUNS_RETENTION_MS).toISOString());
+  const pruned = { prunedPending, prunedRuns };
   const cutoff = new Date(now.getTime() - REQUEUE_STUCK_AFTER_MS).toISOString();
   const stuck = await deps.pending.listStuck(cutoff, REQUEUE_BATCHES_PER_RUN * 100 + 1);
   const slice = stuck.slice(0, REQUEUE_BATCHES_PER_RUN * 100);
@@ -336,13 +344,13 @@ async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
       .map((r) => ({ ...(r.kind !== 'donation' ? { kind: r.kind } : {}), donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
   }
   const remaining = stuck.length - slice.length;
-  if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0 } };
+  if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0, ...pruned } };
   // Stuck rows mean the consumer lost work earlier — report it, don't just quietly fix it.
   return {
     ok: false,
     summary: `re-enqueued ${slice.length} stuck recomputes received before ${cutoff}` +
       (remaining > 0 ? ' — more remain, continuing next run' : ''),
-    detail: { enqueued: slice.length, remaining, oldest: slice[0]!.receivedAt },
+    detail: { enqueued: slice.length, remaining, oldest: slice[0]!.receivedAt, ...pruned },
   };
 }
 

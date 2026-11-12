@@ -999,6 +999,26 @@ describe('requeue duty', () => {
     expect(byId.get('dn-stuck')).not.toHaveProperty('kind');
   });
 
+  // Issue #90: pending_recomputes and custodian_runs were never pruned.
+  it('prunes finished rows past 30 days and custodian runs past 180, keeping each duty\'s latest run', async () => {
+    await seed('done-old', '2026-06-01T00:00:00Z', 'written');   // 61 days before now
+    await seed('done-recent', '2026-07-15T00:00:00Z', 'written');
+    await seed('dead-old', '2026-06-01T00:00:00Z', 'failed');
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'reconcile', ranAt: '2025-12-01T00:00:00Z', ok: true, report: {} });
+    await gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true, report: {} });
+    await gifts.recordRun({ duty: 'sweep', ranAt: '2025-07-01T00:00:00Z', ok: true, report: { detail: { remaining: 0 } } });
+
+    const report = await runDuty('requeue', deps({ archived: [], updates: [] }, [], testConfig({ alertItemId: null })));
+
+    const left = await env.DB.prepare('SELECT donation_item_id FROM pending_recomputes ORDER BY donation_item_id').all<{ donation_item_id: string }>();
+    expect(left.results.map((r) => r.donation_item_id)).toEqual(['dead-old', 'done-recent']);
+    const runs = await env.DB.prepare('SELECT duty, ran_at FROM custodian_runs ORDER BY ran_at').all<{ duty: string; ran_at: string }>();
+    // The sweep's only run stays however old; this requeue run is recorded too.
+    expect(runs.results.map((r) => `${r.duty}@${r.ran_at.slice(0, 10)}`)).toEqual(['sweep@2025-07-01', 'reconcile@2026-07-31', 'requeue@2026-08-01']);
+    expect(report.detail).toMatchObject({ prunedPending: 1, prunedRuns: 1 });
+  });
+
   it('is quiet when nothing is stuck', async () => {
     await seed('fresh', '2026-07-31T23:00:00Z', 'queued');
     const state = { archived: [], updates: [] as { itemId: number; body: string }[] };

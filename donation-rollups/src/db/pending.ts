@@ -15,10 +15,8 @@ export interface PendingStatusPatch {
   writtenAt?: string;
 }
 
-export type UpsertResult = 'inserted' | 'updated' | 'duplicate';
-
 export interface PendingStore {
-  upsertPending(row: NewPending): Promise<UpsertResult>;
+  upsertPending(row: NewPending): Promise<void>;
   updateStatus(donationItemId: string, status: PendingStatus, patch?: PendingStatusPatch): Promise<void>;
   getPending(donationItemId: string): Promise<PendingRow | null>;
   // Rows the queue never finished — still 'received' (enqueue never happened) or 'queued'
@@ -26,6 +24,10 @@ export interface PendingStore {
   // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5), with
   // their kind — a registration re-sent as a donation message would read the wrong board.
   listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]>;
+  // Issue #90: deletes 'written' and 'dropped' rows received before the cutoff; returns how many.
+  // Open rows stay for listStuck and 'failed' rows stay as a human's signal. A pruned row costs
+  // nothing: the next webhook for that donation inserts a fresh one.
+  pruneFinished(receivedBeforeISO: string): Promise<number>;
 }
 
 export interface StuckPending { donationItemId: string; donationBoardId: string; receivedAt: string; kind: RecomputeKind }
@@ -64,14 +66,10 @@ export class D1PendingStore implements PendingStore {
   // Keyed on the Donation item — a redelivery for the same donation replaces the
   // pending row's event_id and resets to 'received' rather than being dropped, since
   // it's still the same recompute work either way (donation-level dedup, same
-  // reasoning as funraise-sync's entity-keyed events table).
-  async upsertPending(row: NewPending): Promise<UpsertResult> {
-    const existing = await this.db
-      .prepare(`SELECT donation_item_id FROM pending_recomputes WHERE donation_item_id = ?1`)
-      .bind(row.donationItemId)
-      .first<{ donation_item_id: string }>();
-
-    const result = await this.db
+  // reasoning as funraise-sync's entity-keyed events table). One statement (issue #90): nothing
+  // reads whether the row was new.
+  async upsertPending(row: NewPending): Promise<void> {
+    await this.db
       .prepare(
         `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at, kind)
          VALUES (?1, ?2, ?3, 'received', ?4, ?5)
@@ -85,9 +83,6 @@ export class D1PendingStore implements PendingStore {
       )
       .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt, row.kind ?? 'donation')
       .run();
-
-    if (existing !== null && result.meta.changes === 0) return 'duplicate';
-    return existing === null ? 'inserted' : 'updated';
   }
 
   async updateStatus(donationItemId: string, status: PendingStatus, patch: PendingStatusPatch = {}): Promise<void> {
@@ -130,5 +125,13 @@ export class D1PendingStore implements PendingStore {
       .bind(olderThanISO, limit)
       .all<{ donation_item_id: string; donation_board_id: string; received_at: string; kind: RecomputeKind }>();
     return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at, kind: r.kind }));
+  }
+
+  async pruneFinished(receivedBeforeISO: string): Promise<number> {
+    const res = await this.db
+      .prepare(`DELETE FROM pending_recomputes WHERE status IN ('written', 'dropped') AND received_at < ?1`)
+      .bind(receivedBeforeISO)
+      .run();
+    return res.meta.changes;
   }
 }
