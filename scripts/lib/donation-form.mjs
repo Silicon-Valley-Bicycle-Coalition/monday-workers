@@ -22,7 +22,6 @@ export const EXPECTED_QUESTIONS = {
   'Check/Reference Number': false,
   Donor: false,
   Campaign: false,
-  'Thank you already sent?': false,
 };
 
 // Pure. `form` is the monday `form(formToken:)` result: { questions: [{ id, type, title, visible,
