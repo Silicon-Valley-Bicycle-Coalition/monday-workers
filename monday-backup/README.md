@@ -172,8 +172,11 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   (`src/usage.ts`, at most three alerts per UTC day, tracked in D1 by migration 0003). Monday caps
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
-  cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 1,500–2,000
-  calls, and once the cap is enforced, hitting it fails each remaining board at once rather than
+  cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 500–700
+  calls (read from the code, not yet measured live; issue #95 cut it from 1,500–2,000): one request
+  per board for its schema, first items page and first updates page together, then items 500 to a
+  page (`src/monday/client.ts`, which halves a page that hits the per-query complexity cap or times
+  out). Once the cap is enforced, hitting it fails each remaining board at once rather than
   retrying (`priorityWorkspaceIds` means the CRM workspace is already captured by then). The limit
   read is `total`, so a purchased API add-on
   raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
