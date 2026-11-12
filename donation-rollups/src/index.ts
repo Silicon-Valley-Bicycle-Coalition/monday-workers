@@ -3,6 +3,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, environmentOf, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
+import { jwtRequired } from './mondayJwt';
 import { D1PendingStore } from './db/pending';
 import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
@@ -109,6 +110,7 @@ export default {
           send: (message: RecomputeQueueMessage, opts?: { delaySeconds: number }) => env.RECOMPUTE_QUEUE.send(message, opts).then(() => undefined),
         },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
+        jwtPolicy: { signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED) },
         writeMode: () => readWriteMode(env, WORKER),
       });
       return app.fetch(request, env, ctx);

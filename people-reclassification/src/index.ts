@@ -10,6 +10,7 @@ import { moveOneToPeople, runPass, type PassDeps } from './pass';
 import { runDaily } from './daily';
 import { promoteFromWebhook } from './promote';
 import { createApp } from './routes';
+import { jwtRequired } from './mondayJwt';
 import { checkRequestRateLimit } from './rateLimit';
 import { errorText } from './logSafe';
 import type { Env } from './types';
@@ -42,6 +43,7 @@ export default {
         promote: (opts) => promoteFromWebhook(deps, opts).catch((err) => console.error(`promote ${opts.runId}: ${errorText(err)}`)),
         requestLabel: deps.config.promote.requestLabel,
         webhookSecret: env.PROMOTE_WEBHOOK_SECRET,
+        jwtPolicy: { signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED) },
         defer: (work) => ctx.waitUntil(work),
       });
       return app.fetch(request, env, ctx);
