@@ -9,9 +9,8 @@
     "currentLabel": "Current"
   },
   "boards": [
-    { "name": "Sponsorships", "boardId": "18435720619", "orgColumn": "Organization", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
-    { "name": "Grants & Contracts", "boardId": "18435720591", "orgColumn": "Funder", "contactsColumn": "Contacts", "role": "Grants", "enabled": true },
-    { "name": "BP Request Form", "boardId": "18435720706", "orgColumn": "Host Organization", "contactsColumn": "Contacts", "role": "Bike Parking", "enabled": true },
+    { "name": "Sponsorships", "boardId": "18439568033", "orgColumn": "Organization", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
+    { "name": "Grants & Contracts", "boardId": "18439568066", "orgColumn": "Funder", "contactsColumn": "Contacts", "role": "Grants", "enabled": true },
     { "name": "Donations", "boardId": "18437342657", "orgColumn": "Matched By", "contactsColumn": "Contacts", "role": "Donation Matching", "enabled": true }
   ]
 }

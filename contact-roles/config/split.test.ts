@@ -24,8 +24,17 @@ describe('config split', () => {
     }
   });
 
-  it('every sandbox board is enabled', () => {
+  it('the sandbox has only the boards that exist in CRM Sandbox v4, all enabled', () => {
+    expect(sandbox.boards.map((b) => b.name)).toEqual(['Sponsorships', 'Grants & Contracts', 'Donations']);
     expect(sandbox.boards.every((b) => b.enabled)).toBe(true);
+  });
+
+  it('BP Request Form, Bike Education and Leads are production-only', () => {
+    const sandboxNames = new Set(sandbox.boards.map((b) => b.name));
+    for (const name of ['BP Request Form', 'Bike Education Lifecycle Tracker', 'Leads']) {
+      expect(sandboxNames.has(name), name).toBe(false);
+      expect(production.boards.some((b) => b.name === name), name).toBe(true);
+    }
   });
 
   it('both shipped configs validate', () => {
