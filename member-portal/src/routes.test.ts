@@ -760,6 +760,42 @@ describe('GET /', () => {
   });
 });
 
+// #99: the stylesheet and logo are linked from every page at content-hashed paths and cached as
+// immutable, instead of being inlined into each no-store page.
+describe('GET /assets/:file', () => {
+  it('serves the stylesheet and logo every page links to, as immutable', async () => {
+    const app = createApp(makeDeps());
+    const html = await (await app.request('/')).text();
+    const cssPath = /<link rel="stylesheet" href="(\/assets\/portal\.[0-9a-f]{16}\.css)"/.exec(html)?.[1];
+    const logoPath = /<img class="site-logo" src="(\/assets\/logo\.[0-9a-f]{16}\.svg)"/.exec(html)?.[1];
+    expect(cssPath).toBeDefined();
+    expect(logoPath).toBeDefined();
+    expect(html).not.toContain('<style>');
+    expect(html).not.toContain('<svg');
+
+    const css = await app.request(cssPath!);
+    expect(css.status).toBe(200);
+    expect(css.headers.get('Content-Type')).toBe('text/css; charset=utf-8');
+    expect(css.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(await css.text()).toContain('--svbc-gold');
+    // Baseline CSP and nosniff still apply to the asset responses themselves.
+    expect(css.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+    expect(css.headers.get('X-Content-Type-Options')).toBe('nosniff');
+
+    const logo = await app.request(logoPath!);
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get('Content-Type')).toBe('image/svg+xml');
+    expect(logo.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(await logo.text()).toMatch(/^<svg/);
+  });
+
+  it('404s an unknown or stale hash rather than serving other bytes as immutable', async () => {
+    const app = createApp(makeDeps());
+    expect((await app.request('/assets/portal.0000000000000000.css')).status).toBe(404);
+    expect((await app.request('/assets/portal.css')).status).toBe(404);
+  });
+});
+
 describe('GET /favicon.png', () => {
   it('serves a cacheable PNG', async () => {
     const app = createApp(makeDeps());
@@ -1398,7 +1434,8 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(html).toContain('class="member-card"');
     expect(html).toContain('Member #donor-1');
-    expect(html).toContain('<svg');
+    expect(html).toContain('<svg'); // the QR code stays inline (per-donor, not cacheable)
+    expect(html).toMatch(/<div class="member-card-logo"><img src="\/assets\/logo\.[0-9a-f]{16}\.svg"/);
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
 
     expect(await cardTokenStore.getActiveToken('donor-1')).toEqual(expect.any(String));

@@ -61,6 +61,7 @@ import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
 import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
+import { IMMUTABLE_CACHE_CONTROL, staticAssetFor } from './assets/static';
 import { decodeEmailLogoPng } from './assets/emailLogo';
 import { DEFAULT_CSP, securityHeaders } from './securityHeaders';
 import { errorText } from './logSafe';
@@ -188,6 +189,15 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // The stylesheet and logo every page links to, at content-hashed paths (#99; see
+  // assets/static.ts). Immutable for a year: a changed file gets a new path, so a cached copy is
+  // never stale. Any other /assets/ path is a 404.
+  app.get('/assets/:file', (c) => {
+    const asset = staticAssetFor(c.req.path);
+    if (!asset) return c.notFound();
+    return c.body(asset.body, 200, { 'Content-Type': asset.contentType, 'Cache-Control': IMMUTABLE_CACHE_CONTROL });
+  });
 
   // Served from an embedded constant rather than a Workers Assets binding (none configured here)
   // — long cache header since the bytes never change without a redeploy.
