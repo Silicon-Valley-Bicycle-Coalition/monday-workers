@@ -42,7 +42,7 @@ afterward, same steps.
 | 4 | Date received | Date | yes | Date | Default today. For a check, the date it was deposited/received, not written. |
 | 5 | Gift type | SingleSelect | yes | Gift Type | **Gift Type is a text column**; a form select can't write to text. Options: either convert the column to Dropdown (touches `salesforce-import`, `donation-rollups` classify, `funraise-sync` reads — check first) or use ShortText with the allowed values listed in the description. Recommend: leave column as text, ShortText, default `Donation`. |
 | 6 | Campaign | ConnectedBoards (Campaigns) | no | Campaign | |
-| 7 | Thank you already sent? | Boolean | no | Thank You Sent | Description: "Check if the donor has already been thanked (note, email, call). Leave blank and gifts of $200+ go on the 'Major gifts to thank' list." Unchecked keeps a Major-tier gift on that dashboard list. |
+| 7 | ~~Thank you already sent?~~ | Boolean | — | Thank You Sent | **Hidden (2026-11-12).** The form is only for entering checks and cash. Thank-yous are sent separately and recorded on the board, so the form doesn't set this column. |
 | 8 | Payment method | ShortText | no | Payment Method | Default `Cash/Check`. Column already exists. |
 | 9 | Check / reference number | ShortText | no | Check/Reference Number | Column already exists. |
 
@@ -103,7 +103,7 @@ I added a **Form** view to the sandbox Donations board (view 291635597) in the M
 The sandbox form (token `2325fd7745d3a2d425086d38358e4bd5`) is configured: 28 integration-owned
 and legacy questions hidden; visible are Name, Amount\*, Date received\* (defaults to today),
 Status\*, Gift Type\* (default `Donation`), Anonymous Donor, Payment Method (default
-`Cash/Check`), Check/Reference Number, Donor, Campaign, "Thank you already sent?". Login is
+`Cash/Check`), Check/Reference Number, Donor, Campaign ("Thank you already sent?" was hidden on 2026-11-12). Login is
 required (`requireLogin: enabled`). Configure through `form_questions_editor` (`visible`,
 `required`, `description`, `settings.default_answer`, `defaultCurrentDate`); it works on a form
 view created in the UI.
