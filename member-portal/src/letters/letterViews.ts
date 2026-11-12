@@ -54,6 +54,9 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
       ${giftTable(data.separateGifts)}`
       : '';
   const retain = hasContributions ? 'Please retain this letter for your tax records. ' : '';
+  // A DAF-only letter is not a tax receipt: the donor took the deduction when they funded the
+  // account, so the EIN is left off. A mixed letter keeps it for the ordinary gifts.
+  const einLine = hasContributions ? `<br>\n        EIN: ${escapeHtml(taxLetter.ein)}` : '';
 
   return `
     <style>
@@ -85,8 +88,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
     <article class="letter" lang="en">
       <header>
         <p><strong>${escapeHtml(taxLetter.orgLegalName)}</strong><br>
-        ${escapeHtml(taxLetter.officeAddress)}<br>
-        EIN: ${escapeHtml(taxLetter.ein)}</p>
+        ${escapeHtml(taxLetter.officeAddress)}${einLine}</p>
       </header>
       <p>${escapeHtml(generatedOn)}</p>
       <p>Dear ${escapeHtml(data.donorName)},</p>
