@@ -33,14 +33,14 @@ Every command is a dry run until `--apply`. `build` and `convert` are idempotent
 Creates one Deals item per Pledged lead whose **Deal** link is empty and links it back; the link is
 the dedupe key, so re-running or moving Stage out of Pledged and back creates nothing. Relation links
 are read from `linked_item_ids` (the plain `value` of a relation column is null). If the Deal is
-created but linking fails, it prints both ids; link them by hand, then re-run.
+created but linking fails (or the run dies between the two writes), the next run finds that Deal by its Lead link and re-links it ("relinked") instead of creating another.
 
 ## seed
 
 Reads `active.csv`, `prospects.csv`, `lapsed.csv` (exported from the "2027 Sponsor List" tabs
 "2026 BTWD, Summit, Misc", "Prospects", "Lapsed Donors") from `--data`, which must live outside this
 repo (convention: `monday-migration/data/funding-leads/`, gitignored). It writes `review.txt`
-(near-match organization names, never merged) and `ledger.json` (resume). Owners and contacts are not
+(near-match organization names for companies on the sheet, never merged; counts of skipped, collapsed and unreadable rows) and `ledger.json` (resume; tied to the two board ids). If a run dies while creating a lead, `ledger.json` holds a `pending` marker and the next run refuses to continue: look in Monday for that lead, then clear `pending`. A header mismatch in any tab (e.g. no `Company` column) stops the run with exit 2. Owners and contacts are not
 linked in this pass; `review.txt` counts rows with contact data.
 
 ## Not done yet

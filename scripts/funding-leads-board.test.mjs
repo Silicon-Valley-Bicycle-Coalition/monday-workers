@@ -359,3 +359,120 @@ describe('every board id must belong to the sandbox workspace', () => {
     assert.equal(calls.mutations, 0);
   });
 });
+
+describe('parseCsv robustness', () => {
+  it('strips a byte-order mark and trims headers', () =>
+    assert.deepEqual(parseCsv('\ufeffCompany , Notes\nAcme,x\n'), [{ Company: 'Acme', Notes: 'x' }]));
+  it('reads CRLF line endings and a quoted newline', () =>
+    assert.deepEqual(parseCsv('Company,Notes\r\nAcme,"a\nb"\r\n'), [{ Company: 'Acme', Notes: 'a\nb' }]));
+});
+
+describe('hardening from the final review', () => {
+  // I1: a Deal that already names this lead (left by a crash) is linked, not duplicated.
+  it('convert repairs the link to an orphan Deal instead of creating another', async () => {
+    const state = { creates: 0, links: 0 };
+    const cols = (t) => t.map((x) => ({ id: `id_${x}`, title: x, type: 'text' }));
+    const gql = async (query, variables) => {
+      if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: WS } })) };
+      if (/create_item/.test(query)) { state.creates += 1; return { create_item: { id: '501' } }; }
+      if (/change_multiple_column_values/.test(query)) { state.links += 1; return { change_multiple_column_values: { id: '1' } }; }
+      if (/items\(ids/.test(query)) return { items: [{ id: '1', column_values: [{ linked_item_ids: [] }] }] };
+      if (/items_page/.test(query)) {
+        const onDeals = String(variables.ids?.[0]) === '8';
+        return { boards: [{ items_page: { cursor: null, items: onDeals
+          ? [{ id: '500', name: 'x', column_values: [{ id: 'id_Lead', text: '', value: null, linked_item_ids: ['1'] }] }]
+          : [{ id: '1', name: 'Example Co', column_values: [{ id: 'id_Stage', text: 'Pledged', value: null }, { id: 'id_Deal', text: '', value: null, linked_item_ids: [] }] }] } }] };
+      }
+      return { boards: [{ id: '7', columns: cols(['Stage', 'Deal', 'Lead']) }, { id: '8', columns: cols(['Lead', 'Type']) }] };
+    };
+    assert.equal(await run(parseArgs(['convert', '--workspace', WS, '--leads', '7', '--deals', '8', '--apply']), { gql, ...sink() }), 0);
+    assert.equal(state.creates, 0);
+    assert.equal(state.links, 1);
+  });
+
+  // I2: past the first 500 leads.
+  it('convert reads every page of leads', async () => {
+    const calls = [];
+    const cols = (t) => t.map((x) => ({ id: `id_${x}`, title: x, type: 'text' }));
+    const lead = (id, stage) => ({ id, name: 'L', column_values: [{ id: 'id_Stage', text: stage, value: null }, { id: 'id_Deal', text: '', value: null, linked_item_ids: [] }] });
+    const gql = async (query, variables) => {
+      calls.push(query);
+      if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: WS } })) };
+      if (/next_items_page/.test(query)) return { next_items_page: { cursor: null, items: [lead('2', 'Pledged')] } };
+      if (/items_page/.test(query)) {
+        if (String(variables.ids?.[0]) === '8') return { boards: [{ items_page: { cursor: null, items: [] } }] };
+        return { boards: [{ items_page: { cursor: 'c1', items: [lead('1', 'Research')] } }] };
+      }
+      return { boards: [{ id: '7', columns: cols(['Stage', 'Deal']) }, { id: '8', columns: cols(['Lead']) }] };
+    };
+    const s = sink();
+    assert.equal(await run(parseArgs(['convert', '--workspace', WS, '--leads', '7', '--deals', '8']), { gql, ...s }), 0);
+    assert.ok(s.lines.some((l) => /1 Pledged lead/.test(l)), s.lines.join('|'));
+  });
+
+  // I4: a tab whose headers are wrong stops the run.
+  it('seed exits 2 when a tab lacks its company column, instead of skipping every row', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'seed-'));
+    writeFileSync(join(dir, 'active.csv'), 'Co,Event\nExample,BTWD\n');
+    writeFileSync(join(dir, 'prospects.csv'), 'Account Name\nA\n');
+    writeFileSync(join(dir, 'lapsed.csv'), 'Company\nB\n');
+    const gql = async (q, v) => (/workspace \{ id \}/.test(q) ? { boards: v.ids.map((id) => ({ id, workspace: { id: WS } })) } : { boards: [{ id: '7', columns: [], items_page: { cursor: null, items: [] } }] });
+    const s = sink();
+    assert.equal(await run(parseArgs(['seed', '--workspace', WS, '--leads', '7', '--orgs', '11', '--data', dir]), { gql, ...s }), 2);
+    assert.ok(s.lines.some((l) => /active\.csv/.test(l) && /Company/.test(l)));
+  });
+
+  // I5: rows collapsed by the dedupe key are counted, not silently lost.
+  it('planSeed counts the rows it collapses', () => {
+    const e = { tab: 'prospects', plan: mapSheetRow('prospects', { 'Account Name': 'Example Co', 'Sponsorship Cycle': '2024 BTWD' }) };
+    assert.equal(planSeed([e, e], []).collapsed, 1);
+  });
+
+  // I6: near-matches that were missed, and noise that should not appear.
+  it('flags punctuation, suffix and leading-"the" variants of a sheet company', () => {
+    const p = (name) => ({ tab: 'prospects', plan: mapSheetRow('prospects', { 'Account Name': name }) });
+    const pairs = (names, existing = []) => planSeed(names.map(p), existing).reviewPairs;
+    assert.equal(pairs(['Google', 'Google, Inc.']).length, 1);
+    assert.equal(pairs(['AT&T', 'AT & T']).length, 1);
+    assert.equal(pairs(['The Acme Co', 'Acme Co']).length, 1);
+  });
+  it('does not list near-matches that involve no sheet company', () =>
+    assert.equal(planSeed([{ tab: 'prospects', plan: mapSheetRow('prospects', { 'Account Name': 'Other Co' }) }], [{ id: '1', name: 'Smith' }, { id: '2', name: 'Smith Household' }]).reviewPairs.length, 0));
+});
+
+describe('seed interruption', () => {
+  function fixture(failOnLead) {
+    const dir = mkdtempSync(join(tmpdir(), 'seed-'));
+    writeFileSync(join(dir, 'active.csv'), 'Event,Company\nBTWD,One Co\nBTWD,Two Co\n');
+    writeFileSync(join(dir, 'prospects.csv'), 'Account Name\n');
+    writeFileSync(join(dir, 'lapsed.csv'), 'Company\n');
+    let leadCreates = 0;
+    const cols = ['Organization', 'Stage'].map((t) => ({ id: `id_${t}`, title: t, type: 'text' }));
+    const gql = async (query, variables) => {
+      if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: WS } })) };
+      if (/create_item/.test(query)) {
+        if (String(variables.board) === '7' && ++leadCreates === failOnLead) throw new Error('boom');
+        return { create_item: { id: String(1000 + Math.random() * 1000) } };
+      }
+      if (/items_page/.test(query)) return { boards: [{ items_page: { cursor: null, items: [] } }] };
+      return { boards: [{ id: '7', columns: cols }] };
+    };
+    return { dir, gql };
+  }
+  const argv = (dir) => ['seed', '--workspace', WS, '--leads', '7', '--orgs', '11', '--data', dir, '--apply'];
+  it('a run that dies mid-create refuses to resume until the operator checks Monday', async () => {
+    const { dir, gql } = fixture(2);
+    assert.equal(await run(parseArgs(argv(dir)), { gql, ...sink() }), 2);
+    const s = sink();
+    assert.equal(await run(parseArgs(argv(dir)), { gql: fixture(0).gql, ...s }), 2);
+    assert.ok(s.lines.some((l) => /interrupted/i.test(l)));
+  });
+  it('refuses a ledger written for different boards', async () => {
+    const { dir, gql } = fixture(0);
+    assert.equal(await run(parseArgs(argv(dir)), { gql, ...sink() }), 0);
+    const other = ['seed', '--workspace', WS, '--leads', '9', '--orgs', '11', '--data', dir, '--apply'];
+    const s = sink();
+    assert.equal(await run(parseArgs(other), { gql, ...s }), 2);
+    assert.ok(s.lines.some((l) => /different boards/i.test(l)));
+  });
+});

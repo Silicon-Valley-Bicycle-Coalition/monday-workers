@@ -146,3 +146,16 @@ describe('mapSheetRow', () => {
     assert.deepEqual(plan.contacts, []);
   });
 });
+
+describe('amounts from a spreadsheet export', () => {
+  const row = (amount) => mapSheetRow('active', { Company: 'Example Co', 'Grant Amount': amount });
+  it('reads currency formatting', () => {
+    assert.equal(row('$5,000').amount, 5000);
+    assert.equal(row('5,000.50').amount, 5000.5);
+    assert.equal(row(' $5000.00 ').amount, 5000);
+  });
+  it('flags a non-blank amount it cannot read, and leaves a blank one alone', () => {
+    assert.deepEqual([row('TBD').amount, row('TBD').amountUnparsed], [null, true]);
+    assert.equal(row('').amountUnparsed, false);
+  });
+});

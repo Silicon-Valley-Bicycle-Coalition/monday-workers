@@ -96,6 +96,14 @@ export function parseEmails(cell) {
 }
 
 const text = (v) => String(v ?? '').trim();
+
+/** "$5,000" / "5,000.50" / "5000" → number; a blank is null; anything else is null and flagged. */
+function parseAmount(raw) {
+  const cleaned = text(raw).replace(/[$,\s]/g, '');
+  if (cleaned === '') return { amount: null, amountUnparsed: false };
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? { amount: n, amountUnparsed: false } : { amount: null, amountUnparsed: true };
+}
 const contact = (name, emailCell) => {
   const emails = parseEmails(emailCell);
   return name || emails.length ? [{ name, emails }] : [];
@@ -106,11 +114,10 @@ const contact = (name, emailCell) => {
  * 'prospects' or 'lapsed'; keys are the sheet's column headings.
  */
 export function mapSheetRow(tab, row) {
-  const base = { types: ['Sponsorship'], btwdTier: null, funderStatus: null, amount: null, owners: [] };
+  const base = { types: ['Sponsorship'], btwdTier: null, funderStatus: null, amount: null, amountUnparsed: false, owners: [] };
   if (tab === 'active') {
     const org = text(row.Company);
     const tier = text(row.Type);
-    const amount = text(row['Grant Amount']);
     return {
       ...base,
       orgName: org,
@@ -119,7 +126,7 @@ export function mapSheetRow(tab, row) {
       events: parseEvents(row.Event),
       btwdTier: BTWD_TIERS.includes(tier) ? tier : null,
       stage: /^true$/i.test(text(row['Scheduled Meeting'])) ? 'Scheduled Meeting' : 'Research',
-      amount: amount === '' || Number.isNaN(Number(amount)) ? null : Number(amount),
+      ...parseAmount(row['Grant Amount']),
       owners: text(row['Staff Lead']).split(',').map(text).filter(Boolean),
       contacts: contact(
         [text(row['Primary Contact (First Name)']), text(row['(Last Name)'])].filter(Boolean).join(' '),

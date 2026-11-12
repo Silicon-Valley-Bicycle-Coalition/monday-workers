@@ -13,7 +13,7 @@
 // Exit 0: nothing wrong. Exit 1: a check failed. Exit 2: usage or API error, or a write whose
 // outcome is unknown. Dry runs send no mutation.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
@@ -156,9 +156,21 @@ export function planConversions(leads) {
 }
 
 const COLUMNS_BY_BOARD = `query ($ids: [ID!]) { boards(ids: $ids) { id columns { id title type } } }`;
-const LEAD_ITEMS = `query ($ids: [ID!]) {
-  boards(ids: $ids) { items_page(limit: 500) { items { id name column_values { id text value ... on BoardRelationValue { linked_item_ids } } } } }
-}`;
+const ITEM_FIELDS = 'id name column_values { id text value ... on BoardRelationValue { linked_item_ids } }';
+const ITEMS_FIRST = `query ($ids: [ID!]) { boards(ids: $ids) { items_page(limit: 500) { cursor items { ${ITEM_FIELDS} } } } }`;
+const ITEMS_NEXT = `query ($cursor: String!) { next_items_page(limit: 500, cursor: $cursor) { cursor items { ${ITEM_FIELDS} } } }`;
+
+/** Every item on a board, following the cursor past the first 500. */
+async function fetchAllItems(gql, board) {
+  const first = (await gql(ITEMS_FIRST, { ids: [board] })).boards[0].items_page;
+  const items = [...first.items];
+  for (let cursor = first.cursor; cursor; ) {
+    const page = (await gql(ITEMS_NEXT, { cursor })).next_items_page;
+    items.push(...page.items);
+    cursor = page.cursor;
+  }
+  return items;
+}
 const LEAD_DEAL_LINK = `query ($ids: [ID!], $col: [String!]) { items(ids: $ids) { id column_values(ids: $col) { ... on BoardRelationValue { linked_item_ids } } } }`;
 const CREATE_ITEM = `mutation ($board: ID!, $name: String!, $cv: JSON) {
   create_item(board_id: $board, item_name: $name, column_values: $cv) { id }
@@ -188,8 +200,13 @@ async function convert(args, { gql, out, err }) {
     Object.fromEntries((meta.boards.find((b) => String(b.id) === String(id))?.columns ?? []).map((c) => [bareTitle(c.title), c.id]));
   const leadCols = colsOf(args.leads);
   const dealCols = colsOf(args.deals);
-  const items = (await gql(LEAD_ITEMS, { ids: [args.leads] })).boards[0].items_page.items;
+  const items = await fetchAllItems(gql, args.leads);
   const plan = planConversions(items.map((i) => leadFromItem(i, leadCols)));
+  // A Deal left by a run that died between create and link already names its lead (I1): link it, never duplicate it.
+  const orphanByLead = new Map();
+  if (dealCols.Lead)
+    for (const d of await fetchAllItems(gql, args.deals))
+      for (const lid of linkedIds(d.column_values.find((c) => c.id === dealCols.Lead))) if (!orphanByLead.has(lid)) orphanByLead.set(lid, String(d.id));
   out(`convert: ${plan.length} Pledged lead(s) without a Deal`);
   if (!args.apply) {
     out('dry run: nothing written. Re-run with --apply.');
@@ -202,12 +219,18 @@ async function convert(args, { gql, out, err }) {
       out(`skipped lead ${c.leadId}: already linked`);
       continue;
     }
-    const made = await gql(
-      CREATE_ITEM,
-      { board: args.deals, name: c.deal.name, cv: JSON.stringify(dealColumnValues(c.deal, c.leadId, dealCols)) },
-      { idempotent: false },
-    );
-    const dealId = String(made.create_item.id);
+    const orphan = orphanByLead.get(c.leadId);
+    const dealId =
+      orphan ??
+      String(
+        (
+          await gql(
+            CREATE_ITEM,
+            { board: args.deals, name: c.deal.name, cv: JSON.stringify(dealColumnValues(c.deal, c.leadId, dealCols)) },
+            { idempotent: false },
+          )
+        ).create_item.id,
+      );
     try {
       await gql(
         SET_COLUMNS,
@@ -218,7 +241,7 @@ async function convert(args, { gql, out, err }) {
       err(`deal ${dealId} was created for lead ${c.leadId} but linking it failed (${errorLine(e)}); link them by hand, then re-run`);
       return 2;
     }
-    out(`converted lead ${c.leadId} → deal ${dealId}`);
+    out(`${orphan ? 'relinked' : 'converted'} lead ${c.leadId} → deal ${dealId}`);
   }
   return 0;
 }
@@ -231,6 +254,7 @@ export function parseCsv(text) {
   let row = [];
   let cell = '';
   let quoted = false;
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (quoted) {
@@ -256,7 +280,16 @@ export function parseCsv(text) {
     rows.push(row);
   }
   const [header, ...data] = rows.filter((r) => r.some((c) => c !== ''));
-  return data.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
+  return data.map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ''])));
+}
+
+const SUFFIX = new Set(['inc', 'llc', 'co', 'corp', 'corporation', 'company', 'ltd']);
+/** For spotting near-matches only (never for matching): no punctuation, leading "the", trailing inc/llc/co. */
+function looseKey(key) {
+  let words = key.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  if (words[0] === 'the') words = words.slice(1);
+  while (words.length > 1 && SUFFIX.has(words.at(-1))) words = words.slice(0, -1);
+  return words.join(' ');
 }
 
 /**
@@ -269,6 +302,7 @@ export function planSeed(entries, existingOrgs) {
   const orgCreates = new Map();
   const leads = new Map();
   let skippedBlank = 0;
+  let collapsed = 0;
   for (const { tab, plan } of entries) {
     if (!plan.orgKey) {
       skippedBlank += 1;
@@ -276,12 +310,22 @@ export function planSeed(entries, existingOrgs) {
     }
     if (!known.has(plan.orgKey) && !orgCreates.has(plan.orgKey)) orgCreates.set(plan.orgKey, { key: plan.orgKey, name: plan.orgName });
     const key = `${plan.orgKey}|${tab}|${plan.events.join('+')}`;
-    if (!leads.has(key)) leads.set(key, { key, tab, plan, orgKey: plan.orgKey, orgId: known.get(plan.orgKey) ?? null });
+    if (leads.has(key)) collapsed += 1;
+    else leads.set(key, { key, tab, plan, orgKey: plan.orgKey, orgId: known.get(plan.orgKey) ?? null });
   }
+  const sheetKeys = new Set(entries.map((e) => e.plan.orgKey).filter(Boolean));
   const keys = [...new Set([...known.keys(), ...orgCreates.keys()])];
+  const loose = new Map(keys.map((k) => [k, looseKey(k)]));
   const reviewPairs = [];
-  for (const a of keys) for (const b of keys) if (a !== b && b.startsWith(`${a} `)) reviewPairs.push([a, b]);
-  return { orgCreates: [...orgCreates.values()], leadCreates: [...leads.values()], reviewPairs, skippedBlank };
+  for (let i = 0; i < keys.length; i++)
+    for (let j = i + 1; j < keys.length; j++) {
+      const [a, b] = [keys[i], keys[j]];
+      if (!sheetKeys.has(a) && !sheetKeys.has(b)) continue; // only variants of a company on the sheet matter
+      const [la, lb] = [loose.get(a), loose.get(b)];
+      if (!la || !lb) continue;
+      if (la === lb || lb.startsWith(`${la} `) || la.startsWith(`${lb} `)) reviewPairs.push([a, b]);
+    }
+  return { orgCreates: [...orgCreates.values()], leadCreates: [...leads.values()], reviewPairs, skippedBlank, collapsed };
 }
 
 const ORG_PAGE = `query ($ids: [ID!]) { boards(ids: $ids) { items_page(limit: 500) { cursor items { id name } } } }`;
@@ -298,6 +342,7 @@ async function fetchOrgs(gql, board) {
   return orgs;
 }
 
+const REQUIRED_HEADER = { active: 'Company', prospects: 'Account Name', lapsed: 'Company' };
 const TAB_FILES = { active: 'active.csv', prospects: 'prospects.csv', lapsed: 'lapsed.csv' };
 
 async function seed(args, { gql, out, err }) {
@@ -308,11 +353,30 @@ async function seed(args, { gql, out, err }) {
       err(`missing ${file} in the data directory`);
       return 2;
     }
-    for (const row of parseCsv(readFileSync(path, 'utf8'))) entries.push({ tab, plan: mapSheetRow(tab, row) });
+    const rows = parseCsv(readFileSync(path, 'utf8'));
+    const need = REQUIRED_HEADER[tab];
+    if (rows.length && !(need in rows[0])) {
+      err(`${file} has no "${need}" column (found: ${Object.keys(rows[0]).join(', ')})`);
+      return 2;
+    }
+    for (const row of rows) entries.push({ tab, plan: mapSheetRow(tab, row) });
   }
   const ledgerPath = join(args.data, 'ledger.json');
-  const ledger = existsSync(ledgerPath) ? JSON.parse(readFileSync(ledgerPath, 'utf8')) : { orgs: {}, leads: [] };
-  const saveLedger = () => writeFileSync(ledgerPath, JSON.stringify(ledger));
+  const ledger = existsSync(ledgerPath)
+    ? JSON.parse(readFileSync(ledgerPath, 'utf8'))
+    : { leadsBoard: args.leads, orgsBoard: args.orgs, orgs: {}, leads: [], pending: null };
+  if (ledger.leadsBoard !== args.leads || ledger.orgsBoard !== args.orgs) {
+    err('ledger.json was written for different boards; move it aside to seed these boards');
+    return 2;
+  }
+  if (ledger.pending) {
+    err(`the previous run was interrupted at lead ${ledger.pending.index}; check Monday for it (its key is in ledger.json under "pending"), then clear "pending" and re-run`);
+    return 2;
+  }
+  const saveLedger = () => {
+    writeFileSync(`${ledgerPath}.tmp`, JSON.stringify(ledger));
+    renameSync(`${ledgerPath}.tmp`, ledgerPath);
+  };
 
   const meta = await gql(COLUMNS_BY_BOARD, { ids: [args.leads] });
   const cols = Object.fromEntries(meta.boards[0].columns.map((c) => [bareTitle(c.title), c.id]));
@@ -323,16 +387,20 @@ async function seed(args, { gql, out, err }) {
   const planned = planSeed(entries, existing);
   const leadCreates = planned.leadCreates.filter((l) => !ledger.leads.includes(l.key));
   const contactRows = entries.filter((e) => e.plan.contacts.length).length;
+  const unparsedAmounts = entries.filter((e) => e.plan.amountUnparsed).length;
   const review = [
     `organizations to create: ${planned.orgCreates.length}`,
     `leads to create: ${leadCreates.length} (already in ledger: ${planned.leadCreates.length - leadCreates.length})`,
     `rows with a blank company, skipped: ${planned.skippedBlank}`,
+    `rows collapsed into an earlier lead (same company, tab and events): ${planned.collapsed}`,
+    `amounts that could not be read, left empty: ${unparsedAmounts}`,
     `rows with contact data, not linked this pass: ${contactRows}`,
     'near-match organization names (not merged):',
     ...planned.reviewPairs.map(([a, b]) => `  "${a}"  vs  "${b}"`),
   ];
   writeFileSync(join(args.data, 'review.txt'), `${review.join('\n')}\n`);
   out(`seed: ${planned.orgCreates.length} organization(s), ${leadCreates.length} lead(s) to create; ${planned.reviewPairs.length} near-match pair(s) in review.txt`);
+  out(`skipped ${planned.skippedBlank} blank-company row(s); collapsed ${planned.collapsed} duplicate row(s); ${unparsedAmounts} unreadable amount(s)`);
   if (!args.apply) {
     out('dry run: nothing written. Re-run with --apply.');
     return 0;
@@ -344,7 +412,7 @@ async function seed(args, { gql, out, err }) {
     ledger.orgs[o.key] = String(made.create_item.id);
     saveLedger();
   }
-  for (const l of leadCreates) {
+  for (const [index, l] of leadCreates.entries()) {
     const p = l.plan;
     const cv = {};
     const set = (title, value) => {
@@ -357,8 +425,12 @@ async function seed(args, { gql, out, err }) {
     if (p.btwdTier) set('BTWD tier', { label: p.btwdTier });
     if (p.funderStatus) set('Funder Status', { label: p.funderStatus });
     if (p.amount !== null) set('Amount', String(p.amount));
+    // Marked before the write: if this run dies here, the next one refuses to guess whether it landed (I7).
+    ledger.pending = { key: l.key, index: index + 1 };
+    saveLedger();
     await gql(CREATE_ITEM, { board: args.leads, name: p.name, cv: JSON.stringify(cv) }, { idempotent: false });
     ledger.leads.push(l.key);
+    ledger.pending = null;
     saveLedger();
   }
   out(`created ${planned.orgCreates.length} organization(s) and ${leadCreates.length} lead(s)`);
