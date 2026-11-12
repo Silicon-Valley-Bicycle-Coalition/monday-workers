@@ -81,6 +81,13 @@ from the Opportunity.
 - Multi-event "Sponsorship Cycle" strings ("2024 BTWD; 2024 Advocacy Summit; …") map to Events of
   interest, not to multiple items.
 
+## Decision after review (user)
+
+- **Active-tab rows merge by company.** The 2026 sheet has one row per company per event, but a
+  sponsor is one commitment: seed produces **one lead per company** with the events unioned and the
+  **amounts summed** (an event listed twice counts once; blank amounts are skipped; all blank stays
+  empty). Owners and contacts are unioned, the furthest stage wins. Other tabs are not merged.
+
 ## Calls made after the builder check (author's calls, not user decisions)
 
 - **Hand-off is one-shot and idempotent.** The lead stays on Leads as Pledged history (it is not

@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, assertSandboxWorkspace, mapSheetRow, normalizeOrgName } from './lib/funding-leads.mjs';
+import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, STAGES, assertSandboxWorkspace, mapSheetRow, normalizeOrgName } from './lib/funding-leads.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 const LEADS_BOARD_NAME = 'Funding Leads';
@@ -283,6 +283,47 @@ export function parseCsv(text) {
   return data.map((r) => Object.fromEntries(header.map((h, i) => [h.trim(), r[i] ?? ''])));
 }
 
+/**
+ * The active tab has one row per company per event, but a sponsor is one commitment: merge those rows
+ * into one lead (events unioned, owners and contacts unioned, the furthest stage, amounts summed). An
+ * event listed twice counts once, so a duplicated row never doubles the total. Other tabs are untouched.
+ */
+function mergeActiveRows(entries) {
+  const out = [];
+  const groups = new Map();
+  let merged = 0;
+  const union = (a, b, same = (x, y) => x === y) => [...a, ...b.filter((y) => !a.some((x) => same(x, y)))];
+  const rank = (stage) => STAGES.findIndex((st) => st.label === stage);
+  for (const e of entries) {
+    if (e.tab !== 'active' || !e.plan.orgKey) {
+      out.push(e);
+      continue;
+    }
+    const event = e.plan.events[0] ?? '';
+    let g = groups.get(e.plan.orgKey);
+    if (!g) {
+      g = { tab: 'active', plan: { ...e.plan, events: [...e.plan.events], owners: [...e.plan.owners], contacts: [...e.plan.contacts] }, amounts: new Map() };
+      groups.set(e.plan.orgKey, g);
+      out.push(g);
+    } else {
+      merged += 1;
+      const p = g.plan;
+      p.events = union(p.events, e.plan.events);
+      p.owners = union(p.owners, e.plan.owners);
+      p.contacts = union(p.contacts, e.plan.contacts, (x, y) => JSON.stringify(x) === JSON.stringify(y));
+      if (rank(e.plan.stage) > rank(p.stage)) p.stage = e.plan.stage;
+      p.btwdTier ??= e.plan.btwdTier;
+      p.amountUnparsed ||= e.plan.amountUnparsed;
+    }
+    if (e.plan.amount !== null && g.amounts.get(event) == null) g.amounts.set(event, e.plan.amount);
+  }
+  for (const g of groups.values()) {
+    const known = [...g.amounts.values()];
+    g.plan.amount = known.length ? known.reduce((a, b) => a + b, 0) : null;
+  }
+  return { entries: out.map(({ tab, plan }) => ({ tab, plan })), merged };
+}
+
 const SUFFIX = new Set(['inc', 'llc', 'co', 'corp', 'corporation', 'company', 'ltd']);
 /** For spotting near-matches only (never for matching): no punctuation, leading "the", trailing inc/llc/co. */
 function looseKey(key) {
@@ -297,12 +338,13 @@ function looseKey(key) {
  * One organization per normalized name, one lead per (company, tab, events); near-matches (one name
  * is the other plus more words) are listed for review and never merged.
  */
-export function planSeed(entries, existingOrgs) {
+export function planSeed(rawEntries, existingOrgs) {
+  const { entries, merged } = mergeActiveRows(rawEntries);
   const known = new Map(existingOrgs.map((o) => [normalizeOrgName(o.name), o.id]));
   const orgCreates = new Map();
   const leads = new Map();
   let skippedBlank = 0;
-  let collapsed = 0;
+  let collapsed = merged;
   for (const { tab, plan } of entries) {
     if (!plan.orgKey) {
       skippedBlank += 1;
