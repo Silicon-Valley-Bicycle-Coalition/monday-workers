@@ -213,7 +213,7 @@ describe('ensureBoards', () => {
 
     expect(defaultsByBoardAndTitle['971:Status']).toBeUndefined();
     expect(JSON.parse(defaultsByBoardAndTitle['972:Status']!).labels).toEqual(
-      { 0: 'Received', 1: 'Received (Historical)', 2: 'Failed', 3: 'Pending', 4: 'Lost' });
+      { 0: 'Received', 1: 'Received (Historical)', 2: 'Failed', 3: 'Pending', 4: 'Closed Lost' });
   });
 
   it('Stakeholder Type is created at load with the full docs/22 label set, so configure finds it present (#46)', async () => {

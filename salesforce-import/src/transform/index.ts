@@ -395,7 +395,7 @@ export async function runTransform(args: string[]): Promise<number> {
   }
   const lostCount = payloads.filter((p) => p.board === 'donations'
     && (p.columns['Status'] as { label?: string } | undefined)?.label === LOST).length;
-  warnings.push(`donations: ${lostCount} gifts Lost — pipeline pitches closed lost or withdrawn, and open ` +
+  warnings.push(`donations: ${lostCount} gifts Closed Lost — pipeline pitches closed lost or withdrawn, and open ` +
     `stages dated before FY${staleBeforeFY} (docs/32)`);
   if (ebOrders.multiOrderOpportunities > 0) {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +

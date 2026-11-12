@@ -115,7 +115,7 @@ export interface LetterSettings {
 export interface DonationsConfig {
   // Donations-board status labels that count as real gifts — everywhere: portal donation
   // history, tax-letter gift lists and totals, and the January letter-cron sweep. The board's
-  // vocabulary is ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Lost'] (seeded by
+  // vocabulary is ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Closed Lost'] (seeded by
   // salesforce-import); only the two Received labels belong here. 'Received (Historical)' is
   // included deliberately — migrated historical gifts are real gifts and belong on tax letters.
   // Unlike volunteerHistory.completedStatuses, an empty array is a config error, not
