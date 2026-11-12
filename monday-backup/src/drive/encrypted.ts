@@ -44,8 +44,8 @@ export class EncryptedDriveClient implements DriveClient {
     return this.inner.ensureFolder(parentFolderId, folderName);
   }
 
-  async createFile(folderId: string, filename: string, _mimeType: string): Promise<DriveFileWriter> {
-    const encryptor = await SnapshotEncryptor.create(await this.key());
+  async createFile(folderId: string, filename: string, _mimeType: string, binding?: string): Promise<DriveFileWriter> {
+    const encryptor = await SnapshotEncryptor.create(await this.key(), requireBinding(binding, filename));
     const writer = await this.inner.createFile(folderId, `${filename}${ENCRYPTED_SUFFIX}`, ENCRYPTED_MIME_TYPE);
     const encoder = new TextEncoder();
     let started = false;
@@ -80,11 +80,17 @@ export class EncryptedDriveClient implements DriveClient {
     return this.inner.findFile(folderId, filename.endsWith('.jsonl') ? `${filename}${ENCRYPTED_SUFFIX}` : filename);
   }
 
-  readLines(fileId: string): AsyncGenerator<string> {
-    return linesOf(this.readBytes(fileId));
+  readLines(fileId: string, binding?: string): AsyncGenerator<string> {
+    return linesOf(this.readBytes(fileId, binding));
   }
 
-  async *readBytes(fileId: string): AsyncGenerator<Uint8Array> {
-    yield* decryptChunks(await this.key(), this.inner.readBytes(fileId));
+  async *readBytes(fileId: string, binding?: string): AsyncGenerator<Uint8Array> {
+    yield* decryptChunks(await this.key(), this.inner.readBytes(fileId), requireBinding(binding, fileId));
   }
+}
+
+// Every encrypted file is bound to its run and name; there is no unbound mode.
+function requireBinding(binding: string | undefined, what: string): string {
+  if (binding === undefined || binding === '') throw new Error(`${what}: an encrypted snapshot file needs its binding (snapshot folder and file name)`);
+  return binding;
 }

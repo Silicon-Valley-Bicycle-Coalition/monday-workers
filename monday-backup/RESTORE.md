@@ -85,10 +85,18 @@ needs the key the manifest's `encryption.keyId` names. Get it from where the ope
 outside the Shared Drive, into a file only you can read, and pass that file with `--key-file`
 (or put the key in `BACKUP_ENCRYPTION_KEY`). Never paste the key itself onto the command line,
 where it lands in shell history. The tool checks the manifest's MAC first, then decrypts in
-memory and checks every file. Any of these stops it, naming the file: a wrong key, a changed
-manifest, a file cut short or changed, or any plaintext `.jsonl` when a key is given. A
-`monday-backup/2` snapshot is restored **without** a key, and the tool warns that nothing in it is
-authenticated: check in Drive that its files each have one revision. To look inside one file without restoring,
+memory and checks every file. Any of these stops it, naming the file:
+* a wrong key, or a changed manifest;
+* a file cut short or changed;
+* a file from another run, or renamed;
+* a file missing from the manifest's list, or one not on it;
+* any plaintext `.jsonl` when a key is given;
+* a download folder still named like a run (`YYYY-MM-DD run-N`) that isn't the manifest's run.
+
+Keep the folder name Drive gives the download, or rename it to something that isn't a run name.
+A `monday-backup/2` snapshot is restored **without** a key and only with
+`--allow-plaintext-snapshot`. The tool warns that nothing in it is authenticated, so check in Drive
+that its files each have one revision first. To look inside one file without restoring,
 `npm run decrypt -- <file>.jsonl.enc --key-file <path>` prints it (plaintext CRM data: delete what
 you save).
 
@@ -100,7 +108,8 @@ npm run restore -- "$HOME/restore/2026-09-24 run-7" --workspace <target-workspac
   --key-file "$HOME/restore/backup.key"
 ```
 
-(`--key-file` only for an encrypted snapshot; repeat it in the commands below.)
+(`--key-file` for an encrypted snapshot, `--allow-plaintext-snapshot` instead for a
+`monday-backup/2` one; repeat it in the commands below.)
 
 Nothing is written. It prints each board and doc it would create, the totals, and every
 warning. Read the warnings — they are the list of things you'll fix by hand afterwards.

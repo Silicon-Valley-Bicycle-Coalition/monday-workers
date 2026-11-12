@@ -17,6 +17,10 @@ Dry run by default: prints what it would create and writes nothing. See RESTORE.
   --key-file <path>         File holding the base64 snapshot encryption key, for an
                             encrypted snapshot (*.jsonl.enc). Or set BACKUP_ENCRYPTION_KEY.
                             Older, plaintext snapshots need no key.
+  --allow-plaintext-snapshot
+                            Accept a snapshot with no encrypted files (format
+                            monday-backup/2, from before encryption). Nothing in such a
+                            snapshot is authenticated; refused without this flag.
 `;
 
 export interface RestoreArgs {
@@ -30,6 +34,7 @@ export interface RestoreArgs {
   intoSourceWorkspace: boolean;
   // A path, never the key itself: a key on the command line lands in shell history.
   keyFile?: string;
+  allowPlaintextSnapshot: boolean;
 }
 
 const list = (value: string): string[] =>
@@ -48,7 +53,7 @@ export function parseRestoreArgs(argv: string[], today: Date): RestoreArgs {
       continue;
     }
     const name = arg.slice(2);
-    if (name === 'execute' || name === 'into-source-workspace') {
+    if (name === 'execute' || name === 'into-source-workspace' || name === 'allow-plaintext-snapshot') {
       flags.set(name, true);
       continue;
     }
@@ -78,6 +83,7 @@ export function parseRestoreArgs(argv: string[], today: Date): RestoreArgs {
     ledgerPath: typeof ledger === 'string' ? ledger : `${snapshotDir}/restore-ledger.jsonl`,
     intoSourceWorkspace: flags.get('into-source-workspace') === true,
     keyFile: typeof keyFile === 'string' ? keyFile : undefined,
+    allowPlaintextSnapshot: flags.get('allow-plaintext-snapshot') === true,
   };
 }
 

@@ -271,11 +271,19 @@ wraps the Drive client; the format is documented at the top of `src/crypto/snaps
   still obvious from Drive. Its last field, `manifestMac`, is an HMAC-SHA256 over the JSON of
   everything before it, under a key HKDF-derived from the secret. The restore checks it before it
   trusts any field.
+* **Files are bound to their run.** Every frame also authenticates the file's binding,
+  `<snapshot folder>/<file name>` (e.g. `2026-08-25 run-17/board-1.jsonl`). The MACed manifest
+  lists the run's `snapshotFolder` and every file it wrote (`files`). The restore requires the
+  `.enc` files to be exactly that list, with nothing extra and nothing missing, and decrypts each
+  under its binding. A genuine file copied in from another night, or renamed into another board's
+  place, therefore fails. A download folder still named like a run must be the manifest's run.
 * **No downgrade at restore.** With a key given, or any `.enc` file in the folder, the restore
   refuses every plaintext `.jsonl` whatever the manifest says. It also refuses a manifest that fails
   its MAC, and a `monday-backup/3`-or-later manifest without `encryption`. Swapping the ciphertext
-  for plaintext and stripping the manifest back to v2 therefore fails. Plaintext-era (v2) snapshots
-  restore only with no key, and with a warning that nothing in them is authenticated.
+  for plaintext and stripping the manifest back to v2 therefore fails. A snapshot with no encrypted
+  files is refused unless the operator passes `--allow-plaintext-snapshot`, with no key; it then
+  restores with a warning that nothing in it is authenticated. That is only for v2 snapshots, from
+  before encryption.
 * **Symmetric, not public-key.** The issue suggested encrypting to a public key whose private
   half only the restore operator holds. The Worker has to read its own files back (a retried
   step re-counts a file it already uploaded, `tallyBoardFile` in `src/backup.ts`), so it holds
@@ -284,7 +292,8 @@ wraps the Drive client; the format is documented at the top of `src/crypto/snaps
   through the Monday binding, so the threat the issue names (the Drive side) is covered.
 * **Reading a snapshot back** is `npm run restore -- … --key-file <path>` (RESTORE.md "The
   encryption key"), or `npm run decrypt -- <file>.jsonl.enc --key-file <path>` for one file. The
-  restore still reads older `monday-backup/2` snapshots, which are plaintext and need no key.
+  restore still reads older `monday-backup/2` snapshots, which are plaintext and need no key
+  but do need `--allow-plaintext-snapshot`.
 
 **Losing the key loses every snapshot encrypted with it.** Keep a copy outside the Shared Drive,
 somewhere the restore operator can reach without Cloudflare or Google, such as a password

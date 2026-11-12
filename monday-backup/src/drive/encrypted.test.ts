@@ -59,7 +59,7 @@ describe('EncryptedDriveClient', () => {
   it('writes <name>.enc as ciphertext the key decrypts, and reads its lines back', async () => {
     const mem = memoryDrive();
     const drive = new EncryptedDriveClient(mem.drive, KEY_B64);
-    const writer = await drive.createFile('folder', 'board-1.jsonl', 'application/x-ndjson');
+    const writer = await drive.createFile('folder', 'board-1.jsonl', 'application/x-ndjson', 'run-1/board-1.jsonl');
     const lines = Array.from({ length: 300 }, (_, i) => JSON.stringify({ type: 'item', item: { id: `${i}`, name: 'Ada Lovelace'.repeat(30) } }));
     for (const line of lines) await writer.write(`${line}\n`);
     await writer.close();
@@ -68,12 +68,12 @@ describe('EncryptedDriveClient', () => {
     expect(file.name).toBe('board-1.jsonl.enc');
     expect(file.mimeType).toBe('application/octet-stream');
     expect(new TextDecoder().decode(mem.all(id))).not.toContain('Ada');
-    expect(new TextDecoder().decode(await decryptBytes(await importSnapshotKey(KEY_B64), mem.all(id)))).toBe(lines.map((l) => `${l}\n`).join(''));
+    expect(new TextDecoder().decode(await decryptBytes(await importSnapshotKey(KEY_B64), mem.all(id), 'run-1/board-1.jsonl'))).toBe(lines.map((l) => `${l}\n`).join(''));
 
     const found = await drive.findFile('folder', 'board-1.jsonl');
     expect(found?.id).toBe(id);
     const read: string[] = [];
-    for await (const line of drive.readLines(id)) read.push(line);
+    for await (const line of drive.readLines(id, 'run-1/board-1.jsonl')) read.push(line);
     expect(read).toEqual(lines);
   });
 
@@ -120,7 +120,7 @@ describe('EncryptedDriveClient', () => {
     let aborted = false;
     const inner = mem.drive.createFile;
     mem.drive.createFile = async (...args) => ({ ...(await inner(...args)), abort: async () => void (aborted = true) });
-    const writer = await new EncryptedDriveClient(mem.drive, KEY_B64).createFile('folder', 'board-1.jsonl', 'application/x-ndjson');
+    const writer = await new EncryptedDriveClient(mem.drive, KEY_B64).createFile('folder', 'board-1.jsonl', 'application/x-ndjson', 'run-1/board-1.jsonl');
     await writer.write('x\n');
     await writer.abort();
     expect(aborted).toBe(true);

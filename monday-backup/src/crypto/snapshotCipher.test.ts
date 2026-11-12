@@ -3,6 +3,7 @@ import {
   decryptBytes,
   decryptChunks,
   ENCRYPTION_SCHEME,
+  fileBinding,
   FRAME_SIZE,
   HEADER_LENGTH,
   importSnapshotKey,
@@ -18,6 +19,8 @@ const decoder = new TextDecoder();
 const KEY_B64 = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i)));
 const OTHER_KEY_B64 = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => 255 - i)));
 
+const B = fileBinding('2026-08-25 run-17', 'board-1.jsonl');
+
 function concat(parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let offset = 0;
@@ -29,7 +32,7 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 async function encrypt(keyB64: string, pieces: string[]): Promise<Uint8Array> {
-  const enc = await SnapshotEncryptor.create(await importSnapshotKey(keyB64));
+  const enc = await SnapshotEncryptor.create(await importSnapshotKey(keyB64), B);
   const out: Uint8Array[] = [enc.header];
   for (const piece of pieces) out.push(...(await enc.push(encoder.encode(piece))));
   out.push(await enc.finish());
@@ -67,7 +70,7 @@ describe('snapshot encryption', () => {
     const bytes = await encrypt(KEY_B64, [text]);
     expect(decoder.decode(bytes)).not.toContain('Ada');
     expect(decoder.decode(bytes.subarray(0, 8))).toBe('MBKENC01');
-    expect(decoder.decode(await decryptBytes(await importSnapshotKey(KEY_B64), bytes))).toBe(text);
+    expect(decoder.decode(await decryptBytes(await importSnapshotKey(KEY_B64), bytes, B))).toBe(text);
   });
 
   it('round-trips across many frames, fed and read in odd-sized pieces', async () => {
@@ -76,14 +79,14 @@ describe('snapshot encryption', () => {
     const bytes = await encrypt(KEY_B64, pieces);
     expect(bytes.length).toBeGreaterThan(3 * FRAME_SIZE);
     const out: Uint8Array[] = [];
-    for await (const part of decryptChunks(await importSnapshotKey(KEY_B64), chunked(bytes, 7_777))) out.push(part);
+    for await (const part of decryptChunks(await importSnapshotKey(KEY_B64), chunked(bytes, 7_777), B)) out.push(part);
     expect(decoder.decode(concat(out))).toBe(pieces.join(''));
   });
 
   it('encrypts an empty file to a header and one final frame', async () => {
     const bytes = await encrypt(KEY_B64, []);
     expect(bytes.length).toBe(HEADER_LENGTH + 4 + 16);
-    expect((await decryptBytes(await importSnapshotKey(KEY_B64), bytes)).length).toBe(0);
+    expect((await decryptBytes(await importSnapshotKey(KEY_B64), bytes, B)).length).toBe(0);
   });
 
   it('uses a fresh salt per file, so the same plaintext never encrypts the same way twice', async () => {
@@ -97,30 +100,37 @@ describe('snapshot encryption', () => {
   it('names the key a file needs when given the wrong one', async () => {
     const bytes = await encrypt(KEY_B64, ['secret\n']);
     const right = await importSnapshotKey(KEY_B64);
-    await expect(decryptBytes(await importSnapshotKey(OTHER_KEY_B64), bytes)).rejects.toThrow(new RegExp(`key ${right.id}`));
+    await expect(decryptBytes(await importSnapshotKey(OTHER_KEY_B64), bytes, B)).rejects.toThrow(new RegExp(`key ${right.id}`));
   });
 
   it('refuses a file that is not an encrypted snapshot', async () => {
-    await expect(decryptBytes(await importSnapshotKey(KEY_B64), encoder.encode('{"type":"board"}\n'))).rejects.toThrow(/not an encrypted/);
+    await expect(decryptBytes(await importSnapshotKey(KEY_B64), encoder.encode('{"type":"board"}\n'), B)).rejects.toThrow(/not an encrypted/);
   });
 
   it('detects tampering', async () => {
     const bytes = await encrypt(KEY_B64, ['secret donor data\n']);
     const tampered = bytes.slice();
     tampered[HEADER_LENGTH + 6] = tampered[HEADER_LENGTH + 6]! ^ 1;
-    await expect(decryptBytes(await importSnapshotKey(KEY_B64), tampered)).rejects.toThrow(/tampered|corrupt/);
+    await expect(decryptBytes(await importSnapshotKey(KEY_B64), tampered, B)).rejects.toThrow(/tampered|corrupt/);
   });
 
   it('detects a file cut short at a frame boundary', async () => {
     const pieces = Array.from({ length: 100 }, () => 'y'.repeat(1_000) + '\n');
     const bytes = await encrypt(KEY_B64, pieces);
     const firstFrameEnd = HEADER_LENGTH + 4 + FRAME_SIZE + 16;
-    await expect(decryptBytes(await importSnapshotKey(KEY_B64), bytes.subarray(0, firstFrameEnd))).rejects.toThrow(/truncated/);
+    await expect(decryptBytes(await importSnapshotKey(KEY_B64), bytes.subarray(0, firstFrameEnd), B)).rejects.toThrow(/truncated/);
   });
 
   it('detects bytes after the final frame', async () => {
     const bytes = await encrypt(KEY_B64, ['a\n']);
-    await expect(decryptBytes(await importSnapshotKey(KEY_B64), concat([bytes, new Uint8Array([1, 2, 3])]))).rejects.toThrow(/after the final frame/);
+    await expect(decryptBytes(await importSnapshotKey(KEY_B64), concat([bytes, new Uint8Array([1, 2, 3])]), B)).rejects.toThrow(/after the final frame/);
+  });
+
+  it('binds a file to its run and name: another run or another name fails to decrypt', async () => {
+    const key = await importSnapshotKey(KEY_B64);
+    const bytes = await encrypt(KEY_B64, ['donor data\n']);
+    await expect(decryptBytes(key, bytes, fileBinding('2026-08-26 run-18', 'board-1.jsonl'))).rejects.toThrow(/not written as 2026-08-26 run-18\/board-1.jsonl/);
+    await expect(decryptBytes(key, bytes, fileBinding('2026-08-25 run-17', 'board-2.jsonl'))).rejects.toThrow(/fails authentication/);
   });
 
   it('MACs a manifest so only the same key verifies it, and any edit fails', async () => {

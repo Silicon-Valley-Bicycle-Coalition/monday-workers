@@ -16,12 +16,13 @@ describe('parseRestoreArgs', () => {
       ledgerPath: 'snap/2026-09-24 run-7/restore-ledger.jsonl',
       intoSourceWorkspace: false,
       keyFile: undefined,
+      allowPlaintextSnapshot: false,
     });
   });
 
   it('parses every option', () => {
     const args = parseRestoreArgs(
-      ['dir', '--workspace', '5', '--execute', '--boards', '10, 11', '--docs', 'none', '--suffix', ' [drill]', '--ledger', '/tmp/l.jsonl', '--into-source-workspace', '--key-file', '/keys/backup.key'],
+      ['dir', '--workspace', '5', '--execute', '--boards', '10, 11', '--docs', 'none', '--suffix', ' [drill]', '--ledger', '/tmp/l.jsonl', '--into-source-workspace', '--key-file', '/keys/backup.key', '--allow-plaintext-snapshot'],
       today,
     );
     expect(args).toMatchObject({
@@ -32,6 +33,7 @@ describe('parseRestoreArgs', () => {
       ledgerPath: '/tmp/l.jsonl',
       intoSourceWorkspace: true,
       keyFile: '/keys/backup.key',
+      allowPlaintextSnapshot: true,
     });
   });
 

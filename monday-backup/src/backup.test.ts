@@ -872,12 +872,14 @@ describe('runSnapshot', () => {
       const file = fake.files.find((f) => f.filename === 'board-1.jsonl.enc')!;
       expect(file.mimeType).toBe('application/octet-stream');
       expect(file.writes.join('')).not.toContain('Donations');
-      const plain = new TextDecoder().decode(await decryptBytes(await importSnapshotKey(keyB64), bytesOf(file.writes.join(''))));
+      const plain = new TextDecoder().decode(await decryptBytes(await importSnapshotKey(keyB64), bytesOf(file.writes.join('')), '2026-08-25 run-1/board-1.jsonl'));
       expect(plain.split('\n').filter((l) => l !== '').map((l) => (JSON.parse(l) as { type: string }).type)).toEqual(['board', 'item', 'item']);
       expect(fake.manifest()).toMatchObject({
         format: 'monday-backup/3',
         encryption: { scheme: 'monday-backup-aes256gcm-stream/1', keyId: (await importSnapshotKey(keyB64)).id },
         itemCountsByBoard: { '1': 2 },
+        snapshotFolder: '2026-08-25 run-1',
+        files: ['board-1.jsonl'],
       });
 
       // A rerun into the same folder finds the encrypted file and counts it by decrypting it.

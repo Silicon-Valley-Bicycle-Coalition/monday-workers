@@ -2,7 +2,7 @@
 // (`npm run restore -- …`), never in the Worker. All logic lives in src/restore/ (unit-tested);
 // this file only does I/O. Procedure: RESTORE.md.
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { importSnapshotKey } from '../src/crypto/snapshotCipher';
 import { MondayGraphQL } from '../src/monday/graphql';
 import { DryRunRestoreApi, MondayRestoreApi } from '../src/restore/api';
@@ -23,7 +23,7 @@ async function main(): Promise<number> {
   const entries = readdirSync(args.snapshotDir)
     .filter((name) => name === 'manifest.json' || name.endsWith('.jsonl') || name.endsWith('.jsonl.enc'))
     .map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(args.snapshotDir, name))) }));
-  const read = await readSnapshotFiles(entries, key);
+  const read = await readSnapshotFiles(entries, key, { allowPlaintext: args.allowPlaintextSnapshot, folderName: basename(args.snapshotDir) });
   for (const warning of read.warnings) console.warn(`WARNING: ${warning}`);
   const snapshot = parseSnapshot(read.files);
   checkTarget(snapshot, args);

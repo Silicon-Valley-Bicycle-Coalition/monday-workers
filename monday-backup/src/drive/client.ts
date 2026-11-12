@@ -44,16 +44,19 @@ export interface DriveFileWriter {
 
 export interface DriveClient {
   ensureFolder(parentFolderId: string, folderName: string): Promise<string>;
-  createFile(folderId: string, filename: string, mimeType: string): Promise<DriveFileWriter>;
+  // `binding` names where the file belongs (`<snapshot folder>/<file name>`, fileBinding in
+  // src/crypto/snapshotCipher.ts); an encrypting client authenticates it, a plain one ignores it.
+  createFile(folderId: string, filename: string, mimeType: string, binding?: string): Promise<DriveFileWriter>;
   uploadJson(folderId: string, filename: string, data: unknown): Promise<void>;
   // A file of this name in the folder, or null. Files only appear once their upload closes, so a
   // match is complete. This is how a retried Workflow step avoids writing a second copy: Drive
   // allows duplicate names, and a Contributor can't delete one (issue #67).
   findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null>;
   // A file's text, one line at a time, without holding the whole file in memory.
-  readLines(fileId: string): AsyncIterable<string>;
+  // `binding` as for createFile.
+  readLines(fileId: string, binding?: string): AsyncIterable<string>;
   // A file's bytes, chunk by chunk.
-  readBytes(fileId: string): AsyncIterable<Uint8Array>;
+  readBytes(fileId: string, binding?: string): AsyncIterable<Uint8Array>;
   // How files this client writes are encrypted, for the manifest; absent when they aren't.
   encryption?(): Promise<{ scheme: string; keyId: string }>;
 }

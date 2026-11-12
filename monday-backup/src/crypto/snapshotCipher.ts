@@ -13,9 +13,11 @@
 //   file needs without revealing anything about the key.
 // - Frames hold up to 64 KiB of plaintext, so neither side ever holds a whole file. Frame n's
 //   12-byte nonce is 7 zero bytes | n as a big-endian uint32 | 1 if it is the last frame, else 0.
-//   Every frame authenticates the header as additional data. A file therefore can't be reordered,
-//   spliced from two files, or cut short at a frame boundary without failing to decrypt: the last
-//   frame (possibly empty) is the only one sealed with the final flag.
+//   Every frame authenticates, as additional data, the header followed by the UTF-8 binding
+//   `<snapshot folder>/<file name>` (e.g. `2026-08-25 run-17/board-1.jsonl`; fileBinding). A file
+//   therefore can't be reordered, spliced from two files, cut short at a frame boundary, renamed,
+//   or moved into another run's folder without failing to decrypt: the last frame (possibly
+//   empty) is the only one sealed with the final flag.
 // - The manifest stays readable, authenticated by `manifestMac` (see manifestMac below).
 //
 // Anyone holding the secret can read every snapshot, so a copy lives outside the Shared Drive with
@@ -102,26 +104,40 @@ function concat(parts: Uint8Array[], length = parts.reduce((n, p) => n + p.lengt
   return out;
 }
 
+// Where a file belongs: its run's folder name ("2026-08-25 run-17", which carries the run id) and
+// its bare file name ("board-1.jsonl"). Authenticated with every frame, so a file only decrypts
+// under the name and run it was written for: one copied in from another run, or renamed, fails.
+export function fileBinding(snapshotFolder: string, filename: string): string {
+  return `${snapshotFolder}/${filename}`;
+}
+
+function additionalData(header: Uint8Array, binding: string): Uint8Array<ArrayBuffer> {
+  return concat([header, new TextEncoder().encode(binding)]);
+}
+
 // Encrypts one file, fed incrementally: write `header` first, then whatever push() returns, then
 // finish(). Holds at most one frame of plaintext.
 export class SnapshotEncryptor {
   readonly header: Uint8Array<ArrayBuffer>;
   private readonly key: CryptoKey;
+  private readonly aad: Uint8Array<ArrayBuffer>;
   private pending: Uint8Array[] = [];
   private pendingLength = 0;
   private counter = 0;
   private finished = false;
 
-  private constructor(header: Uint8Array<ArrayBuffer>, key: CryptoKey) {
+  private constructor(header: Uint8Array<ArrayBuffer>, key: CryptoKey, aad: Uint8Array<ArrayBuffer>) {
     this.header = header;
     this.key = key;
+    this.aad = aad;
   }
 
-  static async create(key: SnapshotKey): Promise<SnapshotEncryptor> {
+  // `binding` is the file's place in its run, `<snapshot folder>/<file name>` (see fileBinding).
+  static async create(key: SnapshotKey, binding: string): Promise<SnapshotEncryptor> {
     const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
     const keyId = Uint8Array.from(key.id.match(/../g)!, (h) => parseInt(h, 16));
     const header = concat([MAGIC, keyId, salt]);
-    return new SnapshotEncryptor(header, await fileKey(key, salt, 'encrypt'));
+    return new SnapshotEncryptor(header, await fileKey(key, salt, 'encrypt'), additionalData(header, binding));
   }
 
   // Ciphertext for every whole frame now buffered; the rest waits for more input or finish().
@@ -155,7 +171,7 @@ export class SnapshotEncryptor {
 
   private async frame(plaintext: Uint8Array<ArrayBuffer>, final: boolean): Promise<Uint8Array> {
     const iv = nonce(this.counter++, final);
-    const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: this.header }, this.key, plaintext));
+    const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: this.aad }, this.key, plaintext));
     const out = new Uint8Array(LENGTH_PREFIX + ciphertext.length);
     new DataView(out.buffer).setUint32(0, ciphertext.length);
     out.set(ciphertext, LENGTH_PREFIX);
@@ -188,8 +204,9 @@ class Reader {
 }
 
 // Decrypts one file's bytes, yielding plaintext a frame at a time. Throws on a wrong key, a file
-// that isn't in this format, any tampering, a file cut short, or anything after the final frame.
-export async function* decryptChunks(key: SnapshotKey, chunks: AsyncIterable<Uint8Array>): AsyncGenerator<Uint8Array> {
+// that isn't in this format, any tampering, a file cut short, anything after the final frame, or a
+// file that was written under a different binding (another run, or another name).
+export async function* decryptChunks(key: SnapshotKey, chunks: AsyncIterable<Uint8Array>, binding: string): AsyncGenerator<Uint8Array> {
   const reader = new Reader(chunks);
   const header = await reader.take(HEADER_LENGTH);
   if (header.length < HEADER_LENGTH || MAGIC.some((b, i) => header[i] !== b)) {
@@ -198,6 +215,7 @@ export async function* decryptChunks(key: SnapshotKey, chunks: AsyncIterable<Uin
   const fileKeyId = hex(header.subarray(MAGIC.length, MAGIC.length + KEY_ID_LENGTH));
   if (fileKeyId !== key.id) throw new Error(`encrypted with key ${fileKeyId}, but the key given is ${key.id}`);
   const aesKey = await fileKey(key, header.slice(MAGIC.length + KEY_ID_LENGTH), 'decrypt');
+  const aad = additionalData(header, binding);
 
   for (let counter = 0; ; counter++) {
     const prefix = await reader.take(LENGTH_PREFIX);
@@ -211,14 +229,16 @@ export async function* decryptChunks(key: SnapshotKey, chunks: AsyncIterable<Uin
     let final = false;
     for (const flag of [false, true]) {
       try {
-        plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce(counter, flag), additionalData: header }, aesKey, ciphertext);
+        plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce(counter, flag), additionalData: aad }, aesKey, ciphertext);
         final = flag;
         break;
       } catch {
         // Not this flag; the other one, or the frame is bad.
       }
     }
-    if (plaintext === undefined) throw new Error(`file is tampered with or corrupt: frame ${counter} fails authentication`);
+    if (plaintext === undefined) {
+      throw new Error(`file is tampered with or corrupt, or not written as ${binding}: frame ${counter} fails authentication`);
+    }
     if (plaintext.byteLength > 0) yield new Uint8Array(plaintext);
     if (final) {
       if ((await reader.take(1)).length > 0) throw new Error('file has data after the final frame');
@@ -232,8 +252,8 @@ async function* once(bytes: Uint8Array): AsyncGenerator<Uint8Array> {
 }
 
 // A whole file at once, for the restore CLI (which holds a snapshot in memory anyway).
-export async function decryptBytes(key: SnapshotKey, bytes: Uint8Array): Promise<Uint8Array> {
+export async function decryptBytes(key: SnapshotKey, bytes: Uint8Array, binding: string): Promise<Uint8Array> {
   const parts: Uint8Array[] = [];
-  for await (const part of decryptChunks(key, once(bytes))) parts.push(part);
+  for await (const part of decryptChunks(key, once(bytes), binding)) parts.push(part);
   return concat(parts);
 }

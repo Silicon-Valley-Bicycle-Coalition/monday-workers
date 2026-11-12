@@ -1,4 +1,5 @@
 import { sendFailureAlert } from './alert';
+import { fileBinding } from './crypto/snapshotCipher';
 import { Deadline } from './deadline';
 import { SNAPSHOT_FORMAT } from './format';
 import type { DriveClient, DriveFileWriter } from './drive/client';
@@ -58,9 +59,10 @@ async function streamFile(
   drive: DriveClient,
   folderId: string,
   filename: string,
+  binding: string,
   produce: (writer: DriveFileWriter) => Promise<void>,
 ): Promise<void> {
-  const writer = await drive.createFile(folderId, filename, JSONL);
+  const writer = await drive.createFile(folderId, filename, JSONL, binding);
   try {
     await produce(writer);
     await writer.close();
@@ -99,11 +101,11 @@ interface DocCounts {
 }
 type StepOutcome<T> = { stopped: true } | ({ stopped: false } & Captured & T);
 
-async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary, filename: string): Promise<BoardCounts> {
+async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary, filename: string, binding: string): Promise<BoardCounts> {
   const schema = await deps.monday.getBoardSchema(board.id);
   let itemCount = 0;
   let updateCount = 0;
-  await streamFile(deps.drive, folderId, filename, async (writer) => {
+  await streamFile(deps.drive, folderId, filename, binding, async (writer) => {
     await writer.write(line({ type: 'board', board, schema }));
     for await (const page of deps.monday.boardItemPages(board.id)) {
       // One write per page: memory holds a single page, never the whole board.
@@ -119,9 +121,9 @@ async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSumma
   return { itemCount, updateCount, subitemBoardIds: subitemBoardIds(schema) };
 }
 
-async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary, filename: string): Promise<DocCounts> {
+async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary, filename: string, binding: string): Promise<DocCounts> {
   let blockCount = 0;
-  await streamFile(deps.drive, folderId, filename, async (writer) => {
+  await streamFile(deps.drive, folderId, filename, binding, async (writer) => {
     await writer.write(line({ type: 'doc', doc }));
     for await (const page of deps.monday.docBlockPages(doc.id)) {
       await writer.write(page.map((block) => line({ type: 'block', block })).join(''));
@@ -132,9 +134,9 @@ async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary, fi
 }
 
 // What a finished file holds, for a step repeated after its upload closed.
-async function tallyBoardFile(drive: DriveClient, fileId: string): Promise<BoardCounts> {
+async function tallyBoardFile(drive: DriveClient, fileId: string, binding: string): Promise<BoardCounts> {
   const counts: BoardCounts = { itemCount: 0, updateCount: 0, subitemBoardIds: [] };
-  for await (const text of drive.readLines(fileId)) {
+  for await (const text of drive.readLines(fileId, binding)) {
     const record = JSON.parse(text) as { type: string; schema?: BoardSchema };
     if (record.type === 'board' && record.schema !== undefined) counts.subitemBoardIds = subitemBoardIds(record.schema);
     else if (record.type === 'item') counts.itemCount++;
@@ -143,9 +145,9 @@ async function tallyBoardFile(drive: DriveClient, fileId: string): Promise<Board
   return counts;
 }
 
-async function tallyDocFile(drive: DriveClient, fileId: string): Promise<DocCounts> {
+async function tallyDocFile(drive: DriveClient, fileId: string, binding: string): Promise<DocCounts> {
   const counts: DocCounts = { blockCount: 0 };
-  for await (const text of drive.readLines(fileId)) {
+  for await (const text of drive.readLines(fileId, binding)) {
     if ((JSON.parse(text) as { type: string }).type === 'block') counts.blockCount++;
   }
   return counts;
@@ -265,8 +267,8 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
         const filename = `board-${board.id}.jsonl`;
         const result = await inStep(`board ${board.id}`, () =>
           capture<BoardCounts>(deps, folderId, filename, {
-            tally: (fileId) => tallyBoardFile(deps.drive, fileId),
-            produce: () => backupBoard(deps, folderId, board, filename),
+            tally: (fileId) => tallyBoardFile(deps.drive, fileId, fileBinding(snapshotFolder, filename)),
+            produce: () => backupBoard(deps, folderId, board, filename, fileBinding(snapshotFolder, filename)),
             describe: (c) => `items=${c.itemCount} updates=${c.updateCount}`,
           }),
         );
@@ -305,8 +307,8 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
         const filename = `doc-${doc.id}.jsonl`;
         const result = await inStep(`doc ${doc.id}`, () =>
           capture<DocCounts>(deps, folderId, filename, {
-            tally: (fileId) => tallyDocFile(deps.drive, fileId),
-            produce: () => backupDoc(deps, folderId, doc, filename),
+            tally: (fileId) => tallyDocFile(deps.drive, fileId, fileBinding(snapshotFolder, filename)),
+            produce: () => backupDoc(deps, folderId, doc, filename, fileBinding(snapshotFolder, filename)),
             describe: (c) => `blocks=${c.blockCount}`,
           }),
         );
@@ -358,6 +360,9 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
           updateCountsByBoard,
           blockCountsByDoc,
           capturedAt,
+          // Every board and doc file this run wrote, by bare name. With the manifest's MAC and each
+          // file's run binding, the restore requires exactly these files and no others.
+          files: Object.keys(capturedAt).map((name) => `${name}.jsonl`),
           deletedBoardsSkipped: listing.deletedBoardsSkipped,
           errors,
         });
