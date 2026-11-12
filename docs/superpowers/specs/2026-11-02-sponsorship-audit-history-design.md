@@ -2,13 +2,17 @@
 
 Date: 2026-11-02. Status: draft for approval.
 
+> **Updated 2026-11-12:** the five sponsorship pipelines named below merged into one
+> **Sponsorships** board on 2026-11-03 (18391037433, the former BTWD Pipeline; `monday-migration`
+> `docs/38`). Item ids didn't change. The design below now names that one board.
+
 ## Why
 
 When a company that sponsored SVBC is audited, its auditors ask SVBC to confirm what the company
 paid. Staff answer by email. Today the multi-year answer lives in a Google Sheet outside Monday
 (the Salesforce sponsor-history export, `monday-migration` `docs/35` §3.2), and staff find that
 awkward: they want everything in one app. Day to day they work only the current year's group on
-the sponsorship pipeline boards; history matters for audits and reporting, which reach back seven
+the Sponsorships board; history matters for audits and reporting, which reach back seven
 years.
 
 The paid sponsorships are already in Monday as Donations gifts (Gift Type `Sponsorship`), but two
@@ -55,10 +59,11 @@ stands only for the case below.)
 - **Event, decided: automatic.** Where the event comes from, in order:
   1. The gift's **Sponsorship Cycle** text, when set (Salesforce imports: 851 of 865 paid
      `Sponsorship` gifts have it).
-  2. Otherwise the **sponsorship pipeline item the gift is connected to**. Each of the five
-     pipeline boards has a two-way **Donations** connect (`monday-migration` `docs/29`), so the
-     Donations item carries the reverse link. The label is the board's configured event name plus
-     the item's group title, which is the year (for example `BTWD 2026`). Gifts entered after go-live
+  2. Otherwise the **Sponsorships item the gift is connected to**. Sponsorships has a two-way
+     **Donations** connect (`monday-migration` `docs/29`), so the Donations item carries the
+     reverse link. The label is the board's configured event name plus the item's group title. On
+     Sponsorships the event name is configured as `""`, because each group title already names the
+     year and event (for example `2026 BTWD`, `2027 Annual Gala`), so the label is the group title. Gifts entered after go-live
      depend on this, and they're the years auditors will ask about next.
   3. Otherwise blank, shown as `—`.
   Store the resolved label, and re-resolve when the gift changes (a later pipeline link should
@@ -120,10 +125,9 @@ in `config/svbc.json` and `config/sandbox.json`, validated at startup:
 
 - `giftTypes`: cash sponsorship labels. SVBC: `["Sponsorship"]`.
 - `inKindGiftTypes`: in-kind labels. SVBC: `["In Kind Donation / Sponsorship"]`.
-- `pipelineBoards`: the sponsorship pipeline boards and each one's event name, e.g.
-  `{ "18391037433": "BTWD", "18390869107": "Advocacy Summit", "18390883634": "Fundraising Ride",
-  "18391037577": "Misc.", "18423176514": "Annual Gala" }` (production ids; sandbox has its own or
-  none), plus the Donations-side reverse connect column id.
+- `pipelineBoards`: the sponsorship board(s) and each one's event name. Production:
+  `{ "18391037433": "" }`, the merged Sponsorships board, whose group titles carry the event;
+  sandbox has its own or none. Plus the Donations-side reverse connect column id.
 - `yearBasis`: `"calendar"` or `"fiscal"`. SVBC: `"calendar"` (the people asking are sponsors'
   auditors) — my call; switch to `"fiscal"` if SVBC prefers.
 - `windowYears`: SVBC `7`.
@@ -142,7 +146,7 @@ Absent block: no section rendered, no behaviour change (keeps forks unaffected).
 
 - Add a "Answering a sponsor's audit request" part to the Box Note *Reporting on Grants and
   Sponsorships in Monday* (`monday-migration` `protocols/monday/reporting-grants-and-sponsorships.md`,
-  then the note by hand) and point the five pipeline board descriptions' "earlier years" line at
+  then the note by hand) and point the Sponsorships board description's "earlier years" line at
   the company card instead of the sheet. The sheet stays as the complete archive (it also holds
   the lost pitches).
 - New sponsorship gifts must be entered with the company as Donor and connected to their pipeline

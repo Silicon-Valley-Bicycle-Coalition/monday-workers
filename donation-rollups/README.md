@@ -761,14 +761,16 @@ projections" above; there is no API for it).
 **Config.** The `donationRollups.sponsorships` block: `organizationsBoardId`, `giftTypes` (cash
 sponsorship types), `inKindGiftTypes`, `yearBasis` (`"calendar"` or `"fiscal"`), `windowYears`,
 `pipelineBoards`. Three optional Donations-board columns feed it: `sponsorshipCycle` (text),
-`inKindValue` and `sponsorshipPipelineLinks` (connect to the sponsorship pipelines). An absent
+`inKindValue` and `sponsorshipPipelineLinks` (the reverse connect from Sponsorships). An absent
 block changes nothing. `sponsorshipPipelineLinks` is **not configured yet in either
-environment**: the pipelines' reverse connect columns don't exist until the board-linking backfill
+environment**: Sponsorships' reverse connect column doesn't exist until the board-linking backfill
 (monday-migration `docs/29`) runs, so until then post-go-live sponsorships show `—` as their
 event unless Sponsorship Cycle is typed.
 
 **Event, in order:** the Sponsorship Cycle text; else the linked pipeline item's
-`<event name> <group title>`; else blank (`—`). Archived gifts keep their stored event (their
+`<event name> <group title>` (production configures Sponsorships with an empty event name, since
+its group titles such as `2027 BTWD` already name the event, so this is just the group title);
+else blank (`—`). Archived gifts keep their stored event (their
 links read back empty). **In-kind value:** In-Kind Value, falling back to Amount when blank or 0.
 Known limitation: a gift with a blank Amount is skipped by the recompute read entirely
 (pre-existing), so staff must fill Amount on in-kind sponsorships.
@@ -828,8 +830,8 @@ only); only the Organizations-owned in-kind rows matter for the section.
    "Answering a sponsor's audit request" part (in-kind sponsorships need Amount filled and the
    gift connected to its pipeline item); check `entering-payments.md` and
    `donor-data-entry-and-acknowledgement.md` say a sponsorship's Donor is the company and it is
-   connected to its pipeline item. Copy them into their Box Notes, and point the five pipeline
-   boards' "earlier years" description line at the company card.
+   connected to its pipeline item. Copy them into their Box Notes, and point the Sponsorships
+   board's "earlier years" description line at the company card.
 
 ## Employer Name from Affiliations
 

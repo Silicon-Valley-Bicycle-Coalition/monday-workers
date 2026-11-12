@@ -311,8 +311,8 @@ Monday user with dashboard rights, so there is nothing to open yet:
   narrative sections.
 
 Please don't build your own in the meantime. If a number you report today isn't in that list,
-say so on IT Requests as a Feature Request. Known omissions: no Grants Pipeline widget until
-cutover (that board lives in the live workspace); members by city and membership type are board
+say so on IT Requests as a Feature Request. Known omissions: no Grants & Contracts widget until
+cutover (that board is in production, not the sandbox); members by city and membership type are board
 views, not charts, because Monday can't chart text columns.
 
 ## Donor portal boards
@@ -345,7 +345,13 @@ check-ins themselves now go to Event Registrations through the eventbrite-sync i
 
 ## Grants & Contracts
 
-[Grants Pipeline](https://bikesiliconvalley.monday.com/boards/8846256606) and
+> **Changed 2026-11-03:** the board staff run is
+> [Grants & Contracts](https://bikesiliconvalley.monday.com/boards/7896177072), the former Grants
+> Pipeline, now on monday CRM in Donors & Contacts with a Category column and a view per category
+> (Bike Parking is one category). The demo pair below is for trying things out and is archived at
+> cutover.
+
+[Grants Pipeline (demo)](https://bikesiliconvalley.monday.com/boards/8846256606) and
 [Grant Providers](https://bikesiliconvalley.monday.com/boards/8846256609): already in daily use,
 the most mature area here. Bike parking contracts are meant to live on this same board as a
 category rather than on a board of their own; say if that model is wrong for how you think about
@@ -358,13 +364,15 @@ item.
 **Don't report these:** no Type (Renewal, New, One-off, Bike Parking) or Probability field yet;
 Awarded doesn't spin up a delivery project automatically.
 
-## Sponsorships (prototype)
+## Sponsorships
 
-[Sponsorships](https://bikesiliconvalley.monday.com/boards/18432083323) and
-[Sponsors](https://bikesiliconvalley.monday.com/boards/18432083548), mirroring Grants Pipeline's
-shape, in a sandbox workspace. Not promoted to the live workspace yet. Historical sponsorship
-revenue (3,613 Salesforce Sponsorship Opportunities) is on Donations under Funding Stream =
-Sponsorships; this pair is the go-forward pipeline. Take a look and say whether the shape's right.
+The sandbox prototype once linked here was dropped and its workspace deleted 2026-10-15.
+Sponsorships are tracked on the live
+[Sponsorships](https://bikesiliconvalley.monday.com/boards/18391037433) board, the former BTWD
+Pipeline with the Advocacy Summit, Fundraising Ride, Misc. and Annual Gala pipelines merged in on
+2026-11-03, on monday CRM in Donors & Contacts: one group per event and year, Category, Event and
+Year on each item, and a Current cycle view. Historical sponsorship revenue (3,613 Salesforce
+Sponsorship Opportunities) is on Donations under Funding Stream = Sponsorships.
 
 Separately, if you're involved in fulfilling sponsor benefits (t-shirts, event tables, website
 logos), we still need to know what current sponsors are actually owed; the tier-to-benefit matrix

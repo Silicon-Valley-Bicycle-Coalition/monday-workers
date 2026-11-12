@@ -7,8 +7,10 @@ call)* were made by the author while writing this up, not discussed — check th
 
 Today every Worker that talks to Monday holds a **personal API token** (`MONDAY_API_TOKEN`) for a
 dedicated integration user, one user per exposure class (root README, "Least-privilege Monday
-tokens"). On monday CRM each such user takes a paid **CRM member seat**, and SVBC has decided to
-stay within CRM's free 10 seats (private repo `migration-plan.md`, Seats per product, #70; #78).
+tokens"). On monday CRM each such user takes a paid **CRM member seat**, and when this was written
+SVBC had decided to stay within CRM's free 10 seats (private repo `migration-plan.md`, Seats per
+product, #70; #78). Since 2026-11-03 every staff member has a CRM seat (14 of 15), so seats are
+less tight than below, but the one-user design stands.
 Three integration users would spend three of those ten, and every seat an integration user holds
 is one a staff member or volunteer can't have without a purchase decision.
 
