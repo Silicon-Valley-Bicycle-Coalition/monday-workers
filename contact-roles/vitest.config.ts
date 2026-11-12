@@ -1,8 +1,10 @@
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
-import { defineConfig, defineProject } from 'vitest/config';
+import { configDefaults, defineConfig, defineProject } from 'vitest/config';
 
 export default defineConfig(
   defineProject({
+    // scripts/*.test.mjs are node:test files, run by `npm run test:scripts`.
+    test: { exclude: [...configDefaults.exclude, 'scripts/**'] },
     plugins: [
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
