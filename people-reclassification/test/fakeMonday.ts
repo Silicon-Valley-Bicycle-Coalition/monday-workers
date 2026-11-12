@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { D1Ledger } from '../src/db/ledger';
 import type { PassDeps } from '../src/pass';
-import type { BoardSchema, ItemsPage, PageItem, ReclassificationMondayClient } from '../src/monday/client';
+import type { BoardSchema, ItemsPage, PageFilter, PageItem, ReclassificationMondayClient } from '../src/monday/client';
 import type { BoardColumn, ColumnMapping } from '../src/columns';
 import type { ReclassificationConfig } from '../src/types';
 
@@ -73,6 +73,8 @@ export interface FakeState {
   failWrite?: (itemId: string, values: Record<string, unknown>) => Error | null;
   boardOf?: Record<string, string | null>;
   pageSize?: number;
+  // Every pageItems call's board and filter, so a test can see what was read.
+  pageCalls?: { boardId: number; filter: PageFilter | undefined }[];
 }
 
 function personItem(p: Person, suffix: string): PageItem {
@@ -120,8 +122,15 @@ export function fakeClient(state: FakeState): ReclassificationMondayClient {
   };
   return {
     async getBoardSchema(boardId) { return schemas[boardId] ?? null; },
-    async pageItems(boardId, _columnIds, cursor): Promise<ItemsPage> {
-      const all = items[boardId] ?? [];
+    async pageItems(boardId, _columnIds, cursor, filter): Promise<ItemsPage> {
+      (state.pageCalls ??= []).push({ boardId, filter });
+      // Monday's on-or-after date rule: a blank date never matches.
+      const rule = filter?.dateOnOrAfter;
+      const all = (items[boardId] ?? []).filter((i) => {
+        if (rule === undefined) return true;
+        const date = i.text.get(rule.columnId);
+        return date !== null && date !== undefined && date >= rule.dateISO;
+      });
       const size = state.pageSize ?? 500;
       const start = cursor === null ? 0 : Number(cursor);
       const page = all.slice(start, start + size);

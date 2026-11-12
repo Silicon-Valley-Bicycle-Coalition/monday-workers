@@ -1,5 +1,5 @@
 import { AmbiguousWriteError } from './monday/graphql';
-import type { ReclassificationMondayClient, BoardSchema, PageItem } from './monday/client';
+import type { ReclassificationMondayClient, BoardSchema, PageFilter, PageItem } from './monday/client';
 import { columnIdByTitle, moveMapping, type ColumnMapping } from './columns';
 import { classify, cutoffFor, dateOnly, todayInZone, type Board, type PersonFacts, type Verdict } from './classify';
 import type { Direction, Ledger, RunTrigger } from './db/ledger';
@@ -370,11 +370,13 @@ export async function readActivity(
 }
 
 // Pages Activities (Logged), reporting each linked person's counted dates. An item with no Date or
-// no Person counts for nobody; a Bulk Email isn't in countedTypeLabels.
+// no Person counts for nobody; a Bulk Email isn't in countedTypeLabels. With sinceISO, Monday
+// returns only items dated on or after it, rather than the whole board (#101).
 export async function readLoggedActivities(
   monday: ReclassificationMondayClient, config: ReclassificationConfig,
   report: (personId: string, dateISO: string) => void,
   scanned: { logged: number },
+  sinceISO?: string,
 ): Promise<void> {
   const la = config.loggedActivities;
   if (la === null) return;
@@ -384,7 +386,8 @@ export async function readLoggedActivities(
     person: columnIdByTitle(board.columns, la.columns.person, label), date: columnIdByTitle(board.columns, la.columns.date, label),
     activityType: columnIdByTitle(board.columns, la.columns.activityType, label),
   };
-  for await (const a of pageAll(monday, la.boardId, [c.person, c.date, c.activityType])) {
+  const filter = sinceISO === undefined ? undefined : { dateOnOrAfter: { columnId: c.date, dateISO: sinceISO } };
+  for await (const a of pageAll(monday, la.boardId, [c.person, c.date, c.activityType], filter)) {
     scanned.logged += 1;
     const date = dateOnly(a.text.get(c.date));
     if (date === null || !la.countedTypeLabels.includes(a.text.get(c.activityType) ?? '')) continue;
@@ -470,10 +473,10 @@ export function countOf(schema: BoardSchema, configuredLimit: number): BoardCoun
   return { boardId: schema.id, name: schema.name, itemsCount: schema.itemsCount, itemsLimit, pct: Math.round((schema.itemsCount / itemsLimit) * 100) };
 }
 
-export async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[]): AsyncGenerator<PageItem> {
+export async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[], filter?: PageFilter): AsyncGenerator<PageItem> {
   let cursor: string | null = null;
   do {
-    const page: { items: PageItem[]; cursor: string | null } = await monday.pageItems(boardId, columnIds, cursor);
+    const page: { items: PageItem[]; cursor: string | null } = await monday.pageItems(boardId, columnIds, cursor, filter);
     for (const item of page.items) yield item;
     cursor = page.cursor;
   } while (cursor !== null);

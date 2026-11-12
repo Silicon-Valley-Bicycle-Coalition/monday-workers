@@ -19,10 +19,15 @@ export interface PageItem {
 
 export interface ItemsPage { items: PageItem[]; cursor: string | null }
 
+// A server-side filter for pageItems: only items whose date column is on or after dateISO
+// (YYYY-MM-DD). A blank date doesn't match.
+export interface PageFilter { dateOnOrAfter: { columnId: string; dateISO: string } }
+
 // What a pass needs from Monday; the fake in src/pass.test.ts implements the same surface.
 export interface ReclassificationMondayClient {
   getBoardSchema(boardId: number): Promise<BoardSchema | null>;
-  pageItems(boardId: number, columnIds: string[], cursor: string | null): Promise<ItemsPage>;
+  // filter applies from the first page on; pass the same one with every cursor.
+  pageItems(boardId: number, columnIds: string[], cursor: string | null, filter?: PageFilter): Promise<ItemsPage>;
   // Which board an item is on now — settles a 'planned'/'ambiguous' ledger row from an
   // interrupted pass. null = deleted or not visible.
   getItemBoardId(itemId: string): Promise<string | null>;
@@ -85,18 +90,23 @@ export class HttpMondayClient implements ReclassificationMondayClient {
     return { id: b.id, name: b.name, itemsCount: b.items_count, itemsLimit: b.items_limit, columns: b.columns, groups: b.groups };
   }
 
-  async pageItems(boardId: number, columnIds: string[], cursor: string | null): Promise<ItemsPage> {
+  async pageItems(boardId: number, columnIds: string[], cursor: string | null, filter?: PageFilter): Promise<ItemsPage> {
+    // The rule goes on the first page only: a cursor already encodes the query it came from.
+    const rule = filter?.dateOnOrAfter;
+    const query = cursor === null && rule !== undefined
+      ? { rules: [{ column_id: rule.columnId, compare_value: ['EXACT', rule.dateISO], operator: 'greater_than_or_equals' }] }
+      : null;
     // 500 is items_page's documented maximum; a People board of ~8k is 16 subrequests.
     const data = await this.graphql<{ boards: { items_page: { cursor: string | null; items: RawItem[] } }[] }>(
-      `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+      `query ($boardId: [ID!], $columnIds: [String!], $cursor: String, $query: ItemsQuery) {
         boards(ids: $boardId) {
-          items_page(limit: 500, cursor: $cursor) {
+          items_page(limit: 500, cursor: $cursor, query_params: $query) {
             cursor
             items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
           }
         }
       }`,
-      { boardId: [String(boardId)], columnIds, cursor },
+      { boardId: [String(boardId)], columnIds, cursor, query },
     );
     const page = data.boards[0]?.items_page;
     if (page === undefined) return { items: [], cursor: null };
