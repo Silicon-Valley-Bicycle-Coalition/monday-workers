@@ -8,7 +8,7 @@
 import { addMonths } from '../membership/derive';
 import { registrationQualifies, historicalShiftQualifies } from '../membership/volunteer';
 import type { CustodianDeps, DutyReport } from './custodian';
-import type { RecomputeQueueMessage } from '../types';
+import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import type { VolunteerActivityRow } from '../db/volunteerActivity';
 import type { HistoricalShiftRecord } from '../monday/client';
 
@@ -40,7 +40,13 @@ async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[], o
   for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100), opts);
 }
 
-function membershipBoards(deps: CustodianDeps): { boardId: string; currentTermStart: string }[] {
+// Exported (config-keyed) for the custodian's shared board read (boardReads.ts, issue #90).
+export function membershipTermStartColumns(config: DonationRollupsConfig): { boardId: string; currentTermStart: string }[] {
+  if (config.donationRollups.membership === null) return [];
+  return membershipBoards({ config });
+}
+
+function membershipBoards(deps: Pick<CustodianDeps, 'config'>): { boardId: string; currentTermStart: string }[] {
   return Object.entries(deps.config.donationRollups.ownerColumnsByBoard)
     .filter(([, cols]) => cols.membership !== undefined)
     .map(([boardId, cols]) => ({ boardId, currentTermStart: cols.membership!.currentTermStart }));

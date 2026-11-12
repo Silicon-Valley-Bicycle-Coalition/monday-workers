@@ -1,7 +1,7 @@
 import { acknowledgmentTier, classifyGift, fiscalYearEnding, type GiftClassification } from '../rollups/classify';
 import { parseAmountCents } from '../money';
 import { MondayRateLimitError, statusLabel, type ItemColumns } from '../monday/client';
-import type { DonationRollupsConfig, ClassificationColumns } from '../types';
+import type { DonationRollupsConfig, ClassificationColumns, DonationBoardConfig } from '../types';
 import type { DutyReport } from './custodian';
 
 // Nightly: keep Funding Stream / Gift Size / Fiscal Quarter / Gift Fiscal Year current on
@@ -43,19 +43,29 @@ function diff(want: GiftClassification, tier: string | null, company: string | n
   return out;
 }
 
+// The columns classify reads from a Donations board, or null when the board isn't classified.
+// Exported for the custodian's shared board read (boardReads.ts, issue #90).
+export function classifyReadColumns(board: DonationBoardConfig): string[] | null {
+  const cl = board.columns.classification;
+  if (!cl) return null;
+  const matchedByCol = board.columns.matchedBy;
+  const matchingOn = Boolean(cl.matchingCompany && matchedByCol);
+  return [board.columns.amount, board.columns.date,
+    ...(board.columns.giftType ? [board.columns.giftType] : []), ...KEYS.map((k) => cl[k]),
+    ...(cl.acknowledgmentTier ? [cl.acknowledgmentTier] : []),
+    ...(matchingOn ? [cl.matchingCompany!, matchedByCol!] : []),
+    ...(board.columns.fiscalYear ? [board.columns.fiscalYear] : [])];
+}
+
 export async function runClassify(client: ClassifyClient, config: DonationRollupsConfig): Promise<DutyReport> {
   let scanned = 0, changed = 0, written = 0;
   const failed: string[] = [];
   for (const board of config.donationRollups.donationBoards) {
     const cl = board.columns.classification;
-    if (!cl) continue;
+    const readCols = classifyReadColumns(board);
+    if (!cl || readCols === null) continue;
     const matchedByCol = board.columns.matchedBy;
     const matchingOn = Boolean(cl.matchingCompany && matchedByCol);
-    const readCols = [board.columns.amount, board.columns.date,
-      ...(board.columns.giftType ? [board.columns.giftType] : []), ...KEYS.map((k) => cl[k]),
-      ...(cl.acknowledgmentTier ? [cl.acknowledgmentTier] : []),
-      ...(matchingOn ? [cl.matchingCompany!, matchedByCol!] : []),
-      ...(board.columns.fiscalYear ? [board.columns.fiscalYear] : [])];
     let cursor: string | null = null;
     do {
       const page = await client.pageItemsColumnsText(board.boardId, readCols, cursor);

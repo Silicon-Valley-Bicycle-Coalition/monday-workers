@@ -179,6 +179,20 @@ describe('runRollCall', () => {
     expect(h.created.every((c) => c.groupId === 'g-FY2027 (in progress)')).toBe(true);
   });
 
+  // Issue #90: the credits table and the board's groups were each read twice a run.
+  it('reads the credits table and the board groups once a run', async () => {
+    const h = harness({ ledger: [gift('g1', '11', 50_000)], donations: [donation('a1', { anonymous: true, donorItemIds: [] })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: [{ id: 'old', title: 'FY2026' }] });
+    const all = vi.spyOn(h.deps.rollCallCredits, 'all');
+    const listGroups = vi.spyOn(h.deps.mondayClient, 'listGroups');
+    const report = await runRollCall(h.deps, NOW);
+    expect(all).toHaveBeenCalledOnce();
+    expect(listGroups).toHaveBeenCalledOnce();
+    // The rows still see this run's credits refresh: the anonymous gift is counted.
+    expect(h.writes).toContain('create Anonymous');
+    expect(report.ok).toBe(true);
+  });
+
   it('reports a gift with no one to credit as unplaced, and not ok', async () => {
     const h = harness({
       ledger: [gift('g1', 'gone-person', 10_000)],

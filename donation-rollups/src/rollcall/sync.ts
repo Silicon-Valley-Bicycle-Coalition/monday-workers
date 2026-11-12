@@ -186,12 +186,13 @@ const ORDER: Record<SyncOp['op'], number> = { delete: 0, update: 1, move: 2, cre
 // Year groups first (create a missing one; retitle so only the current year reads "(in
 // progress)"), then deletes, updates, moves and creates. Every write counts against
 // writesPerRun; what's left over is reported as `remaining` for the next run.
-export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: SyncOp[], currentFY: number):
-  Promise<{ applied: number; remaining: number }> {
+// groups: the board's groups as the caller already read them; listed here when not given.
+export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: SyncOp[], currentFY: number,
+  groups?: { id: string; title: string }[]): Promise<{ applied: number; remaining: number }> {
   const client = deps.mondayClient;
   const groupByYear = new Map<number, string>();
   const retitles: { id: string; title: string }[] = [];
-  for (const g of await client.listGroups(cfg.boardId)) {
+  for (const g of groups ?? await client.listGroups(cfg.boardId)) {
     const year = groupYearFrom(g.title);
     if (year === null) continue;
     if (!groupByYear.has(year)) groupByYear.set(year, g.id);

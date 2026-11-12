@@ -13,6 +13,7 @@ import { runMembership, type MembershipDetail } from './membership';
 import { runRecurring } from './recurring';
 import { runRollCall } from './rollcall';
 import { runSponsorshipsBackfill } from './sponsorships';
+import { sharedBoardReads, sharedReadPlan } from './boardReads';
 import { formatCents, parseAmountCents } from '../money';
 import { runDisposition } from '../flags';
 import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
@@ -128,7 +129,9 @@ export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext):
     return;
   }
   const now = deps.now ?? new Date();
-  const d = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  const proxied = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  // One read of each board several duties page, shared across the run (issue #90).
+  const d: CustodianDeps = { ...proxied, mondayClient: sharedBoardReads(proxied.mondayClient, sharedReadPlan(proxied.config)) };
   const label = disposition === 'dry-run' ? ' (dry run)' : '';
   for (const duty of dutiesForDate(now, d.config.fiscalYear, await d.gifts.lastRuns(), d.config.donationRollups.sponsorships)) {
     const report = await runDuty(duty, d);

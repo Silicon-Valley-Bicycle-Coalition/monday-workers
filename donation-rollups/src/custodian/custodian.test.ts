@@ -1102,4 +1102,28 @@ describe('scheduled custodian run (write switch)', () => {
     expect((await d.gifts.lastRuns()).map((r) => r.duty).sort()).toEqual(
       ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue', 'rollcall']);
   });
+
+  // Issue #90: membership and recurring each paged People in full; one read now serves both.
+  it('pages a board that several duties read once per run', async () => {
+    const config = testConfig({ alertItemId: null });
+    const membershipCols = { status: 'ms', tier: 'mt', since: 'msi', until: 'mu', currentTermStart: 'ts', memberType: 'mty',
+      lapseCount: 'lc', lastLapsed: 'll' };
+    config.donationRollups.ownerColumnsByBoard = { '10': { ...OWNER_COLS, hasActiveRecurringGift: 'rg', membership: membershipCols } };
+    config.donationRollups.membership = { fromISO: '2020-01-01', eligibleGiftTypes: [], minAmountCents: 0, termMonths: 13,
+      lifetimeThresholdCents: 0, statusLabels: { active: 'A', lapsed: 'L' }, tierLabels: { member: 'M', lifetime: 'LT' },
+      typeLabels: { new: 'N', continuing: 'C', lapsedRenewal: 'R', lifetime: 'LT' } };
+    config.donationRollups.recurringGifts = { boardId: 50, columns: { donorLink: 'dl', status: 'st' }, activeStatusLabel: 'Active' };
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, [], config), now: new Date('2026-08-05T16:00:00Z') };
+    const reads: { boardId: number; columnIds: string[] }[] = [];
+    d.mondayClient.pageItemsColumnsText = async (boardId, columnIds) => {
+      reads.push({ boardId, columnIds });
+      return { cursor: null, items: [{ id: 'p1', text: new Map([['ts', '2025-07-01'], ['rg', 'v']]), values: new Map() }] };
+    };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    expect(reads.filter((r) => r.boardId === 10)).toEqual([{ boardId: 10, columnIds: expect.arrayContaining(['ts', 'rg']) }]);
+    // Recurring still saw the flag through the shared read: p1 has no active gift, so it's cleared.
+    expect(state.changedColumns).toEqual([{ boardId: 10, itemId: 'p1', columnValues: { rg: null } }]);
+  });
 });
