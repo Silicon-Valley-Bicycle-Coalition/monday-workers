@@ -97,7 +97,9 @@ export interface ProcessBatchDeps {
  * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
  * KV read failure) leaves the message on the queue untouched, backing off like any retry.
  */
-export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], realDeps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+  // An event is fetched from Eventbrite once per batch, however many of its attendees are in it (#96).
+  const deps = { ...realDeps, eventbriteClient: cacheEventReads(realDeps.eventbriteClient) };
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -108,6 +110,25 @@ export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMes
     }
     await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx, message.body.kind ?? 'order'));
   }
+}
+
+// getEvent memoised for the life of one batch, so the seconds-old copy is still "current" in the
+// sense the consumer needs. A failed read is not kept: the next message asks again.
+function cacheEventReads(client: EventbriteClient): EventbriteClient {
+  const events = new Map<string, ReturnType<EventbriteClient['getEvent']>>();
+  return {
+    getOrder: (orderId) => client.getOrder(orderId),
+    getAttendee: (eventId, attendeeId) => client.getAttendee(eventId, attendeeId),
+    getEvent: (eventId) => {
+      let read = events.get(eventId);
+      if (read === undefined) {
+        read = client.getEvent(eventId);
+        events.set(eventId, read);
+        read.catch(() => events.delete(eventId));
+      }
+      return read;
+    },
+  };
 }
 
 export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
