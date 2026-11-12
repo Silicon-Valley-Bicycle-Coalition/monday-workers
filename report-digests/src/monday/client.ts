@@ -23,8 +23,12 @@ export interface MondayUser { id: string; email: string; enabled: boolean }
 // What a digest needs from Monday; the fake in src/digests.test.ts implements the same surface.
 export interface DigestsMondayClient {
   getBoard(boardId: number): Promise<Board | null>;
+  // A list digest's items, refused past MAX_ITEMS (a list that long belongs in the view).
   queryItems(boardId: number, rules: Rule[], columnIds: string[]): Promise<Item[]>;
-  getItemsByTitle(ids: string[]): Promise<LinkedItem[]>;
+  // Every matching item, one cursor page at a time, with no cap: for a digest that aggregates.
+  itemPages(boardId: number, rules: Rule[], columnIds: string[]): AsyncIterable<Item[]>;
+  // Items by id from any board, with only the columns titled `titles` (bare titles).
+  getItemsByTitle(ids: string[], titles: string[]): Promise<LinkedItem[]>;
   getUsers(ids: number[]): Promise<MondayUser[]>;
 }
 
@@ -34,9 +38,10 @@ export interface DigestsMondayClient {
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 4, requestTimeoutMs: 30_000 };
 
 // A filtered view should be tens or hundreds of items; this stops a filter that matched the whole
-// board from paging it all into one email.
+// board from paging it all into one email. Aggregating digests use itemPages, which has no cap.
 export const MAX_ITEMS = 5000;
 
+interface RawPage { cursor: string | null; items: RawItem[] }
 interface RawItem { id: string; name: string; column_values: { id: string; text: string | null; linked_item_ids?: string[]; display_value?: string }[] }
 
 function toItem(raw: RawItem, columnIds: string[]): Item {
@@ -60,49 +65,90 @@ export class HttpMondayClient implements DigestsMondayClient {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options, apiVersion: MONDAY_API_VERSION });
   }
 
-  async getBoard(boardId: number): Promise<Board | null> {
-    const data = await this.transport.request<{ boards: Board[] }>(
-      `query ($boardId: [ID!]) { boards(ids: $boardId) { id name columns { id title type } views { id name } } }`,
-      { boardId: [String(boardId)] },
-    );
-    return data.boards[0] ?? null;
+  // One client serves one cron run or request, so the three Monday 08:00 digests share one read
+  // of the Donations board's schema. A failed read isn't kept: the next digest tries again.
+  private readonly boards = new Map<number, Promise<Board | null>>();
+
+  getBoard(boardId: number): Promise<Board | null> {
+    let board = this.boards.get(boardId);
+    if (!board) {
+      board = this.transport.request<{ boards: Board[] }>(
+        `query ($boardId: [ID!]) { boards(ids: $boardId) { id name columns { id title type } views { id name } } }`,
+        { boardId: [String(boardId)] },
+      ).then((data) => data.boards[0] ?? null);
+      board.catch(() => this.boards.delete(boardId));
+      this.boards.set(boardId, board);
+    }
+    return board;
   }
 
-  async queryItems(boardId: number, rules: Rule[], columnIds: string[]): Promise<Item[]> {
+  async *itemPages(boardId: number, rules: Rule[], columnIds: string[]): AsyncGenerator<Item[]> {
     const fields = `cursor items { id name column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids display_value } } }`;
-    const first = await this.transport.request<{ boards: { items_page: { cursor: string | null; items: RawItem[] } }[] }>(
+    const first = await this.transport.request<{ boards: { items_page: RawPage }[] }>(
       `query ($boardId: [ID!], $columnIds: [String!], $rules: [ItemsQueryRule!]) {
         boards(ids: $boardId) { items_page(limit: 500, query_params: { rules: $rules }) { ${fields} } }
       }`,
       { boardId: [String(boardId)], columnIds, rules },
     );
     let page = first.boards[0]?.items_page;
-    const items: Item[] = [];
     while (page) {
-      items.push(...page.items.map((raw) => toItem(raw, columnIds)));
-      if (items.length > MAX_ITEMS) throw new Error(`board ${boardId}: filter matched more than ${MAX_ITEMS} items — check the digest's rules`);
+      yield page.items.map((raw) => toItem(raw, columnIds));
       if (!page.cursor) break;
-      const next = await this.transport.request<{ next_items_page: { cursor: string | null; items: RawItem[] } }>(
+      const next = await this.transport.request<{ next_items_page: RawPage }>(
         `query ($cursor: String!, $columnIds: [String!]) { next_items_page(limit: 500, cursor: $cursor) { ${fields} } }`,
         { cursor: page.cursor, columnIds },
       );
       page = next.next_items_page;
     }
+  }
+
+  async queryItems(boardId: number, rules: Rule[], columnIds: string[]): Promise<Item[]> {
+    const items: Item[] = [];
+    for await (const page of this.itemPages(boardId, rules, columnIds)) {
+      items.push(...page);
+      if (items.length > MAX_ITEMS) throw new Error(`board ${boardId}: filter matched more than ${MAX_ITEMS} items — check the digest's rules`);
+    }
     return items;
   }
 
-  async getItemsByTitle(ids: string[]): Promise<LinkedItem[]> {
+  async getItemsByTitle(ids: string[], titles: string[]): Promise<LinkedItem[]> {
     const out: LinkedItem[] = [];
     // items(ids:) takes at most 100 ids per call.
     for (let i = 0; i < ids.length; i += 100) {
-      const data = await this.transport.request<{
-        items: { id: string; name: string; board: { id: string }; column_values: { text: string | null; column: { title: string } }[] }[];
-      }>(
-        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id name board { id } column_values { text column { title } } } }`,
-        { ids: ids.slice(i, i + 100) },
+      const chunk = ids.slice(i, i + 100);
+      // A Donor link can point at People, People (Historical) or Organizations, whose column ids
+      // differ: find each item's board, resolve the titles there, then read just those columns —
+      // not every column, which on People includes the Gift Ledger JSON and Windfall data.
+      const found = await this.transport.request<{ items: { id: string; name: string; board: { id: string } }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id name board { id } } }`,
+        { ids: chunk },
       );
-      for (const item of data.items) {
-        const byTitle = new Map(item.column_values.map((cv) => [bareTitle(cv.column.title), cv.text === null || cv.text === '' ? null : cv.text]));
+      if (found.items.length === 0) continue;
+      const boardIds = [...new Set(found.items.map((item) => item.board.id))];
+      const schema = await this.transport.request<{ boards: { id: string; columns: { id: string; title: string }[] }[] }>(
+        `query ($boardIds: [ID!]) { boards(ids: $boardIds) { id columns { id title } } }`,
+        { boardIds },
+      );
+      // Board id → column id → bare title, for the requested titles only.
+      const wanted = new Map(schema.boards.map((b) => [b.id, new Map(
+        b.columns.filter((c) => titles.includes(bareTitle(c.title))).map((c) => [c.id, bareTitle(c.title)]),
+      )]));
+      const columnIds = [...new Set([...wanted.values()].flatMap((cols) => [...cols.keys()]))];
+      const values = new Map<string, { id: string; text: string | null }[]>();
+      if (columnIds.length > 0) {
+        const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
+          `query ($ids: [ID!], $columnIds: [String!]) { items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } } }`,
+          { ids: found.items.map((item) => item.id), columnIds },
+        );
+        for (const item of data.items) values.set(item.id, item.column_values);
+      }
+      for (const item of found.items) {
+        const cols = wanted.get(item.board.id) ?? new Map<string, string>();
+        const byTitle = new Map<string, string | null>(titles.map((t) => [t, null]));
+        for (const cv of values.get(item.id) ?? []) {
+          const title = cols.get(cv.id);
+          if (title !== undefined) byTitle.set(title, cv.text === null || cv.text === '' ? null : cv.text);
+        }
         out.push({ id: item.id, name: item.name, boardId: item.board.id, byTitle });
       }
     }

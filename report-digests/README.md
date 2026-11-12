@@ -40,6 +40,8 @@ The views are created by `salesforce-import`'s `configure` step (`src/configure/
   carries the donor's Lifetime Giving and Donor Level, read from the Donor item. It carries no
   Windfall wealth-screening data: that is purchased third-party data, and it stays off email.
 * `fiscal-year-by-size`: this fiscal year's Received gifts, counted and totalled by Gift Size.
+  It totals page by page, so it has no item cap. The list digests refuse a filter that matches
+  more than 5,000 items.
 * `last-week`: every gift dated in the last 7 days, newest first, with its Status.
 
 Date windows end today, so a pledge dated in the future isn't listed yet. Tables stop at 150 rows
