@@ -42,7 +42,7 @@ afterward, same steps.
 | 4 | Date received | Date | yes | Date | Default today. For a check, the date it was deposited/received, not written. |
 | 5 | Gift type | SingleSelect | yes | Gift Type | **Gift Type is a text column**; a form select can't write to text. Options: either convert the column to Dropdown (touches `salesforce-import`, `donation-rollups` classify, `funraise-sync` reads — check first) or use ShortText with the allowed values listed in the description. Recommend: leave column as text, ShortText, default `Donation`. |
 | 6 | Campaign | ConnectedBoards (Campaigns) | no | Campaign | |
-| 7 | Thank you already sent? | Boolean | no | Thank You Sent | For gifts acknowledged at the counter. |
+| 7 | Thank you already sent? | Boolean | no | Thank You Sent | Description: "Check if the donor has already been thanked (note, email, call). Leave blank and gifts of $200+ go on the 'Major gifts to thank' list." Unchecked keeps a Major-tier gift on that dashboard list. |
 | 8 | Payment method | ShortText | no | Payment Method | Default `Cash/Check`. Column already exists. |
 | 9 | Check / reference number | ShortText | no | Check/Reference Number | Column already exists. |
 
