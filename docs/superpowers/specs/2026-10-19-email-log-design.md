@@ -1,6 +1,6 @@
 # email-log: BCC an email to log it on Monday
 
-Date: 2026-10-19. Status: design, not built.
+Date: 2026-10-19. Status: **superseded 2026-11-04** by Monday CRM Emails & Activities; not built. See `2026-11-12-organizer-email-logging-design.md`.
 
 ## Why
 
