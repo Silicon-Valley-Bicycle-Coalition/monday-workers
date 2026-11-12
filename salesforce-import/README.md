@@ -68,6 +68,13 @@ npm run cli -- backfill-org-notes --board <Organizations id> --activity-id <id> 
                                     # Account.Description → Emails & Activities entry, per Organization
 ```
 
+**`data/` is owner-only.** Everything the CLI writes there is donor PII, so it creates directories
+0700 and files 0600 regardless of umask, and tightens a directory or rewritten file an older build
+left 0755/0644. An append-only file from an older build (the ledger) keeps its mode but sits in a
+0700 directory; `chmod -R go-rwx data` tightens a whole older tree at once. Every CSV cell starting
+with `= + - @`, tab or CR is prefixed with `'` (`src/csv.ts`), so a formula in a public-form name
+opens as text in Excel or Sheets.
+
 **Organization Descriptions** (`backfill-org-notes`). Salesforce staff used `Account.Description`
 as a running log on organizations, the way People use Emails & Activities; the main import never
 carried it. This command reads every non-person Account with a Description and posts it to that

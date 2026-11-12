@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -266,7 +266,8 @@ describe('runTransform', () => {
       { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'ada@gmail.com', AccountId: 'a-ind', ...prov },
       // Affiliated at the comma/quote-named org, but its secondary address is an unknown
       // domain (neither the org's site nor a consumer domain) → review row.
-      { Id: 'c9', FirstName: 'Rae', LastName: 'P', Email: 'rae@gmail.com', Secondary_Email__c: 'rae@mystery.biz', ...prov },
+      // A formula-like name (public-form input) must reach the sheet as literal text (#111).
+      { Id: 'c9', FirstName: '=Rae', LastName: 'P', Email: 'rae@gmail.com', Secondary_Email__c: 'rae@mystery.biz', ...prov },
     ]);
     await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
       { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
@@ -288,6 +289,8 @@ describe('runTransform', () => {
 
     const classification = readFileSync(dataPath('review', 'email-classification.csv'), 'utf8');
     expect(classification).toContain('"af9:Bike Shop, ""The"" Inc."');
+    expect(classification).toContain(",'=Rae P,");
+    expect(statSync(dataPath('review', 'email-classification.csv')).mode & 0o777).toBe(0o600);
   });
 
   it('lands Funraise and Eventbrite events on the same two boards and feeds People inclusion', async () => {
