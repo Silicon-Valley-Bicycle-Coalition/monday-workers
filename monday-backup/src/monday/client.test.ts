@@ -96,6 +96,50 @@ describe('HttpMondayClient', () => {
     expect(schema.groups).toEqual([{ id: 'g1', title: 'Group 1', color: '#037f4c', position: '65536' }]);
   });
 
+  it('fetches schema, first items page and first updates page in one request, then serves them to the page iterators (#95)', async () => {
+    const fetchMock = mockFetchSequence([
+      {
+        data: {
+          boards: [
+            {
+              columns: [],
+              groups: [],
+              items_page: {
+                cursor: null,
+                items: [
+                  {
+                    id: 'i1',
+                    name: 'Item',
+                    state: 'active',
+                    created_at: null,
+                    updated_at: null,
+                    creator_id: null,
+                    group: null,
+                    parent_item: null,
+                    column_values: [],
+                    assets: [],
+                  },
+                ],
+              },
+              updates: [
+                { id: 'u1', item_id: 'i1', body: 'b', text_body: 'b', created_at: null, updated_at: null, creator_id: null, replies: [], assets: [] },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    await client.getBoardSchema('7');
+    const items: string[] = [];
+    for await (const page of client.boardItemPages('7')) items.push(...page.map((i) => i.id));
+    const updates: string[] = [];
+    for await (const page of client.boardUpdatePages('7')) updates.push(...page.map((u) => u.id));
+    expect(items).toEqual(['i1']);
+    expect(updates).toEqual(['u1']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when a board is not found for schema lookup', async () => {
     mockFetchSequence([{ data: { boards: [] } }]);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
