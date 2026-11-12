@@ -40,10 +40,6 @@ interface ItemsPage { cursor: string | null; items: RawItem[] }
 // per-minute complexity budget, and a longer failure fails the run for the next one to redo.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 4, requestTimeoutMs: 30_000 };
 
-// Donations holds thousands of gifts, almost all with no matching company; its rule reads only
-// the ones where this column is set.
-const SPARSE_ORG_COLUMN = 'Matched By';
-
 const COLUMN_VALUES = 'column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } ... on DropdownValue { values { label } } }';
 
 const idsOf = (cv: RawColumnValue | undefined): string[] => (cv?.linked_item_ids ?? []).map(String);
@@ -77,9 +73,8 @@ export class HttpMondayClient implements ContactRolesMondayClient {
     return cached;
   }
 
-  private async pageAll(boardId: string, columnIds: string[], rules: unknown[] | null): Promise<RawItem[]> {
+  private async pageAll(boardId: string, columnIds: string[], queryParams: unknown): Promise<RawItem[]> {
     const items: RawItem[] = [];
-    const queryParams = rules === null ? null : { rules };
     const first = await this.transport.request<{ boards: { items_page: ItemsPage }[] }>(
       `query ($boardId: [ID!], $columnIds: [String!], $query: ItemsQuery) {
         boards(ids: $boardId) { items_page(limit: 500, query_params: $query) { cursor items { id ${COLUMN_VALUES} } } }
@@ -114,7 +109,7 @@ export class HttpMondayClient implements ContactRolesMondayClient {
     const person = columnByTitle(cols, cfg.personColumn, cfg.boardId).id;
     const org = columnByTitle(cols, cfg.orgColumn, cfg.boardId).id;
     // Only SVBC Roles is requested; Proposed Roles is deliberately never read.
-    const items = await this.pageAll(cfg.boardId, [person, org, status, roles], [{ column_id: roles, compare_value: [], operator: 'is_not_empty' }]);
+    const items = await this.pageAll(cfg.boardId, [person, org, status, roles], { rules: [{ column_id: roles, compare_value: [], operator: 'is_not_empty' }] });
     const out: Affiliation[] = [];
     for (const item of items) {
       const by = new Map(item.column_values.map((cv) => [cv.id, cv]));
@@ -132,9 +127,12 @@ export class HttpMondayClient implements ContactRolesMondayClient {
     const org = columnByTitle(cols, rule.orgColumn, rule.boardId).id;
     const contacts = columnByTitle(cols, rule.contactsColumn, rule.boardId).id;
     const type = rule.typeColumn === undefined ? null : columnByTitle(cols, rule.typeColumn, rule.boardId).id;
-    const sparse = bareTitle(rule.orgColumn) === SPARSE_ORG_COLUMN;
-    const rules = sparse ? [{ column_id: org, compare_value: [], operator: 'is_not_empty' }] : null;
-    const items = await this.pageAll(rule.boardId, type === null ? [org, contacts] : [org, contacts, type], rules);
+    // A sparse board (Donations) reads items with an org link, plus items that still carry
+    // Contacts after the link was cleared, so those stale contacts can be removed.
+    const queryParams = rule.sparse === true
+      ? { operator: 'or', rules: [org, contacts].map((id) => ({ column_id: id, compare_value: [], operator: 'is_not_empty' })) }
+      : null;
+    const items = await this.pageAll(rule.boardId, type === null ? [org, contacts] : [org, contacts, type], queryParams);
     return items.map((item) => {
       const by = new Map(item.column_values.map((cv) => [cv.id, cv]));
       return {
@@ -147,6 +145,8 @@ export class HttpMondayClient implements ContactRolesMondayClient {
   }
 
   async setContacts(rule: BoardRule, itemId: string, personIds: string[]): Promise<void> {
+    const bad = personIds.filter((id) => !/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)));
+    if (bad.length > 0) throw new Error(`setContacts: item ${itemId} on board ${rule.boardId}: ${bad.length} person id(s) are not numeric`);
     const contacts = columnByTitle(await this.columns(rule.boardId), rule.contactsColumn, rule.boardId).id;
     // Connect-boards value; an empty list clears the column. Writing the same set twice is
     // harmless, so the transport may retry it.

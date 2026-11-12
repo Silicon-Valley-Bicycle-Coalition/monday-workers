@@ -11,6 +11,7 @@ export interface FakeBoard { id: string; columns: FakeColumn[]; items: FakeItem[
 export interface FakeWrite { boardId: string; itemId: string; values: Record<string, unknown> }
 
 interface Rule { column_id: string; compare_value: unknown[]; operator: string }
+interface Params { operator?: string; rules?: Rule[] }
 
 export class FakeMonday {
   readonly boards = new Map<string, FakeBoard>();
@@ -39,14 +40,15 @@ export class FakeMonday {
       return { change_multiple_column_values: { id: String(v.itemId) } };
     }
     if (query.includes('next_items_page')) {
-      const [boardId, start, columnIds, rules] = JSON.parse(String(v.cursor)) as [string, number, string[], Rule[] | null];
-      return { next_items_page: this.page(this.board(boardId), start, columnIds, rules) };
+      const [boardId, start, params] = JSON.parse(String(v.cursor)) as [string, number, Params | null];
+      if (!Array.isArray(v.columnIds)) throw new Error('fake: next_items_page sent no columnIds');
+      return { next_items_page: this.page(this.board(boardId), start, v.columnIds as string[], params) };
     }
     if (query.includes('items_page')) {
       const board = this.board(v.boardId);
-      const rules = (v.query as { rules?: Rule[] } | null | undefined)?.rules ?? null;
+      const params = (v.query as Params | null | undefined) ?? null;
       this.queryParams.push(v.query ?? null);
-      return { boards: [{ items_page: this.page(board, 0, v.columnIds as string[], rules) }] };
+      return { boards: [{ items_page: this.page(board, 0, v.columnIds as string[], params) }] };
     }
     if (query.includes('columns')) {
       const board = this.board(v.boardId);
@@ -55,21 +57,24 @@ export class FakeMonday {
     throw new Error(`fake: unrecognised query ${query.slice(0, 60)}`);
   }
 
-  private matches(item: FakeItem, rules: Rule[] | null): boolean {
-    for (const r of rules ?? []) {
+  private matches(item: FakeItem, params: Params | null): boolean {
+    const rules = params?.rules ?? [];
+    if (rules.length === 0) return true;
+    const test = (r: Rule): boolean => {
       if (r.operator !== 'is_not_empty') throw new Error(`fake: unsupported operator ${r.operator}`);
       const cell = item.cells[r.column_id];
-      const filled = (cell?.linked?.length ?? 0) > 0 || (cell?.labels?.length ?? 0) > 0 || (cell?.text ?? '') !== '';
-      if (!filled) return false;
-    }
-    return true;
+      return (cell?.linked?.length ?? 0) > 0 || (cell?.labels?.length ?? 0) > 0 || (cell?.text ?? '') !== '';
+    };
+    if (params?.operator === 'or') return rules.some(test);
+    if (params?.operator !== undefined && params.operator !== 'and') throw new Error(`fake: unsupported group operator ${params.operator}`);
+    return rules.every(test);
   }
 
-  private page(board: FakeBoard, start: number, columnIds: string[], rules: Rule[] | null) {
+  private page(board: FakeBoard, start: number, columnIds: string[], params: Params | null) {
     this.requestedColumns.push(columnIds);
-    const all = board.items.filter((i) => this.matches(i, rules));
+    const all = board.items.filter((i) => this.matches(i, params));
     const slice = all.slice(start, start + this.pageSize);
-    const next = start + this.pageSize < all.length ? JSON.stringify([board.id, start + this.pageSize, columnIds, rules]) : null;
+    const next = start + this.pageSize < all.length ? JSON.stringify([board.id, start + this.pageSize, params]) : null;
     return {
       cursor: next,
       items: slice.map((item) => ({

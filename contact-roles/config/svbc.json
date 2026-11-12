@@ -12,7 +12,7 @@
     { "name": "Sponsorships", "boardId": "18391037433", "orgColumn": "Organization", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
     { "name": "Grants & Contracts", "boardId": "7896177072", "orgColumn": "Funder", "contactsColumn": "Contacts", "role": "Grants", "enabled": true },
     { "name": "BP Request Form", "boardId": "18395469629", "orgColumn": "Host Organization", "contactsColumn": "Contacts", "role": "Bike Parking", "enabled": true },
-    { "name": "Donations", "boardId": "18437909794", "orgColumn": "Matched By", "contactsColumn": "Contacts", "role": "Donation Matching", "enabled": true },
+    { "name": "Donations", "boardId": "18437909794", "orgColumn": "Matched By", "contactsColumn": "Contacts", "role": "Donation Matching", "sparse": true, "enabled": true },
     { "name": "Bike Education Lifecycle Tracker", "boardId": "18433254640", "orgColumn": "Organization", "contactsColumn": "Contacts", "role": "Classes", "enabled": false },
     { "name": "Leads", "boardId": "8531259839", "orgColumn": "Organization", "contactsColumn": "Contacts", "typeColumn": "Type", "typeRoles": { "Sponsorship": "Sponsorship", "Grant": "Grants" }, "enabled": false }
   ]

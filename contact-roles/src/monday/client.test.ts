@@ -8,7 +8,7 @@ const affCfg: ContactRolesConfig['affiliations'] = {
   boardId: AFF_BOARD, rolesColumn: 'SVBC Roles', statusColumn: 'Status', personColumn: 'Person', orgColumn: 'Organization', currentLabel: 'Current',
 };
 const sponsorships: BoardRule = { name: 'Sponsorships', boardId: '100', orgColumn: 'Organization', contactsColumn: 'Contacts', role: 'Sponsorship', enabled: true };
-const donations: BoardRule = { name: 'Donations', boardId: '200', orgColumn: 'Matched By', contactsColumn: 'Contacts', role: 'Donation Matching', enabled: true };
+const donations: BoardRule = { name: 'Donations', boardId: '200', orgColumn: 'Matched By', contactsColumn: 'Contacts', role: 'Donation Matching', sparse: true, enabled: true };
 const leads: BoardRule = { name: 'Leads', boardId: '300', orgColumn: 'Organization', contactsColumn: 'Contacts', typeColumn: 'Type', typeRoles: { Sponsorship: 'Sponsorship' }, enabled: true };
 
 function affiliationsFake(): FakeMonday {
@@ -98,6 +98,7 @@ describe('listBoardItems', () => {
       items: [
         { id: 'd1', cells: { br_mb: { linked: ['o1'] } } },
         { id: 'd2', cells: { br_mb: { linked: [] } } },
+        { id: 'd4', cells: { br_mb: { linked: [] }, br_con: { linked: ['p7'] } } },
         { id: 'd3', cells: { br_mb: { linked: ['o2'] }, br_con: { linked: ['p9'] } } },
       ],
     });
@@ -127,12 +128,14 @@ describe('listBoardItems', () => {
     expect(fake.requestedColumns.length).toBe(2);
   });
 
-  it('reads only items with Matched By set on the Donations rule', async () => {
+  it('on a sparse rule reads items with Matched By or Contacts set, not the whole board', async () => {
     const fake = boardsFake();
     const client = new HttpMondayClient('https://x', 'tok', { fetchFn: fake.fetchFn });
     const items = await client.listBoardItems(donations);
-    expect(items.map((i) => i.id)).toEqual(['d1', 'd3']);
-    expect(items[1]).toEqual({ id: 'd3', orgIds: ['o2'], typeLabel: null, currentPersonIds: ['p9'] });
+    // d4 had Matched By cleared but still carries Contacts: returned so it can be cleared. d2 has neither.
+    expect(items.map((i) => i.id)).toEqual(['d1', 'd4', 'd3']);
+    expect(items.find((i) => i.id === 'd4')).toEqual({ id: 'd4', orgIds: [], typeLabel: null, currentPersonIds: ['p7'] });
+    expect(items.at(-1)).toEqual({ id: 'd3', orgIds: ['o2'], typeLabel: null, currentPersonIds: ['p9'] });
   });
 
   it('reads the Type label for a typeColumn rule', async () => {
@@ -169,5 +172,13 @@ describe('setContacts', () => {
     const f = fake();
     await new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn }).setContacts(sponsorships, 's1', []);
     expect(f.writes[0]!.values).toEqual({ br_con: { item_ids: [] } });
+  });
+
+  it('rejects a non-numeric person id before writing', async () => {
+    const f = fake();
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+    await expect(client.setContacts(sponsorships, 's1', ['11', 'abc'])).rejects.toThrow(/not numeric/);
+    await expect(client.setContacts(sponsorships, 's1', ['99999999999999999999'])).rejects.toThrow(/not numeric/);
+    expect(f.writes).toEqual([]);
   });
 });

@@ -14,6 +14,9 @@ export interface BoardRule {
   role?: string; // fixed role label; absent when typeColumn is used
   typeColumn?: string; // bare title of the Type column
   typeRoles?: Record<string, string>; // Type label -> role label
+  // read only items whose org link or Contacts is set; for boards where most items have no org
+  // link, e.g. Donations
+  sparse?: boolean;
   enabled: boolean;
 }
 
@@ -44,6 +47,10 @@ function boardRule(raw: unknown, path: string): BoardRule {
     name: str(o, 'name', path), boardId: str(o, 'boardId', path),
     orgColumn: str(o, 'orgColumn', path), contactsColumn: str(o, 'contactsColumn', path), enabled,
   };
+  if (o.sparse !== undefined) {
+    if (typeof o.sparse !== 'boolean') throw new Error(`config: ${path}.sparse must be a boolean`);
+    rule.sparse = o.sparse;
+  }
   const hasRole = o.role !== undefined;
   const hasType = o.typeColumn !== undefined || o.typeRoles !== undefined;
   if (hasRole && hasType) throw new Error(`config: ${path} sets both role and typeColumn/typeRoles; use one`);

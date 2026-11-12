@@ -51,4 +51,14 @@ describe('validateConfig', () => {
     c.boards = [{ ...noRole, typeColumn: 'Type' }];
     expect(() => validateConfig(c)).toThrow(/typeRoles/);
   });
+  it('throws on a non-boolean sparse', () => {
+    const c = base();
+    c.boards = [{ ...rule, sparse: 'yes' }];
+    expect(() => validateConfig(c)).toThrow(/sparse/);
+  });
+  it('marks only Donations sparse in the shipped configs', () => {
+    for (const cfg of [production, sandbox]) {
+      for (const b of validateConfig(cfg).boards) expect(b.sparse === true).toBe(b.name === 'Donations');
+    }
+  });
 });
