@@ -4,7 +4,7 @@
 // only the last step — the Mailchimp or Monday write, or the D1 bookkeeping that records it — is
 // swapped out here. The dead-letter consumers and their Slack alert are not gated (DLQs stay live).
 import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
-import type { MailchimpClient, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
+import type { MailchimpClient, ManagedTags, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
 import type { MondayClient } from './monday/client';
 import type { CampaignItemRow, CampaignItemsStore } from './db/campaignItems';
 import type { DnsUnsubscribeLog } from './db/dnsUnsubscribes';
@@ -22,11 +22,21 @@ const MAILCHIMP_SINK = 'Mailchimp';
 const MONDAY_SINK = 'Monday';
 
 function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpClient {
-  return recordingProxy(client, MAILCHIMP_SINK, {
+  const recording = recordingProxy(client, MAILCHIMP_SINK, {
     updateMember: () => 'updated',
     renameMember: (): RenameMemberResult => 'renamed',
     unsubscribeMember: (): UnsubscribeResult => 'unsubscribed',
   }, ctx);
+  // updateMember's managed tags can be a reader the live client calls after its PATCH (#97). The
+  // placeholder never PATCHes, so resolve it here: the skip line then names the tags the write
+  // would have deactivated, as it did when the consumer read them up front.
+  return new Proxy(recording, {
+    get: (target, prop, receiver) =>
+      prop === 'updateMember'
+        ? async (email: string, mergeFields: Record<string, unknown>, tags: string[], managed: ManagedTags) =>
+            recording.updateMember(email, mergeFields, tags, typeof managed === 'function' ? await managed() : managed)
+        : Reflect.get(target, prop, receiver),
+  });
 }
 
 function dryRunMonday(client: MondayClient, ctx: SkipContext): MondayClient {

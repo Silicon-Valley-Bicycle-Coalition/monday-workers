@@ -152,6 +152,19 @@ describe('outbound consumer', () => {
     expect(out).not.toContain('@');
   });
 
+  // The live consumer passes Nearby managed tags as a reader (#97); the skip line must still name
+  // the tags the write would have deactivated, not a function.
+  it('off: the updateMember skip line carries the managed tags read from the member', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = outboundDeps();
+    deps.config = { ...CONFIG, monday: { ...CONFIG.monday, columns: { ...CONFIG.monday.columns, nearby: 'nearby' } } };
+    deps.mailchimpClient = fakeMailchimp({ getMemberTagNames: vi.fn().mockResolvedValue(['Near: Old']) });
+    await consumeOutboundBatch([outMsg({ donorItemId: '1' })], deps, { ...gate('off'), logLevel: 'debug' });
+    expect(deps.mailchimpClient.updateMember).not.toHaveBeenCalled();
+    const line = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"operation":"updateMember"'));
+    expect(line).toContain('Near: Old');
+  });
+
   it('a dropped-stamped message is a dry run even when writes are on', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const deps = outboundDeps();
