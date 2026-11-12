@@ -140,6 +140,14 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync.volunteers"');
     });
 
+    it('requires attendeeSync.volunteers.ticketTypeColumn (the placeholder opts out)', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.volunteers.ticketTypeColumn;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.volunteers.ticketTypeColumn" must be a Monday column id string');
+      cfg.attendeeSync.volunteers.ticketTypeColumn = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+
     it('accepts the placeholder in all five new columns (the pre-cutover production config)', () => {
       const cfg = valid();
       for (const key of NEW_VOLUNTEER_COLUMN_KEYS) cfg.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
@@ -182,6 +190,13 @@ describe('validateConfig', () => {
 
     it('throws when the columns are real but the board is null', () => {
       expect(() => volunteerBoardMode(testConfig({}, { volunteers: null }))).toThrow(/monday\.boards\.volunteers/);
+    });
+
+    it('ignores Ticket Type: its placeholder only means the ticket class is not written (#115)', () => {
+      const cfg = testConfig();
+      cfg.attendeeSync.volunteers.ticketTypeColumn = PLACEHOLDER_COLUMN_ID;
+      expect(volunteerBoardMode(cfg)).toBe('ready');
+      expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
     });
 
     it('ignores the five existing production columns', () => {

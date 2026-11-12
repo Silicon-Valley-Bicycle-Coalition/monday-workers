@@ -218,6 +218,9 @@ export interface EventbriteSyncConfig {
       volunteerLinkColumn: string;
       eventColumn: string;
       listingColumn: string;
+      // Eventbrite's ticket class name (e.g. "Shift 1"), so one person's two shifts don't read as a
+      // duplicate (#115). The placeholder writes nothing, and doesn't count toward volunteerBoardMode.
+      ticketTypeColumn: string;
     };
     // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
     registrantsLinkExcludedEventIds: string[];

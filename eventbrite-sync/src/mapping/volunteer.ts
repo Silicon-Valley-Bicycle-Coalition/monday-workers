@@ -1,3 +1,4 @@
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
@@ -26,6 +27,10 @@ export function mapVolunteer(
   if (facts.classDate !== null) columnValues[cols.dateColumn] = { date: facts.classDate };
   if (name !== null) columnValues[cols.attendeeNameColumn] = name;
   if (email !== null) columnValues[cols.attendeeEmailColumn] = { email, text: email };
+  // Organizer-authored text ("Shift 1", "Bike valet"), not an attendee answer. Written on every
+  // delivery, so a backfill-attendees.mjs replay fills it on items created before the column.
+  const ticketType = a.ticket_class_name?.trim() ?? '';
+  if (ticketType !== '' && cols.ticketTypeColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.ticketTypeColumn] = ticketType;
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
 }

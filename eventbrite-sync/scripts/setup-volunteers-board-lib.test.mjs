@@ -7,16 +7,21 @@ import {
 const col = (id, title, type = 'text') => ({ id, title, type });
 
 describe('planVolunteersBoard', () => {
-  it('plans all five columns on a board that has none of them', () => {
+  it('plans all six columns on a board that has none of them', () => {
     const { toCreate } = planVolunteersBoard([col('text_1', '📜 Job'), col('date_1', '📜 Date', 'date')]);
-    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email']);
-    expect(toCreate.map((s) => s.type)).toEqual(['board_relation', 'board_relation', 'text', 'text', 'email']);
+    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type']);
+    expect(toCreate.map((s) => s.type)).toEqual(['board_relation', 'board_relation', 'text', 'text', 'email', 'text']);
+  });
+
+  it('plans only Ticket Type on a board set up before #115', () => {
+    const before = VOLUNTEER_COLUMN_SPECS.filter((s) => s.key !== 'ticketTypeColumn').map((s, i) => col(`c_${i}`, `🔒 ${s.title}`, s.type));
+    expect(planVolunteersBoard(before).toCreate.map((s) => s.key)).toEqual(['ticketTypeColumn']);
   });
 
   it('does not plan a column that exists under a 🔒 marker', () => {
     const { toCreate } = planVolunteersBoard([col('text_9', '🔒 Eventbrite Attendee ID')]);
     expect(toCreate.map((s) => s.title)).not.toContain('Eventbrite Attendee ID');
-    expect(toCreate).toHaveLength(4);
+    expect(toCreate).toHaveLength(5);
   });
 
   it('plans nothing on a complete board', () => {
@@ -71,7 +76,7 @@ describe('columnConfig', () => {
   it('maps marked titles to config keys', () => {
     const cols = VOLUNTEER_COLUMN_SPECS.map((s, i) => col(`c_${i}`, `🔒 ${s.title}`, s.type));
     expect(columnConfig(cols).eventColumn).toBe('c_0');
-    expect(Object.keys(columnConfig(cols)).sort()).toEqual(['attendeeEmailColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'eventColumn', 'listingColumn']);
+    expect(Object.keys(columnConfig(cols)).sort()).toEqual(['attendeeEmailColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'eventColumn', 'listingColumn', 'ticketTypeColumn']);
   });
 
   it('names a missing column', () => expect(() => columnConfig([])).toThrow('Event'));
@@ -91,7 +96,7 @@ describe('parseArgs', () => {
 
 describe('read-only markers', () => {
   it('locks the Worker-written Volunteers columns', () => {
-    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email']);
+    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type']);
   });
   it('leaves Event editable', () => {
     const { locked, history } = MARKED_COLUMNS['Volunteers'];

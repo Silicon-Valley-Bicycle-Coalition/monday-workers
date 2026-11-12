@@ -14,6 +14,8 @@ export const VOLUNTEER_COLUMN_SPECS = [
   { key: 'attendeeIdColumn', title: 'Eventbrite Attendee ID', type: 'text' },
   { key: 'attendeeNameColumn', title: 'Attendee Name', type: 'text' },
   { key: 'attendeeEmailColumn', title: 'Attendee Email', type: 'email' },
+  // #115. Text, not status: ticket class names are free text, per event.
+  { key: 'ticketTypeColumn', title: 'Ticket Type', type: 'text' },
 ];
 
 /** Idempotent through bareTitle, so a 🔒 marker never causes a duplicate column. */

@@ -45,7 +45,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name and Attendee Email (each only if missing) and the view (grouped by Event, Date within the
+   Attendee Name, Attendee Email and Ticket Type (each only if missing) and the view (grouped by Event, Date within the
    last 90 days, newest first), and prints the column ids. Then, from the repo root, add the 🔒
    markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
    `18201685` is the production Donors & Contacts workspace, per
@@ -59,14 +59,16 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 2. **Put the production column ids in `eventbrite-sync/config/svbc.json`**, under
    `attendeeSync.volunteers`: `eventColumn`, `listingColumn`, `attendeeIdColumn`,
    `attendeeNameColumn`, `attendeeEmailColumn` are `REPLACE_WITH_COLUMN_ID` until then
-   (`monday.boards.volunteers` is already 18437909797). Commit and merge it.
+   (`monday.boards.volunteers` is already 18437909797). Also set `ticketTypeColumn` (#115) from
+   the same output. Commit and merge it.
 
    **Filling all five is what switches the Worker to the Volunteers board**, at the next deploy
    (step 4). While all five are the placeholder, `eventbrite-sync` keeps writing volunteer
    sign-ups as Event Registrations rows (Role = Volunteer) and its class emails read them there,
    exactly as before; so a deploy from `main` before this step is safe. Fill all five or none: a
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
-   splitting volunteers across two boards.
+   splitting volunteers across two boards. `ticketTypeColumn` is not one of the five: left as the
+   placeholder it only means Ticket Type stays blank.
 
 3. **Hold `eventbrite-sync`** (repo root).
 
@@ -290,7 +292,13 @@ step. Never delete the Volunteers items the backfill created.
   again after creating the item, so your choice sticks. **Eventbrite Listing** keeps the listing
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
-  Attendee Email). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+  Attendee Email, Ticket Type). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+- **Rows that look like duplicates usually aren't (#115).** One row is one Eventbrite ticket.
+  One order can hold several: two shifts (different **Ticket Type**), or several people bought
+  under one buyer's email (same Ticket Type, different Attendee Name). A cancel or refund keeps
+  its row with Status **Canceled**; the sync never deletes one. To count people at an event,
+  leave out Canceled rows and count Eventbrite Attendee IDs, not emails. Two live rows with
+  different Eventbrite orders are a real double registration in Eventbrite.
 - **Do not uncheck Historical** on a migrated row. Historical rows count towards membership only
   with Hours >= 1; unchecking it makes the row count as a live sign-up and changes history counts.
   (Monday cannot lock a single checkbox; it is a convention.)

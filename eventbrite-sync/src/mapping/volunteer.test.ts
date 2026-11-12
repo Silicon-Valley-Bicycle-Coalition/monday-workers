@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mergeAttendance } from './attendee';
 import { mapVolunteer, toAttendance, toVolunteerStatus } from './volunteer';
 import { testConfig } from '../test/testConfig';
+import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 
 const config = testConfig();
@@ -71,5 +72,24 @@ describe('mapVolunteer', () => {
   it('omits Date when the event has no class date', () => {
     const m = mapVolunteer(attendee(), { ...facts, classDate: null }, config, 'Registered');
     expect(m.columnValues).not.toHaveProperty('vol_date_col');
+  });
+
+  // #115: a person's Shift 1 and Shift 2 rows (one order, two ticket classes) looked like duplicates.
+  it('writes the ticket class, trimmed, to Ticket Type', () => {
+    const m = mapVolunteer(attendee({ ticket_class_name: '  Shift 2 (10am-noon) ' }), facts, config, 'Registered');
+    expect(m.columnValues.vol_ticket_col).toBe('Shift 2 (10am-noon)');
+  });
+
+  it.each([[undefined], [null], [''], ['   ']])('omits Ticket Type when the ticket class is %j', (ticketClass) => {
+    const m = mapVolunteer(attendee({ ticket_class_name: ticketClass as string | null | undefined }), facts, config, 'Registered');
+    expect(m.columnValues).not.toHaveProperty('vol_ticket_col');
+  });
+
+  it('writes no Ticket Type while the column is the placeholder', () => {
+    const cfg = testConfig();
+    cfg.attendeeSync.volunteers.ticketTypeColumn = PLACEHOLDER_COLUMN_ID;
+    const m = mapVolunteer(attendee({ ticket_class_name: 'Shift 1' }), facts, cfg, 'Registered');
+    expect(Object.keys(m.columnValues)).not.toContain(PLACEHOLDER_COLUMN_ID);
+    expect(Object.values(m.columnValues)).not.toContain('Shift 1');
   });
 });
