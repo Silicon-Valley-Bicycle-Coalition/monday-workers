@@ -49,6 +49,15 @@ export function toContact(raw: RawContact, src: SourceBoard): SourcedContact {
   return { id: raw.id, name: named ? named : raw.name, lat, lng, zip: null, kind: src.kind };
 }
 
+// A search walks every contact on three boards, so each board's {id, name, lat, lng} list is kept
+// for a few minutes per isolate: a radius change, a second preview and the confirm re-run all reuse
+// it. The client is rebuilt per request, hence module scope. In-flight walks are shared, and a
+// failed walk is evicted so the next search retries. Staleness is bounded by the TTL; the geocode
+// cron's new coordinates simply show up within it.
+export const CONTACT_CACHE_TTL_MS = 5 * 60_000;
+const contactCache = new Map<string, { at: number; contacts: Promise<SourcedContact[]> }>();
+export function clearContactCache(): void { contactCache.clear(); }
+
 interface Page<T> { cursor: string | null; items: T[] }
 
 export class HttpNearbyMondayClient implements NearbyMondayClient {
@@ -78,7 +87,18 @@ export class HttpNearbyMondayClient implements NearbyMondayClient {
     return out;
   }
 
-  async listContacts(src: SourceBoard): Promise<SourcedContact[]> {
+  listContacts(src: SourceBoard): Promise<SourcedContact[]> {
+    const key = JSON.stringify([src.boardId, src.kind, src.latColumn, src.lngColumn, src.nameColumn]);
+    const hit = contactCache.get(key);
+    if (hit && Date.now() - hit.at < CONTACT_CACHE_TTL_MS) return hit.contacts;
+    const contacts = this.walkContacts(src);
+    const entry = { at: Date.now(), contacts };
+    contactCache.set(key, entry);
+    contacts.catch(() => { if (contactCache.get(key) === entry) contactCache.delete(key); });
+    return contacts;
+  }
+
+  private async walkContacts(src: SourceBoard): Promise<SourcedContact[]> {
     const columnIds = [src.latColumn, src.lngColumn, ...(src.nameColumn === null ? [] : [src.nameColumn])];
     const items = await this.allItems<RawContact>(src.boardId, 'id name column_values(ids: $columnIds) { id text }', { columnIds }, '$columnIds: [String!]');
     return items.map((raw) => toContact(raw, src));
