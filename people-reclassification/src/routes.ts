@@ -5,6 +5,7 @@ import type { PassReport, SingleMoveResult } from './pass';
 import { parsePromoteEvent } from './promote';
 import { runDisposition, type WriteMode } from './flags';
 import { checkMondayWebhookJwt, type MondayJwtPolicy } from './mondayJwt';
+import { PROMOTE_WEBHOOK_PATH } from './rateLimit'; // one path, so the limiter exemption can't drift from the route
 
 export interface RoutesDeps {
   // Runs one pass now. dryRun comes from the write mode (off = dry) or a forced ?dryRun=true.
@@ -89,7 +90,7 @@ export function createApp(deps: RoutesDeps) {
 
   // Staff set Promote to People = Promote on an item. The URL secret is the first factor (root
   // README, "Webhook secrets in the URL"); Monday's signed JWT, when configured, is the second.
-  app.post('/webhooks/monday/promote', async (c) => {
+  app.post(PROMOTE_WEBHOOK_PATH, async (c) => {
     if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) return c.json({ ok: false }, 401);
     let body: unknown;
     try {

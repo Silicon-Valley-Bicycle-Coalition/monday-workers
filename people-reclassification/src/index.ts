@@ -11,7 +11,7 @@ import { runDaily } from './daily';
 import { promoteFromWebhook } from './promote';
 import { createApp } from './routes';
 import { jwtRequired } from './mondayJwt';
-import { checkRequestRateLimit } from './rateLimit';
+import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import { errorText } from './logSafe';
 import type { Env } from './types';
 
@@ -31,7 +31,11 @@ export default {
     // configFor validates synchronously and must keep throwing synchronously on a misconfigured
     // ENVIRONMENT, before any routing or rate-limit check.
     configFor(env);
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // Monday's own promote deliveries (passing the URL secret) skip the per-IP limit (issue #110).
+    return isVerifiedMondayWebhook(request, env.PROMOTE_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
       const deps = passDeps(env);
       const app = createApp({
