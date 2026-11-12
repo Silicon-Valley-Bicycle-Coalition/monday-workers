@@ -153,7 +153,7 @@ For the order of namespaces, keys and first deploy, see the runbook's "Merging /
    4. Create the `Roles to confirm` view on Affiliations (filter: `Proposed Roles` is not empty).
    5. Hide `Contacts` on the sandbox "Enter a gift" form, then
       `node scripts/check-donation-form.mjs --form 2325fd7745d3a2d425086d38358e4bd5`.
-   6. `node scripts/mark-read-only-columns.mjs --workspace 18210301 --suffix " (Sandbox)"` (dry run), then the same with `--apply` (puts 🔒 on `Contacts`). Production: `--workspace 18201685`, no `--suffix`.
+   6. `node scripts/mark-read-only-columns.mjs --workspace 18210301 --suffix " (sandbox v4)"` (dry run), then the same with `--apply` (puts 🔒 on `Contacts`). Production: `--workspace 18201685`, no `--suffix`.
    7. `npm run deploy:sandbox` with the write switch left **off**. Read the `run-complete` log
       line (`npx wrangler tail`, or Workers Logs): it carries each board's `items` and `updates`
       counts. Confirm the counts are plausible, which proves the `is_not_empty` / `or` filters and

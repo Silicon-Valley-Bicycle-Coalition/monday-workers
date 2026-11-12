@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MARKED_COLUMNS, MondayError, applyRenames, isTransient, parseArgs, planRenames, withRetry,
+  MARKED_COLUMNS, MondayError, applyRenames, isTransient, parseArgs, planRenames, suffixMatchesAny, withRetry,
 } from './mark-read-only-columns.mjs';
 import { WINDFALL_TITLES } from './lib/windfall-board.mjs';
 
@@ -38,6 +38,13 @@ describe('planRenames', () => {
       board('2', 'Letter Settings (Sandbox)', [col('x', 'Lifetime Giving')]),
     ], spec, { suffix: ' (Sandbox)' });
     assert.deepEqual(plan.renames.map((r) => r.boardId), ['1']);
+  });
+
+  it('suffixMatchesAny rejects a suffix no board ends with (sandbox v4 boards end " (sandbox v4)")', () => {
+    const boards = [board('1', 'Sponsorships (sandbox v4)', []), board('2', 'Pledge to Ride', [])];
+    assert.equal(suffixMatchesAny(boards, ' (Sandbox)'), false);
+    assert.equal(suffixMatchesAny(boards, ' (sandbox v4)'), true);
+    assert.equal(suffixMatchesAny(boards, ''), true);
   });
 
   it('lists listed titles a matched board does not have, so typos and unbuilt columns show up', () => {

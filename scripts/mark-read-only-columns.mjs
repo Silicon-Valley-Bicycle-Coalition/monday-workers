@@ -165,6 +165,11 @@ export function planRenames(boards, spec = MARKED_COLUMNS, { suffix = '', remove
   return { renames, missing, unmarked };
 }
 
+// True when no suffix was given, or at least one board name ends with it.
+export function suffixMatchesAny(boards, suffix) {
+  return !suffix || boards.some((b) => b.name.endsWith(suffix));
+}
+
 export function formatPlan(plan, { apply }) {
   const lines = [];
   for (const r of plan.renames) lines.push(`${apply ? 'will rename' : 'would rename'}  ${r.boardName}: "${r.from}" → "${r.to}"`);
@@ -280,7 +285,15 @@ async function main() {
     return 2;
   }
   const options = { suffix: args.suffix, remove: args.remove };
-  const plan = planRenames(await listBoards(token, args.workspace), MARKED_COLUMNS, options);
+  const boards = await listBoards(token, args.workspace);
+  // A suffix that matches no board means every suffixed board would be skipped while unsuffixed
+  // boards in the workspace still match (the sandbox v4 boards end " (sandbox v4)", not " (Sandbox)").
+  if (!suffixMatchesAny(boards, args.suffix)) {
+    console.error(`no board in workspace ${args.workspace} ends with ${JSON.stringify(args.suffix)}; ` +
+      `check the suffix (boards: ${[...new Set(boards.map((b) => b.name.match(/\(([^)]*)\)$/)?.[0]).filter(Boolean))].join(', ')})`);
+    return 2;
+  }
+  const plan = planRenames(boards, MARKED_COLUMNS, options);
   console.log(formatPlan(plan, args));
   if (!args.apply) return 0;
 
