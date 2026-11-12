@@ -642,7 +642,10 @@ hand over HTTP reads for itself and keeps only its own cap.
   This/Last Year move (plus sponsorship owners when `sponsorships.yearBasis` is `fiscal`); a sweep
   on any other day, or `?all=true`, covers everyone. Each run enqueues at most
   `custodian.sweepOwnersPerRun` owners (optional, 1-3,500, default 1,500; each costs the consumer
-  about 2-4 Monday calls) and the daily cron continues it until `remaining` is 0.
+  about 2-4 Monday calls) and the daily cron continues it until `remaining` is 0. Sandbox and
+  production share the account cap and sweep on the same day, so `config/sandbox.json` sets 500:
+  about 1,590 rollover owners each (measured 2026-11-12 for the 2027-07-01 sweep), production
+  done in 2 days and sandbox in 4, with day 1 at most ~8,500 calls across both.
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
   comparison — values written before issue #27 carry float noise; since then every money column
   is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
