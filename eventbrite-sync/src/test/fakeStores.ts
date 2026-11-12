@@ -45,6 +45,12 @@ export function fakeClassEmailStore(seed: ClassEmailRow[] = []): ClassEmailStore
       const i = find(eventId, kind, id);
       if (i !== -1 && rows[i]!.status !== 'sent') rows[i] = { ...rows[i]!, status, resolvedAt };
     },
+    resolveMany: async (eventId, kind, outcomes, resolvedAt) => {
+      for (const { registrationId, status } of outcomes) {
+        const i = find(eventId, kind, registrationId);
+        if (i !== -1 && rows[i]!.status !== 'sent') rows[i] = { ...rows[i]!, status, resolvedAt };
+      }
+    },
     release: async (eventId, kind, ids, claimedBefore) => {
       const released: string[] = [];
       for (const id of ids) {

@@ -184,4 +184,20 @@ describe('processDeadLetters', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('acks a dead class email step, logging it with ids only, and touches no ledger', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const orders = store(null);
+    const m = {
+      body: { kind: 'class-email' as const, step: 'follow-up' as const, eventId: 'e1', emailKind: 'thank-you' as const, audience: 'Participant' as const, registrationId: '10' },
+      timestamp: new Date('2026-10-06T10:00:05.000Z'), ack: vi.fn(), retry: vi.fn(),
+    };
+    await processDeadLetters([m], { orderStore: orders, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
+    expect(m.ack).toHaveBeenCalledTimes(1);
+    expect(m.retry).not.toHaveBeenCalled();
+    expect(orders.updateStatus).not.toHaveBeenCalled();
+    const logged = String(error.mock.calls[0]?.[0]);
+    expect(logged).toContain('registration "10"');
+    expect(logged).toContain('by hand');
+  });
 });
