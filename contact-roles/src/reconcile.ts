@@ -11,8 +11,10 @@ import { MondayApiError } from './monday/graphql';
 export interface RunDeps { monday: ContactRolesMondayClient; config: ContactRolesConfig; environment?: string }
 export interface BoardSummary {
   name: string;
-  skipped?: 'disabled' | 'unknown-role';
-  failed?: boolean; // a Monday error stopped this board; the others still ran
+  skipped?: 'disabled' | 'unknown-role' | 'no-confirmed-roles';
+  // `true`: a read error stopped the whole board. A number: how many item writes failed while
+  // the rest of the board still ran. Other boards run either way.
+  failed?: true | number;
   items: number;
   updates: number;
   written: number;
@@ -35,12 +37,24 @@ export async function runReconcile(deps: RunDeps, mode: 'on' | 'off'): Promise<R
   const { monday, config } = deps;
   let labels: Set<string>;
   let index: ReturnType<typeof buildIndex>;
+  let confirmed: number;
   try {
     labels = new Set(await monday.roleLabels(config.affiliations));
-    index = buildIndex(await monday.listAffiliations(config.affiliations), config.affiliations.currentLabel);
+    const affiliations = await monday.listAffiliations(config.affiliations);
+    confirmed = affiliations.filter((a) => a.roles.length > 0).length;
+    index = buildIndex(affiliations, config.affiliations.currentLabel);
   } catch (err) {
     console.error(JSON.stringify({ worker: 'contact-roles', event: 'run-failed', environment: deps.environment, mode, ...errFields(err) }));
     throw err; // fail the cron invocation
+  }
+
+  if (confirmed === 0) {
+    // Mass-removal guard: with no confirmed role anywhere (a cleared or renamed column, a read
+    // that came back empty) every Contacts column would be blanked. Leave them all as they are.
+    console.warn(JSON.stringify({ worker: 'contact-roles', event: 'no-confirmed-roles', affiliations: 0, boards: config.boards.length }));
+    const boards = config.boards.map((r): BoardSummary => ({ name: r.name, skipped: 'no-confirmed-roles', items: 0, updates: 0, written: 0 }));
+    console.log(JSON.stringify({ worker: 'contact-roles', event: 'run-complete', mode, boards }));
+    return { mode, boards };
   }
 
   const boards: BoardSummary[] = [];
@@ -58,22 +72,27 @@ export async function runReconcile(deps: RunDeps, mode: 'on' | 'off'): Promise<R
       console.warn(JSON.stringify({ worker: 'contact-roles', event: 'skipped-unknown-role', board: rule.name, boardId: rule.boardId, missingRoles: missing.length }));
       continue;
     }
-    let itemId: string | undefined;
     try {
       const items = await monday.listBoardItems(rule);
       const updates = planBoard(rule, items, index);
       summary.items = items.length;
       summary.updates = updates.length;
       if (mode === 'on') {
+        // One bad item must not starve the rest of the board on every run: count it, log its
+        // id once, keep going.
         for (const u of updates) {
-          itemId = u.itemId;
-          await monday.setContacts(rule, u.itemId, u.personIds);
-          summary.written++;
+          try {
+            await monday.setContacts(rule, u.itemId, u.personIds);
+            summary.written++;
+          } catch (err) {
+            summary.failed = (typeof summary.failed === 'number' ? summary.failed : 0) + 1;
+            console.error(JSON.stringify({ worker: 'contact-roles', event: 'item-failed', board: rule.name, boardId: rule.boardId, itemId: u.itemId, ...errFields(err) }));
+          }
         }
       }
     } catch (err) {
       summary.failed = true;
-      console.error(JSON.stringify({ worker: 'contact-roles', event: 'board-failed', board: rule.name, boardId: rule.boardId, ...errFields(err), ...(itemId !== undefined ? { itemId } : {}), written: summary.written }));
+      console.error(JSON.stringify({ worker: 'contact-roles', event: 'board-failed', board: rule.name, boardId: rule.boardId, ...errFields(err), written: summary.written }));
     }
   }
 

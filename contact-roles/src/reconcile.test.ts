@@ -115,15 +115,16 @@ describe('runReconcile', () => {
     expect(err).toHaveBeenCalled();
   });
 
-  it('a write error on one board stops that board but not the next', async () => {
+  it('a failing item write does not starve the rest of the board or the next board', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1']), item('i2', ['o2'])], b2: [item('j1', ['o1'])] });
+    const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1']), item('i2', ['o2']), item('i3', ['o1'])], b2: [item('j1', ['o1'])] });
     m.failWrites.add('i1');
     const s = await runReconcile({ monday: m, config: config([rule(), rule({ name: 'Other', boardId: 'b2' })]) }, 'on');
-    expect(s.boards[0]).toMatchObject({ failed: true, written: 0 });
-    expect(s.boards[1]?.written).toBe(1);
-    const logged = JSON.parse(String(err.mock.calls[0]?.[0]));
-    expect(logged).toEqual({ worker: 'contact-roles', event: 'board-failed', board: 'Grants', boardId: 'b1', error: 'Error', itemId: 'i1', written: 0 });
+    expect(s.boards[0]).toMatchObject({ items: 3, updates: 3, written: 2, failed: 1 });
+    expect(s.boards[1]).toMatchObject({ written: 1 });
+    expect(m.writes.map((w) => w.itemId)).toEqual(['i2', 'i3', 'j1']);
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(err.mock.calls[0]?.[0]))).toEqual({ worker: 'contact-roles', event: 'item-failed', board: 'Grants', boardId: 'b1', itemId: 'i1', error: 'Error' });
   });
 
   it('logs httpStatus and code for a MondayApiError on a board', async () => {
@@ -144,6 +145,34 @@ describe('runReconcile', () => {
     expect(m.writes).toEqual([]);
     expect(err).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(err.mock.calls[0]?.[0]))).toEqual({ worker: 'contact-roles', event: 'run-failed', environment: 'sandbox', mode: 'on', error: 'TypeError' });
+  });
+
+  it('no confirmed roles anywhere: writes nothing, skips every board and warns with counts only', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = new MemClient(['Grants'], [], { b1: [item('i1', ['o1'], ['p9'])], b2: [item('j1', ['o1'], ['p8'])] });
+    const read = vi.spyOn(m, 'listBoardItems');
+    const s = await runReconcile({ monday: m, config: config([rule(), rule({ name: 'Off', boardId: 'b3', enabled: false }), rule({ name: 'Other', boardId: 'b2' })]) }, 'on');
+    expect(s.boards.map((b) => b.skipped)).toEqual(['no-confirmed-roles', 'no-confirmed-roles', 'no-confirmed-roles']);
+    expect(m.writes).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(warn.mock.calls[0]?.[0]))).toEqual({ worker: 'contact-roles', event: 'no-confirmed-roles', affiliations: 0, boards: 3 });
+  });
+
+  it('proposed-only or role-less affiliations count as no confirmed roles', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = new MemClient(['Grants'], [aff('a1', 'p1', 'o1', 'Current', [])], { b1: [item('i1', ['o1'], ['p9'])] });
+    const s = await runReconcile({ monday: m, config: config([rule()]) }, 'on');
+    expect(s.boards[0]?.skipped).toBe('no-confirmed-roles');
+    expect(m.writes).toEqual([]);
+  });
+
+  it('logs run-complete with per-board item and update counts', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1']), item('i2', ['o2'], ['p3'])] });
+    await runReconcile({ monday: m, config: config([rule()]) }, 'off');
+    const logged = JSON.parse(String(log.mock.calls.at(-1)?.[0]));
+    expect(logged).toMatchObject({ worker: 'contact-roles', event: 'run-complete', mode: 'off', boards: [{ name: 'Grants', items: 2, updates: 1, written: 0 }] });
   });
 
   it('a dropdown label no board uses changes nothing', async () => {
