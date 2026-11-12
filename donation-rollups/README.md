@@ -446,8 +446,10 @@ owner columns are recomputed over history. Volunteer activities stamp nothing.
 Tier (never downgrades), so a staff-granted comp or Lifetime is never shortened; shorten by hand
 if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are derived facts
 **written outright** — a staff edit to them is overwritten on the next recompute. All eight
-writes, and the gift stamps, are compare-before-write, so a stamp's own webhook triggers one idle
-recompute and stops. That recompute also writes nothing to the owner: the rollup values and the
+writes, and the gift stamps, are compare-before-write. The gift's Term Start, Term End and
+Membership Type columns are in the webhook's ignored set (issue #89), so a stamp's own webhook
+triggers no recompute at all; a staff edit to one is corrected on the gift's next recompute rather
+than immediately. The owner write is also hash-skipped: the rollup values and the
 description are each hashed (`owner_recomputes.values_hash` / `description_hash`, migration 0014)
 and a write identical to the last one that landed is skipped (issue #88).
 
