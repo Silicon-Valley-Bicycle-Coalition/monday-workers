@@ -21,6 +21,7 @@ import { DEFAULT_PII_KEYS, logSkip, messageDisposition, retryDelaySeconds, type 
 import type { NearbyMondayClient, ResultColumns } from './monday/client';
 import { isTerminal } from './monday/errors';
 import { MondayApiError } from './monday/graphql';
+import { OutageBreaker } from './monday/outage';
 import { WORKER } from './routes';
 import type { WriteMessage } from './types';
 
@@ -80,6 +81,8 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
     return taken.meta.changes === 1 ? 'stale' : 'wait';
   };
 
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker(now);
   for (const msg of batch.messages) {
     const body = msg.body;
     const disposition = messageDisposition(deps.mode, body.stamp);
@@ -103,6 +106,13 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
         body,
       );
       msg.ack();
+      continue;
+    }
+
+    // Monday is down or rate-limiting (#101): retry with backoff without claiming or calling it,
+    // rather than spend the transport's in-process attempts again on every remaining message.
+    if (breaker.open) {
+      breaker.defer(msg);
       continue;
     }
 
@@ -148,6 +158,11 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
           }
         }
         msg.ack();
+        continue;
+      }
+      if (breaker.trip(err)) {
+        console.error(JSON.stringify({ worker: WORKER, outage: true, itemId: body.contactId, code: err instanceof MondayApiError ? err.code ?? err.httpStatus ?? null : null }));
+        breaker.defer(msg);
         continue;
       }
       const hint = err instanceof MondayApiError ? err.retryAfterSeconds : undefined;

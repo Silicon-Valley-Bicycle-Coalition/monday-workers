@@ -17,6 +17,7 @@ import {
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
 } from '../projections/giftHistory';
 import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
+import { isMondayOutage } from '../monday/outage';
 import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import {
@@ -108,8 +109,8 @@ async function runBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[],
   depsFor: (message: QueueMessageLike<RecomputeQueueMessage>) => { deps: ProcessBatchDeps; dryRun: boolean } | null,
 ): Promise<void> {
-  // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
-  // every later message in this batch would fail the same way after spending Monday calls of
+  // Once D1 has refused a query for the day, or Monday has said the token's budget is spent (or
+  // is down: a 5xx or timeout, #101), every later message in this batch would fail the same way after spending Monday calls of
   // its own — defer them all to the same moment instead. A deferred sibling's retry() still
   // counts against its own max_retries, same as the D1-quota deferral; one that runs out lands
   // in the DLQ, where processDeadLetters marks it failed and it can be re-driven.
@@ -175,6 +176,13 @@ async function runBatch(
           : err.retryInSeconds === undefined ? undefined : Math.ceil(err.retryInSeconds);
         batchDelaySeconds = retryDelaySeconds(message.attempts, hintSeconds);
         console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
+        message.retry({ delaySeconds: batchDelaySeconds });
+      } else if (isMondayOutage(err)) {
+        // #101: Monday down (a 5xx, timeout or network error after the transport's own attempts),
+        // not just rate-limiting. Every later message would spend those attempts again — defer the
+        // rest of the batch at this message's backoff, exactly as for a rate limit.
+        batchDelaySeconds = retryDelaySeconds(message.attempts);
+        console.error(`donation-rollups consumer: Monday unavailable (attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else {
         message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });

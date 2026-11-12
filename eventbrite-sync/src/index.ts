@@ -16,7 +16,7 @@ import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/swee
 import { checkPledgeCounts, logPledgeCounts } from './pledgeCounts/check';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
-import { checkRequestRateLimit } from './rateLimit';
+import { checkRequestRateLimit, isVerifiedWebhook } from './rateLimit';
 import { readLogLevel, readWriteMode, runDisposition } from './flags';
 import { dryRunEndedEventDeps, piiKeysFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
@@ -59,7 +59,12 @@ export default {
 
     // Checked before any routing, D1, or Monday work — see the root README "Reliability: traffic
     // and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // A webhook delivery that already passed verification skips it (#101): a burst of genuine
+    // deliveries must not be throttled.
+    return isVerifiedWebhook(request, env.EVENTBRITE_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
 
       const app = createApp({

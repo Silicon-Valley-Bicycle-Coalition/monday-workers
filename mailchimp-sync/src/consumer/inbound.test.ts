@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import md5 from 'md5';
-import { processInboundBatch } from './inbound';
+import { consumeInboundBatch, processInboundBatch } from './inbound';
 import type { MondayClient } from '../monday/client';
 import { MondayApiError } from '../monday/client';
 import { MailchimpAuthError, MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
@@ -429,5 +429,39 @@ describe('processInboundBatch', () => {
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
       errorSpy.mockRestore();
     });
+  });
+});
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday or Mailchimp, instead of each repeating the transport's in-process attempts.
+describe('outage breaker (#101)', () => {
+  function outageDeps(err: Error) {
+    return {
+      mondayClient: fakeMonday({ findItemIdByEmail: vi.fn().mockRejectedValue(err) }),
+      mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: {} }) }),
+      campaignItemsStore: fakeCampaignItemsStore(),
+      pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() },
+      config: CONFIG,
+    };
+  }
+
+  it('stops calling upstream after a Monday outage and retries the rest of the batch with backoff', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outageDeps(new MondayApiError('monday API: HTTP 502', { httpStatus: 502 }));
+    const messages = [fakeMessage('a@b.com', 2), fakeMessage('c@d.com', 1), fakeMessage('e@f.com', 4)];
+    await consumeInboundBatch(messages, deps, { worker: 'mailchimp-sync', environment: 'production', mode: 'on', logLevel: 'normal', piiKeys: ['email'] });
+    expect(deps.mondayClient.findItemIdByEmail).toHaveBeenCalledTimes(1);
+    expect(deps.mailchimpClient.getMemberInterests).toHaveBeenCalledTimes(1);
+    expect(messages.map((m) => (m.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    errors.mockRestore();
+  });
+
+  it('an ordinary failure stays per-message', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outageDeps(new Error('x'));
+    const messages = [fakeMessage('a@b.com', 1), fakeMessage('c@d.com', 1)];
+    await processInboundBatch(messages, deps);
+    expect(deps.mondayClient.findItemIdByEmail).toHaveBeenCalledTimes(2);
+    errors.mockRestore();
   });
 });

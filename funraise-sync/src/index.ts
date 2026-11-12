@@ -12,7 +12,7 @@ import { consumeFunraiseBatch, type FunraiseQueueMessage } from './consumer/proc
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { pollSubscriptions } from './subscriptions/poll';
 import { dispatchScheduled } from './scheduled';
-import { checkRequestRateLimit } from './rateLimit';
+import { checkRequestRateLimit, isVerifiedWebhook } from './rateLimit';
 import { readLogLevel, readWriteMode } from './flags';
 import { piiKeysFor, pollDepsFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
@@ -58,7 +58,12 @@ export default {
 
     // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
     // cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // A webhook delivery that already passed verification skips it (#101): a burst of genuine
+    // deliveries must not be throttled.
+    return isVerifiedWebhook(request, env.FUNRAISE_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
 
       const app = createApp({

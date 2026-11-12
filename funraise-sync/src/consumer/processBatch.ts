@@ -14,6 +14,7 @@ import { isTerminalError } from '../errors';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { OutageBreaker } from '../monday/outage';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -70,6 +71,8 @@ export async function consumeFunraiseBatch(
   deps: ProcessBatchDeps,
   gate: BatchSkipContext
 ): Promise<void> {
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const { entityType, entityId } = message.body;
     const ctx = { ...gate, deliveryId: `${entityType}:${entityId}` };
@@ -79,25 +82,34 @@ export async function consumeFunraiseBatch(
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processFunraiseQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+    await processFunraiseQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx), breaker);
   }
 }
 
 export async function processFunraiseQueueBatch(
   messages: QueueMessageLike<FunraiseQueueMessage>[],
-  deps: ProcessBatchDeps
+  deps: ProcessBatchDeps,
+  breaker: OutageBreaker = new OutageBreaker()
 ): Promise<void> {
   for (const message of messages) {
     const { entityType, entityId } = message.body;
+    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // spend the transport's in-process attempts again on every remaining message.
+    if (breaker.open) {
+      breaker.defer(message);
+      continue;
+    }
     try {
       await processOne(entityType, entityId, deps);
       message.ack();
     } catch (err) {
       const terminal = isTerminalError(err);
+      const outage = !terminal && breaker.trip(err);
       const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
       console.error(
         `funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}` +
-          (terminal ? ' — fix the cause, then re-drive with scripts/redrive-failed.mjs' : '')
+          (terminal ? ' — fix the cause, then re-drive with scripts/redrive-failed.mjs' : '') +
+          (outage ? ' — Monday unavailable, deferring the rest of the batch' : '')
       );
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
@@ -115,8 +127,9 @@ export async function processFunraiseQueueBatch(
       // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
       // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
       // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
-      // max_retries of 100 (about four days).
+      // max_retries of 100 (about four days), raised to Monday's hint on an outage.
       if (terminal && recorded) message.ack();
+      else if (outage) breaker.defer(message);
       else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
