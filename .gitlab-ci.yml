@@ -299,6 +299,12 @@ contact-roles:
     - changes:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run test:scripts
+    - npm run typecheck
 
 member-map:
   extends: .worker_job

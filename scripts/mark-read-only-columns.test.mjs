@@ -60,6 +60,13 @@ describe('planRenames', () => {
 });
 
 describe('MARKED_COLUMNS', () => {
+  it('locks Contacts (contact-roles) on the six opportunity boards', () => {
+    for (const name of ['Sponsorships', 'Grants & Contracts', 'BP Request Form', 'Donations', 'Bike Education Lifecycle Tracker', 'Leads']) {
+      assert.ok(MARKED_COLUMNS[name].locked.includes('Contacts'), name);
+    }
+    assert.ok(MARKED_COLUMNS.Donations.locked.includes('Funding Stream'));
+  });
+
   it('never lists a title as both 🔒 and 📜 on one board', () => {
     for (const [name, { locked, history }] of Object.entries(MARKED_COLUMNS)) {
       const both = locked.filter((t) => history.includes(t));

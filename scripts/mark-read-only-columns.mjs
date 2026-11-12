@@ -67,10 +67,18 @@ export const MARKED_COLUMNS = {
   'Donations': {
     locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Matched By Company', 'Funraise ID',
       'Eventbrite Order ID', 'Benevity Transaction ID', 'Match Status', 'DTD Status (raw)', 'Match Company',
-      'Sent to DTD'],
+      'Sent to DTD', 'Contacts'],
     history: [...SALESFORCE, 'Salesforce Owner', 'Finance Class', 'Revenue Code', 'Sponsorship Cycle',
       'Fee Covered', 'In-Kind Value', 'In-Kind Category', 'Soft Credit'],
   },
+  // Contacts is written by contact-roles from the Affiliations board; a hand edit is overwritten.
+  // Only boards whose names are in the workspace are touched, so an environment that lacks one
+  // (the sandbox has no BP Request Form, say) just skips it.
+  'Sponsorships': { locked: ['Contacts'], history: [] },
+  'Grants & Contracts': { locked: ['Contacts'], history: [] },
+  'BP Request Form': { locked: ['Contacts'], history: [] },
+  'Bike Education Lifecycle Tracker': { locked: ['Contacts'], history: [] },
+  'Leads': { locked: ['Contacts'], history: [] },
   'Matching Gift Program': {
     locked: ['Fiscal Year', 'Screened', 'Employer identified', 'Eligible', 'Submitted', 'Matches paid',
       'Match dollars', 'Matched gift dollars', 'New matching companies', 'First-time matched donors', 'As of'],
