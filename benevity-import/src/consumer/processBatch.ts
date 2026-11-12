@@ -6,6 +6,7 @@ import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
 import { resolveOrganization } from '../matching/organizations';
 import { isWithheld, resolvePerson } from '../matching/people';
+import { BatchLookups } from '../matching/batchLookups';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
 import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
@@ -52,6 +53,8 @@ export async function consumeBenevityBatch(
 ): Promise<void> {
   // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
+  // And one set of read-only lookups, so rows from the same disbursement share them (#101).
+  const lookups = new BatchLookups();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: isUploadMessage(message.body) ? `asset:${message.body.assetId}` : message.body.transactionId };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -60,14 +63,15 @@ export async function consumeBenevityBatch(
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx), breaker);
+    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx), breaker, lookups);
   }
 }
 
 export async function processBenevityQueueBatch(
   messages: QueueMessageLike<BenevityQueueMessage>[],
   deps: ProcessBatchDeps,
-  breaker: OutageBreaker = new OutageBreaker()
+  breaker: OutageBreaker = new OutageBreaker(),
+  lookups: BatchLookups = new BatchLookups()
 ): Promise<void> {
   for (const message of messages) {
     // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
@@ -82,7 +86,7 @@ export async function processBenevityQueueBatch(
     }
     const { transactionId } = message.body;
     try {
-      await processOne(transactionId, deps);
+      await processOne(transactionId, deps, lookups);
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
@@ -119,7 +123,7 @@ async function processUpload(assetId: string, message: QueueMessageLike<Benevity
   }
 }
 
-async function processOne(transactionId: string, deps: ProcessBatchDeps): Promise<void> {
+async function processOne(transactionId: string, deps: ProcessBatchDeps, lookups: BatchLookups): Promise<void> {
   const row = await deps.rowStore.getRow(transactionId);
   if (row === null) {
     throw new Error(`benevity consumer: no row for transaction id "${transactionId}"`);
@@ -141,7 +145,9 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
     return;
   }
 
-  const orgResult = await resolveOrganization(deps.mondayClient, deps.aliasStore, deps.config, parsed.company);
+  const orgResult = await lookups.get(`organization:${parsed.company}`, () =>
+    resolveOrganization(deps.mondayClient, deps.aliasStore, deps.config, parsed.company)
+  );
   if (orgResult.status === 'unresolved') {
     await worklistAndMarkReview(deps, row, parsed, orgResult.reason);
     return;
@@ -156,7 +162,8 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
       donorLastName: parsed.donorLastName,
       email: parsed.email,
     },
-    orgResult.organizationItemId
+    orgResult.organizationItemId,
+    lookups
   );
   if (personResult.status === 'unresolved') {
     await worklistAndMarkReview(deps, row, parsed, personResult.reason);
@@ -164,10 +171,14 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
   }
   const personItemId = personResult.status === 'resolved' ? personResult.personItemId : null;
 
-  const disbursement = await deps.disbursementStore.getDisbursement(row.disbursementId);
-  if (disbursement === null) {
-    throw new Error(`benevity consumer: no disbursement ${row.disbursementId} for transaction "${transactionId}"`);
-  }
+  // A miss throws inside the load, so it isn't remembered: the next row reads D1 again.
+  const disbursement = await lookups.get(`disbursement:${row.disbursementId}`, async () => {
+    const found = await deps.disbursementStore.getDisbursement(row.disbursementId);
+    if (found === null) {
+      throw new Error(`benevity consumer: no disbursement ${row.disbursementId} for transaction "${transactionId}"`);
+    }
+    return found;
+  });
 
   const gifts = splitRowIntoGifts(
     {
