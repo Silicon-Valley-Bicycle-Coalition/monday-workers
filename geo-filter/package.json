@@ -17,6 +17,8 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@turf/turf": "^7.2.0"
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@turf/buffer": "^7.4.0",
+    "@turf/helpers": "^7.4.0"
   }
 }
