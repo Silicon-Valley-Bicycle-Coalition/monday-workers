@@ -21,6 +21,10 @@
   "vars": {
     "ENVIRONMENT": "production",
     "PROBE_ENABLED": "false",
+    // /oauth/webhooks (#110): off like the probe; turn on for one deploy with --var while
+    // re-registering. A created webhook may only point under one of these prefixes.
+    "WEBHOOKS_ENABLED": "false",
+    "WEBHOOK_URL_PREFIXES": "https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/,https://svbc-people-reclassification.svbc-account.workers.dev/webhooks/monday/",
     // The SVBC Integration user (created 2026-10-30); consent by anyone else is refused.
     "EXPECTED_USER_ID": "120827741",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
@@ -55,6 +59,8 @@
         "ENVIRONMENT": "sandbox",
         // Off by default, like production; turn it on only while verifying (README "Measuring ... probe").
         "PROBE_ENABLED": "false",
+        "WEBHOOKS_ENABLED": "false",
+        "WEBHOOK_URL_PREFIXES": "https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/webhooks/monday/,https://svbc-people-reclassification-sandbox.svbc-account.workers.dev/webhooks/monday/",
         // Sandbox Integration
         "EXPECTED_USER_ID": "117112617",
         "MONDAY_SUBDOMAIN": "bikesiliconvalley"
