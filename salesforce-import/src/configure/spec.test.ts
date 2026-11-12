@@ -130,7 +130,8 @@ describe('BOARD_SPECS views', () => {
   it('has the report replacements from the Salesforce usage survey', () => {
     const names = (k: string) => (BOARD_SPECS[k]!.views ?? []).map((v) => v.name);
     expect(names('people-live')).toEqual(expect.arrayContaining(
-      ['Donors', 'Major donors', 'Donors to target', 'Gave last year, not this year', 'Appeal list', 'Members', 'By city']));
+      ['New donors this FY, $200+', 'Donors', 'Major donors', 'Donors to target', 'Gave last year, not this year', 'Appeal list', 'Members', 'By city']));
+    expect(names('event-registrations')).toContain('Volunteers, last 12 months');
     expect(names('donations')).toEqual(expect.arrayContaining(
       ['Recent gifts', 'Revenue by funding stream', 'By gift size', 'By fiscal quarter', 'Major gifts to thank']));
   });

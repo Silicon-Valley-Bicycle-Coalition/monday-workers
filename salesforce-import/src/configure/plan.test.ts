@@ -113,6 +113,15 @@ describe('planViews', () => {
     expect(notes.join(' ')).toMatch(/Active members.*unknown column "Membership Status"/);
   });
 
+  it('resolves a { fiscalYear } date filter from the clock', () => {
+    const fySpec: BoardSpec = { ...SPEC, views: [
+      { name: 'First gifts this FY', filter: { rules: [{ columnTitle: 'First Gift', operator: 'between', compareValue: { fiscalYear: 'current' } }] } },
+    ] };
+    const columns: CurrentColumn[] = [{ id: 'col_fg', title: 'First Gift', type: 'date', description: null, settings_str: '{}' }];
+    const { views } = planViews(columns, new Map(), fySpec, 1, new Date('2026-11-11T20:00:00Z'));
+    expect(views.create[0]!.rules).toEqual([{ column_id: 'col_fg', operator: 'between', compare_value: ['2026-07-01', '2027-06-30'] }]);
+  });
+
   it('emits sort direction as monday’s lowercase enum value, not uppercase', () => {
     const sortSpec: BoardSpec = { ...SPEC, views: [
       { name: 'By date', sort: [{ columnTitle: 'Date', direction: 'desc' }] },
