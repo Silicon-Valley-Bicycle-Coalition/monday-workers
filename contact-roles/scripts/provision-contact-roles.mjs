@@ -2,8 +2,10 @@
 // Provisions the Monday columns contact-roles needs, creating whatever is missing (idempotent by
 // bare column title, so a 🔒 marker added later never causes a duplicate):
 //   Affiliations: `SVBC Roles` and `Proposed Roles` (multi dropdowns, the five seed role labels)
-//   every board in config/<env>.json (enabled or not): `Contacts`, a one-way multi connect column
-//     to the same People boards the Affiliations `Person` column links to (read live)
+//   every ENABLED board in config/<env>.json: its `contactsColumn` (`Contacts`), a one-way multi
+//     connect column to the same People boards the Affiliations `Person` column links to (read
+//     live). A disabled rule is reported, not provisioned; re-run when a board is enabled.
+// A same-titled column of the wrong type is reported under `skipped`, never duplicated.
 // Dry run by default; --execute creates. Then run scripts/mark-read-only-columns.mjs to put the 🔒
 // on Contacts, and do the UI-only steps this prints.
 //
@@ -21,7 +23,6 @@ import { MondayGraphQL } from '../src/monday/graphql.ts';
 
 export const SEED_ROLES = ['Sponsorship', 'Grants', 'Bike Parking', 'Donation Matching', 'Classes'];
 export const ROLE_COLUMNS = ['SVBC Roles', 'Proposed Roles'];
-export const CONTACTS_TITLE = 'Contacts';
 
 export const UI_STEPS = [
   'UI-only steps (the API cannot do these):',
@@ -36,29 +37,40 @@ export const UI_STEPS = [
 export function planProvision(boards, { config, peopleBoardIds }) {
   if (!peopleBoardIds || peopleBoardIds.length === 0) throw new Error('no People board ids to link Contacts to');
   const byId = new Map(boards.map((b) => [String(b.id), b]));
-  const has = (board, title) => board.columns.some((c) => bareTitle(c.title) === title);
   const creates = [];
   const skipped = [];
+  // True when `title` exists with the right type. A same-titled column of another type is
+  // reported, and counts as present so no duplicate title is ever created.
+  const has = (board, title, type) => {
+    const found = board.columns.find((c) => bareTitle(c.title) === title);
+    if (found === undefined) return false;
+    if (found.type !== type) skipped.push(`${board.name} (${board.id}): "${title}": wrong type "${found.type}", expected "${type}"; fix or rename it`);
+    return true;
+  };
 
   const aff = byId.get(String(config.affiliations.boardId));
   if (!aff) throw new Error(`Affiliations board ${config.affiliations.boardId} not found`);
   for (const title of ROLE_COLUMNS) {
-    if (has(aff, title)) continue;
+    if (has(aff, title, 'dropdown')) continue;
     creates.push({
       boardId: aff.id, title, type: 'dropdown',
-      settings: { labels: SEED_ROLES.map((label, i) => ({ id: i + 1, label })) },
+      settings: { labels: SEED_ROLES.map((name, i) => ({ id: i + 1, name })) },
     });
   }
 
   for (const rule of config.boards) {
+    if (rule.enabled === false) {
+      skipped.push(`${rule.name}: disabled, provision when enabled`);
+      continue;
+    }
     const board = byId.get(String(rule.boardId));
     if (!board) {
       skipped.push(`${rule.name} (${rule.boardId}): board not found`);
       continue;
     }
-    if (has(board, CONTACTS_TITLE)) continue;
+    if (has(board, rule.contactsColumn, 'board_relation')) continue;
     creates.push({
-      boardId: board.id, title: CONTACTS_TITLE, type: 'board_relation',
+      boardId: board.id, title: rule.contactsColumn, type: 'board_relation',
       settings: { boardIds: peopleBoardIds.map(Number), allowMultipleItems: true, allowCreateReflectionColumn: false },
     });
   }
@@ -90,6 +102,25 @@ export function formatPlan(plan, { execute }) {
 // its settings at the top level.
 export function defaultsFor(create) {
   return JSON.stringify(create.type === 'dropdown' ? { settings: create.settings } : create.settings);
+}
+
+// Pure. After --execute, the Affiliations role dropdowns must really carry the seed labels:
+// Monday silently accepts a malformed `defaults` payload and creates a dropdown with none.
+// settings_str stores labels as {id, name}. Returns a list of problems (empty = fine).
+export function verifyRoleLabels(boards, config) {
+  const aff = boards.find((b) => String(b.id) === String(config.affiliations.boardId));
+  const problems = [];
+  for (const title of ROLE_COLUMNS) {
+    const col = aff?.columns.find((c) => bareTitle(c.title) === title && c.type === 'dropdown');
+    if (col === undefined) {
+      problems.push(`Affiliations "${title}" dropdown not found`);
+      continue;
+    }
+    const names = (JSON.parse(col.settings_str || '{}').labels ?? []).map((l) => l?.name).filter((n) => typeof n === 'string');
+    const missing = SEED_ROLES.filter((r) => !names.includes(r));
+    if (missing.length > 0) problems.push(`Affiliations "${title}" is missing labels: ${missing.join(', ')}`);
+  }
+  return problems;
 }
 
 const BOARDS_QUERY = `query ($ids: [ID!]) { boards(ids: $ids) { id name columns { id title type settings_str } } }`;
@@ -131,9 +162,12 @@ async function main() {
       await gql.request(CREATE, { board: c.boardId, title: c.title, type: c.type, defaults: defaultsFor(c) }, { idempotent: false });
       console.log(`created  board ${c.boardId}: "${c.title}"`);
     }
-    const left = planProvision(await read(), { config, peopleBoardIds }).creates;
+    const after = await read();
+    const left = planProvision(after, { config, peopleBoardIds }).creates;
     console.log(left.length === 0 ? 're-read confirms nothing left to create' : `${left.length} column(s) still missing after --execute`);
-    if (left.length > 0) return 2;
+    const problems = verifyRoleLabels(after, config);
+    for (const p of problems) console.error(p);
+    if (left.length > 0 || problems.length > 0) return 2;
   }
   console.log(UI_STEPS.join('\n'));
   return 0;
