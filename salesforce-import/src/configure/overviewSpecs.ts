@@ -11,7 +11,7 @@ import type { WidgetSpec } from './widgets.js';
 export const PROVISIONED_ELSEWHERE: Record<string, string[]> = {
   'people-live': ['Donor Level', 'This Year Count', 'This Year Amount', 'Last Year Amount', 'Last Gift Date', 'Last Gift Amount'],
   organizations: ['Donor Level', 'This Year Count', 'This Year Amount', 'Last Year Amount', 'Last Gift Date'],
-  donations: ['Gift Fiscal Year', 'Funding Stream', 'Gift Size'],
+  donations: ['Gift Fiscal Year', 'Funding Stream', 'Gift Size', 'Matched By Company'],
   'people-historical': ['This Year Amount'],
   'annual-giving-summary': ['Total Received'],
 };
@@ -105,6 +105,9 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     overTime('Revenue by month', 'donations', 'Date', 'Amount', 'month', [], { graphType: 'stacked_column', z: 'Gift Fiscal Year' }),
     donut('Revenue by Funding Stream', 'donations', 'Funding Stream', [thisFY], 'Amount'),
     donut('Gifts by Gift Size', 'donations', 'Gift Size', [thisFY]),
+    // A connect column (Matched By) can't be a chart axis, so classify copies the company name into
+    // this status column (#115). Only matching gifts (column set), so ordinary gifts add no blank bar.
+    bars('Matching gifts by company', 'donations', 'Matched By Company', 'Amount', [thisFY, notEmpty('Matched By Company')]),
   ] },
 
   // docs/31 §4.4

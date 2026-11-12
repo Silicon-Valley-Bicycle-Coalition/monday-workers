@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { OVERVIEW_SPECS, PROVISIONED_ELSEWHERE } from './overviewSpecs.js';
 import { BOARD_SPECS } from './spec.js';
 import { COLUMN_TYPES, CONNECT_COLUMNS } from '../load/boards.js';
-import type { WidgetSpec } from './widgets.js';
+import { widgetFilter, widgetSettings, type Columns, type WidgetSpec } from './widgets.js';
+import { col } from './testFixtures.js';
 
 const boardsOf = (w: WidgetSpec): string[] => [
   ...(w.chart ? [w.chart.board] : []), ...(w.number?.boards ?? []), ...(w.list ? [w.list.board] : []),
@@ -134,5 +135,43 @@ describe('OVERVIEW_SPECS', () => {
     const tile = OVERVIEW_SPECS['event-registrations']!.widgets.find((w) => w.name === 'Unlinked attendees')!;
     expect(tab.filter!.rules).toEqual(rules);
     expect(tile.filter!.rules).toEqual(rules);
+  });
+
+  describe('Matching gifts by company (#115)', () => {
+    const widget = OVERVIEW_SPECS['donations']!.widgets.find((w) => w.name === 'Matching gifts by company')!;
+    const NOW = new Date('2026-11-12T12:00:00Z'); // FY2027
+    // The same title on each environment's Donations board; the id comes from the board at apply time.
+    const board = (boardId: number, matchedId: string): Columns => new Map([['donations', { boardId, columns: [
+      col('amt', 'Amount'),
+      col('st', 'Status', 'status', '{"labels":{"0":"Pending","1":"Received"}}'),
+      col('gfy', 'Gift Fiscal Year', 'status', '{"labels":{"3":"FY2026","4":"FY2027"}}'),
+      col(matchedId, 'Matched By Company', 'status', '{"labels":{"0":"Netflix","1":"Apple"}}'),
+    ] }]]);
+
+    it('sums Amount in bars grouped by the Matched By Company status column', () => {
+      expect(widget.kind).toBe('CHART');
+      expect(widget.chart).toEqual({ board: 'donations', graphType: 'column', x: 'Matched By Company', xGroupBy: 'color', y: 'Amount' });
+    });
+
+    it('counts only Received matching gifts this fiscal year', () => {
+      expect(widget.filter!.rules).toEqual(expect.arrayContaining([
+        { columnTitle: 'Gift Fiscal Year', operator: 'any_of', labelValues: ['@FY'] },
+        { columnTitle: 'Matched By Company', operator: 'is_not_empty' },
+        { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
+      ]));
+    });
+
+    it.each([
+      ['sandbox', 18437342657, 'color_mm91qtay'],
+      ['production', 18437909794, 'color_mm90qffq'],
+    ])('resolves on the %s Donations board by title', (_env, boardId, matchedId) => {
+      const cols = board(boardId, matchedId);
+      const settings = widgetSettings(widget, cols) as Record<string, unknown>;
+      expect(settings['x_axis_columns']).toEqual({ [String(boardId)]: [matchedId] });
+      expect(settings['y_axis_columns']).toEqual({ [String(boardId)]: ['amt'] });
+      expect(settings['calc_function_type']).toBe('sum');
+      const filter = widgetFilter(widget, cols, NOW) as { rules: { column_id: string; operator: string }[] };
+      expect(filter.rules).toEqual(expect.arrayContaining([expect.objectContaining({ column_id: matchedId, operator: 'is_not_empty' })]));
+    });
   });
 });
