@@ -66,7 +66,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       an early warning, not noise.
 - [x] **Every Worker carries `limits.cpu_ms`** (re-audited 2026-10-21) — the guard that matters
       once Paid's 30 s default applies. Present at top level and in `env.sandbox` for every
-      Worker except `monday-auth` (re-checked 2026-11-11; add it there). Seven run above 100 ms on
+      Worker (re-checked 2026-11-11; `monday-auth` gained its `100` then, #117). Seven run above 100 ms on
       purpose, each with the reason in a comment beside the setting: `monday-backup`
       (`cpu_ms: 300000` and `subrequests: 50000`, a full-workspace snapshot), `member-map`
       (`300000`), `donation-rollups` and `dtd-sync` (`30000`), `nearby-search` (`2000`),

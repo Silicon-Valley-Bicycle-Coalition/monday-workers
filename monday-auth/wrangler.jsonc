@@ -27,6 +27,10 @@
   },
   // Attempt limiter for POST /oauth/* (keyed on CF-Connecting-IP), so START_KEY can't be guessed online (#104).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } }],
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill (#117). The broker's work is I/O
+  // (D1, auth.monday.com) plus a SHA-256 or AES-GCM call, so 100 ms is ample.
+  "limits": { "cpu_ms": 100 },
   "observability": { "enabled": true, "issues": { "enabled": true } },
 
   // Secrets (wrangler secret put, per environment): the three apps' client id/secret pairs,
@@ -56,6 +60,7 @@
         "MONDAY_SUBDOMAIN": "bikesiliconvalley"
       },
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2102", "simple": { "limit": 10, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
       "observability": { "enabled": true, "issues": { "enabled": true } }
     }
   }
