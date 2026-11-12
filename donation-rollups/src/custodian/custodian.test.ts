@@ -379,6 +379,39 @@ describe('sweep duty', () => {
   });
 });
 
+describe('sweep duty on January 1 (calendar sponsorships)', () => {
+  const insertGift = (id: string, owner: string, board: string, type: string) =>
+    env.DB.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
+      fiscal_year, status, gift_type, source, updated_at) VALUES (?1, ?2, ?3, 1000, '2026-03-01', 2026, 'Received', ?4, 'import', 'now')`)
+      .bind(id, owner, board, type).run();
+  const cfg = () => {
+    const c = testConfig();
+    c.donationRollups.sponsorships = { organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: ['In-Kind'],
+      yearBasis: 'calendar', windowYears: 3, pipelineBoards: {} };
+    return c;
+  };
+
+  it('enqueues only Organizations owners with sponsorship gifts; any other day sweeps everyone', async () => {
+    const links = new D1DonationLinksStore(env.DB);
+    for (const [d, o, b] of [['d1', 'orgSpon', '5'], ['d2', 'orgPlain', '5'], ['d3', 'person', 'b1'], ['d4', 'personSpon', 'b1']] as [string, string, string][]) {
+      await links.upsertLink({ donationItemId: d, donationBoardId: '100', ownerItemId: o, ownerBoardId: b }, 'now');
+    }
+    await insertGift('d1', 'orgSpon', '5', 'In-Kind');
+    await insertGift('d2', 'orgPlain', '5', 'Individual');
+    await insertGift('d3', 'person', 'b1', 'Individual');
+    await insertGift('d4', 'personSpon', 'b1', 'Sponsorship');
+
+    const jan: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, jan, cfg()), now: new Date('2027-01-01T18:00:00Z') });
+    expect(jan.map((m) => m.ownerItemId)).toEqual(['orgSpon']);
+    expect(report.detail).toMatchObject({ scope: 'sponsorships', enqueued: 1 });
+
+    const july: RecomputeQueueMessage[] = [];
+    await runDuty('sweep', { ...deps({ archived: [], updates: [] }, july, cfg()), now: new Date('2027-07-01T18:00:00Z') });
+    expect(july).toHaveLength(4);
+  });
+});
+
 describe('reconcile duty', () => {
   // The projection the recompute path would have written for one 2020-01-01 gift.
   const glj = (entries: [string, number, string?][]) =>
