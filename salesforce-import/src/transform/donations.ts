@@ -22,14 +22,16 @@ const PENDING_STAGES = new Set(['Prospecting', 'Pledged', 'Invoiced', 'Not Poste
 export const donationStatus = (stage: unknown): string =>
   typeof stage === 'string' && Object.hasOwn(STATUS, stage) ? STATUS[stage]! : 'Pending';
 
-// Lost (decided 2026-10-26, monday-migration docs/32 decisions 5 and 6): a pitch that didn't
-// land, not a payment that failed. Staff ran these record types as a sales / grants pipeline —
-// opened as prospects, mostly closed lost (2,385 Sponsorship alone) — so their Closed Lost and
-// Withdrawn are Lost, keeping Failed for declined donations. And any gift still at an open stage
-// with a close date before the oldest fiscal year kept active on the board (~620, $4.2M: dead
-// prospects nobody will work after cutover) is Lost rather than Pending forever. Lost counts
-// toward nothing and stays out of the "Failed and pending" worklist.
-export const LOST = 'Lost';
+// Closed Lost (decided 2026-10-26 as "Lost", renamed 2026-11-12 to match the Closed Lost stage on
+// the Sponsorships and Grants & Contracts boards; monday-migration docs/32 decisions 5 and 6): a
+// pitch that didn't land, not a payment that failed. Staff ran these record types as a sales /
+// grants pipeline — opened as prospects, mostly closed lost (2,385 Sponsorship alone) — so their
+// Closed Lost and Withdrawn are Closed Lost, keeping Failed for declined donations. And any gift
+// still at an open stage with a close date before the oldest fiscal year kept active on the board
+// (~620, $4.2M: dead prospects nobody will work after cutover) is Closed Lost rather than Pending
+// forever. Closed Lost counts toward nothing and stays out of the "Failed and pending" worklist.
+// The constant keeps its LOST name; only the board label changed.
+export const LOST = 'Closed Lost';
 const PIPELINE_TYPES = new Set(['Sponsorship', 'Grants', 'Contracts', 'Membership',
   'In Kind Donation / Sponsorship', 'Commute Workshop', 'Driver Training']);
 
@@ -203,7 +205,7 @@ export interface OpportunityDeps extends DonorResolution {
   eventbriteIntegrationUserName?: string | null;
   // See eventbriteOrderIdsByOpportunity.
   eventbriteOrderId?: string | null;
-  // First fiscal year kept active on the board (archiveCutoffFY); older open gifts are Lost.
+  // First fiscal year kept active on the board (archiveCutoffFY); older open gifts are Closed Lost.
   // Omit (or null) to leave every open gift Pending.
   staleBeforeFY?: number | null;
 }

@@ -547,16 +547,19 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   column records the fee part; Gift Count drops by the number folded. `reconcile` folds the same
   way. A split with no matching gift stays a gift of its own and `transform` reports the count.
   **Needs a re-extract**, since the opportunities query gained the fields.
-* **Lost status (decided 2026-10-26, migration `docs/32` decisions 5 and 6).** Donations Status
-  gains a fifth label, **Lost**, seeded with the rest at board creation. Closed Lost and Withdrawn
-  on the pipeline record types (Sponsorship, Grants, Contracts, Membership, In Kind Donation /
-  Sponsorship, Commute Workshop, Driver Training) are Lost; Donation and Matching Donation keep
-  Failed. Any gift still at an open stage (Prospecting, Pledged, Invoiced…) whose close date is
-  before the first fiscal year kept active on the board (`archiveCutoffFY`: FY2026 for an
-  October 2026 cutover, ~620 gifts) is Lost too, instead of sitting in Pending for good.
-  `transform` prints the Lost count. Lost counts toward nothing and is outside the "Failed and
-  pending" worklist. On a Donations board created before this change, the load's
-  `create_labels_if_missing` adds the label the first time it writes one.
+* **Closed Lost status (decided 2026-10-26 as "Lost", renamed 2026-11-12 to match the Closed Lost
+  stage on the Sponsorships and Grants & Contracts boards; migration `docs/32` decisions 5 and 6).**
+  Donations Status gains a fifth label, **Closed Lost**, seeded with the rest at board creation.
+  Closed Lost and Withdrawn on the pipeline record types (Sponsorship, Grants, Contracts,
+  Membership, In Kind Donation / Sponsorship, Commute Workshop, Driver Training) are Closed Lost;
+  Donation and Matching Donation keep Failed. Any gift still at an open stage (Prospecting,
+  Pledged, Invoiced…) whose close date is before the first fiscal year kept active on the board
+  (`archiveCutoffFY`: FY2026 for an October 2026 cutover, ~620 gifts) is Closed Lost too, instead
+  of sitting in Pending for good. `transform` prints the Closed Lost count. Closed Lost counts
+  toward nothing and is outside the "Failed and pending" worklist. On a Donations board created
+  before this change, the load's `create_labels_if_missing` adds the label the first time it
+  writes one; a board that already holds a `Lost` label (none of the sandbox boards do) needs it
+  renamed in Monday to `Closed Lost`, keeping its id, before the next load.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and

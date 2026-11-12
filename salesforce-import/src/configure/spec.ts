@@ -369,7 +369,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Status': 'Received, or Received (Historical) for gifts staff filed under Salesforce’s ' +
         'legacy Closed Won stage (Eventbrite ticket orders also arrive as Closed Won, but those ' +
         'are Received with Gift Type Event Ticket). Failed and Pending are real outcomes, not ' +
-        'stages to work. Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
+        'stages to work. Closed Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
         'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grants, Contracts… For a gift from a donor-advised fund, ' +
