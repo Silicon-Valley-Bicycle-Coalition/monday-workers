@@ -322,7 +322,7 @@ Combined with 14-day retention, a multi-day Monday outage or a long `hold` queue
 dead-lettering. Error classification (retryable vs terminal) is unchanged per Worker.
 
 **KV namespaces** were created 2026-10-27: `FLAGS` (`1dec1f10ebcc41e7a464179ba2b37628`) and
-`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 13 in-scope `wrangler.jsonc` files carry
+`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 14 in-scope `wrangler.jsonc` files carry
 both ids (forks: create your own with `npx wrangler kv namespace create FLAGS` and
 `npx wrangler kv namespace create sandbox-FLAGS`, and replace them);
 `node scripts/check-worker-flags.mjs --strict` (CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is

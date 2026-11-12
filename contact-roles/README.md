@@ -123,7 +123,10 @@ the scripts' `node:test` files (Vitest is kept off them). Also `npm run typechec
 ## Deploy order and rollout checklist
 
 Each step needs the user's go-ahead. Set `contact-roles:writes on` **before** deploying a build
-that reads it, or the Worker comes up `off` (the root `CLAUDE.md` rule).
+that reads it, or the Worker comes up `off` (the root `CLAUDE.md` rule). CI deploys the sandbox
+Worker from `main` (`deploy-sandbox:contact-roles`), and a missing write-switch key reads as `off`,
+so a CI deploy before `writes on` is a harmless dry run. For the order of namespaces, keys and
+first deploy, see [`docs/runbooks/migration-hold.md`](../docs/runbooks/migration-hold.md) "Merging / first deploy sequencing".
 
 1. **Sandbox**
    1. `node contact-roles/scripts/provision-contact-roles.mjs --env sandbox` (dry run), then `--execute`.
@@ -132,7 +135,7 @@ that reads it, or the Worker comes up `off` (the root `CLAUDE.md` rule).
    3. Create the `Roles to confirm` view on Affiliations (filter: `Proposed Roles` is not empty).
    4. Hide `Contacts` on the sandbox "Enter a gift" form, then
       `node scripts/check-donation-form.mjs --form 2325fd7745d3a2d425086d38358e4bd5`.
-   5. `node scripts/mark-read-only-columns.mjs ...` dry run, then `--apply` (puts 🔒 on `Contacts`).
+   5. `node scripts/mark-read-only-columns.mjs --workspace 18210301 --suffix " (Sandbox)"` (dry run), then the same with `--apply` (puts 🔒 on `Contacts`). Production: `--workspace 18201685`, no `--suffix`.
    6. `node scripts/flags.mjs contact-roles writes on --env sandbox`, **then** `npm run deploy:sandbox`.
    7. Run the backfill dry run, then `--execute`.
    8. Staff confirm a few roles; watch a reconcile ([UAT](../docs/uat/contact-roles.md)).

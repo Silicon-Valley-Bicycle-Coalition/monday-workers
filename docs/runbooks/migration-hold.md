@@ -2,7 +2,7 @@
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
-`all writes on`: three Workers must stay `off` (below), and `all` would turn them on.
+`all writes on`: four Workers must stay `off` (below), and `all` would turn them on.
 
 The in-scope Workers, in five groups that this runbook treats differently:
 
@@ -104,7 +104,7 @@ node scripts/flags.mjs donation-rollups writes off --env production
 
 4. Hold the writing-normally group, one Worker at a time. Each Worker's KV key is set first, then
    its main queues are paused (DLQs never are). Don't use `all writes hold`: it would also move
-   `donation-rollups` and `people-reclassification` from `off` to `hold`, and releasing them later
+   `contact-roles`, `donation-rollups` and `people-reclassification` from `off` to `hold`, and releasing them later
    with `on` would turn them on.
 
 ```sh
@@ -117,7 +117,7 @@ done
    the hold" for what that costs.)
 
 5. Check the result. Every held Worker should read `writes=hold`, queues `paused`;
-   `donation-rollups` and `people-reclassification` read `writes=off`; no `MISMATCH`, no `?`.
+   `contact-roles`, `donation-rollups` and `people-reclassification` read `writes=off`; no `MISMATCH`, no `?`.
 
 ```sh
 node scripts/flags.mjs status --env production
