@@ -143,7 +143,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
     report =
       duty === 'archive' ? await runArchive(deps, now)
       : duty === 'capacity' ? await runCapacity(deps)
-      : duty === 'sweep' ? await runSweep(deps)
+      : duty === 'sweep' ? await runSweep(deps, now)
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
       : duty === 'recurring' ? await runRecurring(deps)
@@ -281,13 +281,25 @@ async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
 // cursor — an incomplete sweep reports remaining>0 and the route is simply called again
 // (each duty run picks up where the last incomplete one stopped).
 const SWEEP_BATCHES_PER_RUN = 35;
-async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
+async function runSweep(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const lastRuns = await deps.gifts.lastRuns();
   const last = lastRuns.find((r) => r.duty === 'sweep')?.report as
-    { detail?: { cursor?: string; remaining?: number } } | undefined;
-  const cursor = (last?.detail?.remaining ?? 0) > 0 ? (last?.detail?.cursor ?? '') : '';
+    { detail?: { cursor?: string; remaining?: number; scope?: string } } | undefined;
+  const continuing = (last?.detail?.remaining ?? 0) > 0;
+  const cursor = continuing ? (last?.detail?.cursor ?? '') : '';
 
-  const owners = await deps.gifts.ownersWithOneGift(cursor, SWEEP_BATCHES_PER_RUN * 100 + 1);
+  // Issue #88: the January 1 sweep (calendar year basis, not also the fiscal start) only rolls the
+  // Sponsorships window, which exists only on Organizations items with sponsorship-type gifts —
+  // so it covers just those owners. A continuation keeps its first slice's scope; any other run
+  // (fiscal start, manual) sweeps everyone.
+  const { month, day } = localDateParts(now, deps.config.fiscalYear.timeZone);
+  const spon = deps.config.donationRollups.sponsorships;
+  const sponsorshipsOnly = continuing ? last?.detail?.scope === 'sponsorships'
+    : spon?.yearBasis === 'calendar' && month === 1 && day === 1 && deps.config.fiscalYear.startMonth !== 1;
+  const only = sponsorshipsOnly && spon !== null
+    ? { ownerBoardId: String(spon.organizationsBoardId), giftTypes: [...new Set([...spon.giftTypes, ...spon.inKindGiftTypes])] }
+    : undefined;
+  const owners = await deps.gifts.ownersWithOneGift(cursor, SWEEP_BATCHES_PER_RUN * 100 + 1, only);
   const slice = owners.slice(0, SWEEP_BATCHES_PER_RUN * 100);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
@@ -299,7 +311,8 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
     ok: true,
     summary: `enqueued recompute for ${slice.length} owners` +
       (remaining > 0 ? ` — more remain, run sweep again to continue` : ''),
-    detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor },
+    detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor,
+      scope: only === undefined ? 'all' : 'sponsorships' },
   };
 }
 

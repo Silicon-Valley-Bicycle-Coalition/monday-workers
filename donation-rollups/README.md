@@ -762,8 +762,10 @@ configured, so every deployment, forks included, must apply 0012 before the new 
 
 **Duties.** The custodian duty `sponsorships` backfills the facts nightly while there is work
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
-`yearBasis: "calendar"` a January 1 sweep runs the regular sweep (one recompute per owner, People
-included) so the Organizations' window rolls over.
+`yearBasis: "calendar"` a January 1 sweep rolls the Organizations' window over. It recomputes only
+Organizations owners with a `giftTypes`/`inKindGiftTypes` gift (issue #88: the full sweep costs tens
+of thousands of Monday calls against the account's daily cap); the fiscal-start and manual sweeps
+still cover every owner.
 
 **Owner check (read-only).** Sponsorships are only shown on Organizations, so check who owns the
 paid sponsorship gifts (substitute the configured `giftTypes` plus `inKindGiftTypes`; sandbox adds
