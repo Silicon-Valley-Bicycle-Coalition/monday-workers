@@ -6,6 +6,7 @@ import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client
 import type { Config, OutboundSyncMessage } from '../types';
 import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
+import { OutageBreaker } from '../monday/outage';
 import { errorText, memberId, redactEmails } from '../logSafe';
 import { messageDisposition, retryDelaySeconds as baseRetryDelaySeconds } from '../flags';
 import { dryRunOutboundDeps, type BatchSkipContext } from '../writeSwitch';
@@ -32,7 +33,12 @@ export async function processOutboundBatch(
   messages: readonly QueueMessageLike<OutboundSyncMessage>[],
   deps: OutboundConsumerDeps,
 ): Promise<void> {
-  for (const message of messages) await handleMessage(message, deps);
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
+  for (const message of messages) {
+    if (breaker.open) breaker.defer(message);
+    else await handleMessage(message, deps, breaker);
+  }
 }
 
 // The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
@@ -43,12 +49,17 @@ export async function consumeOutboundBatch(
   deps: OutboundConsumerDeps,
   gate: BatchSkipContext,
 ): Promise<void> {
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const disposition = messageDisposition(gate.mode, message.body);
     if (disposition === 'retry') {
       message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
+    } else if (breaker.open) {
+      // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+      // spend the transport's in-process attempts again on every remaining message.
+      breaker.defer(message);
     } else if (disposition === 'write') {
-      await handleMessage(message, deps);
+      await handleMessage(message, deps, breaker);
     } else {
       const dry = dryRunOutboundDeps(deps, { ...gate, deliveryId: message.body.donorItemId });
       // The one pending write a dry run makes, so a row can never look like work in flight.
@@ -61,12 +72,12 @@ export async function consumeOutboundBatch(
         message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
         continue;
       }
-      await handleMessage(message, dry);
+      await handleMessage(message, dry, breaker);
     }
   }
 }
 
-async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<void> {
+async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps, breaker: OutageBreaker): Promise<void> {
   const { donorItemId, previousEmail } = message.body;
   try {
     if (await alreadySynced(message, deps)) {
@@ -94,6 +105,8 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
     if (err instanceof MailchimpPermanentError) {
       message.ack(); // retrying a malformed address fails identically every time
     } else {
+      // A Monday outage also defers the rest of the batch (#101); this message's delay is the same.
+      if (breaker.trip(err)) console.error(`mailchimp-sync outbound consumer: Monday unavailable, deferring the rest of the batch`);
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
   }

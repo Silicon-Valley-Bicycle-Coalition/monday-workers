@@ -6,6 +6,7 @@ import type { Config, InboundSyncMessage } from '../types';
 import { reconcileCampaigns } from '../campaigns/reconcile';
 import type { QueueMessageLike } from './outbound';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
+import { OutageBreaker } from '../monday/outage';
 import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client';
 import { errorText, memberId, redactEmails } from '../logSafe';
 import { messageDisposition, retryDelaySeconds as baseRetryDelaySeconds } from '../flags';
@@ -27,20 +28,30 @@ export interface InboundConsumerDeps {
 //     it lists every interest they hold, as the per-message reconcile it replaces did;
 //  3. per message: write the connect column.
 // A failure in phase 1 or 3 retries (or acks) that message alone; a failed reconcile retries only
-// the messages that were waiting on it.
+// the messages that were waiting on it. Once any failure is a Monday outage (#101), every message
+// not yet finished is retried with backoff without calling Monday or Mailchimp again.
 export async function processInboundBatch(
   messages: readonly QueueMessageLike<InboundSyncMessage>[],
   deps: InboundConsumerDeps,
+  breaker: OutageBreaker = new OutageBreaker(),
 ): Promise<void> {
   let pending: Prepared[] = [];
   for (const message of messages) {
+    if (breaker.open) {
+      breaker.defer(message);
+      continue;
+    }
     try {
       const prepared = await prepare(message, deps);
       if (prepared === null) message.ack();
       else pending.push(prepared);
     } catch (err) {
-      await fail(message, err, deps);
+      await fail(message, err, deps, breaker);
     }
+  }
+  if (breaker.open) {
+    for (const p of pending) breaker.defer(p.message);
+    return;
   }
   if (pending.length === 0) return;
 
@@ -48,7 +59,7 @@ export async function processInboundBatch(
   try {
     catalog = await deps.campaignItemsStore.getByInterestIds(pending.flatMap((p) => p.interestIds));
   } catch (err) {
-    for (const p of pending) await fail(p.message, err, deps);
+    for (const p of pending) await fail(p.message, err, deps, breaker);
     return;
   }
 
@@ -64,17 +75,21 @@ export async function processInboundBatch(
       const unknown = waiting.flatMap((p) => p.interestIds.filter((id) => !catalog.has(id)));
       for (const [id, row] of await campaignItemsStore.getByInterestIds(unknown)) catalog.set(id, row);
     } catch (err) {
-      for (const p of waiting) await fail(p.message, err, deps);
+      for (const p of waiting) await fail(p.message, err, deps, breaker);
       pending = pending.filter((p) => !waiting.includes(p));
     }
   }
 
   for (const p of pending) {
+    if (breaker.open) {
+      breaker.defer(p.message);
+      continue;
+    }
     try {
       await write(p, catalog, synced, deps);
       p.message.ack();
     } catch (err) {
-      await fail(p.message, err, deps);
+      await fail(p.message, err, deps, breaker);
     }
   }
 }
@@ -88,12 +103,17 @@ export async function consumeInboundBatch(
   gate: BatchSkipContext,
 ): Promise<void> {
   const live: QueueMessageLike<InboundSyncMessage>[] = [];
+  // One breaker for the whole batch, dry runs included (#101).
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const disposition = messageDisposition(gate.mode, message.body);
     if (disposition === 'retry') {
       message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
     } else if (disposition === 'write') {
       live.push(message);
+    } else if (breaker.open) {
+      // Monday is down or rate-limiting (#101): rehearse this dry run on a later delivery.
+      breaker.defer(message);
     } else {
       // The message body carries an address; the skip lines name the member by hash instead.
       const dry = dryRunInboundDeps(deps, { ...gate, deliveryId: redactEmails(message.body.email) });
@@ -106,10 +126,10 @@ export async function consumeInboundBatch(
         message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
         continue;
       }
-      await processInboundBatch([message], dry);
+      await processInboundBatch([message], dry, breaker);
     }
   }
-  if (live.length > 0) await processInboundBatch(live, deps);
+  if (live.length > 0) await processInboundBatch(live, deps, breaker);
 }
 
 interface Prepared {
@@ -119,7 +139,7 @@ interface Prepared {
   interestIds: string[];
 }
 
-async function fail(message: QueueMessageLike<InboundSyncMessage>, err: unknown, deps: InboundConsumerDeps): Promise<void> {
+async function fail(message: QueueMessageLike<InboundSyncMessage>, err: unknown, deps: InboundConsumerDeps, breaker: OutageBreaker): Promise<void> {
   const { email } = message.body;
   const errMsg = err instanceof Error ? err.message : String(err);
   console.error(`mailchimp-sync inbound consumer: failed to process member ${memberId(email)}: ${redactEmails(errMsg)}`);
@@ -136,6 +156,8 @@ async function fail(message: QueueMessageLike<InboundSyncMessage>, err: unknown,
   if (err instanceof MailchimpPermanentError) {
     message.ack();
   } else {
+    // A Monday outage also defers the rest of the batch (#101); this message's delay is the same.
+    if (breaker.trip(err)) console.error('mailchimp-sync inbound consumer: Monday unavailable, deferring the rest of the batch');
     message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
   }
 }

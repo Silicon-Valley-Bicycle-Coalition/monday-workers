@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processOutboundBatch } from './outbound';
+import { consumeOutboundBatch, processOutboundBatch } from './outbound';
 import { MailchimpAuthError, MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
 import { MondayApiError } from '../monday/client';
 import type { MondayClient } from '../monday/client';
@@ -703,5 +703,64 @@ describe('processOutboundBatch: People (Historical) items', () => {
     await processOutboundBatch([fakeMessage('1')], deps);
     const managed = await managedOf(deps.mailchimpClient.updateMember);
     expect(managed).toContain('Near: Old project');
+  });
+});
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday or Mailchimp, instead of each repeating the transport's in-process attempts.
+describe('outage breaker (#101)', () => {
+  function outageDeps(err: Error) {
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockRejectedValue(err),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn(), getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+    };
+    return { mondayClient, mailchimpClient, config: CONFIG, dnsLog: fakeDnsLog(), pendingStore: fakePending() };
+  }
+  const gate = (mode: 'on' | 'hold') => ({ worker: 'mailchimp-sync', environment: 'production', mode, logLevel: 'normal' as const, piiKeys: ['email'] });
+
+  it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outageDeps(new MondayApiError('monday API: HTTP 503', { httpStatus: 503 }));
+    const messages = [fakeMessage('1', 2), fakeMessage('2', 1), fakeMessage('3', 4)];
+    await consumeOutboundBatch(messages, deps, gate('on'));
+    expect(deps.mondayClient.getDonorById).toHaveBeenCalledTimes(1);
+    expect(messages.map((m) => (m.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    expect(deps.pendingStore.updateStatus).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
+  });
+
+  it("raises the deferral to Monday's Retry-After hint", async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outageDeps(new MondayApiError('monday API: HTTP 429', { httpStatus: 429, retryAfterSeconds: 500 }));
+    const messages = [fakeMessage('1', 1), fakeMessage('2', 1)];
+    await processOutboundBatch(messages, deps);
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 500 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 500 });
+    expect(deps.mondayClient.getDonorById).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
+  });
+
+  it('a Mailchimp failure stays per-message: the next donor still syncs', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outageDeps(new Error('unused'));
+    (deps.mondayClient.getDonorById as ReturnType<typeof vi.fn>).mockResolvedValue(donor());
+    (deps.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('mailchimp: HTTP 503')).mockResolvedValue(undefined);
+    const messages = [fakeMessage('1', 1), fakeMessage('2', 1)];
+    await processOutboundBatch(messages, deps);
+    expect(messages[0]!.retry).toHaveBeenCalled();
+    expect(messages[1]!.ack).toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it('hold is unchanged: every message backs off and nothing is called', async () => {
+    const deps = outageDeps(new Error('unused'));
+    const messages = [fakeMessage('1', 3), fakeMessage('2', 1)];
+    await consumeOutboundBatch(messages, deps, gate('hold'));
+    expect(messages.map((m) => (m.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toEqual([{ delaySeconds: 240 }, { delaySeconds: 60 }]);
+    expect(deps.mondayClient.getDonorById).not.toHaveBeenCalled();
   });
 });
