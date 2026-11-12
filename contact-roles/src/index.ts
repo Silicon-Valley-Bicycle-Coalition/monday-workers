@@ -28,6 +28,6 @@ export default {
     }
     const config = configFor(env);
     const monday = new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env));
-    await runReconcile({ monday, config }, disposition === 'run' ? 'on' : 'off');
+    await runReconcile({ monday, config, environment: environmentOf(env) }, disposition === 'run' ? 'on' : 'off');
   },
 } satisfies ExportedHandler<Env>;

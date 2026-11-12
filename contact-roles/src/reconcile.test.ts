@@ -3,6 +3,7 @@ import type { BoardRule, ContactRolesConfig } from './config';
 import type { Affiliation, BoardItem } from './contacts';
 import type { ContactRolesMondayClient } from './monday/client';
 import { ColumnLookupError } from './monday/client';
+import { MondayApiError } from './monday/graphql';
 import { runReconcile } from './reconcile';
 
 const aff = (id: string, personId: string, orgId: string, status: string, roles: string[]): Affiliation => ({ id, personId, orgId, status, roles });
@@ -67,10 +68,12 @@ describe('runReconcile', () => {
   it('skips a board whose role is not a dropdown label, loudly, leaving Contacts alone', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const m = new MemClient(['Billing'], affs, { b1: [item('i1', ['o1'], ['p9'])] });
+    const read = vi.spyOn(m, 'listBoardItems');
     const s = await runReconcile({ monday: m, config: config([rule()]) }, 'on');
     expect(s.boards[0]).toMatchObject({ skipped: 'unknown-role', updates: 0, written: 0 });
     expect(m.writes).toEqual([]);
     expect(warn).toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
   });
 
   it('skips when any typeRoles role is unknown', async () => {
@@ -113,12 +116,34 @@ describe('runReconcile', () => {
   });
 
   it('a write error on one board stops that board but not the next', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1']), item('i2', ['o2'])], b2: [item('j1', ['o1'])] });
     m.failWrites.add('i1');
     const s = await runReconcile({ monday: m, config: config([rule(), rule({ name: 'Other', boardId: 'b2' })]) }, 'on');
     expect(s.boards[0]).toMatchObject({ failed: true, written: 0 });
     expect(s.boards[1]?.written).toBe(1);
+    const logged = JSON.parse(String(err.mock.calls[0]?.[0]));
+    expect(logged).toEqual({ worker: 'contact-roles', event: 'board-failed', board: 'Grants', boardId: 'b1', error: 'Error', itemId: 'i1', written: 0 });
+  });
+
+  it('logs httpStatus and code for a MondayApiError on a board', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1'])] });
+    m.listBoardItems = async () => { throw new MondayApiError('secret@example.com', { httpStatus: 429, code: 'RATE' }); };
+    await runReconcile({ monday: m, config: config([rule()]) }, 'on');
+    const logged = JSON.parse(String(err.mock.calls[0]?.[0]));
+    expect(logged).toMatchObject({ error: 'MondayApiError', httpStatus: 429, code: 'RATE' });
+    expect(JSON.stringify(logged)).not.toContain('secret');
+  });
+
+  it('a failing shared read logs run-failed (class name only), writes nothing and rethrows', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = new MemClient(['Grants'], affs, { b1: [item('i1', ['o1'])] });
+    m.roleLabels = async () => { throw new TypeError('leaks a@b.co'); };
+    await expect(runReconcile({ monday: m, config: config([rule()]), environment: 'sandbox' }, 'on')).rejects.toThrow(TypeError);
+    expect(m.writes).toEqual([]);
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(err.mock.calls[0]?.[0]))).toEqual({ worker: 'contact-roles', event: 'run-failed', environment: 'sandbox', mode: 'on', error: 'TypeError' });
   });
 
   it('a dropdown label no board uses changes nothing', async () => {

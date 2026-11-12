@@ -3,11 +3,12 @@
 // so a failed board or run is simply redone by the next cron tick.
 //
 // Logs carry board names, ids and counts only; never a person's name or email.
-import type { BoardRule, ContactRolesConfig } from './config';
+import type { BoardRule, ContactRolesConfig } from './config.ts';
 import { buildIndex, planBoard } from './contacts';
-import type { ContactRolesMondayClient } from './monday/client';
+import type { ContactRolesMondayClient } from './monday/client.ts';
+import { MondayApiError } from './monday/graphql';
 
-export interface RunDeps { monday: ContactRolesMondayClient; config: ContactRolesConfig }
+export interface RunDeps { monday: ContactRolesMondayClient; config: ContactRolesConfig; environment?: string }
 export interface BoardSummary {
   name: string;
   skipped?: 'disabled' | 'unknown-role';
@@ -24,11 +25,23 @@ function rolesOf(rule: BoardRule): string[] {
 }
 
 const errName = (err: unknown): string => (err instanceof Error ? err.name : 'UnknownError');
+// Class name plus, for Monday API errors, status and code. Never the message text.
+const errFields = (err: unknown): { error: string; httpStatus?: number; code?: string } => ({
+  error: errName(err),
+  ...(err instanceof MondayApiError ? { ...(err.httpStatus !== undefined ? { httpStatus: err.httpStatus } : {}), ...(err.code !== undefined ? { code: err.code } : {}) } : {}),
+});
 
 export async function runReconcile(deps: RunDeps, mode: 'on' | 'off'): Promise<RunSummary> {
   const { monday, config } = deps;
-  const labels = new Set(await monday.roleLabels(config.affiliations));
-  const index = buildIndex(await monday.listAffiliations(config.affiliations), config.affiliations.currentLabel);
+  let labels: Set<string>;
+  let index: ReturnType<typeof buildIndex>;
+  try {
+    labels = new Set(await monday.roleLabels(config.affiliations));
+    index = buildIndex(await monday.listAffiliations(config.affiliations), config.affiliations.currentLabel);
+  } catch (err) {
+    console.error(JSON.stringify({ worker: 'contact-roles', event: 'run-failed', environment: deps.environment, mode, ...errFields(err) }));
+    throw err; // fail the cron invocation
+  }
 
   const boards: BoardSummary[] = [];
   for (const rule of config.boards) {
@@ -45,6 +58,7 @@ export async function runReconcile(deps: RunDeps, mode: 'on' | 'off'): Promise<R
       console.warn(JSON.stringify({ worker: 'contact-roles', event: 'skipped-unknown-role', board: rule.name, boardId: rule.boardId, missingRoles: missing.length }));
       continue;
     }
+    let itemId: string | undefined;
     try {
       const items = await monday.listBoardItems(rule);
       const updates = planBoard(rule, items, index);
@@ -52,13 +66,14 @@ export async function runReconcile(deps: RunDeps, mode: 'on' | 'off'): Promise<R
       summary.updates = updates.length;
       if (mode === 'on') {
         for (const u of updates) {
+          itemId = u.itemId;
           await monday.setContacts(rule, u.itemId, u.personIds);
           summary.written++;
         }
       }
     } catch (err) {
       summary.failed = true;
-      console.error(JSON.stringify({ worker: 'contact-roles', event: 'board-failed', board: rule.name, boardId: rule.boardId, error: errName(err), written: summary.written }));
+      console.error(JSON.stringify({ worker: 'contact-roles', event: 'board-failed', board: rule.name, boardId: rule.boardId, ...errFields(err), ...(itemId !== undefined ? { itemId } : {}), written: summary.written }));
     }
   }
 
