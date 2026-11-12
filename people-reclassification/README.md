@@ -223,7 +223,9 @@ invocation's CPU and subrequests as that board grows.
 
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
-(`PROMOTE_WEBHOOK_SECRET`). The Worker writes `Promoted On` = today, moves the item if it's on
+(`PROMOTE_WEBHOOK_SECRET`); with `MONDAY_SIGNING_SECRET` set it also verifies the `Authorization`
+JWT Monday signs app-created webhooks with (issue #110; rollout and operator steps in the root
+README, "Monday's signed webhook JWT"). The Worker writes `Promoted On` = today, moves the item if it's on
 Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
 for the window. On People it restarts the window with no move.
 
@@ -240,7 +242,9 @@ covers a dropped webhook, a lease held by a running pass, and a label carried ac
 | Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
 | Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
 
-Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
+Monday's promote deliveries that pass the URL secret skip the 60/min/IP limiter (issue #110,
+`isVerifiedMondayWebhook` in `src/rateLimit.ts`), so a bulk promote isn't 429'd into the next
+morning's sweep. Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
 so a small batch finishes within seconds and anything left finishes the next morning. So does someone
 promoted while a pass is running.
 

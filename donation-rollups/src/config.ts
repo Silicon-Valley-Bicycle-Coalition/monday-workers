@@ -408,6 +408,9 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   if (typeof monday.accountUrl !== 'string' || !/^https:\/\//.test(monday.accountUrl)) {
     throw new Error('config: "monday.accountUrl" must be an https URL (used for gift-history deep links)');
   }
+  if (monday.accountId !== undefined && (typeof monday.accountId !== 'number' || !Number.isInteger(monday.accountId) || monday.accountId < 1)) {
+    throw new Error('config: "monday.accountId" must be a positive integer when set (the account webhook JWTs must name, issue #110)');
+  }
 
   if (typeof cfg.donationRollups !== 'object' || cfg.donationRollups === null) {
     throw new Error('config: missing required key "donationRollups"');
@@ -461,7 +464,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const affiliations = validateAffiliations(cfg.affiliations, donationBoards);
 
   return {
-    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, '') },
+    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, ''), ...(monday.accountId !== undefined ? { accountId: monday.accountId as number } : {}) },
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,

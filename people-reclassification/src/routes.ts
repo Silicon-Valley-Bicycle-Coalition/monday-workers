@@ -102,7 +102,7 @@ export function createApp(deps: RoutesDeps) {
     // The challenge echo has no side effect, so it skips the JWT: re-registering a subscription
     // never depends on Monday signing the handshake.
     if (typeof challenge === 'string') return c.json({ challenge }, 200);
-    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), deps.jwtPolicy ?? {}, Math.floor(now().getTime() / 1000));
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {}, Math.floor(now().getTime() / 1000));
     if (!jwt.accept) {
       console.error(`people-reclassification promote webhook: rejected delivery: JWT ${jwt.reason}`);
       return c.json({ ok: false }, 401);

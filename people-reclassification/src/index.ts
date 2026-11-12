@@ -47,7 +47,10 @@ export default {
         promote: (opts) => promoteFromWebhook(deps, opts).catch((err) => console.error(`promote ${opts.runId}: ${errorText(err)}`)),
         requestLabel: deps.config.promote.requestLabel,
         webhookSecret: env.PROMOTE_WEBHOOK_SECRET,
-        jwtPolicy: { signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED) },
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(deps.config.monday.accountId !== undefined ? { accountId: String(deps.config.monday.accountId) } : {}),
+        },
         defer: (work) => ctx.waitUntil(work),
       });
       return app.fetch(request, env, ctx);

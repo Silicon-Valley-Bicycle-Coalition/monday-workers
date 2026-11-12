@@ -6,14 +6,26 @@
 // Copied, not shared: donation-rollups and people-reclassification each hold a byte-identical
 // src/mondayJwt.ts. Edit one, copy it to the other.
 //
+// A valid signature alone isn't enough: every app webhook and integration call is signed with the
+// same secret, so the token is also bound to this use.
+// - Account: `accountId` (or `dat.account_id`) must equal config `monday.accountId`. Required.
+// - Audience: Monday's integration docs set `aud` to the endpoint URL. Its webhook payload isn't
+//   documented, so `aud` is checked only when present: origin and path must match the request's
+//   (the query, which holds the URL secret, is ignored).
+// - Time: exp, nbf and iat are checked when present, with CLOCK_SKEW_SECONDS of leeway. Monday's
+//   documented example is a 300 s token, but its webhook docs don't promise an exp, so exp stays
+//   optional; a token with exp - iat over MAX_LIFETIME_SECONDS, or issued more than that long ago,
+//   is refused.
 // The signature check is WebCrypto's HMAC verify, which compares in constant time. Only HS256 is
-// accepted (no "none", no algorithm chosen by the token). exp, nbf and iat are checked when
-// present, with CLOCK_SKEW_SECONDS of leeway. The token is never logged.
+// accepted (no "none", no algorithm chosen by the token). The token is never logged.
 
-export type JwtFailure = 'missing' | 'malformed' | 'unsupported-alg' | 'bad-signature' | 'expired' | 'not-yet-valid';
+export type JwtFailure =
+  | 'missing' | 'malformed' | 'unsupported-alg' | 'bad-signature'
+  | 'expired' | 'not-yet-valid' | 'lifetime-too-long' | 'wrong-account' | 'wrong-audience';
 export type JwtCheck = { ok: true; claims: Record<string, unknown> } | { ok: false; reason: JwtFailure };
 
 export const CLOCK_SKEW_SECONDS = 60;
+export const MAX_LIFETIME_SECONDS = 3600;
 const MAX_TOKEN_LENGTH = 4096;
 const B64URL = /^[A-Za-z0-9_-]*$/;
 
@@ -38,7 +50,29 @@ function decodeJsonObject(segment: string): Record<string, unknown> | null {
   }
 }
 
-export async function verifyMondayJwt(authorization: string | undefined, signingSecret: string, nowSeconds = Math.floor(Date.now() / 1000)): Promise<JwtCheck> {
+// What the token must be bound to: the SVBC Monday account, and the URL it was delivered to.
+export interface JwtBinding {
+  accountId: string;
+  requestUrl: string;
+}
+
+function claimedAccountId(claims: Record<string, unknown>): string | null {
+  const dat = claims.dat;
+  const raw = claims.accountId ?? (typeof dat === 'object' && dat !== null ? (dat as Record<string, unknown>).account_id : undefined);
+  return typeof raw === 'number' || (typeof raw === 'string' && raw !== '') ? String(raw) : null;
+}
+
+function sameEndpoint(aud: string, requestUrl: string): boolean {
+  try {
+    const a = new URL(aud);
+    const r = new URL(requestUrl);
+    return a.origin === r.origin && a.pathname.replace(/\/$/, '') === r.pathname.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+}
+
+export async function verifyMondayJwt(authorization: string | undefined, signingSecret: string, binding: JwtBinding, nowSeconds = Math.floor(Date.now() / 1000)): Promise<JwtCheck> {
   // Monday sends the bare token; a "Bearer " prefix is tolerated for hand replays.
   const token = (authorization ?? '').replace(/^Bearer\s+/i, '').trim();
   if (token === '') return { ok: false, reason: 'missing' };
@@ -66,6 +100,13 @@ export async function verifyMondayJwt(authorization: string | undefined, signing
   if (exp !== undefined && nowSeconds > exp + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' };
   if (nbf !== undefined && nowSeconds + CLOCK_SKEW_SECONDS < nbf) return { ok: false, reason: 'not-yet-valid' };
   if (iat !== undefined && nowSeconds + CLOCK_SKEW_SECONDS < iat) return { ok: false, reason: 'not-yet-valid' };
+  if (exp !== undefined && iat !== undefined && exp - iat > MAX_LIFETIME_SECONDS) return { ok: false, reason: 'lifetime-too-long' };
+  if (iat !== undefined && nowSeconds - iat > MAX_LIFETIME_SECONDS + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' };
+
+  if (claimedAccountId(claims) !== binding.accountId) return { ok: false, reason: 'wrong-account' };
+  if (claims.aud !== undefined && !(typeof claims.aud === 'string' && sameEndpoint(claims.aud, binding.requestUrl))) {
+    return { ok: false, reason: 'wrong-audience' };
+  }
   return { ok: true, claims };
 }
 
@@ -73,21 +114,26 @@ export async function verifyMondayJwt(authorization: string | undefined, signing
 //   no signing secret              → accept on the URL secret alone (verification off)
 //   signing secret, no token       → accept, flagged 'missing' for the caller to log, until
 //                                    `required` (MONDAY_WEBHOOK_JWT_REQUIRED=true) rejects it
-//   signing secret, token present  → the token must verify, required or not
+//   signing secret, token present  → the token must verify and bind, required or not
+//   signing secret, no account id  → reject everything: a token can't be bound to nothing
 //   required, no signing secret    → reject everything (fail closed on a half-done config)
 export interface MondayJwtPolicy {
   signingSecret?: string;
   required?: boolean;
+  // config monday.accountId, as a string.
+  accountId?: string;
 }
 export type JwtDecision =
   | { accept: true; verified: true }
   | { accept: true; verified: false; note: 'no-signing-secret' | 'missing' }
-  | { accept: false; reason: JwtFailure | 'no-signing-secret' };
+  | { accept: false; reason: JwtFailure | 'no-signing-secret' | 'no-account-id' };
 
-export async function checkMondayWebhookJwt(authorization: string | undefined, policy: MondayJwtPolicy, nowSeconds?: number): Promise<JwtDecision> {
+export async function checkMondayWebhookJwt(authorization: string | undefined, requestUrl: string, policy: MondayJwtPolicy, nowSeconds?: number): Promise<JwtDecision> {
   const secret = policy.signingSecret ?? '';
   if (secret === '') return policy.required ? { accept: false, reason: 'no-signing-secret' } : { accept: true, verified: false, note: 'no-signing-secret' };
-  const check = await verifyMondayJwt(authorization, secret, nowSeconds);
+  const accountId = policy.accountId ?? '';
+  if (accountId === '') return { accept: false, reason: 'no-account-id' };
+  const check = await verifyMondayJwt(authorization, secret, { accountId, requestUrl }, nowSeconds);
   if (check.ok) return { accept: true, verified: true };
   if (check.reason === 'missing' && !policy.required) return { accept: true, verified: false, note: 'missing' };
   return { accept: false, reason: check.reason };

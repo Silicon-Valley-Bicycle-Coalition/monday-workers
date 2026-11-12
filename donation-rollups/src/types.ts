@@ -94,7 +94,8 @@ export interface FiscalYearConfig {
 
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
-  monday: { apiUrl: string; accountUrl: string };
+  // accountId: the Monday account a webhook JWT must name (issue #110, src/mondayJwt.ts).
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   fiscalYear: FiscalYearConfig;
   custodian: CustodianConfig;
   affiliations: AffiliationsConfig | null;

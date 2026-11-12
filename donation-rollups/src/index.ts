@@ -110,7 +110,10 @@ export default {
           send: (message: RecomputeQueueMessage, opts?: { delaySeconds: number }) => env.RECOMPUTE_QUEUE.send(message, opts).then(() => undefined),
         },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
-        jwtPolicy: { signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED) },
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(config.monday.accountId !== undefined ? { accountId: String(config.monday.accountId) } : {}),
+        },
         writeMode: () => readWriteMode(env, WORKER),
       });
       return app.fetch(request, env, ctx);

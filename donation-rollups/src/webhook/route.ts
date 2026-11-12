@@ -80,7 +80,7 @@ export function createApp(deps: AppDeps) {
       return c.json({ challenge: (body as { challenge: unknown }).challenge }, 200);
     }
 
-    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), deps.jwtPolicy ?? {});
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {});
     if (!jwt.accept) {
       console.error(`donation-rollups webhook: rejected delivery: JWT ${jwt.reason}`);
       return c.json({ ok: false }, 401);

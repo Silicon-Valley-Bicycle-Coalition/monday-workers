@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
 import sandbox from '../config/sandbox.json';
+import production from '../config/svbc.json';
 
 const clone = (): Record<string, any> => JSON.parse(JSON.stringify(sandbox));
 
@@ -12,6 +13,19 @@ describe('validateConfig', () => {
     expect(cfg.eventRegistrations?.events.startColumn).toBe('Date');
     expect(cfg.volunteers?.columns.date).toBe('Date');
     expect(cfg.alerts.itRequests).toBeNull();
+  });
+
+  it('carries the Monday account id webhook JWTs must name (issue #110), optional but numeric', () => {
+    expect(validateConfig(sandbox).monday.accountId).toBe(26331880);
+    expect(validateConfig(production).monday.accountId).toBe(26331880);
+    const none = clone();
+    delete none.monday.accountId;
+    expect(validateConfig(none).monday.accountId).toBeUndefined();
+    for (const bad of [0, '26331880', null]) {
+      const raw = clone();
+      raw.monday.accountId = bad;
+      expect(() => validateConfig(raw), String(bad)).toThrow('monday.accountId');
+    }
   });
 
   it('allows the optional sources and the alert to be null', () => {

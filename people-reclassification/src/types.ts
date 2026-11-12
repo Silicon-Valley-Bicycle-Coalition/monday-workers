@@ -49,7 +49,7 @@ export interface ItRequestsAlertConfig {
 }
 
 export interface ReclassificationConfig {
-  monday: { apiUrl: string; accountUrl: string };
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   window: { years: number; timeZone: string };
   boards: { live: BoardRef; historical: BoardRef };
   peopleColumns: PeopleColumns;
