@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
-import { dataPath, readJson, readNdjson, writeJson } from '../artifacts.js';
+import { dataPath, readJson, readNdjson, writeJson, writeText } from '../artifacts.js';
+import { csvRow } from '../csv.js';
 import type { ItemPayload } from '../transform/types.js';
 import { Ledger } from '../load/ledger.js';
 import { MondayClient } from '../load/monday.js';
@@ -160,22 +160,21 @@ export async function runValidate(args: string[], deps: { client?: MondayClient 
     ? await readJson<BoardMap>(dataPath('load', 'boards.json')) : {};
   const mondayBase = cfg.monday.accountUrl?.replace(/\/$/, '');
   const sfBase = cfg.salesforceInstanceUrl?.replace(/\/$/, '');
-  const cell = (s: string) => `"${s.replace(/"/g, '""')}"`;
   const lines = ['category,board,sfId,mondayItemId,name,archived,mondayUrl,salesforceUrl,result,note'];
   for (const [cat, rows] of byCategory) {
     const target = Math.min(rows.length, Math.max(30, Math.round((rows.length / Math.max(total, 1)) * 300)));
     for (const p of sample(rows, target, rand)) {
       const itemId = ledger.itemId(p.sfId) ?? '';
       const boardId = boardIds[p.board]?.boardId;
-      lines.push([cat, p.board, p.sfId, itemId, cell(p.name),
+      lines.push(csvRow([cat, p.board, p.sfId, itemId, p.name,
         ledger.archivedDone(p.sfId) ? 'yes' : '',
         mondayBase && boardId && itemId ? `${mondayBase}/boards/${boardId}/pulses/${itemId}` : '',
-        sfBase ? `${sfBase}/${p.sfId}` : '', '', ''].join(','));
+        sfBase ? `${sfBase}/${p.sfId}` : '', '', '']));
     }
   }
   await writeJson(dataPath('validate', 'result.json'),
     { ok: checks.every((c) => c.ok), checks });
-  await writeFile(dataPath('validate', 'sample.csv'), lines.join('\n') + '\n', 'utf8');
+  await writeText(dataPath('validate', 'sample.csv'), lines.join('\n') + '\n');
 
   for (const c of checks) console.log(`validate: ${c.ok ? 'OK  ' : 'FAIL'} ${c.name} — ${c.detail}`);
   return checks.every((c) => c.ok) ? 0 : 1;

@@ -1,8 +1,7 @@
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
-import { dataPath, readJson, readNdjson, writeJson } from '../artifacts.js';
+import { dataPath, readJson, readNdjson, writeJson, writeText } from '../artifacts.js';
 import type { ItemPayload } from '../transform/types.js';
 import type { BoardMap } from '../load/boards.js';
 import { Ledger } from '../load/ledger.js';
@@ -247,7 +246,7 @@ export async function runReconcile(args: string[], deps: { reader?: MondayReader
     '', ...sections.flatMap((s) => [s, '']),
   ].join('\n');
   await writeJson(dataPath('reconcile', 'result.json'), { ok, extractedAt, checks });
-  await writeFile(dataPath('reconcile', 'report.md'), report, 'utf8');
+  await writeText(dataPath('reconcile', 'report.md'), report);
 
   for (const c of checks) console.log(`reconcile: ${c.ok ? 'OK  ' : 'FAIL'} ${c.name} — ${c.detail}`);
   console.log(`reconcile: ${ok ? 'GO' : 'NO-GO'} — full report in ${dataPath('reconcile', 'report.md')}`);

