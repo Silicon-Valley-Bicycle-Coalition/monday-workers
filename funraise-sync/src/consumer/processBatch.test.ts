@@ -950,3 +950,94 @@ describe('write switch', () => {
     expect(mutatorCalls()).toBe(0);
   });
 });
+
+// #101: once one message hits a Monday outage (5xx, 429, timeout, spent budget), the rest of the
+// batch is retried with backoff without calling Monday, instead of each repeating the transport's
+// in-process attempts.
+describe('outage breaker', () => {
+  const gateOn: BatchSkipContext = { worker: 'funraise-sync', environment: 'production', mode: 'on', logLevel: 'normal', piiKeys: [] };
+
+  function quietErrors<T>(fn: () => Promise<T>): Promise<T> {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    return fn().finally(() => errors.mockRestore());
+  }
+
+  it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 503', { httpStatus: 503 }));
+    const findItemByColumnValue = vi.fn().mockResolvedValue(null);
+    const mondayClient: MondayClient = { findItemByColumnValue, createItem, changeColumnValues: vi.fn() };
+    const messages = [
+      { ...fakeMessage('transaction', 'txn-1'), attempts: 2 },
+      { ...fakeMessage('transaction', 'txn-2'), attempts: 1 },
+      { ...fakeMessage('transaction', 'txn-3'), attempts: 5 },
+    ];
+
+    await quietErrors(() => consumeFunraiseBatch(messages, { eventStore, mondayClient, config }, gateOn));
+
+    expect(createItem).toHaveBeenCalledTimes(1);
+    expect(findItemByColumnValue).toHaveBeenCalledTimes(1);
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(messages[2]!.retry).toHaveBeenCalledWith({ delaySeconds: 960 });
+    for (const m of messages) expect(m.ack).not.toHaveBeenCalled();
+    // Only the message that actually failed is recorded failed; the deferred ones never ran.
+    expect(eventStore.getEventByEntity).toHaveBeenCalledTimes(1);
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledTimes(1);
+  });
+
+  it("raises the whole batch's delay to Monday's Retry-After hint", async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 429', { httpStatus: 429, retryAfterSeconds: 600 })),
+      changeColumnValues: vi.fn(),
+    };
+    const messages = [fakeMessage('transaction', 'txn-1'), fakeMessage('transaction', 'txn-2')];
+
+    await quietErrors(() => processFunraiseQueueBatch(messages, { eventStore, mondayClient, config }));
+
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 600 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 600 });
+  });
+
+  it('keeps going after a terminal (per-message) failure', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn()
+      .mockRejectedValueOnce(new MondayApiError('monday API: invalid value', { httpStatus: 200, code: 'ColumnValueException' }))
+      .mockResolvedValueOnce({ id: 'item-2' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
+    const messages = [fakeMessage('transaction', 'txn-1'), fakeMessage('transaction', 'txn-2')];
+
+    await quietErrors(() => consumeFunraiseBatch(messages, { eventStore, mondayClient, config }, gateOn));
+
+    expect(createItem).toHaveBeenCalledTimes(2);
+    expect(messages[0]!.ack).toHaveBeenCalled();
+    expect(messages[1]!.ack).toHaveBeenCalled();
+  });
+
+  it('hold is unchanged: every message backs off and Monday is never called', async () => {
+    const eventStore = fakeStore(eventRow());
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues: vi.fn() };
+    const messages = [{ ...fakeMessage('transaction', 'txn-1'), attempts: 3 }, fakeMessage('transaction', 'txn-2')];
+
+    await consumeFunraiseBatch(messages, { eventStore, mondayClient, config }, { ...gateOn, mode: 'hold' });
+
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
+  it('off: an outage on a dry-run read also defers the rest, still recording nothing', async () => {
+    const eventStore = fakeStore(eventRow());
+    const findItemByColumnValue = vi.fn().mockRejectedValue(new MondayApiError('monday API: timed out', {}));
+    const mondayClient: MondayClient = { findItemByColumnValue, createItem: vi.fn(), changeColumnValues: vi.fn() };
+    const messages = [fakeMessage('transaction', 'txn-1'), fakeMessage('transaction', 'txn-2')];
+
+    await quietErrors(() => consumeFunraiseBatch(messages, { eventStore, mondayClient, config }, { ...gateOn, mode: 'off' }));
+
+    expect(findItemByColumnValue).toHaveBeenCalledTimes(1);
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(eventStore.updateStatusByEntity).not.toHaveBeenCalled();
+  });
+});
