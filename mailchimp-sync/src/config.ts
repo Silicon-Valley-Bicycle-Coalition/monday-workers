@@ -15,7 +15,7 @@ const REQUIRED_MERGE_FIELDS: (keyof MailchimpMergeFieldsConfig)[] = [
 ];
 
 const REQUIRED_TAGS: (keyof MailchimpTagsConfig)[] = [
-  'activeMember', 'lapsedMember', 'lifetimeMember', 'hasDonated', 'doNotSolicit',
+  'activeMember', 'lapsedMember', 'lifetimeMember', 'hasDonated', 'doNotSolicit', 'recurringDonor',
 ];
 
 function requireObject(value: unknown, path: string): Record<string, unknown> {
@@ -51,6 +51,11 @@ function requireNullableColumns(columns: Record<string, unknown>, prefix: string
   // Explicit null (not an absent key) says "this deployment has no Nearby column yet".
   if (columns.nearby !== null && (typeof columns.nearby !== 'string' || columns.nearby === '')) {
     throw new Error(`config: "${prefix}.nearby" must be a column id or null`);
+  }
+  // Optional: absent or null means the recurring-donor tag is not synced from this board.
+  const recurring = columns.hasActiveRecurringGift;
+  if (recurring !== undefined && recurring !== null && (typeof recurring !== 'string' || recurring === '')) {
+    throw new Error(`config: "${prefix}.hasActiveRecurringGift" must be a column id or null`);
   }
 }
 

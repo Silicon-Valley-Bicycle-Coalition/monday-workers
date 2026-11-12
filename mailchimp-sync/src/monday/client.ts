@@ -35,6 +35,7 @@ export function donorColumnIds(columns: DonorColumnsConfig): string[] {
     columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
     ...(columns.state === null ? [] : [columns.state]),
     ...(columns.nearby === null ? [] : [columns.nearby]),
+    ...(columns.hasActiveRecurringGift ? [columns.hasActiveRecurringGift] : []),
   ];
 }
 
@@ -86,6 +87,7 @@ export class HttpMondayClient implements MondayClient {
       doNotSolicit: (byId.get(columns.doNotSolicit) ?? '') !== '',
       dnsReasonStatus: byId.get(columns.dnsReasonStatus) ?? '',
       nearby: columns.nearby === null ? [] : splitDropdownLabels(byId.get(columns.nearby) ?? ''),
+      hasActiveRecurringGift: columns.hasActiveRecurringGift ? (byId.get(columns.hasActiveRecurringGift) ?? '') !== '' : false,
       onHistorical,
     };
   }

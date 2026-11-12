@@ -76,7 +76,7 @@ describe('config split: Monday ids', () => {
       real += 1;
       expect(prod[key], `monday.columns.${key}`).not.toBe(id);
     }
-    expect(real).toBe(13);
+    expect(real).toBe(14);
   });
 
   it('both shipped configs validate', () => {

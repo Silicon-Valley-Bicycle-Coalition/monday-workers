@@ -59,7 +59,7 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor).toEqual({
       id: '42', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
       memberSince: '2026-01-01', memberUntil: '', addr1: '1 Main St', city: 'San Jose',
-      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false,
+      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
     });
   });
 
@@ -101,6 +101,19 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor?.nearby).toEqual(['Stevens Creek bikeway', 'Bay Trail', 'Lawrence Expy']);
     const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.variables.columnIds).toContain('nearby');
+  });
+
+  it('reads the Has Active Recurring Gift checkbox when configured, and false when not', async () => {
+    const fetchFn = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'rg', text: 'v' }] }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    expect((await client.getDonorById('42', { ...COLUMNS, hasActiveRecurringGift: 'rg' }))?.hasActiveRecurringGift).toBe(true);
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).toContain('rg');
+
+    const blank = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'rg', text: '' }] }] });
+    const blankClient = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn: blank, sleepFn: noSleep });
+    expect((await blankClient.getDonorById('42', { ...COLUMNS, hasActiveRecurringGift: 'rg' }))?.hasActiveRecurringGift).toBe(false);
+    expect((await blankClient.getDonorById('42', COLUMNS))?.hasActiveRecurringGift).toBe(false);
   });
 
   it('gives an empty Nearby list for a blank column, and never requests the column when nearby is null', async () => {

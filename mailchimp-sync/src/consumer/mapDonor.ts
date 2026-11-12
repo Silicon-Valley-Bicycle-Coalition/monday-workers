@@ -58,6 +58,11 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.doNotSolicit);
   }
 
+  // Renewal Journeys exclude this tag: an active recurring gift renews itself. Unchecking drops it.
+  if (donor.hasActiveRecurringGift) {
+    out.push(tags.recurringDonor);
+  }
+
   for (const label of donor.nearby) out.push(config.mailchimp.nearbyTagPrefix + label);
 
   return out;
@@ -73,5 +78,5 @@ export function managedTags(config: Config, currentMemberTags: string[] = []): s
   const tags = config.mailchimp.tags;
   const prefix = config.mailchimp.nearbyTagPrefix;
   const nearby = currentMemberTags.filter((name) => name.startsWith(prefix));
-  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit, ...nearby];
+  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit, tags.recurringDonor, ...nearby];
 }

@@ -40,7 +40,7 @@ Three independent flows — see the design doc for full sequence diagrams:
 
 1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
    Mailchimp contact update (merge fields: Member Since/Until, Tier, Status, Address, Total
-   Given; tags: active/lapsed/lifetime-member, has-donated). A change to a column the sync doesn't
+   Given; tags: active/lapsed/lifetime-member, has-donated, recurring-donor). A change to a column the sync doesn't
    read (`donorColumnIds` in `src/monday/client.ts`) is skipped at the webhook, so a bulk write to
    another People column, like the 2026-11-03 Location backfill, sends nothing to Mailchimp. **Update only — never creates a
    contact.** Mailchimp is the consent system of record, so a Donor whose address isn't already
@@ -308,6 +308,12 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   tags above instead. **Production: created 2026-10-30** through the API, with the sandbox
   audience's types (dates `MM/DD/YYYY`, `TOTALGIVE` a number, all non-public).
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
+* Exclude the `recurring-donor` tag from the renewal-reminder Customer Journey: it comes from People's
+  **Has Active Recurring Gift** checkbox (`monday.columns.hasActiveRecurringGift`, kept nightly by
+  `donation-rollups`), so someone whose recurring gift lapses starts getting reminders again. The column
+  is optional in config; `null` or absent leaves the tag unsynced. It is a managed tag, so unchecking
+  removes it. The tag appears on a contact's next sync after the change, so run the outbound backfill
+  (or touch the checkbox) once to tag existing recurring donors.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
   independently, and put its id in `mailchimp.interestCategoryIds`. **Production (decided
