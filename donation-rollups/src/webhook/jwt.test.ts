@@ -26,6 +26,7 @@ function setup(jwtPolicy?: MondayJwtPolicy) {
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockResolvedValue(null),
     listStuck: vi.fn().mockResolvedValue([]),
+    pruneFinished: vi.fn().mockResolvedValue(0),
   };
   const app = createApp({
     writeMode: async (): Promise<WriteMode> => 'on', pendingStore, queue: { send }, donationBoardIds: new Set(['1']),
