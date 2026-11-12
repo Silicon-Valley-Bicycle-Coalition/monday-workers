@@ -5,6 +5,7 @@
 // truth instead. Reads are cheap; only cells that disagree are written, so a quiet night writes
 // nothing. Writes are capped per run and the rest wait for the next night (remaining > 0 re-runs).
 import type { CustodianDeps, DutyReport } from './custodian';
+import type { DonationRollupsConfig } from '../types';
 
 export const RECURRING_WRITES_PER_RUN = 500;
 
@@ -14,6 +15,14 @@ export interface RecurringDetail {
 
 // Monday's checkbox text is "v" when checked and empty otherwise.
 export const isChecked = (text: string | null): boolean => text !== null && text !== '';
+
+// The owner boards carrying a Has Active Recurring Gift column. Exported for the custodian's
+// shared board read (boardReads.ts, issue #90).
+export function recurringFlagColumns(config: DonationRollupsConfig): { boardId: string; columnId: string }[] {
+  if (config.donationRollups.recurringGifts === null) return [];
+  return Object.entries(config.donationRollups.ownerColumnsByBoard)
+    .flatMap(([boardId, cols]) => (cols.hasActiveRecurringGift ? [{ boardId, columnId: cols.hasActiveRecurringGift }] : []));
+}
 
 export async function runRecurring(deps: CustodianDeps): Promise<DutyReport> {
   const cfg = deps.config.donationRollups.recurringGifts;
@@ -30,9 +39,7 @@ export async function runRecurring(deps: CustodianDeps): Promise<DutyReport> {
   } while (cursor !== null);
 
   const writes: { boardId: number; itemId: string; columnId: string; check: boolean }[] = [];
-  for (const [boardId, cols] of Object.entries(deps.config.donationRollups.ownerColumnsByBoard)) {
-    const columnId = cols.hasActiveRecurringGift;
-    if (!columnId) continue;
+  for (const { boardId, columnId } of recurringFlagColumns(deps.config)) {
     let page: string | null = null;
     do {
       const res = await deps.mondayClient.pageItemsColumnsText(Number(boardId), [columnId], page);
@@ -46,9 +53,11 @@ export async function runRecurring(deps: CustodianDeps): Promise<DutyReport> {
     } while (page !== null);
   }
 
-  const now = writes.slice(0, RECURRING_WRITES_PER_RUN);
-  for (const w of now) {
+  const now: typeof writes = [];
+  for (const w of writes.slice(0, RECURRING_WRITES_PER_RUN)) {
+    if (deps.writeBudget?.take() === false) break;
     await deps.mondayClient.changeColumnValues(w.boardId, w.itemId, { [w.columnId]: w.check ? { checked: 'true' } : null });
+    now.push(w);
   }
   const detail: RecurringDetail = {
     activeDonors: active.size, checked: now.filter((w) => w.check).length,

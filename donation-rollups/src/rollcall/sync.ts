@@ -186,12 +186,13 @@ const ORDER: Record<SyncOp['op'], number> = { delete: 0, update: 1, move: 2, cre
 // Year groups first (create a missing one; retitle so only the current year reads "(in
 // progress)"), then deletes, updates, moves and creates. Every write counts against
 // writesPerRun; what's left over is reported as `remaining` for the next run.
-export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: SyncOp[], currentFY: number):
-  Promise<{ applied: number; remaining: number }> {
+// groups: the board's groups as the caller already read them; listed here when not given.
+export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: SyncOp[], currentFY: number,
+  groups?: { id: string; title: string }[]): Promise<{ applied: number; remaining: number }> {
   const client = deps.mondayClient;
   const groupByYear = new Map<number, string>();
   const retitles: { id: string; title: string }[] = [];
-  for (const g of await client.listGroups(cfg.boardId)) {
+  for (const g of groups ?? await client.listGroups(cfg.boardId)) {
     const year = groupYearFrom(g.title);
     if (year === null) continue;
     if (!groupByYear.has(year)) groupByYear.set(year, g.id);
@@ -211,17 +212,17 @@ export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: S
 
   // Oldest first, so the newest year's group, created last, sits on top.
   for (const year of missingYears) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     groupByYear.set(year, await client.createGroup(cfg.boardId, groupTitle(year, currentFY)));
     applied++;
   }
   for (const r of retitles) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     await client.updateGroupTitle(cfg.boardId, r.id, r.title);
     applied++;
   }
   for (const op of sorted) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     if (op.op === 'delete') await client.deleteItem(op.itemId);
     else if (op.op === 'update') await client.changeColumnValues(cfg.boardId, op.itemId, op.values);
     else if (op.op === 'move') await client.moveItemToGroup(op.itemId, groupByYear.get(op.fiscalYear)!);

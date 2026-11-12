@@ -43,6 +43,29 @@ const base = {
   },
 };
 
+describe('validateConfig — custodian.writesPerRun (issue #90)', () => {
+  it('is optional: absent leaves the built-in default to the custodian', () => {
+    expect(validateConfig(base).custodian.writesPerRun).toBeUndefined();
+  });
+
+  it('passes a positive integer through and rejects anything else', () => {
+    expect(validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: 250 } }).custodian.writesPerRun).toBe(250);
+    for (const bad of [0, -1, 2.5, '500'] as unknown[]) {
+      expect(() => validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: bad } })).toThrow(/custodian\.writesPerRun/);
+    }
+  });
+});
+
+describe('validateConfig — custodian.sweepOwnersPerRun (issue #88)', () => {
+  it('is optional, and when set an integer from 1 to 3,500 (35 sendBatch calls of 100)', () => {
+    expect(validateConfig(base).custodian.sweepOwnersPerRun).toBeUndefined();
+    expect(validateConfig({ ...base, custodian: { ...base.custodian, sweepOwnersPerRun: 1500 } }).custodian.sweepOwnersPerRun).toBe(1500);
+    for (const bad of [0, 3501, 1.5, '1500'] as unknown[]) {
+      expect(() => validateConfig({ ...base, custodian: { ...base.custodian, sweepOwnersPerRun: bad } })).toThrow(/custodian\.sweepOwnersPerRun/);
+    }
+  });
+});
+
 describe('validateConfig — fiscalYear block (issue #27)', () => {
   it('passes a valid block through', () => {
     expect(validateConfig(base).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });

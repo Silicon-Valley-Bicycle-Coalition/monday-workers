@@ -1,4 +1,10 @@
-export interface OwnerFilter { ownerBoardId: string; giftTypes: string[] }
+// Narrows the sweep's owners (issue #88). sponsorships: owners on one board with a live gift of the
+// given types. rollover: owners with a live gift from fromFY on, plus (optionally) the
+// sponsorships set.
+export interface SponsorshipOwners { ownerBoardId: string; giftTypes: string[] }
+export type OwnerFilter =
+  | ({ kind: 'sponsorships' } & SponsorshipOwners)
+  | { kind: 'rollover'; fromFY: number; sponsorships?: SponsorshipOwners };
 
 export interface GiftFact {
   mondayItemId: string;
@@ -96,6 +102,9 @@ export interface GiftsStore {
   getAnnualSummaries(): Promise<AnnualSummaryRow[]>;
   recordRun(run: CustodianRun): Promise<void>;
   lastRuns(): Promise<{ duty: string; ranAt: string; ok: boolean; report: unknown }[]>;
+  // Issue #90: deletes runs before the cutoff except each duty's latest, which carries its
+  // cursor and continuation state (lastRuns). Returns how many rows went.
+  pruneRuns(ranBeforeISO: string): Promise<number>;
 }
 
 const CHUNK = 50;
@@ -416,14 +425,22 @@ export class D1GiftsStore implements GiftsStore {
     // cursored so the July sweep can slice itself under the Worker subrequest budget.
     // `only` narrows to owners on one board with at least one live gift of the given types (the
     // January sweep, which only rolls the Sponsorships window: issue #88).
-    const filter = only === undefined ? '' : `AND owner_board_id = ?3 AND owner_item_id IN (
-                  SELECT owner_item_id FROM gifts WHERE removed_at IS NULL AND gift_type IN (${only.giftTypes.map((_, n) => `?${n + 4}`).join(', ')}))`;
+    // `rollover` (the fiscal-start sweep) narrows to owners with a live gift from fromFY on, plus
+    // the sponsorships set when given. Bound parameters from ?3.
+    const params: unknown[] = [];
+    const bind = (v: unknown) => { params.push(v); return `?${params.length + 2}`; };
+    const sponsorshipOwners = (s: SponsorshipOwners) => `(owner_board_id = ${bind(s.ownerBoardId)} AND owner_item_id IN (
+                  SELECT owner_item_id FROM gifts WHERE removed_at IS NULL AND gift_type IN (${s.giftTypes.map(bind).join(', ')})))`;
+    const filter = only === undefined ? ''
+      : only.kind === 'sponsorships' ? `AND ${sponsorshipOwners(only)}`
+      : `AND (owner_item_id IN (SELECT owner_item_id FROM gifts WHERE removed_at IS NULL AND fiscal_year >= ${bind(only.fromFY)})` +
+        (only.sponsorships === undefined ? ')' : ` OR ${sponsorshipOwners(only.sponsorships)})`);
     const res = await this.db
       .prepare(`SELECT owner_item_id, MIN(owner_board_id) AS owner_board_id, MIN(donation_item_id) AS donation_item_id,
                        MIN(donation_board_id) AS donation_board_id
                 FROM donation_links WHERE owner_item_id > ?1 ${filter}
                 GROUP BY owner_item_id ORDER BY owner_item_id LIMIT ?2`)
-      .bind(...(only === undefined ? [afterOwnerId, limit] : [afterOwnerId, limit, only.ownerBoardId, ...only.giftTypes]))
+      .bind(afterOwnerId, limit, ...params)
       .all<{ owner_item_id: string; owner_board_id: string; donation_item_id: string; donation_board_id: string }>();
     return res.results.map((r) => ({
       ownerItemId: r.owner_item_id, ownerBoardId: r.owner_board_id, mondayItemId: r.donation_item_id, donationBoardId: r.donation_board_id,
@@ -518,5 +535,14 @@ export class D1GiftsStore implements GiftsStore {
     return res.results.map((r) => ({
       duty: r.duty, ranAt: r.ran_at, ok: r.ok === 1, report: JSON.parse(r.report_json),
     }));
+  }
+
+  async pruneRuns(ranBeforeISO: string): Promise<number> {
+    const res = await this.db
+      .prepare(`DELETE FROM custodian_runs WHERE ran_at < ?1
+                AND ran_at < (SELECT MAX(ran_at) FROM custodian_runs latest WHERE latest.duty = custodian_runs.duty)`)
+      .bind(ranBeforeISO)
+      .run();
+    return res.meta.changes;
   }
 }

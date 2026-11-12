@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applySync, boardItemFrom, columnValuesFor, groupTitle, groupYearFrom, planSync, type BoardItem, type SyncOp } from './sync';
 import type { RollCallRow } from './compute';
+import { WriteBudget } from '../custodian/writeBudget';
 import type { CustodianDeps } from '../custodian/custodian';
 import type { RollCallConfig } from '../types';
 
@@ -259,6 +260,15 @@ describe('applySync', () => {
     const { deps, calls } = fake([]);
     expect(await applySync(deps, { ...CFG, writesPerRun: 1 }, [{ op: 'create', row: r }], 2027)).toEqual({ applied: 1, remaining: 1 });
     expect(calls()).toEqual([['createGroup', 5, 'FY2027 (in progress)']]);
+  });
+
+  it('stops at the run\'s shared write budget as well as writesPerRun (issue #90)', async () => {
+    const r = row({ key: '2027|item:101' });
+    const { deps, calls } = fake([{ id: 'g27', title: 'FY2027 (in progress)' }]);
+    deps.writeBudget = new WriteBudget(1);
+    expect(await applySync(deps, CFG, [{ op: 'delete', itemId: '1', reason: 'gone' }, { op: 'create', row: r }], 2027))
+      .toEqual({ applied: 1, remaining: 1 });
+    expect(calls()).toEqual([['deleteItem', '1']]);
   });
 
   it('an already-right board writes nothing', async () => {

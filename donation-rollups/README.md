@@ -65,6 +65,10 @@ existing boards; it only adds the missing subscriptions.
 and every ledger total name `removed_at`, so an unmigrated database breaks every consumer message
 the moment the build goes live, the same hazard as 0007 below. Then re-run `setup-webhooks.mjs`.
 
+**Migration 0015 (issue #90)** only adds indexes (for the requeue duty's `listStuck` and the
+sponsorships backfill's scan); no code depends on it, so it can go before or after the deploy.
+Apply it with the same `migrations apply` command.
+
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
 **Owner:** David (decided 2026-10-09).
@@ -617,15 +621,28 @@ Sandbox: [Worker Alerts (sandbox)](https://bikesiliconvalley.monday.com/boards/1
 Updates notify only that item's subscribers, so subscribe to be told. Don't reuse a request or
 ticket as the sink, and don't close the production item.
 
+The cron run shares two things across its duties (issue #90). **Reads:** each board several
+duties page (People and People (Historical) for membership, recurring and rollcall; Donations for
+classify and rollcall's credits) is read once, with the union of their columns
+(`src/custodian/boardReads.ts`). **Writes:** one Monday write budget for the whole run,
+`custodian.writesPerRun` (optional, default 500), on top of each duty's own cap. A duty refused a
+write stops and reports the rest as `remaining`, and the next night continues it. A duty run by
+hand over HTTP reads for itself and keeps only its own cap.
+
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
   (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
 * **capacity** (Mondays) — every board in the workspace vs its item limit; alerts at
   `capacityAlertPct` (update posted to `custodian.alertItemId`). First live run immediately
   flagged Activities v2 at 90% — a true positive.
-* **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
-  fiscal boundary (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so
-  the consumer never coalesces them away, even when the owner's representative gift has an old open
-  pending row.
+* **sweep** (July 1) — recomputes owners so This/Last Year splits roll over at the fiscal boundary
+  (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so the consumer
+  never coalesces them away, even when the owner's representative gift has an old open pending row.
+  Scoped and paced for Monday's 10,000 calls/day account cap (issue #88): the fiscal-start sweep
+  covers only owners with a live gift in the two fiscal years before the new one, the ones whose
+  This/Last Year move (plus sponsorship owners when `sponsorships.yearBasis` is `fiscal`); a sweep
+  on any other day, or `?all=true`, covers everyone. Each run enqueues at most
+  `custodian.sweepOwnersPerRun` owners (optional, 1-3,500, default 1,500; each costs the consumer
+  about 2-4 Monday calls) and the daily cron continues it until `remaining` is 0.
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
   comparison — values written before issue #27 carry float noise; since then every money column
   is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
@@ -633,7 +650,8 @@ ticket as the sink, and don't close the production item.
   `owner_board_id` stays stale after an owner moves boards until their next recompute.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
-  verification" above).
+  verification" above). It also prunes (issue #90) `written`/`dropped` pending rows older than 30
+  days and `custodian_runs` rows older than 180 days, always keeping each duty's latest run.
 * **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
   plus Acknowledgment Tier where configured (see "Chartable gift labels" below), and a blank Fiscal
   Year Ending (see "A blank Fiscal Year Ending cell" above). Capped per run;
@@ -766,8 +784,9 @@ configured, so every deployment, forks included, must apply 0012 before the new 
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
 `yearBasis: "calendar"` a January 1 sweep rolls the Organizations' window over. It recomputes only
 Organizations owners with a `giftTypes`/`inKindGiftTypes` gift (issue #88: the full sweep costs tens
-of thousands of Monday calls against the account's daily cap); the fiscal-start and manual sweeps
-still cover every owner.
+of thousands of Monday calls against the account's daily cap). With `yearBasis: "fiscal"` the
+fiscal-start sweep includes them; a manual sweep on any other day, or with `?all=true`, covers
+every owner.
 
 **Owner check (read-only).** Sponsorships are only shown on Organizations, so check who owns the
 paid sponsorship gifts (substitute the configured `giftTypes` plus `inKindGiftTypes`; sandbox adds
