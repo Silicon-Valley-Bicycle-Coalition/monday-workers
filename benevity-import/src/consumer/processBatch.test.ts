@@ -6,6 +6,7 @@ import type { AliasStore } from '../db/aliases';
 import type { UploadStore } from '../db/uploads';
 import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
+import { MondayApiError } from '../monday/graphql';
 
 function fakeConfig(): BenevityImportConfig {
   return {
@@ -569,3 +570,71 @@ const REPORT = [
   'Net Total Payment,50.00',
   '',
 ].join('\n');
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday, instead of each repeating the transport's in-process attempts.
+describe('consumeBenevityBatch — outage breaker', () => {
+  const gate = (mode: 'on' | 'hold' | 'off') =>
+    ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;
+  const anonymous = () =>
+    fakeParsedRow({ donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor', matchAmount: 0 });
+
+  function outageDeps(err: Error) {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(anonymous()));
+    (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+    return deps;
+  }
+
+  it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = outageDeps(new MondayApiError('monday API: HTTP 503', { httpStatus: 503 }));
+    const msgs = [message('TXN001', 2), message('TXN002', 1), { body: { assetId: 'a1' }, attempts: 4, ack: vi.fn(), retry: vi.fn() }];
+
+    await consumeBenevityBatch(msgs, deps, gate('on'));
+
+    expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(deps.rowStore.getRow).toHaveBeenCalledTimes(1);
+    expect(deps.uploadStore.getUploadByAssetId).not.toHaveBeenCalled();
+    expect(msgs.map((m) => (m.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    for (const m of msgs) expect(m.ack).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it("raises the deferral to Monday's Retry-After hint", async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = outageDeps(new MondayApiError('monday API: HTTP 429', { httpStatus: 429, retryAfterSeconds: 700 }));
+    const msgs = [message('TXN001', 1), message('TXN002', 1)];
+
+    await processBenevityQueueBatch(msgs, deps);
+
+    expect(msgs[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 700 });
+    expect(msgs[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 700 });
+    errors.mockRestore();
+  });
+
+  it('an ordinary failure stays per-message: the next row still runs', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('D1_ERROR: overloaded'))
+      .mockResolvedValue(fakeRowRecord(anonymous()));
+    const msgs = [message('TXN001', 1), message('TXN002', 1)];
+
+    await consumeBenevityBatch(msgs, deps, gate('on'));
+
+    expect(msgs[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(msgs[1]!.ack).toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it('hold is unchanged: every message backs off and nothing is read', async () => {
+    const deps = fakeDeps();
+    const msgs = [message('TXN001', 3), message('TXN002', 1)];
+
+    await consumeBenevityBatch(msgs, deps, gate('hold'));
+
+    expect(msgs.map((m) => (m.retry as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toEqual([{ delaySeconds: 240 }, { delaySeconds: 60 }]);
+    expect(deps.rowStore.getRow).not.toHaveBeenCalled();
+  });
+});

@@ -11,6 +11,7 @@ import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { OutageBreaker } from '../monday/outage';
 import { ingestUpload, type IngestDeps } from './ingestUpload';
 import { errorClass } from '../logSafe';
 
@@ -49,6 +50,8 @@ export async function consumeBenevityBatch(
   deps: ProcessBatchDeps,
   gate: BatchSkipContext
 ): Promise<void> {
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: isUploadMessage(message.body) ? `asset:${message.body.assetId}` : message.body.transactionId };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -57,17 +60,24 @@ export async function consumeBenevityBatch(
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx), breaker);
   }
 }
 
 export async function processBenevityQueueBatch(
   messages: QueueMessageLike<BenevityQueueMessage>[],
-  deps: ProcessBatchDeps
+  deps: ProcessBatchDeps,
+  breaker: OutageBreaker = new OutageBreaker()
 ): Promise<void> {
   for (const message of messages) {
+    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // spend the transport's in-process attempts again on every remaining message.
+    if (breaker.open) {
+      breaker.defer(message);
+      continue;
+    }
     if (isUploadMessage(message.body)) {
-      await processUpload(message.body.assetId, message, deps);
+      await processUpload(message.body.assetId, message, deps, breaker);
       continue;
     }
     const { transactionId } = message.body;
@@ -76,7 +86,8 @@ export async function processBenevityQueueBatch(
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`benevity consumer: failed to process "${transactionId}": ${errorClass(err)}`);
+      const outage = breaker.trip(err);
+      console.error(`benevity consumer: failed to process "${transactionId}": ${errorClass(err)}${outage ? ' — Monday unavailable, deferring the rest of the batch' : ''}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
       // retry+DLQ handles it (once retries run out, src/consumer/deadLetters.ts puts it on the
       // worklist) — this is an unexpected/transient failure, not a business
@@ -88,20 +99,23 @@ export async function processBenevityQueueBatch(
       } catch (recordErr) {
         console.error(`benevity consumer: could not record failure for "${transactionId}": ${errorClass(recordErr)}`);
       }
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      if (outage) breaker.defer(message);
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
 
-async function processUpload(assetId: string, message: QueueMessageLike<BenevityQueueMessage>, deps: ProcessBatchDeps): Promise<void> {
+async function processUpload(assetId: string, message: QueueMessageLike<BenevityQueueMessage>, deps: ProcessBatchDeps, breaker: OutageBreaker): Promise<void> {
   try {
     await ingestUpload(assetId, deps);
     message.ack();
   } catch (err) {
     // ingestUpload has already marked the upload 'error' if it got as far as recording it; the
     // retry resumes the same asset from its first unfinished block.
-    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorClass(err)}`);
-    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+    const outage = breaker.trip(err);
+    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorClass(err)}${outage ? ' — Monday unavailable, deferring the rest of the batch' : ''}`);
+    if (outage) breaker.defer(message);
+    else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 
