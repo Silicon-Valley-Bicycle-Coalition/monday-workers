@@ -53,3 +53,100 @@ export const DEAL_EXTRA_COLUMNS = [
   },
   { title: 'PO Number', type: 'text' },
 ];
+
+// ---- Sponsor-sheet mapping -------------------------------------------------------------------
+
+const EVENT_PATTERNS = [
+  [/btwd|bike to wherever/i, 'BTWD'],
+  [/summit/i, 'Advocacy Summit'],
+  [/dinner/i, 'Dinner'],
+  [/ride/i, 'Fundraising Ride'],
+  [/wellness/i, 'Wellness'],
+  [/misc/i, 'Misc'],
+];
+
+/** "2024 BTWD; 2024 Advocacy Summit" or "2018 BTWD / Dinner" → EVENTS values, deduped, unknowns dropped. */
+export function parseEvents(cycle) {
+  const found = [];
+  for (const token of String(cycle ?? '').split(/[;,/]/)) {
+    const hit = EVENT_PATTERNS.find(([re]) => re.test(token));
+    if (hit && !found.includes(hit[1])) found.push(hit[1]);
+  }
+  return found;
+}
+
+/** Comparison key for an organization name: no case, backslash escapes or repeated spaces. */
+export function normalizeOrgName(name) {
+  return String(name ?? '')
+    .replace(/\\/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+export function parseEmails(cell) {
+  return String(cell ?? '')
+    .split(/[,;\s]+/)
+    .map((e) => e.trim())
+    .filter((e) => e.includes('@'));
+}
+
+const text = (v) => String(v ?? '').trim();
+const contact = (name, emailCell) => {
+  const emails = parseEmails(emailCell);
+  return name || emails.length ? [{ name, emails }] : [];
+};
+
+/**
+ * One sheet row → the lead it should become. `tab` is 'active' (2026 BTWD, Summit, Misc),
+ * 'prospects' or 'lapsed'; keys are the sheet's column headings.
+ */
+export function mapSheetRow(tab, row) {
+  const base = { types: ['Sponsorship'], btwdTier: null, funderStatus: null, amount: null, owners: [] };
+  if (tab === 'active') {
+    const org = text(row.Company);
+    const tier = text(row.Type);
+    const amount = text(row['Grant Amount']);
+    return {
+      ...base,
+      orgName: org,
+      orgKey: normalizeOrgName(org),
+      name: org,
+      events: parseEvents(row.Event),
+      btwdTier: BTWD_TIERS.includes(tier) ? tier : null,
+      stage: /^true$/i.test(text(row['Scheduled Meeting'])) ? 'Scheduled Meeting' : 'Research',
+      amount: amount === '' || Number.isNaN(Number(amount)) ? null : Number(amount),
+      owners: text(row['Staff Lead']).split(',').map(text).filter(Boolean),
+      contacts: contact(
+        [text(row['Primary Contact (First Name)']), text(row['(Last Name)'])].filter(Boolean).join(' '),
+        row.Email,
+      ),
+    };
+  }
+  if (tab === 'prospects') {
+    const org = text(row['Account Name']);
+    return {
+      ...base,
+      orgName: org,
+      orgKey: normalizeOrgName(org),
+      name: org,
+      events: parseEvents(row['Sponsorship Cycle']),
+      stage: 'Needs Cultivation',
+      contacts: contact(text(row['Primary Contact']), row['Contact: Email']),
+    };
+  }
+  if (tab === 'lapsed') {
+    const org = text(row.Company);
+    return {
+      ...base,
+      orgName: org,
+      orgKey: normalizeOrgName(org),
+      name: org,
+      events: parseEvents(row['Type of sponsorship']),
+      stage: 'Lost',
+      funderStatus: 'Lapsed',
+      contacts: contact([text(row.Name), text(row['last name'])].filter(Boolean).join(' '), row['Email Address']),
+    };
+  }
+  throw new Error(`unknown sheet tab: ${tab}`);
+}
