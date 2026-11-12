@@ -18,10 +18,14 @@ describe('config split', () => {
     expect(production.affiliations.boardId).toBe('18437909787');
   });
 
-  it('production keeps Leads and Bike Education off until their organization links exist', () => {
-    for (const name of ['Leads', 'Bike Education Lifecycle Tracker']) {
-      expect(production.boards.find((b) => b.name === name)?.enabled, name).toBe(false);
-    }
+  it('production enables only the rules whose organization link exists on the live board', () => {
+    // Live check 2026-11-11: BP Request Form has no organization link (text columns only), Grants &
+    // Contracts has no `Funder` column (its only org link, `Grant Provider`, points at the Grant
+    // Providers board), and Bike Education and Leads have none yet. Each is switched on once its
+    // Organization link exists.
+    const state = (on: boolean) => production.boards.filter((b) => b.enabled === on).map((b) => b.name);
+    expect(state(true)).toEqual(['Sponsorships', 'Donations']);
+    expect(state(false)).toEqual(['Grants & Contracts', 'BP Request Form', 'Bike Education Lifecycle Tracker', 'Leads']);
   });
 
   it('the sandbox has only the boards that exist in CRM Sandbox v4, all enabled', () => {
