@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { classifyPair, indexAttendees, summarizeAttendee } from './compare-attendee-pairs-lib.mjs';
 
 const att = (id, over = {}) => summarizeAttendee({ id, order_id: '900', status: 'Attending', ticket_class_name: 'Volunteer', created: '2025-10-01T00:00:00Z', ...over });

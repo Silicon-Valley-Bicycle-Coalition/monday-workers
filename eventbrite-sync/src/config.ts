@@ -29,12 +29,14 @@ const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
 
 const VOLUNTEER_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'jobColumn', 'dateColumn', 'statusColumn',
-  'historicalColumn', 'volunteerLinkColumn', 'eventColumn', 'listingColumn',
+  'historicalColumn', 'volunteerLinkColumn', 'eventColumn', 'listingColumn', 'ticketTypeColumn',
 ] as const;
 
 // The Volunteers board columns this Worker added (setup-volunteers-board.mjs creates them); the
 // other five attendeeSync.volunteers columns already existed. config/svbc.json carries the
 // placeholder in all five until the cutover (docs/runbooks/volunteers-board-cutover.md step 2).
+// ticketTypeColumn (#115) is new too but optional, like attendeePhoneColumn: its placeholder only
+// skips the ticket class, so it isn't part of the switch.
 export const NEW_VOLUNTEER_COLUMN_KEYS = ['eventColumn', 'listingColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn'] as const;
 
 export type VolunteerBoardMode = 'legacy' | 'ready';

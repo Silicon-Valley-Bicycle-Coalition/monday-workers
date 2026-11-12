@@ -554,9 +554,14 @@ written to the Volunteers board (`monday.boards.volunteers`), not Event Registra
 `src/consumer/processVolunteer.ts`, one item per Eventbrite attendee. Columns, under
 `attendeeSync.volunteers`: **Event** (a relation to Events, staff-editable; defaults to the
 listing's own Events item on create and is never written again), **Eventbrite Listing**,
-**Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, plus the existing Job, Date,
-Status, Historical and Volunteer (People) link. Status maps Registered to RSVP, Attended to
-Completed and Canceled to Canceled; staff No-Show, Prospect and Confirmed are kept. Class emails
+**Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Ticket Type** (the
+attendee's `ticket_class_name`, e.g. "Shift 2"; `ticketTypeColumn`, optional: the placeholder
+writes nothing), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
+Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
+Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
+never deleted, so a count of people must leave out Canceled and count attendee ids, not emails:
+one order can hold two shifts, or several people under the buyer's email (#115).
+`donation-rollups` counts only Completed. Class emails
 for these events read the Volunteers board and write No-Show and the People link back there.
 The board's "Recent events" view (grouped by Event, last 90 days) is made by
 `scripts/setup-volunteers-board.mjs --board <id> --events-board <id> [--apply]`, which also
