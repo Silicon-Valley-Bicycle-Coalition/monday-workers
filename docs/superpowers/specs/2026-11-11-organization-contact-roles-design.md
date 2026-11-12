@@ -48,6 +48,11 @@ can be a different person than the **Grants** contact (the funder) at the same o
 The Events board gets no `Contacts` column in this first round (the author's call: the BP Request
 Form and the Bike Education tracker already carry the logistics contacts).
 
+**Implementation notes (2026-11-11, from the build):**
+- The Bike Education Lifecycle Tracker has **no organization link** on the live board (its `Funder` is a status column), so its Classes rule ships `enabled: false` until an `Organization` link column is added.
+- BP Request Form, Bike Education and Leads have no sandbox v4 copy; the sandbox config covers Sponsorships, Grants & Contracts and Donations only.
+- On sandbox Sponsorships the organization link is `Sponsor` (it points at the sandbox Organizations board); its `Organization` column still points at production organizations.
+
 Leads is the one exception: it is a single board for all funding solicitations tagged by a Type
 column, so its role comes from Type, not from the board. Leads is still being redesigned in another
 session (Type values not final; an Organization link is expected but not built; where a pledged lead's
