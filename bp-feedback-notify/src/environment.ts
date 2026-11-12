@@ -32,6 +32,9 @@ export interface WorkerConfig {
   // Where to write Sent/Failed back onto the item after each send (see src/sendStatus.ts), or
   // null to only log the outcome. Uses the same Monday access when set.
   sendStatus: SendStatusConfig | null;
+  // Per-item resend guard (#105, src/sendGuard.ts): an item emailed within this many hours is not
+  // emailed again, however many webhooks arrive for it.
+  resendCooldownHours: number;
 }
 
 export function configFor(env: EnvironmentBindings, production: WorkerConfig, sandbox: WorkerConfig): WorkerConfig {

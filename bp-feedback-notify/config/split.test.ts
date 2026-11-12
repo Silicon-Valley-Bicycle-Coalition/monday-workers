@@ -72,3 +72,21 @@ describe('wrangler.jsonc FLAGS binding', () => {
     expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
   });
 });
+
+describe('wrangler.jsonc DB binding (#105 resend guard)', () => {
+  const db = (w: Json) => ((w.d1_databases as { binding: string; database_name: string }[] | undefined) ?? []).find((d) => d.binding === 'DB');
+
+  it('binds DB in production and sandbox to different databases', () => {
+    expect(db(wrangler)?.database_name).toBe('svbc-bp-feedback-notify');
+    expect(db(sandboxEnv)?.database_name).toBe('svbc-bp-feedback-notify-sandbox');
+  });
+
+  it('gives env.sandbox an explicit empty routes list, so it never inherits a production route', () => {
+    expect(sandboxEnv.routes).toEqual([]);
+  });
+
+  it('sets a positive resend cooldown in both configs', () => {
+    expect(production.resendCooldownHours).toBeGreaterThan(0);
+    expect(sandbox.resendCooldownHours).toBeGreaterThan(0);
+  });
+});
