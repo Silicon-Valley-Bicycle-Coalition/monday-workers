@@ -114,7 +114,8 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   edited, so a Shared Drive manager should treat any snapshot file with more than one revision
   as tampered with (Drive keeps the earlier revisions; restore one from the file's
   **Manage versions**). Since snapshot encryption, an edited encrypted file fails authentication at
-  restore, and the restore refuses a plaintext `.jsonl` added to an encrypted snapshot, so a
+  restore, as does an edited manifest, and the restore refuses plaintext `.jsonl` files whenever a
+  key is given, so a
   tampered file can't be restored by mistake; it still has to be recovered from **Manage
   versions**. If that residual risk ever matters more, the next step is a second
   Shared Drive the account isn't a member of, filled by a copy it can't reach. Not built.
@@ -265,10 +266,16 @@ wraps the Drive client; the format is documented at the top of `src/crypto/snaps
 * **One secret, `BACKUP_ENCRYPTION_KEY`**: 32 random bytes, base64. **Required.** Without it (or
   with a malformed one) a run fails at its folder step, before anything is uploaded, and alerts
   Slack; nothing is ever uploaded in the clear. Production and sandbox each have their own key.
-* **The manifest stays plaintext** (ids, counts, timestamps, error lines, and
+* **The manifest stays plaintext but is authenticated** (ids, counts, timestamps, error lines, and
   `encryption.keyId`, the first 8 bytes of the key's SHA-256), so a stale or partial run is
-  still obvious from Drive. It isn't authenticated: the "more than one revision means tampered"
-  rule above applies to it too.
+  still obvious from Drive. Its last field, `manifestMac`, is an HMAC-SHA256 over the JSON of
+  everything before it, under a key HKDF-derived from the secret. The restore checks it before it
+  trusts any field.
+* **No downgrade at restore.** With a key given, or any `.enc` file in the folder, the restore
+  refuses every plaintext `.jsonl` whatever the manifest says. It also refuses a manifest that fails
+  its MAC, and a `monday-backup/3`-or-later manifest without `encryption`. Swapping the ciphertext
+  for plaintext and stripping the manifest back to v2 therefore fails. Plaintext-era (v2) snapshots
+  restore only with no key, and with a warning that nothing in them is authenticated.
 * **Symmetric, not public-key.** The issue suggested encrypting to a public key whose private
   half only the restore operator holds. The Worker has to read its own files back (a retried
   step re-counts a file it already uploaded, `tallyBoardFile` in `src/backup.ts`), so it holds

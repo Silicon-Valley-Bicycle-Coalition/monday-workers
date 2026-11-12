@@ -885,6 +885,11 @@ describe('runSnapshot', () => {
       await runSnapshot(fakeStep().step, deps({ monday: fakeMonday({ listBoards: async () => [board('1', 'Donations')] }), drive }));
       expect(fake.files.filter((f) => f.filename === 'board-1.jsonl.enc')).toHaveLength(1);
       expect(fake.manifest().itemCountsByBoard).toEqual({ '1': 2 });
+
+      // ...and a repeated manifest step finds manifest.json rather than writing a second one.
+      await runSnapshot(fakeStep().step, deps({ monday: fakeMonday({ listBoards: async () => [board('1', 'Donations')] }), drive }));
+      expect(fake.files.filter((f) => f.filename === 'manifest.json')).toHaveLength(1);
+      expect(fake.manifest().manifestMac).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('fails the run, and alerts, when the encryption key is missing: nothing is uploaded', async () => {

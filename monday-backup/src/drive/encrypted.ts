@@ -3,6 +3,7 @@ import {
   ENCRYPTED_SUFFIX,
   ENCRYPTION_SCHEME,
   importSnapshotKey,
+  manifestMac,
   SnapshotEncryptor,
   type SnapshotKey,
 } from '../crypto/snapshotCipher';
@@ -13,8 +14,9 @@ const ENCRYPTED_MIME_TYPE = 'application/octet-stream';
 // Snapshot files encrypted before they reach Drive (issue #112). Wraps the real client: every file
 // created or looked up by name is `<name>.enc`, written as ciphertext (src/crypto/snapshotCipher.ts)
 // and decrypted again when read back. The one exception is uploadJson, which writes the manifest
-// in the clear: it holds ids, counts, timestamps and error lines, so a stale or partial snapshot
-// stays obvious from the Drive folder without the key, and it names the key id the files need.
+// in the clear but MACed: it holds ids, counts, timestamps and error lines, so a stale or partial
+// snapshot stays obvious from the Drive folder without the key, and it names the key id the files
+// need.
 //
 // The key is imported on first use and the failure kept, so a missing or malformed secret fails
 // the run's folder step, before anything is created: the run is recorded as failed and alerts.
@@ -64,12 +66,18 @@ export class EncryptedDriveClient implements DriveClient {
     };
   }
 
-  uploadJson(folderId: string, filename: string, data: unknown): Promise<void> {
-    return this.inner.uploadJson(folderId, filename, data);
+  // Plaintext, but authenticated: `manifestMac` (src/crypto/snapshotCipher.ts) is appended as the
+  // last field, an HMAC over the JSON of everything before it, so the restore can trust the
+  // manifest's format and encryption fields before reading anything else.
+  async uploadJson(folderId: string, filename: string, data: unknown): Promise<void> {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error(`${filename}: only a JSON object can be authenticated`);
+    const mac = await manifestMac(await this.key(), JSON.stringify(data));
+    return this.inner.uploadJson(folderId, filename, { ...data, manifestMac: mac });
   }
 
+  // `.jsonl` files are the encrypted ones (createFile); anything else (the manifest) keeps its name.
   findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null> {
-    return this.inner.findFile(folderId, `${filename}${ENCRYPTED_SUFFIX}`);
+    return this.inner.findFile(folderId, filename.endsWith('.jsonl') ? `${filename}${ENCRYPTED_SUFFIX}` : filename);
   }
 
   readLines(fileId: string): AsyncGenerator<string> {

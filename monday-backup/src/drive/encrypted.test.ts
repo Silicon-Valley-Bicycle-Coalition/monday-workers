@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decryptBytes, importSnapshotKey } from '../crypto/snapshotCipher';
+import { decryptBytes, importSnapshotKey, verifyManifestMac } from '../crypto/snapshotCipher';
 import type { DriveClient } from './client';
 import { EncryptedDriveClient } from './encrypted';
 
@@ -83,12 +83,24 @@ describe('EncryptedDriveClient', () => {
     expect(await new EncryptedDriveClient(mem.drive, KEY_B64).findFile('folder', 'board-1.jsonl')).toBeNull();
   });
 
-  it('leaves the manifest readable, and reports the scheme and key id for it', async () => {
+  it('leaves the manifest readable but MACs it, and reports the scheme and key id for it', async () => {
     const mem = memoryDrive();
     const drive = new EncryptedDriveClient(mem.drive, KEY_B64);
-    await drive.uploadJson('folder', 'manifest.json', { format: 'x' });
-    expect([...mem.files.values()][0]!.name).toBe('manifest.json');
+    await drive.uploadJson('folder', 'manifest.json', { format: 'x', runId: 4 });
+    const [id, file] = [...mem.files][0]!;
+    expect(file.name).toBe('manifest.json');
+    const { manifestMac, ...rest } = JSON.parse(new TextDecoder().decode(mem.all(id))) as { manifestMac: string };
+    expect(rest).toEqual({ format: 'x', runId: 4 });
+    expect(await verifyManifestMac(await importSnapshotKey(KEY_B64), JSON.stringify(rest), manifestMac)).toBe(true);
     expect(await drive.encryption()).toEqual({ scheme: 'monday-backup-aes256gcm-stream/1', keyId: (await importSnapshotKey(KEY_B64)).id });
+  });
+
+  // A repeated manifest step looks for manifest.json before writing a second one.
+  it('finds the manifest by its own name', async () => {
+    const mem = memoryDrive();
+    const drive = new EncryptedDriveClient(mem.drive, KEY_B64);
+    await drive.uploadJson('folder', 'manifest.json', {});
+    expect(await drive.findFile('folder', 'manifest.json')).not.toBeNull();
   });
 
   it('fails before creating the run folder when the key is missing or malformed', async () => {

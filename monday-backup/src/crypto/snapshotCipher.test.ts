@@ -6,7 +6,9 @@ import {
   FRAME_SIZE,
   HEADER_LENGTH,
   importSnapshotKey,
+  manifestMac,
   SnapshotEncryptor,
+  verifyManifestMac,
 } from './snapshotCipher';
 
 const encoder = new TextEncoder();
@@ -119,6 +121,17 @@ describe('snapshot encryption', () => {
   it('detects bytes after the final frame', async () => {
     const bytes = await encrypt(KEY_B64, ['a\n']);
     await expect(decryptBytes(await importSnapshotKey(KEY_B64), concat([bytes, new Uint8Array([1, 2, 3])]))).rejects.toThrow(/after the final frame/);
+  });
+
+  it('MACs a manifest so only the same key verifies it, and any edit fails', async () => {
+    const key = await importSnapshotKey(KEY_B64);
+    const text = '{"format":"monday-backup/3","runId":1}';
+    const mac = await manifestMac(key, text);
+    expect(mac).toMatch(/^[0-9a-f]{64}$/);
+    expect(await verifyManifestMac(key, text, mac)).toBe(true);
+    expect(await verifyManifestMac(key, text.replace('1', '2'), mac)).toBe(false);
+    expect(await verifyManifestMac(await importSnapshotKey(OTHER_KEY_B64), text, mac)).toBe(false);
+    expect(await verifyManifestMac(key, text, 'not hex')).toBe(false);
   });
 
   it('names its scheme', () => {

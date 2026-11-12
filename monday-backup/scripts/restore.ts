@@ -23,7 +23,9 @@ async function main(): Promise<number> {
   const entries = readdirSync(args.snapshotDir)
     .filter((name) => name === 'manifest.json' || name.endsWith('.jsonl') || name.endsWith('.jsonl.enc'))
     .map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(args.snapshotDir, name))) }));
-  const snapshot = parseSnapshot(await readSnapshotFiles(entries, key));
+  const read = await readSnapshotFiles(entries, key);
+  for (const warning of read.warnings) console.warn(`WARNING: ${warning}`);
+  const snapshot = parseSnapshot(read.files);
   checkTarget(snapshot, args);
 
   const ledgerText = existsSync(args.ledgerPath) ? readFileSync(args.ledgerPath, 'utf8') : '';

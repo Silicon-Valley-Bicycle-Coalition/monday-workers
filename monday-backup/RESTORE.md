@@ -84,9 +84,11 @@ From `monday-backup/3` on, every board and doc file is encrypted (AES-256-GCM; f
 needs the key the manifest's `encryption.keyId` names. Get it from where the operator keeps it,
 outside the Shared Drive, into a file only you can read, and pass that file with `--key-file`
 (or put the key in `BACKUP_ENCRYPTION_KEY`). Never paste the key itself onto the command line,
-where it lands in shell history. The tool decrypts in memory and checks every file: a wrong key,
-a file cut short or changed, or a plaintext `.jsonl` file in an encrypted snapshot stops it with
-the file's name. To look inside one file without restoring,
+where it lands in shell history. The tool checks the manifest's MAC first, then decrypts in
+memory and checks every file. Any of these stops it, naming the file: a wrong key, a changed
+manifest, a file cut short or changed, or any plaintext `.jsonl` when a key is given. A
+`monday-backup/2` snapshot is restored **without** a key, and the tool warns that nothing in it is
+authenticated: check in Drive that its files each have one revision. To look inside one file without restoring,
 `npm run decrypt -- <file>.jsonl.enc --key-file <path>` prints it (plaintext CRM data: delete what
 you save).
 

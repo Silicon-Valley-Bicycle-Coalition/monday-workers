@@ -16,6 +16,7 @@
 //   Every frame authenticates the header as additional data. A file therefore can't be reordered,
 //   spliced from two files, or cut short at a frame boundary without failing to decrypt: the last
 //   frame (possibly empty) is the only one sealed with the final flag.
+// - The manifest stays readable, authenticated by `manifestMac` (see manifestMac below).
 //
 // Anyone holding the secret can read every snapshot, so a copy lives outside the Shared Drive with
 // the restore operator (README "Snapshot encryption").
@@ -55,6 +56,33 @@ export async function importSnapshotKey(secret: string | undefined): Promise<Sna
 
 function fileKey(key: SnapshotKey, salt: Uint8Array<ArrayBuffer>, usage: 'encrypt' | 'decrypt'): Promise<CryptoKey> {
   return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt, info: INFO }, key.key, { name: 'AES-GCM', length: 256 }, false, [usage]);
+}
+
+// The manifest is plaintext but authenticated: HMAC-SHA256 over its exact JSON text, under a key
+// HKDF-derived from the secret with its own info string (never a file key). EncryptedDriveClient
+// stores the tag in the manifest itself as `manifestMac`, appended last, so the text it covers is
+// the manifest re-serialized without that field (JSON.parse keeps key order).
+const MANIFEST_MAC_INFO = new TextEncoder().encode('monday-backup manifest mac v1');
+
+function manifestMacKey(key: SnapshotKey, usage: 'sign' | 'verify'): Promise<CryptoKey> {
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: MANIFEST_MAC_INFO },
+    key.key,
+    { name: 'HMAC', hash: 'SHA-256', length: 256 },
+    false,
+    [usage],
+  );
+}
+
+export async function manifestMac(key: SnapshotKey, text: string): Promise<string> {
+  return hex(new Uint8Array(await crypto.subtle.sign('HMAC', await manifestMacKey(key, 'sign'), new TextEncoder().encode(text))));
+}
+
+// Constant-time, through crypto.subtle.verify.
+export async function verifyManifestMac(key: SnapshotKey, text: string, mac: string): Promise<boolean> {
+  if (!/^[0-9a-f]{64}$/.test(mac)) return false;
+  const tag = Uint8Array.from(mac.match(/../g)!, (h) => parseInt(h, 16));
+  return crypto.subtle.verify('HMAC', await manifestMacKey(key, 'verify'), tag, new TextEncoder().encode(text));
 }
 
 function nonce(counter: number, final: boolean): Uint8Array<ArrayBuffer> {
