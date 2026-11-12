@@ -1,11 +1,20 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect } from 'vitest';
+import { countingDb } from '../test/countingDb';
 import { D1OrderStore } from './orders';
 
 describe('D1OrderStore', () => {
+  it('records a delivery with a single D1 statement, first sight or redelivery', async () => {
+    const counted = countingDb(env.DB);
+    const store = new D1OrderStore(counted.db);
+    await store.recordDelivery({ orderId: 'c-1', action: 'order.placed', receivedAt: '2026-10-06T00:00:00.000Z' });
+    await store.recordDelivery({ orderId: 'c-1', action: 'order.updated', receivedAt: '2026-10-07T00:00:00.000Z' });
+    expect(counted.prepared()).toBe(2);
+  });
+
   it('inserts an order on first delivery and reads it back', async () => {
     const store = new D1OrderStore(env.DB);
-    expect(await store.recordDelivery({ orderId: 'o-1', action: 'order.placed', receivedAt: '2026-10-06T00:00:00.000Z' })).toBe('inserted');
+    await store.recordDelivery({ orderId: 'o-1', action: 'order.placed', receivedAt: '2026-10-06T00:00:00.000Z' });
 
     expect(await store.getOrder('o-1')).toEqual({
       orderId: 'o-1',
@@ -39,7 +48,7 @@ describe('D1OrderStore', () => {
       writtenAt: '2026-10-06T00:01:00.000Z',
     });
 
-    expect(await store.recordDelivery({ orderId: 'o-2', action: 'order.refunded', receivedAt: '2026-10-07T00:00:00.000Z' })).toBe('updated');
+    await store.recordDelivery({ orderId: 'o-2', action: 'order.refunded', receivedAt: '2026-10-07T00:00:00.000Z' });
 
     const row = await store.getOrder('o-2');
     expect(row?.status).toBe('received');

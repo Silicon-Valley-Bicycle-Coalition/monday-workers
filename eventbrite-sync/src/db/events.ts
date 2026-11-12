@@ -20,7 +20,7 @@ export interface EventStatusPatch {
 export interface EventStore {
   // Insert the event on first sight, or bump its delivery count and reset it to 'received' —
   // keeping the Monday item id and event facts a previous write recorded.
-  recordDelivery(delivery: NewEventDelivery): Promise<'inserted' | 'updated'>;
+  recordDelivery(delivery: NewEventDelivery): Promise<void>;
   updateStatus(eventId: string, status: LedgerStatus, patch?: EventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<EventRow | null>;
   // Events with a Monday item whose end falls in [fromIso, toIso]; what the ended-event sweep reads.
@@ -65,10 +65,7 @@ const COLUMNS =
 export class D1EventStore implements EventStore {
   constructor(private db: D1Database) {}
 
-  async recordDelivery(delivery: NewEventDelivery): Promise<'inserted' | 'updated'> {
-    // The pre-SELECT only classifies the result; the primary key makes a concurrent insert of the
-    // same event land on the ON CONFLICT path.
-    const existing = await this.db.prepare(`SELECT event_id FROM events WHERE event_id = ?1`).bind(delivery.eventId).first<{ event_id: string }>();
+  async recordDelivery(delivery: NewEventDelivery): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO events (event_id, last_action, status, deliveries, received_at)
@@ -82,7 +79,6 @@ export class D1EventStore implements EventStore {
       )
       .bind(delivery.eventId, delivery.action, delivery.receivedAt)
       .run();
-    return existing === null ? 'inserted' : 'updated';
   }
 
   async updateStatus(eventId: string, status: LedgerStatus, patch: EventStatusPatch = {}): Promise<void> {
