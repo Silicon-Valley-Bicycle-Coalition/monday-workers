@@ -345,6 +345,8 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
       if ((await deps.drive.findFile(folderId, 'manifest.json')) === null) {
         await deps.drive.uploadJson(folderId, 'manifest.json', {
           format: SNAPSHOT_FORMAT,
+          // The scheme and key id the board and doc files need (issue #112); null if unencrypted.
+          encryption: deps.drive.encryption === undefined ? null : await deps.drive.encryption(),
           runId,
           snapshotFolder,
           runAt: startedAtUtc,

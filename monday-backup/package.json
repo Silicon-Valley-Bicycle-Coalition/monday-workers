@@ -9,7 +9,8 @@
     "deploy": "wrangler deploy",
     "deploy:sandbox": "wrangler deploy --env sandbox",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
-    "restore": "tsx scripts/restore.ts"
+    "restore": "tsx scripts/restore.ts",
+    "decrypt": "tsx scripts/decrypt.ts"
   },
   "type": "module",
   "private": true,

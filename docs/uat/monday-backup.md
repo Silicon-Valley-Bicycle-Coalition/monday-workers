@@ -20,7 +20,8 @@ rehearsal is also outstanding. None of this is something a staff tester can exer
 ## What to check
 
 The only staff-visible check: open the production backup folder in the Shared Drive and confirm
-there is a dated snapshot folder from last night.
+there is a dated snapshot folder from last night. Its board and doc files end in `.enc` and won't
+open as text: they are encrypted on purpose, and only the restore tool, with the key, reads them.
 
 ## Known limits, for later
 

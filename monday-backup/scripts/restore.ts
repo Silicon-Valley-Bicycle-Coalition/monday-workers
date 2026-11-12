@@ -3,9 +3,11 @@
 // this file only does I/O. Procedure: RESTORE.md.
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { importSnapshotKey } from '../src/crypto/snapshotCipher';
 import { MondayGraphQL } from '../src/monday/graphql';
 import { DryRunRestoreApi, MondayRestoreApi } from '../src/restore/api';
 import { checkTarget, parseRestoreArgs } from '../src/restore/args';
+import { readSnapshotFiles } from '../src/restore/files';
 import { RestoreLedger } from '../src/restore/ledger';
 import { restoreSnapshot } from '../src/restore/restore';
 import { parseSnapshot } from '../src/restore/snapshot';
@@ -15,12 +17,13 @@ const MONDAY_API_URL = 'https://api.monday.com/v2';
 async function main(): Promise<number> {
   const args = parseRestoreArgs(process.argv.slice(2), new Date());
 
-  const files = new Map<string, string>();
-  for (const name of readdirSync(args.snapshotDir)) {
-    if (name === 'manifest.json' || name.endsWith('.jsonl')) files.set(name, readFileSync(join(args.snapshotDir, name), 'utf8'));
-  }
-  files.delete('restore-ledger.jsonl');
-  const snapshot = parseSnapshot(files);
+  // Snapshots since format v3 are encrypted (issue #112); older plaintext ones need no key.
+  const keyText = args.keyFile !== undefined ? readFileSync(args.keyFile, 'utf8') : process.env.BACKUP_ENCRYPTION_KEY;
+  const key = keyText === undefined || keyText.trim() === '' ? undefined : await importSnapshotKey(keyText);
+  const entries = readdirSync(args.snapshotDir)
+    .filter((name) => name === 'manifest.json' || name.endsWith('.jsonl') || name.endsWith('.jsonl.enc'))
+    .map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(args.snapshotDir, name))) }));
+  const snapshot = parseSnapshot(await readSnapshotFiles(entries, key));
   checkTarget(snapshot, args);
 
   const ledgerText = existsSync(args.ledgerPath) ? readFileSync(args.ledgerPath, 'utf8') : '';
