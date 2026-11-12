@@ -27,8 +27,8 @@ Each consumer Worker binds to one entrypoint, so its binding decides which app i
 | Entrypoint | App | Used by |
 |---|---|---|
 | `PortalToken` | `portal` | `member-portal` |
-| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer` |
-| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests` |
+| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer`, `nearby-search` |
+| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests`, `member-map` |
 
 Each exposes `token(rejected?)`, which returns the app's current access token (pass the token that
 got a 401 as `rejected` to force a refresh).

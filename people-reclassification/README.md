@@ -352,8 +352,10 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
-`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
+Steps 1–6 are done in sandbox (2026-11-02/03). The sandbox write switch is `on`. The sandbox
+operator secret was never saved: `monday-migration/.env` has no `RECLASSIFY_SECRET_SANDBOX`
+(checked 2026-11-12). Set a new one before the next operator call, as
+`../docs/runbooks/windfall-private-board.md` step 5 shows.
 
 **Production: live, writes on** (2026-11-03). The first live pass is the quarterly one on
 **2027-01-01 at 10:00 UTC**. Until then no trigger is due: operator dry runs don't count, People
@@ -363,8 +365,10 @@ Starting one by hand (`POST /reclassify/run`) would move people now. Done so far
 * `config/svbc.json` has the board ids, and the two People boards' columns match.
 * The Worker is deployed. Its write switch was turned `on` on 2026-11-03, after the dry run below.
 * `RECLASSIFY_SECRET` was replaced on 2026-11-03, because the 10-31 value wasn't recoverable.
-  The current value is `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env`, and belongs
-  in the secure note too.
+  It was to be kept as `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env` and in the
+  secure note, but `.env` has no such variable (checked 2026-11-12). If the secure note doesn't
+  have it either, replace it again the same way (`wrangler secret put RECLASSIFY_SECRET`) and
+  save it in both places; only operator calls use it.
 
 The first production dry run (cutoff 2019-11-02) scanned 8,361 People and 8,037 Historical
 items. It decided 543 to-historical and 131 to-live, and planned 400 to-historical, all
