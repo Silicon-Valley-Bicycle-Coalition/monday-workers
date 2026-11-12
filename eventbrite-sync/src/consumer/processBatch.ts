@@ -18,6 +18,9 @@ import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import { describeMessage, messageDeliveryId } from './messages';
 import { processEvent } from './processEvent';
 import { processAttendee } from './processAttendee';
+import { processClassEmail } from './processClassEmail';
+import type { ClassEmailKind } from '../db/classEmails';
+import type { AudienceRole } from '../classEmails/plan';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -58,7 +61,22 @@ export type AttendeeQueueMessage = {
   action: string;
 } & WriteStamp;
 
-export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
+// What a class email still needs once it has gone out, one message per recipient and step (#96; see
+// processClassEmail.ts). The route enqueues the timeline step, or the follow-up step directly when no
+// timeline activity is configured; the timeline step chains to the follow-up on success.
+export type ClassEmailQueueMessage = {
+  kind: 'class-email';
+  eventId: string;
+  emailKind: ClassEmailKind;
+  // Which board `registrationId` is an item on, read once by the route.
+  audience: AudienceRole;
+  registrationId: string;
+} & (
+  | { step: 'timeline'; sender: string; subject: string; sentAt: string }
+  | { step: 'follow-up' }
+) & WriteStamp;
+
+export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage | ClassEmailQueueMessage;
 
 export type ConsumerQueue = QueueLike & BatchSender<WriteQueueMessage>;
 
@@ -79,7 +97,9 @@ export interface ProcessBatchDeps {
  * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
  * KV read failure) leaves the message on the queue untouched, backing off like any retry.
  */
-export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], realDeps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+  // An event is fetched from Eventbrite once per batch, however many of its attendees are in it (#96).
+  const deps = { ...realDeps, eventbriteClient: cacheEventReads(realDeps.eventbriteClient) };
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -92,6 +112,25 @@ export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMes
   }
 }
 
+// getEvent memoised for the life of one batch, so the seconds-old copy is still "current" in the
+// sense the consumer needs. A failed read is not kept: the next message asks again.
+function cacheEventReads(client: EventbriteClient): EventbriteClient {
+  const events = new Map<string, ReturnType<EventbriteClient['getEvent']>>();
+  return {
+    getOrder: (orderId) => client.getOrder(orderId),
+    getAttendee: (eventId, attendeeId) => client.getAttendee(eventId, attendeeId),
+    getEvent: (eventId) => {
+      let read = events.get(eventId);
+      if (read === undefined) {
+        read = client.getEvent(eventId);
+        events.set(eventId, read);
+        read.catch(() => events.delete(eventId));
+      }
+      return read;
+    },
+  };
+}
+
 export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
   for (const message of messages) {
     const body = message.body;
@@ -99,6 +138,7 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQue
     try {
       if (body.kind === 'event') await processEvent(body, deps);
       else if (body.kind === 'attendee') await processAttendee(body, deps);
+      else if (body.kind === 'class-email') await processClassEmail(body, deps);
       else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
@@ -111,7 +151,9 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQue
       try {
         if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
         else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
-        else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
+        else if (body.kind === 'class-email') {
+          // No ledger row to stamp: the failure is only logged above, and the dead-letter line names it.
+        } else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
         recorded = true;
       } catch (recordErr) {
         console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);

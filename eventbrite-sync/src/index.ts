@@ -78,6 +78,7 @@ export default {
           // write unless the mode is `on`. Built only after the secret passes.
           mondayClient: () => new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
           secret: env.CLASS_EMAIL_SECRET,
+          queue: { sendBatch: (messages: WriteQueueMessage[]) => env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined) },
         },
       });
       return app.fetch(request, env, ctx);
