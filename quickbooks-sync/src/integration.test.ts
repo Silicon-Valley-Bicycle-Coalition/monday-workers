@@ -43,6 +43,9 @@ function fakeQueue() {
     async send(message: QueueMessage): Promise<void> {
       sent.push(message);
     },
+    async sendBatch(messages: QueueMessage[]): Promise<void> {
+      sent.push(...messages);
+    },
   };
 }
 

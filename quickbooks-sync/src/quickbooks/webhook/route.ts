@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { QbEventStore } from '../../db/qbEvents';
+import type { NewQbEvent, QbEventStore } from '../../db/qbEvents';
 import { stampFor, type WriteMode } from '../../flags';
 import type { QueueMessage, SyncStatus } from '../../types';
 import { parseQbNotifications, verifyQbSignature } from './validate';
@@ -18,9 +18,16 @@ export interface QueueLike {
   send(message: QueueMessage): Promise<void>;
 }
 
+// Cloudflare's sendBatch takes at most 100 messages.
+const QUEUE_BATCH_MAX = 100;
+
+export interface BatchQueueLike {
+  sendBatch(messages: QueueMessage[]): Promise<void>;
+}
+
 export interface QbWebhookDeps {
   qbEventStore: QbEventStore;
-  queue: QueueLike;
+  queue: BatchQueueLike;
   verifierToken: string;
   // The realm (company) id of the connected QuickBooks company — the one the stored OAuth tokens
   // belong to — or null before the initial handshake. Read-only: never refreshes a token.
@@ -37,6 +44,9 @@ export interface QbWebhookDeps {
 // processing time (not as of the webhook), and is the only code path that needs an OAuth token.
 // This route never touches QuickBooks, which also keeps it inside Intuit's 3-second response
 // window.
+//
+// A delivery costs a fixed number of round trips, not three per notification (#101): one D1 batch
+// records every row, one sendBatch enqueues, one UPDATE marks them queued (each per 100).
 //
 // A failed enqueue answers 500: Intuit retries non-200 deliveries, and the row left 'failed'
 // (not hasReachedQueue) takes the resume branch on the redelivery.
@@ -78,7 +88,9 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
     }
 
     const stamp = stampFor(await deps.writeMode());
-    let enqueueFailed = false;
+    const receivedAt = new Date().toISOString();
+    // Keyed by event id: a payload that repeats an entity at the same lastUpdated is one event.
+    const accepted = new Map<string, NewQbEvent>();
     for (const notification of notifications) {
       if (notification.realmId !== realmId) {
         console.warn(`quickbooks-sync qb webhook: ignoring notification for realm "${notification.realmId}" (connected company is another realm)`);
@@ -96,34 +108,41 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       if (notification.operation === 'Merge' && notification.deletedId !== null) {
         console.log(`quickbooks-sync qb webhook: QuickBooks ${notification.entityType} ${notification.deletedId} merged into ${notification.entityType} ${notification.qbId} — syncing the survivor; the merged-away item is left in place`);
       }
-
-      const insertResult = await deps.qbEventStore.insertEvent({
+      accepted.set(notification.eventId, {
         eventId: notification.eventId,
         entityType: notification.entityType,
         qbId: notification.qbId,
-        receivedAt: new Date().toISOString(),
+        receivedAt,
       });
+    }
+    if (accepted.size === 0) return c.json({ ok: true }, 200);
 
-      if (insertResult === 'duplicate') {
-        // "A row already exists" is not the same as "this was already processed" — see
-        // hasReachedQueue. Only skip when the existing row genuinely reached the queue,
-        // otherwise fall through and resume it.
-        const existing = await deps.qbEventStore.getEvent(notification.eventId);
-        if (existing === null || hasReachedQueue(existing.status)) continue;
-      }
+    const rows = [...accepted.values()];
+    const recorded = await deps.qbEventStore.recordEvents(rows);
+    // "A row already exists" is not the same as "this was already processed" — see
+    // hasReachedQueue. Only skip a redelivered row that genuinely reached the queue; otherwise
+    // resume it.
+    const toEnqueue = rows
+      .filter((_, i) => { const r = recorded[i]; return r === undefined || r.inserted || !hasReachedQueue(r.status); })
+      .map((row) => row.eventId);
 
+    let enqueueFailed = false;
+    const queued: string[] = [];
+    for (let i = 0; i < toEnqueue.length; i += QUEUE_BATCH_MAX) {
+      const part = toEnqueue.slice(i, i + QUEUE_BATCH_MAX);
       try {
-        await deps.queue.send({ direction: 'qb-to-monday', eventId: notification.eventId, ...stamp });
-        await deps.qbEventStore.updateStatus(notification.eventId, 'queued');
+        await deps.queue.sendBatch(part.map((eventId) => ({ direction: 'qb-to-monday' as const, eventId, ...stamp })));
+        queued.push(...part);
       } catch (err) {
-        // Keep going: the other notifications in this payload can still be enqueued, and the
-        // redelivery skips whichever of them reached the queue.
+        // Keep going: the other chunks can still be enqueued, and the redelivery skips whichever
+        // of them reached the queue. The failed rows are left resumable.
         enqueueFailed = true;
         const errMsg = (err as Error).message;
-        console.error(`quickbooks-sync qb webhook: enqueue failed for "${notification.eventId}": ${errMsg}`);
-        await deps.qbEventStore.updateStatus(notification.eventId, 'failed', { error: errMsg });
+        console.error(`quickbooks-sync qb webhook: enqueue failed for ${part.length} event(s) (${part.join(', ')}): ${errMsg}`);
+        await deps.qbEventStore.markEvents(part, 'failed', errMsg);
       }
     }
+    if (queued.length > 0) await deps.qbEventStore.markEvents(queued, 'queued');
 
     if (enqueueFailed) return c.json({ ok: false }, 500);
     return c.json({ ok: true }, 200);

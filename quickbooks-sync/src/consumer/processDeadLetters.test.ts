@@ -38,7 +38,8 @@ function mondayRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow {
 
 function stores(qb: QbEventRow | null, monday: MondayEventRow | null) {
   const qbEventStore: QbEventStore = {
-    insertEvent: vi.fn(),
+    recordEvents: vi.fn(),
+    markEvents: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qb),
     findByPendingMondayItemId: vi.fn(),
