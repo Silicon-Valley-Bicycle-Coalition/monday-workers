@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { columnDefaults, leadFromItem, parseArgs, planBuild, planConversions, run } from './funding-leads-board.mjs';
-import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, STAGES } from './lib/funding-leads.mjs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { columnDefaults, leadFromItem, parseArgs, parseCsv, planBuild, planConversions, planSeed, run } from './funding-leads-board.mjs';
+import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, STAGES, mapSheetRow } from './lib/funding-leads.mjs';
 
 const WS = '18210301';
 
@@ -230,5 +233,88 @@ describe('run convert', () => {
     assert.equal(state.created, 1);
     assert.equal(await run(parseArgs([...argv, '--apply']), { gql, ...sink() }), 0);
     assert.equal(state.created, 1);
+  });
+});
+
+describe('parseCsv', () => {
+  it('reads headers, quoted commas and doubled quotes', () => {
+    const rows = parseCsv('Company,Notes\n"Acme, Inc.","said ""hi"""\nBeta,\n');
+    assert.deepEqual(rows, [
+      { Company: 'Acme, Inc.', Notes: 'said "hi"' },
+      { Company: 'Beta', Notes: '' },
+    ]);
+  });
+});
+
+describe('planSeed', () => {
+  const plan = (tab, row) => ({ tab, plan: mapSheetRow(tab, row) });
+  const prospect = (name, cycle = '2024 BTWD') => plan('prospects', { 'Account Name': name, 'Sponsorship Cycle': cycle });
+  it('creates one organization for two rows of the same company', () => {
+    const r = planSeed([prospect('Example Co', '2023 BTWD'), prospect('example  co', '2024 Dinner')], []);
+    assert.equal(r.orgCreates.length, 1);
+    assert.equal(r.leadCreates.length, 2);
+  });
+  it('keeps near-match organizations separate and flags the pair for review', () => {
+    const r = planSeed([prospect('Applied Materials'), prospect('Applied Materials Foundation')], []);
+    assert.equal(r.orgCreates.length, 2);
+    assert.equal(r.reviewPairs.length, 1);
+  });
+  it('links an organization that already exists instead of creating it', () => {
+    const r = planSeed([prospect('Example Co')], [{ id: '5', name: 'EXAMPLE CO' }]);
+    assert.equal(r.orgCreates.length, 0);
+    assert.equal(r.leadCreates[0].orgId, '5');
+  });
+  it('drops an exact duplicate row but keeps a different event for the same company', () => {
+    const r = planSeed([prospect('Example Co', '2024 BTWD'), prospect('Example Co', '2024 BTWD'), prospect('Example Co', '2024 Dinner')], []);
+    assert.equal(r.leadCreates.length, 2);
+  });
+  it('still creates a lead for a row with no event, contact or amount, and counts a blank-company row', () => {
+    const r = planSeed([plan('prospects', { 'Account Name': 'Bare Co' }), plan('prospects', { 'Account Name': ' ' })], []);
+    assert.equal(r.leadCreates.length, 1);
+    assert.equal(r.skippedBlank, 1);
+  });
+});
+
+describe('run seed', () => {
+  function seedFixture() {
+    const dir = mkdtempSync(join(tmpdir(), 'seed-'));
+    writeFileSync(join(dir, 'active.csv'), 'Event,Type,Company,Scheduled Meeting,Staff Lead,Grant Amount\nBTWD,Local,Example Co,FALSE,,5000\n');
+    writeFileSync(join(dir, 'prospects.csv'), 'Sponsorship Cycle,Account Name\n2024 BTWD,Other Co\n');
+    writeFileSync(join(dir, 'lapsed.csv'), 'Type of sponsorship,Company\n2018 Dinner,Old Co\n');
+    let n = 100;
+    const calls = { creates: 0, mutations: 0 };
+    const cols = ['Organization', 'Stage', 'Type', 'Events of interest', 'BTWD tier', 'Funder Status', 'Amount'].map((t) => ({ id: `id_${t}`, title: t, type: 'text' }));
+    const gql = async (query) => {
+      if (/mutation/.test(query)) {
+        calls.mutations += 1;
+        calls.creates += 1;
+        return { create_item: { id: String(n++) } };
+      }
+      if (/items_page/.test(query)) return { boards: [{ items_page: { cursor: null, items: [] } }] };
+      return { boards: [{ id: '7', columns: cols }] };
+    };
+    return { dir, gql, calls };
+  }
+  const argv = (dir, extra = []) => ['seed', '--workspace', WS, '--leads', '7', '--orgs', '11', '--data', dir, ...extra];
+  it('dry run writes a review file and no mutation', async () => {
+    const { dir, gql, calls } = seedFixture();
+    assert.equal(await run(parseArgs(argv(dir)), { gql, ...sink() }), 0);
+    assert.equal(calls.mutations, 0);
+    assert.ok(existsSync(join(dir, 'review.txt')));
+  });
+  it('apply creates everything once and a re-run skips what the ledger holds', async () => {
+    const { dir, gql, calls } = seedFixture();
+    assert.equal(await run(parseArgs(argv(dir, ['--apply'])), { gql, ...sink() }), 0);
+    const first = calls.creates;
+    assert.equal(first, 6); // 3 organizations + 3 leads
+    assert.equal(await run(parseArgs(argv(dir, ['--apply'])), { gql, ...sink() }), 0);
+    assert.equal(calls.creates, first);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'ledger.json'), 'utf8')).leads.length, 3);
+  });
+  it('refuses the production workspace', async () => {
+    const { dir, gql, calls } = seedFixture();
+    const code = await run(parseArgs(['seed', '--workspace', '10001654', '--leads', '7', '--orgs', '11', '--data', dir, '--apply']), { gql, ...sink() });
+    assert.equal(code, 2);
+    assert.equal(calls.mutations, 0);
   });
 });

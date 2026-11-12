@@ -13,10 +13,12 @@
 // Exit 0: nothing wrong. Exit 1: a check failed. Exit 2: usage or API error, or a write whose
 // outcome is unknown. Dry runs send no mutation.
 
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, assertSandboxWorkspace } from './lib/funding-leads.mjs';
+import { DEAL_EXTRA_COLUMNS, LEADS_COLUMNS, assertSandboxWorkspace, mapSheetRow, normalizeOrgName } from './lib/funding-leads.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 const LEADS_BOARD_NAME = 'Funding Leads';
@@ -25,11 +27,13 @@ const NEW_DEALS_BOARD_NAME = 'Opportunities (Deals)';
 
 const USAGE = `usage: MONDAY_API_TOKEN=... node scripts/funding-leads-board.mjs <command>
   build --workspace <id> --organizations <boardId> [--contacts <boardId>] [--apply]
-  convert --workspace <id> --leads <boardId> --deals <boardId> [--apply]`;
+  convert --workspace <id> --leads <boardId> --deals <boardId> [--apply]
+  seed --workspace <id> --leads <boardId> --orgs <boardId> --data <dir> [--apply]`;
 
 const COMMANDS = {
   build: { required: ['--workspace', '--organizations'], optional: ['--contacts', '--apply'] },
   convert: { required: ['--workspace', '--leads', '--deals'], optional: ['--apply'] },
+  seed: { required: ['--workspace', '--leads', '--orgs', '--data'], optional: ['--apply'] },
 };
 
 const numeric = (v, flag) => {
@@ -48,7 +52,10 @@ export function parseArgs(argv) {
     if (!allowed.has(flag)) throw new Error(`unknown argument "${flag}" for ${command}`);
     if (seen.has(flag)) throw new Error(`${flag} can only be given once`);
     if (flag === '--apply') seen.set(flag, true);
-    else seen.set(flag, numeric(argv[++i], flag));
+    else if (flag === '--data') {
+      if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) throw new Error('--data needs a directory');
+      seen.set(flag, argv[++i]);
+    } else seen.set(flag, numeric(argv[++i], flag));
   }
   for (const flag of spec.required) if (!seen.has(flag)) throw new Error(`${flag} is required for ${command}`);
   return {
@@ -58,6 +65,8 @@ export function parseArgs(argv) {
     contacts: seen.get('--contacts') ?? null,
     leads: seen.get('--leads') ?? null,
     deals: seen.get('--deals') ?? null,
+    orgs: seen.get('--orgs') ?? null,
+    data: seen.get('--data') ?? null,
     apply: seen.get('--apply') === true,
   };
 }
@@ -218,6 +227,148 @@ async function convert(args, { gql, out, err }) {
   return 0;
 }
 
+// ---- Seed from the sponsor sheet ---------------------------------------------------------------
+
+/** Minimal RFC 4180 reader: first row is the header; returns one object per data row. */
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      cell = '';
+      rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  if (cell !== '' || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  const [header, ...data] = rows.filter((r) => r.some((c) => c !== ''));
+  return data.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
+}
+
+/**
+ * entries: [{tab, plan}] from mapSheetRow. existingOrgs: [{id, name}]. Pure.
+ * One organization per normalized name, one lead per (company, tab, events); near-matches (one name
+ * is the other plus more words) are listed for review and never merged.
+ */
+export function planSeed(entries, existingOrgs) {
+  const known = new Map(existingOrgs.map((o) => [normalizeOrgName(o.name), o.id]));
+  const orgCreates = new Map();
+  const leads = new Map();
+  let skippedBlank = 0;
+  for (const { tab, plan } of entries) {
+    if (!plan.orgKey) {
+      skippedBlank += 1;
+      continue;
+    }
+    if (!known.has(plan.orgKey) && !orgCreates.has(plan.orgKey)) orgCreates.set(plan.orgKey, { key: plan.orgKey, name: plan.orgName });
+    const key = `${plan.orgKey}|${tab}|${plan.events.join('+')}`;
+    if (!leads.has(key)) leads.set(key, { key, tab, plan, orgKey: plan.orgKey, orgId: known.get(plan.orgKey) ?? null });
+  }
+  const keys = [...new Set([...known.keys(), ...orgCreates.keys()])];
+  const reviewPairs = [];
+  for (const a of keys) for (const b of keys) if (a !== b && b.startsWith(`${a} `)) reviewPairs.push([a, b]);
+  return { orgCreates: [...orgCreates.values()], leadCreates: [...leads.values()], reviewPairs, skippedBlank };
+}
+
+const ORG_PAGE = `query ($ids: [ID!]) { boards(ids: $ids) { items_page(limit: 500) { cursor items { id name } } } }`;
+const ORG_NEXT = `query ($cursor: String!) { next_items_page(limit: 500, cursor: $cursor) { cursor items { id name } } }`;
+
+async function fetchOrgs(gql, board) {
+  const first = (await gql(ORG_PAGE, { ids: [board] })).boards[0].items_page;
+  const orgs = [...first.items];
+  for (let cursor = first.cursor; cursor; ) {
+    const page = (await gql(ORG_NEXT, { cursor })).next_items_page;
+    orgs.push(...page.items);
+    cursor = page.cursor;
+  }
+  return orgs;
+}
+
+const TAB_FILES = { active: 'active.csv', prospects: 'prospects.csv', lapsed: 'lapsed.csv' };
+
+async function seed(args, { gql, out, err }) {
+  const entries = [];
+  for (const [tab, file] of Object.entries(TAB_FILES)) {
+    const path = join(args.data, file);
+    if (!existsSync(path)) {
+      err(`missing ${file} in the data directory`);
+      return 2;
+    }
+    for (const row of parseCsv(readFileSync(path, 'utf8'))) entries.push({ tab, plan: mapSheetRow(tab, row) });
+  }
+  const ledgerPath = join(args.data, 'ledger.json');
+  const ledger = existsSync(ledgerPath) ? JSON.parse(readFileSync(ledgerPath, 'utf8')) : { orgs: {}, leads: [] };
+  const saveLedger = () => writeFileSync(ledgerPath, JSON.stringify(ledger));
+
+  const meta = await gql(COLUMNS_BY_BOARD, { ids: [args.leads] });
+  const cols = Object.fromEntries(meta.boards[0].columns.map((c) => [bareTitle(c.title), c.id]));
+  const existing = [
+    ...(await fetchOrgs(gql, args.orgs)),
+    ...Object.entries(ledger.orgs).map(([name, id]) => ({ id, name })),
+  ];
+  const planned = planSeed(entries, existing);
+  const leadCreates = planned.leadCreates.filter((l) => !ledger.leads.includes(l.key));
+  const contactRows = entries.filter((e) => e.plan.contacts.length).length;
+  const review = [
+    `organizations to create: ${planned.orgCreates.length}`,
+    `leads to create: ${leadCreates.length} (already in ledger: ${planned.leadCreates.length - leadCreates.length})`,
+    `rows with a blank company, skipped: ${planned.skippedBlank}`,
+    `rows with contact data, not linked this pass: ${contactRows}`,
+    'near-match organization names (not merged):',
+    ...planned.reviewPairs.map(([a, b]) => `  "${a}"  vs  "${b}"`),
+  ];
+  writeFileSync(join(args.data, 'review.txt'), `${review.join('\n')}\n`);
+  out(`seed: ${planned.orgCreates.length} organization(s), ${leadCreates.length} lead(s) to create; ${planned.reviewPairs.length} near-match pair(s) in review.txt`);
+  if (!args.apply) {
+    out('dry run: nothing written. Re-run with --apply.');
+    return 0;
+  }
+  const orgId = new Map(existing.map((o) => [normalizeOrgName(o.name), o.id]));
+  for (const o of planned.orgCreates) {
+    const made = await gql(CREATE_ITEM, { board: args.orgs, name: o.name, cv: null }, { idempotent: false });
+    orgId.set(o.key, String(made.create_item.id));
+    ledger.orgs[o.key] = String(made.create_item.id);
+    saveLedger();
+  }
+  for (const l of leadCreates) {
+    const p = l.plan;
+    const cv = {};
+    const set = (title, value) => {
+      if (cols[title] && value !== null && value !== undefined) cv[cols[title]] = value;
+    };
+    set('Organization', { item_ids: [orgId.get(l.orgKey)] });
+    set('Stage', { label: p.stage });
+    set('Type', { labels: p.types });
+    if (p.events.length) set('Events of interest', { labels: p.events });
+    if (p.btwdTier) set('BTWD tier', { label: p.btwdTier });
+    if (p.funderStatus) set('Funder Status', { label: p.funderStatus });
+    if (p.amount !== null) set('Amount', String(p.amount));
+    await gql(CREATE_ITEM, { board: args.leads, name: p.name, cv: JSON.stringify(cv) }, { idempotent: false });
+    ledger.leads.push(l.key);
+    saveLedger();
+  }
+  out(`created ${planned.orgCreates.length} organization(s) and ${leadCreates.length} lead(s)`);
+  return 0;
+}
+
 const BOARDS_QUERY = `query ($ws: [ID!]) {
   boards(workspace_ids: $ws, limit: 100) { id name columns { id title type } }
 }`;
@@ -280,6 +431,7 @@ export async function run(args, io) {
   try {
     if (args.command === 'build') return await build(args, io);
     if (args.command === 'convert') return await convert(args, io);
+    if (args.command === 'seed') return await seed(args, io);
     io.err(`unknown command ${args.command}`);
     return 2;
   } catch (e) {
