@@ -1,0 +1,26 @@
+{
+  "name": "contact-roles",
+  "version": "0.1.0",
+  "description": "Keeps the Organization Contact Roles board in step with People: a periodic pass reconciles each organization contact's role links.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "dev:sandbox": "wrangler dev --env sandbox",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}
