@@ -114,13 +114,9 @@ export function planBuild(existingBoards, _opts = {}) {
 
 // ---- Hand-off: Pledged lead → Deal ------------------------------------------------------------
 
-const linkedIds = (value) => {
-  try {
-    return (JSON.parse(value)?.linkedPulseIds ?? []).map((l) => String(l.linkedPulseId));
-  } catch {
-    return [];
-  }
-};
+// A relation column's links are in linked_item_ids (via the BoardRelationValue fragment); its plain
+// `value` is null, which is what made the first live conversion re-run forever.
+const linkedIds = (column) => (column?.linked_item_ids ?? []).map(String);
 const labelsOf = (text) => (text ? text.split(',').map((t) => t.trim()).filter(Boolean) : []);
 
 /** One Leads item (id, name, column_values[{id,text,value}]) → the fields the hand-off reads. */
@@ -131,9 +127,9 @@ export function leadFromItem(item, cols) {
     id: String(item.id),
     name: item.name,
     stage: col('Stage')?.text ?? '',
-    dealLinked: linkedIds(col('Deal')?.value).length > 0,
-    organization: linkedIds(col('Organization')?.value),
-    contact: linkedIds(col('Contact')?.value),
+    dealLinked: linkedIds(col('Deal')).length > 0,
+    organization: linkedIds(col('Organization')),
+    contact: linkedIds(col('Contact')),
     amount: col('Amount')?.text || null,
     owner: col('Owner')?.value ?? null,
     types: labelsOf(col('Type')?.text),
@@ -161,9 +157,9 @@ export function planConversions(leads) {
 
 const COLUMNS_BY_BOARD = `query ($ids: [ID!]) { boards(ids: $ids) { id columns { id title type } } }`;
 const LEAD_ITEMS = `query ($ids: [ID!]) {
-  boards(ids: $ids) { items_page(limit: 500) { items { id name column_values { id text value } } } }
+  boards(ids: $ids) { items_page(limit: 500) { items { id name column_values { id text value ... on BoardRelationValue { linked_item_ids } } } } }
 }`;
-const LEAD_DEAL_LINK = `query ($ids: [ID!], $col: [String!]) { items(ids: $ids) { id column_values(ids: $col) { value } } }`;
+const LEAD_DEAL_LINK = `query ($ids: [ID!], $col: [String!]) { items(ids: $ids) { id column_values(ids: $col) { ... on BoardRelationValue { linked_item_ids } } } }`;
 const CREATE_ITEM = `mutation ($board: ID!, $name: String!, $cv: JSON) {
   create_item(board_id: $board, item_name: $name, column_values: $cv) { id }
 }`;
@@ -202,7 +198,7 @@ async function convert(args, { gql, out, err }) {
   for (const c of plan) {
     // Re-read the dedupe key right before writing, so a lead linked since the listing is skipped.
     const fresh = await gql(LEAD_DEAL_LINK, { ids: [c.leadId], col: [leadCols.Deal] });
-    if (linkedIds(fresh.items?.[0]?.column_values?.[0]?.value).length) {
+    if (linkedIds(fresh.items?.[0]?.column_values?.[0]).length) {
       out(`skipped lead ${c.leadId}: already linked`);
       continue;
     }
@@ -421,6 +417,19 @@ async function build(args, { gql, out, err }) {
   return 0;
 }
 
+const BOARD_WORKSPACES = `query ($ids: [ID!]) { boards(ids: $ids) { id workspace { id } } }`;
+
+/** Every board id named on the command line must exist and live in the sandbox workspace. */
+async function assertBoardsInSandbox(gql, args) {
+  const ids = [args.organizations, args.contacts, args.leads, args.deals, args.orgs].filter(Boolean);
+  if (!ids.length) return;
+  const found = new Map(((await gql(BOARD_WORKSPACES, { ids })).boards ?? []).map((b) => [String(b.id), b.workspace?.id]));
+  for (const id of ids) {
+    if (!found.has(String(id))) throw new Error(`board ${id} was not found`);
+    assertSandboxWorkspace(found.get(String(id)));
+  }
+}
+
 export async function run(args, io) {
   try {
     assertSandboxWorkspace(args.workspace);
@@ -429,13 +438,14 @@ export async function run(args, io) {
     return 2;
   }
   try {
+    await assertBoardsInSandbox(io.gql, args);
     if (args.command === 'build') return await build(args, io);
     if (args.command === 'convert') return await convert(args, io);
     if (args.command === 'seed') return await seed(args, io);
     io.err(`unknown command ${args.command}`);
     return 2;
   } catch (e) {
-    io.err(errorLine(e));
+    io.err(e instanceof MondayApiError ? errorLine(e) : e.message.startsWith('board ') || e.message.startsWith('funding-leads') ? e.message : errorLine(e));
     return 2;
   }
 }

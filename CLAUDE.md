@@ -27,7 +27,8 @@ both the tests and the check below).
 - Operator tools, not CI checks: `flags.mjs`, `mark-read-only-columns.mjs`,
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
   really reach, #18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
-  `docs/runbooks/windfall-private-board.md`) and `propose-partner-types.mjs`.
+  `docs/runbooks/windfall-private-board.md`), `funding-leads-board.mjs` (sandbox-only Funding
+  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`) and `propose-partner-types.mjs`.
 
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has

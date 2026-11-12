@@ -71,10 +71,11 @@ describe('planBuild', () => {
   });
 });
 
-function fakeGql(boards = []) {
+function fakeGql(boards = [], foreign = new Set()) {
   const calls = [];
   const gql = async (query, variables) => {
     calls.push({ query, variables });
+    if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: foreign.has(String(id)) ? '10001654' : WS } })) };
     if (/mutation/.test(query) && /create_board/.test(query)) return { create_board: { id: String(900 + calls.length) } };
     if (/mutation/.test(query)) return { create_column: { id: `c${calls.length}` } };
     return { boards };
@@ -145,13 +146,14 @@ describe('planConversions', () => {
 
 describe('leadFromItem', () => {
   const cols = { Stage: 's', Deal: 'd', Organization: 'o', Amount: 'a', Type: 't', 'Events of interest': 'e' };
+  // Relation links come back in linked_item_ids; their `value` is null (verified against the live API).
   const item = (deal) => ({
     id: '9',
     name: 'Example Co',
     column_values: [
       { id: 's', text: 'Pledged', value: null },
-      { id: 'd', text: '', value: deal },
-      { id: 'o', text: 'Org', value: '{"linkedPulseIds":[{"linkedPulseId":11}]}' },
+      { id: 'd', text: '', value: null, linked_item_ids: deal },
+      { id: 'o', text: 'Org', value: null, linked_item_ids: ['11'] },
       { id: 'a', text: '5000', value: '"5000"' },
       { id: 't', text: 'Grant, Sponsorship', value: null },
       { id: 'e', text: 'BTWD, Dinner', value: null },
@@ -166,14 +168,15 @@ describe('leadFromItem', () => {
     assert.deepEqual(l.events, ['BTWD', 'Dinner']);
   });
   it('sees a linked Deal', () =>
-    assert.equal(leadFromItem(item('{"linkedPulseIds":[{"linkedPulseId":77}]}'), cols).dealLinked, true));
+    assert.equal(leadFromItem(item(['77']), cols).dealLinked, true));
 });
 
 // A stateful fake of the two boards: enough to prove convert is idempotent end to end.
-function convertFake() {
+function convertFake(foreign = new Set()) {
   const state = { linked: false, created: 0, linkWrites: 0 };
   const cols = (titles) => titles.map((t) => ({ id: `id_${t}`, title: t, type: 'text' }));
-  const gql = async (query) => {
+  const gql = async (query, variables) => {
+    if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: foreign.has(String(id)) ? '10001654' : WS } })) };
     if (/create_item/.test(query)) {
       state.created += 1;
       return { create_item: { id: '500' } };
@@ -184,7 +187,7 @@ function convertFake() {
       return { change_multiple_column_values: { id: '1' } };
     }
     if (/items\(ids/.test(query))
-      return { items: [{ id: '1', column_values: [{ value: state.linked ? '{"linkedPulseIds":[{"linkedPulseId":500}]}' : null }] }] };
+      return { items: [{ id: '1', column_values: [{ linked_item_ids: state.linked ? ['500'] : [] }] }] };
     if (/items_page/.test(query))
       return {
         boards: [
@@ -196,7 +199,7 @@ function convertFake() {
                   name: 'Example Co',
                   column_values: [
                     { id: 'id_Stage', text: 'Pledged', value: null },
-                    { id: 'id_Deal', text: '', value: state.linked ? '{"linkedPulseIds":[{"linkedPulseId":500}]}' : null },
+                    { id: 'id_Deal', text: '', value: null, linked_item_ids: state.linked ? ['500'] : [] },
                   ],
                 },
               ],
@@ -276,7 +279,7 @@ describe('planSeed', () => {
 });
 
 describe('run seed', () => {
-  function seedFixture() {
+  function seedFixture(foreign = new Set()) {
     const dir = mkdtempSync(join(tmpdir(), 'seed-'));
     writeFileSync(join(dir, 'active.csv'), 'Event,Type,Company,Scheduled Meeting,Staff Lead,Grant Amount\nBTWD,Local,Example Co,FALSE,,5000\n');
     writeFileSync(join(dir, 'prospects.csv'), 'Sponsorship Cycle,Account Name\n2024 BTWD,Other Co\n');
@@ -284,7 +287,8 @@ describe('run seed', () => {
     let n = 100;
     const calls = { creates: 0, mutations: 0 };
     const cols = ['Organization', 'Stage', 'Type', 'Events of interest', 'BTWD tier', 'Funder Status', 'Amount'].map((t) => ({ id: `id_${t}`, title: t, type: 'text' }));
-    const gql = async (query) => {
+    const gql = async (query, variables) => {
+      if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: foreign.has(String(id)) ? '10001654' : WS } })) };
       if (/mutation/.test(query)) {
         calls.mutations += 1;
         calls.creates += 1;
@@ -314,6 +318,43 @@ describe('run seed', () => {
   it('refuses the production workspace', async () => {
     const { dir, gql, calls } = seedFixture();
     const code = await run(parseArgs(['seed', '--workspace', '10001654', '--leads', '7', '--orgs', '11', '--data', dir, '--apply']), { gql, ...sink() });
+    assert.equal(code, 2);
+    assert.equal(calls.mutations, 0);
+  });
+});
+
+describe('every board id must belong to the sandbox workspace', () => {
+  it('build refuses an Organizations board outside the sandbox', async () => {
+    const { gql, calls } = fakeGql([], new Set(['11']));
+    const code = await run(parseArgs(['build', '--workspace', WS, '--organizations', '11', '--apply']), { gql, ...sink() });
+    assert.equal(code, 2);
+    assert.ok(calls.every((c) => !/mutation/.test(c.query)));
+  });
+  it('convert refuses a Deals board outside the sandbox', async () => {
+    const { gql, state } = convertFake(new Set(['8']));
+    const code = await run(parseArgs(['convert', '--workspace', WS, '--leads', '7', '--deals', '8', '--apply']), { gql, ...sink() });
+    assert.equal(code, 2);
+    assert.equal(state.created, 0);
+  });
+  it('convert refuses a board that does not exist', async () => {
+    const gql = async () => ({ boards: [] });
+    assert.equal(await run(parseArgs(['convert', '--workspace', WS, '--leads', '7', '--deals', '8', '--apply']), { gql, ...sink() }), 2);
+  });
+  it('seed refuses an Organizations board outside the sandbox', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'seed-'));
+    for (const f of ['active', 'prospects', 'lapsed']) writeFileSync(join(dir, `${f}.csv`), 'Company\nX\n');
+    const { gql, calls } = (() => {
+      const calls = { mutations: 0 };
+      return {
+        calls,
+        gql: async (query, variables) => {
+          if (/workspace \{ id \}/.test(query)) return { boards: variables.ids.map((id) => ({ id, workspace: { id: id === '11' ? '10001654' : WS } })) };
+          if (/mutation/.test(query)) calls.mutations += 1;
+          return { boards: [{ id: '7', columns: [], items_page: { cursor: null, items: [] } }] };
+        },
+      };
+    })();
+    const code = await run(parseArgs(['seed', '--workspace', WS, '--leads', '7', '--orgs', '11', '--data', dir, '--apply']), { gql, ...sink() });
     assert.equal(code, 2);
     assert.equal(calls.mutations, 0);
   });
