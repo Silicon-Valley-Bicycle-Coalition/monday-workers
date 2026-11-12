@@ -25,11 +25,17 @@ export class ColumnLookupError extends Error {
 
 interface BoardColumn { id: string; title: string; type: string; settings_str: string }
 
-function columnByTitle(columns: BoardColumn[], title: string, boardId: string): BoardColumn {
+// `type`, when given, is asserted: a staff-made text or people column that happens to share the
+// title (e.g. "Contacts") must never be read as, or overwritten like, the real one.
+function columnByTitle(columns: BoardColumn[], title: string, boardId: string, type?: string): BoardColumn {
   const matches = columns.filter((c) => bareTitle(c.title) === bareTitle(title));
   if (matches.length === 0) throw new ColumnLookupError(`board ${boardId}: no column titled "${title}"`);
   if (matches.length > 1) throw new ColumnLookupError(`board ${boardId}: ${matches.length} columns titled "${title}"; rename one`);
-  return matches[0]!;
+  const col = matches[0]!;
+  if (type !== undefined && col.type !== type) {
+    throw new ColumnLookupError(`board ${boardId}: column "${title}" is type "${col.type}", expected "${type}"`);
+  }
+  return col;
 }
 
 interface RawColumnValue { id: string; text: string | null; linked_item_ids?: (string | number)[] | null; values?: { label: string }[] | null }
@@ -97,17 +103,19 @@ export class HttpMondayClient implements ContactRolesMondayClient {
   }
 
   async roleLabels(cfg: ContactRolesConfig['affiliations']): Promise<string[]> {
-    const col = columnByTitle(await this.columns(cfg.boardId), cfg.rolesColumn, cfg.boardId);
-    const settings = JSON.parse(col.settings_str) as { labels?: { label: string }[] };
-    return (settings.labels ?? []).map((l) => l.label);
+    const col = columnByTitle(await this.columns(cfg.boardId), cfg.rolesColumn, cfg.boardId, 'dropdown');
+    // Dropdown settings_str stores labels as {id, name} (item-level reads use `label`, a
+    // different shape).
+    const settings = JSON.parse(col.settings_str) as { labels?: { name?: unknown }[] };
+    return (settings.labels ?? []).map((l) => l.name).filter((n): n is string => typeof n === 'string');
   }
 
   async listAffiliations(cfg: ContactRolesConfig['affiliations']): Promise<Affiliation[]> {
     const cols = await this.columns(cfg.boardId);
-    const roles = columnByTitle(cols, cfg.rolesColumn, cfg.boardId).id;
-    const status = columnByTitle(cols, cfg.statusColumn, cfg.boardId).id;
-    const person = columnByTitle(cols, cfg.personColumn, cfg.boardId).id;
-    const org = columnByTitle(cols, cfg.orgColumn, cfg.boardId).id;
+    const roles = columnByTitle(cols, cfg.rolesColumn, cfg.boardId, 'dropdown').id;
+    const status = columnByTitle(cols, cfg.statusColumn, cfg.boardId, 'status').id;
+    const person = columnByTitle(cols, cfg.personColumn, cfg.boardId, 'board_relation').id;
+    const org = columnByTitle(cols, cfg.orgColumn, cfg.boardId, 'board_relation').id;
     // Only SVBC Roles is requested; Proposed Roles is deliberately never read.
     const items = await this.pageAll(cfg.boardId, [person, org, status, roles], { rules: [{ column_id: roles, compare_value: [], operator: 'is_not_empty' }] });
     const out: Affiliation[] = [];
@@ -124,8 +132,8 @@ export class HttpMondayClient implements ContactRolesMondayClient {
 
   async listBoardItems(rule: BoardRule): Promise<BoardItem[]> {
     const cols = await this.columns(rule.boardId);
-    const org = columnByTitle(cols, rule.orgColumn, rule.boardId).id;
-    const contacts = columnByTitle(cols, rule.contactsColumn, rule.boardId).id;
+    const org = columnByTitle(cols, rule.orgColumn, rule.boardId, 'board_relation').id;
+    const contacts = columnByTitle(cols, rule.contactsColumn, rule.boardId, 'board_relation').id;
     const type = rule.typeColumn === undefined ? null : columnByTitle(cols, rule.typeColumn, rule.boardId).id;
     // A sparse board (Donations) reads items with an org link, plus items that still carry
     // Contacts after the link was cleared, so those stale contacts can be removed.
@@ -147,7 +155,7 @@ export class HttpMondayClient implements ContactRolesMondayClient {
   async setContacts(rule: BoardRule, itemId: string, personIds: string[]): Promise<void> {
     const bad = personIds.filter((id) => !/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)));
     if (bad.length > 0) throw new Error(`setContacts: item ${itemId} on board ${rule.boardId}: ${bad.length} person id(s) are not numeric`);
-    const contacts = columnByTitle(await this.columns(rule.boardId), rule.contactsColumn, rule.boardId).id;
+    const contacts = columnByTitle(await this.columns(rule.boardId), rule.contactsColumn, rule.boardId, 'board_relation').id;
     // Connect-boards value; an empty list clears the column. Writing the same set twice is
     // harmless, so the transport may retry it.
     const values = { [contacts]: { item_ids: personIds.map(Number) } };

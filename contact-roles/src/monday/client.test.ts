@@ -20,7 +20,7 @@ function affiliationsFake(): FakeMonday {
       { id: 'br_person', title: '🔒 Person', type: 'board_relation' },
       { id: 'br_org', title: 'Organization', type: 'board_relation' },
       { id: 'st', title: '📜 Status', type: 'status' },
-      { id: 'dd_roles', title: 'SVBC Roles', type: 'dropdown', settings: { labels: [{ id: 1, label: 'Sponsorship' }, { id: 2, label: 'Grants' }] } },
+      { id: 'dd_roles', title: 'SVBC Roles', type: 'dropdown', settings: { labels: [{ id: 1, name: 'Sponsorship' }, { id: 2, name: 'Grants' }] } },
       { id: 'dd_proposed', title: 'Proposed Roles', type: 'dropdown' },
     ],
     items: [
@@ -67,6 +67,13 @@ describe('roleLabels', () => {
   it('returns the dropdown labels of SVBC Roles', async () => {
     const client = new HttpMondayClient('https://x', 'tok', { fetchFn: affiliationsFake().fetchFn });
     expect(await client.roleLabels(affCfg)).toEqual(['Sponsorship', 'Grants']);
+  });
+
+  it('reads Monday\'s real settings_str shape, labels as {id, name}, and ignores entries without a string name', async () => {
+    const fake = affiliationsFake();
+    fake.boards.get(AFF_BOARD)!.columns.find((c) => c.id === 'dd_roles')!.settings = { labels: [{ id: 1, name: 'Sponsorship' }, { id: 2, label: 'Legacy' }, { id: 3 }, { id: 4, name: 'Classes' }] };
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: fake.fetchFn });
+    expect(await client.roleLabels(affCfg)).toEqual(['Sponsorship', 'Classes']);
   });
 
   it('throws the typed missing-column error when SVBC Roles does not exist yet', async () => {
@@ -152,6 +159,35 @@ describe('listBoardItems', () => {
     expect(err).toBeInstanceOf(ColumnLookupError);
     expect((err as Error).message).toContain('Contacts');
     expect((err as Error).message).toContain('200');
+  });
+});
+
+describe('column type checks', () => {
+  it('refuses a Contacts column that is not a connect-boards column, on read and on write', async () => {
+    const f = new FakeMonday();
+    f.addBoard({ id: '100', columns: [{ id: 'br_org', title: 'Organization', type: 'board_relation' }, { id: 'tx', title: 'Contacts', type: 'text' }], items: [] });
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+    for (const op of [client.listBoardItems(sponsorships), client.setContacts(sponsorships, 's1', ['1'])]) {
+      const err = await op.catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ColumnLookupError);
+      expect((err as Error).message).toMatch(/100.*Contacts.*"text".*board_relation/);
+    }
+    expect(f.writes).toEqual([]);
+  });
+
+  it('refuses a wrong-typed organization column', async () => {
+    const f = new FakeMonday();
+    f.addBoard({ id: '100', columns: [{ id: 'o', title: 'Organization', type: 'people' }, { id: 'c', title: 'Contacts', type: 'board_relation' }], items: [] });
+    await expect(new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn }).listBoardItems(sponsorships)).rejects.toBeInstanceOf(ColumnLookupError);
+  });
+
+  it.each([
+    ['dd_roles', 'text'], ['st', 'text'], ['br_person', 'text'], ['br_org', 'text'],
+  ])('refuses an Affiliations column %s of type %s', async (id, type) => {
+    const fake = affiliationsFake();
+    fake.boards.get(AFF_BOARD)!.columns.find((c) => c.id === id)!.type = type;
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: fake.fetchFn });
+    await expect(client.listAffiliations(affCfg)).rejects.toBeInstanceOf(ColumnLookupError);
   });
 });
 
