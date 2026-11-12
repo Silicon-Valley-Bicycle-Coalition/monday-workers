@@ -9,12 +9,13 @@ export interface CampaignItemsStore {
   listActive(): Promise<CampaignItemRow[]>;
   upsert(row: CampaignItemRow): Promise<void>;
   markArchived(interestId: string, archivedAt: string): Promise<void>;
-  getByInterestId(interestId: string): Promise<CampaignItemRow | null>;
+  /** The tracked rows for these interests, keyed by interest id; an untracked one is absent. */
+  getByInterestIds(interestIds: readonly string[]): Promise<Map<string, CampaignItemRow>>;
   /**
    * Atomically reserve the right to create the Monday item for an interest. True for
    * exactly one caller when the interest is untracked, archived, or held by a claim older
    * than `staleBefore`; false when a live item or a fresh claim already exists. A claimed
-   * row is invisible to listActive/getByInterestId until `upsert` fills in its item id.
+   * row is invisible to listActive/getByInterestIds until `upsert` fills in its item id.
    */
   claim(interestId: string, name: string, now: string, staleBefore: string): Promise<boolean>;
 }
@@ -25,6 +26,9 @@ interface D1CampaignItemRecord {
   name: string;
   archived_at: string | null;
 }
+
+// Below D1's 100 bound parameters per statement.
+const IDS_PER_QUERY = 90;
 
 function toRow(record: D1CampaignItemRecord): CampaignItemRow {
   return { interestId: record.interest_id, mondayItemId: record.monday_item_id, name: record.name, archivedAt: record.archived_at };
@@ -74,11 +78,27 @@ export class D1CampaignItemsStore implements CampaignItemsStore {
     return result.meta.changes === 1;
   }
 
-  async getByInterestId(interestId: string): Promise<CampaignItemRow | null> {
-    const record = await this.db
-      .prepare(`SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items WHERE interest_id = ?1 AND monday_item_id != ''`)
-      .bind(interestId)
-      .first<D1CampaignItemRecord>();
-    return record === null ? null : toRow(record);
+  // One statement per IDS_PER_QUERY ids, sent as one batch: the inbound consumer resolves a whole
+  // queue batch's interests with this, instead of a query per interest (#97).
+  async getByInterestIds(interestIds: readonly string[]): Promise<Map<string, CampaignItemRow>> {
+    const ids = [...new Set(interestIds)];
+    const rows = new Map<string, CampaignItemRow>();
+    if (ids.length === 0) return rows;
+    const statements = [];
+    for (let i = 0; i < ids.length; i += IDS_PER_QUERY) {
+      const chunk = ids.slice(i, i + IDS_PER_QUERY);
+      statements.push(
+        this.db
+          .prepare(
+            `SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items
+             WHERE interest_id IN (${chunk.map((_, n) => `?${n + 1}`).join(', ')}) AND monday_item_id != ''`,
+          )
+          .bind(...chunk),
+      );
+    }
+    for (const { results } of await this.db.batch<D1CampaignItemRecord>(statements)) {
+      for (const record of results) rows.set(record.interest_id, toRow(record));
+    }
+    return rows;
   }
 }

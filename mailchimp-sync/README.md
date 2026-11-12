@@ -52,6 +52,10 @@ Three independent flows — see the design doc for full sequence diagrams:
    change moves the contact:** when staff change a Donor's Email column, the old address's
    contact is renamed to the new one, so its consent and history follow the person — see
    [Address changes made on Monday](#address-changes-made-on-monday).
+   **Coalesced per Donor (#97):** every outbound message is a full current-state sync, so the
+   consumer acks one without work when the Donor's last completed sync began after the message
+   was enqueued (`pending_outbound_syncs.last_sync_started_at`, migration `0006`); a message
+   carrying an Email change is never skipped.
 2. **Campaign catalog reconciliation:** daily cron diffs the interests in the Interest Categories
    listed in `mailchimp.interestCategoryIds` against a D1-tracked set of Monday items on the
    Campaigns board — creates, renames, or archives as needed. Other categories are ignored, and
@@ -62,7 +66,10 @@ Three independent flows — see the design doc for full sequence diagrams:
    a reliability fallback.
 3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
-   the full current set to the Donor's connect column.
+   the full current set to the Donor's connect column. Catalog work is per queue batch, not per
+   message (#97): a member with no Donor item is skipped before any of it, one D1 query resolves
+   the batch's interests, and an interest the catalog doesn't know triggers one reconcile for the
+   whole batch, run after every member in it was read.
 
 **Retries.** A failed queue message is retried with exponential backoff — 1, 4, then 16 minutes
 across the queue's 3 retries — before landing in its `-dlq` dead-letter queue. When Mailchimp
@@ -350,12 +357,12 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
 * **Nearby tags.** When `monday.columns.nearby` is set, each label in the People "Nearby"
   dropdown (written by `nearby-search`) becomes a tag `mailchimp.nearbyTagPrefix` + label
   (`"Near: Stevens Creek bikeway"`). Labels are 1-60 characters with no commas, so the column's
-  text splits exactly on `", "`. They are open-ended, so before `updateMember` the consumer reads
-  the member's current tags (`GET /lists/{id}/members/{hash}/tags?count=1000`) and treats every
-  one starting with the prefix as managed: a label removed on Monday is sent `inactive`, and the
-  prefix is reserved for this Worker (a staff-made `Near: ...` tag would be cleared too). The
-  read happens only when the column is configured, the Donor has an email and the update is
-  about to run. `nearby` is `null` in both configs until the column exists (set its id in
+  text splits exactly on `", "`. They are open-ended, so between the merge-field `PATCH` and the
+  tag sync `updateMember` reads the member's current tags (`GET /lists/{id}/members/{hash}/tags?count=1000`)
+  and treats every one starting with the prefix as managed: a label removed on Monday is sent
+  `inactive`, and the prefix is reserved for this Worker (a staff-made `Near: ...` tag would be
+  cleared too). The read happens only when the column is configured, the Donor has an email and
+  the `PATCH` found the member (#97), so a Donor who isn't in the audience costs no extra call. `nearby` is `null` in both configs until the column exists (set its id in
   `config/svbc.json` / `config/sandbox.json` to turn this on). Any People column change fires
   the Donors webhook, so editing Nearby flows through the normal outbound path.
   Set `monday.historical.columns.nearby` at the same time (`config/split.test.ts` fails on one

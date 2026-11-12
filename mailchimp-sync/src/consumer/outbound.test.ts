@@ -36,6 +36,21 @@ function fakePending(lastSyncStartedAt: string | null = null): PendingOutboundSt
   return { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(lastSyncStartedAt), recordSyncStart: vi.fn() };
 }
 
+// Stands in for HttpMailchimpClient.updateMember's handling of lazily supplied managed tags: read
+// only once the member is known to be in the audience.
+function fakeUpdateMember(result: string = 'updated') {
+  return vi.fn(async (_email: string, _fields: unknown, _tags: string[], managed: string[] | (() => Promise<string[]>)) => {
+    if (result === 'updated' && typeof managed === 'function') await managed();
+    return result as 'updated' | 'not-in-audience';
+  });
+}
+
+// The managed tags an updateMember call was given, resolved if it was given a reader.
+async function managedOf(updateMember: unknown, call = 0): Promise<string[]> {
+  const managed = (updateMember as ReturnType<typeof vi.fn>).mock.calls[call]![3] as string[] | (() => Promise<string[]>);
+  return typeof managed === 'function' ? managed() : managed;
+}
+
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
@@ -239,7 +254,7 @@ describe('processOutboundBatch', () => {
         findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
       };
       const mailchimpClient: MailchimpClient = {
-        updateMember: vi.fn().mockResolvedValue(updateResult),
+        updateMember: fakeUpdateMember(updateResult),
         renameMember: vi.fn(), unsubscribeMember: vi.fn(),
         getMemberInterests: vi.fn(), getMemberTagNames: vi.fn().mockResolvedValue(memberTags), listInterests: vi.fn(),
       };
@@ -251,7 +266,8 @@ describe('processOutboundBatch', () => {
       const d = nearbyDeps(donor({ nearby: ['New'] }), ['Near: Old', 'Near: New', 'VIP']);
       await processOutboundBatch([fakeMessage('1')], d);
 
-      const [, , desired, managed] = (d.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      const [, , desired] = (d.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      const managed = await managedOf(d.mailchimpClient.updateMember);
       expect(desired).toEqual(['active-member', 'Near: New']);
       expect(managed).toContain('Near: Old');
       expect(managed).not.toContain('VIP');
@@ -278,9 +294,24 @@ describe('processOutboundBatch', () => {
       const message = fakeMessage('1');
       await processOutboundBatch([message], d);
 
-      expect(d.mailchimpClient.updateMember).not.toHaveBeenCalled();
       expect(message.retry).toHaveBeenCalled();
       expect(message.ack).not.toHaveBeenCalled();
+      expect(d.pendingStore.recordSyncStart).not.toHaveBeenCalled();
+    });
+
+    // #97: PATCH first. Reading tags first spent a call on every donor who isn't a member.
+    it('does not read tags for a donor the PATCH finds is not in the audience', async () => {
+      const d = nearbyDeps(donor(), ['Near: Old'], NEARBY_CONFIG, 'not-in-audience');
+      await processOutboundBatch([fakeMessage('1')], d);
+      expect(d.mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
+      expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('1', 'skipped', expect.stringContaining('not in the Mailchimp audience'));
+    });
+
+    it('reads tags only after the PATCH', async () => {
+      const d = nearbyDeps(donor(), ['Near: Old']);
+      await processOutboundBatch([fakeMessage('1')], d);
+      expect(vi.mocked(d.mailchimpClient.updateMember).mock.invocationCallOrder[0]!)
+        .toBeLessThan(vi.mocked(d.mailchimpClient.getMemberTagNames).mock.invocationCallOrder[0]!);
     });
   });
 
@@ -549,7 +580,7 @@ describe('processOutboundBatch: People (Historical) items', () => {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
-      updateMember: vi.fn().mockResolvedValue('updated'),
+      updateMember: fakeUpdateMember(),
       renameMember: vi.fn().mockResolvedValue('renamed'),
       unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
       getMemberTagNames: vi.fn().mockResolvedValue(['Near: Old project']),
@@ -662,7 +693,7 @@ describe('processOutboundBatch: People (Historical) items', () => {
     const deps = { ...setup(donor({ onHistorical: true })), config: withPeopleNearby };
     await processOutboundBatch([fakeMessage('1')], deps);
     expect(deps.mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
-    const managed = (deps.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]![3] as string[];
+    const managed = await managedOf(deps.mailchimpClient.updateMember);
     expect(managed).not.toContain('Near: Old project');
   });
 
@@ -670,7 +701,7 @@ describe('processOutboundBatch: People (Historical) items', () => {
     const withBothNearby: Config = { ...config, monday: { ...config.monday, historical: { boardId: 222, columns: { ...HISTORICAL_COLUMNS, nearby: 'h-n' } } } };
     const deps = { ...setup(donor({ onHistorical: true })), config: withBothNearby };
     await processOutboundBatch([fakeMessage('1')], deps);
-    const managed = (deps.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]![3] as string[];
+    const managed = await managedOf(deps.mailchimpClient.updateMember);
     expect(managed).toContain('Near: Old project');
   });
 });

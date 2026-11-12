@@ -17,7 +17,7 @@ function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string
     listActive: vi.fn().mockResolvedValue(rows.filter((r) => r.archivedAt === null)),
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
-    getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
+    getByInterestIds: vi.fn().mockImplementation(async (ids: readonly string[]) => new Map(rows.filter((r) => ids.includes(r.interestId)).map((r) => [r.interestId, r]))),
   };
 }
 
