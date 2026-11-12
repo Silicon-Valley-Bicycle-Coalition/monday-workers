@@ -49,7 +49,7 @@ function fakeCampaignItemsStore(rows: CampaignItemRow[] = []): CampaignItemsStor
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
     claim: vi.fn().mockResolvedValue(true),
-    getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
+    getByInterestIds: vi.fn().mockImplementation(async (ids: readonly string[]) => new Map(rows.filter((r) => ids.includes(r.interestId)).map((r) => [r.interestId, r]))),
   };
 }
 
@@ -118,7 +118,7 @@ describe('processInboundBatch', () => {
       upsert: vi.fn().mockImplementation(async (row: CampaignItemRow) => { rows.push(row); }),
       markArchived: vi.fn(),
       claim: vi.fn().mockResolvedValue(true),
-      getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
+      getByInterestIds: vi.fn().mockImplementation(async (ids: readonly string[]) => new Map(rows.filter((r) => ids.includes(r.interestId)).map((r) => [r.interestId, r]))),
     };
     const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -223,6 +223,118 @@ describe('processInboundBatch', () => {
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'mailchimp getMemberInterests: HTTP 400');
     errorSpy.mockRestore();
+  });
+
+  // #97: catalog work is batch-scoped. One D1 query resolves every message's interests, one
+  // reconcile (run after every member in the batch was read) covers every unknown interest, and a
+  // member with no Donor item never gets that far.
+  describe('batch scope (#97)', () => {
+    const KNOWN: CampaignItemRow[] = [
+      { interestId: 'int1', mondayItemId: 'campaign-1', name: 'Newsletter', archivedAt: null },
+    ];
+
+    function trackingStore(): { store: CampaignItemsStore; rows: CampaignItemRow[] } {
+      const rows: CampaignItemRow[] = [...KNOWN];
+      const store: CampaignItemsStore = {
+        listActive: vi.fn().mockImplementation(async () => rows),
+        upsert: vi.fn().mockImplementation(async (row: CampaignItemRow) => { rows.push(row); }),
+        markArchived: vi.fn(),
+        claim: vi.fn().mockResolvedValue(true),
+        getByInterestIds: vi.fn().mockImplementation(async (ids: readonly string[]) => new Map(rows.filter((r) => ids.includes(r.interestId)).map((r) => [r.interestId, r]))),
+      };
+      return { store, rows };
+    }
+
+    const interestsByEmail = (map: Record<string, Record<string, boolean>>) =>
+      vi.fn(async (email: string) => ({ status: 'subscribed', interests: map[email] ?? {} }));
+
+    it('resolves every message\'s interests with one catalog query', async () => {
+      const { store } = trackingStore();
+      const mondayClient = fakeMonday();
+      const messages = [fakeMessage('a@b.com'), fakeMessage('c@d.com')];
+      await processInboundBatch(messages, {
+        mondayClient, campaignItemsStore: store, pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() }, config: CONFIG,
+        mailchimpClient: fakeMailchimp({ getMemberInterests: interestsByEmail({ 'a@b.com': { int1: true }, 'c@d.com': { int1: true } }) }),
+      });
+      expect(store.getByInterestIds).toHaveBeenCalledOnce();
+      expect(mondayClient.setConnectColumn).toHaveBeenCalledTimes(2);
+      for (const m of messages) expect(m.ack).toHaveBeenCalled();
+    });
+
+    it('reconciles once for a batch whose messages hold unknown interests, after reading every member', async () => {
+      const { store } = trackingStore();
+      const mondayClient = fakeMonday({ createCampaignItem: vi.fn().mockImplementation(async (_b: number, name: string) => `item-${name}`) });
+      const mailchimpClient = fakeMailchimp({
+        getMemberInterests: interestsByEmail({ 'a@b.com': { new1: true }, 'c@d.com': { new2: true, 'old-list': true } }),
+        listInterests: vi.fn().mockResolvedValue([
+          { categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' },
+          { categoryId: 'cat1', interestId: 'new1', name: 'N1' },
+          { categoryId: 'cat1', interestId: 'new2', name: 'N2' },
+        ]),
+      });
+      await processInboundBatch([fakeMessage('a@b.com'), fakeMessage('c@d.com')], {
+        mondayClient, mailchimpClient, campaignItemsStore: store, pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() }, config: CONFIG,
+      });
+      expect(mailchimpClient.listInterests).toHaveBeenCalledOnce();
+      expect(vi.mocked(mailchimpClient.getMemberInterests).mock.invocationCallOrder[1]!)
+        .toBeLessThan(vi.mocked(mailchimpClient.listInterests).mock.invocationCallOrder[0]!);
+      expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['item-N1']);
+      expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['item-N2']);
+    });
+
+    it('never reconciles or resolves interests for a member with no Donor item', async () => {
+      const { store } = trackingStore();
+      const mailchimpClient = fakeMailchimp({ getMemberInterests: interestsByEmail({ 'a@b.com': { 'brand-new': true } }) });
+      const message = fakeMessage('a@b.com');
+      const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await processInboundBatch([message], {
+        mondayClient: fakeMonday({ findItemIdByEmail: vi.fn().mockResolvedValue(null) }), mailchimpClient, campaignItemsStore: store, pendingStore, config: CONFIG,
+      });
+      expect(mailchimpClient.listInterests).not.toHaveBeenCalled();
+      expect(store.getByInterestIds).not.toHaveBeenCalled();
+      expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'skipped', expect.any(String));
+      expect(message.ack).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('when the reconcile fails, retries only the messages that needed it and writes the rest', async () => {
+      const { store } = trackingStore();
+      const mondayClient = fakeMonday();
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const needsIt = fakeMessage('a@b.com');
+      const known = fakeMessage('c@d.com');
+      await processInboundBatch([needsIt, known], {
+        mondayClient, campaignItemsStore: store, pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() }, config: CONFIG,
+        mailchimpClient: fakeMailchimp({
+          getMemberInterests: interestsByEmail({ 'a@b.com': { 'brand-new': true }, 'c@d.com': { int1: true } }),
+          listInterests: vi.fn().mockRejectedValue(new Error('mailchimp listInterests: HTTP 503')),
+        }),
+      });
+      expect(needsIt.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+      expect(needsIt.ack).not.toHaveBeenCalled();
+      expect(known.ack).toHaveBeenCalled();
+      expect(mondayClient.setConnectColumn).toHaveBeenCalledOnce();
+      expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-1']);
+      errorSpy.mockRestore();
+    });
+
+    it('a failed member read retries that message alone', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const failing = fakeMessage('a@b.com');
+      const fine = fakeMessage('c@d.com');
+      const getMemberInterests = vi.fn(async (email: string) => {
+        if (email === 'a@b.com') throw new Error('mailchimp getMemberInterests: HTTP 503');
+        return { status: 'subscribed', interests: { int1: true } };
+      });
+      await processInboundBatch([failing, fine], {
+        mondayClient: fakeMonday(), mailchimpClient: fakeMailchimp({ getMemberInterests }), campaignItemsStore: trackingStore().store,
+        pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() }, config: CONFIG,
+      });
+      expect(failing.retry).toHaveBeenCalled();
+      expect(fine.ack).toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
   });
 
   describe('logs never carry an email address', () => {

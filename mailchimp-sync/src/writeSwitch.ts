@@ -82,8 +82,15 @@ export function dryRunCampaignItemsStore(store: CampaignItemsStore): CampaignIte
     get: (target, prop, receiver) => {
       if (prop === 'claim') return async () => true;
       if (prop === 'upsert') return async (row: CampaignItemRow) => void overlay.set(row.interestId, row);
-      if (prop === 'getByInterestId') {
-        return async (interestId: string) => overlay.get(interestId) ?? (await store.getByInterestId(interestId));
+      if (prop === 'getByInterestIds') {
+        return async (interestIds: readonly string[]) => {
+          const rows = await store.getByInterestIds(interestIds.filter((id) => !overlay.has(id)));
+          for (const id of interestIds) {
+            const row = overlay.get(id);
+            if (row !== undefined) rows.set(id, row);
+          }
+          return rows;
+        };
       }
       return Reflect.get(target, prop, receiver);
     },
