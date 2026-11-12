@@ -5,6 +5,7 @@
 //   - BP Request Form `Contact (People)` at the board's org column     -> Bike Parking
 //   - Grants & Contracts `Funder Contact` at the board's org column    -> Grants
 //   - Sponsorships `Primary Contact` (only if it is a People link)     -> Sponsorship
+//   - Affiliations `Grant/Contract Contact` checkbox -> Grants on that same affiliation
 // Only Current affiliations get proposals; nothing is created; SVBC Roles is never written.
 // Dry run by default; --execute writes Proposed Roles only (merged with the labels already there).
 // Prints counts only (no names, no emails) and writes an ids-only JSON report outside the repo.
@@ -31,7 +32,11 @@ export const BOARD_SOURCES = [
   { from: 'grants', rule: 'Grants & Contracts', person: 'Funder Contact', orgFallbacks: ['Grant Provider'] },
   { from: 'sponsorships', rule: 'Sponsorships', person: 'Primary Contact', orgFallbacks: [] },
 ];
-export const SPONSOR_CONTACT_TITLE = 'Sponsor Contact';
+// Affiliations checkbox sources: a checked box proposes the role on that same affiliation.
+export const CHECKBOX_SOURCES = [
+  { from: 'sponsor-contact', title: 'Sponsor Contact', role: 'Sponsorship' },
+  { from: 'grant-contract-contact', title: 'Grant/Contract Contact', role: 'Grants' },
+];
 export const PROPOSED_TITLE = 'Proposed Roles';
 
 export function parseArgs(argv, now = Date.now()) {
@@ -111,15 +116,19 @@ async function main() {
   const personId = need(aff.personColumn);
   const orgId = need(aff.orgColumn);
   const statusId = need(aff.statusColumn);
-  const sponsorId = find(affCols, SPONSOR_CONTACT_TITLE)?.id ?? null;
+  const stats = {}; // per source: { read, skipped }
+  const checkboxes = CHECKBOX_SOURCES.map((c) => {
+    const col = find(affCols, c.title);
+    stats[c.from] = { read: 0, skipped: col ? null : `no "${c.title}" column on Affiliations` };
+    return { ...c, id: col?.id ?? null };
+  });
   const rolesId = find(affCols, aff.rolesColumn)?.id ?? null;
   const proposedId = find(affCols, PROPOSED_TITLE)?.id ?? null;
   if (rolesId === null || proposedId === null) {
     if (args.execute) throw new Error(`Affiliations needs "${aff.rolesColumn}" and "${PROPOSED_TITLE}"; run provision-contact-roles.mjs first`);
     notes.push(`Affiliations lacks "${aff.rolesColumn}" and/or "${PROPOSED_TITLE}" (not provisioned): treated as empty`);
   }
-  if (sponsorId === null) notes.push(`Affiliations has no "${SPONSOR_CONTACT_TITLE}" column: source skipped`);
-  const affColumnIds = [personId, orgId, statusId, sponsorId, rolesId, proposedId].filter(Boolean);
+  const affColumnIds = [personId, orgId, statusId, ...checkboxes.map((c) => c.id), rolesId, proposedId].filter(Boolean);
   const affItems = await pageAll(gql, aff.boardId, affColumnIds);
 
   const affiliations = [];
@@ -139,8 +148,10 @@ async function main() {
       proposed: (by.get(proposedId)?.values ?? []).map((v) => v.label),
     };
     affiliations.push(a);
-    if (sponsorId !== null && by.get(sponsorId)?.checked === true) {
-      sources.push({ role: 'Sponsorship', orgId: o, personId: p, from: 'sponsor-contact', affiliationId: a.id });
+    for (const c of checkboxes) {
+      if (c.id === null || by.get(c.id)?.checked !== true) continue;
+      stats[c.from].read++;
+      sources.push({ role: c.role, orgId: o, personId: p, from: c.from, affiliationId: a.id });
     }
   }
 
@@ -148,11 +159,13 @@ async function main() {
   for (const s of BOARD_SOURCES) {
     const rule = config.boards.find((b) => b.name === s.rule);
     const cols = rule ? colsByBoard.get(String(rule.boardId)) : null;
-    if (!rule || !cols) { notes.push(`${s.from}: board not found, skipped`); continue; }
+    stats[s.from] = { read: 0, skipped: null };
+    const skip = (why) => { stats[s.from].skipped = why; };
+    if (!rule || !cols) { skip('board not found'); continue; }
     const person = find(cols, s.person);
     const org = [rule.orgColumn, ...s.orgFallbacks].map((t) => find(cols, t)).find(Boolean);
-    if (!person) { notes.push(`${s.from}: no "${s.person}" column on the board, skipped`); continue; }
-    if (!org) { notes.push(`${s.from}: no organization link column, skipped`); continue; }
+    if (!person) { skip(`no "${s.person}" column on the board`); continue; }
+    if (!org) { skip('no organization link column'); continue; }
     if (org.title !== rule.orgColumn) notes.push(`${s.from}: used org column "${org.title}", not configured "${rule.orgColumn}"`);
     const isLink = person.type === 'board_relation';
     if (!isLink) notes.push(`${s.from}: "${person.title}" is ${person.type}, not a People link: items report no-person-link`);
@@ -160,6 +173,7 @@ async function main() {
       const by = cvMap(item);
       const orgs = linked(by.get(org.id));
       const people = isLink ? linked(by.get(person.id)) : (by.get(person.id)?.text ? [''] : []);
+      for (const o of orgs) for (const p of people) stats[s.from].read++;
       for (const o of orgs) for (const p of people) sources.push({ role: rule.role, orgId: o, personId: p, from: s.from });
     }
   }
@@ -171,10 +185,14 @@ async function main() {
   console.log(`${args.execute ? 'EXECUTE' : 'DRY RUN'} (${args.env})`);
   console.log(`affiliations read: ${affItems.length} (${affiliations.length} usable, ${withoutLinks} without a person or organization link)`);
   console.log(`sources: ${sources.length}; proposals: ${plan.proposals.length} across ${writes.length} affiliations; reported: ${plan.reported.length}`);
-  for (const [from, c] of Object.entries(summary)) console.log(`  ${from}: ${JSON.stringify(c)}`);
+  for (const [from, st] of Object.entries(stats)) {
+    const c = summary[from] ?? { proposed: 0, 'no-affiliation': 0, 'draft-or-former': 0, 'no-person-link': 0 };
+    const tail = st.skipped ? `SKIPPED (${st.skipped})` : `reported no-affiliation ${c['no-affiliation']}, draft-or-former ${c['draft-or-former']}, no-person-link ${c['no-person-link']}`;
+    console.log(`  ${from}: read ${st.read} / proposed ${c.proposed} / ${tail}`);
+  }
   for (const n of notes) console.log(`note: ${n}`);
 
-  writeFileSync(args.report, JSON.stringify({ env: args.env, executed: args.execute, notes, summary, proposals: plan.proposals, reported: plan.reported, writes }, null, 2));
+  writeFileSync(args.report, JSON.stringify({ env: args.env, executed: args.execute, notes, stats, summary, proposals: plan.proposals, reported: plan.reported, writes }, null, 2));
   console.log(`report (ids only): ${args.report}`);
 
   if (args.execute) {

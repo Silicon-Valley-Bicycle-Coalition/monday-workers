@@ -63,7 +63,35 @@ describe('planProposals', () => {
   });
 });
 
+describe('checkbox sources', () => {
+  it('a Grant/Contract Contact source proposes Grants on its own affiliation, and reports a Former one', () => {
+    const affiliations = [aff('a1', 'p1', 'o1'), aff('a2', 'p2', 'o1', 'Former')];
+    const out = planProposals({ affiliations, sources: [
+      src('Grants', 'o1', 'p1', 'grant-contract-contact', { affiliationId: 'a1' }),
+      src('Grants', 'o1', 'p2', 'grant-contract-contact', { affiliationId: 'a2' }),
+    ] });
+    assert.deepEqual(out.proposals, [{ affiliationId: 'a1', role: 'Grants', from: 'grant-contract-contact' }]);
+    assert.deepEqual(out.reported, [{ reason: 'draft-or-former', role: 'Grants', from: 'grant-contract-contact' }]);
+  });
+
+  it('both checkboxes on one affiliation give two proposals that merge into one write', () => {
+    const affiliations = [aff('a1', 'p1', 'o1')];
+    const out = planProposals({ affiliations, sources: [
+      src('Sponsorship', 'o1', 'p1', 'sponsor-contact', { affiliationId: 'a1' }),
+      src('Grants', 'o1', 'p1', 'grant-contract-contact', { affiliationId: 'a1' }),
+    ] });
+    assert.equal(out.proposals.length, 2);
+    assert.deepEqual(buildWrites(affiliations, out.proposals), [{ affiliationId: 'a1', labels: ['Grants', 'Sponsorship'] }]);
+  });
+});
+
 describe('buildWrites', () => {
+  it('only emits Proposed Roles labels; a confirmed role is never part of a write', () => {
+    const writes = buildWrites([aff('a1', 'p1', 'o1', 'Current', ['Classes'], ['Grants'])], [{ affiliationId: 'a1', role: 'Sponsorship', from: 's' }]);
+    assert.deepEqual(writes, [{ affiliationId: 'a1', labels: ['Grants', 'Sponsorship'] }]);
+    assert.deepEqual(Object.keys(writes[0]).sort(), ['affiliationId', 'labels']);
+  });
+
   it('merges new proposals with the labels already in Proposed Roles, never dropping any', () => {
     const affiliations = [aff('a1', 'p1', 'o1', 'Current', [], ['Classes']), aff('a2', 'p2', 'o1')];
     const writes = buildWrites(affiliations, [
