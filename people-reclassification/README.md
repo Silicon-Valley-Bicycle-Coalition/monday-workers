@@ -218,8 +218,12 @@ run. Neither run counts as a pass when the cron decides whether one is due.
 **A logged contact** (`src/loggedContact.ts`): on a morning no pass is owed, anyone on Historical
 with a counted Activities (Logged) item inside the window moves to People, most recent first, under
 the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged contact does this; a
-new gift still waits for the pass. This pages all of Activities (Logged) every day, so watch the
-invocation's CPU and subrequests as that board grows.
+new gift still waits for the pass. It doesn't page all of Activities (Logged) every day (#101): a
+server-side date rule reads only items dated from 14 days (`LOOKBACK_MARGIN_DAYS`) before the last
+clean live logged-contact run, one that finished ok with no failed, ambiguous or deferred move.
+After any other run, or with none, it reads the whole window, as before. People (Historical) is
+paged only when that read finds someone. An item dated earlier than the margin but logged since
+waits for the next pass.
 
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`

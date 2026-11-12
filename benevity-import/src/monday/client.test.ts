@@ -73,13 +73,41 @@ describe('HttpMondayClient', () => {
       data: { items: [{ column_values: [{ linked_item_ids: ['111', '222'] }] }] },
     });
     const client = newClient();
-    expect(await client.getLinkedItemIds('789', 'organization_link')).toEqual(['111', '222']);
+    expect(await client.getLinkedItemIds(['789'], 'organization_link')).toEqual(['111', '222']);
   });
 
   it('returns an empty array when a board-relation column has no linked items', async () => {
     mockFetchOnce({ data: { items: [{ column_values: [{}] }] } });
     const client = newClient();
-    expect(await client.getLinkedItemIds('789', 'organization_link')).toEqual([]);
+    expect(await client.getLinkedItemIds(['789'], 'organization_link')).toEqual([]);
+  });
+
+  it('reads the linked ids of several items in one request, flattened', async () => {
+    const fetchMock = mockFetchOnce({
+      data: { items: [{ column_values: [{ linked_item_ids: ['111'] }] }, { column_values: [{ linked_item_ids: ['222', '333'] }] }] },
+    });
+    const client = newClient();
+    expect(await client.getLinkedItemIds(['a-1', 'a-2'], 'person_link')).toEqual(['111', '222', '333']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables).toEqual({ ids: ['a-1', 'a-2'], columnId: ['person_link'] });
+    // Without an explicit limit items(ids:) returns at most 25.
+    expect(body.query).toContain('limit: 100');
+  });
+
+  it('splits more than 100 item ids across requests, and makes none for an empty list', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const { variables } = JSON.parse(init.body as string) as { variables: { ids: string[] } };
+      return { ok: true, status: 200, json: async () => ({ data: { items: variables.ids.map((id) => ({ column_values: [{ linked_item_ids: [`p-${id}`] }] })) } }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const client = newClient();
+    const ids = Array.from({ length: 150 }, (_, i) => String(i));
+    const linked = await client.getLinkedItemIds(ids, 'person_link');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(linked).toHaveLength(150);
+    expect(await client.getLinkedItemIds([], 'person_link')).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('creates an item, optionally in a group', async () => {

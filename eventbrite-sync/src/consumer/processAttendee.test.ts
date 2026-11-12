@@ -56,7 +56,7 @@ function setup(opts: { att?: EventbriteAttendee | null; evRow?: EventRow | null;
   const calls: string[] = [];
   const eventStore = fakeEventStore({
     getEvent: vi.fn().mockResolvedValue(evRow),
-    recordDelivery: vi.fn().mockImplementation(async () => { calls.push('recordDelivery'); return 'inserted'; }),
+    recordDelivery: vi.fn().mockImplementation(async () => { calls.push('recordDelivery'); }),
   });
   const attendeeStore = fakeAttendeeStore({ getAttendee: vi.fn().mockResolvedValue(opts.row === undefined ? attendeeRow() : opts.row) });
   const queue = { send: vi.fn().mockImplementation(async () => { calls.push('send'); }) };
@@ -466,7 +466,6 @@ describe('a batch of attendees of one event', () => {
     // The first attendee records the delivery, which makes the row `received` for the next.
     (eventStore.recordDelivery as ReturnType<typeof vi.fn>).mockImplementation(async () => {
       (eventStore.getEvent as ReturnType<typeof vi.fn>).mockResolvedValue(eventRow({ mondayItemId: null, status: 'received', receivedAt: new Date().toISOString() }));
-      return 'inserted';
     });
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const batch = [msg('a1'), msg('a2'), msg('a3')];

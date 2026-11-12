@@ -1,13 +1,22 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect } from 'vitest';
+import { countingDb } from '../test/countingDb';
 import { D1AttendeeStore } from './attendees';
 
 const T0 = '2026-10-26T00:00:00.000Z';
 
 describe('D1AttendeeStore', () => {
+  it('records a delivery with a single D1 statement, first sight or redelivery', async () => {
+    const counted = countingDb(env.DB);
+    const store = new D1AttendeeStore(counted.db);
+    await store.recordDelivery({ attendeeId: 'c-1x', eventId: 'E0', action: 'attendee.updated', receivedAt: T0 });
+    await store.recordDelivery({ attendeeId: 'c-1x', eventId: 'E0', action: 'attendee.checked_in', receivedAt: T0 });
+    expect(counted.prepared()).toBe(2);
+  });
+
   it('inserts an attendee on first delivery and reads it back', async () => {
     const store = new D1AttendeeStore(env.DB);
-    expect(await store.recordDelivery({ attendeeId: 'a-1', eventId: 'E0', action: 'attendee.updated', receivedAt: T0 })).toBe('inserted');
+    await store.recordDelivery({ attendeeId: 'a-1', eventId: 'E0', action: 'attendee.updated', receivedAt: T0 });
     expect(await store.getAttendee('a-1')).toEqual({
       attendeeId: 'a-1',
       eventId: 'E0',
@@ -26,7 +35,7 @@ describe('D1AttendeeStore', () => {
     const store = new D1AttendeeStore(env.DB);
     await store.recordDelivery({ attendeeId: 'a-2', eventId: 'E0', action: 'attendee.updated', receivedAt: T0 });
     await store.updateStatus('a-2', 'written', { mondayItemId: 'item-2', matchedPersonItemId: 'person-2', writtenAt: T0 });
-    expect(await store.recordDelivery({ attendeeId: 'a-2', eventId: 'E0', action: 'attendee.checked_in', receivedAt: '2026-10-27T00:00:00.000Z' })).toBe('updated');
+    await store.recordDelivery({ attendeeId: 'a-2', eventId: 'E0', action: 'attendee.checked_in', receivedAt: '2026-10-27T00:00:00.000Z' });
     const row = await store.getAttendee('a-2');
     expect(row?.status).toBe('received');
     expect(row?.lastAction).toBe('attendee.checked_in');

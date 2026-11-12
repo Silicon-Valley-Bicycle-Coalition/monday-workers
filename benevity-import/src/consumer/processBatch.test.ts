@@ -638,3 +638,60 @@ describe('consumeBenevityBatch — outage breaker', () => {
     expect(deps.rowStore.getRow).not.toHaveBeenCalled();
   });
 });
+
+// A disbursement's rows share one company and one disbursement; read each once per batch (#101).
+describe('consumeBenevityBatch — per-batch lookups', () => {
+  const gate = (mode: 'on' | 'off') =>
+    ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;
+
+  function threeRowDeps() {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockImplementation(async (transactionId: string) =>
+      // Name only, no email: each row walks the Affiliation and Employer lookups for the Organization.
+      fakeRowRecord(fakeParsedRow({ transactionId, email: 'Not shared by donor', matchAmount: 0 }))
+    );
+    return deps;
+  }
+
+  it('resolves the Organization, the disbursement and its Affiliations once for rows that share them', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = threeRowDeps();
+    const findItemsByName = deps.mondayClient.findItemsByName as ReturnType<typeof vi.fn>;
+    const findItemsByColumnValue = deps.mondayClient.findItemsByColumnValue as ReturnType<typeof vi.fn>;
+
+    await consumeBenevityBatch([message('TXN001'), message('TXN002'), message('TXN003')], deps, gate('on'));
+
+    expect(findItemsByName.mock.calls.filter(([boardId]) => boardId === 222)).toHaveLength(1); // Organizations
+    expect(findItemsByName.mock.calls.filter(([boardId]) => boardId === 333)).toHaveLength(3); // People, per donor
+    expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'org_c')).toHaveLength(1);
+    expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'employer_c')).toHaveLength(1);
+  });
+
+  it('reads a shared disbursement once', async () => {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockImplementation(async (transactionId: string) =>
+      fakeRowRecord(fakeParsedRow({ transactionId, donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor' }))
+    );
+    const msgs = [message('TXN001'), message('TXN002')];
+
+    await consumeBenevityBatch(msgs, deps, gate('on'));
+
+    expect(deps.disbursementStore.getDisbursement).toHaveBeenCalledTimes(1);
+    for (const m of msgs) expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('reads a missing disbursement again for the next row rather than remembering the miss', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockImplementation(async (transactionId: string) =>
+      fakeRowRecord(fakeParsedRow({ transactionId, donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor' }))
+    );
+    (deps.disbursementStore.getDisbursement as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    const msgs = [message('TXN001'), message('TXN002')];
+
+    await consumeBenevityBatch(msgs, deps, gate('on'));
+
+    expect(deps.disbursementStore.getDisbursement).toHaveBeenCalledTimes(2);
+    for (const m of msgs) expect(m.retry).toHaveBeenCalled();
+  });
+});

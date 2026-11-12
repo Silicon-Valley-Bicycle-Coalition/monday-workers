@@ -18,7 +18,7 @@ describe('D1EventStore', () => {
   it('inserts a new event and reads it back by entity', async () => {
     const store = new D1EventStore(env.DB);
     const result = await store.upsertEvent(newEvent());
-    expect(result).toBe('inserted');
+    expect(result).toBe('stored');
 
     const row = await store.getEventByEntity('transaction', 'txn-1');
     expect(row).toEqual({
@@ -35,6 +35,28 @@ describe('D1EventStore', () => {
     });
   });
 
+  // The webhook path only branches on 'duplicate', so the upsert is one statement: no pre-SELECT
+  // to tell an insert from an update (#101).
+  it('stores a delivery with a single D1 statement, new entity or known', async () => {
+    let prepared = 0;
+    const db = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === 'prepare') {
+          return (sql: string) => {
+            prepared++;
+            return target.prepare(sql);
+          };
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const store = new D1EventStore(db);
+    await store.upsertEvent(newEvent({ eventId: 'evt-1s', entityId: 'txn-1s' }));
+    await store.upsertEvent(newEvent({ eventId: 'evt-1t', entityId: 'txn-1s' }));
+    expect(prepared).toBe(2);
+  });
+
   it('reports duplicate when the same delivery (event id) arrives twice', async () => {
     const store = new D1EventStore(env.DB);
     await store.upsertEvent(newEvent({ eventId: 'evt-2', entityId: 'txn-2' }));
@@ -42,7 +64,7 @@ describe('D1EventStore', () => {
     expect(second).toBe('duplicate');
   });
 
-  it('reports updated and replaces the payload when a new delivery arrives for a known entity', async () => {
+  it('reports stored and replaces the payload when a new delivery arrives for a known entity', async () => {
     const store = new D1EventStore(env.DB);
     await store.upsertEvent(newEvent({ eventId: 'evt-3a', entityId: 'txn-3', rawPayload: '{"amount":100}' }));
     await store.updateStatusByEntity('transaction', 'txn-3', 'written', {
@@ -53,7 +75,7 @@ describe('D1EventStore', () => {
     const result = await store.upsertEvent(
       newEvent({ eventId: 'evt-3b', entityId: 'txn-3', rawPayload: '{"amount":50}', receivedAt: '2026-08-22T02:00:00.000Z' })
     );
-    expect(result).toBe('updated');
+    expect(result).toBe('stored');
 
     const row = await store.getEventByEntity('transaction', 'txn-3');
     expect(row?.eventId).toBe('evt-3b');
@@ -83,22 +105,22 @@ describe('D1EventStore', () => {
       expect(row?.status).toBe('written');
     });
 
-    it('reports updated when the incoming sentAt is newer', async () => {
+    it('reports stored when the incoming sentAt is newer', async () => {
       const store = new D1EventStore(env.DB);
       await store.upsertEvent(newEvent({ eventId: '10:1000', entityId: 'txn-10', sentAt: 1000 }));
 
       const result = await store.upsertEvent(newEvent({ eventId: '10:2000', entityId: 'txn-10', sentAt: 2000, rawPayload: '{"amount":5}' }));
-      expect(result).toBe('updated');
+      expect(result).toBe('stored');
       expect((await store.getEventByEntity('transaction', 'txn-10'))?.rawPayload).toBe('{"amount":5}');
     });
 
     it('still updates when either side has no sentAt, since their order is unknown', async () => {
       const store = new D1EventStore(env.DB);
       await store.upsertEvent(newEvent({ eventId: '11:a', entityId: 'txn-11', sentAt: 5000 }));
-      expect(await store.upsertEvent(newEvent({ eventId: '11:b', entityId: 'txn-11', sentAt: null }))).toBe('updated');
+      expect(await store.upsertEvent(newEvent({ eventId: '11:b', entityId: 'txn-11', sentAt: null }))).toBe('stored');
 
       await store.upsertEvent(newEvent({ eventId: '12:a', entityId: 'txn-12', sentAt: null }));
-      expect(await store.upsertEvent(newEvent({ eventId: '12:b', entityId: 'txn-12', sentAt: 1 }))).toBe('updated');
+      expect(await store.upsertEvent(newEvent({ eventId: '12:b', entityId: 'txn-12', sentAt: 1 }))).toBe('stored');
     });
   });
 

@@ -23,7 +23,7 @@ export interface OrderStatusPatch {
 export interface OrderStore {
   // Insert the order on first sight, or bump its delivery count and reset it to 'received' —
   // keeping the Monday item id, donor match and order facts a previous write recorded.
-  recordDelivery(delivery: NewDelivery): Promise<'inserted' | 'updated'>;
+  recordDelivery(delivery: NewDelivery): Promise<void>;
   updateStatus(orderId: string, status: OrderStatus, patch?: OrderStatusPatch): Promise<void>;
   getOrder(orderId: string): Promise<OrderRow | null>;
 }
@@ -86,10 +86,7 @@ export class D1OrderStore implements OrderStore {
     return known;
   }
 
-  async recordDelivery(delivery: NewDelivery): Promise<'inserted' | 'updated'> {
-    // The pre-SELECT only classifies the result; the primary key is what makes a concurrent
-    // insert of the same order land on the ON CONFLICT path.
-    const existing = await this.db.prepare(`SELECT order_id FROM orders WHERE order_id = ?1`).bind(delivery.orderId).first<{ order_id: string }>();
+  async recordDelivery(delivery: NewDelivery): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO orders (order_id, last_action, status, deliveries, received_at)
@@ -103,7 +100,6 @@ export class D1OrderStore implements OrderStore {
       )
       .bind(delivery.orderId, delivery.action, delivery.receivedAt)
       .run();
-    return existing === null ? 'inserted' : 'updated';
   }
 
   async updateStatus(orderId: string, status: OrderStatus, patch: OrderStatusPatch = {}): Promise<void> {
