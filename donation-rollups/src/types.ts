@@ -58,6 +58,9 @@ export interface CustodianConfig {
   // still materialize into D1's annual_summaries either way. Column ids come with it.
   annualSummaryBoardId: number | null;
   annualSummaryColumns: { fiscalYear: string; total: string; giftCount: string; byType: string; restatedAt: string } | null;
+  // Monday writes the whole nightly cron run may make, shared by every duty (issue #90). Optional;
+  // absent = DEFAULT_WRITES_PER_RUN (custodian/writeBudget.ts).
+  writesPerRun?: number;
 }
 
 export interface AffiliationsConfig {

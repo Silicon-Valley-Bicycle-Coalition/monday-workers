@@ -53,9 +53,11 @@ export async function runRecurring(deps: CustodianDeps): Promise<DutyReport> {
     } while (page !== null);
   }
 
-  const now = writes.slice(0, RECURRING_WRITES_PER_RUN);
-  for (const w of now) {
+  const now: typeof writes = [];
+  for (const w of writes.slice(0, RECURRING_WRITES_PER_RUN)) {
+    if (deps.writeBudget?.take() === false) break;
     await deps.mondayClient.changeColumnValues(w.boardId, w.itemId, { [w.columnId]: w.check ? { checked: 'true' } : null });
+    now.push(w);
   }
   const detail: RecurringDetail = {
     activeDonors: active.size, checked: now.filter((w) => w.check).length,

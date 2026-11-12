@@ -14,6 +14,7 @@ import { runRecurring } from './recurring';
 import { runRollCall } from './rollcall';
 import { runSponsorshipsBackfill } from './sponsorships';
 import { sharedBoardReads, sharedReadPlan } from './boardReads';
+import { DEFAULT_WRITES_PER_RUN, WriteBudget } from './writeBudget';
 import { formatCents, parseAmountCents } from '../money';
 import { runDisposition } from '../flags';
 import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
@@ -71,6 +72,8 @@ export interface CustodianDeps {
   queue: { sendBatch(messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> };
   config: DonationRollupsConfig;
   now?: Date;
+  // The cron run's shared Monday write budget (issue #90); absent = only each duty's own cap.
+  writeBudget?: WriteBudget;
 }
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
@@ -131,7 +134,10 @@ export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext):
   const now = deps.now ?? new Date();
   const proxied = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
   // One read of each board several duties page, shared across the run (issue #90).
-  const d: CustodianDeps = { ...proxied, mondayClient: sharedBoardReads(proxied.mondayClient, sharedReadPlan(proxied.config)) };
+  // And one write budget for the whole run (issue #90): a duty refused a write reports the rest as
+  // remaining and the next run picks it up.
+  const d: CustodianDeps = { ...proxied, mondayClient: sharedBoardReads(proxied.mondayClient, sharedReadPlan(proxied.config)),
+    writeBudget: new WriteBudget(proxied.config.custodian.writesPerRun ?? DEFAULT_WRITES_PER_RUN) };
   const label = disposition === 'dry-run' ? ' (dry run)' : '';
   for (const duty of dutiesForDate(now, d.config.fiscalYear, await d.gifts.lastRuns(), d.config.donationRollups.sponsorships)) {
     const report = await runDuty(duty, d);
@@ -148,7 +154,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
       : duty === 'capacity' ? await runCapacity(deps)
       : duty === 'sweep' ? await runSweep(deps, now)
       : duty === 'requeue' ? await runRequeue(deps, now)
-      : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
+      : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config, deps.writeBudget)
       : duty === 'recurring' ? await runRecurring(deps)
       : duty === 'sponsorships' ? await runSponsorshipsBackfill(deps, now)
       : duty === 'rollcall' ? await runRollCall(deps, now, { force: opts.force ?? false })
@@ -176,11 +182,13 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const cutoffFY = currentFiscalYear(now, deps.config.fiscalYear) - activeFiscalYears + 1;
   const work = await deps.gifts.getArchivable(cutoffFY);
   const slice = work.slice(0, ARCHIVE_PER_RUN);
-  const remaining = work.length - slice.length;
 
   const archived: string[] = [];
   const failures: { mondayItemId: string; error: string }[] = [];
+  let tried = 0;
   for (const g of slice) {
+    if (deps.writeBudget?.take() === false) break;
+    tried++;
     try {
       await deps.mondayClient.archiveItem(g.mondayItemId);
       archived.push(g.mondayItemId);
@@ -189,6 +197,7 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
     }
   }
   if (archived.length > 0) await deps.gifts.markArchived(archived, now.toISOString());
+  const remaining = work.length - tried;
 
   // Summaries only once the year's archiving is complete — materializing mid-slice would
   // stamp restatements for totals that aren't final yet.

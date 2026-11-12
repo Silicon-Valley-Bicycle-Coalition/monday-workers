@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runRecurring, RECURRING_WRITES_PER_RUN, type RecurringDetail } from './recurring';
 import type { CustodianDeps, CustodianMondayClient } from './custodian';
+import { WriteBudget } from './writeBudget';
 import type { DonationRollupsConfig, OwnerColumns, RecurringGiftsConfig } from '../types';
 
 const OWNER_COLS: OwnerColumns = { giftLedgerJson: 'c', lifetimeGiving: 'c', giftCount: 'c', firstGift: 'c', thisYearAmount: 'c',
@@ -62,5 +63,14 @@ describe('runRecurring', () => {
     const r = await runRecurring(d);
     expect(writes).toHaveLength(RECURRING_WRITES_PER_RUN);
     expect((r.detail as RecurringDetail).remaining).toBe(3);
+  });
+
+  it('stops at the run\'s shared write budget (issue #90)', async () => {
+    const { d, writes } = deps({ gifts: [{ id: 'g', statusLabel: 'Active', donorItemIds: ['p1', 'p2', 'p3'] }],
+      people: { '10': ['p1', 'p2', 'p3'].map((id) => ({ id, flag: null })) } });
+    d.writeBudget = new WriteBudget(1);
+    const r = await runRecurring(d);
+    expect(writes).toHaveLength(1);
+    expect((r.detail as RecurringDetail)).toMatchObject({ checked: 1, remaining: 2 });
   });
 });

@@ -43,6 +43,19 @@ const base = {
   },
 };
 
+describe('validateConfig — custodian.writesPerRun (issue #90)', () => {
+  it('is optional: absent leaves the built-in default to the custodian', () => {
+    expect(validateConfig(base).custodian.writesPerRun).toBeUndefined();
+  });
+
+  it('passes a positive integer through and rejects anything else', () => {
+    expect(validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: 250 } }).custodian.writesPerRun).toBe(250);
+    for (const bad of [0, -1, 2.5, '500'] as unknown[]) {
+      expect(() => validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: bad } })).toThrow(/custodian\.writesPerRun/);
+    }
+  });
+});
+
 describe('validateConfig — fiscalYear block (issue #27)', () => {
   it('passes a valid block through', () => {
     expect(validateConfig(base).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });

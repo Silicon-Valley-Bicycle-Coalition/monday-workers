@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { runClassify, CLASSIFY_WRITES_PER_RUN, type ClassifyClient } from './classify';
 import type { DonationRollupsConfig } from '../types';
 import { MondayRateLimitError } from '../monday/client';
+import { WriteBudget } from './writeBudget';
 
 const CL = { fundingStream: 'fs', giftSize: 'gs', fiscalQuarter: 'fq', giftFiscalYear: 'gfy' };
 const config = {
@@ -101,6 +102,17 @@ describe('runClassify', () => {
     expect(writes).toHaveLength(CLASSIFY_WRITES_PER_RUN);
     expect(report.detail).toMatchObject({ changed: CLASSIFY_WRITES_PER_RUN + 7, written: CLASSIFY_WRITES_PER_RUN, remaining: 7 });
     expect(report.summary).toMatch(/run classify again/);
+  });
+
+  // Issue #90: the cron run's writes share one budget across duties.
+  it('stops at the run\'s shared write budget and reports the rest as remaining', async () => {
+    const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
+    const { client, writes } = fakeClient(rows, 500);
+    const budget = new WriteBudget(2);
+    const report = await runClassify(client, config, budget);
+    expect(writes.map((w) => w.itemId)).toEqual(['1', '2']);
+    expect(budget.remaining).toBe(0);
+    expect(report.detail).toMatchObject({ changed: 3, written: 2, remaining: 1 });
   });
 
   it('reads amounts with thousands separators', async () => {

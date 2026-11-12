@@ -212,17 +212,17 @@ export async function applySync(deps: CustodianDeps, cfg: RollCallConfig, ops: S
 
   // Oldest first, so the newest year's group, created last, sits on top.
   for (const year of missingYears) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     groupByYear.set(year, await client.createGroup(cfg.boardId, groupTitle(year, currentFY)));
     applied++;
   }
   for (const r of retitles) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     await client.updateGroupTitle(cfg.boardId, r.id, r.title);
     applied++;
   }
   for (const op of sorted) {
-    if (applied >= cfg.writesPerRun) return done();
+    if (applied >= cfg.writesPerRun || deps.writeBudget?.take() === false) return done();
     if (op.op === 'delete') await client.deleteItem(op.itemId);
     else if (op.op === 'update') await client.changeColumnValues(cfg.boardId, op.itemId, op.values);
     else if (op.op === 'move') await client.moveItemToGroup(op.itemId, groupByYear.get(op.fiscalYear)!);

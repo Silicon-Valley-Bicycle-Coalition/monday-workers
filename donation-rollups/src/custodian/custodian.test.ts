@@ -11,6 +11,7 @@ import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN, R
 import type { DonationRollupsConfig, RecomputeQueueMessage, SponsorshipsConfig } from '../types';
 import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
 import type { BatchSkipContext } from '../writeSwitch';
+import { WriteBudget } from './writeBudget';
 
 const OWNER_COLS = {
   giftLedgerJson: 'col_glj', lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
@@ -289,6 +290,16 @@ describe('archive duty', () => {
     const second = await runDuty('archive', d);
     expect((second.detail as { remaining: number }).remaining).toBe(0);
     expect((await d.gifts.getAnnualSummaries()).map((s) => s.fiscalYear)).toEqual([2015]);
+  });
+
+  it('stops at the run\'s shared write budget and continues on the next run (issue #90)', async () => {
+    for (const id of ['a1', 'a2', 'a3']) await seedGift(env.DB, id, { fy: 2015 });
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, []), writeBudget: new WriteBudget(2) };
+    const report = await runDuty('archive', d);
+    expect(state.archived).toEqual(['a1', 'a2']);
+    expect(report.detail).toMatchObject({ archived: 2, remaining: 1 });
+    expect(await d.gifts.getArchivable(2026)).toEqual([{ mondayItemId: 'a3', fiscalYear: 2015 }]);
   });
 
   it('a failed archive keeps the gift active in the ledger and reports not-ok', async () => {
@@ -1101,6 +1112,26 @@ describe('scheduled custodian run (write switch)', () => {
     expect(sent.map((m) => m.donationItemId)).toEqual(['stuck1']);
     expect((await d.gifts.lastRuns()).map((r) => r.duty).sort()).toEqual(
       ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue', 'rollcall']);
+  });
+
+  // Issue #90: one write budget for the whole run (custodian.writesPerRun), not one per duty.
+  it('shares one write budget across the run\'s duties', async () => {
+    for (const id of ['a1', 'a2', 'a3']) await seedGift(env.DB, id, { fy: 2015 });
+    const config = testConfig({ alertItemId: null, writesPerRun: 2 });
+    config.donationRollups.ownerColumnsByBoard = { '10': { ...OWNER_COLS, hasActiveRecurringGift: 'rg' } };
+    config.donationRollups.recurringGifts = { boardId: 50, columns: { donorLink: 'dl', status: 'st' }, activeStatusLabel: 'Active' };
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, [], config), now: JULY_15 };
+    d.mondayClient.pageItemsColumnsText = async () =>
+      ({ cursor: null, items: [{ id: 'p1', text: new Map([['rg', 'v']]), values: new Map() }] });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    // Recurring (nightly, before archive) has one write; archive gets the one left.
+    expect(state.changedColumns).toEqual([{ boardId: 10, itemId: 'p1', columnValues: { rg: null } }]);
+    expect(state.archived).toEqual(['a1']);
+    const archive = (await d.gifts.lastRuns()).find((r) => r.duty === 'archive');
+    expect(archive?.report).toMatchObject({ detail: { archived: 1, remaining: 2 } });
   });
 
   // Issue #90: membership and recurring each paged People in full; one read now serves both.

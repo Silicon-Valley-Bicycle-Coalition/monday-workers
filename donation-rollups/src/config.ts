@@ -566,6 +566,11 @@ function validateCustodian(raw: unknown): CustodianConfig {
     }
     annualSummaryColumns = cols as unknown as NonNullable<CustodianConfig['annualSummaryColumns']>;
   }
+  for (const key of ['writesPerRun'] as const) {
+    if (c[key] !== undefined && (typeof c[key] !== 'number' || !Number.isInteger(c[key]) || (c[key] as number) < 1)) {
+      throw new Error(`config: "custodian.${key}" must be a positive integer when set`);
+    }
+  }
   return {
     activeFiscalYears: c.activeFiscalYears as number,
     workspaceId: c.workspaceId as number,
@@ -573,5 +578,6 @@ function validateCustodian(raw: unknown): CustodianConfig {
     alertItemId: c.alertItemId as number | null,
     annualSummaryBoardId: c.annualSummaryBoardId as number | null,
     annualSummaryColumns,
+    ...(c.writesPerRun !== undefined ? { writesPerRun: c.writesPerRun as number } : {}),
   };
 }

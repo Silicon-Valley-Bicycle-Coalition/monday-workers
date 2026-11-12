@@ -3,6 +3,7 @@ import { parseAmountCents } from '../money';
 import { MondayRateLimitError, statusLabel, type ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, ClassificationColumns, DonationBoardConfig } from '../types';
 import type { DutyReport } from './custodian';
+import type { WriteBudget } from './writeBudget';
 
 // Nightly: keep Funding Stream / Gift Size / Fiscal Quarter / Gift Fiscal Year current on
 // every active gift (spec 2026-09-29 §10.1), and Acknowledgment Tier where it's configured. Also
@@ -57,7 +58,7 @@ export function classifyReadColumns(board: DonationBoardConfig): string[] | null
     ...(board.columns.fiscalYear ? [board.columns.fiscalYear] : [])];
 }
 
-export async function runClassify(client: ClassifyClient, config: DonationRollupsConfig): Promise<DutyReport> {
+export async function runClassify(client: ClassifyClient, config: DonationRollupsConfig, budget?: WriteBudget): Promise<DutyReport> {
   let scanned = 0, changed = 0, written = 0;
   const failed: string[] = [];
   for (const board of config.donationRollups.donationBoards) {
@@ -88,7 +89,7 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
         }
         if (Object.keys(values).length === 0) continue;
         changed++;
-        if (written + failed.length < CLASSIFY_WRITES_PER_RUN) {
+        if (written + failed.length < CLASSIFY_WRITES_PER_RUN && budget?.take() !== false) {
           // One bad item (deleted mid-run, a locked column…) must not stop the rest; a rate
           // limit will fail every remaining write too, so that one still ends the run.
           try {
