@@ -364,6 +364,32 @@ item.
 **Don't report these:** no Type (Renewal, New, One-off, Bike Parking) or Probability field yet;
 Awarded doesn't spin up a delivery project automatically.
 
+### Bike Parking: book an event and get the invoice reminder (#120)
+
+Built on [Grants & Contracts (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18439568066)
+only; production waits on the Opportunities merge and the stage vocabulary sign-off.
+
+**Try it (Bike Parking manager):**
+
+1. Open the organizer on Organizations (e.g. City of Sunnyvale) and check it carries the primary
+   contact.
+2. On Grants & Contracts, add an item named for the engagement ("Bike Parking at Sunnyvale Earth
+   Day Festival"). Set Type = Bike Parking, Contract Status = Requested, **Event Date**, Hours and
+   Hourly Rate (Bike Parking Total fills in), and link the organizer in **Funder**. Link the
+   request in BP Request and the event in Linked event if they exist.
+3. Open the organizer again: the new item shows in its **Opportunities (Grants)** column.
+4. Walk Contract Status Requested → Quoted → Contract Sent → Signed.
+
+**What happens next:** at 9:00 the day after the Event Date, if Type is Bike Parking and Contract
+Status is Signed or Event Done, Monday adds a subitem **"Send invoice: \<item name\>"** under the
+item, assigned to the bookkeeper. Once the invoice goes out, the bookkeeper marks the subitem Done
+and sets Contract Status to **Invoiced**. A Quoted, Requested or Cancelled item gets no reminder.
+
+**Known limits:** the reminder only fires when Event Date is filled in on the item itself (a date
+only on the linked Event or BP Request doesn't count), and it doesn't fire for an Event Date set
+in the past. The subitem has no Deadline yet. In the sandbox it is assigned to David, not Deanna,
+so tests don't notify her.
+
 ## Sponsorships
 
 The sandbox prototype once linked here was dropped and its workspace deleted 2026-10-15.
