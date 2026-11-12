@@ -17,7 +17,7 @@ const CONFIG: Config = {
   mailchimp: {
     apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
-    tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit' },
+    tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor' },
   },
   lifetimeTierValue: 'Lifetime',
   activeStatusValue: 'Active',
@@ -40,7 +40,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false,
+    doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
     ...overrides,
   };
 }
@@ -129,7 +129,7 @@ describe('processOutboundBatch', () => {
       expect.any(Object),
       ['active-member'],
       // The full worker-managed set, so the client can deactivate the ones no longer desired.
-      ['active-member', 'lapsed-member', 'lifetime-member', 'has-donated', 'do-not-solicit'],
+      ['active-member', 'lapsed-member', 'lifetime-member', 'has-donated', 'do-not-solicit', 'recurring-donor'],
     );
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('1', 'written', undefined, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
