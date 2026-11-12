@@ -1,7 +1,7 @@
 // A per-batch circuit breaker for queue consumers (#101). Canonical copy:
 // funraise-sync/src/monday/outage.ts. Every queue Worker in the `monday-outage-copies` CI job
-// carries a byte-identical copy at src/monday/outage.ts; edit this one, then copy it over. Like
-// graphql.ts it must stay strip-only TypeScript (no enums, namespaces or parameter properties).
+// carries a byte-identical copy at src/monday/outage.ts; edit this one, then copy it over. It is
+// bundled by Wrangler only (its imports are extensionless), never loaded by a Worker's .mjs script.
 //
 // Why: the transport spends its in-process attempts (and honours advised waits of up to 60 s
 // each) on every call. When Monday is down or rate-limiting, each message in a batch of 10 would

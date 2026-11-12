@@ -93,6 +93,31 @@ monday-graphql-copies:
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
       exit $status
 
+# funraise-sync/src/monday/outage.ts is the canonical per-batch Monday outage breaker for queue
+# consumers (#101); every queue Worker in the list carries a byte-identical copy. Edit
+# funraise-sync's, then copy it to every path listed.
+monday-outage-copies:
+  stage: test
+  rules:
+    - changes:
+        - "*/src/monday/outage.ts"
+        - .gitlab-ci.yml
+  script:
+    - |
+      status=0
+      roster="benevity-import/src/monday/outage.ts donation-rollups/src/monday/outage.ts eventbrite-sync/src/monday/outage.ts mailchimp-sync/src/monday/outage.ts nearby-search/src/monday/outage.ts quickbooks-sync/src/monday/outage.ts"
+      for copy in $roster; do
+        cmp funraise-sync/src/monday/outage.ts "$copy" || { echo "$copy differs from funraise-sync/src/monday/outage.ts"; status=1; }
+      done
+      # A new copy that isn't in the roster would drift unchecked.
+      for f in */src/monday/outage.ts; do
+        case " funraise-sync/src/monday/outage.ts $roster " in
+          *" $f "*) ;;
+          *) echo "$f is not in the monday-outage-copies roster"; status=1 ;;
+        esac
+      done
+      exit $status
+
 # geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search carries
 # a byte-identical copy (the Worker stays self-contained). Edit geo-filter's, then copy it over.
 geo-geometry-copies:

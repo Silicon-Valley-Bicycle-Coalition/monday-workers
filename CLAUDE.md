@@ -236,6 +236,10 @@ copy it over.
   than a fast error the donor can reload past.
 - Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
   `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
+- Queue consumers stop calling Monday for the rest of a batch once one message fails on an
+  outage (429, 5xx, timeout, spent budget or daily limit) and retry the rest with backoff (#101).
+  The breaker is `funraise-sync/src/monday/outage.ts`, copied byte-identical like `graphql.ts`;
+  the `monday-outage-copies` CI job holds the roster. A new queue Worker copies it in.
 
 **Monday API tokens are least-privilege by design:** a Worker gets Monday access from the
 `monday-auth` broker, not from a token of its own. One integration user (SVBC Integration; Sandbox
