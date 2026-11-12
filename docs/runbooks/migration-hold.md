@@ -4,13 +4,17 @@ Uses the write switch (README, "Write switch: off / hold / on"). Run every comma
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
 `all writes on`: three Workers must stay `off` (below), and `all` would turn them on.
 
-The in-scope Workers, in four groups that this runbook treats differently:
+The in-scope Workers, in five groups that this runbook treats differently:
 
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
   `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
   `monday-backup`, `report-digests`.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
+- **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout and smoke tests
+  (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
+  it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
+  needs catching up, because the next `on` run recomputes every `Contacts` column.
 - **`people-reclassification`**: stays `off` until the staged one-item live check in its README
   ("Not verified against a live board yet") has passed; never part of a bulk flip.
 - **`quickbooks-sync`**: postponed indefinitely (decided 2026-10-28); stays `off` in both
@@ -134,6 +138,8 @@ node scripts/flags.mjs status --env production
   re-triggering by hand once Monday gives up. The two `benevity-import` routes also return 503
   under `hold`/`unknown`: an upload or Retry during the hold is refused and must be repeated
   after the flip to `on`.
+- `contact-roles` skips its 10-minute run under `hold`/`unknown` and has nothing to catch up:
+  after the flip, the next run recomputes every `Contacts` column.
 - A `member-portal` letter queued under `hold` but consumed under `off` (someone flipped the
   Worker to `off` instead of `on`) stays stranded as `queued` until a staff re-click.
 - `report-digests` skips each hour's digests under `hold` and does not catch up: after the flip,
