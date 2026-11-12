@@ -1,4 +1,4 @@
-import type { Board, DigestsMondayClient, Item, LinkedItem, MondayUser, Rule } from '../src/monday/client';
+import { MAX_ITEMS, type Board, type DigestsMondayClient, type Item, type LinkedItem, type MondayUser, type Rule } from '../src/monday/client';
 
 export const DONATIONS: Board = {
   id: '18437342657', name: 'Donations',
@@ -21,7 +21,8 @@ export function item(id: string, name: string, text: Record<string, string>, lin
 }
 
 export class FakeMonday implements DigestsMondayClient {
-  queries: { boardId: number; rules: Rule[] }[] = [];
+  queries: { boardId: number; rules: Rule[]; columnIds: string[]; paged: boolean }[] = [];
+  donorLookups: { ids: string[]; titles: string[] }[] = [];
   constructor(
     private items: Item[] = [],
     private donors: LinkedItem[] = [],
@@ -29,7 +30,20 @@ export class FakeMonday implements DigestsMondayClient {
     private boards: Board[] = [DONATIONS, PEOPLE],
   ) {}
   async getBoard(boardId: number) { return this.boards.find((b) => Number(b.id) === boardId) ?? null; }
-  async queryItems(boardId: number, rules: Rule[]) { this.queries.push({ boardId, rules }); return this.items; }
-  async getItemsByTitle(ids: string[]) { return this.donors.filter((d) => ids.includes(d.id)); }
+  // Mirrors HttpMondayClient: queryItems refuses past MAX_ITEMS; itemPages streams any number.
+  async queryItems(boardId: number, rules: Rule[], columnIds: string[]) {
+    this.queries.push({ boardId, rules, columnIds, paged: false });
+    if (this.items.length > MAX_ITEMS) throw new Error(`board ${boardId}: filter matched more than ${MAX_ITEMS} items`);
+    return this.items;
+  }
+  async *itemPages(boardId: number, rules: Rule[], columnIds: string[]) {
+    this.queries.push({ boardId, rules, columnIds, paged: true });
+    for (let i = 0; i < this.items.length; i += 500) yield this.items.slice(i, i + 500);
+  }
+  async getItemsByTitle(ids: string[], titles: string[]) {
+    this.donorLookups.push({ ids, titles });
+    return this.donors.filter((d) => ids.includes(d.id))
+      .map((d) => ({ ...d, byTitle: new Map(titles.map((t) => [t, d.byTitle.get(t) ?? null])) }));
+  }
   async getUsers(ids: number[]) { return this.users.filter((u) => ids.includes(Number(u.id))); }
 }
