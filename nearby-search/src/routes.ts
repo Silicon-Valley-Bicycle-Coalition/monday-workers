@@ -131,17 +131,18 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     }
 
     const deps: SearchDeps = makeDeps(c.env);
-    const boards = await resultsBoards(deps);
-    if (!boards.some((b) => b.id === String(boardId))) return c.json({ message: 'boardId is not a results board.' }, 400);
-
     // Re-run the search here: the client's preview is only a picture, never the list to write.
+    // It is independent of the board check, so both run together; nothing is written until the
+    // board check has passed.
     const request = rest as PreviewRequest;
-    const preview = await runSearch(request, deps);
+    const [boards, preview] = await Promise.all([resultsBoards(deps), runSearch(request, deps)]);
+    if (!boards.some((b) => b.id === String(boardId))) return c.json({ message: 'boardId is not a results board.' }, 400);
     if (preview.resolved.kind === 'not-found') return c.json({ message: preview.resolved.message }, 422);
 
-    const columns = await deps.monday.findResultColumns(boardId);
-    const linked = columns ? await deps.monday.linkedContactIds(boardId, columns.connectColumnId) : new Set<string>();
-    const written = await c.env.DB.prepare('SELECT contact_id FROM result_rows WHERE board_id = ?').bind(String(boardId)).all<{ contact_id: string }>();
+    const [linked, written] = await Promise.all([
+      deps.monday.findResultColumns(boardId).then((columns) => (columns ? deps.monday.linkedContactIds(boardId, columns.connectColumnId) : new Set<string>())),
+      c.env.DB.prepare('SELECT contact_id FROM result_rows WHERE board_id = ?').bind(String(boardId)).all<{ contact_id: string }>(),
+    ]);
     const done = new Set(written.results.map((r) => r.contact_id));
 
     const fresh = preview.matches.filter((m) => !linked.has(m.id) && !done.has(m.id));
@@ -162,11 +163,16 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     const searchId = inserted.meta.last_row_id;
     let queued = 0;
     try {
-      for (let i = 0; i < messages.length; i += SEND_BATCH) {
-        const chunk = messages.slice(i, i + SEND_BATCH);
-        await c.env.WRITES.sendBatch(chunk.map((message) => ({ body: message })));
-        queued += chunk.length;
-      }
+      const chunks: WriteMessage[][] = [];
+      for (let i = 0; i < messages.length; i += SEND_BATCH) chunks.push(messages.slice(i, i + SEND_BATCH));
+      // Chunks go out together; each that lands counts toward `queued`, and the first failure is
+      // rethrown after the audit row is updated, as with the serial loop.
+      const results = await Promise.allSettled(
+        chunks.map((chunk) => c.env.WRITES.sendBatch(chunk.map((message) => ({ body: message }))).then(() => chunk.length)),
+      );
+      for (const r of results) if (r.status === 'fulfilled') queued += r.value;
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) throw failed.reason;
     } finally {
       if (queued > 0) await c.env.DB.prepare('UPDATE searches SET queued = ? WHERE id = ?').bind(queued, searchId).run();
     }

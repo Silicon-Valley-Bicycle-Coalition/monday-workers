@@ -80,8 +80,10 @@ export async function runSearch(req: PreviewRequest, deps: SearchDeps): Promise<
       : { kind: 'corridor', geometry: resolved.geometry, bufferMiles: req.miles };
 
   const preview = empty(resolved);
-  for (const src of config.monday.sources) {
-    const result = filterContacts(await monday.listContacts(src), mode);
+  // The boards are independent, so walk them together; results are applied in config order.
+  const lists = await Promise.all(config.monday.sources.map((src) => monday.listContacts(src)));
+  for (const [i, src] of config.monday.sources.entries()) {
+    const result = filterContacts(lists[i]!, mode);
     for (const c of result.matched) {
       preview.matches.push({ id: c.id, kind: src.kind, name: c.name, lat: c.lat as number, lng: c.lng as number });
     }

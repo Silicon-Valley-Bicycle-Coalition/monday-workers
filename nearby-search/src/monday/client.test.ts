@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SourceBoard } from '../config';
-import { HttpNearbyMondayClient, toContact } from './client';
+import { clearContactCache, HttpNearbyMondayClient, toContact } from './client';
 
 const SRC: SourceBoard = {
   kind: 'person', boardId: 10, latColumn: 'lat', lngColumn: 'lng', nameColumn: null, nearbyColumn: 'nearby', address: null,
@@ -54,7 +54,7 @@ const cols = [
 ];
 
 describe('HttpNearbyMondayClient', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); clearContactCache(); });
 
   it('listContacts follows the cursor across pages', async () => {
     const bodies = stub([
@@ -64,6 +64,20 @@ describe('HttpNearbyMondayClient', () => {
     const out = await client().listContacts(SRC);
     expect(out.map((c) => c.id)).toEqual(['1', '2']);
     expect(bodies[1]?.variables.cursor).toBe('c1');
+  });
+
+  it('listContacts reuses a board walk, and evicts a failed one', async () => {
+    const bodies = stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [raw('1', '2')] } }] })]]);
+    await Promise.all([client().listContacts(SRC), client().listContacts(SRC)]);
+    await client().listContacts(SRC);
+    expect(bodies).toHaveLength(1);
+
+    clearContactCache();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 400 })));
+    await expect(client().listContacts(SRC)).rejects.toThrow();
+    const again = stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [] } }] })]]);
+    await client().listContacts(SRC);
+    expect(again).toHaveLength(1);
   });
 
   it('addNearbyLabel sends no mutation when the label is already present', async () => {
