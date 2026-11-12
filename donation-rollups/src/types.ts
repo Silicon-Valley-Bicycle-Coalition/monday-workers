@@ -100,7 +100,8 @@ export interface FiscalYearConfig {
 
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
-  monday: { apiUrl: string; accountUrl: string };
+  // accountId: the Monday account a webhook JWT must name (issue #110, src/mondayJwt.ts).
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   fiscalYear: FiscalYearConfig;
   custodian: CustodianConfig;
   affiliations: AffiliationsConfig | null;
@@ -266,6 +267,10 @@ export interface Env {
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Staff sync app's Signing Secret (issue #110, src/mondayJwt.ts): set = verify any webhook JWT
+  // present; MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
   CUSTODIAN_SECRET?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".

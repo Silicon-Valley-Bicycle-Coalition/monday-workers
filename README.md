@@ -208,9 +208,9 @@ than restarted from zero. See that Worker's README.
 
 ## Webhook secrets in the URL (`?secret=`)
 
-Funraise, Eventbrite and Monday webhooks can't send a custom header or a per-delivery signature
-this repo can verify, so every Worker they call authenticates the delivery by a shared secret
-embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
+Funraise and Eventbrite webhooks can't send a custom header or a per-delivery signature this
+repo can verify, and Monday signs only webhooks created by an app (below), so every Worker they
+call authenticates the delivery by a shared secret embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
 `mailchimp-sync` (Monday and Mailchimp routes), `benevity-import`, `member-portal`'s letters
 route, `people-reclassification`'s promote route, `quickbooks-sync`'s Monday route and
 `bp-feedback-notify`. (Intuit signs its own
@@ -237,6 +237,51 @@ deliveries. Mitigations, in every such Worker:
 - A secret used only in a URL authenticates webhooks and nothing else. Operator endpoints take
   their own secret in a header (`Authorization: Bearer`, as `report-digests` does), not
   `?secret=`.
+
+### Monday's signed webhook JWT (second factor, #110)
+
+A Monday webhook created **by an app** (with that app's OAuth token) carries
+`Authorization: <JWT>`, HS256-signed with the app's **Signing Secret**; one created with a
+personal API token carries none. `donation-rollups` and `people-reclassification` verify it
+after the URL secret (`src/mondayJwt.ts`, byte-identical in both: WebCrypto HMAC verify, HS256
+only). Every app request is signed with the same secret, so the token is also bound to its use:
+`accountId` (or `dat.account_id`) must equal config `monday.accountId` (26331880, the
+`bikesiliconvalley` account, which holds both the production and sandbox boards; read with
+`query { account { id } }`), `aud`, when present, must name the request's origin and path, and
+`exp`/`nbf`/`iat` are checked when present with 60 s skew, refusing a lifetime (`exp - iat`) or
+age over an hour. Monday's integration docs show `accountId`, `aud` (the endpoint URL), `iat` and
+a 300 s `exp`, but its webhook docs don't list the claims, so `exp` and `aud` stay optional until a
+live sandbox delivery shows them. A signing secret with no `monday.accountId` rejects everything.
+The subscription challenge skips the JWT:
+its echo has no side effect and the URL secret already gates it. Rollout is by config, so a
+deploy ahead of the secret drops nothing:
+
+| `MONDAY_SIGNING_SECRET` (secret) | `MONDAY_WEBHOOK_JWT_REQUIRED` (var) | Delivery without a JWT | Delivery with a JWT |
+|---|---|---|---|
+| unset | not `"true"` | accepted (URL secret only, as before) | accepted, not checked |
+| set | not `"true"` | accepted, logged `delivery carried no Authorization JWT` | must verify, else 401 |
+| set | `"true"` | 401 | must verify, else 401 |
+| unset | `"true"` | 401 (fails closed) | 401 |
+
+Operator path, per Worker and per environment (sandbox first):
+
+1. Copy the Signing Secret of the app that will own the subscriptions: monday.com Developer
+   Center → *SVBC Staff Sync* (the sandbox's own Staff sync app for `--env sandbox`) → Basic
+   Information → Signing Secret. It is not the OAuth client secret (`SYNC_CLIENT_SECRET`).
+2. `wrangler secret put MONDAY_SIGNING_SECRET` (add `--env sandbox` for the sandbox) in
+   `donation-rollups/` and `people-reclassification/`. Any JWT that arrives is now checked.
+3. Re-register the subscriptions with a token issued to that app, not a personal token:
+   `setup-webhooks.mjs --prune <boards>` (donation-rollups) and `setup-promote.mjs` (delete the
+   old promote webhooks first). The broker never hands its token out, so this needs a one-off
+   way to run the scripts with the Staff sync token; until then deliveries stay unsigned and the
+   warning above keeps firing.
+4. Confirm on a live sandbox delivery that the warning stops and nothing is rejected
+   (`wrangler tail --env sandbox`, look for `JWT`). A `wrong-audience` or `wrong-account`
+   rejection means Monday's webhook claims differ from its integration docs: fix the binding in
+   `src/mondayJwt.ts` before production. If deliveries always carry `exp`, make it required there.
+5. Then set `"MONDAY_WEBHOOK_JWT_REQUIRED": "true"` in that environment's `vars` in
+   `wrangler.jsonc` and deploy. Keep `?secret=` as well: it gates the per-IP limiter exemption
+   and costs nothing.
 
 ## Write switch: off / hold / on
 

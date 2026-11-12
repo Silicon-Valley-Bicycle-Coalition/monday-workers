@@ -524,3 +524,17 @@ describe('sponsorships config', () => {
     return { ...base, donationRollups: { ...base.donationRollups, donationBoards: [{ ...donationBoard, columns: { ...donationBoard.columns, ...columns } }] } };
   }
 });
+
+describe('validateConfig — monday.accountId (issue #110)', () => {
+  it('both shipped configs name the SVBC Monday account webhook JWTs must carry', () => {
+    expect(validateConfig(rawConfig).monday.accountId).toBe(26331880);
+    expect(validateConfig(rawSandboxConfig).monday.accountId).toBe(26331880);
+  });
+
+  it('is optional, and a positive integer when set', () => {
+    expect(validateConfig(base).monday.accountId).toBeUndefined();
+    for (const accountId of [0, -1, 1.5, '26331880', null]) {
+      expect(() => validateConfig({ ...base, monday: { ...base.monday, accountId } }), String(accountId)).toThrow(/monday\.accountId/);
+    }
+  });
+});

@@ -49,7 +49,7 @@ export interface ItRequestsAlertConfig {
 }
 
 export interface ReclassificationConfig {
-  monday: { apiUrl: string; accountUrl: string };
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   window: { years: number; timeZone: string };
   boards: { live: BoardRef; historical: BoardRef };
   peopleColumns: PeopleColumns;
@@ -74,6 +74,10 @@ export interface Env {
   RECLASSIFY_SECRET?: string;
   // Shared secret on the registered Monday webhook URL (?secret=…); unset = route disabled.
   PROMOTE_WEBHOOK_SECRET?: string;
+  // Staff sync app's Signing Secret (issue #110, src/mondayJwt.ts): set = verify any webhook JWT
+  // present; MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Write switch (`people-reclassification:writes` = on | hold | off), see src/flags.ts.
   FLAGS: KVNamespace;
   REQUEST_RATE_LIMITER: RateLimit;

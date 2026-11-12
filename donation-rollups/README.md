@@ -27,8 +27,8 @@ private planning repo retired. D1 re-bootstrapped from `salesforce-import`'s run
 (37,286 donation→owner links — see `scripts/bootstrap-links-from-artifacts.mjs` and "Why the
 bootstrap reads artifacts now" below), owner boards provisioned with the full 12-column rollup
 set (`scripts/setup-owner-columns.mjs`). Webhooks drop from 18 subscriptions to 2
-(`create_item` + `change_column_value` on the one board, shared secret in the URL — Monday
-doesn't sign payloads); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
+(`create_item` + `change_column_value` on the one board, shared secret in the URL; Monday signs
+only app-created webhooks, see "APIs & auth"); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
 Worker with the matching `MONDAY_WEBHOOK_SECRET`. **Scoped entirely to the CRM Sandbox** —
 every board id in `config/sandbox.json` is a sandbox board,
 not a production one (production doesn't exist yet; real cutover is October — `config/svbc.json`
@@ -1234,8 +1234,11 @@ sandbox gets rebuilt before cutover:
   Donations board, pointed at the deployment's `/webhooks/monday/donations` route
   (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
   the production-named Worker once production boards exist) with the
-  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`;
-  Monday doesn't sign API-created webhooks, so this is the only authentication). Compared in
+  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
+  Second factor (issue #110): with `MONDAY_SIGNING_SECRET` set, the `Authorization` JWT Monday
+  signs app-created webhooks with is verified too, and `MONDAY_WEBHOOK_JWT_REQUIRED = "true"`
+  rejects unsigned deliveries; rollout table and operator steps in the root README, "Monday's
+  signed webhook JWT". The URL secret is compared in
   constant time and **fails closed** since issue #27: with the secret unset or empty every
   delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
@@ -1261,6 +1264,7 @@ sandbox gets rebuilt before cutover:
   | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell |
   | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
   | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
+  | `MONDAY_SIGNING_SECRET` (optional, #110) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
 
   With neither the binding nor the secret, building the Monday client throws a config error
   naming both, rather than sending an empty `Authorization` header. Local `wrangler dev` has no
