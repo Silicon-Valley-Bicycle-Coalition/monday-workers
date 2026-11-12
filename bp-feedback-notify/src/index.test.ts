@@ -11,9 +11,16 @@ vi.mock('./sendStatus', () => ({ writeSendStatus }));
 const BOARD_ITEM = { kind: 'ok', eventName: 'Fall Festival', organizerEmail: 'organizer@example.org' } as const;
 const { readFeedbackItem } = vi.hoisted(() => ({ readFeedbackItem: vi.fn() }));
 vi.mock('./feedbackItem', () => ({ readFeedbackItem }));
+// The D1 resend guard is unit-tested against real SQLite in sendGuard.test.ts; here it's a spy.
+const { claimSend, releaseSend } = vi.hoisted(() => ({ claimSend: vi.fn(), releaseSend: vi.fn() }));
+vi.mock('./sendGuard', () => ({ claimSend, releaseSend }));
 beforeEach(() => {
   readFeedbackItem.mockReset();
   readFeedbackItem.mockResolvedValue(BOARD_ITEM);
+  claimSend.mockReset();
+  claimSend.mockResolvedValue(true);
+  releaseSend.mockReset();
+  releaseSend.mockResolvedValue(undefined);
 });
 
 const SECRET = 'test-secret';
@@ -33,6 +40,7 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) },
     // Existing behavior is tested under `on`; the write-switch block below overrides it.
     FLAGS: { get: vi.fn().mockResolvedValue('on') } as unknown as KVNamespace,
+    DB: {} as D1Database,
     ...overrides,
   };
 }
@@ -161,6 +169,83 @@ describe('POST /webhook/bp-feedback', () => {
     expect(env.EMAIL.send).not.toHaveBeenCalled();
     expect(writeSendStatus).not.toHaveBeenCalled();
     logSpy.mockRestore();
+  });
+
+  it('claims the item in D1 before sending, with the configured 24-hour cooldown (#105)', async () => {
+    const env = fakeEnv();
+    const before = Date.now();
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(200);
+    expect(claimSend).toHaveBeenCalledTimes(1);
+    const [db, itemId, now, cooldown] = claimSend.mock.calls[0]!;
+    expect(db).toBe(env.DB);
+    expect(itemId).toBe(VALID_BODY.itemId);
+    expect(now).toBeGreaterThanOrEqual(before);
+    expect(cooldown).toBe(24 * 3_600_000);
+    expect(claimSend.mock.invocationCallOrder[0]!).toBeLessThan((env.EMAIL.send as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!);
+    expect(releaseSend).not.toHaveBeenCalled();
+  });
+
+  it('item emailed within the cooldown: 200, no send, no status write (#105)', async () => {
+    claimSend.mockResolvedValue(false);
+    writeSendStatus.mockClear();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const env = fakeEnv();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sent: false, alreadySent: true, itemId: VALID_BODY.itemId });
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-resend-cooldown'));
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['a D1 error', () => claimSend.mockRejectedValue(new Error('D1_ERROR: no such table: sends')), {}],
+    ['a missing DB binding', () => {}, { DB: undefined }],
+  ] as const)('%s on the resend guard: 503 so monday retries, and no send (fail closed)', async (_label, arrange, overrides) => {
+    arrange();
+    writeSendStatus.mockClear();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv(overrides as Partial<Env>);
+
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(503);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-guard-failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('a failed send releases its own claim so a retry goes through', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv({ EMAIL: { send: vi.fn().mockRejectedValue(new Error('boom')) } });
+    const ctx = fakeCtx();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, ctx);
+
+    expect(res.status).toBe(500);
+    const claimedAt = claimSend.mock.calls[0]![2];
+    expect(releaseSend).toHaveBeenCalledWith(env.DB, VALID_BODY.itemId, claimedAt);
+    errorSpy.mockRestore();
+  });
+
+  it.each([
+    ['not-found', 404],
+    ['wrong-board', 404],
+    ['already-sent', 200],
+    ['no-email', 422],
+  ] as const)('%s item: no claim taken', async (kind, status) => {
+    readFeedbackItem.mockResolvedValue({ kind });
+    const quiet = [vi.spyOn(console, 'log').mockImplementation(() => {}), vi.spyOn(console, 'error').mockImplementation(() => {})];
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv(), fakeCtx());
+    expect(res.status).toBe(status);
+    expect(claimSend).not.toHaveBeenCalled();
+    quiet.forEach((spy) => spy.mockRestore());
   });
 
   it('no address on the item: 422, no send, writes Failed back', async () => {
@@ -336,6 +421,7 @@ describe('write switch (FLAGS)', () => {
     expect(res.status).toBe(200);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
     expect(readFeedbackItem).not.toHaveBeenCalled();
+    expect(claimSend).not.toHaveBeenCalled();
     expect(writeSendStatus).not.toHaveBeenCalled();
     expect(ctx.waitUntil).not.toHaveBeenCalled();
     const lines = logSpy.mock.calls.map(([l]) => String(l));
