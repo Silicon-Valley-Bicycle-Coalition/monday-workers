@@ -61,6 +61,9 @@ export interface CustodianConfig {
   // Monday writes the whole nightly cron run may make, shared by every duty (issue #90). Optional;
   // absent = DEFAULT_WRITES_PER_RUN (custodian/writeBudget.ts).
   writesPerRun?: number;
+  // Owners one sweep run enqueues (issue #88), 1-3,500. Each costs ~2-4 Monday calls in the
+  // consumer, against an account-wide 10,000/day cap. Absent = SWEEP_OWNERS_PER_RUN (custodian.ts).
+  sweepOwnersPerRun?: number;
 }
 
 export interface AffiliationsConfig {

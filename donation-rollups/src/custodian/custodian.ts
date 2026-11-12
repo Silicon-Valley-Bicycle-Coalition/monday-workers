@@ -1,4 +1,4 @@
-import type { GiftsStore } from '../db/gifts';
+import type { GiftsStore, OwnerFilter } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
@@ -152,7 +152,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
     report =
       duty === 'archive' ? await runArchive(deps, now)
       : duty === 'capacity' ? await runCapacity(deps)
-      : duty === 'sweep' ? await runSweep(deps, now)
+      : duty === 'sweep' ? await runSweep(deps, now, opts)
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config, deps.writeBudget)
       : duty === 'recurring' ? await runRecurring(deps)
@@ -284,35 +284,52 @@ async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
   };
 }
 
-// July sweep: recompute every owner once so This/Last Year splits roll over at the fiscal
-// boundary even for donors with no new gifts. Messages are owner-keyed (issue #88: D1 already
-// knows the owner, so the consumer skips resolving it from a representative gift, which rides
-// along only for logs and the affiliation fan-out). Queue sends count
-// against the Worker's per-invocation subrequest budget (50 on the Free plan) and sendBatch
-// caps at 100 messages, so one invocation covers 3,500 owners and hands the next slice a
-// cursor — an incomplete sweep reports remaining>0 and the route is simply called again
-// (each duty run picks up where the last incomplete one stopped).
-const SWEEP_BATCHES_PER_RUN = 35;
-async function runSweep(deps: CustodianDeps, now: Date): Promise<DutyReport> {
+// July sweep: recompute owners so This/Last Year splits roll over at the fiscal boundary even for
+// donors with no new gifts. Messages are owner-keyed (issue #88: D1 already knows the owner, so
+// the consumer skips resolving it from a representative gift, which rides along only for logs and
+// the affiliation fan-out).
+//
+// Issue #88 also scopes and paces it against Monday's account-wide 10,000 calls/day:
+// - the fiscal-start sweep ('rollover') covers only owners with a live gift in the two fiscal
+//   years before the new one (from currentFY - 2): theirs are the This/Last Year columns that
+//   move. Everyone else's columns compute the same as before (both $0) and the consumer's hash
+//   check would skip the writes anyway, leaving only the reads. Sponsorship owners ride along when
+//   sponsorships roll on the fiscal year. Membership terms are date-driven too, but the nightly
+//   membership duty already recomputes each anniversary.
+// - the January 1 sweep (calendar sponsorships basis) covers only the Sponsorships owners.
+// - any other sweep (an HTTP run on another day, or ?all=true) covers every owner.
+// - each run enqueues at most custodian.sweepOwnersPerRun owners (default 1,500, ~3,000-6,000
+//   consumer calls) and hands the next slice a cursor. An incomplete sweep reports remaining>0
+//   and dutiesForDate re-runs it every day until it completes, keeping its first slice's scope.
+//   Queue sends count against the per-invocation subrequest budget and sendBatch caps at 100
+//   messages, so 3,500 (35 batches) is the ceiling.
+export const SWEEP_OWNERS_PER_RUN = 1_500;
+async function runSweep(deps: CustodianDeps, now: Date, opts: DutyOptions = {}): Promise<DutyReport> {
   const lastRuns = await deps.gifts.lastRuns();
   const last = lastRuns.find((r) => r.duty === 'sweep')?.report as
-    { detail?: { cursor?: string; remaining?: number; scope?: string } } | undefined;
-  const continuing = (last?.detail?.remaining ?? 0) > 0;
+    { detail?: { cursor?: string; remaining?: number; scope?: string; fromFY?: number } } | undefined;
+  const continuing = opts.all !== true && (last?.detail?.remaining ?? 0) > 0;
   const cursor = continuing ? (last?.detail?.cursor ?? '') : '';
 
-  // Issue #88: the January 1 sweep (calendar year basis, not also the fiscal start) only rolls the
-  // Sponsorships window, which exists only on Organizations items with sponsorship-type gifts —
-  // so it covers just those owners. A continuation keeps its first slice's scope; any other run
-  // (fiscal start, manual) sweeps everyone.
   const { month, day } = localDateParts(now, deps.config.fiscalYear.timeZone);
   const spon = deps.config.donationRollups.sponsorships;
-  const sponsorshipsOnly = continuing ? last?.detail?.scope === 'sponsorships'
-    : spon?.yearBasis === 'calendar' && month === 1 && day === 1 && deps.config.fiscalYear.startMonth !== 1;
-  const only = sponsorshipsOnly && spon !== null
-    ? { ownerBoardId: String(spon.organizationsBoardId), giftTypes: [...new Set([...spon.giftTypes, ...spon.inKindGiftTypes])] }
+  const sponsorshipOwners = spon === null ? undefined
+    : { ownerBoardId: String(spon.organizationsBoardId), giftTypes: [...new Set([...spon.giftTypes, ...spon.inKindGiftTypes])] };
+  const fiscalStart = month === deps.config.fiscalYear.startMonth && day === 1;
+  const scope: 'all' | 'rollover' | 'sponsorships' = opts.all === true ? 'all'
+    : continuing ? (last?.detail?.scope === 'sponsorships' || last?.detail?.scope === 'rollover' ? last.detail.scope : 'all')
+    : fiscalStart ? 'rollover'
+    : spon?.yearBasis === 'calendar' && month === 1 && day === 1 ? 'sponsorships'
+    : 'all';
+  const fromFY = continuing && last?.detail?.fromFY !== undefined ? last.detail.fromFY : currentFiscalYear(now, deps.config.fiscalYear) - 2;
+  const only: OwnerFilter | undefined =
+    scope === 'rollover' ? { kind: 'rollover', fromFY, ...(spon?.yearBasis === 'fiscal' && sponsorshipOwners ? { sponsorships: sponsorshipOwners } : {}) }
+    : scope === 'sponsorships' && sponsorshipOwners ? { kind: 'sponsorships', ...sponsorshipOwners }
     : undefined;
-  const owners = await deps.gifts.ownersWithOneGift(cursor, SWEEP_BATCHES_PER_RUN * 100 + 1, only);
-  const slice = owners.slice(0, SWEEP_BATCHES_PER_RUN * 100);
+
+  const perRun = deps.config.custodian.sweepOwnersPerRun ?? SWEEP_OWNERS_PER_RUN;
+  const owners = await deps.gifts.ownersWithOneGift(cursor, perRun + 1, only);
+  const slice = owners.slice(0, perRun);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
       .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId,
@@ -321,10 +338,10 @@ async function runSweep(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const remaining = owners.length - slice.length; // >0 means at least one more slice exists
   return {
     ok: true,
-    summary: `enqueued recompute for ${slice.length} owners` +
-      (remaining > 0 ? ` — more remain, run sweep again to continue` : ''),
+    summary: `enqueued recompute for ${slice.length} owners (${scope})` +
+      (remaining > 0 ? ` — more remain, continuing next run` : ''),
     detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor,
-      scope: only === undefined ? 'all' : 'sponsorships' },
+      scope: only === undefined ? 'all' : scope, ...(scope === 'rollover' ? { fromFY } : {}) },
   };
 }
 

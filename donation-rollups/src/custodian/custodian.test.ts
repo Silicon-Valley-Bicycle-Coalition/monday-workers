@@ -390,6 +390,65 @@ describe('sweep duty', () => {
   });
 });
 
+// Issue #88: the fiscal-start sweep only moves This/Last Year, so it recomputes the owners whose
+// totals the rollover changes, paced under the account's 10,000/day Monday call cap.
+describe('sweep duty on the fiscal start (rollover scope and pacing)', () => {
+  const insertGift = (id: string, owner: string, board: string, fy: number, type = 'Individual', removed: string | null = null) =>
+    env.DB.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
+      fiscal_year, status, gift_type, removed_at, source, updated_at) VALUES (?1, ?2, ?3, 1000, '2026-03-01', ?4, 'Received', ?5, ?6, 'import', 'now')`)
+      .bind(id, owner, board, fy, type, removed).run();
+  const link = (d: string, o: string, b = 'b1') =>
+    new D1DonationLinksStore(env.DB).upsertLink({ donationItemId: d, donationBoardId: '100', ownerItemId: o, ownerBoardId: b }, 'now');
+  const JULY_1 = new Date('2026-07-01T18:00:00Z'); // FY2027 begins: This Year 2026 -> 2027, Last Year 2025 -> 2026
+
+  it('on July 1 enqueues only owners with a live gift in the fiscal years the rollover moves', async () => {
+    for (const [d, o, fy, removed] of [['d1', 'gaveLastYear', 2026, null], ['d2', 'gaveTwoYearsAgo', 2025, null],
+      ['d3', 'lapsed', 2024, null], ['d4', 'removedOnly', 2026, 'gone']] as [string, string, number, string | null][]) {
+      await link(d, o);
+      await insertGift(d, o, 'b1', fy, 'Individual', removed);
+    }
+    const sent: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent), now: JULY_1 });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['gaveLastYear', 'gaveTwoYearsAgo']);
+    expect(report.detail).toMatchObject({ scope: 'rollover', fromFY: 2025, enqueued: 2, remaining: 0 });
+  });
+
+  it('includes sponsorship owners when sponsorships roll on the fiscal year', async () => {
+    await link('d1', 'orgSpon', '5');
+    await insertGift('d1', 'orgSpon', '5', 2020, 'Sponsorship');
+    const c = testConfig();
+    c.donationRollups.sponsorships = { organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: [],
+      yearBasis: 'fiscal', windowYears: 3, pipelineBoards: {} };
+    const sent: RecomputeQueueMessage[] = [];
+    await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent, c), now: JULY_1 });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['orgSpon']);
+  });
+
+  it('?all=true sweeps every owner, on any day', async () => {
+    await link('d3', 'lapsed');
+    await insertGift('d3', 'lapsed', 'b1', 2010);
+    const sent: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent), now: JULY_1 }, { all: true });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['lapsed']);
+    expect(report.detail).toMatchObject({ scope: 'all' });
+  });
+
+  it('slices at custodian.sweepOwnersPerRun and continues with the same scope the next day', async () => {
+    for (let i = 0; i < 5; i++) { await link(`d${i}`, `o${i}`); await insertGift(`d${i}`, `o${i}`, 'b1', 2026); }
+    await link('dL', 'oLapsed'); await insertGift('dL', 'oLapsed', 'b1', 2010);
+    const config = testConfig({ sweepOwnersPerRun: 3 });
+    const day1: RecomputeQueueMessage[] = [];
+    const r1 = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, day1, config), now: JULY_1 });
+    expect(day1.map((m) => m.ownerItemId)).toEqual(['o0', 'o1', 'o2']);
+    expect(r1.detail).toMatchObject({ scope: 'rollover', remaining: 1, cursor: 'o2' });
+
+    const day2: RecomputeQueueMessage[] = [];
+    const r2 = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, day2, config), now: new Date('2026-07-02T18:00:00Z') });
+    expect(day2.map((m) => m.ownerItemId)).toEqual(['o3', 'o4']);
+    expect(r2.detail).toMatchObject({ scope: 'rollover', fromFY: 2025, remaining: 0 });
+  });
+});
+
 describe('sweep duty on January 1 (calendar sponsorships)', () => {
   const insertGift = (id: string, owner: string, board: string, type: string) =>
     env.DB.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,

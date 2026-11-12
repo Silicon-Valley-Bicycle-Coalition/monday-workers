@@ -571,6 +571,10 @@ function validateCustodian(raw: unknown): CustodianConfig {
       throw new Error(`config: "custodian.${key}" must be a positive integer when set`);
     }
   }
+  if (c.sweepOwnersPerRun !== undefined && (typeof c.sweepOwnersPerRun !== 'number' || !Number.isInteger(c.sweepOwnersPerRun)
+    || c.sweepOwnersPerRun < 1 || c.sweepOwnersPerRun > 3_500)) {
+    throw new Error('config: "custodian.sweepOwnersPerRun" must be an integer from 1 to 3500 when set');
+  }
   return {
     activeFiscalYears: c.activeFiscalYears as number,
     workspaceId: c.workspaceId as number,
@@ -579,5 +583,6 @@ function validateCustodian(raw: unknown): CustodianConfig {
     annualSummaryBoardId: c.annualSummaryBoardId as number | null,
     annualSummaryColumns,
     ...(c.writesPerRun !== undefined ? { writesPerRun: c.writesPerRun as number } : {}),
+    ...(c.sweepOwnersPerRun !== undefined ? { sweepOwnersPerRun: c.sweepOwnersPerRun } : {}),
   };
 }
