@@ -34,6 +34,16 @@ describe('parseSnapshot', () => {
     expect(() => parseSnapshot(new Map([['board-1.jsonl', '']]))).toThrow(/no manifest/);
   });
 
+  it('reads v3 (encrypted at rest, decrypted before it gets here) as well as v2', () => {
+    const snapshot = parseSnapshot(
+      new Map([
+        ['manifest.json', manifest({ format: 'monday-backup/3', itemCountsByBoard: {} })],
+        ['board-1.jsonl', jsonl({ type: 'board', board: { id: '1', name: 'B', workspaceId: null }, schema: { columns: [], groups: [] } })],
+      ]),
+    );
+    expect(snapshot.boards).toHaveLength(1);
+  });
+
   it('refuses an unknown snapshot format', () => {
     expect(() => parseSnapshot(new Map([['manifest.json', JSON.stringify({ format: 'monday-backup/1' })]]))).toThrow(/format/);
   });
