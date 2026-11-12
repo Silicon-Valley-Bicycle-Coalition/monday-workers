@@ -8,5 +8,6 @@
     "eventNameColumnId": "short_textdqu5gf2d",
     "organizerEmailColumnId": "short_text3z8szxke"
   },
-  "sendStatus": null
+  "sendStatus": null,
+  "resendCooldownHours": 24
 }

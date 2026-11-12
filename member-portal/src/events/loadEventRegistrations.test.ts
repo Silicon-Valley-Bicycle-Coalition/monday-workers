@@ -93,4 +93,21 @@ describe('loadEventRegistrations', () => {
 
     expect(listings[0]!.donorName).toBe('donor-1');
   });
+
+  // #99: the name lookup and the per-donor reads are independent, so all go out at once.
+  it('issues the name lookup and every donor read before any of them answers', async () => {
+    const monday = fakeMonday({});
+    const release: (() => void)[] = [];
+    const gate = <T>(value: T) => new Promise<T>((resolve) => release.push(() => resolve(value)));
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockImplementation((ids: string[]) =>
+      gate(ids.map((id) => ({ id, name: `Donor ${id}` })))
+    );
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockImplementation(() => gate([]));
+
+    const result = loadEventRegistrations(['donor-1', 'donor-2'], monday, eventConfig, NOW);
+    await vi.waitFor(() => expect(release).toHaveLength(3));
+    release.forEach((r) => r());
+
+    expect((await result).map((l) => l.donorName)).toEqual(['Donor donor-1', 'Donor donor-2']);
+  });
 });

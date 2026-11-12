@@ -218,12 +218,18 @@ run. Neither run counts as a pass when the cron decides whether one is due.
 **A logged contact** (`src/loggedContact.ts`): on a morning no pass is owed, anyone on Historical
 with a counted Activities (Logged) item inside the window moves to People, most recent first, under
 the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged contact does this; a
-new gift still waits for the pass. This pages all of Activities (Logged) every day, so watch the
-invocation's CPU and subrequests as that board grows.
+new gift still waits for the pass. It doesn't page all of Activities (Logged) every day (#101): a
+server-side date rule reads only items dated from 14 days (`LOOKBACK_MARGIN_DAYS`) before the last
+clean live logged-contact run, one that finished ok with no failed, ambiguous or deferred move.
+After any other run, or with none, it reads the whole window, as before. People (Historical) is
+paged only when that read finds someone. An item dated earlier than the margin but logged since
+waits for the next pass.
 
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
-(`PROMOTE_WEBHOOK_SECRET`). The Worker writes `Promoted On` = today, moves the item if it's on
+(`PROMOTE_WEBHOOK_SECRET`); with `MONDAY_SIGNING_SECRET` set it also verifies the `Authorization`
+JWT Monday signs app-created webhooks with (issue #110; rollout and operator steps in the root
+README, "Monday's signed webhook JWT"). The Worker writes `Promoted On` = today, moves the item if it's on
 Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
 for the window. On People it restarts the window with no move.
 
@@ -240,7 +246,9 @@ covers a dropped webhook, a lease held by a running pass, and a label carried ac
 | Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
 | Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
 
-Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
+Monday's promote deliveries that pass the URL secret skip the 60/min/IP limiter (issue #110,
+`isVerifiedMondayWebhook` in `src/rateLimit.ts`), so a bulk promote isn't 429'd into the next
+morning's sweep. Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
 so a small batch finishes within seconds and anything left finishes the next morning. So does someone
 promoted while a pass is running.
 
@@ -348,8 +356,10 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
-`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
+Steps 1–6 are done in sandbox (2026-11-02/03). The sandbox write switch is `on`. The sandbox
+operator secret was never saved: `monday-migration/.env` has no `RECLASSIFY_SECRET_SANDBOX`
+(checked 2026-11-12). Set a new one before the next operator call, as
+`../docs/runbooks/windfall-private-board.md` step 5 shows.
 
 **Production: live, writes on** (2026-11-03). The first live pass is the quarterly one on
 **2027-01-01 at 10:00 UTC**. Until then no trigger is due: operator dry runs don't count, People
@@ -359,8 +369,10 @@ Starting one by hand (`POST /reclassify/run`) would move people now. Done so far
 * `config/svbc.json` has the board ids, and the two People boards' columns match.
 * The Worker is deployed. Its write switch was turned `on` on 2026-11-03, after the dry run below.
 * `RECLASSIFY_SECRET` was replaced on 2026-11-03, because the 10-31 value wasn't recoverable.
-  The current value is `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env`, and belongs
-  in the secure note too.
+  It was to be kept as `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env` and in the
+  secure note, but `.env` has no such variable (checked 2026-11-12). If the secure note doesn't
+  have it either, replace it again the same way (`wrangler secret put RECLASSIFY_SECRET`) and
+  save it in both places; only operator calls use it.
 
 The first production dry run (cutoff 2019-11-02) scanned 8,361 People and 8,037 Historical
 items. It decided 543 to-historical and 131 to-live, and planned 400 to-historical, all

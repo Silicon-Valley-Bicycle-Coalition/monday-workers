@@ -24,10 +24,10 @@ export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
 const MONDAY_SINK = 'Monday';
 const QUEUE_SINK = 'RECOMPUTE_QUEUE';
 
-const PENDING_MUTATORS = ['upsertPending', 'updateStatus'] as const satisfies readonly (keyof PendingStore)[];
+const PENDING_MUTATORS = ['upsertPending', 'updateStatus', 'pruneFinished'] as const satisfies readonly (keyof PendingStore)[];
 const LINKS_MUTATORS = ['upsertLink', 'bulkUpsert', 'deleteLink'] as const satisfies readonly (keyof DonationLinksStore)[];
 const GIFTS_MUTATORS = ['refreshFacts', 'markRemoved', 'setSummaryItemId', 'markArchived', 'setTermStarts', 'setSponsorshipFacts',
-  'upsertAnnualSummaries', 'recordRun'] as const satisfies readonly (keyof GiftsStore)[];
+  'upsertAnnualSummaries', 'recordRun', 'pruneRuns'] as const satisfies readonly (keyof GiftsStore)[];
 const RECOMPUTES_MUTATORS = ['record', 'acquireLease', 'releaseLease'] as const satisfies readonly (keyof OwnerRecomputesStore)[];
 const AFFILIATIONS_MUTATORS = ['upsert', 'bulkUpsert'] as const satisfies readonly (keyof AffiliationsStore)[];
 const ROLLCALL_MUTATORS = ['upsert', 'remove', 'markArchived'] as const satisfies readonly (keyof RollCallCreditsStore)[];
@@ -71,6 +71,7 @@ function dryRunGiftsStore(store: GiftsStore): GiftsStore {
     refreshFacts: async () => ({ changed: 0 }),
     markRemoved: async () => null,
     upsertAnnualSummaries: async () => ({ changed: [] }),
+    pruneRuns: async () => 0,
   });
 }
 
@@ -128,7 +129,7 @@ export function custodianDepsFor(disposition: 'run' | 'dry-run', deps: Custodian
   return {
     ...deps,
     gifts: dryRunGiftsStore(deps.gifts),
-    pending: dryRunStore(deps.pending, PENDING_MUTATORS),
+    pending: dryRunStore(deps.pending, PENDING_MUTATORS, { pruneFinished: async () => 0 }),
     volunteers: dryRunVolunteerStore(deps.volunteers),
     recomputes: dryRunStore(deps.recomputes, RECOMPUTES_MUTATORS),
     rollCallCredits: dryRunStore(deps.rollCallCredits, ROLLCALL_MUTATORS, { upsert: async () => 0 }),

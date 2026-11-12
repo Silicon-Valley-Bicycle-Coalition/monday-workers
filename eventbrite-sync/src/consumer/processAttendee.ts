@@ -11,6 +11,16 @@ import { stampOf } from './messages';
 import { processPledge } from './processPledge';
 import { processVolunteer } from './processVolunteer';
 import { linkedItemId } from '../util/itemId';
+import type { EventRow } from '../types';
+
+// How long a `received`/`queued` events row counts as an event message still on its way.
+const EVENT_REQUEST_WINDOW_MS = 10 * 60 * 1000;
+
+function eventRequestInFlight(row: EventRow | null): boolean {
+  if (row === null || (row.status !== 'received' && row.status !== 'queued')) return false;
+  const receivedAt = Date.parse(row.receivedAt);
+  return Number.isFinite(receivedAt) && Date.now() - receivedAt < EVENT_REQUEST_WINDOW_MS;
+}
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
 // item. Attendance is the one column staff also edit, so it is read back from Monday and merged:
@@ -44,18 +54,24 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     return;
   }
   if (eventRow === null || eventRow.mondayItemId === null) {
-    await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
-    await queue.send({ kind: 'event', eventId, action: 'attendee.updated', ...stampOf(message) });
+    // One event message per event, not one per waiting attendee (#96): a row still `received` or
+    // `queued` and recent means the event is already on its way, either from its own webhook or from
+    // an earlier attendee. The window keeps a row stranded in either state (an event message dropped
+    // under `off`, say) from blocking the request for good; every retry after it asks again.
+    if (!eventRequestInFlight(eventRow)) {
+      await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
+      await queue.send({ kind: 'event', eventId, action: 'attendee.updated', ...stampOf(message) });
+    }
     throw new Error(`eventbrite-sync consumer: event "${eventId}" has no Events item yet; requested it, will retry attendee "${attendeeId}"`);
   }
 
-  const attendee = await eventbriteClient.getAttendee(eventId, attendeeId);
+  // Independent reads, so not one after the other.
+  const [attendee, event] = await Promise.all([eventbriteClient.getAttendee(eventId, attendeeId), eventbriteClient.getEvent(eventId)]);
   if (attendee === null) {
     console.warn(`eventbrite-sync consumer: attendee "${attendeeId}" not found in Eventbrite (HTTP 404); marking failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: 'attendee not found in Eventbrite (HTTP 404)' });
     return;
   }
-  const event = await eventbriteClient.getEvent(eventId);
   if (event === null) {
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking attendee "${attendeeId}" failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: EVENT_NOT_FOUND_ERROR });

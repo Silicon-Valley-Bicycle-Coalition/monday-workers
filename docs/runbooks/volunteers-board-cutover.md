@@ -45,7 +45,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name and Attendee Email (each only if missing) and the view (grouped by Event, Date within the
+   Attendee Name, Attendee Email and Ticket Type (each only if missing) and the view (grouped by Event, Date within the
    last 90 days, newest first), and prints the column ids. Then, from the repo root, add the 🔒
    markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
    `18201685` is the production Donors & Contacts workspace, per
@@ -59,14 +59,16 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 2. **Put the production column ids in `eventbrite-sync/config/svbc.json`**, under
    `attendeeSync.volunteers`: `eventColumn`, `listingColumn`, `attendeeIdColumn`,
    `attendeeNameColumn`, `attendeeEmailColumn` are `REPLACE_WITH_COLUMN_ID` until then
-   (`monday.boards.volunteers` is already 18437909797). Commit and merge it.
+   (`monday.boards.volunteers` is already 18437909797). Also set `ticketTypeColumn` (#115) from
+   the same output. Commit and merge it.
 
    **Filling all five is what switches the Worker to the Volunteers board**, at the next deploy
    (step 4). While all five are the placeholder, `eventbrite-sync` keeps writing volunteer
    sign-ups as Event Registrations rows (Role = Volunteer) and its class emails read them there,
    exactly as before; so a deploy from `main` before this step is safe. Fill all five or none: a
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
-   splitting volunteers across two boards.
+   splitting volunteers across two boards. `ticketTypeColumn` is not one of the five: left as the
+   placeholder it only means Ticket Type stays blank.
 
 3. **Hold `eventbrite-sync`** (repo root).
 
@@ -154,7 +156,23 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    Volunteers board holds those people. Without it, old Event Registrations-sourced rows keep
    counting, and a registration later cancelled would still count. Run from `donation-rollups/`.
 
-   **First capture what the undo needs**, before the UPDATE. Write down the count, and save the
+   **First check the precondition.** Step 9 removes credit from every owner whose only qualifying
+   volunteer rows are old Event Registrations ones, so confirm the Volunteers board already holds
+   those people. This counts owners with a qualifying `sweep`/`webhook` row and no qualifying
+   Volunteers-board (`historical`) row; it should be `0`:
+
+   ```sh
+   npx wrangler d1 execute svbc-donation-rollups --remote --command "SELECT COUNT(DISTINCT owner_item_id) AS uncovered FROM volunteer_activity WHERE source IN ('sweep','webhook') AND qualifies = 1 AND owner_item_id IS NOT NULL AND owner_item_id NOT IN (SELECT owner_item_id FROM volunteer_activity WHERE source = 'historical' AND qualifies = 1 AND owner_item_id IS NOT NULL)"
+   ```
+
+   A non-zero count means step 9 would remove those people's credit. Find out why before going on
+   (the backfill in step 5 may have skipped them, or the nightly load has not reached them yet;
+   run step 10's recompute first, or fix the backfill report's skipped rows). Break it down with
+   `GROUP BY board_id` to see which registrations board the uncovered owners come from. On the
+   2026-11 sandbox rehearsal every uncovered owner came from the deleted v3 registrations board
+   (stale rehearsal data), and none from the current one.
+
+   **Then capture what the undo needs**, before the UPDATE. Write down the count, and save the
    ids (`volunteer_activity`'s primary key is `registration_item_id`; migration
    `0009_membership_activity.sql`):
 
@@ -170,8 +188,12 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    it holds registration item ids, so never commit it. Then run:
 
    ```sh
-   npx wrangler d1 execute svbc-donation-rollups --remote --command "UPDATE volunteer_activity SET qualifies = 0 WHERE source IN ('sweep','webhook')"
+   npx wrangler d1 execute svbc-donation-rollups --remote --command "UPDATE volunteer_activity SET qualifies = 0 WHERE source IN ('sweep','webhook') AND qualifies = 1"
    ```
+
+   The `AND qualifies = 1` writes only the rows being turned off (610 on the sandbox rehearsal)
+   instead of rewriting every `sweep`/`webhook` row (13,939 there), with the same end state. Its
+   `changes` count should equal the count you wrote down above.
 
 10. **Run the full recompute**, so membership reflects the Volunteers board now rather than over
     several nights (the nightly load enqueues at most `ENQUEUE_PER_RUN` = 3,500 owners a night):
@@ -270,7 +292,13 @@ step. Never delete the Volunteers items the backfill created.
   again after creating the item, so your choice sticks. **Eventbrite Listing** keeps the listing
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
-  Attendee Email). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+  Attendee Email, Ticket Type). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+- **Rows that look like duplicates usually aren't (#115).** One row is one Eventbrite ticket.
+  One order can hold several: two shifts (different **Ticket Type**), or several people bought
+  under one buyer's email (same Ticket Type, different Attendee Name). A cancel or refund keeps
+  its row with Status **Canceled**; the sync never deletes one. To count people at an event,
+  leave out Canceled rows and count Eventbrite Attendee IDs, not emails. Two live rows with
+  different Eventbrite orders are a real double registration in Eventbrite.
 - **Do not uncheck Historical** on a migrated row. Historical rows count towards membership only
   with Hours >= 1; unchecking it makes the row count as a live sign-up and changes history counts.
   (Monday cannot lock a single checkbox; it is a convention.)
@@ -283,10 +311,9 @@ step. Never delete the Volunteers items the backfill created.
 - A Volunteers item deleted in Monday is never removed from `volunteer_activity` (archiving is
   the supported route), so a deleted row keeps counting until its D1 row is removed by hand.
 - Staff unchecking Historical on a migrated row would change history counts (see "For staff").
-- **Sandbox rehearsal.** The sandbox boards differ: `eventbrite-sync` sandbox writes Volunteers
-  v3 (18431577321), `donation-rollups` sandbox reads v4 (18437342662). Point both
-  `config/sandbox.json` files at the same Volunteers board (and its column ids) before an
-  end-to-end rehearsal. A sandbox deploy then needs its own sequence, the same as production's
+- **Sandbox rehearsal.** Both sandbox configs (`eventbrite-sync` and `donation-rollups`) point at
+  Volunteers (sandbox v4) 18437342662, so an end-to-end rehearsal needs no config change. A
+  sandbox deploy then needs its own sequence, the same as production's
   with `--env sandbox` throughout: `flags.mjs eventbrite-sync writes hold --env sandbox`, deploy
   (`npm run deploy:sandbox`), `backfill-volunteers.mjs --env sandbox` (dry run, `--apply`,
   `--remap-out`), the remap on `svbc-eventbrite-sync-sandbox`

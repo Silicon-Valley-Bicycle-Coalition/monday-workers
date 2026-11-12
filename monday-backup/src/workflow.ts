@@ -4,6 +4,7 @@ import { runSnapshot, type SnapshotStep } from './backup';
 import { D1SnapshotRunStore } from './db/runs';
 import { Deadline } from './deadline';
 import { GoogleDriveClient } from './drive/client';
+import { EncryptedDriveClient } from './drive/encrypted';
 import { environmentOf } from './environment';
 import type { Env } from './env';
 import { DEFAULT_PII_KEYS, logSkip, readLogLevel, readWriteMode, runDisposition, type SkipContext } from './flags';
@@ -73,9 +74,14 @@ export class SnapshotWorkflow extends WorkflowEntrypoint<Env, unknown> {
     const requestStats = new RequestStats();
     await runSnapshot(asSnapshotStep(step), {
       monday: new HttpMondayClient(MONDAY_API_URL, tokenProviderFor(env), { deadline, fetchFn: requestStats.fetchFn }),
-      drive: new GoogleDriveClient(
-        { clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, privateKeyPem: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY },
-        { deadline },
+      // Every board and doc file is encrypted before upload (issue #112); without the key the run
+      // fails at its folder step and alerts, and nothing is uploaded.
+      drive: new EncryptedDriveClient(
+        new GoogleDriveClient(
+          { clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, privateKeyPem: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY },
+          { deadline },
+        ),
+        env.BACKUP_ENCRYPTION_KEY,
       ),
       deadline,
       requestStats,

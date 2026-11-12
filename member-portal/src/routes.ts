@@ -39,7 +39,7 @@ import {
 } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
-import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
+import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
 import { selectImpact } from './impact/impact';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
@@ -61,6 +61,7 @@ import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
 import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
+import { IMMUTABLE_CACHE_CONTROL, staticAssetFor } from './assets/static';
 import { decodeEmailLogoPng } from './assets/emailLogo';
 import { DEFAULT_CSP, securityHeaders } from './securityHeaders';
 import { errorText } from './logSafe';
@@ -188,6 +189,15 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // The stylesheet and logo every page links to, at content-hashed paths (#99; see
+  // assets/static.ts). Immutable for a year: a changed file gets a new path, so a cached copy is
+  // never stale. Any other /assets/ path is a 404.
+  app.get('/assets/:file', (c) => {
+    const asset = staticAssetFor(c.req.path);
+    if (!asset) return c.notFound();
+    return c.body(asset.body, 200, { 'Content-Type': asset.contentType, 'Cache-Control': IMMUTABLE_CACHE_CONTROL });
+  });
 
   // Served from an embedded constant rather than a Workers Assets binding (none configured here)
   // — long cache header since the bytes never change without a redeploy.
@@ -443,6 +453,21 @@ export function createApp(deps: AppDeps) {
       return c.redirect('/');
     }
 
+    // Same degrade-instead-of-fail treatment as volunteer history in loadPortalData: a Monday
+    // read failure here should cost the donor the Events tab, not the whole dashboard. Disabled
+    // and failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
+    // Started before loadPortalData and awaited after it (#99): the two are independent, and the
+    // catch is attached up front so a rejection is never unhandled when loadPortalData throws.
+    const eventsLeg: Promise<Record<string, EventRegistrationListing> | null> = eventsEnabled(deps.config)
+      ? loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now()).then(
+          (listings) => Object.fromEntries(listings.map((listing) => [listing.donorId, listing])),
+          (err: unknown) => {
+            console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
+            return null;
+          }
+        )
+      : Promise.resolve(null);
+
     const data = await loadPortalData(
       donorItemIds,
       deps.monday,
@@ -453,35 +478,26 @@ export function createApp(deps: AppDeps) {
       donationHistoryEnabled(deps.config, deps.now())
     );
     c.header('Cache-Control', NO_STORE);
-
-    // Same degrade-instead-of-fail treatment as volunteer history above: a Monday read failure
-    // here should cost the donor the Events tab, not the whole dashboard. Disabled and
-    // failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
-    let eventsByDonor: Record<string, EventRegistrationListing> | null = null;
-    if (eventsEnabled(deps.config)) {
-      try {
-        const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
-        eventsByDonor = Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
-      } catch (err) {
-        console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
-      }
-    }
+    const eventsByDonor = await eventsLeg;
 
     // The membership card is now a dashboard widget (one per donor), not a separate page — see
     // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
     // renders without a card widget; it must never take down the whole dashboard, since donation
     // history, discounts, and everything else on the page is still useful without it.
+    // The per-donor token reads are independent, so they run concurrently (#99).
     const cards: Record<string, PortalCard> = {};
     if (cardEnabled(deps.config)) {
-      for (const donor of data.donors) {
-        try {
-          const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
-          const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
-          cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
-        } catch (err) {
-          console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
-        }
-      }
+      await Promise.all(
+        data.donors.map(async (donor) => {
+          try {
+            const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
+            const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+            cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
+          } catch (err) {
+            console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
+          }
+        })
+      );
     }
 
     // "Your giving supported …" (v8): per donor, from the gifts already loaded for the Donations
@@ -773,19 +789,8 @@ export function createApp(deps: AppDeps) {
     if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
-    // Replaces the app-wide baseline CSP (securityHeaders.ts) on the only page that may run
-    // third-party JS, so it repeats the baseline's frame-ancestors/base-uri. The load-bearing part
-    // is connect-src excluding 'self': the DTD script executes on the authenticated portal
-    // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
-    // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
-    // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
-    // works under this policy on the sandbox deploy (matchingGiftViews.ts header comment).
-    c.header(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
-        "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
-        "connect-src https://doublethedonation.com; frame-ancestors 'none'; base-uri 'none'"
-    );
+    // This page keeps the app-wide baseline CSP: it runs no third-party JS itself. The DTD widget
+    // runs only inside the sandboxed /search document framed below (issue #102).
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
     return c.html(
@@ -793,6 +798,22 @@ export function createApp(deps: AppDeps) {
         authenticated: true,
       })
     );
+  });
+
+  // The Double the Donation employer search, framed by the page above. Its CSP `sandbox`
+  // directive (no allow-same-origin) gives it an opaque origin, so DTD's script never runs with
+  // the portal's origin — see matchingGiftViews.ts. Session-gated like every /portal page so the
+  // widget stays a donor-only feature; the session is read server-side, never by the document.
+  app.get('/:locale/portal/matching-gifts/search', async (c) => {
+    const locale = resolvePathLocale(c);
+    if (!matchingGiftsSearchEnabled(deps.config)) return c.notFound();
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.notFound();
+
+    c.header('Cache-Control', NO_STORE);
+    c.header('Content-Security-Policy', SEARCH_DOCUMENT_CSP);
+    c.header('X-Frame-Options', 'SAMEORIGIN');
+    return c.html(matchingGiftsSearchDocument(deps.config.matchingGifts.doubleTheDonationPublicKey as string, locale));
   });
 
   // The membership card used to be its own page — it's now a dashboard widget (see GET

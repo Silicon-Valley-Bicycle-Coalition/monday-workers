@@ -134,12 +134,15 @@ async function recentGifts(ctx: Context): Promise<Digest> {
   const ids = columnIds(board, Object.values(D));
   const since = addDays(ctx.now.date, -cfg.days!);
   const rules = dateRange(ids, since, ctx.now.date);
-  const items = (await ctx.monday.queryItems(Number(board.id), rules, [...ids.values()]))
-    .filter((i) => (i.text.get(ids.get(D.status)!) ?? '').startsWith('Received'))
+  const min = cfg.minAmount!;
+  // Filter before the donor lookup, so only the donors of the rows the email lists are read.
+  const read = [D.date, D.donor, D.amount, D.giftType, D.status].map((t) => ids.get(t)!);
+  const big = (await ctx.monday.queryItems(Number(board.id), rules, read))
+    .filter((i) => (i.text.get(ids.get(D.status)!) ?? '').startsWith('Received') && amountOf(i.text.get(ids.get(D.amount)!)) >= min)
     .sort((a, b) => amountOf(b.text.get(ids.get(D.amount)!)) - amountOf(a.text.get(ids.get(D.amount)!)));
 
-  const donorIds = [...new Set(items.flatMap((i) => i.linked.get(ids.get(D.donor)!) ?? []))];
-  const donors = new Map((await ctx.monday.getItemsByTitle(donorIds)).map((d) => [d.id, d]));
+  const donorIds = [...new Set(big.flatMap((i) => i.linked.get(ids.get(D.donor)!) ?? []))];
+  const donors = new Map(donorIds.length ? (await ctx.monday.getItemsByTitle(donorIds, GIVING)).map((d) => [d.id, d]) : []);
   const givingOf = (item: Item) => {
     const donor = donors.get((item.linked.get(ids.get(D.donor)!) ?? [])[0] ?? '');
     return GIVING.map((title) => {
@@ -150,8 +153,6 @@ async function recentGifts(ctx: Context): Promise<Digest> {
   const row = (i: Item) => [...giftRow(i, ids).slice(0, 4), ...givingOf(i)];
   const headers = [...GIFT_HEADERS.slice(0, 4), ...GIVING];
 
-  const min = cfg.minAmount!;
-  const big = items.filter((i) => amountOf(i.text.get(ids.get(D.amount)!)) >= min);
   return {
     subject: `Gifts of ${formatMoney(min)} and up in the last ${cfg.days} days: ${big.length}`,
     intro: `Received gifts dated ${since} through ${ctx.now.date}, largest first, with the donor’s giving from People. Organizations donors have none.`,
@@ -169,25 +170,31 @@ async function fiscalYearBySize(ctx: Context): Promise<Digest> {
   const ids = columnIds(board, Object.values(D));
   const fy = fiscalYear(ctx.now);
   const rules = dateRange(ids, fy.start, ctx.now.date);
-  const items = (await ctx.monday.queryItems(Number(board.id), rules, [...ids.values()]))
-    .filter((i) => (i.text.get(ids.get(D.status)!) ?? '').startsWith('Received'));
+  // Totalled page by page, with no item cap: a fiscal year passes 5,000 gifts, and only the three
+  // summed columns are read.
   const bands = new Map<string, { count: number; total: number }>();
-  for (const i of items) {
-    const band = i.text.get(ids.get(D.size)!) ?? 'No size yet';
-    const b = bands.get(band) ?? { count: 0, total: 0 };
-    b.count += 1;
-    b.total += amountOf(i.text.get(ids.get(D.amount)!));
-    bands.set(band, b);
+  let count = 0;
+  const statusId = ids.get(D.status)!, sizeId = ids.get(D.size)!, amountId = ids.get(D.amount)!;
+  for await (const page of ctx.monday.itemPages(Number(board.id), rules, [statusId, sizeId, amountId])) {
+    for (const i of page) {
+      if (!(i.text.get(statusId) ?? '').startsWith('Received')) continue;
+      const band = i.text.get(sizeId) ?? 'No size yet';
+      const b = bands.get(band) ?? { count: 0, total: 0 };
+      b.count += 1;
+      b.total += amountOf(i.text.get(amountId));
+      bands.set(band, b);
+      count += 1;
+    }
   }
   const total = [...bands.values()].reduce((s, b) => s + b.total, 0);
   const rows = [...bands.entries()].sort((a, b) => b[1].total - a[1].total)
     .map(([band, b]) => [band, String(b.count), formatMoney(b.total)]);
-  if (rows.length) rows.push(['Total', String(items.length), formatMoney(total)]);
+  if (rows.length) rows.push(['Total', String(count), formatMoney(total)]);
   return {
-    subject: `${fy.label} to date: ${formatMoney(total)} from ${items.length} gifts`,
+    subject: `${fy.label} to date: ${formatMoney(total)} from ${count} gifts`,
     intro: `Received gifts dated ${fy.start} through ${ctx.now.date}, by Gift Size.`,
     sections: [{ heading: `${fy.label} by gift size`, table: rows.length ? { headers: ['Gift Size', 'Gifts', 'Amount'], rows, more: 0 } : null, empty: 'No gifts yet this fiscal year.' }],
-    count: items.length,
+    count,
     viewUrl: viewUrl(ctx, board, ctx.config.digests['fiscal-year-by-size'].view),
   };
 }

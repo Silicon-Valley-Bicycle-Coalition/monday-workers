@@ -16,6 +16,8 @@ export interface MailchimpTagsConfig {
   lifetimeMember: string;
   hasDonated: string;
   doNotSolicit: string;
+  // Active recurring giver: renewal Journeys skip anyone carrying this tag.
+  recurringDonor: string;
 }
 
 export interface MondayColumnsConfig {
@@ -36,6 +38,9 @@ export interface MondayColumnsConfig {
   // The People "Nearby" dropdown (written by nearby-search): each label becomes a Mailchimp tag.
   // null = not synced (the column doesn't exist on this board yet).
   nearby: string | null;
+  // The People "Has Active Recurring Gift" checkbox (kept nightly by donation-rollups) -> the
+  // recurring-donor tag. null or absent = not synced (the column isn't configured on this board).
+  hasActiveRecurringGift?: string | null;
 }
 
 // The columns the outbound sync reads. Everything but the Campaigns connect column, which only the
@@ -144,6 +149,8 @@ export interface DonorRecord {
   dnsReasonStatus: string;
   // Labels from the Nearby dropdown; [] when unset or the column isn't configured.
   nearby: string[];
+  // The Has Active Recurring Gift checkbox; false when unchecked or the column isn't configured.
+  hasActiveRecurringGift: boolean;
   // Which board the item is on now, read with its columns. A move between the People boards keeps
   // the item id, so this can differ from the board its webhook named.
   onHistorical: boolean;

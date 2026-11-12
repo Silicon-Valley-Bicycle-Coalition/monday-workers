@@ -11,6 +11,7 @@ import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN, R
 import type { DonationRollupsConfig, RecomputeQueueMessage, SponsorshipsConfig } from '../types';
 import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
 import type { BatchSkipContext } from '../writeSwitch';
+import { WriteBudget } from './writeBudget';
 
 const OWNER_COLS = {
   giftLedgerJson: 'col_glj', lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
@@ -291,6 +292,16 @@ describe('archive duty', () => {
     expect((await d.gifts.getAnnualSummaries()).map((s) => s.fiscalYear)).toEqual([2015]);
   });
 
+  it('stops at the run\'s shared write budget and continues on the next run (issue #90)', async () => {
+    for (const id of ['a1', 'a2', 'a3']) await seedGift(env.DB, id, { fy: 2015 });
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, []), writeBudget: new WriteBudget(2) };
+    const report = await runDuty('archive', d);
+    expect(state.archived).toEqual(['a1', 'a2']);
+    expect(report.detail).toMatchObject({ archived: 2, remaining: 1 });
+    expect(await d.gifts.getArchivable(2026)).toEqual([{ mondayItemId: 'a3', fiscalYear: 2015 }]);
+  });
+
   it('a failed archive keeps the gift active in the ledger and reports not-ok', async () => {
     await seedGift(env.DB, 'f1', { fy: 2015 });
     const state: FakeClientState = { archived: [], archiveFailFor: new Set(['f1']), updates: [] };
@@ -376,6 +387,98 @@ describe('sweep duty', () => {
     expect(sent.every((m) => m.sweep === true)).toBe(true);
     // Issue #88: owner-keyed, so the consumer needn't resolve the owner from the gift.
     expect(sent.map((m) => [m.ownerItemId, m.ownerBoardId])).toEqual([['oA', 'b1'], ['oB', 'b1']]);
+  });
+});
+
+// Issue #88: the fiscal-start sweep only moves This/Last Year, so it recomputes the owners whose
+// totals the rollover changes, paced under the account's 10,000/day Monday call cap.
+describe('sweep duty on the fiscal start (rollover scope and pacing)', () => {
+  const insertGift = (id: string, owner: string, board: string, fy: number, type = 'Individual', removed: string | null = null) =>
+    env.DB.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
+      fiscal_year, status, gift_type, removed_at, source, updated_at) VALUES (?1, ?2, ?3, 1000, '2026-03-01', ?4, 'Received', ?5, ?6, 'import', 'now')`)
+      .bind(id, owner, board, fy, type, removed).run();
+  const link = (d: string, o: string, b = 'b1') =>
+    new D1DonationLinksStore(env.DB).upsertLink({ donationItemId: d, donationBoardId: '100', ownerItemId: o, ownerBoardId: b }, 'now');
+  const JULY_1 = new Date('2026-07-01T18:00:00Z'); // FY2027 begins: This Year 2026 -> 2027, Last Year 2025 -> 2026
+
+  it('on July 1 enqueues only owners with a live gift in the fiscal years the rollover moves', async () => {
+    for (const [d, o, fy, removed] of [['d1', 'gaveLastYear', 2026, null], ['d2', 'gaveTwoYearsAgo', 2025, null],
+      ['d3', 'lapsed', 2024, null], ['d4', 'removedOnly', 2026, 'gone']] as [string, string, number, string | null][]) {
+      await link(d, o);
+      await insertGift(d, o, 'b1', fy, 'Individual', removed);
+    }
+    const sent: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent), now: JULY_1 });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['gaveLastYear', 'gaveTwoYearsAgo']);
+    expect(report.detail).toMatchObject({ scope: 'rollover', fromFY: 2025, enqueued: 2, remaining: 0 });
+  });
+
+  it('includes sponsorship owners when sponsorships roll on the fiscal year', async () => {
+    await link('d1', 'orgSpon', '5');
+    await insertGift('d1', 'orgSpon', '5', 2020, 'Sponsorship');
+    const c = testConfig();
+    c.donationRollups.sponsorships = { organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: [],
+      yearBasis: 'fiscal', windowYears: 3, pipelineBoards: {} };
+    const sent: RecomputeQueueMessage[] = [];
+    await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent, c), now: JULY_1 });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['orgSpon']);
+  });
+
+  it('?all=true sweeps every owner, on any day', async () => {
+    await link('d3', 'lapsed');
+    await insertGift('d3', 'lapsed', 'b1', 2010);
+    const sent: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, sent), now: JULY_1 }, { all: true });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['lapsed']);
+    expect(report.detail).toMatchObject({ scope: 'all' });
+  });
+
+  it('slices at custodian.sweepOwnersPerRun and continues with the same scope the next day', async () => {
+    for (let i = 0; i < 5; i++) { await link(`d${i}`, `o${i}`); await insertGift(`d${i}`, `o${i}`, 'b1', 2026); }
+    await link('dL', 'oLapsed'); await insertGift('dL', 'oLapsed', 'b1', 2010);
+    const config = testConfig({ sweepOwnersPerRun: 3 });
+    const day1: RecomputeQueueMessage[] = [];
+    const r1 = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, day1, config), now: JULY_1 });
+    expect(day1.map((m) => m.ownerItemId)).toEqual(['o0', 'o1', 'o2']);
+    expect(r1.detail).toMatchObject({ scope: 'rollover', remaining: 1, cursor: 'o2' });
+
+    const day2: RecomputeQueueMessage[] = [];
+    const r2 = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, day2, config), now: new Date('2026-07-02T18:00:00Z') });
+    expect(day2.map((m) => m.ownerItemId)).toEqual(['o3', 'o4']);
+    expect(r2.detail).toMatchObject({ scope: 'rollover', fromFY: 2025, remaining: 0 });
+  });
+});
+
+describe('sweep duty on January 1 (calendar sponsorships)', () => {
+  const insertGift = (id: string, owner: string, board: string, type: string) =>
+    env.DB.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
+      fiscal_year, status, gift_type, source, updated_at) VALUES (?1, ?2, ?3, 1000, '2026-03-01', 2026, 'Received', ?4, 'import', 'now')`)
+      .bind(id, owner, board, type).run();
+  const cfg = () => {
+    const c = testConfig();
+    c.donationRollups.sponsorships = { organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: ['In-Kind'],
+      yearBasis: 'calendar', windowYears: 3, pipelineBoards: {} };
+    return c;
+  };
+
+  it('enqueues only Organizations owners with sponsorship gifts; any other day sweeps everyone', async () => {
+    const links = new D1DonationLinksStore(env.DB);
+    for (const [d, o, b] of [['d1', 'orgSpon', '5'], ['d2', 'orgPlain', '5'], ['d3', 'person', 'b1'], ['d4', 'personSpon', 'b1']] as [string, string, string][]) {
+      await links.upsertLink({ donationItemId: d, donationBoardId: '100', ownerItemId: o, ownerBoardId: b }, 'now');
+    }
+    await insertGift('d1', 'orgSpon', '5', 'In-Kind');
+    await insertGift('d2', 'orgPlain', '5', 'Individual');
+    await insertGift('d3', 'person', 'b1', 'Individual');
+    await insertGift('d4', 'personSpon', 'b1', 'Sponsorship');
+
+    const jan: RecomputeQueueMessage[] = [];
+    const report = await runDuty('sweep', { ...deps({ archived: [], updates: [] }, jan, cfg()), now: new Date('2027-01-01T18:00:00Z') });
+    expect(jan.map((m) => m.ownerItemId)).toEqual(['orgSpon']);
+    expect(report.detail).toMatchObject({ scope: 'sponsorships', enqueued: 1 });
+
+    const july: RecomputeQueueMessage[] = [];
+    await runDuty('sweep', { ...deps({ archived: [], updates: [] }, july, cfg()), now: new Date('2027-07-01T18:00:00Z') });
+    expect(july).toHaveLength(4);
   });
 });
 
@@ -966,6 +1069,26 @@ describe('requeue duty', () => {
     expect(byId.get('dn-stuck')).not.toHaveProperty('kind');
   });
 
+  // Issue #90: pending_recomputes and custodian_runs were never pruned.
+  it('prunes finished rows past 30 days and custodian runs past 180, keeping each duty\'s latest run', async () => {
+    await seed('done-old', '2026-06-01T00:00:00Z', 'written');   // 61 days before now
+    await seed('done-recent', '2026-07-15T00:00:00Z', 'written');
+    await seed('dead-old', '2026-06-01T00:00:00Z', 'failed');
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'reconcile', ranAt: '2025-12-01T00:00:00Z', ok: true, report: {} });
+    await gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true, report: {} });
+    await gifts.recordRun({ duty: 'sweep', ranAt: '2025-07-01T00:00:00Z', ok: true, report: { detail: { remaining: 0 } } });
+
+    const report = await runDuty('requeue', deps({ archived: [], updates: [] }, [], testConfig({ alertItemId: null })));
+
+    const left = await env.DB.prepare('SELECT donation_item_id FROM pending_recomputes ORDER BY donation_item_id').all<{ donation_item_id: string }>();
+    expect(left.results.map((r) => r.donation_item_id)).toEqual(['dead-old', 'done-recent']);
+    const runs = await env.DB.prepare('SELECT duty, ran_at FROM custodian_runs ORDER BY ran_at').all<{ duty: string; ran_at: string }>();
+    // The sweep's only run stays however old; this requeue run is recorded too.
+    expect(runs.results.map((r) => `${r.duty}@${r.ran_at.slice(0, 10)}`)).toEqual(['sweep@2025-07-01', 'reconcile@2026-07-31', 'requeue@2026-08-01']);
+    expect(report.detail).toMatchObject({ prunedPending: 1, prunedRuns: 1 });
+  });
+
   it('is quiet when nothing is stuck', async () => {
     await seed('fresh', '2026-07-31T23:00:00Z', 'queued');
     const state = { archived: [], updates: [] as { itemId: number; body: string }[] };
@@ -1048,5 +1171,49 @@ describe('scheduled custodian run (write switch)', () => {
     expect(sent.map((m) => m.donationItemId)).toEqual(['stuck1']);
     expect((await d.gifts.lastRuns()).map((r) => r.duty).sort()).toEqual(
       ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue', 'rollcall']);
+  });
+
+  // Issue #90: one write budget for the whole run (custodian.writesPerRun), not one per duty.
+  it('shares one write budget across the run\'s duties', async () => {
+    for (const id of ['a1', 'a2', 'a3']) await seedGift(env.DB, id, { fy: 2015 });
+    const config = testConfig({ alertItemId: null, writesPerRun: 2 });
+    config.donationRollups.ownerColumnsByBoard = { '10': { ...OWNER_COLS, hasActiveRecurringGift: 'rg' } };
+    config.donationRollups.recurringGifts = { boardId: 50, columns: { donorLink: 'dl', status: 'st' }, activeStatusLabel: 'Active' };
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, [], config), now: JULY_15 };
+    d.mondayClient.pageItemsColumnsText = async () =>
+      ({ cursor: null, items: [{ id: 'p1', text: new Map([['rg', 'v']]), values: new Map() }] });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    // Recurring (nightly, before archive) has one write; archive gets the one left.
+    expect(state.changedColumns).toEqual([{ boardId: 10, itemId: 'p1', columnValues: { rg: null } }]);
+    expect(state.archived).toEqual(['a1']);
+    const archive = (await d.gifts.lastRuns()).find((r) => r.duty === 'archive');
+    expect(archive?.report).toMatchObject({ detail: { archived: 1, remaining: 2 } });
+  });
+
+  // Issue #90: membership and recurring each paged People in full; one read now serves both.
+  it('pages a board that several duties read once per run', async () => {
+    const config = testConfig({ alertItemId: null });
+    const membershipCols = { status: 'ms', tier: 'mt', since: 'msi', until: 'mu', currentTermStart: 'ts', memberType: 'mty',
+      lapseCount: 'lc', lastLapsed: 'll' };
+    config.donationRollups.ownerColumnsByBoard = { '10': { ...OWNER_COLS, hasActiveRecurringGift: 'rg', membership: membershipCols } };
+    config.donationRollups.membership = { fromISO: '2020-01-01', eligibleGiftTypes: [], minAmountCents: 0, termMonths: 13,
+      lifetimeThresholdCents: 0, statusLabels: { active: 'A', lapsed: 'L' }, tierLabels: { member: 'M', lifetime: 'LT' },
+      typeLabels: { new: 'N', continuing: 'C', lapsedRenewal: 'R', lifetime: 'LT' } };
+    config.donationRollups.recurringGifts = { boardId: 50, columns: { donorLink: 'dl', status: 'st' }, activeStatusLabel: 'Active' };
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = { ...deps(state, [], config), now: new Date('2026-08-05T16:00:00Z') };
+    const reads: { boardId: number; columnIds: string[] }[] = [];
+    d.mondayClient.pageItemsColumnsText = async (boardId, columnIds) => {
+      reads.push({ boardId, columnIds });
+      return { cursor: null, items: [{ id: 'p1', text: new Map([['ts', '2025-07-01'], ['rg', 'v']]), values: new Map() }] };
+    };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    expect(reads.filter((r) => r.boardId === 10)).toEqual([{ boardId: 10, columnIds: expect.arrayContaining(['ts', 'rg']) }]);
+    // Recurring still saw the flag through the shared read: p1 has no active gift, so it's cleared.
+    expect(state.changedColumns).toEqual([{ boardId: 10, itemId: 'p1', columnValues: { rg: null } }]);
   });
 });

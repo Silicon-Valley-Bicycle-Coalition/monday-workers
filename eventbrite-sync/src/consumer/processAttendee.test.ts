@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { processAttendee } from './processAttendee';
 import { consumeWriteBatch } from './processBatch';
 import { piiKeysFor } from '../writeSwitch';
@@ -56,7 +56,7 @@ function setup(opts: { att?: EventbriteAttendee | null; evRow?: EventRow | null;
   const calls: string[] = [];
   const eventStore = fakeEventStore({
     getEvent: vi.fn().mockResolvedValue(evRow),
-    recordDelivery: vi.fn().mockImplementation(async () => { calls.push('recordDelivery'); return 'inserted'; }),
+    recordDelivery: vi.fn().mockImplementation(async () => { calls.push('recordDelivery'); }),
   });
   const attendeeStore = fakeAttendeeStore({ getAttendee: vi.fn().mockResolvedValue(opts.row === undefined ? attendeeRow() : opts.row) });
   const queue = { send: vi.fn().mockImplementation(async () => { calls.push('send'); }) };
@@ -309,6 +309,27 @@ describe('processAttendee', () => {
     expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].name).toBeUndefined();
   });
 
+  describe('requesting an event that has no item yet', () => {
+    afterEach(() => vi.useRealTimers());
+    const at = (ms: number) => new Date(ms).toISOString();
+    const NOW = Date.parse('2026-11-11T12:00:00.000Z');
+
+    it.each(['received', 'queued'] as const)('does not request it again while its %s row is recent, but still retries the attendee', async (status) => {
+      vi.useFakeTimers({ now: NOW });
+      const { deps, eventStore, queue } = setup({ evRow: eventRow({ mondayItemId: null, status, receivedAt: at(NOW - 60_000) }) });
+      await expect(processAttendee(message, deps)).rejects.toThrow(/has no Events item yet/);
+      expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+    });
+
+    it('requests it again once the row is stale, so a stranded row cannot block it', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const { deps, queue } = setup({ evRow: eventRow({ mondayItemId: null, status: 'received', receivedAt: at(NOW - 11 * 60_000) }) });
+      await expect(processAttendee(message, deps)).rejects.toThrow(/9001/);
+      expect(queue.send).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('does the same when there is no events row at all', async () => {
     const { deps, eventStore, queue } = setup({ evRow: null });
     await expect(processAttendee(message, deps)).rejects.toThrow(/9001/);
@@ -414,6 +435,47 @@ describe('registrants link', () => {
   });
 });
 
+describe('a batch of attendees of one event', () => {
+  const gate = { worker: 'eventbrite-sync', environment: 'production', mode: 'on' as const, logLevel: 'normal' as const, piiKeys: ['name', 'email'] };
+  const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
+  const msg = (attendeeId: string) => ({ body: { ...message, attendeeId }, attempts: 1, ack: vi.fn(), retry: vi.fn() });
+
+  it('reads the event from Eventbrite once, and each attendee once', async () => {
+    const { deps, eventbriteClient } = setup();
+    const batch = [msg('a1'), msg('a2'), msg('a3')];
+    await consumeWriteBatch(batch, full(deps), gate);
+    expect(eventbriteClient.getEvent).toHaveBeenCalledTimes(1);
+    expect(eventbriteClient.getAttendee).toHaveBeenCalledTimes(3);
+    for (const m of batch) expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('asks again after a failed read, rather than keeping the failure', async () => {
+    const { deps, eventbriteClient } = setup();
+    eventbriteClient.getEvent.mockRejectedValueOnce(new Error('503'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const batch = [msg('a1'), msg('a2')];
+    await consumeWriteBatch(batch, full(deps), gate);
+    error.mockRestore();
+    expect(batch[0]!.retry).toHaveBeenCalled();
+    expect(batch[1]!.ack).toHaveBeenCalled();
+    expect(eventbriteClient.getEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends one event request for the whole batch when the event has no item yet', async () => {
+    const { deps, queue, eventStore } = setup({ evRow: null });
+    // The first attendee records the delivery, which makes the row `received` for the next.
+    (eventStore.recordDelivery as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      (eventStore.getEvent as ReturnType<typeof vi.fn>).mockResolvedValue(eventRow({ mondayItemId: null, status: 'received', receivedAt: new Date().toISOString() }));
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const batch = [msg('a1'), msg('a2'), msg('a3')];
+    await consumeWriteBatch(batch, full(deps), gate);
+    error.mockRestore();
+    expect(queue.send).toHaveBeenCalledTimes(1);
+    for (const m of batch) expect(m.retry).toHaveBeenCalled();
+  });
+});
+
 describe('attendee messages under the write switch', () => {
   // setup() builds only what this consumer reaches; the dry-run deps also wrap the orders ledger.
   const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
@@ -507,7 +569,7 @@ describe('attendee messages under the write switch', () => {
   });
 
   it('on: an event with no item yet is requested live and the attendee retried, as before', async () => {
-    const { deps, queue, eventStore } = setup({ evRow: eventRow({ mondayItemId: null, status: 'queued' }) });
+    const { deps, queue, eventStore } = setup({ evRow: eventRow({ mondayItemId: null, status: 'failed', error: 'monday API: 500' }) });
     const m = msg();
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

@@ -8,6 +8,7 @@ import type { GiftsStore } from '../db/gifts';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import { MondayRateLimitError } from '../monday/client';
+import { MondayApiError } from '../monday/graphql';
 import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
 import type { VolunteerActivityStore, VolunteerActivityRow } from '../db/volunteerActivity';
 import type { GiftHistoryRow } from '../projections/giftHistory';
@@ -76,7 +77,8 @@ const renewalGift = { id: 'dn1', amountCents: 5000, dateISO: '2026-11-05', fisca
 
 function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
   return {
-    upsertPending: vi.fn().mockResolvedValue('inserted'),
+    upsertPending: vi.fn().mockResolvedValue(undefined),
+    pruneFinished: vi.fn().mockResolvedValue(0),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockResolvedValue(null),
     listStuck: vi.fn().mockResolvedValue([]),
@@ -131,6 +133,7 @@ function fakeGiftsStore(): GiftsStore {
     getAnnualSummaries: vi.fn().mockResolvedValue([]),
     recordRun: vi.fn().mockResolvedValue(undefined),
     lastRuns: vi.fn().mockResolvedValue([]),
+    pruneRuns: vi.fn().mockResolvedValue(0),
   };
 }
 
@@ -1085,6 +1088,37 @@ describe('Monday rate-limit handling (issue #27)', () => {
       expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 90 });
       expect(m.ack).not.toHaveBeenCalled();
     }
+  });
+
+  // #101: a 5xx or timeout (Monday down, not just rate-limiting) defers the rest of the batch too,
+  // instead of each message spending the transport's in-process attempts again.
+  it.each([
+    ['a 503', new MondayApiError('monday API: exhausted 3 attempts — last error: HTTP 503', { httpStatus: 503 })],
+    ['a timeout', new MondayApiError('monday API: exhausted 3 attempts — last error: request timed out', {})],
+  ])('defers the rest of the batch after %s without calling Monday again', async (_label, err) => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(err) });
+    const messages = [{ ...fakeMessage('dn1'), attempts: 2 }, fakeMessage('dn2'), fakeMessage('dn3')];
+
+    await processRecomputeBatch(messages, base(mondayClient));
+
+    expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+    for (const m of messages) {
+      expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+      expect(m.ack).not.toHaveBeenCalled();
+    }
+    errors.mockRestore();
+  });
+
+  it('a non-outage failure stays per-message', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 400', { httpStatus: 400 })) });
+    const messages = [fakeMessage('dn1'), fakeMessage('dn2')];
+
+    await processRecomputeBatch(messages, base(mondayClient));
+
+    expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(2);
+    errors.mockRestore();
   });
 });
 

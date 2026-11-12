@@ -18,7 +18,7 @@ parsing), Vitest + `@cloudflare/vitest-plugin` (runs tests inside `workerd` via 
 migrations applied per test run — not mocked).
 
 **Spec:** [`docs/superpowers/specs/2026-08-22-committee-calendars-design.md`](../specs/2026-08-22-committee-calendars-design.md)
-(and the product spec it builds on, [`committee-calendars/README.md`](../../../committee-calendars/README.md))
+(and the product spec it builds on, `committee-calendars/README.md` (since replaced by `svbc-calendars`; current spec: [`svbc-calendars/README.md`](../../../svbc-calendars/README.md)))
 
 ## Global Constraints
 

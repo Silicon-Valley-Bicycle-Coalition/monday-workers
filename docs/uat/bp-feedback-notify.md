@@ -23,11 +23,13 @@ will not receive anything.
    uses; nothing else on the item matters.
 2. Set its **Post-Event Feedback** column to **Ready to Send**.
 3. Within a few seconds, check `sandbox@bikesiliconvalley.org`. Expect an email from **SVBC Bike
-   Valet (sandbox)** addressed to the organizer's name, with a link to the feedback form. Open
+   Valet (sandbox)** naming the event (Event Name, or the item name if that is blank), with a link
+   to the feedback form. Open
    the link and confirm the form loads. Is the wording what you'd want an organizer to read?
 4. Set the column to **Sent to Organizer** yourself. See the first note below.
-5. Set it back to Ready to Send. A second email arrives. That is expected today (no duplicate
-   check), so decide whether you want one.
+5. Set it back to Ready to Send. **No** second email arrives: the Worker emails each item at most
+   once every 24 hours, however many times it's triggered. Is a day the right wait before a
+   re-send is allowed? Inside it, a re-send needs an engineer.
 6. Clear the item's Preferred Email Address For Coordination and set it to Ready to Send again.
    No email arrives: the Worker only sends to the address on the item.
 
@@ -35,15 +37,16 @@ will not receive anything.
 
 - The column does **not** flip to Sent to Organizer on its own; staff set it after the email goes
   out. The automatic write-back exists but is switched off in the sandbox.
-- Two Ready to Send changes send two emails.
+- An item emailed in the last 24 hours (by anyone's test) sends nothing when set to Ready to Send
+  again. Pick a different item, or wait a day.
 - The email's branding is the shared SVBC template; wording changes are Feature Requests, not
   bugs.
 
 ## Not testable yet
 
 - The automatic Sent / Failed write-back to the item.
-- The production version: it needs the feedback column and automation added to the live
-  **BP Request Form** board by someone with write access, which happens after cutover.
+- The production version is live (2026-11-03), but no real organizer email has gone out through
+  it yet.
 
 ---
 

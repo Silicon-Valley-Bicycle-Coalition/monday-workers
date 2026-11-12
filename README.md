@@ -134,6 +134,7 @@ open it in a browser. Keep it in step with this table — it carries an "as of" 
 
 | Worker | Status | Priority |
 |---|---|---|
+| [`monday-auth`](monday-auth/README.md) | **Production deployed 2026-10-31** (cutover step 0.4) and consented as SVBC Integration the same day; latest production deploy 2026-11-09 (version `3b31d518`). Sandbox verified 2026-10-31. The #104 hardening (rate-limited `/oauth`, encrypted token columns, trimmed `/health`) and `limits.cpu_ms` (#117) are merged but not deployed: each environment needs a `TOKEN_ENC_KEY` secret first ([README](monday-auth/README.md), "Secrets"). | Migration-blocking: every Monday-writing Worker gets its token here |
 | [`salesforce-import`](salesforce-import/README.md) | Built (merged). **Production config targets the Donors & Contacts workspace (18201685) since 2026-10-26** (3fcaa80, merged !235), and the production boards exist: `donation-rollups`' production config took its board ids from this tool's production load (`boards.json`) on 2026-11-01 (1526652). This repo doesn't record the production load's run dates or its `validate` results. History: full pipeline rehearsed against the **sandbox v2** workspace (2026-08-28, resume 2026-09-08 — monday-migration `docs/18` §9); **batched load re-rehearsed 2026-10-09 → 12** (!211): 27 h 51 min against a ≈ 26.7 h projection, `validate --live` 18 OK / 2 FAIL (the two pre-existing `recon-funraise-*` checks); `configure` builds Find views and an Overview dashboard on each of the 12 CRM boards (!216, !217, merged 2026-10-20), and the importer stamps `Eventbrite Order ID` on migrated ticket gifts (2026-10-19) | **Blocking.** Central migration deliverable — the production load was the cutover |
 | [`funraise-sync`](funraise-sync/README.md) | **Production:** every id in `config/svbc.json` filled 2026-11-01 for Donations, Recurring Gifts and People in workspace 18201685 (aa45bb1); production's first Worker-written gifts came from it on 2026-11-02 (`donation-rollups/README.md`, Acknowledgment Tier backstop). This repo doesn't record when Funraise's webhook was repointed from the sandbox Worker to production. **Sandbox:** `svbc-funraise-sync-sandbox` since 2026-09-19; its `config/sandbox.json` still names the `(sandbox v3)` Donations board (18431577310), not CRM Sandbox v4. History: first deployed and proven end to end 2026-09-18 (route → D1 → queue → consumer, Funraise webhook registered and Enabled, re-proven with its Test button); hourly Recurring Gifts poller built 2026-09-18 and bootstrapped 2026-09-19 (1,175 subscriptions mirrored; design [`docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md`](docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md)); remapped to `(sandbox v3)` 2026-09-30 (ledger rebuilt, 53 held gifts re-driven — README "Rebuilt boards"); write switch rehearsed in the sandbox 2026-10-27/28 (hold → on → off; README "Deploying: the write switch"). | Blocking (feeds the import) |
 | [`quickbooks-sync`](quickbooks-sync/README.md) | **Postponed indefinitely (decided 2026-10-28)** — not shipping at migration. Sandbox write switch set `off` 2026-10-28 (production was already `off`) and its `deploy-sandbox` CI job removed; the code, tests and CI test job stay so it can be picked up again. History: built (merged) — production not deployed; needs real board ids. The Intuit app-review question is resolved 2026-09-21 (a private single-company app still needs Intuit's ~40-minute self-assessment questionnaire, but not the full app-store review). Has a **sandbox environment** on Intuit's sandbox host, deployed as `svbc-quickbooks-sync-sandbox` (by hand — `npm run deploy:sandbox`; merging does not deploy it, see "Deploys"). **D1 and queues provisioned and verified 2026-09-22**: `svbc-quickbooks-sync-sandbox` D1 (id wired 2026-09-20) had a pending migration (`0002_qb_events_pending_monday_item_id`, added 2026-09-21) that had never actually run against it — closed today, both migrations now applied and confirmed via schema check; both queues (`quickbooks-sync-writes-sandbox` and its `-dlq`) confirmed provisioned; config split test, typecheck, unit tests, and a `wrangler deploy --dry-run --env sandbox` all pass. **`MONDAY_API_TOKEN` and `MONDAY_WEBHOOK_SECRET` set 2026-09-22** (the former reuses the shared `Sandbox Integration` user already used by the other sandbox Workers; the latter's local copy is lost, so regenerate and re-set it when the Monday webhook is registered). **Sandbox Customers/Invoices/Products boards created and wired 2026-09-29.** **Still blocked** on staff-side prerequisites before it can process anything live: an Intuit sandbox company and development keys, and a token pair seeded via the OAuth Playground (`QB_CLIENT_ID`/`QB_CLIENT_SECRET`/`QB_WEBHOOK_VERIFIER_TOKEN` remain unset) — see [the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) **Sandbox redeployed from `main` 2026-10-09** (canonical Monday transport, dead-letter retry delay after a D1 failure, production D1 id wired); no D1 migrations were pending. | Postponed indefinitely — not part of cutover |
@@ -208,9 +209,9 @@ than restarted from zero. See that Worker's README.
 
 ## Webhook secrets in the URL (`?secret=`)
 
-Funraise, Eventbrite and Monday webhooks can't send a custom header or a per-delivery signature
-this repo can verify, so every Worker they call authenticates the delivery by a shared secret
-embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
+Funraise and Eventbrite webhooks can't send a custom header or a per-delivery signature this
+repo can verify, and Monday signs only webhooks created by an app (below), so every Worker they
+call authenticates the delivery by a shared secret embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
 `mailchimp-sync` (Monday and Mailchimp routes), `benevity-import`, `member-portal`'s letters
 route, `people-reclassification`'s promote route, `quickbooks-sync`'s Monday route and
 `bp-feedback-notify`. (Intuit signs its own
@@ -237,6 +238,51 @@ deliveries. Mitigations, in every such Worker:
 - A secret used only in a URL authenticates webhooks and nothing else. Operator endpoints take
   their own secret in a header (`Authorization: Bearer`, as `report-digests` does), not
   `?secret=`.
+
+### Monday's signed webhook JWT (second factor, #110)
+
+A Monday webhook created **by an app** (with that app's OAuth token) carries
+`Authorization: <JWT>`, HS256-signed with the app's **Signing Secret**; one created with a
+personal API token carries none. `donation-rollups` and `people-reclassification` verify it
+after the URL secret (`src/mondayJwt.ts`, byte-identical in both: WebCrypto HMAC verify, HS256
+only). Every app request is signed with the same secret, so the token is also bound to its use:
+`accountId` (or `dat.account_id`) must equal config `monday.accountId` (26331880, the
+`bikesiliconvalley` account, which holds both the production and sandbox boards; read with
+`query { account { id } }`), `aud`, when present, must name the request's origin and path, and
+`exp`/`nbf`/`iat` are checked when present with 60 s skew, refusing a lifetime (`exp - iat`) or
+age over an hour. Monday's integration docs show `accountId`, `aud` (the endpoint URL), `iat` and
+a 300 s `exp`, but its webhook docs don't list the claims, so `exp` and `aud` stay optional until a
+live sandbox delivery shows them. A signing secret with no `monday.accountId` rejects everything.
+The subscription challenge skips the JWT:
+its echo has no side effect and the URL secret already gates it. Rollout is by config, so a
+deploy ahead of the secret drops nothing:
+
+| `MONDAY_SIGNING_SECRET` (secret) | `MONDAY_WEBHOOK_JWT_REQUIRED` (var) | Delivery without a JWT | Delivery with a JWT |
+|---|---|---|---|
+| unset | not `"true"` | accepted (URL secret only, as before) | accepted, not checked |
+| set | not `"true"` | accepted, logged `delivery carried no Authorization JWT` | must verify, else 401 |
+| set | `"true"` | 401 | must verify, else 401 |
+| unset | `"true"` | 401 (fails closed) | 401 |
+
+Operator path, per Worker and per environment (sandbox first):
+
+1. Copy the Signing Secret of the app that will own the subscriptions: monday.com Developer
+   Center → *SVBC Staff Sync* (the sandbox's own Staff sync app for `--env sandbox`) → Basic
+   Information → Signing Secret. It is not the OAuth client secret (`SYNC_CLIENT_SECRET`).
+2. `wrangler secret put MONDAY_SIGNING_SECRET` (add `--env sandbox` for the sandbox) in
+   `donation-rollups/` and `people-reclassification/`. Any JWT that arrives is now checked.
+3. Re-register the subscriptions with a token issued to that app, not a personal token:
+   `setup-webhooks.mjs --prune <boards>` (donation-rollups) and `setup-promote.mjs` (delete the
+   old promote webhooks first). The broker never hands its token out, so this needs a one-off
+   way to run the scripts with the Staff sync token; until then deliveries stay unsigned and the
+   warning above keeps firing.
+4. Confirm on a live sandbox delivery that the warning stops and nothing is rejected
+   (`wrangler tail --env sandbox`, look for `JWT`). A `wrong-audience` or `wrong-account`
+   rejection means Monday's webhook claims differ from its integration docs: fix the binding in
+   `src/mondayJwt.ts` before production. If deliveries always carry `exp`, make it required there.
+5. Then set `"MONDAY_WEBHOOK_JWT_REQUIRED": "true"` in that environment's `vars` in
+   `wrangler.jsonc` and deploy. Keep `?secret=` as well: it gates the per-IP limiter exemption
+   and costs nothing.
 
 ## Write switch: off / hold / on
 
@@ -417,7 +463,8 @@ object with an address in it), so it's a backstop, not a proof. A deliberate exc
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares
 one branded layout — dark SVBC-gold header with the logo, light/dark-mode-aware body, plain-text
 part — rather than each Worker sending bare, unstyled HTML. `member-portal/src/email/layout.ts` is
-the source of truth; `bp-feedback-notify/src/email/layout.ts` is a copy, same reasoning as every
+the source of truth; `bp-feedback-notify/src/email/layout.ts` and
+`report-digests/src/email/layout.ts` are copies, same reasoning as every
 other per-Worker copy in this repo (see "Concurrency" above). The logo itself is a PNG (email
 clients don't render the site's inline SVG logo) served by member-portal at `GET /email/logo.png`
 and referenced by every Worker's email config as an absolute URL — regenerate it from

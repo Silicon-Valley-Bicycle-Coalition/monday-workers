@@ -108,10 +108,23 @@ node scripts/windfall-board.mjs verify --people 18437342592 --historical 1843734
    `"empty": false`, so an empty answer is known to mean something.
 5. **Moves still work, both ways.** The on-demand route only goes from People (Historical) to People,
    so the other way takes a sandbox pass, which moves everyone due, up to the 400-move cap. Never do
-   this in production. Operator calls need the sandbox secret, `RECLASSIFY_SECRET_SANDBOX` in
-   `monday-migration/.env`, sent as a Bearer header; the Worker is
+   this in production. The Worker is
    `https://svbc-people-reclassification-sandbox.svbc-account.workers.dev`. Make sure
    `people-reclassification:writes` is on for the sandbox.
+
+   Operator calls send the sandbox Worker's `RECLASSIFY_SECRET` as a Bearer header. No copy of
+   its value is kept: `monday-migration/.env` has no `RECLASSIFY_SECRET_SANDBOX` (checked
+   2026-11-12), and Cloudflare secrets are write-only. So before this step, set a new value on
+   the sandbox Worker and save the same value as `RECLASSIFY_SECRET_SANDBOX` in
+   `monday-migration/.env`, which the commands below read. Replacing it affects only operator
+   calls; the cron and the promote webhook don't use it. From `people-reclassification/`:
+
+```sh
+openssl rand -hex 32   # paste this value at the prompt below and into monday-migration/.env
+npx wrangler secret put RECLASSIFY_SECRET --env sandbox
+set -a; . ../../monday-migration/.env; set +a   # path from the primary checkout; loads RECLASSIFY_SECRET_SANDBOX
+```
+
    1. Pick a test person on People (sandbox v4) with a row on the new board, no Funraise Profile link,
       not a Lifetime member, and no registration, volunteer hours or logged contact in the last seven
       years. Give them an old `Last Gift Date`, such as 2010-01-01, and an old or empty `Member

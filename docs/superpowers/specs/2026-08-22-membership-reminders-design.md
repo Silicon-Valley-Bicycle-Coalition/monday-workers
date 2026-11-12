@@ -1,7 +1,7 @@
 # membership-reminders: implementation design
 
 **Status:** Approved for implementation (2026-08-22).
-**Builds on:** [`membership-reminders/README.md`](../../../membership-reminders/README.md), which is
+**Builds on:** `membership-reminders/README.md` (since repurposed as `mailchimp-sync`; current spec: [`mailchimp-sync/README.md`](../../../mailchimp-sync/README.md)), which is
 the decided product/business spec. This document covers the implementation-level decisions that
 README leaves open.
 

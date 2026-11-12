@@ -2,7 +2,9 @@
 // (svbc-monday-migration#24, generalizing migration-plan.md's Bike-lane GIS proximity). Kept
 // free of any Monday/network dependency so it's directly unit-testable.
 
-import { booleanPointInPolygon, buffer, point as turfPoint } from '@turf/turf';
+import { booleanPointInPolygon } from '@turf/boolean-point-in-polygon';
+import { buffer } from '@turf/buffer';
+import { point as turfPoint } from '@turf/helpers';
 import type { Feature, Geometry, Polygon, MultiPolygon } from 'geojson';
 
 export interface Contact {

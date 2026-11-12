@@ -80,9 +80,9 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // unrelated vocabularies: Recurring Gifts and Volunteers/Activities pass raw values through
 // from Funraise/the Volunteers app/Salesforce Task, which aren't closed sets known to this
 // code. Only the Donations board computes "Status" itself (StageName mapped to exactly
-// Received/Failed/Pending/Lost in transform/donations.ts), so that one is closed and scoped by
-// board key rather than title alone.
-export const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Lost'];
+// Received/Failed/Pending/Closed Lost in transform/donations.ts), so that one is closed and scoped
+// by board key rather than title alone.
+export const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Closed Lost'];
 // The design spec adds a 'Draft' state for affiliations a later Worker proposes and staff have
 // not yet confirmed, alongside the two settled states.
 export const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];

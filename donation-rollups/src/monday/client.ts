@@ -242,6 +242,36 @@ function checkboxChecked(value: string | null | undefined): boolean {
   }
 }
 
+// The Donations columns the rollcall duty's credits read needs. Exported so the custodian's shared
+// board read (custodian/boardReads.ts, issue #90) requests them alongside classify's.
+export function donationCreditColumnIds(cfg: RollCallConfig['donations']): string[] {
+  const c = cfg.columns;
+  return [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
+    ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])];
+}
+
+// One Donations item, as pageItemsColumnsText reads it, to the credits read's record.
+export function donationCreditFrom(item: ItemColumns, cfg: RollCallConfig['donations'], fiscalYearStartMonth: number): DonationCreditRecord {
+  const c = cfg.columns;
+  const text = (id: string): string => item.text.get(id) ?? '';
+  // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in getDonationsByIds —
+  // the ledger's year for the same gift, so the two never disagree.
+  const fyText = text(c.fiscalYear).trim();
+  const dateISO = text(c.date).trim();
+  const rawFY = fyText === '' ? NaN : Number(fyText);
+  const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
+  return { id: item.id,
+    fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
+    amountCents: parseAmountCents(item.text.get(c.amount)),
+    status: statusLabel(item.text.get(c.status), item.values.get(c.status)),
+    giftType: text(c.giftType).trim(),
+    donorItemIds: item.linkedIds?.get(c.donorLink) ?? [],
+    matchedByItemIds: item.linkedIds?.get(c.matchedBy) ?? [],
+    anonymous: checkboxChecked(item.values.get(c.anonymous)),
+    inKindValueCents: c.inKindValue ? parseAmountCents(item.text.get(c.inKindValue)) : null,
+    recognitionFiscalYear: c.recognitionFiscalYear ? text(c.recognitionFiscalYear).trim() : '' };
+}
+
 export class HttpMondayClient implements DonationRollupsMondayClient {
   private readonly transports = new Map<string, MondayGraphQL>();
 
@@ -560,45 +590,11 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     };
   }
 
+  // The rollcall duty's only read of Donations: an empty read would resolve every stored credit
+  // through getItemsState, so a board Monday doesn't return is an error, not empty (requireBoard).
   async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number) {
-    const c = cfg.columns;
-    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
-      await this.graphql(
-        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
-          boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
-          }
-        }`,
-        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
-          ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])], cursor },
-      );
-    // The rollcall duty's only read of Donations: an empty read would resolve every stored
-    // credit through getItemsState, so a board Monday doesn't return is an error, not empty.
-    const page = data.boards[0]?.items_page;
-    if (page === undefined) throw new Error(`monday API: Donations board ${cfg.boardId} not returned (deleted, or not visible to this token)`);
-    return {
-      cursor: page.cursor,
-      items: page.items.map((item) => {
-        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
-        const status = byId.get(c.status);
-        // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in
-        // getDonationsByIds — the ledger's year for the same gift, so the two never disagree.
-        const fyText = (byId.get(c.fiscalYear)?.text ?? '').trim();
-        const dateISO = (byId.get(c.date)?.text ?? '').trim();
-        const rawFY = fyText === '' ? NaN : Number(fyText);
-        const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
-        return { id: item.id,
-          fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
-          amountCents: parseAmountCents(byId.get(c.amount)?.text),
-          status: statusLabel(status?.text, status?.value),
-          giftType: (byId.get(c.giftType)?.text ?? '').trim(),
-          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],
-          matchedByItemIds: byId.get(c.matchedBy)?.linked_item_ids ?? [],
-          anonymous: checkboxChecked(byId.get(c.anonymous)?.value),
-          inKindValueCents: c.inKindValue ? parseAmountCents(byId.get(c.inKindValue)?.text) : null,
-          recognitionFiscalYear: c.recognitionFiscalYear ? (byId.get(c.recognitionFiscalYear)?.text ?? '').trim() : '' };
-      }),
-    };
+    const page = await this.pageItemsColumnsText(cfg.boardId, donationCreditColumnIds(cfg), cursor, { requireBoard: true });
+    return { cursor: page.cursor, items: page.items.map((item) => donationCreditFrom(item, cfg, fiscalYearStartMonth)) };
   }
 
   async getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>> {

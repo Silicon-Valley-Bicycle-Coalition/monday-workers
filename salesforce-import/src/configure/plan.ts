@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BoardSpec, ColoringRule, ColumnSpec, ViewSpec } from './spec.js';
 import { resolveLabelId } from './labels.js';
+import { fiscalYearRange, isFiscalYearValue } from './fiscal.js';
 import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 export interface CurrentColumn { id: string; title: string; type: string; description: string | null; settings_str: string }
@@ -123,7 +124,7 @@ function toWireCondition(
 // Spec views are created when absent and re-applied (updated) when present; views whose names
 // aren't in the spec — ones staff made — are never touched.
 export function planViews(
-  columns: CurrentColumn[], existingViews: Map<string, string>, spec: BoardSpec, boardId: number,
+  columns: CurrentColumn[], existingViews: Map<string, string>, spec: BoardSpec, boardId: number, now: Date = new Date(),
 ): { views: { create: ResolvedView[]; update: (ResolvedView & { viewId: string })[] }; notes: string[] } {
   const notes: string[] = [];
   const create: ResolvedView[] = [];
@@ -131,7 +132,7 @@ export function planViews(
   const byTitle = new Map(columns.map((c) => [bareTitle(c.title), c]));
 
   for (const viewSpec of spec.views ?? []) {
-    const resolved = resolveView(viewSpec, byTitle, columns, boardId);
+    const resolved = resolveView(viewSpec, byTitle, columns, boardId, now);
     if ('error' in resolved) { notes.push(`view "${viewSpec.name}" skipped — ${resolved.error}`); continue; }
     const viewId = existingViews.get(viewSpec.name);
     if (viewId) update.push({ ...resolved.view, viewId });
@@ -151,13 +152,15 @@ function resolveLabels(col: CurrentColumn, labels: string[]): number[] | string 
 }
 
 function resolveView(
-  viewSpec: ViewSpec, byTitle: Map<string, CurrentColumn>, allColumns: CurrentColumn[], boardId: number,
+  viewSpec: ViewSpec, byTitle: Map<string, CurrentColumn>, allColumns: CurrentColumn[], boardId: number, now: Date,
 ): { view: ResolvedView } | { error: string } {
   const rules: ResolvedRule[] = [];
   for (const rule of viewSpec.filter?.rules ?? []) {
     const col = byTitle.get(rule.columnTitle);
     if (!col) return { error: `filter references unknown column "${rule.columnTitle}"` };
     let compare_value: unknown = rule.compareValue ?? [];
+    // { fiscalYear } is resolved from the clock; re-running configure each July refreshes it.
+    if (isFiscalYearValue(compare_value)) compare_value = fiscalYearRange(now, compare_value.fiscalYear === 'previous' ? -1 : 0);
     if (rule.labelValues) {
       const ids = resolveLabels(col, rule.labelValues);
       if (typeof ids === 'string') return { error: `filter on "${rule.columnTitle}" — unknown label "${ids}"` };

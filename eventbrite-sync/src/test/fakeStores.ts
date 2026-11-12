@@ -5,7 +5,7 @@ import type { ClassEmailKind, ClassEmailRow, ClassEmailStore } from '../db/class
 
 export function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
   return {
-    recordDelivery: vi.fn().mockResolvedValue('inserted'),
+    recordDelivery: vi.fn().mockResolvedValue(undefined),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
     listEndedBetween: vi.fn().mockResolvedValue([]),
@@ -15,7 +15,7 @@ export function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore 
 
 export function fakeAttendeeStore(overrides: Partial<AttendeeStore> = {}): AttendeeStore {
   return {
-    recordDelivery: vi.fn().mockResolvedValue('inserted'),
+    recordDelivery: vi.fn().mockResolvedValue(undefined),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getAttendee: vi.fn().mockResolvedValue(null),
     listByEvent: vi.fn().mockResolvedValue([]),
@@ -44,6 +44,12 @@ export function fakeClassEmailStore(seed: ClassEmailRow[] = []): ClassEmailStore
     resolve: async (eventId, kind, id, status, resolvedAt) => {
       const i = find(eventId, kind, id);
       if (i !== -1 && rows[i]!.status !== 'sent') rows[i] = { ...rows[i]!, status, resolvedAt };
+    },
+    resolveMany: async (eventId, kind, outcomes, resolvedAt) => {
+      for (const { registrationId, status } of outcomes) {
+        const i = find(eventId, kind, registrationId);
+        if (i !== -1 && rows[i]!.status !== 'sent') rows[i] = { ...rows[i]!, status, resolvedAt };
+      }
     },
     release: async (eventId, kind, ids, claimedBefore) => {
       const released: string[] = [];

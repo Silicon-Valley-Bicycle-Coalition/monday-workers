@@ -1,8 +1,7 @@
 # UAT script: the member map
 
-**Status 2026-11-02: nothing to test yet.** The map is built but not deployed; it needs the
-Cloudflare Access setup first. Once it is on `map.sandbox.bikesiliconvalley.org`, this is the
-script.
+**Status 2026-11-03: testable now** on `map.sandbox.bikesiliconvalley.org` (production is live on
+`map.bikesiliconvalley.org`; both sit behind Cloudflare Access).
 
 This is a map for staff to see where SVBC has few members, so you can pick places for membership
 drives, events and group rides. Dark-shaded neighborhoods are the gaps; a heavy outline means a

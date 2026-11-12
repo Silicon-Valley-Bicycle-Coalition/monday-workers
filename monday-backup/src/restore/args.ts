@@ -14,6 +14,13 @@ Dry run by default: prints what it would create and writes nothing. See RESTORE.
   --ledger <path>           Old→new id ledger for resuming.
                             Default: <snapshot-dir>/restore-ledger.jsonl.
   --into-source-workspace   Allow restoring into a workspace the snapshot came from.
+  --key-file <path>         File holding the base64 snapshot encryption key, for an
+                            encrypted snapshot (*.jsonl.enc). Or set BACKUP_ENCRYPTION_KEY.
+                            Older, plaintext snapshots need no key.
+  --allow-plaintext-snapshot
+                            Accept a snapshot with no encrypted files (format
+                            monday-backup/2, from before encryption). Nothing in such a
+                            snapshot is authenticated; refused without this flag.
 `;
 
 export interface RestoreArgs {
@@ -25,6 +32,9 @@ export interface RestoreArgs {
   nameSuffix: string;
   ledgerPath: string;
   intoSourceWorkspace: boolean;
+  // A path, never the key itself: a key on the command line lands in shell history.
+  keyFile?: string;
+  allowPlaintextSnapshot: boolean;
 }
 
 const list = (value: string): string[] =>
@@ -43,13 +53,13 @@ export function parseRestoreArgs(argv: string[], today: Date): RestoreArgs {
       continue;
     }
     const name = arg.slice(2);
-    if (name === 'execute' || name === 'into-source-workspace') {
+    if (name === 'execute' || name === 'into-source-workspace' || name === 'allow-plaintext-snapshot') {
       flags.set(name, true);
       continue;
     }
     const value = argv[i + 1];
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value\n\n${USAGE}`);
-    if (!['workspace', 'boards', 'docs', 'suffix', 'ledger'].includes(name)) throw new Error(`unknown option --${name}\n\n${USAGE}`);
+    if (!['workspace', 'boards', 'docs', 'suffix', 'ledger', 'key-file'].includes(name)) throw new Error(`unknown option --${name}\n\n${USAGE}`);
     flags.set(name, value);
     i++;
   }
@@ -62,6 +72,7 @@ export function parseRestoreArgs(argv: string[], today: Date): RestoreArgs {
   const boards = flags.get('boards');
   const suffix = flags.get('suffix');
   const ledger = flags.get('ledger');
+  const keyFile = flags.get('key-file');
   return {
     snapshotDir,
     workspaceId: workspace,
@@ -71,6 +82,8 @@ export function parseRestoreArgs(argv: string[], today: Date): RestoreArgs {
     nameSuffix: typeof suffix === 'string' ? suffix : ` (restored ${today.toISOString().slice(0, 10)})`,
     ledgerPath: typeof ledger === 'string' ? ledger : `${snapshotDir}/restore-ledger.jsonl`,
     intoSourceWorkspace: flags.get('into-source-workspace') === true,
+    keyFile: typeof keyFile === 'string' ? keyFile : undefined,
+    allowPlaintextSnapshot: flags.get('allow-plaintext-snapshot') === true,
   };
 }
 

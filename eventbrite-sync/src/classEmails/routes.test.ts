@@ -10,6 +10,8 @@ import { fakeAttendeeStore, fakeClassEmailStore, fakeEventStore } from '../test/
 import { mondayItem } from '../test/mondayItem';
 import { testConfig } from '../test/testConfig';
 import { NEW_VOLUNTEER_COLUMN_KEYS, PLACEHOLDER_COLUMN_ID } from '../config';
+import { processClassEmail } from '../consumer/processClassEmail';
+import type { ProcessBatchDeps, WriteQueueMessage } from '../consumer/processBatch';
 
 const SECRET = 'class-secret';
 const NOW = new Date('2026-11-10T12:00:00.000Z');
@@ -63,6 +65,7 @@ interface Options {
   volunteersBoard?: number | null;
   // 'placeholder' sets all five new Volunteers-board columns to the placeholder: the pre-cutover (legacy) config.
   volunteerColumns?: 'placeholder';
+  queueFails?: boolean;
 }
 
 function harness(o: Options = {}) {
@@ -88,12 +91,34 @@ function harness(o: Options = {}) {
   const attendeeStore = fakeAttendeeStore({
     listByEvent: vi.fn(async (eventId: string) => (eventId === 'e1' ? [...items.keys()].filter((k) => k !== '900').map((k) => attendee(`a${k}`, k)) : [attendee('zz', '99', eventId)])),
   });
+  const queued: WriteQueueMessage[] = [];
+  const queue = {
+    send: async (message: WriteQueueMessage) => void queued.push(message),
+    sendBatch: async (messages: WriteQueueMessage[]) => {
+      if (o.queueFails) throw new Error('queue down');
+      queued.push(...messages);
+    },
+  };
+  // What the write queue consumer would do with the follow-ups the route enqueued: runs each
+  // message (and any it chains) against this harness's Monday client, collecting what throws.
+  const errors: unknown[] = [];
+  const drain = async () => {
+    while (queued.length > 0) {
+      const message = queued.shift()!;
+      if (message.kind !== 'class-email') continue;
+      try {
+        await processClassEmail(message, { eventStore, mondayClient: client as unknown as MondayClient, config, queue } as unknown as ProcessBatchDeps);
+      } catch (err) {
+        errors.push(err);
+      }
+    }
+  };
   const app = new Hono();
   registerClassEmailRoutes(app, {
-    store: routeStore, mondayClient, secret: 'secret' in o ? o.secret : SECRET, eventStore, attendeeStore, config,
+    queue, store: routeStore, mondayClient, secret: 'secret' in o ? o.secret : SECRET, eventStore, attendeeStore, config,
     writeMode: async () => o.mode ?? 'on', now: () => NOW,
   });
-  return { app, client, mondayClient, store, items, eventStore, attendeeStore };
+  return { app, client, mondayClient, store, items, eventStore, attendeeStore, queued, drain, errors };
 }
 
 type App = ReturnType<typeof harness>['app'];
@@ -104,12 +129,13 @@ function call(app: App, method: 'GET' | 'POST', path: string, body?: unknown, he
     ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
   }, undefined, ctx);
 }
-function fakeExecutionContext() {
-  const waited: Promise<unknown>[] = [];
-  return { waited, ctx: { waitUntil: (p: Promise<unknown>) => void waited.push(p), passThroughOnException: () => {} } as unknown as ExecutionContext };
-}
 const get = (h: { app: App }, eventId = 'e1') => call(h.app, 'GET', `/class-emails/${eventId}`);
-const post = (h: { app: App }, route: 'claim' | 'result' | 'release', body: unknown) => call(h.app, 'POST', `/class-emails/e1/${route}`, body);
+// A result is followed by the queue consumer's turn, as it would be in production.
+async function post(h: { app: App; drain?: () => Promise<void> }, route: 'claim' | 'result' | 'release', body: unknown) {
+  const res = await call(h.app, 'POST', `/class-emails/e1/${route}`, body);
+  if (route === 'result') await h.drain?.();
+  return res;
+}
 const sendResult = (kind: string, results: unknown, over: Record<string, unknown> = {}) => ({ kind, sender: 'coach@svbc.org', subject: 'See you soon', results, ...over });
 
 afterEach(() => vi.restoreAllMocks());
@@ -386,8 +412,9 @@ describe('POST result', () => {
     ]));
     expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
     expect(h.client.changeColumnValues).toHaveBeenCalledWith(333, '10', { [rc.attendanceColumn]: 'No Show' });
-    // Read fresh, once, for the sent ids that were claimed.
-    expect(h.client.getItems).toHaveBeenCalledWith(333, ['10', '11', '12'], [rc.attendanceColumn]);
+    // Read fresh for each sent id that was claimed.
+    for (const id of ['10', '11', '12']) expect(h.client.getItems).toHaveBeenCalledWith(333, [id], [rc.attendanceColumn]);
+    expect(h.client.getItems).not.toHaveBeenCalledWith(333, ['13'], expect.anything());
   });
 
   it('writes no Attendance for a reminder or a thank-you', async () => {
@@ -417,7 +444,7 @@ describe('POST result', () => {
       await post(h, 'result', sendResult('missed-you', [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'sent' }, { registrationId: '12', status: 'sent' }]));
       expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
       expect(h.client.changeColumnValues).toHaveBeenCalledWith(666, '10', { [vc.statusColumn]: 'No-Show' });
-      expect(h.client.getItems).toHaveBeenCalledWith(666, ['10', '11', '12'], [vc.statusColumn]);
+      for (const id of ['10', '11', '12']) expect(h.client.getItems).toHaveBeenCalledWith(666, [id], [vc.statusColumn]);
     });
 
     it('a thank-you links People through the Volunteer column when it is blank, never overwriting', async () => {
@@ -470,7 +497,8 @@ describe('POST result', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, sent: 2 });
     expect(h.store.rows.map((r) => r.status)).toEqual(['sent', 'sent']);
-    expect(error).toHaveBeenCalled();
+    // Each failing People match is the queue's to retry; the request's own log never carries an address.
+    expect(h.errors).toHaveLength(2);
     expect(JSON.stringify(error.mock.calls)).not.toContain('real.org');
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
   });
@@ -571,55 +599,63 @@ describe('POST result', () => {
 });
 
 describe('POST result: the update comes before the follow-ups', () => {
-  const missedYou = () => harness({ ledger: [row('missed-you', '10')] });
+  const missedYou = (o: Options = {}) => harness({ ledger: [row('missed-you', '10')], ...o });
   const sentOne = sendResult('missed-you', [{ registrationId: '10', status: 'sent' }]);
-  const postWith = (h: { app: App }, ctx: ExecutionContext) => call(h.app, 'POST', '/class-emails/e1/result', sentOne, undefined, ctx);
 
-  it('posts the update, then writes No Show, when there is no execution context', async () => {
+  it('posts the update and queues the follow-ups; nothing else is written in the request', async () => {
     const h = missedYou();
-    expect((await post(h, 'result', sentOne)).status).toBe(200);
-    expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
-    expect(h.client.postUpdate.mock.invocationCallOrder[0]!).toBeLessThan(h.client.changeColumnValues.mock.invocationCallOrder[0]!);
-  });
-
-  it('answers with the update posted and leaves the follow-ups to waitUntil', async () => {
-    const h = missedYou();
-    let open!: () => void;
-    const gate = new Promise<void>((resolve) => { open = resolve; });
-    const getItems = h.client.getItems.getMockImplementation()!;
-    h.client.getItems.mockImplementation(async (board, ids) => { await gate; return getItems(board, ids); });
-    const { ctx, waited } = fakeExecutionContext();
-
-    const res = await postWith(h, ctx);
+    const res = await call(h.app, 'POST', '/class-emails/e1/result', sentOne);
     expect(res.status).toBe(200);
     expect(h.store.rows[0]!.status).toBe('sent');
     expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
     expect(h.client.changeColumnValues).not.toHaveBeenCalled();
-    expect(waited).toHaveLength(1);
+    expect(h.queued).toEqual([{ kind: 'class-email', step: 'follow-up', eventId: 'e1', emailKind: 'missed-you', audience: 'Participant', registrationId: '10' }]);
 
-    open();
-    await waited[0];
+    await h.drain();
     expect(h.client.changeColumnValues).toHaveBeenCalledWith(333, '10', { [rc.attendanceColumn]: 'No Show' });
+    expect(h.client.postUpdate.mock.invocationCallOrder[0]!).toBeLessThan(h.client.changeColumnValues.mock.invocationCallOrder[0]!);
   });
 
-  it('logs a background failure by kind and id only, and never rejects', async () => {
+  it('queues one message per sent person however many there are, with no Monday call per person', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => String(1000 + i));
+    const h = harness({ items: ids.map((id) => reg(id)), ledger: ids.map((id) => row('thank-you', id)), event: PAST });
+    await call(h.app, 'POST', '/class-emails/e1/result', sendResult('thank-you', ids.map((registrationId) => ({ registrationId, status: 'sent' }))));
+    expect(h.queued.map((m) => (m as { registrationId: string }).registrationId)).toEqual(ids);
+    expect(h.client.changeColumnValues).not.toHaveBeenCalled();
+    expect(h.client.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
+  it('queues nothing for a reminder with no timeline activity, or for failed people', async () => {
+    const reminder = harness({ ledger: [row('reminder', '10')] });
+    await post(reminder, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
+    expect(reminder.queued).toEqual([]);
+    const failed = missedYou();
+    await post(failed, 'result', sendResult('missed-you', [{ registrationId: '10', status: 'failed', error: 'x' }]));
+    expect(failed.queued).toEqual([]);
+  });
+
+  it('reports on the Events item, without ids or addresses, when the follow-ups cannot be queued', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const h = missedYou();
-    h.client.getItems.mockImplementation(async () => { throw new Error('Monday refused p10@real.org for Al One'); });
-    const { ctx, waited } = fakeExecutionContext();
-    expect((await postWith(h, ctx)).status).toBe(200);
-    await expect(waited[0]).resolves.toBeUndefined();
-    const logged = JSON.stringify(error.mock.calls);
-    expect(logged).toContain('e1');
-    expect(logged).not.toContain('real.org');
-    expect(logged).not.toContain('Al One');
+    const h = missedYou({ queueFails: true });
+    expect((await call(h.app, 'POST', '/class-emails/e1/result', sentOne)).status).toBe(200);
+    const updates = h.client.postUpdate.mock.calls.map((c) => String((c as unknown[])[1]));
+    expect(updates.some((u) => u.includes('could not be queued for 1 person'))).toBe(true);
+    expect(JSON.stringify(error.mock.calls)).not.toContain('real.org');
   });
 
-  it('still runs the follow-ups when the update fails', async () => {
+  it('still queues the follow-ups when the update fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const h = harness({ ledger: [row('missed-you', '10')], postUpdate: async () => { throw new Error('boom'); } });
+    const h = missedYou({ postUpdate: async () => { throw new Error('boom'); } });
     await post(h, 'result', sentOne);
     expect(h.client.changeColumnValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('a follow-up that throws is left to the queue to retry, not swallowed', async () => {
+    const h = missedYou();
+    await call(h.app, 'POST', '/class-emails/e1/result', sentOne);
+    h.client.getItems.mockImplementation(async () => { throw new Error('Monday refused p10@real.org'); });
+    await h.drain();
+    expect(h.errors).toHaveLength(1);
   });
 });
 
@@ -854,16 +890,13 @@ describe('POST result: the timeline entries', () => {
     expect(entry(h, 0).content).toContain('A &lt;b&gt; &amp; C');
   });
 
-  it('keeps going past a failed entry and reports it on the Events item, without the address', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const create = vi.fn().mockRejectedValueOnce(new Error('boom p10@real.org')).mockResolvedValue('tl2');
+  it("a failed entry throws for the queue to retry, and doesn't hold up the others", async () => {
+    const create = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue('tl2');
     const h = on({ ledger: [row('reminder', '10'), row('reminder', '11')], createTimelineItem: create });
     const res = await post(h, 'result', result('reminder', 'S', ['10', '11']));
     expect(res.status).toBe(200);
     expect(create).toHaveBeenCalledTimes(2);
-    const updates = h.client.postUpdate.mock.calls.map((c) => String((c as unknown[])[1]));
-    expect(updates.some((u) => u.includes('1 person') && u.includes('timeline') && u.includes('registration 10'))).toBe(true);
-    expect(JSON.stringify(error.mock.calls)).not.toContain('@real.org');
+    expect(h.errors).toHaveLength(1);
   });
 
   it('posts nothing when the write switch is off, or no activity is configured', async () => {

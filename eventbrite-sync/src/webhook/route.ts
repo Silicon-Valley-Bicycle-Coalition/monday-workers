@@ -9,6 +9,7 @@ import { errorMessage } from '../util/errorMessage';
 import type { WriteQueueMessage } from '../consumer/processBatch';
 import { stampFor, type WriteMode } from '../flags';
 import type { ClassEmailStore } from '../db/classEmails';
+import type { BatchSender } from '../util/sendBatch';
 import type { MondayClient } from '../monday/client';
 import { registerClassEmailRoutes } from '../classEmails/routes';
 
@@ -65,6 +66,8 @@ export interface AppDeps {
     mondayClient: () => MondayClient;
     secret: string | undefined;
     now?: () => Date;
+    // The follow-up messages after a send (timeline entries, No Show, People links).
+    queue: BatchSender<WriteQueueMessage>;
   };
 }
 

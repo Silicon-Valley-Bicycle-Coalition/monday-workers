@@ -170,6 +170,29 @@ describe('processAttendee on a volunteer event', () => {
     expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_status_col: 'Canceled' });
   });
 
+  it('a refund updates an existing item to Canceled, and never deletes it', async () => {
+    const { deps, mondayClient } = setup({
+      ...existing, att: attendee({ refunded: true }),
+      monday: { getItems: vi.fn().mockResolvedValue([volItem({ vol_status_col: 'RSVP' })]) },
+    });
+    await processAttendee(message, deps);
+    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_status_col: 'Canceled' });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+  });
+
+  it('writes the ticket class on create and on a replay over an existing item (#115)', async () => {
+    const created = setup({ att: attendee({ ticket_class_name: 'Shift 1' }) });
+    await processAttendee(message, created.deps);
+    expect((created.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_ticket_col: 'Shift 1' });
+
+    const replayed = setup({
+      ...existing, att: attendee({ ticket_class_name: 'Shift 2' }),
+      monday: { getItems: vi.fn().mockResolvedValue([volItem({ vol_status_col: 'RSVP' })]) },
+    });
+    await processAttendee(message, replayed.deps);
+    expect((replayed.mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).toMatchObject({ vol_ticket_col: 'Shift 2' });
+  });
+
   it.each([
     ['board null, columns real', testConfig({}, { volunteers: null })],
     ['one placeholder', (() => { const c = testConfig(); c.attendeeSync.volunteers.attendeeIdColumn = PLACEHOLDER_COLUMN_ID; return c; })()],

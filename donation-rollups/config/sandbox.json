@@ -1,7 +1,8 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "accountUrl": "https://bikesiliconvalley.monday.com"
+    "accountUrl": "https://bikesiliconvalley.monday.com",
+    "accountId": 26331880
   },
   "fiscalYear": {
     "startMonth": 7,
@@ -28,8 +29,10 @@
             "giftSize": "color_mm8j5vap",
             "fiscalQuarter": "color_mm8jqpx0",
             "giftFiscalYear": "color_mm8j5her",
-            "acknowledgmentTier": "color_mm8j2m0m"
+            "acknowledgmentTier": "color_mm8j2m0m",
+            "matchingCompany": "color_mm91qtay"
           },
+          "matchedBy": "board_relation_mm8hs607",
           "sponsorshipCycle": "text_mm8hkfm6",
           "inKindValue": "numeric_mm8hpt4q"
         }

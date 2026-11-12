@@ -8,7 +8,7 @@ import { isChecked } from './recurring';
 import { currentFiscalYear } from '../rollups/compute';
 import { formatCents } from '../money';
 import { buildRollCall, RECEIVED_LABELS, type CountedGift, type DonorRecord } from '../rollcall/compute';
-import { refreshCredits } from '../rollcall/credits';
+import { refreshCreditsWithRows } from '../rollcall/credits';
 import type { CreditRow } from '../db/rollCallCredits';
 import { applySync, boardItemFrom, distinctItems, groupYearFrom, planSync, type BoardItem } from '../rollcall/sync';
 import type { ItemColumns } from '../monday/client';
@@ -37,7 +37,8 @@ const DELETE_FLOOR = 10;
 // after currentFY are ignored, so a typo'd year never gets a group of its own.
 // A credits row's Recognition Fiscal Year replaces the gift's year, whichever copy it counts from,
 // and a blank ledger Amount takes the row's in-kind cents (spec §10): still one gift, one year.
-export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, currentFY: number):
+// allCredits: the credits table as the run's refresh left it; read from D1 when not given.
+export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, currentFY: number, allCredits?: CreditRow[]):
   Promise<{ gifts: CountedGift[]; pendingLedger: number }> {
   // A gift of zero or negative cents never counts (donor-roll-call.mjs skips it too): it would
   // make a $0 row, or add to a row's Gifts without adding to its Total.
@@ -46,7 +47,7 @@ export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, cu
   // Who a gift is credited to comes from every credits row, before any counting filter: a gift
   // with a named credit (anonymous, Matched By, unplaced) is never its ledger owner's, even when
   // that row doesn't count tonight ($0, not received, another year). Fail closed on the donor's name.
-  const allCredits = await deps.rollCallCredits.all();
+  allCredits ??= await deps.rollCallCredits.all();
   const creditById = new Map(allCredits.map((r) => [r.giftItemId, r]));
   const yearOf = (r: CreditRow | undefined, own: number) => r?.recognitionFiscalYear ?? own;
   const moved = (year: number, own: number) => (year !== own ? { ownFiscalYear: own } : {});
@@ -95,16 +96,28 @@ async function pageAll(deps: CustodianDeps, boardId: number, columnIds: string[]
   return items;
 }
 
-// People and People (Historical), then Organizations, keyed by item id.
-async function readDonors(deps: CustodianDeps, cfg: RollCallConfig): Promise<Map<string, DonorRecord>> {
-  const donors = new Map<string, DonorRecord>();
+// The donor boards' columns readDonors pages: People and People (Historical), then Organizations.
+// Exported for the custodian's shared board read (boardReads.ts, issue #90).
+export function donorReadColumns(cfg: RollCallConfig): { boardId: number; columnIds: string[] }[] {
   // Addresses stay out of memory and the Review Note until the board has a column for them (spec §11).
   const mailingOn = cfg.columns.mailingAddress !== undefined;
   const mailingColumns = (...ids: (string | undefined)[]): string[] => (mailingOn ? ids.filter((id) => id !== undefined) : []);
+  const org = cfg.organizations;
+  return [
+    ...Object.entries(cfg.people).map(([boardId, cols]) => ({ boardId: Number(boardId),
+      columnIds: [cols.householdId, cols.householdGreeting, cols.householdEmail, cols.doNotSolicit, cols.dontList,
+        ...mailingColumns(cols.address, cols.doNotMail)] })),
+    { boardId: org.boardId, columnIds: [org.columns.recognitionName, org.columns.dontList, ...mailingColumns(org.columns.address)] },
+  ];
+}
+
+// People and People (Historical), then Organizations, keyed by item id.
+async function readDonors(deps: CustodianDeps, cfg: RollCallConfig): Promise<Map<string, DonorRecord>> {
+  const donors = new Map<string, DonorRecord>();
+  const mailingOn = cfg.columns.mailingAddress !== undefined;
+  const reads = new Map(donorReadColumns(cfg).map((r) => [r.boardId, r.columnIds]));
   for (const [boardId, cols] of Object.entries(cfg.people)) {
-    const ids = [cols.householdId, cols.householdGreeting, cols.householdEmail, cols.doNotSolicit, cols.dontList,
-      ...mailingColumns(cols.address, cols.doNotMail)];
-    for (const item of await pageAll(deps, Number(boardId), ids)) {
+    for (const item of await pageAll(deps, Number(boardId), reads.get(Number(boardId))!)) {
       const text = (id: string) => item.text.get(id) ?? null;
       donors.set(item.id, { kind: 'person', name: item.name ?? '', recognitionName: text(cols.householdGreeting) ?? '',
         householdId: text(cols.householdId) ?? '', householdEmail: text(cols.householdEmail) ?? '',
@@ -114,7 +127,7 @@ async function readDonors(deps: CustodianDeps, cfg: RollCallConfig): Promise<Map
     }
   }
   const org = cfg.organizations;
-  for (const item of await pageAll(deps, org.boardId, [org.columns.recognitionName, org.columns.dontList, ...mailingColumns(org.columns.address)])) {
+  for (const item of await pageAll(deps, org.boardId, reads.get(org.boardId)!)) {
     donors.set(item.id, { kind: 'organization', name: item.name ?? '',
       recognitionName: item.text.get(org.columns.recognitionName) ?? '', householdId: '', householdEmail: '',
       doNotSolicit: false, dontList: isChecked(item.text.get(org.columns.dontList) ?? null),
@@ -129,16 +142,18 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
   if (cfg === null) return { ok: true, summary: 'rollcall: not configured, skipped' };
 
   const currentFY = currentFiscalYear(now, deps.config.fiscalYear);
-  const credits = await refreshCredits(deps, cfg, now.toISOString(), currentFY);
-  const { gifts, pendingLedger } = await rollCallGifts(deps, cfg, currentFY);
+  const { summary: credits, rows: creditRows } = await refreshCreditsWithRows(deps, cfg, now.toISOString(), currentFY);
+  const { gifts, pendingLedger } = await rollCallGifts(deps, cfg, currentFY, creditRows);
   const { rows, unplaced } = buildRollCall(gifts, await readDonors(deps, cfg));
 
   // Distinct by id: a paging race can repeat an item, which must neither delete it nor raise
   // the guard's 10% limit.
   const items: BoardItem[] = distinctItems((await pageAll(deps, cfg.boardId, Object.values(cfg.columns)))
     .map((item) => boardItemFrom(item, cfg.columns)));
+  // Read once and handed to applySync (issue #90): planning writes nothing in between.
+  const groups = await deps.mondayClient.listGroups(cfg.boardId);
   const groupYearById = new Map<string, number>();
-  for (const g of await deps.mondayClient.listGroups(cfg.boardId)) {
+  for (const g of groups) {
     const year = groupYearFrom(g.title);
     if (year !== null) groupYearById.set(g.id, year);
   }
@@ -162,7 +177,7 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
     : rows.length === 0 && items.length > 0 ? `computed no rows but the board has ${items.length}`
     : deletes > limit ? `${deletes} rows would be deleted, more than the limit of ${limit}`
     : undefined;
-  const { applied, remaining } = blocked === undefined ? await applySync(deps, cfg, ops, currentFY) : { applied: 0, remaining: ops.length };
+  const { applied, remaining } = blocked === undefined ? await applySync(deps, cfg, ops, currentFY, groups) : { applied: 0, remaining: ops.length };
 
   const detail: RollCallDetail = { rows: rows.length, unplaced, credits, pendingLedger, applied, remaining, ...(blocked ? { blocked } : {}) };
   const parts = [`rollcall: ${rows.length} rows`];

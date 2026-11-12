@@ -1,4 +1,4 @@
-import { SNAPSHOT_FORMAT } from '../format';
+import { READABLE_SNAPSHOT_FORMATS } from '../format';
 import type { BoardSchema, BoardSummary, DocBlock, DocSummary, ItemRecord, UpdateRecord } from '../types';
 
 // Reads a snapshot folder (as downloaded from Drive) back into memory. Restore runs on an
@@ -101,8 +101,11 @@ export function parseSnapshot(files: Map<string, string>): Snapshot {
     throw new Error('snapshot has no manifest.json — the run did not finish; pick another snapshot');
   }
   const manifest = JSON.parse(manifestText) as SnapshotManifest;
-  if (manifest.format !== SNAPSHOT_FORMAT) {
-    throw new Error(`snapshot format "${String(manifest.format)}" is not ${SNAPSHOT_FORMAT}; this restore tool cannot read it`);
+  // v2 and v3 hold the same records; v3's files arrive here already decrypted (./files.ts).
+  if (!READABLE_SNAPSHOT_FORMATS.includes(manifest.format)) {
+    throw new Error(
+      `snapshot format "${String(manifest.format)}" is not one of ${READABLE_SNAPSHOT_FORMATS.join(', ')}; this restore tool cannot read it`,
+    );
   }
 
   const warnings: string[] = [];

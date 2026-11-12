@@ -90,6 +90,32 @@ describe('HttpMailchimpClient.updateMember', () => {
     );
   });
 
+  // #97: the member's current tags are only needed once the PATCH has found the member, so a
+  // caller can pass a reader instead of a list and save a call on every not-in-audience donor.
+  it('reads lazily supplied managed tags only after the PATCH finds the member', async () => {
+    const fetchFn = fakeFetch({ ok: true });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+    const readManaged = vi.fn(async () => {
+      expect(fetchFn).toHaveBeenCalledTimes(1); // the PATCH, and nothing else yet
+      return [...MANAGED_TAGS, 'Near: Old'];
+    });
+
+    await client.updateMember('a@b.com', {}, ['active-member'], readManaged);
+
+    expect(readManaged).toHaveBeenCalledOnce();
+    const body = JSON.parse(fetchFn.mock.calls[1]![1].body as string) as { tags: { name: string; status: string }[] };
+    expect(body.tags).toContainEqual({ name: 'Near: Old', status: 'inactive' });
+  });
+
+  it('never reads lazily supplied managed tags for a member not in the audience', async () => {
+    const fetchFn = fakeFetch({ ok: false, status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+    const readManaged = vi.fn(async () => MANAGED_TAGS);
+
+    expect(await client.updateMember('nobody@example.com', {}, ['active-member'], readManaged)).toBe('not-in-audience');
+    expect(readManaged).not.toHaveBeenCalled();
+  });
+
   it('does not POST tags when the PATCH fails', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 400, text: async () => 'invalid email' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);

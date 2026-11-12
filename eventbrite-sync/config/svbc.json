@@ -97,7 +97,8 @@
       "historicalColumn": "boolean_mm8nd5tq",
       "volunteerLinkColumn": "board_relation_mm8n732t",
       "eventColumn": "REPLACE_WITH_COLUMN_ID",
-      "listingColumn": "REPLACE_WITH_COLUMN_ID"
+      "listingColumn": "REPLACE_WITH_COLUMN_ID",
+      "ticketTypeColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {

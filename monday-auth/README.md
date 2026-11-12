@@ -1,6 +1,12 @@
 # monday-auth
 
-**Status:** Built and verified in the sandbox (2026-10-31); production deploys at cutover step 0.4.
+**Status:** **Production deployed 2026-10-31** at cutover step 0.4 and consented as SVBC Integration
+the same day (all three apps `ok`); redeployed 2026-11-04 after migration `0003`, latest
+production deploy 2026-11-09 (version `3b31d518`). Sandbox built and verified 2026-10-31. The #104
+hardening (`/oauth` rate limit, 32-character `START_KEY` minimum, encrypted token columns, trimmed
+`/health`) and the `cpu_ms` limit (#117) are on `main` but not yet deployed to either environment
+(as of 2026-11-11 neither has a `TOKEN_ENC_KEY` secret, which that build needs): set it first,
+then deploy ("Secrets" below).
 First-time setup (the integration user, the OAuth apps, secrets, consent) is in
 [`SETUP.md`](SETUP.md). Design and verification results:
 [`docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`](../docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md).
@@ -21,8 +27,8 @@ Each consumer Worker binds to one entrypoint, so its binding decides which app i
 | Entrypoint | App | Used by |
 |---|---|---|
 | `PortalToken` | `portal` | `member-portal` |
-| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer` |
-| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests` |
+| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer`, `nearby-search` |
+| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests`, `member-map` |
 
 Each exposes `token(rejected?)`, which returns the app's current access token (pass the token that
 got a 401 as `rejected` to force a refresh).

@@ -13,14 +13,21 @@ boards throughout.
 **Scope:** `member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
 `monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`
 (post-cutover, time-boxed by the Oct 22 Summit backfill), `report-digests` (live before the first
-Monday 08:00 after cutover; its README, "Deploy"), and the `salesforce-import` CLI. The private
+Monday 08:00 after cutover; its README, "Production (cutover weekend)"), and the `salesforce-import`
+CLI. `monday-auth` (the Monday token broker) deploys **before** all of these and
+`member-portal-writer` with `member-portal` (`member-portal/DEPLOY.md`). `dtd-sync`, `member-map`
+and `nearby-search` are post-migration additions with their own READMEs. The private
 runbook's other step-6 items (6.11 board linking, 6.12 invoicing Tasks) are scripts, not deploys. `svbc-calendars` isn't part of the migration and can ship on its own
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
 `quickbooks-sync` is postponed indefinitely (decided 2026-10-28) and is out of scope: don't
 deploy it, set its secrets, or register its webhooks at cutover. Its `writes` key stays `off`.
 
 **Status as of 2026-10-06, wording refreshed 2026-10-30** (readiness review): nothing below is done unless marked (Phase 1 items resolved
-2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
+2026-09-29, 2026-10-01 and 2026-10-06 are ticked). **Since then (2026-11-11), per the root README's
+status table, these have deployed to production without their boxes here being ticked:**
+`report-digests` (2026-11-01), `funraise-sync` and `benevity-import` and `eventbrite-sync`
+(2026-11-02), `bp-feedback-notify`, `monday-backup`, `people-reclassification` and `member-map`
+(2026-11-03). Treat the root README as the source of truth for what is live. `salesforce-import`'s
 `cutoverDateISO` is `2026-10-30` (moved from `2026-10-09` on 2026-10-09, from `2026-10-16` on 2026-10-19, then from `2026-10-23` on 2026-10-26, with the cutover weekend; `donation-rollups` `membership.fromISO` moves with it). `benevity-import` `minDisbursementDate` is `2026-10-30` too (from 2026-10-28): the freeze date, not a confirmed Period Ending, so a disbursement keyed before the freeze can't be imported twice and any unkeyed one before it is reviewed from its "Skipped, not imported" worklist item. Phase 3/4 order brought in line with the private cutover
 runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
 in Phase 3, before `configure` and the go/no-go.
@@ -58,24 +65,24 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       plan, not Workers Paid, so the $5 base is billed and $10 means $5 of real usage overage —
       an early warning, not noise.
 - [x] **Every Worker carries `limits.cpu_ms`** (re-audited 2026-10-21) — the guard that matters
-      once Paid's 30 s default applies. Present at top level and in `env.sandbox` for all
-      thirteen Workers. Two run above 100 ms on purpose, each with the reason in a comment
-      beside the setting: `monday-backup` (`cpu_ms: 300000` and `subrequests: 50000`, a
-      full-workspace snapshot) and
-      `people-reclassification` (`1000`, a board sweep). Keep those exceptions; re-check
+      once Paid's 30 s default applies. Present at top level and in `env.sandbox` for every
+      Worker (re-checked 2026-11-11; `monday-auth` gained its `100` then, #117). Seven run above 100 ms on
+      purpose, each with the reason in a comment beside the setting: `monday-backup`
+      (`cpu_ms: 300000` and `subrequests: 50000`, a full-workspace snapshot), `member-map`
+      (`300000`), `donation-rollups` and `dtd-sync` (`30000`), `nearby-search` (`2000`),
+      `people-reclassification` (`1000`, a board sweep) and `report-digests` (`500`). Keep those
+      exceptions; re-check
       the rest before the production deploy if a `wrangler.jsonc` changes.
 - [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
       docs: the id "uniquely defines this rate limiting namespace within your Cloudflare
       account", and two bindings with the same id share counters, even across Workers. Every
-      id in this repo is already distinct (`1001`–`1004`, `2001`–`2061`); keep it that way when
-      adding a Worker.
-- [ ] **Integration users and tokens, one per exposure class** (root README, "Least-privilege
-      Monday tokens"). Create after the production workspace exists, scope before minting:
-  - [ ] `member-portal` — its own user, read access to only the boards it reads.
-  - [ ] Staff-facing sync Workers (`funraise-sync`, `donation-rollups`, `mailchimp-sync`,
-        `benevity-import`) — `donation-rollups`' README notes its dedicated
-        token is "scheduled for production cutover".
-  - [ ] `monday-backup` — view access to every workspace.
+      id in this repo is distinct (`1001`–`1004`, `2001`–`2096`; `nearby-search` moved off
+      `member-map`'s `2093`/`2094` on 2026-11-11); keep it that way when adding a Worker.
+- [ ] **Monday access through the `monday-auth` broker** (root README, "Least-privilege
+      Monday tokens"): one integration user authorizes three OAuth apps (Portal, Staff sync,
+      Read-only), and each Worker binds `MONDAY_AUTH` to its entrypoint (`PortalToken`,
+      `SyncToken`, `ReadOnlyToken`). Deploy `monday-auth` and consent the three apps
+      (`monday-auth/SETUP.md`) before any Worker that binds it.
   - [ ] Never a staff member's personal token.
 - [ ] **Mail domain:** `mail.bikesiliconvalley.org` onboarded for Email Sending, DMARC record in
       place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it. The name is
@@ -98,11 +105,11 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 |---|---|---|---|
 | `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0006 applied (0001–0005 verified 2026-10-08; 0006, `hash_login_attempts`, applied 2026-10-29 on an empty `login_attempts`) |
 | `funraise-sync` | exists, 0001–0005 applied (0005 applied 2026-10-08) | `funraise-sync-writes` | nothing — the D1 is still reset before first deploy (Phase 4 step 2) |
-| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 (membership rule) applied 2026-10-23 and 0010 (`owner_leases`, the per-owner recompute lease) applied 2026-10-29 — both had to land **before** the builds that read them (same ordering rule as 0005/0006) | `donation-rollups-recompute` | nothing — 0001–0010 applied |
+| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 (membership rule) applied 2026-10-23 and 0010 (`owner_leases`, the per-owner recompute lease) applied 2026-10-29 — both had to land **before** the builds that read them (same ordering rule as 0005/0006) | `donation-rollups-recompute` | apply 0011–0014 (roll call credits, sponsorship facts, recognition year, recompute hashes) before the build that reads them, unless already applied — not recorded here |
 | `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
-| `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0003 applied (0003, `usage_alert_state`, applied 2026-10-29) |
+| `monday-backup` | created 2026-10-08, id wired | — | 0001–0003 applied (0003, `usage_alert_state`, applied 2026-10-29); 0004 (`usage_tracking`) not recorded here — check before deploy |
 | `benevity-import` | exists, 0001–0003 applied (0002–0003 applied 2026-10-08; the tables were empty, so 0002's dedupe had nothing to merge) | `benevity-import-writes` (created 2026-10-08) | nothing |
-| `eventbrite-sync` | **create** — id is `REPLACE_WITH_D1_ID` (sandbox is also a placeholder) | `eventbrite-sync-writes` | create D1 + queues; wire id; apply 0001 — post-cutover, see Phase 4 step 9 |
+| `eventbrite-sync` | created, id wired (production deployed 2026-11-02) | `eventbrite-sync-writes` | apply 0001–0003 |
 | `bp-feedback-notify` | — | — | nothing |
 
 For each row:
@@ -116,14 +123,18 @@ For each row:
 
 | Worker | Secrets |
 |---|---|
-| `member-portal` | `MONDAY_API_TOKEN`, `LETTER_WEBHOOK_SECRET` |
-| `funraise-sync` | `MONDAY_API_TOKEN`, `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
-| `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` (Bearer for `/custodian/*`; not a webhook secret, never in a URL) |
-| `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
+| `member-portal` | `LETTER_WEBHOOK_SECRET` |
+| `funraise-sync` | `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
+| `donation-rollups` | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` (Bearer for `/custodian/*`; not a webhook secret, never in a URL) |
+| `mailchimp-sync` | `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
 | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
-| `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
-| `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
-| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET`, `CLASS_EMAIL_SECRET` (header `X-Class-Email-Secret` from the class email send page; not a webhook secret, never in a URL) |
+| `benevity-import` | `BENEVITY_WEBHOOK_SECRET` |
+| `bp-feedback-notify` | `WEBHOOK_SECRET` |
+| `eventbrite-sync` | `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET`, `CLASS_EMAIL_SECRET` (header `X-Class-Email-Secret` from the class email send page; not a webhook secret, never in a URL) |
+| `report-digests` | `DIGESTS_SECRET` (Bearer for `POST /digests/run`) |
+
+Monday access comes from the `MONDAY_AUTH` binding, not a secret: a `MONDAY_API_TOKEN` is only a
+cutover-era fallback where a Worker still declares one, and is not set for production.
 
 Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
 password manager before `wrangler secret put` — the same value goes into the registration URL
@@ -145,7 +156,7 @@ Worker's first deploy) except `member-portal`, which is
 
 | Worker | Registered in | URL |
 |---|---|---|
-| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, !214):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board, plus `create_item` and `change_column_value` on Affiliations when `affiliations.employerSync` is set. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, !214):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
 | `mailchimp-sync` | Monday webhook on the Donors board and on People (Historical) (`18437909784`), same URL | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
@@ -253,13 +264,14 @@ For each Worker:
    nothing but `svbc-calendars` and `monday-backup` until the Workers Builds item above is done — root README, "Deploys".)
 4. Turn its write switch on, `node scripts/flags.mjs <worker> writes on --env production` (a
    missing key reads as `off`, and work ingested under `off` is never written). `funraise-sync`:
-   before its bootstrap walk. `donation-rollups` went on in Phase 3, after its webhooks.
+   before its bootstrap walk. `donation-rollups` goes on in Phase 3, after its webhooks
+   (`node scripts/flags.mjs donation-rollups writes on --env production`).
 5. Register its inbound feeds.
 6. Run its verification before starting the next Worker.
 
 At the end, `node scripts/flags.mjs status --env production`: every deployed Worker reads
-`writes=on`. Until step 9 creates `eventbrite-sync-writes`, its row reads `missing` and `status`
-exits 1; that is expected.
+`writes=on`. Undeployed Workers (`nearby-search`, `dtd-sync`, `quickbooks-sync`) read `off`, and
+those with queues read `missing`, so `status` exits 1; that is expected.
 
 Order matters: `donation-rollups` must be listening before anything writes Donations, which is
 why it was already deployed, bootstrapped and subscribed in Phase 3.
@@ -352,7 +364,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       `Matched By`/`Benevity Transaction ID` columns (`benevity-import/README.md`); provision the
       worklist's Retry status column (Needs review / Retry / Queued / Done) and Key text column
       and fill `uploadsBoard.retry.column` and `worklistKeyColumn` (both
-      `REPLACE_WITH_COLUMN_ID` today). **Two** webhooks of type `change_specific_column_value`:
+      filled in `config/svbc.json`). **Two** webhooks of type `change_specific_column_value`:
       the Uploads file column → `/webhooks/monday/benevity-upload?secret=`, and the Retry column
       → `/webhooks/monday/benevity-retry?secret=` (without it Retry does nothing). Verify with a
       one-row upload built for it: a **synthetic** Disbursement ID and Transaction ID, and Period
@@ -378,7 +390,8 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       `eb4sf_orders.ndjson` is missing from the extract — re-extract before loading if it does),
       so read its id from the load's `boards.json` (the `Refunded` Status label it also needs was
       added in step 2; it is missing on sandbox v3);
-      fill `config/svbc.json` (all placeholders today); create D1 + queues; set fresh secrets;
+      fill `config/svbc.json` (the order path and attendee feed are filled; Home Zip and five Volunteers
+      attendee-sync columns are still placeholders, pending the Volunteers cutover); create D1 + queues; set fresh secrets;
       deploy; register the Eventbrite webhook; *then* run `scripts/backfill-orders.mjs`
       (`--dry-run` first). Sequence per
       [`eventbrite-sync/README.md`](../eventbrite-sync/README.md): deploy → register webhook →
@@ -395,7 +408,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       reaches a DLQ: also check each D1 for `status = 'failed'`.
 - [ ] Daily: D1 write usage per database, now that the Free cap is gone and nothing stops a loop.
 - [ ] Each cron fired once and did what it should (Workers → Logs, or `wrangler tail`).
-- [ ] Per-Worker CPU time well under the 100 ms cap.
+- [ ] Per-Worker CPU time well under each Worker's `limits.cpu_ms`.
 - [ ] Update the root README status table and each Worker's README "Status" line.
 - [ ] Sandbox Workers still deploy and still can't reach production sinks.
 
@@ -416,7 +429,7 @@ Decide these before deploying, not during.
 - **Code regression:** `npx wrangler versions list` then `npx wrangler rollback <version-id>`
   — for a D1 schema change, only if the old code tolerates the new schema.
 - **Stop inbound without redeploying:** disable the Monday webhook/automation, repoint or
-  disable the Funraise/Mailchimp/Intuit webhook, or remove `member-portal`'s custom domain.
+  disable the Funraise/Mailchimp/Eventbrite webhook, or remove `member-portal`'s custom domain.
   Queued messages sit (and eventually DLQ) instead of writing.
 - **After the fix:** replay the DLQ, then reconcile anything that arrived while inbound was off.
 - **Boards rebuilt (a cutover retry):** every deployed Worker's D1 still holds the old boards'

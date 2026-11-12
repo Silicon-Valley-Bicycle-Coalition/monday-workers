@@ -35,7 +35,7 @@ interface Ledger {
   markFailed(error: string): Promise<void>;
 }
 
-function ledgerFor(body: WriteQueueMessage, deps: DeadLetterDeps): Ledger {
+function ledgerFor(body: Exclude<WriteQueueMessage, { kind: 'class-email' }>, deps: DeadLetterDeps): Ledger {
   if (body.kind === 'event') {
     return { noun: 'event', id: body.eventId, get: () => deps.eventStore.getEvent(body.eventId), markFailed: (error) => deps.eventStore.updateStatus(body.eventId, 'failed', { error }) };
   }
@@ -51,9 +51,18 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
   const dead: string[] = [];
   let orderDead = false;
   let attendeeDead = false;
+  let followUpDead = false;
   for (const message of messages) {
-    const ledger = ledgerFor(message.body, deps);
     const label = describeMessage(message.body);
+    // A class email's timeline entry or follow-up has no ledger row to mark, so the line below is
+    // its whole record.
+    if (message.body.kind === 'class-email') {
+      dead.push(label);
+      followUpDead = true;
+      message.ack();
+      continue;
+    }
+    const ledger = ledgerFor(message.body, deps);
     try {
       const row = await ledger.get();
       const sentAt = message.timestamp?.toISOString();
@@ -83,12 +92,12 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
     }
   }
   if (dead.length > 0) {
+    const redrive = [orderDead && 'orders with scripts/backfill-orders.mjs', attendeeDead && 'events and attendees with scripts/backfill-attendees.mjs'].filter(Boolean).join(' and ');
     console.error(
       `eventbrite-sync: ${dead.length} message${dead.length === 1 ? '' : 's'} dead-lettered after exhausting retries — ` +
-        `${dead.join(', ')}. Not on the board (or not updated there). See each ledger row's error; ` +
-        `once the cause is fixed, re-drive ` +
-        [orderDead && 'orders with scripts/backfill-orders.mjs', attendeeDead && 'events and attendees with scripts/backfill-attendees.mjs'].filter(Boolean).join(' and ') +
-        '.'
+        `${dead.join(', ')}. Not on the board (or not updated there). ` +
+        (redrive ? `See each ledger row's error; once the cause is fixed, re-drive ${redrive}. ` : '') +
+        (followUpDead ? 'A dead class email step was never applied: add that timeline entry, No Show or People link by hand.' : '')
     );
   }
 }

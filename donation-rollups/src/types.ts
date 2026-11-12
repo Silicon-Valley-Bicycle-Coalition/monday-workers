@@ -58,6 +58,12 @@ export interface CustodianConfig {
   // still materialize into D1's annual_summaries either way. Column ids come with it.
   annualSummaryBoardId: number | null;
   annualSummaryColumns: { fiscalYear: string; total: string; giftCount: string; byType: string; restatedAt: string } | null;
+  // Monday writes the whole nightly cron run may make, shared by every duty (issue #90). Optional;
+  // absent = DEFAULT_WRITES_PER_RUN (custodian/writeBudget.ts).
+  writesPerRun?: number;
+  // Owners one sweep run enqueues (issue #88), 1-3,500. Each costs ~2-4 Monday calls in the
+  // consumer, against an account-wide 10,000/day cap. Absent = SWEEP_OWNERS_PER_RUN (custodian.ts).
+  sweepOwnersPerRun?: number;
 }
 
 export interface AffiliationsConfig {
@@ -94,7 +100,8 @@ export interface FiscalYearConfig {
 
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
-  monday: { apiUrl: string; accountUrl: string };
+  // accountId: the Monday account a webhook JWT must name (issue #110, src/mondayJwt.ts).
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   fiscalYear: FiscalYearConfig;
   custodian: CustodianConfig;
   affiliations: AffiliationsConfig | null;
@@ -260,6 +267,10 @@ export interface Env {
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Staff sync app's Signing Secret (issue #110, src/mondayJwt.ts): set = verify any webhook JWT
+  // present; MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
   CUSTODIAN_SECRET?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".

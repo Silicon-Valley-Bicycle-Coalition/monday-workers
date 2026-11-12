@@ -408,6 +408,9 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   if (typeof monday.accountUrl !== 'string' || !/^https:\/\//.test(monday.accountUrl)) {
     throw new Error('config: "monday.accountUrl" must be an https URL (used for gift-history deep links)');
   }
+  if (monday.accountId !== undefined && (typeof monday.accountId !== 'number' || !Number.isInteger(monday.accountId) || monday.accountId < 1)) {
+    throw new Error('config: "monday.accountId" must be a positive integer when set (the account webhook JWTs must name, issue #110)');
+  }
 
   if (typeof cfg.donationRollups !== 'object' || cfg.donationRollups === null) {
     throw new Error('config: missing required key "donationRollups"');
@@ -461,7 +464,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const affiliations = validateAffiliations(cfg.affiliations, donationBoards);
 
   return {
-    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, '') },
+    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, ''), ...(monday.accountId !== undefined ? { accountId: monday.accountId as number } : {}) },
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
@@ -566,6 +569,15 @@ function validateCustodian(raw: unknown): CustodianConfig {
     }
     annualSummaryColumns = cols as unknown as NonNullable<CustodianConfig['annualSummaryColumns']>;
   }
+  for (const key of ['writesPerRun'] as const) {
+    if (c[key] !== undefined && (typeof c[key] !== 'number' || !Number.isInteger(c[key]) || (c[key] as number) < 1)) {
+      throw new Error(`config: "custodian.${key}" must be a positive integer when set`);
+    }
+  }
+  if (c.sweepOwnersPerRun !== undefined && (typeof c.sweepOwnersPerRun !== 'number' || !Number.isInteger(c.sweepOwnersPerRun)
+    || c.sweepOwnersPerRun < 1 || c.sweepOwnersPerRun > 3_500)) {
+    throw new Error('config: "custodian.sweepOwnersPerRun" must be an integer from 1 to 3500 when set');
+  }
   return {
     activeFiscalYears: c.activeFiscalYears as number,
     workspaceId: c.workspaceId as number,
@@ -573,5 +585,7 @@ function validateCustodian(raw: unknown): CustodianConfig {
     alertItemId: c.alertItemId as number | null,
     annualSummaryBoardId: c.annualSummaryBoardId as number | null,
     annualSummaryColumns,
+    ...(c.writesPerRun !== undefined ? { writesPerRun: c.writesPerRun as number } : {}),
+    ...(c.sweepOwnersPerRun !== undefined ? { sweepOwnersPerRun: c.sweepOwnersPerRun } : {}),
   };
 }

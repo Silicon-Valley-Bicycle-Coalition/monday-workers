@@ -43,6 +43,29 @@ const base = {
   },
 };
 
+describe('validateConfig — custodian.writesPerRun (issue #90)', () => {
+  it('is optional: absent leaves the built-in default to the custodian', () => {
+    expect(validateConfig(base).custodian.writesPerRun).toBeUndefined();
+  });
+
+  it('passes a positive integer through and rejects anything else', () => {
+    expect(validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: 250 } }).custodian.writesPerRun).toBe(250);
+    for (const bad of [0, -1, 2.5, '500'] as unknown[]) {
+      expect(() => validateConfig({ ...base, custodian: { ...base.custodian, writesPerRun: bad } })).toThrow(/custodian\.writesPerRun/);
+    }
+  });
+});
+
+describe('validateConfig — custodian.sweepOwnersPerRun (issue #88)', () => {
+  it('is optional, and when set an integer from 1 to 3,500 (35 sendBatch calls of 100)', () => {
+    expect(validateConfig(base).custodian.sweepOwnersPerRun).toBeUndefined();
+    expect(validateConfig({ ...base, custodian: { ...base.custodian, sweepOwnersPerRun: 1500 } }).custodian.sweepOwnersPerRun).toBe(1500);
+    for (const bad of [0, 3501, 1.5, '1500'] as unknown[]) {
+      expect(() => validateConfig({ ...base, custodian: { ...base.custodian, sweepOwnersPerRun: bad } })).toThrow(/custodian\.sweepOwnersPerRun/);
+    }
+  });
+});
+
 describe('validateConfig — fiscalYear block (issue #27)', () => {
   it('passes a valid block through', () => {
     expect(validateConfig(base).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });
@@ -500,4 +523,18 @@ describe('sponsorships config', () => {
   function withBoardCols(columns: Record<string, unknown>) {
     return { ...base, donationRollups: { ...base.donationRollups, donationBoards: [{ ...donationBoard, columns: { ...donationBoard.columns, ...columns } }] } };
   }
+});
+
+describe('validateConfig — monday.accountId (issue #110)', () => {
+  it('both shipped configs name the SVBC Monday account webhook JWTs must carry', () => {
+    expect(validateConfig(rawConfig).monday.accountId).toBe(26331880);
+    expect(validateConfig(rawSandboxConfig).monday.accountId).toBe(26331880);
+  });
+
+  it('is optional, and a positive integer when set', () => {
+    expect(validateConfig(base).monday.accountId).toBeUndefined();
+    for (const accountId of [0, -1, 1.5, '26331880', null]) {
+      expect(() => validateConfig({ ...base, monday: { ...base.monday, accountId } }), String(accountId)).toThrow(/monday\.accountId/);
+    }
+  });
 });

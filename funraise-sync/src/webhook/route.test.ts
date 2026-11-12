@@ -10,7 +10,7 @@ const config = testConfig(
 
 function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
   return {
-    upsertEvent: vi.fn().mockResolvedValue('inserted'),
+    upsertEvent: vi.fn().mockResolvedValue('stored'),
     updateStatusByEntity: vi.fn().mockResolvedValue(undefined),
     getEventByEntity: vi.fn().mockResolvedValue(null),
     purgeWrittenPayloads: vi.fn().mockResolvedValue(0),
@@ -119,7 +119,7 @@ describe('createApp', () => {
   });
 
   it('re-enqueues when the upsert reports an update to a known entity', async () => {
-    const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('updated') });
+    const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('stored') });
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET, writeMode: live });
 

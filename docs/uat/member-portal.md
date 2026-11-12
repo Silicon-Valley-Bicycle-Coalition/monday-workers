@@ -80,14 +80,14 @@ can safely use any real donor's email address while testing.
 ## What's not ready to test yet
 
 These features aren't wired up to test data yet, so you'll see them missing rather than broken —
-no need to report these as bugs:
+no need to report these as bugs. (Volunteer history and the employer matching-gift search
+*are* wired up: volunteer history shows for anyone with shifts on the Volunteers board, and the
+matching-gifts page shows the employer search.)
 
 - Setting communication preferences (opting out of email, text, or mail)
 - Your preferred language being remembered automatically
-- Volunteer history
 - Event sign-ups/registrations
 - Pledge tracking
-- The "find your employer's matching-gift program" search tool
 
 The giving letter (tax letter) *does* work in this test environment, but it's deliberately shown
 with obvious "SANDBOX TEST" placeholder wording everywhere, since SVBC hasn't finalized the real

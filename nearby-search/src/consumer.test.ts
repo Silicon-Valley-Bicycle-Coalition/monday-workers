@@ -321,3 +321,60 @@ describe('handleBatch', () => {
     expect(monday.calls).toEqual(['ensure:900', 'label:p1', 'create:p1', 'create:o1', 'label:p2', 'create:p2']);
   });
 });
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday or claiming, instead of each repeating the transport's in-process attempts.
+describe('handleBatch — outage breaker', () => {
+  it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {
+    const monday = new WritingMonday();
+    monday.createError = new MondayApiError('bad gateway', { httpStatus: 502 });
+    const db = new FakeD1();
+    const ms = [message('p1', 'person', { attempts: 2 }), message('p2', 'person', { attempts: 1 }), message('o1', 'organization', { attempts: 4 })];
+    await run(ms, { monday, db });
+    expect(monday.calls).toEqual(['ensure:900', 'label:p1', 'create:p1']);
+    expect(ms.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    for (const m of ms) expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("raises the deferral to Monday's Retry-After hint", async () => {
+    const monday = new WritingMonday();
+    monday.labelError = new MondayApiError('rate limited', { httpStatus: 429, retryAfterSeconds: 300 });
+    const ms = [message('p1'), message('p2')];
+    await run(ms, { monday });
+    expect(ms.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 300 }, { delaySeconds: 300 }]);
+    expect(monday.calls).toEqual(['ensure:900', 'label:p1']);
+  });
+
+  it('a terminal failure stays per-message: the next message still runs', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const monday = new WritingMonday();
+    let first = true;
+    monday.createResultRow = async function (this: WritingMonday, ...args: Parameters<WritingMonday['createResultRow']>) {
+      if (first) { first = false; throw new MondayApiError('bad value', { httpStatus: 200, code: 'ColumnValueException' }); }
+      return WritingMonday.prototype.createResultRow.apply(this, args);
+    };
+    const ms = [message('o1', 'organization'), message('o2', 'organization')];
+    await run(ms, { monday });
+    expect(ms[0]!.ack).toHaveBeenCalled();
+    expect(ms[1]!.ack).toHaveBeenCalled();
+    expect(monday.created.map((c) => c[2])).toEqual(['o2']);
+  });
+
+  it('dry-run messages after an outage still ack (they never call Monday)', async () => {
+    const monday = new WritingMonday();
+    monday.createError = new MondayApiError('bad gateway', { httpStatus: 503 });
+    const ms = [message('o1', 'organization'), message('p2', 'person', { dropped: true })];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await run(ms, { monday });
+    expect(ms[0]!.retry).toHaveBeenCalled();
+    expect(ms[1]!.ack).toHaveBeenCalled();
+  });
+
+  it('hold is unchanged: every message backs off and Monday is never called', async () => {
+    const monday = new WritingMonday();
+    const ms = [message('p1', 'person', { attempts: 3 }), message('p2')];
+    await run(ms, { monday, mode: 'hold' });
+    expect(ms.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 240 }, { delaySeconds: 60 }]);
+    expect(monday.calls).toEqual([]);
+  });
+});

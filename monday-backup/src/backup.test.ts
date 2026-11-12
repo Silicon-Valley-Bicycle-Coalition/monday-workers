@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSnapshot, SNAPSHOT_FORMAT, type BackupDeps, type SnapshotStep } from './backup';
 import type { RunResult, SnapshotRunStore } from './db/runs';
 import type { DriveClient } from './drive/client';
+import { decryptBytes, importSnapshotKey } from './crypto/snapshotCipher';
 import { Deadline } from './deadline';
+import { EncryptedDriveClient } from './drive/encrypted';
 import { HttpMondayClient, type MondayClient } from './monday/client';
 import { RequestStats } from './monday/requestStats';
 import type { BackupConfig, BoardSummary, DocSummary, ItemRecord } from './types';
@@ -67,8 +69,10 @@ function fakeDrive(overrides: Partial<DriveClient> = {}) {
       const file: FakeFile = { folderId, filename, mimeType, writes: [], closed: false, aborted: false };
       files.push(file);
       return {
-        write: async (text) => {
-          file.writes.push(text);
+        // A plaintext fake: runSnapshot only ever writes text (EncryptedDriveClient, which writes
+        // bytes, is tested over its own byte-keeping fake).
+        write: async (data) => {
+          file.writes.push(typeof data === 'string' ? data : new TextDecoder().decode(data));
         },
         close: async () => {
           file.closed = true;
@@ -89,6 +93,10 @@ function fakeDrive(overrides: Partial<DriveClient> = {}) {
     async *readLines(fileId) {
       const file = files.find((f) => f.closed && `${f.folderId}/${f.filename}` === fileId)!;
       yield* file.writes.join('').split('\n').filter((l) => l !== '');
+    },
+    async *readBytes(fileId) {
+      const file = files.find((f) => f.closed && `${f.folderId}/${f.filename}` === fileId)!;
+      yield new TextEncoder().encode(file.writes.join(''));
     },
     ...overrides,
   };
@@ -819,7 +827,8 @@ describe('runSnapshot', () => {
         }),
       );
       expect(fake.manifest()).toMatchObject({
-        format: 'monday-backup/2',
+        format: 'monday-backup/3',
+        encryption: null,
         runAt: '2026-08-25T09:00:00.000Z',
         finishedAt: '2026-08-25T09:02:00.000Z',
         capturedAt: {
@@ -827,6 +836,75 @@ describe('runSnapshot', () => {
           'doc-d1': { startedAt: '2026-08-25T09:01:00.000Z', finishedAt: '2026-08-25T09:02:00.000Z' },
         },
       });
+    });
+
+    // Issue #112: what the Worker actually deploys, EncryptedDriveClient over the real Drive client,
+    // here over the plaintext fake, so the fake holds exactly what Drive would.
+    it('through EncryptedDriveClient: files are ciphertext, a repeated step re-tallies them, the manifest names the key', async () => {
+      const keyB64 = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));
+      const fake = fakeDrive();
+      // Bytes in and out unchanged (latin1-style), since ciphertext isn't UTF-8.
+      const raw = fake.drive;
+      const bytesOf = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
+      const drive = new EncryptedDriveClient(
+        {
+          ...raw,
+          createFile: async (folderId, filename, mimeType) => {
+            const writer = await raw.createFile(folderId, filename, mimeType);
+            return { ...writer, write: (data) => writer.write(typeof data === 'string' ? data : String.fromCharCode(...data)) };
+          },
+          async *readBytes(fileId) {
+            const file = fake.files.find((f) => f.closed && `${f.folderId}/${f.filename}` === fileId)!;
+            yield bytesOf(file.writes.join(''));
+          },
+        },
+        keyB64,
+      );
+      const monday = fakeMonday({
+        listBoards: async () => [board('1', 'Donations')],
+        async *boardItemPages() {
+          yield [item('a'), item('b')];
+        },
+      });
+      const { step } = fakeStep();
+      await runSnapshot(step, deps({ monday, drive }));
+      expect(fake.filenames()).toEqual(['board-1.jsonl.enc', 'manifest.json']);
+      const file = fake.files.find((f) => f.filename === 'board-1.jsonl.enc')!;
+      expect(file.mimeType).toBe('application/octet-stream');
+      expect(file.writes.join('')).not.toContain('Donations');
+      const plain = new TextDecoder().decode(await decryptBytes(await importSnapshotKey(keyB64), bytesOf(file.writes.join('')), '2026-08-25 run-1/board-1.jsonl'));
+      expect(plain.split('\n').filter((l) => l !== '').map((l) => (JSON.parse(l) as { type: string }).type)).toEqual(['board', 'item', 'item']);
+      expect(fake.manifest()).toMatchObject({
+        format: 'monday-backup/3',
+        encryption: { scheme: 'monday-backup-aes256gcm-stream/1', keyId: (await importSnapshotKey(keyB64)).id },
+        itemCountsByBoard: { '1': 2 },
+        snapshotFolder: '2026-08-25 run-1',
+        files: ['board-1.jsonl'],
+      });
+
+      // A rerun into the same folder finds the encrypted file and counts it by decrypting it.
+      fake.files.splice(fake.files.findIndex((f) => f.filename === 'manifest.json'), 1);
+      await runSnapshot(fakeStep().step, deps({ monday: fakeMonday({ listBoards: async () => [board('1', 'Donations')] }), drive }));
+      expect(fake.files.filter((f) => f.filename === 'board-1.jsonl.enc')).toHaveLength(1);
+      expect(fake.manifest().itemCountsByBoard).toEqual({ '1': 2 });
+
+      // ...and a repeated manifest step finds manifest.json rather than writing a second one.
+      await runSnapshot(fakeStep().step, deps({ monday: fakeMonday({ listBoards: async () => [board('1', 'Donations')] }), drive }));
+      expect(fake.files.filter((f) => f.filename === 'manifest.json')).toHaveLength(1);
+      expect(fake.manifest().manifestMac).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('fails the run, and alerts, when the encryption key is missing: nothing is uploaded', async () => {
+      const fake = fakeDrive();
+      const runStore = fakeRunStore();
+      const fetchMock = vi.fn().mockResolvedValue(new Response('ok'));
+      vi.stubGlobal('fetch', fetchMock);
+      await expect(
+        runBackup(deps({ monday: fakeMonday({ listBoards: async () => [board('1')] }), drive: new EncryptedDriveClient(fake.drive, undefined), runStore, slackWebhookUrl: 'https://hooks.example.test/x' })),
+      ).rejects.toThrow(/BACKUP_ENCRYPTION_KEY is not set/);
+      expect(fake.files).toEqual([]);
+      expect(runStore.failures[0]).toMatch(/BACKUP_ENCRYPTION_KEY is not set/);
+      expect(fetchMock).toHaveBeenCalledTimes(1); // the Slack alert
     });
 
     it('logs each file with its requests and retries', async () => {

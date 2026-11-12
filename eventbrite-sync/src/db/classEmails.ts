@@ -20,6 +20,8 @@ export interface ClassEmailStore {
   claim(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedAt: string): Promise<string[]>;
   // Records the outcome of a claimed send. A row already `sent` is never changed.
   resolve(eventId: string, kind: ClassEmailKind, registrationId: string, status: 'sent' | 'failed', resolvedAt: string): Promise<void>;
+  // resolve for many registrations of one kind in a single D1 batch (one round trip, one transaction).
+  resolveMany(eventId: string, kind: ClassEmailKind, outcomes: { registrationId: string; status: 'sent' | 'failed' }[], resolvedAt: string): Promise<void>;
   // Frees `failed` rows, and `claimed` rows claimed at or before `claimedBefore`, so they can be
   // claimed again, and returns the ids it freed. A `sent` row or a younger claim stays.
   release(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedBefore: string): Promise<string[]>;
@@ -83,6 +85,20 @@ export class D1ClassEmailStore implements ClassEmailStore {
       )
       .bind(eventId, kind, registrationId, status, resolvedAt)
       .run();
+  }
+
+  async resolveMany(eventId: string, kind: ClassEmailKind, outcomes: { registrationId: string; status: 'sent' | 'failed' }[], resolvedAt: string): Promise<void> {
+    if (outcomes.length === 0) return;
+    await this.db.batch(
+      outcomes.map((o) =>
+        this.db
+          .prepare(
+            `UPDATE class_email_recipients SET status = ?4, resolved_at = ?5
+             WHERE event_id = ?1 AND kind = ?2 AND registration_item_id = ?3 AND status != 'sent'`
+          )
+          .bind(eventId, kind, o.registrationId, o.status, resolvedAt)
+      )
+    );
   }
 
   async release(eventId: string, kind: ClassEmailKind, registrationIds: string[], claimedBefore: string): Promise<string[]> {

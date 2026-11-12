@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SourceBoard } from '../config';
-import { HttpNearbyMondayClient, toContact } from './client';
+import { clearContactCache, CONTACT_CACHE_TTL_MS, HttpNearbyMondayClient, toContact } from './client';
 
 const SRC: SourceBoard = {
   kind: 'person', boardId: 10, latColumn: 'lat', lngColumn: 'lng', nameColumn: null, nearbyColumn: 'nearby', address: null,
@@ -54,7 +54,7 @@ const cols = [
 ];
 
 describe('HttpNearbyMondayClient', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); clearContactCache(); });
 
   it('listContacts follows the cursor across pages', async () => {
     const bodies = stub([
@@ -64,6 +64,97 @@ describe('HttpNearbyMondayClient', () => {
     const out = await client().listContacts(SRC);
     expect(out.map((c) => c.id)).toEqual(['1', '2']);
     expect(bodies[1]?.variables.cursor).toBe('c1');
+  });
+
+  it('listContacts reuses a board walk, and evicts a failed one', async () => {
+    const bodies = stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [raw('1', '2')] } }] })]]);
+    await Promise.all([client().listContacts(SRC), client().listContacts(SRC)]);
+    await client().listContacts(SRC);
+    expect(bodies).toHaveLength(1);
+
+    clearContactCache();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 400 })));
+    await expect(client().listContacts(SRC)).rejects.toThrow();
+    const again = stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [] } }] })]]);
+    await client().listContacts(SRC);
+    expect(again).toHaveLength(1);
+  });
+
+  // The colo-wide tier: a preview and its confirm often land on different isolates.
+  function fakeCache() {
+    const store = new Map<string, Response>();
+    const key = (req: RequestInfo | URL) => (typeof req === 'string' ? req : req instanceof URL ? req.href : req.url);
+    const cache = {
+      async match(req: RequestInfo | URL) { return store.get(key(req))?.clone(); },
+      async put(req: RequestInfo | URL, res: Response) { store.set(key(req), res.clone()); },
+    };
+    return { cache: cache as unknown as Cache, store };
+  }
+  const shared = (cache: Cache) => new HttpNearbyMondayClient('https://api.test/v2', 'tok', {}, cache);
+  const onePage = () => stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [raw('1', '2')] } }] })]]);
+
+  it('listContacts reuses a snapshot another isolate stored in the Cache API', async () => {
+    const { cache, store } = fakeCache();
+    const bodies = onePage();
+    const first = await shared(cache).listContacts(SRC);
+    expect(store.size).toBe(1);
+    expect(store.values().next().value?.headers.get('Cache-Control')).toBe('max-age=300');
+
+    clearContactCache(); // a different isolate: empty memory, same colo cache
+    expect(await shared(cache).listContacts(SRC)).toEqual(first);
+    expect(bodies).toHaveLength(1);
+  });
+
+  it('listContacts walks again once a Cache API snapshot is past the TTL', async () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
+    try {
+      const { cache } = fakeCache();
+      const bodies = onePage();
+      await shared(cache).listContacts(SRC);
+      clearContactCache();
+      vi.setSystemTime(1_000_000 + CONTACT_CACHE_TTL_MS);
+      await shared(cache).listContacts(SRC);
+      expect(bodies).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('listContacts keeps an in-memory entry only as long as the snapshot it came from', async () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] });
+    try {
+      const { cache } = fakeCache();
+      const bodies = onePage();
+      await shared(cache).listContacts(SRC); // snapshot stamped at t0
+      clearContactCache();
+      vi.setSystemTime(1_000_000 + CONTACT_CACHE_TTL_MS - 1_000);
+      await shared(cache).listContacts(SRC); // memory now holds the t0 snapshot
+      vi.setSystemTime(1_000_000 + CONTACT_CACHE_TTL_MS);
+      await shared(cache).listContacts(SRC);
+      expect(bodies).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('listContacts treats a failing Cache API as a miss, never a failed search', async () => {
+    const cache = {
+      match: async () => { throw new Error('cache down'); },
+      put: async () => { throw new Error('cache down'); },
+    } as unknown as Cache;
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onePage();
+    expect((await shared(cache).listContacts(SRC)).map((c) => c.id)).toEqual(['1']);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('listContacts keys snapshots by board and columns', async () => {
+    const { cache, store } = fakeCache();
+    onePage();
+    await shared(cache).listContacts(SRC);
+    await shared(cache).listContacts({ ...SRC, boardId: 11 });
+    expect(store.size).toBe(2);
   });
 
   it('addNearbyLabel sends no mutation when the label is already present', async () => {

@@ -48,6 +48,10 @@ export interface MailchimpMemberInterests {
 export type UpdateMemberResult = 'updated' | 'not-in-audience';
 export type RenameMemberResult = 'renamed' | 'target-exists' | 'not-in-audience';
 export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
+// The managed tag set, or a reader for it that updateMember calls only once the PATCH has found
+// the member, so a caller that needs the member's current tags to build it pays for that read
+// only on a member that exists (#97).
+export type ManagedTags = string[] | (() => Promise<string[]>);
 
 export interface MailchimpClient {
   /**
@@ -56,9 +60,9 @@ export interface MailchimpClient {
    * the audience stays absent and this returns 'not-in-audience'. `tags` is the desired set;
    * `managedTags` is every tag this worker owns — managed tags not in `tags` are
    * deactivated, and tags outside `managedTags` (staff-applied, other tools') are
-   * never touched.
+   * never touched. Given as a reader, it is called after the merge-field PATCH succeeds.
    */
-  updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult>;
+  updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags): Promise<UpdateMemberResult>;
   /**
    * Move an existing member from `oldEmail` to `newEmail` after staff change a Donor's address
    * on Monday. Only `email_address` is sent, so the member's status (its consent), tags and
@@ -76,7 +80,8 @@ export interface MailchimpClient {
   unsubscribeMember(email: string): Promise<UnsubscribeResult>;
   /**
    * The names of the tags currently on a member (up to 1000), [] for an address not in the
-   * audience. Read before updateMember so the Nearby tags it should deactivate can be named.
+   * audience. Read (through updateMember's managed-tags reader) so the Nearby tags it should
+   * deactivate can be named.
    */
   getMemberTagNames(email: string): Promise<string[]>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
@@ -123,7 +128,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     return `Basic ${btoa(`anystring:${this.apiKey}`)}`;
   }
 
-  async updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult> {
+  async updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags): Promise<UpdateMemberResult> {
     if (!sinkLogged) {
       sinkLogged = true;
       // Design doc §6: one line per isolate naming the sink this deployment writes to.
@@ -144,7 +149,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     );
     if (response.status === 404) return 'not-in-audience';
     if (!response.ok) throw await httpError('updateMember', response);
-    await this.syncTags(hash, tags, managedTags);
+    await this.syncTags(hash, tags, typeof managedTags === 'function' ? await managedTags() : managedTags);
     return 'updated';
   }
 

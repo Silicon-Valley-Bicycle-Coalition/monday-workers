@@ -27,8 +27,8 @@ private planning repo retired. D1 re-bootstrapped from `salesforce-import`'s run
 (37,286 donation→owner links — see `scripts/bootstrap-links-from-artifacts.mjs` and "Why the
 bootstrap reads artifacts now" below), owner boards provisioned with the full 12-column rollup
 set (`scripts/setup-owner-columns.mjs`). Webhooks drop from 18 subscriptions to 2
-(`create_item` + `change_column_value` on the one board, shared secret in the URL — Monday
-doesn't sign payloads); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
+(`create_item` + `change_column_value` on the one board, shared secret in the URL; Monday signs
+only app-created webhooks, see "APIs & auth"); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
 Worker with the matching `MONDAY_WEBHOOK_SECRET`. **Scoped entirely to the CRM Sandbox** —
 every board id in `config/sandbox.json` is a sandbox board,
 not a production one (production doesn't exist yet; real cutover is October — `config/svbc.json`
@@ -64,6 +64,10 @@ existing boards; it only adds the missing subscriptions.
 (`wrangler d1 migrations apply svbc-donation-rollups --remote`) **before** merging. `refreshFacts`
 and every ledger total name `removed_at`, so an unmigrated database breaks every consumer message
 the moment the build goes live, the same hazard as 0007 below. Then re-run `setup-webhooks.mjs`.
+
+**Migration 0015 (issue #90)** only adds indexes (for the requeue duty's `listStuck` and the
+sponsorships backfill's scan); no code depends on it, so it can go before or after the deploy.
+Apply it with the same `migrations apply` command.
 
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
@@ -446,8 +450,10 @@ owner columns are recomputed over history. Volunteer activities stamp nothing.
 Tier (never downgrades), so a staff-granted comp or Lifetime is never shortened; shorten by hand
 if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are derived facts
 **written outright** — a staff edit to them is overwritten on the next recompute. All eight
-writes, and the gift stamps, are compare-before-write, so a stamp's own webhook triggers one idle
-recompute and stops. That recompute also writes nothing to the owner: the rollup values and the
+writes, and the gift stamps, are compare-before-write. The gift's Term Start, Term End and
+Membership Type columns are in the webhook's ignored set (issue #89), so a stamp's own webhook
+triggers no recompute at all; a staff edit to one is corrected on the gift's next recompute rather
+than immediately. The owner write is also hash-skipped: the rollup values and the
 description are each hashed (`owner_recomputes.values_hash` / `description_hash`, migration 0014)
 and a write identical to the last one that landed is skipped (issue #88).
 
@@ -615,15 +621,28 @@ Sandbox: [Worker Alerts (sandbox)](https://bikesiliconvalley.monday.com/boards/1
 Updates notify only that item's subscribers, so subscribe to be told. Don't reuse a request or
 ticket as the sink, and don't close the production item.
 
+The cron run shares two things across its duties (issue #90). **Reads:** each board several
+duties page (People and People (Historical) for membership, recurring and rollcall; Donations for
+classify and rollcall's credits) is read once, with the union of their columns
+(`src/custodian/boardReads.ts`). **Writes:** one Monday write budget for the whole run,
+`custodian.writesPerRun` (optional, default 500), on top of each duty's own cap. A duty refused a
+write stops and reports the rest as `remaining`, and the next night continues it. A duty run by
+hand over HTTP reads for itself and keeps only its own cap.
+
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
   (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
 * **capacity** (Mondays) — every board in the workspace vs its item limit; alerts at
   `capacityAlertPct` (update posted to `custodian.alertItemId`). First live run immediately
   flagged Activities v2 at 90% — a true positive.
-* **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
-  fiscal boundary (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so
-  the consumer never coalesces them away, even when the owner's representative gift has an old open
-  pending row.
+* **sweep** (July 1) — recomputes owners so This/Last Year splits roll over at the fiscal boundary
+  (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so the consumer
+  never coalesces them away, even when the owner's representative gift has an old open pending row.
+  Scoped and paced for Monday's 10,000 calls/day account cap (issue #88): the fiscal-start sweep
+  covers only owners with a live gift in the two fiscal years before the new one, the ones whose
+  This/Last Year move (plus sponsorship owners when `sponsorships.yearBasis` is `fiscal`); a sweep
+  on any other day, or `?all=true`, covers everyone. Each run enqueues at most
+  `custodian.sweepOwnersPerRun` owners (optional, 1-3,500, default 1,500; each costs the consumer
+  about 2-4 Monday calls) and the daily cron continues it until `remaining` is 0.
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
   comparison — values written before issue #27 carry float noise; since then every money column
   is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
@@ -631,7 +650,8 @@ ticket as the sink, and don't close the production item.
   `owner_board_id` stays stale after an owner moves boards until their next recompute.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
-  verification" above).
+  verification" above). It also prunes (issue #90) `written`/`dropped` pending rows older than 30
+  days and `custodian_runs` rows older than 180 days, always keeping each duty's latest run.
 * **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
   plus Acknowledgment Tier where configured (see "Chartable gift labels" below), and a blank Fiscal
   Year Ending (see "A blank Fiscal Year Ending cell" above). Capped per run;
@@ -741,14 +761,16 @@ projections" above; there is no API for it).
 **Config.** The `donationRollups.sponsorships` block: `organizationsBoardId`, `giftTypes` (cash
 sponsorship types), `inKindGiftTypes`, `yearBasis` (`"calendar"` or `"fiscal"`), `windowYears`,
 `pipelineBoards`. Three optional Donations-board columns feed it: `sponsorshipCycle` (text),
-`inKindValue` and `sponsorshipPipelineLinks` (connect to the sponsorship pipelines). An absent
+`inKindValue` and `sponsorshipPipelineLinks` (the reverse connect from Sponsorships). An absent
 block changes nothing. `sponsorshipPipelineLinks` is **not configured yet in either
-environment**: the pipelines' reverse connect columns don't exist until the board-linking backfill
+environment**: Sponsorships' reverse connect column doesn't exist until the board-linking backfill
 (monday-migration `docs/29`) runs, so until then post-go-live sponsorships show `—` as their
 event unless Sponsorship Cycle is typed.
 
 **Event, in order:** the Sponsorship Cycle text; else the linked pipeline item's
-`<event name> <group title>`; else blank (`—`). Archived gifts keep their stored event (their
+`<event name> <group title>` (production configures Sponsorships with an empty event name, since
+its group titles such as `2027 BTWD` already name the event, so this is just the group title);
+else blank (`—`). Archived gifts keep their stored event (their
 links read back empty). **In-kind value:** In-Kind Value, falling back to Amount when blank or 0.
 Known limitation: a gift with a blank Amount is skipped by the recompute read entirely
 (pre-existing), so staff must fill Amount on in-kind sponsorships.
@@ -762,8 +784,11 @@ configured, so every deployment, forks included, must apply 0012 before the new 
 
 **Duties.** The custodian duty `sponsorships` backfills the facts nightly while there is work
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
-`yearBasis: "calendar"` a January 1 sweep runs the regular sweep (one recompute per owner, People
-included) so the Organizations' window rolls over.
+`yearBasis: "calendar"` a January 1 sweep rolls the Organizations' window over. It recomputes only
+Organizations owners with a `giftTypes`/`inKindGiftTypes` gift (issue #88: the full sweep costs tens
+of thousands of Monday calls against the account's daily cap). With `yearBasis: "fiscal"` the
+fiscal-start sweep includes them; a manual sweep on any other day, or with `?all=true`, covers
+every owner.
 
 **Owner check (read-only).** Sponsorships are only shown on Organizations, so check who owns the
 paid sponsorship gifts (substitute the configured `giftTypes` plus `inKindGiftTypes`; sandbox adds
@@ -805,8 +830,8 @@ only); only the Organizations-owned in-kind rows matter for the section.
    "Answering a sponsor's audit request" part (in-kind sponsorships need Amount filled and the
    gift connected to its pipeline item); check `entering-payments.md` and
    `donor-data-entry-and-acknowledgement.md` say a sponsorship's Donor is the company and it is
-   connected to its pipeline item. Copy them into their Box Notes, and point the five pipeline
-   boards' "earlier years" description line at the company card.
+   connected to its pipeline item. Copy them into their Box Notes, and point the Sponsorships
+   board's "earlier years" description line at the company card.
 
 ## Employer Name from Affiliations
 
@@ -1211,8 +1236,11 @@ sandbox gets rebuilt before cutover:
   Donations board, pointed at the deployment's `/webhooks/monday/donations` route
   (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
   the production-named Worker once production boards exist) with the
-  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`;
-  Monday doesn't sign API-created webhooks, so this is the only authentication). Compared in
+  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
+  Second factor (issue #110): with `MONDAY_SIGNING_SECRET` set, the `Authorization` JWT Monday
+  signs app-created webhooks with is verified too, and `MONDAY_WEBHOOK_JWT_REQUIRED = "true"`
+  rejects unsigned deliveries; rollout table and operator steps in the root README, "Monday's
+  signed webhook JWT". The URL secret is compared in
   constant time and **fails closed** since issue #27: with the secret unset or empty every
   delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
@@ -1238,6 +1266,7 @@ sandbox gets rebuilt before cutover:
   | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell |
   | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
   | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
+  | `MONDAY_SIGNING_SECRET` (optional, #110) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
 
   With neither the binding nor the secret, building the Monday client throws a config error
   naming both, rather than sending an empty `Authorization` header. Local `wrangler dev` has no

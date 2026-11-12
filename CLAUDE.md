@@ -27,7 +27,8 @@ both the tests and the check below).
 - Operator tools, not CI checks: `flags.mjs`, `mark-read-only-columns.mjs`,
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
   really reach, #18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
-  `docs/runbooks/windfall-private-board.md`) and `propose-partner-types.mjs`.
+  `docs/runbooks/windfall-private-board.md`), `funding-leads-board.mjs` (sandbox-only Funding
+  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`) and `propose-partner-types.mjs`.
 
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has
@@ -236,6 +237,10 @@ copy it over.
   than a fast error the donor can reload past.
 - Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
   `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
+- Queue consumers stop calling Monday for the rest of a batch once one message fails on an
+  outage (429, 5xx, timeout, spent budget or daily limit) and retry the rest with backoff (#101).
+  The breaker is `funraise-sync/src/monday/outage.ts`, copied byte-identical like `graphql.ts`;
+  the `monday-outage-copies` CI job holds the roster. A new queue Worker copies it in.
 
 **Monday API tokens are least-privilege by design:** a Worker gets Monday access from the
 `monday-auth` broker, not from a token of its own. One integration user (SVBC Integration; Sandbox

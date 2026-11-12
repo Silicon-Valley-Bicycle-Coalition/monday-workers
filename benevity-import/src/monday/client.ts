@@ -14,7 +14,9 @@ export interface MondayAsset {
 export interface MondayClient {
   findItemsByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem[]>;
   findItemsByName(boardId: number, name: string): Promise<MondayItem[]>;
-  getLinkedItemIds(itemId: string, columnId: string): Promise<string[]>;
+  // The ids linked from one board-relation column across several items, flattened (one request
+  // per 100 items; none for an empty list).
+  getLinkedItemIds(itemIds: string[], columnId: string): Promise<string[]>;
   createItem(
     boardId: number,
     itemName: string,
@@ -34,6 +36,9 @@ export interface MondayClient {
 // Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
 // backoff (1 minute doubling to an hour — retryDelaySeconds in flags.ts) takes over rather than holding a batch.
+// items(ids:) accepts at most 100 ids per call.
+const ITEMS_BATCH_SIZE = 100;
+
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
 export class HttpMondayClient implements MondayClient {
@@ -63,22 +68,26 @@ export class HttpMondayClient implements MondayClient {
     return this.findItemsByColumnValue(boardId, 'name', name);
   }
 
-  async getLinkedItemIds(itemId: string, columnId: string): Promise<string[]> {
-    const data = await this.transport.request<{
-      items: { column_values: { linked_item_ids?: string[] }[] }[];
-    }>(
-      `query ($itemId: ID!, $columnId: [String!]) {
-        items(ids: [$itemId]) {
-          column_values(ids: $columnId) {
-            ... on BoardRelationValue { linked_item_ids }
+  async getLinkedItemIds(itemIds: string[], columnId: string): Promise<string[]> {
+    const linked: string[] = [];
+    for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
+      const ids = itemIds.slice(i, i + ITEMS_BATCH_SIZE);
+      const data = await this.transport.request<{
+        items: { column_values: { linked_item_ids?: string[] }[] }[];
+      }>(
+        // limit: without it items(ids:) returns at most 25 (Monday's default page size).
+        `query ($ids: [ID!], $columnId: [String!]) {
+          items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) {
+            column_values(ids: $columnId) {
+              ... on BoardRelationValue { linked_item_ids }
+            }
           }
-        }
-      }`,
-      { itemId, columnId: [columnId] }
-    );
-    const item = data.items[0];
-    if (!item || item.column_values.length === 0) return [];
-    return item.column_values[0]?.linked_item_ids ?? [];
+        }`,
+        { ids, columnId: [columnId] }
+      );
+      for (const item of data.items) linked.push(...(item.column_values[0]?.linked_item_ids ?? []));
+    }
+    return linked;
   }
 
   async createItem(

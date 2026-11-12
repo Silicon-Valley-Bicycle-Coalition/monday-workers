@@ -8,15 +8,16 @@ import type { AttendeeStore } from '../db/attendees';
 import type { ClassEmailKind, ClassEmailRow, ClassEmailStore } from '../db/classEmails';
 import type { EventStore } from '../db/events';
 import type { WriteMode } from '../flags';
-import { matchPerson } from '../matching/people';
 import { isActive, statusText, type MondayClient, type MondayItemColumns } from '../monday/client';
 import type { EventbriteSyncConfig, EventRow } from '../types';
-import { linkedItemId } from '../util/itemId';
+import type { WriteQueueMessage } from '../consumer/processBatch';
+import { sendInBatches, type BatchSender } from '../util/sendBatch';
 import { secretsMatch } from '../webhook/route';
-import { audienceSource, type AudienceSource } from './audienceSource';
+import { audienceSource } from './audienceSource';
 import { classFields } from './fields';
 import { planKind, type AudienceRole, type ClassFacts, type KindPlan, type Recipient, type RosterEntry } from './plan';
 import { loadRoster, sandboxRecipients } from './roster';
+import { KIND_LABEL, oneLine } from './text';
 
 export const CLASS_EMAIL_SECRET_HEADER = 'X-Class-Email-Secret';
 
@@ -33,14 +34,14 @@ export interface ClassEmailRouteDeps {
   eventStore: EventStore;
   attendeeStore: AttendeeStore;
   config: EventbriteSyncConfig;
+  // Where each sent person's timeline entry and follow-up go (consumer/processClassEmail.ts).
+  queue: BatchSender<WriteQueueMessage>;
   writeMode: () => Promise<WriteMode>;
   now?: () => Date;
 }
 
 const KINDS: ClassEmailKind[] = ['reminder', 'thank-you', 'missed-you'];
-const KIND_LABEL: Record<ClassEmailKind, string> = { reminder: 'Reminder', 'thank-you': 'Thank-you', 'missed-you': 'Missed-you' };
 const MAX_ENTRIES = 500;
-const MAX_TEXT = 200;
 // Deliberately loose: it only has to stop obvious junk, Gmail is the real judge of an address.
 const ADDRESS_PATTERN = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 
@@ -102,20 +103,8 @@ function parseRelease(raw: unknown): { kind: ClassEmailKind; sender: string; reg
   return { kind, sender, registrationIds: ids };
 }
 
-// Free text from the page, for a Monday update: one line, bounded.
-const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
-
 // Monday errors can echo what was sent, so only the class of the failure is ever logged.
 const errorKind = (err: unknown): string => (err instanceof Error ? err.name : 'unknown error');
-
-// Hono's getter throws when the request has no execution context, as in app.request() from a test.
-function executionContextOf(c: Context): ExecutionContext | null {
-  try {
-    return c.executionCtx as ExecutionContext;
-  } catch {
-    return null;
-  }
-}
 
 export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): void {
   const { store, config } = deps;
@@ -263,7 +252,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
     // Ledger first: whatever Monday does next cannot lose what was sent.
     const resolvedAt = now().toISOString();
-    for (const r of acted.values()) await store.resolve(eventId, kind, r.registrationId, r.status, resolvedAt);
+    await store.resolveMany(eventId, kind, [...acted.values()].map((r) => ({ registrationId: r.registrationId, status: r.status })), resolvedAt);
 
     const sentIds = [...acted.values()].filter((r) => r.status === 'sent').map((r) => r.registrationId);
     const failed = [...acted.values()].filter((r) => r.status === 'failed');
@@ -306,22 +295,9 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
             return null;
           }
         })());
-        // The update first: it is the record of the send, and a long Thank-you's People matching
-        // must not be able to cost it. The follow-ups can outlive the response.
+        // The update first: it is the record of the send, and nothing after it can cost it.
         await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed, audienceOnce);
-        // Entries first: a thank-you's People link can create the person, and an entry shouldn't
-        // depend on that having happened.
-        const work = audienceOnce().then((audience) => {
-          const source = audience === null ? null : audienceSource(config, audience);
-          if (source === null || source.board === null) {
-            console.error(`eventbrite-sync class emails: timeline and follow-ups skipped after result for event "${eventId}": no board to read`);
-            return;
-          }
-          return logToTimeline(monday, event, eventId, kind, sender, subject, sentIds, source).then(() => followUp(monday, kind, sentIds, eventId, source));
-        });
-        const ctx = executionContextOf(c);
-        if (ctx === null) await work;
-        else ctx.waitUntil(work);
+        await enqueueFollowUps(client, event.mondayItemId, eventId, kind, sender, subject, sentIds, audienceOnce);
       }
     }
     return json(c, answer);
@@ -358,91 +334,36 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     }
   }
 
-  // The email on each person's Emails & Activities timeline, because Monday's own logging doesn't
-  // pick up mail sent as a Google Group. On their People item when the address matches, else their
-  // registration; never creates a person. The email has gone, so a failure is reported on the Events
-  // item, not retried: an entry can't be looked up, so a retry could post it twice. Never rejects.
-  async function logToTimeline(
-    client: MondayClient, event: EventRow & { mondayItemId: string }, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[], source: AudienceSource
+  // Each sent person's timeline entry and follow-up (No Show, People link) go to the write queue, one
+  // message per person, so they are retried and are not cut off by the wall-clock a response leaves
+  // for background work (#96). The email has gone: a failure to enqueue is reported on the Events
+  // item, since nothing would otherwise do the work. Never rejects.
+  async function enqueueFollowUps(
+    client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[], audienceOnce: () => Promise<AudienceRole | null>
   ): Promise<void> {
-    const customActivityId = config.attendeeSync.classEmails.timelineActivityId;
-    if (customActivityId === null || sentIds.length === 0) return;
-    const failed: string[] = [];
+    const logsTimeline = config.attendeeSync.classEmails.timelineActivityId !== null;
+    if (sentIds.length === 0 || (!logsTimeline && kind === 'reminder')) return;
+    const audience = await audienceOnce();
+    let hasBoard = false;
     try {
-      const [classItem] = await client.getItems(boards['events']!, [event.mondayItemId], [ev.venueColumn, ev.addressColumn]);
-      const fields = classFields(event, classItem?.columns[ev.venueColumn] ?? '', classItem?.columns[ev.addressColumn] ?? '');
-      const className = classItem?.name ?? `Eventbrite event ${eventId}`;
-      const fresh = await client.getItems(source.board!, sentIds, [source.emailColumn, source.firstNameColumn]);
-      const byId = new Map(fresh.map((item) => [item.id, item]));
-      const peopleBoard = boards['people-live'];
-      const timestamp = now().toISOString();
-      for (const id of sentIds) {
-        try {
-          const item = byId.get(id);
-          const email = (item?.columns[source.emailColumn] ?? '').trim();
-          const firstName = source.firstNameOf(item?.columns[source.firstNameColumn] ?? '');
-          const person = peopleBoard != null && email !== '' ? await client.findItemByColumnValue(peopleBoard, config.attendeeSync.peopleEmailColumn, email) : null;
-          const title = oneLine(fillPlaceholders(subject, { ...fields, 'First Name': firstName || null })).slice(0, MAX_TIMELINE_TEXT);
-          const summary = `${KIND_LABEL[kind]} for ${oneLine(className)}. Sent by ${sender}.`;
-          await client.createTimelineItem({
-            itemId: person?.id ?? id, customActivityId, title, timestamp,
-            summary: summary.slice(0, MAX_TIMELINE_TEXT),
-            content: `<p>${escapeHtml(title)}</p><p>${escapeHtml(summary)}</p>`,
-          });
-        } catch (err) {
-          failed.push(id);
-          console.error(`eventbrite-sync class emails: timeline entry for registration ${id} on event "${eventId}" failed: ${errorKind(err)}`);
-        }
-      }
-    } catch (err) {
-      failed.splice(0, failed.length, ...sentIds);
-      console.error(`eventbrite-sync class emails: timeline entries for event "${eventId}" failed: ${errorKind(err)}`);
+      hasBoard = audience !== null && audienceSource(config, audience).board !== null;
+    } catch {
+      // A half-configured Volunteers board; the same skip as no board.
     }
-    if (failed.length > 0) {
-      const who = failed.length === 1 ? '1 person' : `${failed.length} people`;
-      await postUpdate(event.mondayItemId, eventId, `Event email: ${KIND_LABEL[kind]}. Sent, but not added to the timeline for ${who}: ${failed.map((id) => `registration ${id}`).join(', ')}`, client);
+    if (audience === null || !hasBoard) {
+      console.error(`eventbrite-sync class emails: timeline and follow-ups skipped after result for event "${eventId}": no board to read`);
+      return;
     }
-  }
-
-  // What the ledger doesn't cover: a missed-you marks No Show and a thank-you links People. Each
-  // item is independent and none of it can undo the ledger, so a failure is logged and skipped.
-  // Runs under waitUntil, so it never rejects.
-  async function followUp(client: MondayClient, kind: ClassEmailKind, sentIds: string[], eventId: string, source: AudienceSource): Promise<void> {
-    if (sentIds.length === 0 || kind === 'reminder') return;
+    const base = { kind: 'class-email' as const, eventId, emailKind: kind, audience };
+    const sentAt = now().toISOString();
+    const messages: WriteQueueMessage[] = sentIds.map((registrationId): WriteQueueMessage =>
+      logsTimeline ? { ...base, step: 'timeline' as const, registrationId, sender, subject, sentAt } : { ...base, step: 'follow-up' as const, registrationId }
+    );
     try {
-      const regBoard = source.board!;
-      if (kind === 'missed-you') {
-        // Fresh: staff may have checked someone in since the page was loaded.
-        const fresh = (await client.getItems(regBoard, sentIds, [source.statusColumn])).filter(isActive);
-        for (const item of fresh) {
-          if (statusText(item, source.statusColumn) !== source.signedUpStatus) continue;
-          await writeRegistration(client, regBoard, item.id, { [source.statusColumn]: source.noShowStatus }, eventId);
-        }
-        return;
-      }
-      const peopleBoard = boards['people-live'];
-      if (peopleBoard === null) return;
-      const fresh = (await client.getItems(regBoard, sentIds, [source.emailColumn, source.linkColumn])).filter(isActive);
-      for (const item of fresh) {
-        if ((item.columns[source.linkColumn] ?? '').trim() !== '') continue; // never overwrite a link
-        try {
-          const match = await matchPerson(client, peopleBoard, config.attendeeSync.peopleEmailColumn, { email: item.columns[source.emailColumn], name: item.name });
-          if (match.donorItemId === null) continue;
-          await writeRegistration(client, regBoard, item.id, { [source.linkColumn]: { item_ids: [linkedItemId(match.donorItemId)] } }, eventId);
-        } catch (err) {
-          console.error(`eventbrite-sync class emails: People link for registration ${item.id} on event "${eventId}" failed: ${errorKind(err)}`);
-        }
-      }
+      await sendInBatches(deps.queue, messages);
     } catch (err) {
-      console.error(`eventbrite-sync class emails: ${kind} follow-up for event "${eventId}" failed: ${errorKind(err)}`);
-    }
-  }
-
-  async function writeRegistration(client: MondayClient, board: number, itemId: string, values: Record<string, unknown>, eventId: string): Promise<void> {
-    try {
-      await client.changeColumnValues(board, itemId, values);
-    } catch (err) {
-      console.error(`eventbrite-sync class emails: write to registration ${itemId} on event "${eventId}" failed: ${errorKind(err)}`);
+      console.error(`eventbrite-sync class emails: could not queue ${messages.length} follow-ups for event "${eventId}" ${kind}: ${errorKind(err)}`);
+      await postUpdate(itemId, eventId, `Event email: ${KIND_LABEL[kind]}. Sent, but the timeline entries and follow-up writes could not be queued for ${messages.length} ${messages.length === 1 ? 'person' : 'people'}. Add them by hand.`, client);
     }
   }
 
@@ -468,16 +389,4 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     }
     await postUpdate(itemId, eventId, lines.join('\n'), client);
   }
-}
-
-// create_timeline_item's limit on title and summary.
-const MAX_TIMELINE_TEXT = 255;
-
-// Fills what's known, and leaves anything else as typed so a mistake stays visible.
-function fillPlaceholders(text: string, values: Record<string, string | null>): string {
-  return text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (whole, name: string) => values[name] ?? whole);
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

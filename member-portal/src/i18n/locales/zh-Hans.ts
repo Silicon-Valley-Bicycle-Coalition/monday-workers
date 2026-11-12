@@ -193,6 +193,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'matchingGifts.einLine': '填写配捐表格时,您可能需要我们的税号(EIN):{{ein}}',
   'matchingGifts.searchHint': '在下方搜索您的雇主,查看其配捐政策及提交说明。',
   'matchingGifts.searchUnavailable': '雇主搜索功能配置完成后将显示在此处。在此之前,您的人力资源或薪资部门可以告诉您捐款是否可获配捐。',
+  'matchingGifts.searchFrameTitle': '雇主配捐查询',
   'letterReady.subject': '您的 {{year}} 年 SVBC 捐赠信函已就绪',
   'letterReady.greeting': '{{donorName}}，您好：',
   'letterReady.body': '您的 {{year}} 年捐赠信函现在可以在捐赠者门户中查看。',

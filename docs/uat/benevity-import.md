@@ -19,8 +19,7 @@ It only writes to Monday.
 ## Try it
 
 1. Open
-   [Benevity Uploads (sandbox v2)](https://bikesiliconvalley.monday.com/boards/18431270204)
-   (still titled v2 on purpose; that is the right board).
+   [Benevity Uploads (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18439574423).
    Create a new item named for the report (for example "Benevity Sep 2026") and attach the
    report CSV to its **Report** file column. Use a real report if you have one. A report is
    taken only if its **Period Ending** is **2026-09-16 or later**; an older report is skipped
@@ -35,6 +34,8 @@ It only writes to Monday.
 3. Back on the Uploads board, rows the import couldn't place appear as items in the worklist
    group with a **Reason**: no matching person or company, a currency other than USD, or a
    report whose totals don't add up. Read the reasons: are they clear enough to act on?
+   Fix one row's cause (for example, add the missing person), then set its **Retry** to Retry: it
+   should go Queued, then Done, or back to Needs review with a new Reason.
 4. Upload the same file again. Nothing new should appear; rows already imported are recognised by
    their transaction ID.
 5. Open the donor on People. Their totals reflect the gift (see
@@ -46,15 +47,10 @@ It only writes to Monday.
 - **Thank You Sent** is deliberately left unchecked on Benevity gifts; Benevity's own receipt is
   not SVBC's acknowledgment.
 - Benevity's comment, cause, and project text isn't carried onto the item.
-- **Fiscal Year Ending** reads like `2027-06-30` on Benevity gifts, where every other gift
-  reads `2027`. Known; a fix is in progress. Giving totals are not affected.
+- **Fiscal Year Ending** reads like `2027-06-30` on Benevity gifts imported before the fix; new
+  ones read `2027` like every other gift. Giving totals are not affected.
 - A company name that matches under a different spelling isn't learned for next time; each upload
   matches afresh.
-
-## Not testable yet
-
-- The worklist **Retry** flow (fix a row, tick Retry, watch it import) isn't switched on in the
-  sandbox.
 
 ---
 

@@ -4,6 +4,8 @@ import type { RunRow } from './db/ledger';
 import type { PassReport, SingleMoveResult } from './pass';
 import { parsePromoteEvent } from './promote';
 import { runDisposition, type WriteMode } from './flags';
+import { checkMondayWebhookJwt, type MondayJwtPolicy } from './mondayJwt';
+import { PROMOTE_WEBHOOK_PATH } from './rateLimit'; // one path, so the limiter exemption can't drift from the route
 
 export interface RoutesDeps {
   // Runs one pass now. dryRun comes from the write mode (off = dry) or a forced ?dryRun=true.
@@ -22,6 +24,10 @@ export interface RoutesDeps {
   requestLabel: string;
   // Shared secret on the registered Monday webhook URL (`?secret=`); unset = route disabled.
   webhookSecret?: string;
+  // Second factor (issue #110): the `Authorization: <JWT>` Monday signs app-created webhooks with,
+  // using the app's Signing Secret. src/mondayJwt.ts holds the rollout policy; absent = no signing
+  // secret, so the URL secret alone decides, as before.
+  jwtPolicy?: MondayJwtPolicy;
   // ctx.waitUntil: a promote can outlast Monday's webhook timeout, and the sweep covers a lost one.
   defer(work: Promise<unknown>): void;
   now?: () => Date;
@@ -82,9 +88,9 @@ export function createApp(deps: RoutesDeps) {
     return c.json({ ok: status === 200, ...result }, status);
   });
 
-  // Staff set Promote to People = Promote on an item. Monday can't send a header, so the secret is in
-  // the URL (root README, "Webhook secrets in the URL").
-  app.post('/webhooks/monday/promote', async (c) => {
+  // Staff set Promote to People = Promote on an item. The URL secret is the first factor (root
+  // README, "Webhook secrets in the URL"); Monday's signed JWT, when configured, is the second.
+  app.post(PROMOTE_WEBHOOK_PATH, async (c) => {
     if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) return c.json({ ok: false }, 401);
     let body: unknown;
     try {
@@ -93,7 +99,17 @@ export function createApp(deps: RoutesDeps) {
       return c.json({ ok: false, error: 'invalid JSON body' }, 200);
     }
     const challenge = (body as { challenge?: unknown } | null)?.challenge;
+    // The challenge echo has no side effect, so it skips the JWT: re-registering a subscription
+    // never depends on Monday signing the handshake.
     if (typeof challenge === 'string') return c.json({ challenge }, 200);
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {}, Math.floor(now().getTime() / 1000));
+    if (!jwt.accept) {
+      console.error(`people-reclassification promote webhook: rejected delivery: JWT ${jwt.reason}`);
+      return c.json({ ok: false }, 401);
+    }
+    if (!jwt.verified && jwt.note === 'missing') {
+      console.warn('people-reclassification promote webhook: delivery carried no Authorization JWT; accepted on the URL secret alone (MONDAY_WEBHOOK_JWT_REQUIRED is not true). Re-register the subscription with the Staff sync app token.');
+    }
     const event = parsePromoteEvent(body, deps.requestLabel);
     if (event === null) return c.json({ ok: false, ignored: true }, 200);
     // The status stays at Promote under hold, so the morning sweep picks it up after.

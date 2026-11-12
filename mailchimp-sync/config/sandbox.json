@@ -17,7 +17,8 @@
       "mailchimpCampaigns": "board_relation_mm90f8q8",
       "doNotSolicit": "boolean_mm8h1x0b",
       "dnsReasonStatus": "color_mm8j203g",
-      "nearby": null
+      "nearby": null,
+      "hasActiveRecurringGift": "boolean_mm8hzx4e"
     },
     "historical": {
       "boardId": 18437342607,
@@ -34,7 +35,8 @@
         "totalGiven": "numeric_mm8hc2f5",
         "doNotSolicit": "boolean_mm8h56b4",
         "dnsReasonStatus": "color_mm8j9ez7",
-        "nearby": null
+        "nearby": null,
+        "hasActiveRecurringGift": "boolean_mm8hry6e"
       }
     }
   },
@@ -55,7 +57,8 @@
       "lapsedMember": "lapsed-member",
       "lifetimeMember": "lifetime-member",
       "hasDonated": "has-donated",
-      "doNotSolicit": "do-not-solicit"
+      "doNotSolicit": "do-not-solicit",
+      "recurringDonor": "recurring-donor"
     },
     "nearbyTagPrefix": "Near: "
   },

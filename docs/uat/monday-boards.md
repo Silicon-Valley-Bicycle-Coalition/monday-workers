@@ -1,6 +1,6 @@
 # UAT script: the Monday.com boards
 
-**Last checked 2026-10-06** against the `(sandbox v4)` boards in
+**Last checked 2026-10-06, corrected 2026-11-11** against the `(sandbox v4)` boards in
 [CRM Sandbox v4 (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/18210301).
 Item counts are from that day.
 
@@ -46,7 +46,8 @@ Two things to try on **every** board, before the per-board steps:
 everyone with real activity since about 2019. Replaces Salesforce Contacts, with membership
 status right on the record instead of tracked separately.
 
-**Tabs:** **Donors** (opens here; grouped by Donor Level: Leadership, Major, Donor, blank) ·
+**Tabs:** **Find a person** (opens here; sorted by name) · **Donors** (grouped by Donor Level:
+Leadership, Major, Donor, blank) ·
 **Major donors** · **Donors to target** (Worklist: last gift $250 or more, most recent first) ·
 **Gave last year, not this year** (Worklist: the lapsed-donor call list) · **Appeal list**
 (donors with an email and no Do Not Solicit flag, grouped by level) · **Postal appeal list**
@@ -58,7 +59,8 @@ last closed fiscal year) · **Donor portfolios** (grouped by Relationship Owner)
 a membership status, sorted by Member Until; amber within 60 days, red when lapsed) · **Active
 members** (the Board Elections export) · **By city** · **Stakeholders** · **By campaign** ·
 **Do Not Solicit** · **DNS reason missing** (Worklist, red) · **Renewals this month and next**
-(Worklist: Member Until this calendar month or next, red when lapsed; emailed on the 1st and 15th).
+(Worklist: Member Until this calendar month or next, red when lapsed; emailed on the 1st and 15th) ·
+**Possible duplicates** (Worklist: items staff flagged with Possible Duplicate).
 
 **Try it:**
 
@@ -94,8 +96,10 @@ around the **Campaign** tag column but hasn't been rehearsed here. If that proce
 you, say so on IT Requests so it's prioritised before cutover.
 
 **Don't report these:** Personal Email Consent reads "Not in Mailchimp" for everyone (load ran
-without the consent file). Nobody moves between this board and People (Historical) yet. You can
-no longer merge duplicates yourself: file the pair on IT Requests. A tab called **Drafts to
+without the consent file). People move between this board and People (Historical) on a schedule (see
+[people-reclassification.md](people-reclassification.md)). You can no longer merge duplicates
+yourself: set **Possible Duplicate** on the item and add an update naming the other record; David
+reviews and merges. A tab called **Drafts to
 confirm** with nothing in it is a leftover from the load and will be removed.
 
 ## People (Historical)
@@ -107,20 +111,21 @@ was first made to fit a 10,000-item board limit; SVBC's real limit is 100,000. N
 Each quarter, people with no activity in seven years move here, and anyone here who becomes
 active again moves back.
 
-**Tabs:** **People** (opens here, all grey) · **Active again** (Worklist: anyone here who has
+**Tabs:** **Find a person** (opens here) · **Active again** (Worklist: anyone here who has
 given or renewed since the split, and so belongs on People) · **Do Not Solicit** · **DNS reason
-missing**.
+missing** · **Possible duplicates**.
 
 **Try it:** search for someone who "used to give" and doesn't turn up on People. Look at
-**Active again**: if anyone is listed, they're on the wrong board and should be reported, not
-moved by hand (their gift links would need re-pointing).
+**Active again**: anyone listed belongs on People. Don't move them by hand; set **Promote to
+People** to Promote on their item (see [people-reclassification.md](people-reclassification.md)).
 
 ## Organizations
 
 [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579), 1,888
 items: bike shops, corporate partners, funders, cities and agencies. Replaces Salesforce Accounts.
 
-**Tabs:** **Organizations** (opens here; grouped by Donor Level) · **Untyped** (Worklist:
+**Tabs:** **Find an organization** (opens here) · **Organizations** (grouped by Donor Level) ·
+**Untyped** (Worklist:
 organizations with no Partner Type) · **Municipal** · **Funders and matching companies** ·
 **Do Not Solicit** · **DNS reason missing**.
 
@@ -202,7 +207,6 @@ Donations, Other Program Revenue, Donor Advised Funds), **Gift Size**, **Fiscal 
 
 **Don't report these:** Recurring Gifts and Fiscal Year Ending can be blank on a gift; the year
 is derived from Date. Older gifts may show no Acknowledgment Tier until a one-time backfill runs.
-Funraise and Benevity gifts aren't reaching this board yet (see the README).
 
 ## Recurring Gifts
 
@@ -238,15 +242,15 @@ the Salesforce Campaigns, kept so every migrated gift's Campaign link still reso
 only; you won't work here day to day. Going forward, tagging a person to an outreach effort is the
 **Campaign** tag column on People.
 
-**Tabs:** **All Campaigns** (opens here) · **Active**.
+**Tabs:** **All Campaigns** (opens here) · **Appeals** · **Active**.
 
 ## Events and Event Registrations
 
 [Events (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342639), 247 items, and
 [Event Registrations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342649),
 6,913 items: the historical Eventbrite and Funraise events and who attended, migrated from
-Salesforce. Ongoing Eventbrite check-ins flow to the live workspace's Event Participation board
-(below), not here, until the Eventbrite automation is repointed at cutover.
+Salesforce. New Eventbrite registrations and check-ins now arrive here through the eventbrite-sync
+integration (see [eventbrite-sync.md](eventbrite-sync.md)).
 
 **Events tabs:** **Upcoming** (opens here) · **All events**. Calendar (by Date) and Kanban (by
 Program) views are still to be added by hand.
@@ -267,13 +271,15 @@ records from the old separate system, marked **Historical**.
 
 **Tabs:** **Completed hours** (opens here, grey, newest first).
 
-**Try it:** find a long-time volunteer and check their hours look complete. New sign-ups come in
-through the live workspace's Volunteer registration management board (below).
+**Try it:** find a long-time volunteer and check their hours look complete. Eventbrite volunteer sign-ups
+now arrive here through the eventbrite-sync integration.
 
 ## Activities
 
 [Activities (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342671), 9,000
-items: the last two years of calls, meetings, and logged emails. A searchable "who did we talk
+items: the migrated last two years of calls, meetings, and logged emails. That board is full, so
+new activities go on
+[Activities (Logged) (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18438393347). A searchable "who did we talk
 to, and about what" log, replacing free-text Salesforce notes.
 
 **Tabs:** **My activities** (opens here; Worklist) · **Recent touches** (grouped by Activity
@@ -281,7 +287,7 @@ Type) · **Open** · **All** · **By person**.
 
 **Try it:**
 
-1. Log a call: new item, set Activity Type, Date, yourself under **Assigned To**, link the
+1. Log a call: new item on Activities (Logged), set Activity Type, Date, yourself under **Assigned To**, link the
    **Person**, and add a **Topic** tag for what it was about (free tags, your vocabulary).
 2. Open that person's card: the activity should be listed there.
 3. Only significant touches belong here (calls, meetings, major-gift emails), not every email.
@@ -305,8 +311,8 @@ Monday user with dashboard rights, so there is nothing to open yet:
   narrative sections.
 
 Please don't build your own in the meantime. If a number you report today isn't in that list,
-say so on IT Requests as a Feature Request. Known omissions: no Grants Pipeline widget until
-cutover (that board lives in the live workspace); members by city and membership type are board
+say so on IT Requests as a Feature Request. Known omissions: no Grants & Contracts widget until
+cutover (that board is in production, not the sandbox); members by city and membership type are board
 views, not charts, because Monday can't chart text columns.
 
 ## Donor portal boards
@@ -334,12 +340,18 @@ registration and attendance.
 
 **Try it:** submit the public "Volunteer with us!" form linked from the registration board and
 confirm the item lands with no staff entry. On an Event Participation item, set **Attendance**
-(Attended, Registered, No Show) and the Participant / Volunteer dropdown by hand; that is what an
-Eventbrite check-in will set automatically once the automation is repointed after cutover.
+(Attended, Registered, No Show) and the Participant / Volunteer dropdown by hand; Eventbrite
+check-ins themselves now go to Event Registrations through the eventbrite-sync integration.
 
 ## Grants & Contracts
 
-[Grants Pipeline](https://bikesiliconvalley.monday.com/boards/8846256606) and
+> **Changed 2026-11-03:** the board staff run is
+> [Grants & Contracts](https://bikesiliconvalley.monday.com/boards/7896177072), the former Grants
+> Pipeline, now on monday CRM in Donors & Contacts with a Category column and a view per category
+> (Bike Parking is one category). The demo pair below is for trying things out and is archived at
+> cutover.
+
+[Grants Pipeline (demo)](https://bikesiliconvalley.monday.com/boards/8846256606) and
 [Grant Providers](https://bikesiliconvalley.monday.com/boards/8846256609): already in daily use,
 the most mature area here. Bike parking contracts are meant to live on this same board as a
 category rather than on a board of their own; say if that model is wrong for how you think about
@@ -352,13 +364,15 @@ item.
 **Don't report these:** no Type (Renewal, New, One-off, Bike Parking) or Probability field yet;
 Awarded doesn't spin up a delivery project automatically.
 
-## Sponsorships (prototype)
+## Sponsorships
 
-[Sponsorships](https://bikesiliconvalley.monday.com/boards/18432083323) and
-[Sponsors](https://bikesiliconvalley.monday.com/boards/18432083548), mirroring Grants Pipeline's
-shape, in a sandbox workspace. Not promoted to the live workspace yet. Historical sponsorship
-revenue (3,613 Salesforce Sponsorship Opportunities) is on Donations under Funding Stream =
-Sponsorships; this pair is the go-forward pipeline. Take a look and say whether the shape's right.
+The sandbox prototype once linked here was dropped and its workspace deleted 2026-10-15.
+Sponsorships are tracked on the live
+[Sponsorships](https://bikesiliconvalley.monday.com/boards/18391037433) board, the former BTWD
+Pipeline with the Advocacy Summit, Fundraising Ride, Misc. and Annual Gala pipelines merged in on
+2026-11-03, on monday CRM in Donors & Contacts: one group per event and year, Category, Event and
+Year on each item, and a Current cycle view. Historical sponsorship revenue (3,613 Salesforce
+Sponsorship Opportunities) is on Donations under Funding Stream = Sponsorships.
 
 Separately, if you're involved in fulfilling sponsor benefits (t-shirts, event tables, website
 logos), we still need to know what current sponsors are actually owed; the tier-to-benefit matrix

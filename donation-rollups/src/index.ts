@@ -3,6 +3,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, environmentOf, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
+import { jwtRequired } from './mondayJwt';
 import { D1PendingStore } from './db/pending';
 import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
@@ -99,12 +100,20 @@ export default {
           new Set([b.columns.attendee, b.columns.event, b.columns.attendance, b.columns.role, ...(b.columns.hours ? [b.columns.hours] : [])])])),
         affiliationBoards: new Map(config.affiliations?.employerSync ? [[String(config.affiliations.boardId), new Set([
           config.affiliations.columns.personLink, ...Object.values(config.affiliations.employerSync.columns)])]] : []),
-        ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) =>
-          b.columns.classification ? Object.values(b.columns.classification).map((col) => `${b.boardId}:${col}`) : [])),
+        // Columns this Worker writes itself: classification outputs and the gift term stamp (issue #89).
+        // Their webhook echoes would only trigger a recompute that rewrites nothing.
+        ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) => [
+          ...(b.columns.classification ? Object.values(b.columns.classification) : []),
+          ...[b.columns.termStart, b.columns.termEnd, b.columns.membershipType].filter((c): c is string => !!c),
+        ].map((col) => `${b.boardId}:${col}`))),
         queue: {
           send: (message: RecomputeQueueMessage, opts?: { delaySeconds: number }) => env.RECOMPUTE_QUEUE.send(message, opts).then(() => undefined),
         },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(config.monday.accountId !== undefined ? { accountId: String(config.monday.accountId) } : {}),
+        },
         writeMode: () => readWriteMode(env, WORKER),
       });
       return app.fetch(request, env, ctx);

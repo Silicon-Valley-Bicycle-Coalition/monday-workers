@@ -24,7 +24,7 @@ const CONFIG: Config = {
   mailchimp: {
     apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
-    tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit' },
+    tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor' },
   },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
@@ -39,7 +39,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: EMAIL, membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: true, dnsReasonStatus: 'Confirmed', nearby: [], onHistorical: false,
+    doNotSolicit: true, dnsReasonStatus: 'Confirmed', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
     ...overrides,
   };
 }
@@ -71,12 +71,12 @@ function fakeCampaignItemsStore(rows: CampaignItemRow[] = []): CampaignItemsStor
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
     claim: vi.fn().mockResolvedValue(true),
-    getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
+    getByInterestIds: vi.fn().mockImplementation(async (ids: readonly string[]) => new Map(rows.filter((r) => ids.includes(r.interestId)).map((r) => [r.interestId, r]))),
   };
 }
 
 function outboundDeps() {
-  const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+  const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
   const dnsLog: DnsUnsubscribeLog = { has: vi.fn().mockResolvedValue(false), record: vi.fn() };
   return { pendingStore, dnsLog, mondayClient: fakeMonday(), mailchimpClient: fakeMailchimp(), config: CONFIG };
 }
@@ -102,7 +102,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('routes stamp the mode', () => {
   it('outbound: off stamps the message dropped and records the row dropped', async () => {
     const send = vi.fn();
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
     const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: 's', config: CONFIG, writeMode: async () => 'off' });
     const res = await app.request('/webhooks/monday/donors?secret=s', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: { pulseId: 7 } }),
@@ -114,7 +114,7 @@ describe('routes stamp the mode', () => {
 
   it('outbound: on sends an unstamped message and records it queued', async () => {
     const send = vi.fn();
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
     const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: 's', config: CONFIG, writeMode: async () => 'on' });
     await app.request('/webhooks/monday/donors?secret=s', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: { pulseId: 7 } }),
@@ -150,6 +150,19 @@ describe('outbound consumer', () => {
     expect(out).toContain('"operation":"updateMember"');
     expect(out).toContain('"operation":"unsubscribeMember"');
     expect(out).not.toContain('@');
+  });
+
+  // The live consumer passes Nearby managed tags as a reader (#97); the skip line must still name
+  // the tags the write would have deactivated, not a function.
+  it('off: the updateMember skip line carries the managed tags read from the member', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const deps = outboundDeps();
+    deps.config = { ...CONFIG, monday: { ...CONFIG.monday, columns: { ...CONFIG.monday.columns, nearby: 'nearby' } } };
+    deps.mailchimpClient = fakeMailchimp({ getMemberTagNames: vi.fn().mockResolvedValue(['Near: Old']) });
+    await consumeOutboundBatch([outMsg({ donorItemId: '1' })], deps, { ...gate('off'), logLevel: 'debug' });
+    expect(deps.mailchimpClient.updateMember).not.toHaveBeenCalled();
+    const line = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"operation":"updateMember"'));
+    expect(line).toContain('Near: Old');
   });
 
   it('a dropped-stamped message is a dry run even when writes are on', async () => {
@@ -337,6 +350,8 @@ describe('a failing dropped-status write', () => {
     deps.pendingStore = {
       upsertPending: vi.fn(),
       updateStatus: vi.fn().mockRejectedValueOnce(new Error('D1 unavailable')).mockResolvedValue(undefined),
+      lastSyncStartedAt: vi.fn().mockResolvedValue(null),
+      recordSyncStart: vi.fn(),
     };
     const first = outMsg({ donorItemId: '1' }, 2);
     const second = outMsg({ donorItemId: '2' });

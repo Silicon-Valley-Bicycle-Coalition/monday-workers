@@ -67,9 +67,18 @@ export function creditFor(
   return 'ledger';
 }
 
-export async function refreshCredits(
+export interface CreditsRefresh { upserted: number; removed: number; archived: number; badRecognitionYears?: string[] }
+
+export async function refreshCredits(deps: CustodianDeps, cfg: RollCallConfig, now: string, currentFY: number): Promise<CreditsRefresh> {
+  return (await refreshCreditsWithRows(deps, cfg, now, currentFY)).summary;
+}
+
+// refreshCredits, plus the table as this refresh leaves it — what all() would read back after it
+// (issue #90: the rollcall duty read the whole table a second time to get it). Under a dry run,
+// whose writes are dropped, that is the table the live run would have left.
+export async function refreshCreditsWithRows(
   deps: CustodianDeps, cfg: RollCallConfig, now: string, currentFY: number,
-): Promise<{ upserted: number; removed: number; archived: number; badRecognitionYears?: string[] }> {
+): Promise<{ summary: CreditsRefresh; rows: CreditRow[] }> {
   const stored = new Map((await deps.rollCallCredits.all()).map((r) => [r.giftItemId, r]));
 
   const seen = new Set<string>();
@@ -114,6 +123,15 @@ export async function refreshCredits(
   const upserted = await deps.rollCallCredits.upsert([...rows.values()], now);
   if (removals.length + gone.length > 0) await deps.rollCallCredits.remove([...removals, ...gone]);
   if (archived.length > 0) await deps.rollCallCredits.markArchived(archived, now);
-  return { upserted, removed: removals.length + gone.length, archived: archived.length,
-    ...(badRecognitionYears.size > 0 ? { badRecognitionYears: [...badRecognitionYears] } : {}) };
+
+  const after = new Map(stored);
+  for (const [id, row] of rows) after.set(id, row);
+  for (const id of [...removals, ...gone]) after.delete(id);
+  for (const id of archived) after.set(id, { ...after.get(id)!, archivedAt: now });
+  return {
+    summary: { upserted, removed: removals.length + gone.length, archived: archived.length,
+      ...(badRecognitionYears.size > 0 ? { badRecognitionYears: [...badRecognitionYears] } : {}) },
+    // all()'s order
+    rows: [...after.values()].sort((a, b) => (a.giftItemId < b.giftItemId ? -1 : a.giftItemId > b.giftItemId ? 1 : 0)),
+  };
 }
