@@ -19,6 +19,8 @@ function fakePendingStore(overrides: Partial<PendingOutboundStore> = {}): Pendin
   return {
     upsertPending: vi.fn().mockResolvedValue(undefined),
     updateStatus: vi.fn().mockResolvedValue(undefined),
+    lastSyncStartedAt: vi.fn().mockResolvedValue(null),
+    recordSyncStart: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

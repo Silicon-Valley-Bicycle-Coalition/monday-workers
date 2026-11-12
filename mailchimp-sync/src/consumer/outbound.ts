@@ -14,6 +14,8 @@ export interface QueueMessageLike<T> {
   body: T;
   // Cloudflare's Message.attempts (1 on first delivery). Optional so tests can omit it.
   attempts?: number;
+  // Cloudflare's Message.timestamp — when the message was first sent. Optional so tests can omit it.
+  timestamp?: Date;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
 }
@@ -67,7 +69,13 @@ export async function consumeOutboundBatch(
 async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<void> {
   const { donorItemId, previousEmail } = message.body;
   try {
+    if (await alreadySynced(message, deps)) {
+      message.ack();
+      return;
+    }
+    const startedAt = new Date().toISOString();
     await processOne(donorItemId, previousEmail, deps);
+    await recordSyncStart(donorItemId, startedAt, deps);
     message.ack();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -88,6 +96,32 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
     } else {
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
+  }
+}
+
+// Every message is a full current-state sync, so one that is queued behind a sync which began
+// after it was enqueued has nothing left to add (#97). A message carrying previousEmail is
+// exempt: the rename must run even if a later sync already happened, and a retry of it (its
+// first attempt failed before the start was recorded) is covered the same way. A failed lookup
+// just means the sync runs.
+async function alreadySynced(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<boolean> {
+  const { donorItemId, previousEmail } = message.body;
+  if (previousEmail !== undefined || message.timestamp === undefined) return false;
+  try {
+    const last = await deps.pendingStore.lastSyncStartedAt(donorItemId);
+    return last !== null && Date.parse(last) > message.timestamp.getTime();
+  } catch (err) {
+    console.error(`mailchimp-sync outbound consumer: could not read last sync for donor "${donorItemId}": ${errorText(err)}`);
+    return false;
+  }
+}
+
+// Bookkeeping only: a failure here must not turn a finished sync into a retry.
+async function recordSyncStart(donorItemId: string, startedAt: string, deps: OutboundConsumerDeps): Promise<void> {
+  try {
+    await deps.pendingStore.recordSyncStart(donorItemId, startedAt);
+  } catch (err) {
+    console.error(`mailchimp-sync outbound consumer: could not record sync start for donor "${donorItemId}": ${errorText(err)}`);
   }
 }
 

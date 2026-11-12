@@ -47,7 +47,7 @@ function dryRunMonday(client: MondayClient, ctx: SkipContext): MondayClient {
 // ingested live but consumed under `off` is closed out as dropped rather than left looking like
 // work in flight.
 function dryRunPending<T extends PendingOutboundStore | PendingInboundStore>(store: T): T {
-  const readOnly = readOnlyProxy(store, ['upsertPending', 'updateStatus'] as (keyof T)[]);
+  const readOnly = readOnlyProxy(store, ['upsertPending', 'updateStatus', 'recordSyncStart'] as (keyof T)[]);
   return new Proxy(readOnly, {
     get: (target, prop, receiver) =>
       prop === 'updateStatus'

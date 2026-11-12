@@ -76,7 +76,7 @@ function fakeCampaignItemsStore(rows: CampaignItemRow[] = []): CampaignItemsStor
 }
 
 function outboundDeps() {
-  const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+  const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
   const dnsLog: DnsUnsubscribeLog = { has: vi.fn().mockResolvedValue(false), record: vi.fn() };
   return { pendingStore, dnsLog, mondayClient: fakeMonday(), mailchimpClient: fakeMailchimp(), config: CONFIG };
 }
@@ -102,7 +102,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('routes stamp the mode', () => {
   it('outbound: off stamps the message dropped and records the row dropped', async () => {
     const send = vi.fn();
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
     const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: 's', config: CONFIG, writeMode: async () => 'off' });
     const res = await app.request('/webhooks/monday/donors?secret=s', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: { pulseId: 7 } }),
@@ -114,7 +114,7 @@ describe('routes stamp the mode', () => {
 
   it('outbound: on sends an unstamped message and records it queued', async () => {
     const send = vi.fn();
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
     const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: 's', config: CONFIG, writeMode: async () => 'on' });
     await app.request('/webhooks/monday/donors?secret=s', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: { pulseId: 7 } }),
@@ -337,6 +337,8 @@ describe('a failing dropped-status write', () => {
     deps.pendingStore = {
       upsertPending: vi.fn(),
       updateStatus: vi.fn().mockRejectedValueOnce(new Error('D1 unavailable')).mockResolvedValue(undefined),
+      lastSyncStartedAt: vi.fn().mockResolvedValue(null),
+      recordSyncStart: vi.fn(),
     };
     const first = outMsg({ donorItemId: '1' }, 2);
     const second = outMsg({ donorItemId: '2' });

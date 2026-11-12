@@ -32,6 +32,10 @@ function fakeMessage(donorItemId: string, attempts = 1): { body: OutboundSyncMes
   return { body: { donorItemId }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
+function fakePending(lastSyncStartedAt: string | null = null): PendingOutboundStore {
+  return { upsertPending: vi.fn(), updateStatus: vi.fn(), lastSyncStartedAt: vi.fn().mockResolvedValue(lastSyncStartedAt), recordSyncStart: vi.fn() };
+}
+
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
@@ -40,6 +44,69 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
     ...overrides,
   };
 }
+
+describe('processOutboundBatch coalescing (#97)', () => {
+  function setup(lastSync: string | null, body: OutboundSyncMessage = { donorItemId: '1' }) {
+    const message = { ...fakeMessage('1'), body, timestamp: new Date('2026-11-11T10:00:00.000Z') };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor()),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn().mockResolvedValue('updated'),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn().mockResolvedValue('renamed'), unsubscribeMember: vi.fn(),
+    };
+    const pendingStore = fakePending(lastSync);
+    const run = () => processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
+    return { message, mondayClient, mailchimpClient, pendingStore, run };
+  }
+
+  it('acks without work when a sync began after the message was enqueued', async () => {
+    const t = setup('2026-11-11T10:00:05.000Z');
+    await t.run();
+    expect(t.mondayClient.getDonorById).not.toHaveBeenCalled();
+    expect(t.mailchimpClient.updateMember).not.toHaveBeenCalled();
+    expect(t.message.ack).toHaveBeenCalled();
+  });
+
+  it('syncs when the last sync began before the message was enqueued, and records its start', async () => {
+    const t = setup('2026-11-11T09:59:00.000Z');
+    await t.run();
+    expect(t.mailchimpClient.updateMember).toHaveBeenCalled();
+    expect(t.pendingStore.recordSyncStart).toHaveBeenCalledWith('1', expect.any(String));
+    expect(t.message.ack).toHaveBeenCalled();
+  });
+
+  it('syncs when no sync has completed yet', async () => {
+    const t = setup(null);
+    await t.run();
+    expect(t.mailchimpClient.updateMember).toHaveBeenCalled();
+  });
+
+  it('never coalesces a message carrying previousEmail', async () => {
+    const t = setup('2026-11-11T10:00:05.000Z', { donorItemId: '1', previousEmail: 'old@b.com' });
+    await t.run();
+    expect(t.mailchimpClient.renameMember).toHaveBeenCalledWith('old@b.com', 'a@b.com');
+    expect(t.pendingStore.lastSyncStartedAt).not.toHaveBeenCalled();
+  });
+
+  it('syncs anyway when the last-sync lookup fails', async () => {
+    const t = setup(null);
+    vi.mocked(t.pendingStore.lastSyncStartedAt).mockRejectedValue(new Error('d1 down'));
+    await t.run();
+    expect(t.mailchimpClient.updateMember).toHaveBeenCalled();
+    expect(t.message.ack).toHaveBeenCalled();
+  });
+
+  it('does not retry a finished sync when recording its start fails', async () => {
+    const t = setup(null);
+    vi.mocked(t.pendingStore.recordSyncStart).mockRejectedValue(new Error('d1 down'));
+    await t.run();
+    expect(t.message.ack).toHaveBeenCalled();
+    expect(t.message.retry).not.toHaveBeenCalled();
+  });
+});
 
 describe('processOutboundBatch', () => {
   it('updates the donor in Mailchimp and acks on success', async () => {
@@ -53,7 +120,7 @@ describe('processOutboundBatch', () => {
       updateMember: vi.fn().mockResolvedValue('updated'),
       getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -81,7 +148,7 @@ describe('processOutboundBatch', () => {
       updateMember: vi.fn().mockResolvedValue('not-in-audience'),
       getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -98,7 +165,7 @@ describe('processOutboundBatch', () => {
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -115,7 +182,7 @@ describe('processOutboundBatch', () => {
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -133,7 +200,7 @@ describe('processOutboundBatch', () => {
       updateMember: vi.fn().mockRejectedValue(new Error('rate limited')),
       getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -153,7 +220,7 @@ describe('processOutboundBatch', () => {
       updateMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
       getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
@@ -176,7 +243,7 @@ describe('processOutboundBatch', () => {
         renameMember: vi.fn(), unsubscribeMember: vi.fn(),
         getMemberInterests: vi.fn(), getMemberTagNames: vi.fn().mockResolvedValue(memberTags), listInterests: vi.fn(),
       };
-      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+      const pendingStore: PendingOutboundStore = fakePending();
       return { mondayClient, mailchimpClient, pendingStore, dnsLog: fakeDnsLog(), config };
     }
 
@@ -229,7 +296,7 @@ describe('processOutboundBatch', () => {
         renameMember: vi.fn(), unsubscribeMember: vi.fn().mockResolvedValue(opts.unsubscribeResult ?? 'unsubscribed'),
         getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(),
       };
-      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+      const pendingStore: PendingOutboundStore = fakePending();
       const dnsLog = fakeDnsLog(opts.alreadyLogged);
       return { mondayClient, mailchimpClient, pendingStore, dnsLog, config: CONFIG };
     }
@@ -326,7 +393,7 @@ describe('processOutboundBatch', () => {
         unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
         getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(),
       };
-      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+      const pendingStore: PendingOutboundStore = fakePending();
       return { mondayClient, mailchimpClient, pendingStore, dnsLog: fakeDnsLog(), config: CONFIG };
     }
     const changed = (previousEmail: string) => ({ body: { donorItemId: '1', previousEmail }, attempts: 1, ack: vi.fn(), retry: vi.fn() });
@@ -405,7 +472,7 @@ describe('processOutboundBatch', () => {
       };
       return {
         mondayClient, mailchimpClient, config: CONFIG, dnsLog: fakeDnsLog(),
-        pendingStore: pendingStore ?? { upsertPending: vi.fn(), updateStatus: vi.fn() },
+        pendingStore: pendingStore ?? fakePending(),
       };
     }
 
@@ -435,7 +502,7 @@ describe('processOutboundBatch', () => {
 
     it('still retries with backoff when recording the failure in D1 throws', async () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
+      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
       const message = fakeMessage('6', 2);
       await processOutboundBatch([message], depsFailingWith(new Error('503'), pendingStore));
       expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
@@ -458,7 +525,7 @@ describe('processOutboundBatch', () => {
 
     it('still acks a permanent failure when recording it in D1 throws', async () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
+      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')), lastSyncStartedAt: vi.fn().mockResolvedValue(null), recordSyncStart: vi.fn() };
       const message = fakeMessage('6', 1);
       await processOutboundBatch([message], depsFailingWith(new MailchimpPermanentError('invalid email'), pendingStore));
       expect(message.ack).toHaveBeenCalled();
@@ -488,7 +555,7 @@ describe('processOutboundBatch: People (Historical) items', () => {
       getMemberTagNames: vi.fn().mockResolvedValue(['Near: Old project']),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
     };
-    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    const pendingStore: PendingOutboundStore = fakePending();
     return { mondayClient, mailchimpClient, pendingStore, config, dnsLog: fakeDnsLog() };
   }
 
