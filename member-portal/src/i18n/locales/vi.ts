@@ -193,6 +193,7 @@ export const vi: Record<TranslationKey, string> = {
   'matchingGifts.einLine': 'Bạn có thể cần mã số thuế (EIN) của chúng tôi cho biểu mẫu: {{ein}}',
   'matchingGifts.searchHint': 'Tìm nơi làm việc của bạn bên dưới để xem chính sách quyên góp đối ứng và hướng dẫn nộp hồ sơ.',
   'matchingGifts.searchUnavailable': 'Công cụ tìm kiếm nơi làm việc sẽ hiển thị tại đây sau khi được thiết lập. Trong lúc chờ, bộ phận nhân sự hoặc tiền lương có thể cho bạn biết khoản quyên góp của bạn có được đối ứng hay không.',
+  'matchingGifts.searchFrameTitle': 'Tìm kiếm chương trình quyên góp tương ứng của nhà tuyển dụng',
   'letterReady.subject': 'Thư ghi nhận đóng góp {{year}} của SVBC của bạn đã sẵn sàng',
   'letterReady.greeting': 'Chào {{donorName}},',
   'letterReady.body': 'Thư ghi nhận đóng góp năm {{year}} của bạn đã sẵn sàng để xem trong cổng thông tin nhà tài trợ.',

@@ -265,6 +265,20 @@ Routing destination). A live login-link request for a real sandbox People record
   this is one host under a domain whose apex and siblings are run elsewhere, and preload is
   only possible for the apex. `/email/logo.png` alone is `Cross-Origin-Resource-Policy:
   cross-origin`, since webmail clients load it from their own origins.
+* Third-party JavaScript never runs on the portal's origin (issue #102). The one third-party
+  script, Double the Donation's `ddplugin.js`, is served only in
+  `GET /:locale/portal/matching-gifts/search`. That document's CSP starts with
+  `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox`, with no
+  `allow-same-origin`, so the browser gives it an opaque origin even when it is opened top-level.
+  A compromised `ddplugin.js` there therefore:
+  * can't read a same-origin popup of `/portal`, because the popup is cross-origin to it;
+  * can't post a form the CSRF check accepts, because its `Origin` is `null` and it also has
+    `form-action 'none'`;
+  * can't reach the session cookie.
+
+  The matching-gifts page frames it with the same `sandbox` attribute and keeps the baseline
+  CSP. The search document is the only response with `X-Frame-Options: SAMEORIGIN` and
+  `frame-ancestors 'self'`. Never add `allow-same-origin` to `SEARCH_SANDBOX_FLAGS`.
 * No permanent duplicate of donation records in D1 — read live from Monday (or cache with a short
   TTL, e.g. a few minutes, purely for rate-limit headroom against Monday's API), so Monday stays
   the single place donation data actually lives.
@@ -572,17 +586,20 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
   DTD's Workplace Giving Platform – Standard, quoted 2026-07-07 for two years, and DTD confirmed
   onboarding complete 2026-08-20; the public plugin key is set in `config/sandbox.json` and
   `config/svbc.json`, `null` in `config/local.json`). This is the only portal page
-  that may load third-party JavaScript, so it deliberately renders **zero donor PII** and ships
-  its own full
-  Content-Security-Policy in place of the app-wide baseline (see Security notes) — the
-  load-bearing directive is `connect-src` excluding `'self'`, so
-  a compromised widget script can't fetch sibling `/portal` pages (which carry the session
-  cookie on same-origin requests) and exfiltrate donor data. Keep both properties. The embed
+  that shows third-party JavaScript, and the widget runs only in a sandboxed, opaque-origin
+  iframe (`/:locale/portal/matching-gifts/search`; see Security notes), never on the portal's
+  own origin. The page also still renders **zero donor PII**, as a second line of defence.
+  Keep both properties. The embed
   in `src/matchingGifts/matchingGiftViews.ts` matches DTD's "Standard Javascript Embed using
-  Shadow DOM Encapsulation" snippet as of 2026-11-03; the remaining operator step is verifying the
-  widget under the CSP on the sandbox deploy (search loads, a company search returns results, no
-  CSP violations in the console). No Subresource Integrity hash on the DTD script by their design (mutable
-  unversioned URL); the PII-free page plus the CSP are the compensating controls.
+  Shadow DOM Encapsulation" snippet as of 2026-11-03. The remaining operator step is checking the
+  widget inside the sandbox on the sandbox deploy:
+  * the search loads;
+  * a company search returns results;
+  * a company's guidance link opens in a new tab;
+  * the console shows no CSP or sandbox errors.
+
+  DTD's script has no Subresource Integrity hash because DTD serves it from a mutable,
+  unversioned URL. The sandbox is the compensating control.
 
 **Upgrading an existing deployment (forks included):** config validation requires the
 `pledges` and `matchingGifts` stanzas to *exist* before v4 code will serve any request — a
