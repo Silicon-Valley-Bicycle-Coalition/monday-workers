@@ -271,11 +271,12 @@ Operator path, per Worker and per environment (sandbox first):
    Information → Signing Secret. It is not the OAuth client secret (`SYNC_CLIENT_SECRET`).
 2. `wrangler secret put MONDAY_SIGNING_SECRET` (add `--env sandbox` for the sandbox) in
    `donation-rollups/` and `people-reclassification/`. Any JWT that arrives is now checked.
-3. Re-register the subscriptions with a token issued to that app, not a personal token:
-   `setup-webhooks.mjs --prune <boards>` (donation-rollups) and `setup-promote.mjs` (delete the
-   old promote webhooks first). The broker never hands its token out, so this needs a one-off
-   way to run the scripts with the Staff sync token; until then deliveries stay unsigned and the
-   warning above keeps firing.
+3. Re-register the subscriptions as that app, through the monday-auth broker's
+   `/oauth/webhooks/sync` route (the broker never hands its token out): turn the route on for one
+   deploy, then run `setup-webhooks.mjs --prune <boards>` (donation-rollups) and
+   `setup-promote.mjs --worker-url … --replace-webhooks` with `MONDAY_AUTH_URL` and `START_KEY`
+   set. Steps in `monday-auth/README.md` "Re-registering webhooks". Until this is done,
+   deliveries stay unsigned and the warning above keeps firing.
 4. Confirm on a live sandbox delivery that the warning stops and nothing is rejected
    (`wrangler tail --env sandbox`, look for `JWT`). A `wrong-audience` or `wrong-account`
    rejection means Monday's webhook claims differ from its integration docs: fix the binding in

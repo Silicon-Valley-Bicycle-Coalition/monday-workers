@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { APPS, type AppKey } from './apps';
 import type { Env } from './env';
 import { runProbe } from './probe';
+import { parsePrefixes, parseWebhookOp, runWebhookOp } from './webhooks';
 import { authorizeUrl, exchangeCode, fetchMe, pkcePair, revoke, type FetchFn } from './mondayOAuth';
 import type { D1AppTokenStore } from './tokenStore';
 
@@ -10,7 +11,7 @@ export interface RouteDeps {
   env: Env;
   fetchFn: FetchFn;
   now: () => Date;
-  // Hands out the app's current access token; required only by the probe route.
+  // Hands out the app's current access token; required only by the probe and webhook routes.
   broker?: { token(app: AppKey): Promise<string> };
 }
 
@@ -36,10 +37,13 @@ function keyForm(title: string, extraFields = ''): string {
     `${extraFields}<p><button type="submit">Continue</button></p></form>`;
 }
 
+async function formFields(c: Context): Promise<Record<string, string>> {
+  const body = (await c.req.parseBody().catch(() => ({}))) as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(body).filter((e): e is [string, string] => typeof e[1] === 'string'));
+}
+
 async function formField(c: Context, name: string): Promise<string> {
-  const body = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
-  const value = (body as Record<string, unknown>)[name];
-  return typeof value === 'string' ? value : '';
+  return (await formFields(c))[name] ?? '';
 }
 
 function isAppKey(name: string): name is AppKey {
@@ -77,6 +81,23 @@ function credentials(env: Env, app: AppKey): { clientId: string; clientSecret: s
 // No response, page or log line below ever includes an access or refresh token.
 export function createApp(deps: RouteDeps): Hono {
   const { store, env, fetchFn, now, broker } = deps;
+
+  // The app's current token, or the response to send instead (logged without the token).
+  const appToken = async (c: Context, name: AppKey, route: string): Promise<string | Response> => {
+    if (!broker) return c.text(`${route} is not configured`, 500);
+    try {
+      return await broker.token(name);
+    } catch (err) {
+      console.error(`monday-auth: ${route} could not get a ${name} token: ${err instanceof Error ? err.message : 'error'}`);
+      const needsConsent = err instanceof Error && /needs consent|not authorized yet/i.test(err.message);
+      return c.text(
+        needsConsent
+          ? `the ${name} app needs consent; run its consent flow`
+          : `could not get a ${name} token right now; try again`,
+        409
+      );
+    }
+  };
   const app = new Hono();
 
   // Unauthenticated, so status only: no token, no error text, no expiry or refresh-error times
@@ -152,21 +173,34 @@ export function createApp(deps: RouteDeps): Hono {
     if (!/^\d+$/.test(workspace)) return c.text('workspace must be a numeric workspace id', 400);
     const board = await formField(c, 'board');
     if (board !== '' && !/^\d+$/.test(board)) return c.text('board must be a numeric board id', 400);
-    if (!broker) return c.text('probe is not configured', 500);
-    let token: string;
-    try {
-      token = await broker.token(name);
-    } catch (err) {
-      console.error(`monday-auth: probe could not get a ${name} token: ${err instanceof Error ? err.message : 'error'}`);
-      const needsConsent = err instanceof Error && /needs consent|not authorized yet/i.test(err.message);
-      return c.text(
-        needsConsent
-          ? `the ${name} app needs consent; run its consent flow`
-          : `could not get a ${name} token right now; try again`,
-        409
-      );
-    }
+    const token = await appToken(c, name, 'probe');
+    if (token instanceof Response) return token;
     return c.json(await runProbe(name, token, workspace, fetchFn, board === '' ? undefined : board));
+  });
+
+  // Webhook subscriptions owned by the app (#110), so Monday signs their deliveries with that
+  // app's Signing Secret. POST only, JSON in and out for scripts/lib/broker-webhooks.mjs: `op` is
+  // list (board), create (board, url, event, optional JSON config) or delete (id). Same key gate
+  // and limiter as the probe; 404 unless WEBHOOKS_ENABLED is exactly "true", and a create's url
+  // must sit under a WEBHOOK_URL_PREFIXES entry. Never logs the url: its query is a Worker's secret.
+  app.post('/oauth/webhooks/:app', async (c) => {
+    if (env.WEBHOOKS_ENABLED !== 'true') return c.text('not found', 404);
+    const fields = await formFields(c);
+    if (!(await keyMatches(fields.key ?? '', env.START_KEY))) return c.text('forbidden', 403);
+    const name = c.req.param('app');
+    if (!isAppKey(name)) return c.text('unknown app', 404);
+    const op = parseWebhookOp(fields, parsePrefixes(env.WEBHOOK_URL_PREFIXES));
+    if ('error' in op) return c.text(op.error, 400);
+    const token = await appToken(c, name, 'webhooks');
+    if (token instanceof Response) return token;
+    const result = await runWebhookOp(op, token, fetchFn);
+    if (!result.ok) {
+      console.error(`monday-auth: webhook ${op.op} with the ${name} app failed: ${result.error}`);
+      return c.json({ ok: false, error: result.error }, result.status);
+    }
+    const target = op.op === 'delete' ? `webhook ${op.id}` : `board ${op.board}`;
+    if (op.op !== 'list') console.log(`monday-auth: webhook ${op.op} on ${target} with the ${name} app`);
+    return c.json(result.data);
   });
 
   app.get('/oauth/callback', async (c) => {

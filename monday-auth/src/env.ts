@@ -11,6 +11,10 @@ export interface Env {
   REQUEST_RATE_LIMITER?: RateLimit;
   // "true" enables /oauth/probe; anything else makes it 404.
   PROBE_ENABLED?: string;
+  // "true" enables /oauth/webhooks; anything else makes it 404.
+  WEBHOOKS_ENABLED?: string;
+  // Comma-separated https://host/path/ prefixes a webhook created through /oauth/webhooks may point at.
+  WEBHOOK_URL_PREFIXES?: string;
   SLACK_WEBHOOK_URL?: string;
   PORTAL_CLIENT_ID: string;
   PORTAL_CLIENT_SECRET: string;

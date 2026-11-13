@@ -391,6 +391,9 @@ both new columns exist, and Monday won't register a webhook until the URL answer
 2. `wrangler secret put PROMOTE_WEBHOOK_SECRET` (with `--env sandbox` for the sandbox).
 3. Deploy.
 4. Re-run the script with `--worker-url <url>` and `WEBHOOK_SECRET` to subscribe the webhooks.
+   Set `MONDAY_AUTH_URL` and `START_KEY` too so the Staff sync app owns them and Monday signs
+   their deliveries (#110; `monday-auth/README.md` "Re-registering webhooks"); add
+   `--replace-webhooks` to move an existing personal-token subscription over.
 
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a

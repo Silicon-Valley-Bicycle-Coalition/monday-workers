@@ -1266,7 +1266,7 @@ sandbox gets rebuilt before cutover:
 
   | Setting | Production (`svbc-donation-rollups`) | Sandbox (`--env sandbox`) | Operator scripts (`scripts/*.mjs`) |
   | --- | --- | --- | --- |
-  | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell |
+  | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell; `setup-webhooks.mjs` prefers `MONDAY_AUTH_URL` + `START_KEY` (the broker's `/oauth/webhooks`, so deliveries are signed, #110) |
   | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
   | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
   | `MONDAY_SIGNING_SECRET` (optional, #110) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
