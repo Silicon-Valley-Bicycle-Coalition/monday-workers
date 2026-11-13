@@ -38,6 +38,7 @@ const USAGE = `usage:
 export const QUEUES = {
   'benevity-import': ['benevity-import-writes'],
   'bp-feedback-notify': [],
+  'contact-roles': [],
   'donation-rollups': ['donation-rollups-recompute'],
   'dtd-sync': [], // cron-only: no queues to pause; the write switch is the dtd-sync-writes flag
   'eventbrite-sync': ['eventbrite-sync-writes'],

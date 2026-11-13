@@ -1,0 +1,27 @@
+{
+  "name": "contact-roles",
+  "version": "0.1.0",
+  "description": "Cron Worker that fills the Contacts column on organization-linked Monday boards from the confirmed SVBC Roles held by each organization's current Affiliations.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "dev": "wrangler dev",
+    "dev:sandbox": "wrangler dev --env sandbox",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}

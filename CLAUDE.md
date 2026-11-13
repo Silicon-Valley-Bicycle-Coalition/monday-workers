@@ -131,7 +131,8 @@ visible, replayable backlog instead of a silently dropped donation. D1 status he
 The one invariant that matters: the D1 "last processed" cursor must only advance *after* a
 confirmed Monday write, never before, or a failed run silently skips what it should have processed
 with nothing to retry it. `people-reclassification` is the example: its D1 `moves` row goes to
-`moved` only after Monday confirms the move.
+`moved` only after Monday confirms the move. `contact-roles` is the stateless case: its cron
+recomputes every `Contacts` column each run, so it needs no cursor.
 
 **`salesforce-import` is a one-time batch job**, not an ongoing sync, so it uses neither pattern.
 It's a self-registering CLI (`src/commands.ts` holds a `registerCommand` map; each pipeline stage
@@ -154,7 +155,7 @@ When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run
 
 **The staff "Enter a gift" form shows every Donations column unless hidden.** A Monday form view
 lists all of its board's columns, visible by default, so a column a Worker adds later (a new 🔒
-rollup, an integration id) appears on the form and staff can overwrite it. A new form view also
+rollup, an integration id, `contact-roles`' `Contacts`) appears on the form and staff can overwrite it. A new form view also
 defaults to public, with "Require login" off. When you add a column to the Donations board, or
 create a form view, hide the new question in the form editor and run
 `node scripts/check-donation-form.mjs --form <token>` (token from the share link; production
