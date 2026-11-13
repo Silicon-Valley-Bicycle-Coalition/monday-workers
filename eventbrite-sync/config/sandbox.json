@@ -102,7 +102,7 @@
       "volunteerLinkColumn": "board_relation_mm8hymp1",
       "eventColumn": "board_relation_mm90etzt",
       "listingColumn": "board_relation_mm90cgd7",
-      "ticketTypeColumn": "REPLACE_WITH_COLUMN_ID"
+      "ticketTypeColumn": "text_mm919w2k"
     },
     "registrantsLinkExcludedEventIds": [
       "1977741403778"
