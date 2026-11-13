@@ -8,7 +8,8 @@ import { PORTAL_CSS } from './portalStyles';
 // deploy that edits either one changes the URL every page links to.
 //
 // Same-origin <link rel="stylesheet"> and <img> are allowed by the baseline CSP (DEFAULT_CSP sets
-// no default-src, style-src or img-src), so nothing in securityHeaders.ts changes.
+// no default-src, style-src or img-src), so nothing in securityHeaders.ts changes. The same holds
+// for page()'s cross-origin Google Fonts stylesheet.
 
 export interface StaticAsset {
   path: string;

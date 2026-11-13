@@ -1,20 +1,29 @@
 // The portal stylesheet. Served from a content-hashed, immutable route (see ./static.ts and
 // GET /assets/:file in routes.ts) rather than inlined into every no-store page (#99).
 //
-// Brand tokens (SVBC black/gold/white) plus the page chrome shared by every route. Scoped mostly
+// Brand tokens from the SVBC design system (bikesiliconvalley.org's palette and type) plus the page chrome shared by every route. Scoped mostly
 // by element selector rather than per-view classes, so styling the whole portal costs this one
 // block instead of touching every view file. The generic button[type=submit] rule is scoped to
 // `main` so it doesn't fight with .site-header's own outline-style logout button.
 export const PORTAL_CSS = `
   :root {
-    --svbc-black: #221E1F;
-    --svbc-gold: #FEC10C;
+    --svbc-black: #000000;
+    --svbc-gold: #FFC700;
     --svbc-white: #FFFFFF;
+    --svbc-chrome: #383838;
+    --svbc-ink: #303030;
+    --svbc-sand: #F4F4F3;
+    /* Manrope and Poppins come from Google Fonts (linked in views.ts's page()); the system stack
+       covers the load and any blocked request. */
+    --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --radius-pill: 300px;
+    --button-pad: 16px 20.8px;
     /* Semantic tokens that flip under prefers-color-scheme below. The brand tokens above stay
        fixed in both themes — header/footer bars, the member card, and table headers are
        deliberately always-dark brand chrome, not page background. */
     --bg: var(--svbc-white);
-    --text: var(--svbc-black);
+    --text: var(--svbc-ink);
     --surface: var(--svbc-white);
     --border: #ccc;
     --table-border: #eee;
@@ -46,17 +55,24 @@ export const PORTAL_CSS = `
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-body);
+    line-height: 1.5;
     color: var(--text);
     background: var(--bg);
   }
-  a { color: var(--text); }
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  a { color: var(--text); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
   /* The header/footer bars are full-bleed edge-to-edge, like bikesiliconvalley.org's own nav —
      matching its visual weight matters more here than lining up with <main>'s narrower 720px
      reading column underneath, which stays capped for form/table readability. Same fixed side
      padding on both bars, so they at least align with *each other*. */
   .site-header {
-    background: rgb(48, 48, 48);
+    background: var(--svbc-black);
   }
   .site-header-inner {
     padding: 14px 40px;
@@ -86,8 +102,9 @@ export const PORTAL_CSS = `
     display: block;
     line-height: 0;
   }
-  .site-header-donate {
-    height: 44px;
+  /* Every button, and every link styled as one, is a full pill (design system): primary is a gold
+     fill with black text at weight 400; outline is a transparent 1px border at weight 600. */
+  .site-header-donate, .cta-button {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
@@ -95,11 +112,12 @@ export const PORTAL_CSS = `
     background: var(--svbc-gold);
     color: var(--svbc-black);
     border: 1px solid var(--svbc-gold);
-    padding: 0 26px;
-    font-size: 15px;
-    font-weight: bold;
-    line-height: 1;
-    border-radius: 22px;
+    padding: var(--button-pad);
+    font-family: var(--font-body);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.2;
+    border-radius: var(--radius-pill);
     text-decoration: none;
   }
   main {
@@ -118,32 +136,34 @@ export const PORTAL_CSS = `
     justify-content: safe center;
   }
   button {
-    font-family: inherit;
-    font-size: 14px;
-    padding: 8px 16px;
-    border-radius: 4px;
+    font-family: var(--font-body);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: var(--button-pad);
+    border-radius: var(--radius-pill);
     cursor: pointer;
     border: 1px solid var(--text);
-    background: var(--surface);
+    background: transparent;
     color: var(--text);
   }
   main button[type='submit'] {
     background: var(--svbc-gold);
     border-color: var(--svbc-gold);
-    font-weight: bold;
+    color: var(--svbc-black);
+    font-weight: 400;
+  }
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--svbc-gold);
+    outline-offset: 2px;
   }
   .site-header .logout-form button {
-    height: 32px;
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
     white-space: nowrap;
-    background: transparent;
     color: var(--svbc-gold);
     border-color: var(--svbc-gold);
-    padding: 0 14px;
-    font-size: 13px;
-    line-height: 1;
   }
   input[type='email'], input[type='text'], select {
     font-size: 14px;
@@ -204,7 +224,7 @@ export const PORTAL_CSS = `
     border: 1px solid var(--tab-border);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
-    font-weight: bold;
+    font-weight: 600;
     font-size: 14px;
   }
   .tab-input:checked + .tab-label {
@@ -229,20 +249,7 @@ export const PORTAL_CSS = `
     display: block;
   }
   .tab-empty { padding: 8px 0; }
-  .cta-button {
-    display: inline-flex;
-    align-items: center;
-    height: 38px;
-    background: var(--svbc-gold);
-    color: var(--svbc-black);
-    border: 1px solid var(--svbc-gold);
-    padding: 0 20px;
-    font-size: 14px;
-    font-weight: bold;
-    border-radius: 19px;
-    text-decoration: none;
-    margin-top: 4px;
-  }
+  .cta-button { margin-top: 4px; }
 
   /* Wallet-style membership card, embedded per-donor on the dashboard (not a separate page —
      see routes.ts's GET /:locale/portal). Fixed max-width with aspect-ratio (not a fixed height)
@@ -267,7 +274,7 @@ export const PORTAL_CSS = `
   .member-card::after {
     content: '';
     position: absolute; top: -60%; left: -20%; width: 140%; height: 140%;
-    background: radial-gradient(circle at 30% 20%, rgba(254,193,12,0.10), transparent 55%);
+    background: radial-gradient(circle at 30% 20%, rgba(255,199,0,0.10), transparent 55%);
     pointer-events: none;
   }
   .member-card-top { display: flex; align-items: flex-start; justify-content: space-between; }
@@ -281,10 +288,10 @@ export const PORTAL_CSS = `
     background: #171415;
     padding: 5px;
     border-radius: 6px;
-    box-shadow: inset 0 0 0 1px rgba(254,193,12,0.35);
+    box-shadow: inset 0 0 0 1px rgba(255,199,0,0.35);
   }
   .member-card-qr svg { display: block; width: 77px; height: 77px; }
-  .member-card-name { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
+  .member-card-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
   .member-card-meta {
     display: flex; justify-content: space-between; align-items: flex-end;
     font-size: 11px; color: #cfcfcf; gap: 10px;
@@ -301,14 +308,14 @@ export const PORTAL_CSS = `
      gold-fill rule above — same fix as .site-header .logout-form button. */
   .member-card-regenerate button[type='submit'] {
     background: none; border: none; color: #888; font-size: 12px; text-decoration: underline;
-    cursor: pointer; padding: 4px 0; font-weight: normal;
+    cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
   }
 
   .site-footer {
-    background: rgb(48, 48, 48);
-    color: #cfcfcf;
+    background: var(--svbc-chrome);
+    color: var(--svbc-white);
     margin-top: 40px;
-    font-size: 13px;
+    font-size: 14.56px;
     flex-shrink: 0;
   }
   .site-footer-inner {
@@ -320,7 +327,7 @@ export const PORTAL_CSS = `
     gap: 20px;
   }
   .site-footer p { margin: 0 0 4px; }
-  .site-footer a { color: var(--svbc-gold); }
+  .site-footer a { color: var(--svbc-gold); text-decoration: underline; }
   .site-footer-lang {
     display: flex;
     align-items: center;
@@ -338,7 +345,7 @@ export const PORTAL_CSS = `
        on one line down to a ~375px viewport. */
     .site-header-inner { flex-wrap: wrap; row-gap: 10px; }
     .site-header .site-logo { height: 56px; }
-    .site-header-donate { height: 36px; padding: 0 16px; font-size: 13px; border-radius: 18px; }
+    .site-header-donate, .site-header .logout-form button { padding: 10px 16px; font-size: 14px; }
   }
   @media print {
     .site-header, .site-footer { display: none; }
