@@ -155,6 +155,33 @@ describe('moveLoggedContacts — read window', () => {
     expect(await moveLoggedContacts(deps(s), opts)).toMatchObject({ planned: 1, moved: 1 });
   });
 
+  // A few candidates on a big Historical: ask Monday where those people are rather than paging the
+  // whole board to find them.
+  it('looks up only the candidates\' boards instead of paging People (Historical)', async () => {
+    await priorRun('yesterday');
+    const historical = Array.from({ length: 1_200 }, (_, i) => ({ id: `h${i}`, ...old }));
+    const candidates = ['h1', 'h2', 'h3', 'on-people', 'deleted', 'archived'];
+    const s = base({
+      live: [{ id: 'on-people' }], historical: [...historical, { id: 'archived', ...old }], archived: ['archived'],
+      logged: candidates.map((id, i) => ({ id: `a${i}`, people: [id], date: `2026-10-0${i + 1}`, type: 'Call' })),
+    });
+    expect(await moveLoggedContacts(deps(s), opts)).toMatchObject({ planned: 3, moved: 3, deferred: 0 });
+    expect(pagedHistorical(s)).toBe(false);
+    expect(s.itemBoardCalls?.map((ids) => ids.length)).toEqual([6]);
+    expect(s.moves.map((m) => m.itemId)).toEqual(['h3', 'h2', 'h1']);
+    expect(s.calls?.filter((c) => c !== 'moveItemToBoard')).toEqual([
+      'getBoardSchema', 'getBoardSchema', 'getBoardSchema', 'pageItems', 'getItemBoardIds',
+    ]);
+  });
+
+  it('looks candidates up 100 at a time', async () => {
+    const historical = Array.from({ length: 150 }, (_, i) => ({ id: `h${i}`, ...old }));
+    const s = base({ historical, logged: historical.map((p) => ({ id: `l-${p.id}`, people: [p.id], date: '2026-09-15', type: 'Call' })) });
+    expect(await moveLoggedContacts(deps(s), opts)).toMatchObject({ planned: 150, moved: 150 });
+    expect(s.itemBoardCalls?.map((ids) => ids.length)).toEqual([100, 50]);
+    expect(pagedHistorical(s)).toBe(false);
+  });
+
   it.each([
     ['a failed run', { status: 'failed' as const }],
     ['a dry run', { dryRun: true }],

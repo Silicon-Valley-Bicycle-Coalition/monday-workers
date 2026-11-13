@@ -221,9 +221,10 @@ the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged co
 new gift still waits for the pass. It doesn't page all of Activities (Logged) every day (#101): a
 server-side date rule reads only items dated from 14 days (`LOOKBACK_MARGIN_DAYS`) before the last
 clean live logged-contact run, one that finished ok with no failed, ambiguous or deferred move.
-After any other run, or with none, it reads the whole window, as before. People (Historical) is
-paged only when that read finds someone. An item dated earlier than the margin but logged since
-waits for the next pass.
+After any other run, or with none, it reads the whole window, as before. It never pages People
+(Historical): it asks Monday which board each person that read found is on (`items(ids:)`, 100 at
+a time, active items only), and moves those on Historical. An item dated earlier than the margin
+but logged since waits for the next pass.
 
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
@@ -293,7 +294,8 @@ There's no route for the other direction, because a pass handles that.
 * **Monday GraphQL** (`src/monday/graphql.ts`, the canonical transport copy; `src/monday/client.ts`
   tunes it to 4 attempts / 30 s per request). Reads: `boards { items_count items_limit columns
   groups }`, `items_page(limit: 500)` with `column_values` (+ `linked_item_ids` on connect
-  columns), `items(ids:) { board { id } }`, `items(ids:) { column_values }` (a single-person
+  columns), `items(ids:) { board { id } }` (one item when settling a move or promoting; up to 100 active
+  items, `exclude_nonactive: true`, for a logged-contact run's candidates), `items(ids:) { column_values }` (a single-person
   move). Writes: `move_item_to_board`, and `create_item` on IT
   Requests when configured — both sent non-idempotent so a timeout is recorded, never retried blind.
 * **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind

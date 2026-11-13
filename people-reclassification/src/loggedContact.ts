@@ -1,5 +1,6 @@
 import { AmbiguousWriteError } from './monday/graphql';
-import { LEASE_MS, pageAll, readLoggedActivities, resolveBoards, settleUnsettled, type PassDeps } from './pass';
+import { ITEMS_BY_ID_LIMIT } from './monday/client';
+import { LEASE_MS, readLoggedActivities, resolveBoards, settleUnsettled, type PassDeps } from './pass';
 import { cutoffFor, todayInZone } from './classify';
 import { errorText } from './logSafe';
 import type { RunRow } from './db/ledger';
@@ -20,7 +21,7 @@ const MAX_CONSECUTIVE_FAILURES = 5;
 export const LOOKBACK_MARGIN_DAYS = 14;
 
 // The first date a daily run reads Activities (Logged) from. A quiet day shouldn't page the whole
-// board (nor People (Historical) after it), so it starts shortly before the last live run that left
+// board, so it starts shortly before the last live run that left
 // nothing behind: it finished ok and every person it found due was moved. Anything else, including
 // no such run or a summary from before deferred was counted, reads the whole window again.
 export function loggedReadSince(previous: RunRow | null, cutoffISO: string, timeZone: string): string {
@@ -84,11 +85,14 @@ async function moveAll(
     if (dateISO > (latest.get(personId) ?? '')) latest.set(personId, dateISO);
   }, { logged: 0 }, sinceISO);
 
+  // Ask Monday which board each candidate is on, rather than paging all of People (Historical) to
+  // find them (#101). Someone on People, deleted or archived isn't due.
   const due: { itemId: string; latestActivity: string }[] = [];
-  if (latest.size > 0) {
-    for await (const item of pageAll(monday, Number(resolved.historical.id), [resolved.historicalCols.promotedOn])) {
-      const latestActivity = latest.get(item.id);
-      if (latestActivity !== undefined) due.push({ itemId: item.id, latestActivity });
+  const candidates = [...latest.keys()];
+  for (let i = 0; i < candidates.length; i += ITEMS_BY_ID_LIMIT) {
+    const boards = await monday.getItemBoardIds(candidates.slice(i, i + ITEMS_BY_ID_LIMIT));
+    for (const [itemId, boardId] of boards) {
+      if (boardId === resolved.historical.id) due.push({ itemId, latestActivity: latest.get(itemId)! });
     }
   }
   due.sort((a, b) => b.latestActivity.localeCompare(a.latestActivity));
