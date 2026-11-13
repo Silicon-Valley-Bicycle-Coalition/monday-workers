@@ -61,7 +61,8 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
 
 function fakeQbEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
   return {
-    insertEvent: vi.fn(),
+    recordEvents: vi.fn(),
+    markEvents: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qbEventRow()),
     findByPendingMondayItemId: vi.fn().mockResolvedValue(null),
