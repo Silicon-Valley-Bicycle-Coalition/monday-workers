@@ -72,9 +72,16 @@ export interface FakeState {
   updates?: { itemId: string; body: string }[];
   failWrite?: (itemId: string, values: Record<string, unknown>) => Error | null;
   boardOf?: Record<string, string | null>;
+  // Archived items: Monday's items_page and items(ids:, exclude_nonactive: true) both leave them
+  // out, as they do deleted items (ids on neither People board).
+  archived?: string[];
   pageSize?: number;
   // Every pageItems call's board and filter, so a test can see what was read.
   pageCalls?: { boardId: number; filter: PageFilter | undefined }[];
+  // Every getItemBoardIds call's ids, so a test can see the batch sizes.
+  itemBoardCalls?: string[][];
+  // Every client call by method name, in order, for counting Monday requests.
+  calls?: string[];
 }
 
 function personItem(p: Person, suffix: string): PageItem {
@@ -120,13 +127,22 @@ export function fakeClient(state: FakeState): ReclassificationMondayClient {
       id: a.id, text: new Map([['date_a', a.date ?? null], ['color_type', a.type ?? null]]), linked: new Map([['br_person', a.people ?? []]]),
     })),
   };
-  return {
+  const archived = new Set(state.archived ?? []);
+  const boardIdOf = (itemId: string): string | null => {
+    if (state.boardOf !== undefined && itemId in state.boardOf) return state.boardOf[itemId] ?? null;
+    if (archived.has(itemId)) return null;
+    if (state.live.some((p) => p.id === itemId)) return String(LIVE);
+    if (state.historical.some((p) => p.id === itemId)) return String(HIST);
+    return null;
+  };
+  const client: ReclassificationMondayClient = {
     async getBoardSchema(boardId) { return schemas[boardId] ?? null; },
     async pageItems(boardId, _columnIds, cursor, filter): Promise<ItemsPage> {
       (state.pageCalls ??= []).push({ boardId, filter });
       // Monday's on-or-after date rule: a blank date never matches.
       const rule = filter?.dateOnOrAfter;
       const all = (items[boardId] ?? []).filter((i) => {
+        if (archived.has(i.id)) return false;
         if (rule === undefined) return true;
         const date = i.text.get(rule.columnId);
         return date !== null && date !== undefined && date >= rule.dateISO;
@@ -137,6 +153,16 @@ export function fakeClient(state: FakeState): ReclassificationMondayClient {
       return { items: page, cursor: start + size < all.length ? String(start + size) : null };
     },
     async getItemBoardId(itemId) { return state.boardOf?.[itemId] ?? null; },
+    async getItemBoardIds(itemIds) {
+      if (itemIds.length > 100) throw new Error(`items(ids:) takes at most 100 ids, got ${itemIds.length}`);
+      (state.itemBoardCalls ??= []).push([...itemIds]);
+      const found = new Map<string, string>();
+      for (const id of itemIds) {
+        const boardId = boardIdOf(id);
+        if (boardId !== null) found.set(id, boardId);
+      }
+      return found;
+    },
     async getItemValues(itemId) { return [...items[LIVE]!, ...items[HIST]!].find((i) => i.id === itemId) ?? null; },
     async moveItemToBoard(itemId, boardId, groupId, mapping) {
       const err = state.failMove?.(itemId) ?? null;
@@ -158,6 +184,17 @@ export function fakeClient(state: FakeState): ReclassificationMondayClient {
       return `it-${state.created.length}`;
     },
   };
+  // Count every call by name; a counting wrapper keeps each method above free of bookkeeping.
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== 'function' || typeof prop !== 'string') return value;
+      return (...args: unknown[]) => {
+        (state.calls ??= []).push(prop);
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
 }
 
 export function deps(state: FakeState, cfg = config()): PassDeps {
