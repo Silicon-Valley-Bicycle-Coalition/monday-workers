@@ -88,17 +88,17 @@
       "registrantsLinkColumn": "board_relation_mm8svmgy"
     },
     "volunteers": {
-      "attendeeIdColumn": "REPLACE_WITH_COLUMN_ID",
-      "attendeeNameColumn": "REPLACE_WITH_COLUMN_ID",
-      "attendeeEmailColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeIdColumn": "text_mm928trc",
+      "attendeeNameColumn": "text_mm9254sk",
+      "attendeeEmailColumn": "email_mm92apq7",
       "jobColumn": "text_mm8nvrsn",
       "dateColumn": "date_mm8nyac2",
       "statusColumn": "color_mm8neqqe",
       "historicalColumn": "boolean_mm8nd5tq",
       "volunteerLinkColumn": "board_relation_mm8n732t",
-      "eventColumn": "REPLACE_WITH_COLUMN_ID",
-      "listingColumn": "REPLACE_WITH_COLUMN_ID",
-      "ticketTypeColumn": "REPLACE_WITH_COLUMN_ID"
+      "eventColumn": "board_relation_mm925xt9",
+      "listingColumn": "board_relation_mm92t0g4",
+      "ticketTypeColumn": "text_mm92pfac"
     },
     "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {
