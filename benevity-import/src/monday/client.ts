@@ -27,9 +27,10 @@ export interface MondayClient {
   // Archive, not delete: reversible from the board's archive if it was ever the wrong item.
   archiveItem(itemId: string): Promise<void>;
   fetchAsset(assetId: string): Promise<MondayAsset>;
-  // The board an item lives on and the ids of the assets attached to it; null when the item
-  // doesn't exist. Lets the upload webhook refuse an asset id that isn't on the Uploads board (#106).
-  fetchItemAssets(itemId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
+  // The board an item lives on and the ids of the assets in one of its file columns; null when
+  // the item doesn't exist. Lets the upload webhook refuse an asset id that isn't in the Uploads
+  // board's file column (#106).
+  fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
 }
 
 // API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
@@ -145,17 +146,28 @@ export class HttpMondayClient implements MondayClient {
     return { id: asset.id, name: asset.name, publicUrl: asset.public_url };
   }
 
-  async fetchItemAssets(itemId: string): Promise<{ boardId: string; assetIds: string[] } | null> {
+  async fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null> {
     const data = await this.transport.request<{
-      items: { board: { id: string } | null; assets: { id: string }[] | null }[];
+      items: {
+        board: { id: string } | null;
+        column_values: { files?: { asset_id?: string | number }[] | null }[] | null;
+      }[];
     }>(
-      `query ($itemIds: [ID!]!) {
-        items(ids: $itemIds) { board { id } assets { id } }
+      `query ($itemIds: [ID!]!, $columnIds: [String!]) {
+        items(ids: $itemIds) {
+          board { id }
+          column_values(ids: $columnIds) {
+            ... on FileValue { files { ... on FileAssetValue { asset_id } } }
+          }
+        }
       }`,
-      { itemIds: [itemId] }
+      { itemIds: [itemId], columnIds: [fileColumnId] }
     );
     const item = data.items[0];
     if (!item?.board) return null;
-    return { boardId: String(item.board.id), assetIds: (item.assets ?? []).map((a) => String(a.id)) };
+    const assetIds = (item.column_values ?? [])
+      .flatMap((value) => value.files ?? [])
+      .flatMap((file) => (file.asset_id === undefined ? [] : [String(file.asset_id)]));
+    return { boardId: String(item.board.id), assetIds };
   }
 }

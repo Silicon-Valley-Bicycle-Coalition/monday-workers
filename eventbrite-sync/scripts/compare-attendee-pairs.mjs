@@ -44,18 +44,22 @@ async function get(url, token) {
       await new Promise((r) => setTimeout(r, wait * 1000));
       continue;
     }
-    if (!res.ok) throw new Error(`Eventbrite ${res.status} for ${url.replace(/\?.*/, '')}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(`Eventbrite ${res.status} for ${url.replace(/\?.*/, '')}: ${body.error_description ?? body.error ?? 'no detail'}`);
+    }
     return res.json();
   }
 }
 
-// Every attendee of one event, following the continuation token. status=all so canceled and
-// refunded records are listed too: they are exactly what this check has to see.
+// Every attendee of one event, following the continuation token. No `status` filter: "all" is not
+// a valid choice, and omitting it lists canceled and refunded records too (verified 2026-11-11: 5
+// attendees unfiltered vs 3 with status=attending), which are exactly what this check has to see.
 async function listAttendees(eventId, token) {
   const out = [];
   let continuation = null;
   do {
-    const qs = new URLSearchParams({ status: 'all' });
+    const qs = new URLSearchParams();
     if (continuation) qs.set('continuation', continuation);
     const page = await get(`${API}/events/${encodeURIComponent(eventId)}/attendees/?${qs}`, token);
     out.push(...(page.attendees ?? []));

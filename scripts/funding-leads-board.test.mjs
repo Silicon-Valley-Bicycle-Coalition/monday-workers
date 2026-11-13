@@ -476,3 +476,42 @@ describe('seed interruption', () => {
     assert.ok(s.lines.some((l) => /different boards/i.test(l)));
   });
 });
+
+describe('planSeed merges active rows by company', () => {
+  const act = (company, event, amount, over = {}) => ({
+    tab: 'active',
+    plan: mapSheetRow('active', { Company: company, Event: event, 'Grant Amount': amount, 'Scheduled Meeting': 'FALSE', 'Staff Lead': '', ...over }),
+  });
+  it('makes one lead per company with the events unioned and the amounts summed', () => {
+    const r = planSeed([act('Example Co', 'BTWD', '3000'), act('example co', 'Summit', '$4,000')], []);
+    assert.equal(r.leadCreates.length, 1);
+    assert.deepEqual(r.leadCreates[0].plan.events, ['BTWD', 'Advocacy Summit']);
+    assert.equal(r.leadCreates[0].plan.amount, 7000);
+  });
+  it('does not double-count an event listed twice', () => {
+    const r = planSeed([act('Example Co', 'BTWD', '3000'), act('Example Co', 'BTWD', '3000')], []);
+    assert.equal(r.leadCreates[0].plan.amount, 3000);
+    assert.equal(r.collapsed, 1);
+  });
+  it('sums what is known and leaves the amount empty only when every row is blank', () => {
+    assert.equal(planSeed([act('A', 'BTWD', '3000'), act('A', 'Summit', '')], []).leadCreates[0].plan.amount, 3000);
+    assert.equal(planSeed([act('A', 'BTWD', ''), act('A', 'Summit', '')], []).leadCreates[0].plan.amount, null);
+  });
+  it('keeps the furthest stage, the BTWD tier, and the union of owners', () => {
+    const r = planSeed(
+      [
+        act('A', 'BTWD', '1', { Type: 'Local', 'Staff Lead': 'Ann A' }),
+        act('A', 'Summit', '1', { 'Scheduled Meeting': 'TRUE', 'Staff Lead': 'Ann A, Bo B' }),
+      ],
+      [],
+    );
+    const p = r.leadCreates[0].plan;
+    assert.equal(p.stage, 'Scheduled Meeting');
+    assert.equal(p.btwdTier, 'Local');
+    assert.deepEqual(p.owners, ['Ann A', 'Bo B']);
+  });
+  it('does not merge across tabs', () => {
+    const pr = { tab: 'prospects', plan: mapSheetRow('prospects', { 'Account Name': 'A', 'Sponsorship Cycle': '2024 BTWD' }) };
+    assert.equal(planSeed([act('A', 'BTWD', '1'), pr], []).leadCreates.length, 2);
+  });
+});

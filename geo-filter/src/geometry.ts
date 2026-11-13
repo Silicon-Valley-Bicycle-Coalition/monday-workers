@@ -38,6 +38,19 @@ function hasCoordinates(c: Contact): c is Contact & { lat: number; lng: number }
   return c.lat !== null && c.lng !== null && Number.isFinite(c.lat) && Number.isFinite(c.lng);
 }
 
+// Mean earth radius turf uses (meters), so distances agree with the corridor buffer's units.
+const EARTH_RADIUS_M = 6_371_008.8;
+const METERS_PER_MILE = 1609.344;
+
+/** Great-circle (haversine) distance between two lat/lng points, in miles. */
+function distanceMiles(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const rad = Math.PI / 180;
+  const dLat = (bLat - aLat) * rad;
+  const dLng = (bLng - aLng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+  return (2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)))) / METERS_PER_MILE;
+}
+
 /**
  * Reduces a US ZIP or ZIP+4 (`95113-1234`, `95113 1234`, `951131234`) to its 5-digit ZIP so the
  * forms match each other. A 3–4-digit number is left-padded with zeros (`2134` → `02134`): a
@@ -64,13 +77,8 @@ export function filterContacts(contacts: Contact[], mode: FilterMode): FilterRes
   const withCoordinates = contacts.filter(hasCoordinates);
 
   if (mode.kind === 'radius') {
-    const center = turfPoint([mode.center.lng, mode.center.lat]);
-    const bufferMiles = mode.radiusMiles;
-    const targetPolygon = buffer(center, bufferMiles, { units: 'miles' }) as Feature<Polygon | MultiPolygon> | null;
-    if (!targetPolygon) return { matched: [], skippedNoLocation };
-    const matched = withCoordinates.filter((c) =>
-      booleanPointInPolygon(turfPoint([c.lng, c.lat]), targetPolygon)
-    );
+    const { lat, lng } = mode.center;
+    const matched = withCoordinates.filter((c) => distanceMiles(lat, lng, c.lat, c.lng) <= mode.radiusMiles);
     return { matched, skippedNoLocation };
   }
 

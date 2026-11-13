@@ -39,7 +39,7 @@ created but linking fails (or the run dies between the two writes), the next run
 
 Reads `active.csv`, `prospects.csv`, `lapsed.csv` (exported from the "2027 Sponsor List" tabs
 "2026 BTWD, Summit, Misc", "Prospects", "Lapsed Donors") from `--data`, which must live outside this
-repo (convention: `monday-migration/data/funding-leads/`, gitignored). It writes `review.txt`
+repo (convention: `monday-migration/data/funding-leads/`, gitignored). On the active tab, rows for the same company are merged into one lead: events unioned, amounts summed (an event listed twice counts once). It writes `review.txt`
 (near-match organization names for companies on the sheet, never merged; counts of skipped, collapsed and unreadable rows) and `ledger.json` (resume; tied to the two board ids). If a run dies while creating a lead, `ledger.json` holds a `pending` marker and the next run refuses to continue: look in Monday for that lead, then clear `pending`. A header mismatch in any tab (e.g. no `Company` column) stops the run with exit 2. Owners and contacts are not
 linked in this pass; `review.txt` counts rows with contact data.
 

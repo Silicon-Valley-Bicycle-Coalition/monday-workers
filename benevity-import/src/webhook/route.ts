@@ -80,8 +80,8 @@ export function createApp(deps: AppDeps) {
     }
 
     // The payload is only as trustworthy as the URL secret (#106): don't ingest any asset id it
-    // names. The event must come from the Uploads board, and every asset must really be attached
-    // to that item there. Monday is asked, so a forged payload can't vouch for itself.
+    // names. The event must come from the Uploads board, and every asset must really be in that
+    // item's file column there. Monday is asked, so a forged payload can't vouch for itself.
     const uploadsBoardId = deps.config.monday.boards.benevityUploads;
     if (uploadsBoardId === null || event.boardId !== String(uploadsBoardId)) {
       console.error(`benevity webhook: refused item "${event.itemId}": event is not from the Uploads board`);
@@ -89,7 +89,7 @@ export function createApp(deps: AppDeps) {
     }
     let attached;
     try {
-      attached = await deps.mondayClient.fetchItemAssets(event.itemId);
+      attached = await deps.mondayClient.fetchItemAssets(event.itemId, event.columnId);
     } catch (err) {
       console.error(`benevity webhook: failed to verify item "${event.itemId}": ${errorMessage(err)}`);
       return c.json({ ok: false }, 500); // Monday redelivers
@@ -101,7 +101,7 @@ export function createApp(deps: AppDeps) {
     const onItem = new Set(attached.assetIds);
     const assetIds = event.assetIds.filter((id) => onItem.has(id));
     if (assetIds.length !== event.assetIds.length) {
-      console.error(`benevity webhook: item "${event.itemId}": ignored ${event.assetIds.length - assetIds.length} asset id(s) not attached to it`);
+      console.error(`benevity webhook: item "${event.itemId}": ignored ${event.assetIds.length - assetIds.length} asset id(s) not in its file column`);
     }
 
     // Record and enqueue; the consumer fetches, parses and ingests the file (#74), so a large

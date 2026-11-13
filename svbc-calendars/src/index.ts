@@ -89,7 +89,7 @@ async function withCache(cacheKey: Request, ttlSeconds: number, ctx: ExecutionCo
   return response;
 }
 
-async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> {
+async function handleCalendarIcs(sourceId: string, env: Env, ctx: ExecutionContext): Promise<Response> {
   const source = config.sources.find((s) => s.id === sourceId);
   if (!source) {
     // Deliberately a constant sentinel, not the raw (attacker-controlled) sourceId: a 404 here is
@@ -105,6 +105,7 @@ async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> 
     sendFailureAlert,
     slackWebhookUrl: env.SLACK_WEBHOOK_URL,
     now: () => new Date(),
+    waitUntil: (promise) => ctx.waitUntil(promise),
   });
   recordMetric(env, { route: 'calendars.ics', sourceId, outcome: result.ics === null ? 'error' : result.servedFromFallback ? 'fallback' : 'live' });
   if (result.ics === null) {
@@ -204,7 +205,7 @@ export default {
         const sourceId = icsMatch[1];
         const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
         const cacheKey = new Request(`${url.origin}/calendars/${sourceId}.ics?v=${version}`, { method: 'GET' });
-        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarIcs(sourceId, env)));
+        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarIcs(sourceId, env, ctx)));
         if (response.headers.get('X-Cache') === 'HIT') {
           recordMetric(env, { route: 'calendars.ics', sourceId, outcome: 'cache-hit' });
         }

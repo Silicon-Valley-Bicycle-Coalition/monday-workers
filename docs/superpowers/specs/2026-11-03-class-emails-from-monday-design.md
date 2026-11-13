@@ -33,7 +33,7 @@ the email before it goes.
 | Monday Mass email: From list | Connected mailbox only, no alias |
 | Fresh Sheet copy: **Mail Merge** menu | Absent on one copy through two loads, present on another within about 20 seconds. **Cause unknown.** The send page doesn't use this menu. |
 
-**Not tested:** a staff member's account, the first-run experience for a staff member, the `log@` BCC,
+**Not tested:** a staff member's account, the first-run experience for a staff member, whether Monday's built-in logging picks up mail sent as `learn@`,
 or anything below that isn't in this table.
 
 ## Goals
@@ -169,7 +169,7 @@ Nothing else. No status column, and no Class Type, because the sender chooses th
 * `doGet` serves the page; `google.script.run` calls the server functions.
 * Reuses `templateFromDraft_`, `send_` and the checks from `mail-merge.gs`. These are copied, as Apps
   Script projects don't share code without a library. Mark each copy so a fix is applied to both.
-* Keeps the `log@` BCC from `feat/learn-mail-merge-log`, once that lands.
+* Adds no BCC. **Decided 2026-11-03:** every staff member gets a CRM seat, and Monday's built-in email logging keeps the record.
 * Sends within Apps Script's execution limit. At about 3–26 recipients per send, this isn't close.
 
 ### Staff docs (private repo)
@@ -180,7 +180,7 @@ Nothing else. No status column, and no Class Type, because the sender chooses th
 
 1. **Attendee feed in production** (separate work, on the Class roster branch). Without it, Monday has
    no recipients.
-2. Land `feat/learn-mail-merge-log`, and confirm one real send through `log@`.
+2. Confirm whether Monday's built-in logging picks up one real send as `learn@`, to an outside address on a People record.
 3. Worker endpoints, with tests, in the sandbox.
 4. The page, tested in dwk@'s account against the sandbox Worker.
 5. A staff account: the coordinator's alias, first-run authorization, one send to staff-only
