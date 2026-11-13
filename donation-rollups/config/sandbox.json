@@ -249,6 +249,7 @@
   },
   "custodian": {
     "activeFiscalYears": 2,
+    "sweepOwnersPerRun": 500,
     "workspaceId": 18210301,
     "capacityAlertPct": 80,
     "alertItemId": 13460723549,
