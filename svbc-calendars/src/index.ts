@@ -3,6 +3,7 @@ import { validateConfig } from './config';
 import { createFetchSourceEvents } from './adapters/dispatch';
 import { fetchEventsResponse, ALLOWED_ORGANIZERS } from './eventsApi';
 import { widgetResponse } from './widget';
+import { fontResponse } from './fonts';
 import { getSourceCalendar } from './calendarSource';
 import { buildListing, buildListingHtml } from './listing';
 import { getAllSourceStatuses } from './calendarStore';
@@ -144,6 +145,14 @@ export default {
       }
 
       const url = new URL(request.url);
+
+      // The widget's self-hosted fonts (#123): constant bytes with an immutable cache header, so
+      // like a cache HIT they're served ahead of the rate limiter and cost no upstream work.
+      if (request.method === 'GET' && url.pathname.startsWith('/fonts/')) {
+        const font = fontResponse(url.pathname);
+        if (font) return handleCORS(request, font);
+      }
+
       const organizerId = url.searchParams.get('organizer');
       const organizerAllowed = !organizerId || ALLOWED_ORGANIZERS.includes(organizerId);
       const version = env.CACHE_VERSION || '0';

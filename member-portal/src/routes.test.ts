@@ -787,6 +787,18 @@ describe('GET /assets/:file', () => {
     expect(logo.headers.get('Content-Type')).toBe('image/svg+xml');
     expect(logo.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
     expect(await logo.text()).toMatch(/^<svg/);
+
+    // The stylesheet's @font-face rules point at self-hosted woff2 files (#123).
+    const cssText = await (await app.request(cssPath!)).text();
+    expect(cssText).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    const fontPath = /url\((\/assets\/poppins-latin-400\.[0-9a-f]{16}\.woff2)\)/.exec(cssText)?.[1];
+    expect(fontPath).toBeDefined();
+    const font = await app.request(fontPath!);
+    expect(font.status).toBe(200);
+    expect(font.headers.get('Content-Type')).toBe('font/woff2');
+    expect(font.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(new TextDecoder().decode(new Uint8Array(await font.arrayBuffer(), 0, 4))).toBe('wOF2');
+    expect(font.headers.get('Content-Security-Policy')).toContain("font-src 'self'");
   });
 
   it('404s an unknown or stale hash rather than serving other bytes as immutable', async () => {

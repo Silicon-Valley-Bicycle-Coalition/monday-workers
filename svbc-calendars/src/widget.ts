@@ -1,3 +1,5 @@
+import { FONT_FACE_CSS } from './fonts';
+
 export function widgetResponse(url: URL, organizerId: string | null, webAnalyticsToken: string): Response {
   const maxEvents = Math.min(parseInt(url.searchParams.get('max') || '20', 10), 50);
   const showImages = url.searchParams.get('images') !== 'false';
@@ -27,12 +29,10 @@ function widgetHTML(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SVBC Events</title>
-<!-- Manrope/Poppins, as bikesiliconvalley.org loads them: the widget is an iframe, so it doesn't inherit the site's fonts. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&family=Poppins:wght@400;600;700&display=swap">
 ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliberately: Cloudflare serves beacon.min.js from its own edge and updates it without version pinning, so a pinned SRI hash would break the beacon the next time Cloudflare ships an update. This is the standard, documented way to load Cloudflare Web Analytics. --><script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${webAnalyticsToken}"}'></script>` : ''}
 <style>
+  /* Manrope/Poppins, self-hosted by this Worker (src/fonts.ts): the widget is an iframe, so it doesn't inherit the site's fonts. */
+  ${FONT_FACE_CSS}
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     --svbc-accent: #FFC700;

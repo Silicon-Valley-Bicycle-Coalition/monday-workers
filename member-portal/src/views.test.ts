@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GOOGLE_FONTS_CSS_URL, checkEmailView, errorView, loginFormView, page, portalView } from './views';
+import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { formatUsdText } from './money';
 import { formatShortDate } from './dates';
 import type { FunraiseLinkUrls, PortalView } from './types';
@@ -7,12 +7,10 @@ import type { PortalCard } from './card/loadCardData';
 import { t } from './i18n/t';
 
 describe('page', () => {
-  it('loads Manrope and Poppins from Google Fonts before the portal stylesheet', () => {
-    const html = page('Title', '<p>body</p>', 'en');
-    expect(GOOGLE_FONTS_CSS_URL).toMatch(/^https:\/\/fonts\.googleapis\.com\/css2\?family=Manrope.*family=Poppins.*display=swap$/);
-    const fonts = html.indexOf(`<link rel="stylesheet" href="${GOOGLE_FONTS_CSS_URL}" />`);
-    expect(fonts).toBeGreaterThan(-1);
-    expect(fonts).toBeLessThan(html.indexOf('href="/assets/portal.'));
+  it('loads nothing from another origin: fonts come from the portal stylesheet (#123)', () => {
+    const html = page('Title', '<p>body</p>', 'en', { authenticated: true });
+    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    expect(html).not.toMatch(/<(link|script|img)\b[^>]*\b(href|src)="https?:/);
   });
 
   it('wraps the body in a document with charset, viewport, the given title, and the locale as <html lang>', () => {
