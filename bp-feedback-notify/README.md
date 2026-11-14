@@ -253,5 +253,7 @@ npm run deploy         # production: live, and goes straight to real organizers
   `bp-feedback-notify:writes` = `on`, the live board has the `Post-Event Feedback` column
   (`color_mm8rtt99`), and the webhook automation is on, its handshake answered 200. Still open: no
   real item has gone through it yet, so a production email is unconfirmed, and staff need telling
-  about the manual "mark sent" step (`sendStatus` is still `null`) and the 24-hour resend cooldown. Changing the board's structure
+  about the 24-hour resend cooldown. Since 2026-11-14 (D1 resend guard deployed, `sendStatus` set)
+  the Worker writes `Sent to Organizer` back itself; the column still needs a `Send Failed` label
+  before a failed send can show. Changing the board's structure
   takes board ownership; the `+` column button is simply dead without it.
