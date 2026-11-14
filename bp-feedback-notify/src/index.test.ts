@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import app, { type Env } from './index';
+import production from '../config/production.json';
 
 // The real write-back is unit-tested in sendStatus.test.ts; here it's a spy so a test can make it
 // hang and check the webhook response doesn't wait for it.
@@ -118,7 +119,8 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(SPOOFED_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(200);
-    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), expect.any(Function), VALID_BODY.itemId, null);
+    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), expect.any(Function), VALID_BODY.itemId,
+      production.sendStatus && { columnId: production.sendStatus.columnId, sentLabel: production.sendStatus.sentLabel });
     // The token reaches the Monday helpers as a provider (src/mondayApi.ts tokenProviderFor).
     expect(await (readFeedbackItem.mock.calls[0]![1] as () => Promise<string>)()).toBe(TOKEN);
     const sent = (env.EMAIL.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -258,7 +260,7 @@ describe('POST /webhook/bp-feedback', () => {
 
     expect(res.status).toBe(422);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
-    expect(writeSendStatus).toHaveBeenLastCalledWith(null, expect.any(Function), VALID_BODY.itemId, 'failed');
+    expect(writeSendStatus).toHaveBeenLastCalledWith(production.sendStatus, expect.any(Function), VALID_BODY.itemId, 'failed');
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
   });
@@ -339,7 +341,7 @@ describe('POST /webhook/bp-feedback', () => {
     const logged = JSON.parse(errorSpy.mock.calls.find(([line]) => String(line).includes('bp-feedback-send-failed'))![0] as string);
     expect(logged).toMatchObject({ itemId: VALID_BODY.itemId, error: 'destination address is not a verified address' });
     expect(JSON.stringify(logged)).not.toContain('organizer@example.org'); // no PII in logs
-    // Status write-back ships disabled (sendStatus: null in both configs), so no Monday call.
+    // The status write-back is the mocked writeSendStatus, so nothing here calls Monday.
     expect(fetchSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
     fetchSpy.mockRestore();
@@ -369,7 +371,7 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ EMAIL: { send } }), ctx);
 
     expect(res.status).toBe(status);
-    expect(writeSendStatus).toHaveBeenLastCalledWith(null, expect.any(Function), VALID_BODY.itemId, outcome);
+    expect(writeSendStatus).toHaveBeenLastCalledWith(production.sendStatus, expect.any(Function), VALID_BODY.itemId, outcome);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
     expect(ctx.waitUntil.mock.calls[0]![0]).toBe(writeSendStatus.mock.results.at(-1)!.value);
     errorSpy.mockRestore();

@@ -8,6 +8,11 @@
     "eventNameColumnId": "short_textdqu5gf2d",
     "organizerEmailColumnId": "short_text3z8szxke"
   },
-  "sendStatus": null,
+  "sendStatus": {
+    "boardId": "18395469629",
+    "columnId": "color_mm8rtt99",
+    "sentLabel": "Sent to Organizer",
+    "failedLabel": "Send Failed"
+  },
   "resendCooldownHours": 24
 }

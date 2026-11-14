@@ -9,12 +9,11 @@
   // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
   // member-portal — no new domain onboarding needed for this Worker.
   "send_email": [{ "name": "EMAIL" }],
-  // Per-item resend guard (#105, src/sendGuard.ts). No database_id yet: create the database with
-  // `wrangler d1 create svbc-bp-feedback-notify` and paste its id here (forks: your own). Without
-  // an id, `wrangler deploy` auto-provisions a database by this name. Either way, apply
+  // Per-item resend guard (#105, src/sendGuard.ts). SVBC's database was created 2026-11-14; a fork
+  // creates its own with `wrangler d1 create svbc-bp-feedback-notify` and pastes the id here. Apply
   // migrations/ with `wrangler d1 migrations apply svbc-bp-feedback-notify --remote` before the
   // first deploy: until the table exists every send fails closed with a 503.
-  "d1_databases": [{ "binding": "DB", "database_name": "svbc-bp-feedback-notify", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "svbc-bp-feedback-notify", "database_id": "ee63819e-d723-447b-9987-48632f26eceb", "migrations_dir": "migrations" }],
   // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
   // env.sandbox); every in-scope Worker carries the same two ids, which
   // scripts/check-worker-flags.mjs verifies.
@@ -57,7 +56,7 @@
       "routes": [],
       "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
       // The sandbox resend-guard database (same setup as production's, with --env sandbox).
-      "d1_databases": [{ "binding": "DB", "database_name": "svbc-bp-feedback-notify-sandbox", "migrations_dir": "migrations" }],
+      "d1_databases": [{ "binding": "DB", "database_name": "svbc-bp-feedback-notify-sandbox", "database_id": "6d57074a-7bbc-4b25-9499-879a48c4c69f", "migrations_dir": "migrations" }],
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2012", "simple": { "limit": 60, "period": 60 } }],
