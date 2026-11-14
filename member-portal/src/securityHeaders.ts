@@ -11,6 +11,8 @@ import { secureHeaders } from 'hono/secure-headers';
 //   base-uri 'none'        — an injected <base> can't re-point relative form actions/links.
 //   object-src 'none'      — no plugins.
 //   form-action 'self'     — every form posts (and redirects) same-origin.
+// No style-src or font-src, so page()'s Google Fonts stylesheet (fonts.googleapis.com) and its
+// font files (fonts.gstatic.com) load; a future style-src/font-src must allow both hosts.
 export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
 
 // Not Hono's default no-referrer: under no-referrer, browsers send `Origin: null` on same-origin

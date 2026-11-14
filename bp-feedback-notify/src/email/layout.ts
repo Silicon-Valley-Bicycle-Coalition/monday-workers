@@ -41,13 +41,13 @@ export function renderEmailLayout(params: EmailLayoutParams): RenderedEmail {
 </style>
 </head>
 <body style="margin:0; padding:0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F4F4F4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F4F4F3;">
 <tr><td align="center" style="padding:24px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
-<tr><td style="background:#221E1F; padding:24px; text-align:center; border-radius:8px 8px 0 0;">
+<tr><td style="background:#000000; padding:24px; text-align:center; border-radius:8px 8px 0 0;">
 <img src="${params.logoUrl}" width="235" height="90" alt="Silicon Valley Bicycle Coalition" style="display:block; margin:0 auto; max-width:235px; width:100%; height:auto; border:0;">
 </td></tr>
-<tr><td class="em-card em-text" style="background:#FFFFFF; color:#221E1F; padding:32px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:16px; line-height:1.5;">
+<tr><td class="em-card em-text" style="background:#FFFFFF; color:#303030; padding:32px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:16px; line-height:1.5;">
 ${params.bodyHtml}
 </td></tr>
 <tr><td class="em-card em-muted" style="background:#FFFFFF; color:#666666; padding:16px 24px 32px; text-align:center; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:12px; border-radius:0 0 8px 8px;">
