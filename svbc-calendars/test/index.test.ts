@@ -77,6 +77,36 @@ function mockEventbrite(body = fakeEventbriteResponse()) {
   });
 }
 
+describe("self-hosted widget fonts (#123)", () => {
+  it("GET /widget declares @font-face rules for its own /fonts/ files and loads nothing from Google", async () => {
+    const html = await (await call(req("/widget"))).text();
+    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    for (const face of ["Manrope\"; font-style: normal; font-weight: 500", "Poppins\"; font-style: normal; font-weight: 400", "Poppins\"; font-style: normal; font-weight: 600", "Poppins\"; font-style: normal; font-weight: 700"]) {
+      expect(html).toContain(`font-family: "${face}`);
+    }
+  });
+
+  it("serves every font the widget names as immutable woff2, without touching the rate limiter", async () => {
+    const html = await (await call(req("/widget"))).text();
+    const paths = [...html.matchAll(/url\((\/fonts\/[a-z0-9-]+\.woff2)\)/g)].map((m) => m[1]!);
+    expect(paths.length).toBeGreaterThan(0);
+    const limit = vi.spyOn(env.REQUEST_RATE_LIMITER, "limit");
+    for (const path of paths) {
+      const res = await call(req(path));
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("font/woff2");
+      expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+      expect(new TextDecoder().decode(new Uint8Array(await res.arrayBuffer(), 0, 4))).toBe("wOF2");
+    }
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it("404s an unknown font path", async () => {
+    expect((await call(req("/fonts/comic-sans.woff2"))).status).toBe(404);
+    expect((await call(req("/fonts/../widget"))).status).not.toBe(500);
+  });
+});
+
 describe("routing (existing events-widgets behavior, preserved)", () => {
   it("GET /events returns 200 with events", async () => {
     mockEventbrite();

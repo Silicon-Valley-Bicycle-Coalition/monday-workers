@@ -78,9 +78,10 @@ CSS custom properties on `body`:
 - `--svbc-radius: 10px`
 
 The "More Information" link is the website's primary button: a gold pill (300px radius) with black
-Poppins 16px text. Manrope (event titles) and Poppins (everything else) load from Google Fonts,
-since the iframe doesn't inherit the parent page's fonts; the system stack is the fallback. No
-other external stylesheets or dependencies.
+Poppins 16px text. Manrope (event titles) and Poppins (everything else) are self-hosted by this
+Worker at `/fonts/*.woff2` (`src/fonts.ts`, #123), since the iframe doesn't inherit the parent
+page's fonts and loading them from Google Fonts would send each visitor's IP address to Google;
+the system stack is the fallback. No external stylesheets or dependencies.
 
 ## Embedding
 

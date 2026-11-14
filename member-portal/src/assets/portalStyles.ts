@@ -13,8 +13,8 @@ export const PORTAL_CSS = `
     --svbc-chrome: #383838;
     --svbc-ink: #303030;
     --svbc-sand: #F4F4F3;
-    /* Manrope and Poppins come from Google Fonts (linked in views.ts's page()); the system stack
-       covers the load and any blocked request. */
+    /* Manrope and Poppins are self-hosted: static.ts prepends their @font-face rules to this
+       stylesheet. The system stack covers the load (font-display: swap) and CJK locales. */
     --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --radius-pill: 300px;

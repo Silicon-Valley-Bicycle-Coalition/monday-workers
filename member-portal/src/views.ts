@@ -112,11 +112,6 @@ function siteFooter(locale: Locale, languagePicker: boolean): string {
 // languagePicker: false drops the footer language <select> — for pages whose state lives in the
 // query string, which the picker's `to` (location.pathname only) would lose. GET /auth/callback
 // is the one: switching language there dropped the token and landed on "invalid link".
-// Manrope (headings) and Poppins (body), as bikesiliconvalley.org loads them. The baseline CSP
-// sets no style-src or font-src, so these cross-origin loads need nothing in securityHeaders.ts.
-export const GOOGLE_FONTS_CSS_URL =
-  'https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&family=Poppins:ital,wght@0,400;0,600;0,700;1,400;1,700&display=swap';
-
 export function page(
   title: string,
   body: string,
@@ -130,9 +125,6 @@ export function page(
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <title>${escapeHtml(title)}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="${GOOGLE_FONTS_CSS_URL}" />
     <link rel="stylesheet" href="${PORTAL_CSS_ASSET.path}" />
   </head>
   <body>
