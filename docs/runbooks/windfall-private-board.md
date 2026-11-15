@@ -232,6 +232,11 @@ node scripts/windfall-board.mjs verify --people 18437909781 --historical 1843790
    confirms they can't. **Tell the three not to edit the board until step 7:** until the delete,
    any edit there is a mismatch against People and blocks it.
 
+   `verify` tolerates SVBC Integration (120827741) being an account admin and prints that it did
+   (`ADMIN_TOLERATED_USERS`); Sandbox Integration must still not be one, and neither may be
+   subscribed. The tolerance rests on the token check below: run it before relying on a passing
+   `verify`. It held on 2026-11-15, when all three apps read the board as empty.
+
    Then repeat the non-subscriber item-card and account-admin checks from the sandbox rehearsal, and
    the token check. The probe is off in production, so it needs one deploy with it on, per
    `monday-auth/README.md`, "Measuring production scope with the probe". From `monday-auth/`:

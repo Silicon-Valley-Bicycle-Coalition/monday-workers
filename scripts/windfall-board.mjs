@@ -44,6 +44,7 @@ import { AmbiguousWriteError, MondayApiError, MondayGraphQL } from '../monday-ba
 import { bareTitle } from './lib/column-titles.mjs';
 import {
   FORBIDDEN_USERS,
+  ADMIN_TOLERATED_USERS,
   SnapshotError,
   WINDFALL_TITLES,
   boardRowsFlagged,
@@ -366,7 +367,9 @@ async function verifyAll(args, { gql, out, err }) {
     }
     for (const id of FORBIDDEN_USERS) {
       if (!users.has(id)) out(`Forbidden user ${id} not found by the API; that's only a failure if subscribed.`);
-      else if (users.get(id).is_admin !== false) failures.push(`Forbidden user ${id} is an account admin, or the API wouldn't say.`);
+      else if (users.get(id).is_admin === true && ADMIN_TOLERATED_USERS.includes(id)) {
+        out(`Forbidden user ${id} is an account admin; tolerated (token probe showed no Worker token reads the board). Not subscribed is still required.`);
+      } else if (users.get(id).is_admin !== false) failures.push(`Forbidden user ${id} is an account admin, or the API wouldn't say.`);
     }
   }
 

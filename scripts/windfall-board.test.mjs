@@ -751,6 +751,16 @@ describe('verify', () => {
     }
   });
 
+  it('verify tolerates SVBC Integration being an account admin, but not Sandbox Integration or an unknown answer', async () => {
+    const w = await copied();
+    w.users[0].is_admin = true;
+    const r = await go(w, VERIFY);
+    assert.equal(r.code, 0, r.text);
+    assert.match(r.text, new RegExp(`${FORBIDDEN_USERS[0]} is an account admin; tolerated`));
+    w.boards.get(NEW_BOARD).subscribers.push(FORBIDDEN_USERS[0]);
+    assert.equal((await go(w, VERIFY)).code, 1, 'admin and subscribed');
+  });
+
   it('a forbidden user passed as --subscriber still fails', async () => {
     const w = await copied();
     w.boards.get(NEW_BOARD).subscribers.push(FORBIDDEN_USERS[0]);
@@ -919,7 +929,7 @@ describe('delete-people-columns', () => {
       (w) => { w.boards.get(NEW_BOARD).kind = 'public'; },
       (w) => w.boards.get(NEW_BOARD).subscribers.push(FORBIDDEN_USERS[0]),
       (w) => { w.boards.get(NEW_BOARD).items.pop(); },
-      (w) => { w.users[0].is_admin = true; },
+      (w) => { w.users[1].is_admin = true; },
       (w) => { w.users = []; },
       (w) => {
         const b = w.boards.get(PEOPLE);
