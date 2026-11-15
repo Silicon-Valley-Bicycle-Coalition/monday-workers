@@ -144,6 +144,11 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
+**Visual design:** `docs/design-system/` (follows bikesiliconvalley.org). Take colours, type,
+spacing and component patterns for any Worker page or email from its `tokens.json` and README,
+not from older Worker code. Fonts are self-hosted (`scripts/build-font-modules.mjs`); never link
+Google Fonts from a Worker page.
+
 **Read-only column markers: match titles with `bareTitle`.** Staff-facing column titles carry 🔒
 (a Worker writes it) or 📜 (Salesforce history, loaded once) so staff don't edit them, applied by
 `scripts/mark-read-only-columns.mjs`, whose `MARKED_COLUMNS` is the list. Code and config always
