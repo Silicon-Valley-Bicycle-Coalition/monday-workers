@@ -1,0 +1,57 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-13T18:15:00Z"
+  },
+  "title": "SVBC Workers",
+  "namespace": "SVBCWorkers",
+  "libraries": [],
+  "sections": {},
+  "groups": [
+    "Logos"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "svbc-wordmark.svg",
+        "svbc-wordmark-email.png",
+        "svbc-icon.png"
+      ],
+      "files": {
+        "svbc-wordmark.svg": {
+          "name": "svbc-wordmark.svg",
+          "blob": "020524899d86fda498bd27be7c777873",
+          "size": 19585,
+          "type": "image/svg+xml"
+        },
+        "svbc-wordmark-email.png": {
+          "name": "svbc-wordmark-email.png",
+          "blob": "0e95ba2d1ebf315962321ccfc30ba79f",
+          "size": 20309,
+          "type": "image/png"
+        },
+        "svbc-icon.png": {
+          "name": "svbc-icon.png",
+          "blob": "38f270eca501a88587e86881af7ee2c6",
+          "size": 13248,
+          "type": "image/png"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "lastChange": {
+    "by": "David W. Keith",
+    "at": "2026-11-14T00:00:00Z",
+    "via": "Claude Code · bikesiliconvalley.org + monday-workers@22f708e7",
+    "note": "Workers code migrated to the system in MR 478; migration table replaced with a status note"
+  }
+}
