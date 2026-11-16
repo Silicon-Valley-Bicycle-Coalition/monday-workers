@@ -26,8 +26,10 @@ Everything runs from the repo root with David's own Monday token, never a Worker
     with a better export carries Martha's notes over. It warns when every Notes cell in the input
     is blank.
 * **Review files live under `data/`.** They hold names and emails, and the script refuses to write
-  them anywhere else. `data/` is gitignored, so never commit or email them. They go to Martha's
-  restricted Box folder.
+  them anywhere else. `data/` is gitignored, so never commit or email them. They go to Box:
+  Development → Corporate Sponsorship → 2027 Sponsorship → "Sponsor Outreach setup review
+  (2026-11-16)". That folder is visible to all SVBC staff, like the rest of Development; David
+  accepted that on 2026-11-16.
 * **The console shows counts and ids only.**
 * **Exit codes:**
   * 0: nothing left to do or review.
@@ -168,8 +170,8 @@ found:
 
 1. With David's go-ahead, apply in this order: `columns`, `link-pipeline`, `prospects`, `contacts`.
 2. Re-run each as a dry run. Each should report 0 to write.
-3. Put the review files and `cycles.csv` in Martha's restricted Box folder, along with the
-   decisions she needs to make:
+3. Put the review files, `cycles.csv` and `event-names.json` in that Box folder, with a read-me
+   listing the decisions Martha needs to make (done 2026-11-16):
    * the event table
    * the unmatched companies
    * the unresolved contacts
