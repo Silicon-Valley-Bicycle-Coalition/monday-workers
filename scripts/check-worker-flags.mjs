@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 export const IN_SCOPE = [
   'benevity-import', 'bp-feedback-notify', 'contact-roles', 'donation-rollups', 'dtd-sync', 'eventbrite-sync',
-  'funraise-sync', 'mailchimp-sync', 'member-portal', 'monday-backup', 'nearby-search',
+  'funraise-sync', 'impact-attribution', 'mailchimp-sync', 'member-portal', 'monday-backup', 'nearby-search',
   'people-reclassification', 'quickbooks-sync', 'report-digests',
 ];
 const CANONICAL = 'member-portal/src/flags.ts';

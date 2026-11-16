@@ -85,7 +85,7 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts contact-roles/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts contact-roles/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts impact-attribution/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
@@ -331,6 +331,21 @@ contact-roles:
     - npm run test:scripts
     - npm run typecheck
 
+impact-attribution:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: impact-attribution
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run test:scripts
+    - npm run typecheck
+
 member-map:
   extends: .worker_job
   variables:
@@ -458,6 +473,16 @@ deploy-sandbox:contact-roles:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: contact-roles
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
+deploy-sandbox:impact-attribution:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: impact-attribution
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
       changes:

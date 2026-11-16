@@ -1,0 +1,66 @@
+{
+  "name": "svbc-impact-attribution",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "preview_urls": false,
+  "upload_source_maps": true,
+  // Match history (every Matching Donation ever seen, bootstrapped once from the import's
+  // artifacts) and the proposals ledger. Create with `npx wrangler d1 create svbc-impact-attribution`
+  // and replace the id below (README "Operator setup").
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-impact-attribution",
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Write-switch flag (scripts/flags.mjs): every Monday mutation is off unless
+  // `impact-attribution:writes` is `on`. The namespace is `FLAGS` (`sandbox-FLAGS` under env.sandbox);
+  // every in-scope Worker carries the same two ids, which scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // No HTTP surface (no routes, no ratelimits): the Worker only runs on its nightly cron.
+  "limits": { "cpu_ms": 30000 },
+  "triggers": {
+    "crons": ["0 11 * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. No MONDAY_API_TOKEN secret.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` deploys svbc-impact-attribution-sandbox. Everything here is
+  // non-inheritable in Wrangler and deliberately restated: the sandbox shares nothing with
+  // production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  "env": {
+    "sandbox": {
+      "name": "svbc-impact-attribution-sandbox",
+      "preview_urls": false,
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-impact-attribution-sandbox",
+          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "limits": { "cpu_ms": 30000 },
+      "triggers": {
+        "crons": ["0 11 * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
+    }
+  }
+}
