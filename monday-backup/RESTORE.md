@@ -6,7 +6,8 @@ machine, never in the Worker.
 
 > **Status: not yet rehearsed.** The procedure and tool are unit-tested against mocked APIs only.
 > The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue #30.
-> The sandbox backup works (first complete snapshot 2026-11-10, run 46); seeding the sandbox
+> The sandbox backup works (first complete snapshot 2026-11-10, run 46; first encrypted one
+> 2026-11-16, run 54); seeding the sandbox
 > (step 2) is what's left before the rehearsal can run. Until it has been done once, treat
 > any real restore as a first run: dry-run first, restore into an empty workspace, verify.
 
@@ -178,9 +179,10 @@ Do this once end to end in the sandbox, then record the result below and close i
 
 1. Provision the sandbox. Done 2026-11-10: `svbc-monday-backup-sandbox` backs up CRM Sandbox v4
    (`18210301`) into the *Monday Backups (sandbox)* Shared Drive. Run 46 was complete: 18 boards,
-   53,650 items, `errors: []`, 23 minutes. It predates snapshot encryption (a plaintext
-   `monday-backup/2` snapshot), so the sandbox also needs its own `BACKUP_ENCRYPTION_KEY` before
-   it runs a build with encryption.
+   53,650 items, `errors: []`, 23 minutes, as a plaintext `monday-backup/2` snapshot. The sandbox
+   got its own `BACKUP_ENCRYPTION_KEY` on 2026-11-16 (kept in the operator's password manager,
+   `keyId` `4b115f081c9eb7a1`); run 54 that day was the first encrypted one: `monday-backup/3`,
+   34 boards, 58,345 items, `errors: []`, 70 minutes.
 2. Seed the sandbox boards with representative data. v4 already has several groups, the
    production column types and connect-boards columns, from the load rehearsal. As of 2026-11-10
    it has **no** subitems, no archived board, no Doc, and only a handful of updates (none checked
