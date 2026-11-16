@@ -32,8 +32,10 @@
     "affiliationsColumns": {
       "person": "board_relation_mm8nb95b",
       "organization": "board_relation_mm8nsa59",
-      "workEmail": "email_mm8ndy69"
+      "workEmail": "email_mm8ndy69",
+      "status": "color_mm8na4wv"
     },
+    "affiliationsCurrentLabel": "Current",
     "uploadsBoard": {
       "fileColumn": "file_mm8rz1v8",
       "worklistGroupId": "group_mm8rbvjt",

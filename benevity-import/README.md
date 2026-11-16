@@ -204,6 +204,9 @@ Only attempted when the row discloses a name or email.
    worklist with the candidates. Of last year's matched gifts with a known donor, the CRM's email
    for the donor was a personal address about twice as often as a work one, and Benevity may hand
    over either, so this fallback fires regularly.
+   Both steps count only affiliations whose `Status` is `Current` (config
+   `affiliationsCurrentLabel`, column `affiliationsColumns.status`): a `Draft` is an employer
+   `impact-attribution` proposed and staff haven't confirmed (#124), and a `Former` is a past job.
 3. **Never auto-create a Person from a name.** Same rule as the Eventbrite name-match proposal:
    propose, staff confirm. A worklist item carries the row's disclosed fields (name, email,
    company, amount, date) so staff can fix the Person (add the email Benevity disclosed, or create

@@ -14,6 +14,16 @@ export interface PersonResolutionRow {
   email: string;
 }
 
+// Keeps the affiliations whose Status is the configured Current label. A Draft is a proposal
+// nobody has checked yet (#124) and a Former is a past job; neither is evidence of who an
+// employee is.
+async function currentOnly(mondayClient: MondayClient, config: BenevityImportConfig, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const { affiliationsColumns, affiliationsCurrentLabel } = config.benevityImport;
+  const labels = await mondayClient.getStatusLabels(ids, affiliationsColumns.status);
+  return ids.filter((id) => labels.get(id) === affiliationsCurrentLabel);
+}
+
 export function isWithheld(value: string): boolean {
   const trimmed = value.trim().toLowerCase();
   return trimmed === '' || trimmed === 'not shared by donor';
@@ -46,7 +56,7 @@ export async function resolvePerson(
       mondayClient.findItemsByColumnValue(affiliationsBoardId, affiliationsColumns.workEmail, email),
     ]);
     const workEmailPersonIds = await mondayClient.getLinkedItemIds(
-      workEmailAffiliations.map((affiliation) => affiliation.id),
+      await currentOnly(mondayClient, config, workEmailAffiliations.map((affiliation) => affiliation.id)),
       affiliationsColumns.person
     );
 
@@ -78,7 +88,7 @@ export async function resolvePerson(
           organizationItemId
         );
         return mondayClient.getLinkedItemIds(
-          affiliationsAtOrg.map((a) => a.id),
+          await currentOnly(mondayClient, config, affiliationsAtOrg.map((a) => a.id)),
           affiliationsColumns.person
         );
       }),
