@@ -171,10 +171,13 @@ when `MONDAY_AUTH_URL` and `START_KEY` are set. Per environment, sandbox first:
 1. From `monday-auth/`: `npx wrangler deploy --env sandbox --var WEBHOOKS_ENABLED:true` (drop
    `--env sandbox` for production). As with the probe, the command-line `--var` lasts one deploy.
 2. Run the scripts with `MONDAY_AUTH_URL=https://svbc-monday-auth-sandbox.svbc-account.workers.dev`
-   (production: `svbc-monday-auth`) and `START_KEY`, pruning or replacing the old personal-token
-   subscriptions: `setup-webhooks.mjs --prune <every board it subscribes>` and
-   `setup-promote.mjs --worker-url … --replace-webhooks`. The broker allows 10 calls a minute,
-   so the client waits out a 429 and the run takes a few minutes.
+   (production: `svbc-monday-auth`) and `START_KEY`: `setup-webhooks.mjs` and
+   `setup-promote.mjs --worker-url …`. The broker allows 10 calls a minute, so the client waits
+   out a 429 and the run takes a few minutes. **First delete the old personal-token
+   subscriptions with the personal token that created them:** Monday lets only a webhook's
+   creator delete it, so through the broker `delete_webhook` returns `null` and leaves them, and
+   `--prune` / `--replace-webhooks` do nothing. The scripts skip an event a board already has, so
+   while the old ones remain nothing new is created. (Sandbox, 2026-11-16: #110.)
 3. `npm run deploy:sandbox` (or `npm run deploy`), which restores `"false"`, and confirm
    `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/webhooks/sync`
    prints `404`.
