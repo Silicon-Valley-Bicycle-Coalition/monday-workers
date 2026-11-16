@@ -132,13 +132,13 @@ describe('createConsentMonday.writeConsent', () => {
       calls.push({ query, variables });
       return {};
     }) as GraphQLRequest;
-    const writes = Array.from({ length: 30 }, (_, i) => write(String(i), i === 0 ? '' : 'Cleaned'));
+    const writes = Array.from({ length: 30 }, (_, i) => write(String(i), i === 0 ? 'Unsubscribed' : 'Cleaned'));
     const result = await createConsentMonday(request).writeConsent(writes);
     expect(result).toEqual({ written: 30, failedItemIds: [] });
     expect(calls).toHaveLength(2);
     expect(calls[0]!.query.match(/change_multiple_column_values/g)).toHaveLength(25);
     expect(calls[1]!.query.match(/change_multiple_column_values/g)).toHaveLength(5);
-    expect(calls[0]!.variables).toMatchObject({ b0: 7, i0: '0', v0: JSON.stringify({ k: '' }), v1: JSON.stringify({ k: { label: 'Cleaned' } }) });
+    expect(calls[0]!.variables).toMatchObject({ b0: 7, i0: '0', v0: JSON.stringify({ k: { label: 'Unsubscribed' } }), v1: JSON.stringify({ k: { label: 'Cleaned' } }) });
   });
 
   it('writeConsent isolates a failed chunk item by item', async () => {

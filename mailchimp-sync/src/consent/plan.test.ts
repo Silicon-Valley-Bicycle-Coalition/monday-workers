@@ -73,8 +73,11 @@ describe('planBoard', () => {
     ]);
   });
 
-  it('clears consent for a blank address', () => {
-    expect(planBoard(board, [item('1', { personalConsent: 'Subscribed' })], new Map()).map((c) => c.to)).toEqual(['']);
+  it('leaves consent alone for a blank address', () => {
+    // ~980 production items have no address but a cutover consent value; nothing can be sent
+    // to them, so they aren't touched.
+    expect(planBoard(board, [item('1', { personalConsent: 'Not in Mailchimp' })], new Map())).toEqual([]);
+    expect(planBoard(board, [item('1', { personalConsent: 'Unsubscribed' })], new Map())).toEqual([]);
     expect(planBoard(board, [item('1', {})], new Map())).toEqual([]);
   });
 });
@@ -97,8 +100,8 @@ describe('applyGuard', () => {
     expect(result.tripped).toBe(false);
   });
 
-  it('counts a clear and Not in Mailchimp as sendable', () => {
-    const result = applyGuard([change('1', ''), change('2', 'Not in Mailchimp'), change('3', 'Cleaned')], 1);
+  it('counts Not in Mailchimp as sendable', () => {
+    const result = applyGuard([change('1', 'Not in Mailchimp'), change('2', 'Subscribed'), change('3', 'Cleaned')], 1);
     expect(result.allowed.map((c) => c.to)).toEqual(['Cleaned']);
     expect(result.tripped).toBe(true);
   });
@@ -108,11 +111,11 @@ describe('toWrites', () => {
   it('groups an item\'s columns', () => {
     const writes = toWrites([
       change('1', 'Unsubscribed'),
-      { ...change('1', ''), consentColumn: 'householdConsent' },
+      { ...change('1', 'Cleaned'), consentColumn: 'householdConsent' },
       change('2', 'Cleaned'),
     ]);
     expect(writes).toEqual([
-      { boardId: 1, itemId: '1', columnValues: { personalConsent: 'Unsubscribed', householdConsent: '' } },
+      { boardId: 1, itemId: '1', columnValues: { personalConsent: 'Unsubscribed', householdConsent: 'Cleaned' } },
       { boardId: 1, itemId: '2', columnValues: { personalConsent: 'Cleaned' } },
     ]);
   });
@@ -120,9 +123,9 @@ describe('toWrites', () => {
 
 describe('summarize', () => {
   it('counts by transition', () => {
-    expect(summarize([change('1', 'Unsubscribed'), change('2', 'Unsubscribed'), change('3', '', '')])).toEqual({
+    expect(summarize([change('1', 'Unsubscribed'), change('2', 'Unsubscribed'), change('3', 'Cleaned', '')])).toEqual({
       'People personalConsent: Subscribed → Unsubscribed': 2,
-      'People personalConsent: (blank) → (blank)': 1,
+      'People personalConsent: (blank) → Cleaned': 1,
     });
   });
 });

@@ -17,11 +17,10 @@ export interface ConsentChange {
   itemId: string;
   consentColumn: string;
   from: string;
-  // '' clears the column (the item's address is blank).
-  to: ConsentLabel | '';
+  to: ConsentLabel;
 }
 
-export interface ConsentWrite { boardId: number; itemId: string; columnValues: Record<string, ConsentLabel | ''> }
+export interface ConsentWrite { boardId: number; itemId: string; columnValues: Record<string, ConsentLabel> }
 
 export function normalizeAddress(text: string): string {
   return text.trim().toLowerCase();
@@ -51,8 +50,11 @@ export function planBoard(board: ConsentBoard, items: readonly ConsentItem[], st
   for (const item of items) {
     for (const { emailColumn, consentColumn } of board.pairs) {
       const address = normalizeAddress(item.values[emailColumn] ?? '');
+      // No address, nothing to send to: the consent column is left as it is (~980 production
+      // items carry a cutover value with no address).
+      if (address === '') continue;
       const from = item.values[consentColumn] ?? '';
-      const to = address === '' ? '' : desiredLabel(statuses.get(address), from);
+      const to = desiredLabel(statuses.get(address), from);
       if (to !== from) changes.push({ boardId: board.boardId, boardName: board.name, itemId: item.itemId, consentColumn, from, to });
     }
   }
@@ -60,8 +62,8 @@ export function planBoard(board: ConsentBoard, items: readonly ConsentItem[], st
 }
 
 // A value under which the sponsor send (or anyone reading the column) may email the address.
-export function isSendable(to: ConsentLabel | ''): boolean {
-  return to === 'Subscribed' || to === 'Not in Mailchimp' || to === '';
+export function isSendable(to: ConsentLabel): boolean {
+  return to === 'Subscribed' || to === 'Not in Mailchimp';
 }
 
 /**
@@ -92,7 +94,7 @@ export function toWrites(changes: readonly ConsentChange[]): ConsentWrite[] {
 export function summarize(changes: readonly ConsentChange[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const c of changes) {
-    const key = `${c.boardName} ${c.consentColumn}: ${c.from || '(blank)'} → ${c.to || '(blank)'}`;
+    const key = `${c.boardName} ${c.consentColumn}: ${c.from || '(blank)'} → ${c.to}`;
     out[key] = (out[key] ?? 0) + 1;
   }
   return out;

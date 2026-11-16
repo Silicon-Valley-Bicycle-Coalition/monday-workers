@@ -95,8 +95,10 @@ Mailchimp status for the address (lowercased, trimmed), to the label written:
   short read. *(My call.)*
 * `pending` (double opt-in not confirmed) and `transactional` carry no marketing consent and no
   opt-out, so "Not in Mailchimp" fits; neither exists in quantity today. *(My call.)*
-* An item whose address column is blank and whose consent column isn't gets its consent
-  **cleared**, so a removed address doesn't leave a stale value behind. *(My call.)*
+* An item whose address column is blank keeps whatever its consent column says. *(My call,
+  revised 2026-11-16 after the first production dry run: ~980 items have no address but carry a
+  cutover consent value, mostly Not in Mailchimp. Clearing them would trip the cap on the first
+  run, and there is nothing to send to.)*
 * Consent is per address, so an address on several items (a shared Household Email; a work
   address that's also someone's Personal Email) writes the same label to each item's column.
   No ownership rule is needed. The one exception is the archived rule, which reads each item's
@@ -119,7 +121,7 @@ A new module, `src/consent/` (names are the builder's), run from `scheduled()`:
    above and compare it with the current label text; collect only differences.
 4. **Guard, split by direction** *(David, 2026-11-16)*. Changes **to Unsubscribed or Cleaned**
    are always written: they can only stop mail. Changes toward a sendable value (to Subscribed,
-   to Not in Mailchimp, or clearing the column) are capped by `consent.maxChangesPerRun` (config;
+   or to Not in Mailchimp) are capped by `consent.maxChangesPerRun` (config;
    500 in both environments, above the ~150 expected on the first production run). Over the cap,
    the run writes only the non-sendable changes, skips every sendable one, logs an error with the
    counts by transition, and alerts. An operator raises the cap deliberately if a large change is

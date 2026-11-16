@@ -90,8 +90,8 @@ export function createConsentMonday(request: GraphQLRequest): ConsentMonday {
     chunk.forEach((w, n) => {
       vars[`b${n}`] = w.boardId;
       vars[`i${n}`] = w.itemId;
-      // A status label by text; '' clears the cell.
-      vars[`v${n}`] = JSON.stringify(Object.fromEntries(Object.entries(w.columnValues).map(([col, label]) => [col, label === '' ? '' : { label }])));
+      // A status label by its text.
+      vars[`v${n}`] = JSON.stringify(Object.fromEntries(Object.entries(w.columnValues).map(([col, label]) => [col, { label }])));
       decls.push(`$b${n}: ID!, $i${n}: ID!, $v${n}: JSON!`);
       fields.push(`w${n}: change_multiple_column_values(board_id: $b${n}, item_id: $i${n}, column_values: $v${n}) { id }`);
     });
