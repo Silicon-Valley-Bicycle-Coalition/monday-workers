@@ -368,7 +368,7 @@ results table and tell David.
 
 | Date | Step | Result |
 | --- | --- | --- |
-| | Archived items checked (method, count, decision), or David's written acceptance | |
-| | Board created (id) | |
-| | `verify` passed | |
-| | Columns deleted | |
+| 2026-11-14 | Archived items checked (method, count, decision), or David's written acceptance | David accepted the loss of archived items' values in writing (#81 note 4225072836); Salesforce is the only recovery source |
+| 2026-11-14 | Board created (id) | 18439785776 in workspace 18201685: 12 columns, 6,623 items, made with David's token (the integration user can't create it) |
+| 2026-11-15 | `verify` passed | People 16,437 rows, board 6,623 items, 0 missing/extra/duplicate/mismatched. SVBC Integration is an account admin, tolerated after the token probe: portal, readonly and sync all read the board as empty, with a People control that read data. One Job Title edited on People after the copy was synced to the board first. |
+| 2026-11-15 | Columns deleted | 22 columns (11 on each People board), re-read shows none left. Backup: run-14 manifest, 0 errors, 8,404 + 8,033 items (accepted at manifest level; snapshot files are encrypted). `people-reclassification` held, then back on. Board columns marked 📜. |
