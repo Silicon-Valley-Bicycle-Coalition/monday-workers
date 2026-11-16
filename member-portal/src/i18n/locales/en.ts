@@ -208,6 +208,8 @@ export const en = {
   'letterReady.body': 'Your {{year}} giving letter is ready to view in your member portal.',
   'letterReady.loginLink': 'Log in to view it',
   'letterReady.expiry': 'This link expires soon and can only be used once.',
+  'letterReady.employerPrompt': 'Does your employer match gifts? Tell us where you work.',
+  'letterReady.employerLink': 'Add your employer',
   'portal.matchedBy': 'Matched by {{company}} on {{date}}: {{amount}}',
   'portal.startMatch': 'Your employer may match this gift',
 } as const;

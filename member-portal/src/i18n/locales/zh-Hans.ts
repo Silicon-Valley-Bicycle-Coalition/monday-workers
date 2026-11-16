@@ -202,6 +202,8 @@ export const zhHans: Record<TranslationKey, string> = {
   'letterReady.body': '您的 {{year}} 年捐赠信函现在可以在捐赠者门户中查看。',
   'letterReady.loginLink': '登录查看',
   'letterReady.expiry': '此链接很快会失效，且只能使用一次。',
+  'letterReady.employerPrompt': '您的雇主提供配捐吗？告诉我们您的工作单位。',
+  'letterReady.employerLink': '添加您的雇主',
   'portal.matchedBy': '{{company}} 已于 {{date}} 配捐:{{amount}}',
   'portal.startMatch': '您的雇主可能会为这笔捐款配捐',
 } satisfies Record<TranslationKey, string>;

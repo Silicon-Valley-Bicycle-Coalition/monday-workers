@@ -426,6 +426,11 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   template → the built-in copy *in their language* (`letterReady.*` keys exist across all ten
   locales). The subject line always follows the donor's language, and the magic link carries
   `&lang=<locale>` so the portal opens localized — same resolution as the login email.
+* **Employer ask (#127)** — while the portal's Employer field is on (`employerAnswerEnabled`),
+  every letter-ready email ends with one localized line, "Does your employer match gifts? Tell
+  us where you work.", linking to `/<locale>/portal/change-request?field=employer`. It's
+  appended after the body, built-in or template, so a template doesn't need (and can't drop) it.
+  The page is session-gated: a donor who clicks it before the login link signs in first.
 
 How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
 handler — no separate cron trigger): every day the Worker reads the settings board (one cheap

@@ -202,6 +202,8 @@ export const fil: Record<TranslationKey, string> = {
   'letterReady.body': 'Handa nang tingnan ang iyong {{year}} giving letter sa member portal.',
   'letterReady.loginLink': 'Mag-log in para tingnan ito',
   'letterReady.expiry': 'Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
+  'letterReady.employerPrompt': 'Tinutumbasan ba ng iyong employer ang mga donasyon? Sabihin sa amin kung saan ka nagtatrabaho.',
+  'letterReady.employerLink': 'Idagdag ang iyong employer',
   'portal.matchedBy': 'Tinumbasan ng {{company}} noong {{date}}: {{amount}}',
   'portal.startMatch': 'Maaaring tumbasan ng iyong employer ang donasyong ito',
 } satisfies Record<TranslationKey, string>;
