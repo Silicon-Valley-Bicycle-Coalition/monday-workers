@@ -210,8 +210,9 @@ Only attempted when the row discloses a name or email.
    them) and set the item to Retry (see Worklist).
 
 Resolving a person does **not** write the employer onto their People item or create an
-Affiliation — that's `impact-attribution`'s job (or a human's), and a single match is weak evidence
-of current employment (foundation payers, retirees' programs, spouse matches all exist).
+Affiliation — a single match is weak evidence of current employment (foundation payers, retirees'
+programs, spouse matches all exist). [`impact-attribution`](../impact-attribution/README.md) proposes
+a Draft Affiliation once the same company has matched a person twice within a year, for staff to confirm.
 
 ## Worklist — what staff do
 

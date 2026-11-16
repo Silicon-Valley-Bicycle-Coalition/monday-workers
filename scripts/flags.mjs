@@ -43,6 +43,7 @@ export const QUEUES = {
   'dtd-sync': [], // cron-only: no queues to pause; the write switch is the dtd-sync-writes flag
   'eventbrite-sync': ['eventbrite-sync-writes'],
   'funraise-sync': ['funraise-sync-writes'],
+  'impact-attribution': [], // cron-only: no queues to pause
   'mailchimp-sync': ['mailchimp-sync-outbound', 'mailchimp-sync-inbound'],
   'member-portal': ['member-portal-change-requests', 'member-portal-letter-emails'],
   'monday-backup': [],

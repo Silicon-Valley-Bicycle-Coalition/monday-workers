@@ -139,6 +139,10 @@ driven, here and elsewhere." The two are allowed to overlap; that is the point.
 
 ## The resolver: `impact-attribution` Worker
 
+*(2026-11-16: the Worker exists, but its only job so far is employer affiliations from repeated
+matching gifts — [`2026-11-16-employer-affiliation-proposals-design.md`](2026-11-16-employer-affiliation-proposals-design.md).
+The resolver below is not built.)*
+
 Follows the repo's standard webhook-driven shape (root `README.md`'s Reliability section):
 webhook → D1 idempotency row → Cloudflare Queue → consumer → retry → DLQ.
 

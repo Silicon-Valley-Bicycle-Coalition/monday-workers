@@ -651,10 +651,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     description: 'One item per person-at-organization tenure: role, dates, whether it’s ' +
       'current, and the work email that belongs to it (with its own consent). This is how a ' +
       "person's professional side is represented without a second People item. Draft items were " +
-      'proposed by the impact-attribution integration and need staff confirmation.',
+      'proposed by the impact-attribution integration from repeated matching gifts and need staff ' +
+      'confirmation: Proposed status says whether it suggested Current or Former.',
     groupTitle: 'Affiliations',
     views: [
-      { name: 'Drafts to confirm', tag: 'Worklist', columns: ['Person', 'Organization', 'Affiliation Role', 'Start', 'Work Email'],
+      { name: 'Drafts to confirm', tag: 'Worklist', columns: ['Person', 'Organization', 'Proposed status', 'Affiliation Role', 'Start', 'Work Email'],
         filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Draft'] }] } },
       { name: 'Current', tag: 'Reference', columns: ['Person', 'Organization', 'Affiliation Role', 'Start', 'Work Email', 'Primary'],
         filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Current'] }] } },

@@ -35,6 +35,9 @@ describe('queue maps', () => {
     assert.deepEqual(queuesFor('bp-feedback-notify', 'production'), []);
     assert.deepEqual(queuesFor('report-digests', 'production'), []);
   });
+  it('impact-attribution has no queues to pause', () => {
+    assert.deepEqual(QUEUES['impact-attribution'], []);
+  });
   it('covers every in-scope worker, and only those', () => {
     for (const worker of IN_SCOPE) assert.ok(Object.hasOwn(QUEUES, worker), worker);
     assert.deepEqual(Object.keys(QUEUES).sort(), [...IN_SCOPE].sort());
@@ -131,7 +134,7 @@ describe('applyCommand', () => {
     assert.ok(!calls.includes('queues pause-delivery donation-rollups-recompute'));
     assert.ok(calls.includes('queues pause-delivery eventbrite-sync-writes'));
     assert.ok(calls.includes('kv key put --namespace-id prod-id --remote report-digests:writes hold'));
-    assert.match(result.message, /^1 of 14 Workers failed:/);
+    assert.match(result.message, /^1 of 15 Workers failed:/);
     assert.match(result.message, /donation-rollups: kv-put donation-rollups:writes failed \(boom\)/);
   });
   it('all reports a mid-worker queue failure with its KV/queue mismatch, and keeps going', async () => {
