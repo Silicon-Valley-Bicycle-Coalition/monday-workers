@@ -238,7 +238,7 @@ describe('assertDataPath', () => {
 
 - [ ] **Step 1: Write the runbook.** For each command it gives the command line, its inputs, what it writes, and how to read its review CSV.
 - [ ] **Step 2: Run** every command once more as a dry run on production. Expected: each `--apply` command reports 0 to write.
-- [ ] **Step 3: Put the review files in Martha's restricted Box folder.** These are `cycles.csv` (with the `event-names.json` mapping), the `link-pipeline`, `prospects` and `contacts` review files, and `fundraise-opt-out.csv`. Never commit them. Write David a short note listing the counts and the decisions Martha needs to make:
+- [ ] **Step 3: Put the review files in Box (Development → Corporate Sponsorship → 2027 Sponsorship, all-staff).** These are `cycles.csv` (with the `event-names.json` mapping), the `link-pipeline`, `prospects` and `contacts` review files, and `fundraise-opt-out.csv`. Never commit them. Write David a short note listing the counts and the decisions Martha needs to make:
   - the event table
   - the unmatched companies
   - the unresolved contacts
