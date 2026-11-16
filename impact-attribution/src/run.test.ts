@@ -135,6 +135,31 @@ describe('runProposals (on)', () => {
     expect(summary).toMatchObject({ proposed: 2, failed: 0 });
   });
 
+  it('a gone candidate does not take a capped slot: the next live one is proposed', async () => {
+    // p9 sorts first (newest Current) but its person item is gone; with a cap of 1 the live p2
+    // must still be proposed, or a stale pair would block the queue every night.
+    const monday = clientWith([
+      match('d1', 'p9', 'o1', '2026-10-01'), match('d2', 'p9', 'o1', '2026-10-15'),
+      match('d3', 'p2', 'o2', '2026-03-01'), match('d4', 'p2', 'o2', '2026-04-01'),
+    ]);
+    const summary = await runProposals(deps(monday, { ...config, maxProposalsPerRun: 1 }), 'on');
+    expect(monday.drafts.map((d) => d.personItemId)).toEqual(['p2']);
+    expect(summary).toMatchObject({ proposed: 1, deferred: 0, skipped: { missingItem: 1 } });
+  });
+
+  it('deletes a stored match the board no longer returns when its item is still active (Matched By cleared)', async () => {
+    await env.DB.prepare(
+      `INSERT INTO matches (donation_item_id, person_item_id, org_item_id, match_date, amount_cents, source, seen_at)
+       VALUES ('d8', 'p1', 'o1', '2026-02-01', NULL, 'board', ?), ('d9', 'p1', 'o1', '2026-02-02', NULL, 'board', ?)`,
+    ).bind(NOW, NOW).run();
+    const monday = clientWith([match('d1', 'p1', 'o1', '2026-03-01')]);
+    monday.names.set('d8', 'active gift, Matched By cleared'); // d9 is archived: not active
+    const summary = await runProposals(deps(monday), 'off');
+    const ids = (await env.DB.prepare('SELECT donation_item_id FROM matches ORDER BY donation_item_id').all<{ donation_item_id: string }>()).results.map((r) => r.donation_item_id);
+    expect(ids).toEqual(['d1', 'd9']);
+    expect(summary.deleted).toBe(1);
+  });
+
   it('caps the run at maxProposalsPerRun and counts the rest as deferred', async () => {
     const monday = clientWith([
       match('d1', 'p1', 'o1', '2026-09-01'), match('d2', 'p1', 'o1', '2026-10-01'),

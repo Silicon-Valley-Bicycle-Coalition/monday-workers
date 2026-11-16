@@ -29,16 +29,17 @@ Cloudflare cron 0 11 * * * ──► read write mode (once): on → run · off �
                                    │
                                    ▼
    read active Donations with a Matched By (sparse) ──► upsert D1 `matches`
-     (an item that no longer qualifies is deleted; one the board stops returning — archived —
-      is kept: archived gifts read empty through the API, so D1 is the history)
+     (an item that no longer qualifies is deleted; a stored one the board stops returning is
+      checked by id: still active means Matched By was cleared → deleted; archived → kept,
+      because archived gifts read empty through the API, so D1 is the history)
                                    │
                                    ▼
    pairs from ALL of `matches` ──► the rule ──► drop excluded payers, pairs that already have an
      Affiliation (any status), pairs proposed before (D1 `proposals`)
                                    │
                                    ▼
-   Current first, newest first, at most maxProposalsPerRun (25) ──► check person and org items
-     still exist ──► create Draft Affiliation ──► record in `proposals` ──► post evidence comment
+   Current first, newest first ──► check person and org items still exist (a gone one is
+     skipped without using a slot) until maxProposalsPerRun (25) live ones ──► create Draft Affiliation ──► record in `proposals` ──► post evidence comment
 ```
 
 ## The rule

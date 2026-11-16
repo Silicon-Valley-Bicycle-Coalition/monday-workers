@@ -145,9 +145,10 @@ changing the list needs no re-bootstrap.
 * **Nightly board read:** every run upserts what the active board shows (step 3 below), so new
   matches, staff corrections to Donor/Matched By/Date/Amount on active gifts, and hand-entered
   matches all land. A row whose active item no longer passes the filters (Gift Type changed,
-  Donor cleared) is deleted. A row the board no longer returns is **kept**: it was archived (or
-  deleted — the Worker can't tell the two apart, and keeping a deleted match costs at most one
-  Draft staff can delete).
+  Donor cleared) is deleted. A stored row the board no longer returns is looked up by id: if the
+  item is still active, staff cleared its Matched By, and the row is deleted; otherwise it is
+  **kept**: it was archived (or deleted — keeping a deleted match costs at most one Draft staff can
+  delete). *(Added after the final review, 2026-11-16.)*
 * **Stale ids:** post-import merges deleted some People and Organizations items. Before creating a
   Draft, fetch the person and organization items by id (one batched `items(ids:)` read for the
   run's candidates); a candidate whose person or org is missing or not `active` is skipped and
@@ -185,9 +186,10 @@ year-end archive: a gift seen once while active stays in `matches`. Each run:
 4. Load the ledger's (person, org) keys.
 5. Compute candidate pairs by the rule **from `matches`**; drop excluded payers, existing pairs
    and ledger pairs.
-6. Order candidates Current first, then by latest match date descending; take at most
-   `maxProposalsPerRun` (config, default 25). Check the chosen candidates' person and org items
-   still exist (above).
+6. Order candidates Current first, then by latest match date descending; walk that list checking
+   each candidate's person and org items still exist (above) until `maxProposalsPerRun` (config,
+   default 25) live ones are found. A gone candidate doesn't use a slot, so a stale pair can't
+   block the queue night after night. *(Changed after the final review, 2026-11-16.)*
 7. For each: create the item, record the ledger row, post the comment (evidence from `matches`). One failure logs
    `impact-attribution: proposal <person>/<org> failed …` (ids only, never names or emails — the
    log-safety check) and moves to the next.

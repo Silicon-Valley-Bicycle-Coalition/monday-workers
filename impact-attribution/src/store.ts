@@ -34,6 +34,14 @@ export async function refreshMatches(db: D1Database, read: BoardMatchRead, now: 
   return { upserted: read.stored.length, deleted };
 }
 
+// Stored match ids the latest board read did not return. Each is archived (keep), deleted (keep:
+// the API can't tell the two apart reliably), or still active with its Matched By cleared (delete);
+// the caller asks Monday which.
+export async function storedIdsNotIn(db: D1Database, returned: Set<string>): Promise<string[]> {
+  const { results } = await db.prepare('SELECT donation_item_id FROM matches').all<{ donation_item_id: string }>();
+  return results.map((r) => r.donation_item_id).filter((id) => !returned.has(id));
+}
+
 interface MatchDbRow { donation_item_id: string; person_item_id: string; org_item_id: string; match_date: string; amount_cents: number | null }
 
 export async function allMatches(db: D1Database): Promise<MatchRow[]> {
