@@ -205,6 +205,12 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow(/email\.replyTo/);
   });
 
+  it('accepts a string monday.columns.volunteerTicketType and rejects any other type', () => {
+    const withTicket = (v: unknown) => ({ ...validConfig, monday: { ...validConfig.monday, columns: { ...validConfig.monday.columns, volunteerTicketType: v } } });
+    expect(validateConfig(withTicket('vol_ticket_col')).monday.columns.volunteerTicketType).toBe('vol_ticket_col');
+    expect(() => validateConfig(withTicket(42))).toThrow(/volunteerTicketType/);
+  });
+
   it('throws when auth is missing a key', () => {
     const { portalBaseUrl, ...rest } = validConfig.auth;
     const broken = { ...validConfig, auth: rest };

@@ -26,6 +26,10 @@ export interface MondayColumns {
   volunteerDate: string;
   volunteerJob: string;
   volunteerStatus: string;
+  // Optional (#115): eventbrite-sync's Ticket Type column ("Shift 1", "Bike valet"), shown after
+  // the Job so one person's two shifts at one event don't read as a duplicate. Absent or the
+  // placeholder = Job alone.
+  volunteerTicketType?: string;
   // DTD (Double the Donation) match columns — gated together by matchLinesEnabled: the first three
   // live on the Donations board, donorDtdLink on the Donors board.
   donationMatchesGift: string;

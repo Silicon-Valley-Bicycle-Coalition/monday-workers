@@ -29,6 +29,7 @@
       "volunteerDate": "date_mm8h5rf2",
       "volunteerJob": "text_mm8h1bw8",
       "volunteerStatus": "color_mm8hc3n7",
+      "volunteerTicketType": "text_mm919w2k",
       "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
