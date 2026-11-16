@@ -442,7 +442,24 @@ async function cmdLinkPipeline(args, ctx) {
   return 0;
 }
 
-export const PROSPECT_HEADERS = { company: 'Company', notes: 'Notes for Outreach (EX: Hold or Remove etc)' };
+
+// The Prospects tab's two layouts: the original hand-built one, and the Salesforce-report layout
+// Martha rebuilt it in on 2026-11-16 (Sponsorship Cycle, Account Name, notes, Contact: Email).
+const PROSPECT_LAYOUTS = [
+  { company: 'company', notes: 'notes for outreach (ex: hold or remove etc)' },
+  { company: 'account name', notes: 'notes' },
+];
+
+/** The Prospects tab as { company, notes } rows, in either layout. Neither layout stops the run. */
+export function prospectRecords(text) {
+  const [header = [], ...rows] = parseCsv(text);
+  const keys = header.map((h) => h.trim().toLowerCase());
+  const layout = PROSPECT_LAYOUTS.find((l) => keys.includes(l.company) && keys.includes(l.notes));
+  if (!layout) throw new Stopped('The Prospects CSV has neither Company + Notes for Outreach nor Account Name + notes columns.');
+  const ci = keys.indexOf(layout.company);
+  const ni = keys.indexOf(layout.notes);
+  return rows.map((r) => ({ company: r[ci] ?? '', notes: r[ni] ?? '' }));
+}
 
 /** Rows of a CSV as objects keyed by header (trimmed). A required header that's missing stops the run. */
 export function csvRecords(text, required) {
@@ -487,7 +504,7 @@ const checked = (cell) => cell?.text === 'v' || /"checked"\s*:\s*"?true/.test(ce
 
 async function cmdProspects(args, ctx) {
   const { gql, out } = ctx;
-  const records = csvRecords(ctx.readFile(args.input), [PROSPECT_HEADERS.company, PROSPECT_HEADERS.notes]);
+  const records = prospectRecords(ctx.readFile(args.input));
   const cols = await columnsByTitle(gql, args.organizations);
   const prospect = optionalColumn(cols, args.organizations, 'Sponsor Prospect', args.apply);
   const notesCol = optionalColumn(cols, args.organizations, 'Prospect Notes', args.apply);
@@ -498,11 +515,7 @@ async function cmdProspects(args, ctx) {
       current.set(o.id, { prospect: checked(o.values[prospect.id]), notes: o.values[notesCol.id].text ?? '' });
     }
   }
-  const plan = planProspects(
-    records.map((r) => ({ company: r[PROSPECT_HEADERS.company], notes: r[PROSPECT_HEADERS.notes] })),
-    index,
-    current,
-  );
+  const plan = planProspects(records, index, current);
   writeReview(
     args.out,
     toCsv(['Company', 'Reason', 'Candidate Organization IDs'], plan.review.map((r) => [r.company, r.reason, r.candidates.join(' ')])),
@@ -510,7 +523,7 @@ async function cmdProspects(args, ctx) {
   );
   const notesOnly = plan.set.filter((x) => x.notesOnly).length;
   out(`${records.length} row(s) against ${count} Organization(s): ${plan.set.length - notesOnly} to mark, ${notesOnly} already marked whose empty notes the sheet fills, ${plan.already} already marked, ${plan.review.length} for review.`);
-  if (records.length > 0 && records.every((r) => !r[PROSPECT_HEADERS.notes].trim())) {
+  if (records.length > 0 && records.every((r) => !r.notes.trim())) {
     out('Warning: every Notes cell in the input is blank. If the tab has notes, re-export it with File → Download → CSV.');
   }
   if (!args.apply) {
@@ -591,8 +604,8 @@ export function planContacts(sources, affiliations, people, orgsBySfId) {
 }
 
 // Sheet columns that may hold contact addresses, and the ones that name the company (any case).
-const SHEET_EMAIL_HEADERS = ['email', 'email address', 'other contacts', 'additional contact names'];
-const SHEET_COMPANY_HEADERS = ['company', 'name of your organization, business, or advocacy group:'];
+const SHEET_EMAIL_HEADERS = ['email', 'email address', 'contact: email', 'other contacts', 'additional contact names'];
+const SHEET_COMPANY_HEADERS = ['company', 'account name', 'name of your organization, business, or advocacy group:'];
 
 // Salesforce ids compare on their case-sensitive 15-character form (an 18-character id adds a
 // checksum), so an export and the migrated 📜 Salesforce ID agree whichever length each kept.

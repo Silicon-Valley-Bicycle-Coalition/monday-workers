@@ -505,3 +505,19 @@ describe('final review fixes', () => {
     assert.ok(lines.some((l) => /Dinner Focused\.csv: skipped, no email column/.test(l)));
   });
 });
+
+import { prospectRecords } from './sponsor-outreach-setup.mjs';
+
+describe('2026-11-16 sheet layout', () => {
+  it('prospects reads the Salesforce-style Prospects tab (Account Name, notes)', () =>
+    assert.deepEqual(prospectRecords('Sponsorship Cycle,Account Name,notes,Primary Contact\n2024 BTWD,AECOM,closed?,X\n'), [
+      { company: 'AECOM', notes: 'closed?' },
+    ]));
+  it('prospects still reads the old layout', () =>
+    assert.deepEqual(prospectRecords('Notes for Outreach (EX: Hold or Remove etc),Company\nwarm,AECOM\n'), [{ company: 'AECOM', notes: 'warm' }]));
+  it('prospects stops on a tab with neither layout', () => assert.throws(() => prospectRecords('a,b\n1,2\n'), /Company|Account Name/));
+  it('contacts reads Contact: Email and Account Name columns', () => {
+    const ctx = { out: () => {}, listDir: () => ['raw lapsed.csv'], readFile: () => 'Account Name,Contact: Email\nAcme,a@acme.com\n' };
+    assert.deepEqual(sheetSources(ctx, '/d/data/so', buildOrgIndex([{ id: '1', name: 'Acme' }])), [{ kind: 'email', email: 'a@acme.com', orgId: '1' }]);
+  });
+});
