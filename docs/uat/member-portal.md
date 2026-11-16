@@ -65,6 +65,19 @@ can safely use any real donor's email address while testing.
   in the CRM Sandbox: the request should be there as a new item with the donor, the field, and
   the old and new values. Staff apply changes from that board; the portal never edits a donor's
   record directly.
+- **Tell the portal where you work** — on the change-request page, choose **Employer** (the
+  matching-gifts page's "Add your employer" link opens it with Employer already chosen). Try
+  three answers, one at a time:
+  - the exact name of an organization on
+    [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579) (or that
+    name with "Inc." or "LLC" added or removed): the person's affiliation to it should become
+    **Current** and **Primary**, and their **Employer Name** should update a moment later.
+  - a made-up company: nothing changes on the person, and staff get a Change Requests item
+    marked **Employer (needs an Organization)**.
+  - a different real organization, for a person who already has a Primary employer: the new one
+    becomes Primary, and the old one stays **Current** with Primary unticked. The Change Requests
+    item says "previous Primary: …, still Current".
+  Every answer should appear on the Change Requests board.
 - **Check a partner discount end to end** — on
   [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579), set
   **Discount Offered** and tick **Discount Active** on a bike shop, then log in as a current
