@@ -90,7 +90,8 @@ export const MARKED_COLUMNS = {
     history: [...SALESFORCE, 'Pledge Amount', 'Received Amount'],
   },
   'Affiliations': {
-    locked: ['Attributed Giving', 'Attributed Gift Count', 'Last Attributed Gift'],
+    // Proposed status is written by impact-attribution on each Draft it proposes.
+    locked: ['Attributed Giving', 'Attributed Gift Count', 'Last Attributed Gift', 'Proposed status'],
     history: SALESFORCE,
   },
   'Annual Giving Summary': {

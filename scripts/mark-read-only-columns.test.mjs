@@ -74,6 +74,10 @@ describe('MARKED_COLUMNS', () => {
     assert.ok(MARKED_COLUMNS.Donations.locked.includes('Funding Stream'));
   });
 
+  it('locks Proposed status (impact-attribution) on Affiliations', () => {
+    assert.ok(MARKED_COLUMNS.Affiliations.locked.includes('Proposed status'));
+  });
+
   it('never lists a title as both 🔒 and 📜 on one board', () => {
     for (const [name, { locked, history }] of Object.entries(MARKED_COLUMNS)) {
       const both = locked.filter((t) => history.includes(t));
