@@ -74,15 +74,16 @@ by Task 4.
 
 **Files:** none.
 
-- [ ] **Step 1:** Pick (or set up in production, then remove) three test targets using
+- [ ] **Step 1:** Pick (or set up in production, then remove) five test targets using
   addresses the tester controls: an Affiliation with Status `Current` and a Work Email; a
-  `Former` affiliation; an Organization with the new `Email` set; one address that is both a
+  `Former` affiliation; a `Draft` affiliation; an Organization with the new `Email` set; one address that is both a
   People Personal Email and an Affiliation Work Email.
 - [ ] **Step 2:** The tester, from a Gmail connected to Emails & Activities with the
   BCC-only setting, sends one email to each target, BCC'ing their Emails & Activities address.
 - [ ] **Step 3:** Within 15 minutes, record where each message shows (Affiliation, Organization,
   People, or nowhere). Expected: the Affiliation (both statuses) and the Organization each
-  show their message. Write down what the shared address does (Review Focus 1).
+  show their message. Write down what the shared address does (Review Focus 1) and what the
+  Former and Draft affiliations do (Review Focus 2).
 - [ ] **Step 4:** Remove the test targets and logged entries created for the test.
 
 ### Task 4: Staff docs (`monday-migration`)
