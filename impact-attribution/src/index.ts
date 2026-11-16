@@ -1,5 +1,9 @@
+import { configFor } from './config';
 import { environmentOf } from './environment';
 import { readLogLevel, readWriteMode, runDisposition } from './flags';
+import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
+import { runProposals } from './run';
 import type { Env } from './types';
 
 const WORKER = 'impact-attribution';
@@ -14,13 +18,20 @@ export default {
   // what it would propose, and `hold`/`unknown` skip the run without touching Monday or D1.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const mode = await readWriteMode(env, WORKER);
-    if (runDisposition(mode) === 'skip') {
+    const disposition = runDisposition(mode);
+    if (disposition === 'skip') {
       console.log(JSON.stringify({
         writeSwitch: 'skipped', worker: WORKER, environment: environmentOf(env), mode, logLevel: await readLogLevel(env, WORKER),
         operation: 'cron', reason: 'write mode is not on or off',
       }));
       return;
     }
-    // The proposal run is wired in Task 5 of the plan.
+    const config = configFor(env);
+    const monday = new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env));
+    const now = new Date().toISOString();
+    await runProposals(
+      { monday, db: env.DB, config, environment: environmentOf(env), today: now.slice(0, 10), now },
+      disposition === 'run' ? 'on' : 'off',
+    );
   },
 } satisfies ExportedHandler<Env>;
