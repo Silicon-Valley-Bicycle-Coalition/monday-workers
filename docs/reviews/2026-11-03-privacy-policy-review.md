@@ -128,9 +128,25 @@ mentions cookies, but only for statistics and advertising. Nothing describes:
 The portal's own code sets no analytics or advertising cookies. The exception to check is the
 matching-gifts page, which loads a third-party script from Double the Donation
 (`member-portal/src/matchingGifts/matchingGiftViews.ts:26`), and production config has a key set for
-it. That page renders no donor data, but the script can see the visitor's IP address and may set its
-own cookies. A browser check of the widget is still pending, and should record what it sets before
-the wording below is finalized.
+it. That page renders no donor data, but the script can see the visitor's IP address.
+
+Browser check, 2026-11-16 (Chrome, the real search document and CSP served locally, DTD's live
+`ddplugin.js` as last modified 2026-11-13, searching for and opening one employer):
+
+- The widget sets no cookies and stores nothing. Inside the sandboxed frame, `document.cookie`,
+  `localStorage` and `sessionStorage` all throw `SecurityError` (opaque origin), so the script's
+  own `localStorage` use (donation-tracking keys for donation forms, not used here) fails quietly.
+  `ddplugin.js` contains no `document.cookie` code.
+- None of DTD's responses carry `Set-Cookie`.
+- Every request goes to `doublethedonation.com`: the script, its stylesheet, two images,
+  `/api/v1/plugin_settings`, `/api/v1/prefix` (each keystroke's search text) and
+  `/api/v1/company/<id>`. No analytics or ad hosts load, and the CSP would block any that tried.
+- What DTD receives: the visitor's IP address and browser details, the employer names they type,
+  and SVBC's public key. No donor name, email or gift data.
+
+So the policy needs only a line saying the matching-gifts search is provided by Double the
+Donation, which receives the search text and standard request data. No cookie disclosure is
+needed for it. Re-check if DTD's embed snippet changes or the sandbox is loosened.
 
 ### 6. The advertising statement may not be true
 
@@ -184,7 +200,7 @@ Everything here depends on the decisions above; bracketed text marks what isn't 
 > one-time sign-in link. We use two cookies: `session`, which keeps you signed in for up to 24 hours
 > and is required to use the portal, and `lang`, which remembers your language for up to a year. We
 > don't set advertising or analytics cookies. Our matching-gift search is provided by Double the
-> Donation, which receives your search and [may set its own cookies, per the browser check]. We keep
+> Donation, which receives what you search for and your IP address, and sets no cookies. We keep
 > a scrambled record of each sign-in request for 24 hours to prevent abuse. Changes you request
 > through the portal are recorded and applied to your donor record.
 
@@ -198,7 +214,7 @@ Add an effective date at the top.
 - [ ] Confirm what was sent to Windfall and when the data was last synced
 - [ ] Check the advertising and demographics statements against the website (finding 6)
 - [ ] Agree a process for access and removal requests (finding 7)
-- [ ] Record what the Double the Donation widget sets, from the pending browser check (finding 5)
+- [x] Record what the Double the Donation widget sets (finding 5): no cookies or storage; checked 2026-11-16
 - [ ] Decide whether Monday AI features may touch donor boards, and check whether AI is enabled on the account (finding 3)
 - [ ] Check the sub-processor objection window in Monday's DPA, and name a staff recipient for these notices (finding 3)
 - [ ] Publish the update before the portal's production deploy
