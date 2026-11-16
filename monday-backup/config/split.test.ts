@@ -23,13 +23,11 @@ describe('config split: the Drive sink', () => {
     expect(sandbox.destinationParentFolderId).not.toBe(production.destinationParentFolderId);
   });
 
-  it('the sandbox folder placeholder is unmistakably the sandbox one until an operator fills it in', () => {
-    if (sandbox.destinationParentFolderId.startsWith('REPLACE_WITH_')) {
-      expect(sandbox.destinationParentFolderId).toBe('REPLACE_WITH_SANDBOX_DRIVE_FOLDER_ID');
-    }
-    if (production.destinationParentFolderId.startsWith('REPLACE_WITH_')) {
-      expect(production.destinationParentFolderId).toBe('REPLACE_WITH_DRIVE_FOLDER_ID');
-    }
+  it('neither config ships a placeholder folder id', () => {
+    // Both Workers deploy from main on a nightly cron; a placeholder id fails every run with a
+    // Drive 404 (the sandbox shipped one until 2026-11-16).
+    expect(sandbox.destinationParentFolderId).not.toMatch(/^REPLACE_WITH_/);
+    expect(production.destinationParentFolderId).not.toMatch(/^REPLACE_WITH_/);
   });
 
   it('both shipped configs validate', () => {
