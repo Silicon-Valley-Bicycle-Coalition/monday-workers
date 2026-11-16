@@ -51,18 +51,19 @@
   "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "ReadOnlyToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-monday-backup-sandbox,
-  // which snapshots every board its *sandbox* token can see (a user scoped to the CRM Sandbox
-  // workspace) into the Drive folder named in config/backup.sandbox.json, alerting a sandbox
-  // Slack channel. Rule: inbound data only, no outbound data — the Drive folder and Slack channel
-  // are staff-only sinks, and config/split.test.ts fails if the two configs ever share the folder.
+  // which snapshots the boards in the workspace named by config/backup.sandbox.json's workspaceIds
+  // into the Drive folder named there, alerting a sandbox Slack channel. Rule: inbound data only,
+  // no outbound data — the Drive folder and Slack channel are staff-only sinks, and
+  // config/split.test.ts fails if the two configs ever share the folder.
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
-  // GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (a service account shared only
-  // into the sandbox folder), SLACK_WEBHOOK_URL (#crm-sandbox), and BACKUP_ENCRYPTION_KEY (its own
-  // key, never production's; README "Snapshot encryption"). BACKUP_ENCRYPTION_KEY is required in
-  // both environments: without it a run fails and alerts rather than upload plaintext.
+  // GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (a service account that is a
+  // member of the sandbox Shared Drive only), SLACK_WEBHOOK_URL (#crm-sandbox), and
+  // BACKUP_ENCRYPTION_KEY (its own key, never production's; README "Snapshot encryption").
+  // BACKUP_ENCRYPTION_KEY is required in both environments: without it a run fails and alerts
+  // rather than upload plaintext.
   // Monday access comes from the MONDAY_AUTH binding (the sandbox broker, consented as the
-  // sandbox-workspace-scoped Sandbox Integration user), not a MONDAY_API_TOKEN secret.
+  // Sandbox Integration user), not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },

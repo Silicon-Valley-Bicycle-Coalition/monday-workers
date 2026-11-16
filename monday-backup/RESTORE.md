@@ -5,8 +5,9 @@ How to rebuild Monday boards and Docs from a nightly snapshot. The tool is
 machine, never in the Worker.
 
 > **Status: not yet rehearsed.** The procedure and tool are unit-tested against mocked APIs only.
-> The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue #30
-> and is blocked on the sandbox being provisioned (issue #14). Until it has been done once, treat
+> The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue #30.
+> The sandbox backup works (first complete snapshot 2026-11-10, run 46); seeding the sandbox
+> (step 2) is what's left before the rehearsal can run. Until it has been done once, treat
 > any real restore as a first run: dry-run first, restore into an empty workspace, verify.
 
 ## What comes back, and what doesn't
@@ -171,21 +172,29 @@ ambiguous: fix the cause and rerun.
 * Delete the downloaded snapshot and your local copy of the key file. Keep `restore-ledger.jsonl` only as long as you might need to
   resume or trace an id, then delete it too (it maps ids, not data, but it's no longer useful).
 
-## Restore rehearsal (outstanding — do once #14 is done)
+## Restore rehearsal (outstanding)
 
 Do this once end to end in the sandbox, then record the result below and close issue #30.
 
-1. Provision the sandbox (issue #14): the CRM Sandbox workspace, the sandbox D1 and secrets
-   (including its own `BACKUP_ENCRYPTION_KEY`), and `config/backup.sandbox.json`'s Shared Drive
-   folder id.
-2. Seed the sandbox boards with representative data: several groups, every column type in use in
-   production, a connect-boards column across two boards (with a mirror), subitems, updates with
-   replies, one archived board, and a Doc longer than 100 blocks with nested lists.
+1. Provision the sandbox. Done 2026-11-10: `svbc-monday-backup-sandbox` backs up CRM Sandbox v4
+   (`18210301`) into the *Monday Backups (sandbox)* Shared Drive. Run 46 was complete: 18 boards,
+   53,650 items, `errors: []`, 23 minutes. It predates snapshot encryption (a plaintext
+   `monday-backup/2` snapshot), so the sandbox also needs its own `BACKUP_ENCRYPTION_KEY` before
+   it runs a build with encryption.
+2. Seed the sandbox boards with representative data. v4 already has several groups, the
+   production column types and connect-boards columns, from the load rehearsal. As of 2026-11-10
+   it has **no** subitems, no archived board, no Doc, and only a handful of updates (none checked
+   for replies). Add: subitems on a few items, an update with replies, one archived board, and a
+   Doc longer than 100 blocks with nested lists. Seed a copy, not a board other Workers write to.
 3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger one
    with `npx wrangler workflows trigger svbc-monday-backup-snapshot-sandbox`.
 4. Confirm the run folder and a `manifest.json` with `errors: []`.
 5. Create an empty workspace for the rehearsal and follow steps 2–5 above against it (dry run
-   first). Use a token that can write only to that workspace.
+   first). Narrow it with `--boards` (the seeded boards plus a mid-sized one such as Campaigns,
+   2,817 items): a full v4 restore is about one API call per item, roughly 54,000. Monday has
+   no token that can write only to one workspace (any member can edit Main boards in every open
+   workspace, #18), so make the rehearsal workspace **closed** and use a token of a user who is a
+   member of it, and check the `--workspace` id twice before `--execute`.
 6. Run the verification checklist; time the restore.
 7. Record here: date, snapshot run, counts restored, duration, every warning and whether it was
    expected, and any fix made to the tool. Then delete the rehearsal workspace.

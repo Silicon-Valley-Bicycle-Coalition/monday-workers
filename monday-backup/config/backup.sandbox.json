@@ -2,5 +2,21 @@
   "destinationParentFolderId": "0AFDcTovnsiaKUk9PVA",
   "excludeBoardIds": [],
   "workspaceIds": ["18210301"],
-  "apiUsageAlerts": false
+  "apiUsageAlerts": false,
+  "requiredBoardIds": [
+    "18437342579",
+    "18437342592",
+    "18437342607",
+    "18437342615",
+    "18437342623",
+    "18437342630",
+    "18437342639",
+    "18437342649",
+    "18437342657",
+    "18437342662",
+    "18437342671",
+    "18437530607",
+    "18438393347",
+    "18438156633"
+  ]
 }

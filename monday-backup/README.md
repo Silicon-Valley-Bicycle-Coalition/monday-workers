@@ -18,7 +18,8 @@ Paid** (see Cloudflare config below). The restore mutations in `src/restore/api.
 exercised against a live account yet.
 **Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
 [`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
-outstanding** (it needs the provisioned sandbox, issue #14).
+outstanding**: the sandbox now backs up CRM Sandbox v4 (first complete snapshot 2026-11-10, run
+46), but it needs seeding first (RESTORE.md, "Restore rehearsal").
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
@@ -196,16 +197,17 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 ## Sandbox environment — inbound only, no outbound data
 
 `npm run deploy:sandbox` deploys `svbc-monday-backup-sandbox` (`wrangler.jsonc` `env.sandbox`),
-which snapshots every board its **sandbox token** can see — mint it from a user whose only
-access is the CRM Sandbox workspace, and the snapshot is the sandbox and nothing else — into the
+which snapshots the boards in the workspace named by `workspaceIds` (CRM Sandbox v4), less
+`excludeBoardIds`, into the
 Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENVIRONMENT` var,
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
 Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
 because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
-sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder
-(also as Contributor), the
-sandbox Slack webhook, and the sandbox's own `BACKUP_ENCRYPTION_KEY` (see "Snapshot encryption"). `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
+sandbox`): a service account that is a Contributor on the sandbox Shared Drive only, the
+sandbox Slack webhook, and the sandbox's own `BACKUP_ENCRYPTION_KEY` (see "Snapshot encryption").
+Monday access comes from the `MONDAY_AUTH` binding, so no Monday secret is needed.
+`npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
@@ -216,13 +218,11 @@ dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:monday-backup` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
-The sandbox token scoped to the CRM Sandbox workspace (design doc §4) is the primary guard
-against a sandbox run touching production boards or docs. `config/backup.sandbox.json` also sets
-`workspaceIds: ["18210301"]`, a config-level belt-and-braces check: `runSnapshot` skips any board
-or doc whose `workspaceId` isn't in the list, so a token that somehow gained broader access still
-wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
-in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
-behaviour.
+`workspaceIds: ["18210301"]` in `config/backup.sandbox.json` is the guard against a sandbox run
+copying production boards or docs: `runSnapshot` skips any board or doc whose `workspaceId` isn't in
+the list. The token doesn't provide this. Sandbox Integration can read Main boards in every open
+workspace (#18), so don't remove the filter. `workspaceIds` is optional — absent or empty (as in
+`config/backup.json`) means no filter, "snapshot everything the token can see".
 
 ## Service account key
 

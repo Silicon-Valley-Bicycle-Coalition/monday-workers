@@ -1,6 +1,6 @@
 # UAT script: Monday backup
 
-**Status 2026-11-11: live in production since 2026-11-03; the sandbox copy is still unconfigured.**
+**Status 2026-11-16: live in production since 2026-11-03; the sandbox copy since 2026-11-10.**
 
 ## What it does
 
@@ -13,9 +13,10 @@ complete backup has landed in 36 hours.
 ## Where it stands
 
 Production has run nightly since 2026-11-03; the first complete snapshot landed 2026-11-04. The
-sandbox copy exists but has never run against a real Drive folder: its destination is still a
-placeholder, and it needs a Google service account added to a Shared Drive folder. The restore
-rehearsal is also outstanding. None of this is something a staff tester can exercise.
+sandbox copy works too: since 2026-11-10 it backs up the CRM Sandbox v4 boards into the
+*Monday Backups (sandbox)* Shared Drive (members only, because the boards hold real donor
+records). The restore rehearsal is still outstanding. None of this is something a staff tester
+can exercise.
 
 ## What to check
 
