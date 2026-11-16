@@ -25,6 +25,13 @@ export const WINDFALL_TITLES = [
 // SVBC Integration, Sandbox Integration: must never be on the private board's subscribers.
 export const FORBIDDEN_USERS = ['120827741', '117112617'];
 
+// Forbidden users whose account-admin status is reported but tolerated. Monday exposes private
+// boards to admins only through the UI; the Worker tokens go through OAuth apps. The production
+// token probe (2026-11-15: portal, sync and readonly all read the private board as empty, with a
+// People control that read data) shows SVBC Integration's admin role doesn't reach the board through
+// any token a Worker holds. Being subscribed is still a failure. Sandbox Integration stays strict.
+export const ADMIN_TOLERATED_USERS = ['120827741'];
+
 const PROFILE_TITLE = 'Windfall Profile';
 const REMOVED_FLAGS = ['recently divorced', 'recent death in family'];
 
