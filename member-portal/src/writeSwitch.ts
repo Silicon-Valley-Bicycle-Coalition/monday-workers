@@ -65,8 +65,9 @@ export function dryRunChangeDeps(deps: ProcessChangeBatchDeps, ctx: SkipContext)
   return {
     ...deps,
     store: readOnlyProxy(deps.store, CHANGE_STORE_MUTATORS),
-    // createChangeRequestItem returns nothing, so there is no placeholder id to mint.
-    monday: recordingProxy(deps.monday, MONDAY_SINK, { createChangeRequestItem: undefined }, ctx),
+    // The writes return nothing, so there is no placeholder id to mint. Reads (the Organization
+    // lookup, the person's affiliations) stay live so a dry run logs the writes it would make.
+    monday: recordingProxy(deps.monday, MONDAY_SINK, { createChangeRequestItem: undefined, createAffiliation: undefined, updateAffiliation: undefined }, ctx),
   };
 }
 

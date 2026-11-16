@@ -463,12 +463,13 @@ function validateEmployerAnswer(raw: unknown): EmployerAnswerConfig | null {
   return raw as EmployerAnswerConfig;
 }
 
-// The Employer field shows only with change requests on, an employer block, and a real
-// People → Employer Name column (the change request's old value).
+// The Employer field shows only with change requests on, an employer block, an Organizations
+// board to match against, and a real People → Employer Name column (the request's old value).
 export function employerAnswerEnabled(config: Config): boolean {
   return (
     changeRequestsEnabled(config) &&
     (config.changeRequests.employer ?? null) !== null &&
+    config.monday.organizationsBoardId !== null &&
     config.monday.columns.donorEmployer !== PLACEHOLDER_COLUMN_VALUE
   );
 }

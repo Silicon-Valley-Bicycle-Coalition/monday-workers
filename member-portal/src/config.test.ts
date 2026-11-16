@@ -1037,6 +1037,7 @@ describe('changeRequests.employer', () => {
   const withEmployer = (value: unknown) => {
     const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as Record<string, any>;
     raw.changeRequests.employer = value;
+    raw.monday.organizationsBoardId = 3;
     return raw;
   };
 
@@ -1054,6 +1055,12 @@ describe('changeRequests.employer', () => {
   it('is off while donorEmployer is the placeholder', () => {
     const raw = withEmployer(structuredClone(employer));
     raw.monday.columns.donorEmployer = 'REPLACE_WITH_COLUMN_ID';
+    expect(employerAnswerEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is off while monday.organizationsBoardId is null', () => {
+    const raw = withEmployer(structuredClone(employer));
+    raw.monday.organizationsBoardId = null;
     expect(employerAnswerEnabled(validateConfig(raw))).toBe(false);
   });
 
