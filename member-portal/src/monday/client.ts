@@ -5,6 +5,7 @@ import type {
   DonationsConfig,
   DonorContactInfo,
   DonorMatch,
+  EmployerAnswerConfig,
   MemberPortalData,
   EventRegistrationColumns,
   EventRegistrationRecord,
@@ -15,6 +16,7 @@ import type {
   PledgeRecord,
   VolunteerShift,
 } from '../types';
+import type { AffiliationRecord, OrganizationCandidate } from '../changeRequests/employer';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { MondayGraphQL, type TokenProvider } from './graphql';
@@ -109,6 +111,12 @@ export interface MondayClient {
   // adopt an item an earlier, ambiguously failed create already committed (the name carries the
   // D1 request id, so it's unique per request).
   findChangeRequestItem(params: { boardId: number; itemName: string }): Promise<string | null>;
+  // Donor employer answer (writer only). Exact-name lookup of every candidate spelling at once.
+  findOrganizationsByNames(params: { boardId: number; names: string[] }): Promise<OrganizationCandidate[]>;
+  getPersonAffiliations(params: { donorItemId: string; employer: EmployerAnswerConfig }): Promise<AffiliationRecord[]>;
+  createAffiliation(params: { employer: EmployerAnswerConfig; itemName: string; donorItemId: string; organizationItemId: string }): Promise<void>;
+  // makeCurrent false leaves Status alone; primary false clears the checkbox.
+  updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void>;
   createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -557,6 +565,9 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
       columnIds.push(this.columns.preferredLanguage);
     }
+    if (this.columns.donorEmployer !== 'REPLACE_WITH_COLUMN_ID') {
+      columnIds.push(this.columns.donorEmployer);
+    }
     const prefColumnIds = [this.columns.donorEmailOptOut, this.columns.donorSmsOptOut, this.columns.donorDoNotMail];
     for (const prefColumnId of prefColumnIds) {
       if (prefColumnId !== 'REPLACE_WITH_COLUMN_ID') {
@@ -587,6 +598,7 @@ export class HttpMondayClient implements MondayClient {
       address: columnText(item, this.columns.donorAddress),
       phone: columnText(item, this.columns.donorPhone),
       preferredLanguage: columnText(item, this.columns.preferredLanguage),
+      employer: this.columns.donorEmployer === 'REPLACE_WITH_COLUMN_ID' ? '' : columnText(item, this.columns.donorEmployer),
       emailOptOut: checkboxState(item, this.columns.donorEmailOptOut),
       smsOptOut: checkboxState(item, this.columns.donorSmsOptOut),
       doNotMail: checkboxState(item, this.columns.donorDoNotMail),
@@ -660,6 +672,113 @@ export class HttpMondayClient implements MondayClient {
       columns: [{ column_id: 'name', column_values: [params.itemName] }],
     });
     return data.items_page_by_column_values.items.find((item) => item.name === params.itemName)?.id ?? null;
+  }
+
+  async findOrganizationsByNames(params: { boardId: number; names: string[] }): Promise<OrganizationCandidate[]> {
+    if (params.names.length === 0) return [];
+    // Exact match on name (see findChangeRequestItem); the caller compares normalised names.
+    const query = `
+      query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
+        items_page_by_column_values(board_id: $boardId, limit: 100, columns: $columns) {
+          items { id name }
+        }
+      }
+    `;
+    const data = await this.request<{ items_page_by_column_values: { items: MondayItem[] } }>(query, {
+      boardId: params.boardId,
+      columns: [{ column_id: 'name', column_values: params.names }],
+    });
+    return data.items_page_by_column_values.items.map((item) => ({ id: item.id, name: item.name }));
+  }
+
+  // Through People's Affiliations link and items(ids:), not a board filter, so a retry sees an
+  // affiliation an earlier, ambiguously failed create already linked.
+  async getPersonAffiliations(params: { donorItemId: string; employer: EmployerAnswerConfig }): Promise<AffiliationRecord[]> {
+    const { employer } = params;
+    const linkQuery = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          name
+          column_values(ids: ${JSON.stringify([employer.personAffiliationsLink])}) { id text ... on BoardRelationValue { linked_item_ids } }
+        }
+      }
+    `;
+    const linkData = await this.request<{ items: MondayItem[] }>(linkQuery, { itemId: Number(params.donorItemId) });
+    const person = linkData.items[0];
+    if (!person) throw new Error(`monday: donor item "${params.donorItemId}" not found`);
+    const affiliationIds =
+      (person.column_values ?? []).find((c) => c.id === employer.personAffiliationsLink)?.linked_item_ids ?? [];
+    if (affiliationIds.length === 0) return [];
+
+    const { organizationLink, status, primary } = employer.affiliationColumns;
+    const query = `
+      query ($itemIds: [ID!]) {
+        items(ids: $itemIds, limit: 100) {
+          id
+          name
+          column_values(ids: ${JSON.stringify([organizationLink, status, primary])}) {
+            id text ... on BoardRelationValue { linked_item_ids linked_items { name } }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemIds: affiliationIds.map(Number) });
+    return data.items.map((item) => {
+      const org = (item.column_values ?? []).find((c) => c.id === organizationLink);
+      const statusText = columnText(item, status);
+      return {
+        id: item.id,
+        organizationId: org?.linked_item_ids?.[0] ?? null,
+        organizationName: org?.linked_items?.[0]?.name ?? null,
+        statusLabel: statusText === '' ? null : statusText,
+        primary: columnText(item, primary) !== '',
+      };
+    });
+  }
+
+  async createAffiliation(params: {
+    employer: EmployerAnswerConfig;
+    itemName: string;
+    donorItemId: string;
+    organizationItemId: string;
+  }): Promise<void> {
+    const { affiliationColumns: cols, affiliationsBoardId, currentStatusLabel } = params.employer;
+    const mutation = `
+      mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) { id }
+      }
+    `;
+    const columnValues = {
+      [cols.personLink]: { item_ids: [Number(params.donorItemId)] },
+      [cols.organizationLink]: { item_ids: [Number(params.organizationItemId)] },
+      [cols.status]: { label: currentStatusLabel },
+      [cols.primary]: { checked: 'true' },
+    };
+    // Not idempotent: the writer re-reads the person's affiliations before any retry creates.
+    await this.request<{ create_item: { id: string } }>(
+      mutation,
+      { boardId: affiliationsBoardId, itemName: params.itemName, columnValues: JSON.stringify(columnValues) },
+      { idempotent: false },
+    );
+  }
+
+  async updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void> {
+    const { affiliationColumns: cols, affiliationsBoardId, currentStatusLabel } = params.employer;
+    const mutation = `
+      mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) { id }
+      }
+    `;
+    // A null value clears a checkbox column; Status is only ever set, never cleared.
+    const columnValues: Record<string, unknown> = {};
+    if (params.makeCurrent) columnValues[cols.status] = { label: currentStatusLabel };
+    columnValues[cols.primary] = params.primary ? { checked: 'true' } : null;
+    await this.request<{ change_multiple_column_values: { id: string } }>(mutation, {
+      boardId: affiliationsBoardId,
+      itemId: Number(params.itemId),
+      columnValues: JSON.stringify(columnValues),
+    });
   }
 
   async createChangeRequestItem(params: {

@@ -31,6 +31,7 @@ const columns: MondayColumns = {
   donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
   donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
   donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
+  donorEmployer: 'employer_col',
 };
 
 // Mirrors config donations.countableStatuses — the Donations-board status labels that count as
@@ -939,6 +940,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: '',
+      employer: '',
       emailOptOut: false,
       smsOptOut: false,
       doNotMail: false,
@@ -977,6 +979,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: 'Spanish',
+      employer: '',
       emailOptOut: false,
       smsOptOut: false,
       doNotMail: false,
@@ -1104,6 +1107,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: '',
+      employer: '',
       emailOptOut: false,
       smsOptOut: false,
       doNotMail: false,
@@ -2045,5 +2049,158 @@ describe('HttpMondayClient DTD match lines', () => {
     expect(donations).toContain('match_status_col');
     expect(donations).toContain('matched_by_col');
     expect(donations).toContain('linked_items');
+  });
+});
+
+const employerCfg = {
+  affiliationsBoardId: 555,
+  affiliationColumns: { personLink: 'aff_person', organizationLink: 'aff_org', status: 'aff_status', primary: 'aff_primary' },
+  currentStatusLabel: 'Current',
+  personAffiliationsLink: 'people_affs',
+};
+
+type Captured = { query: string; variables: Record<string, unknown> };
+
+// Answers each request in turn from `responses`, recording every body.
+function sequencedClient(responses: unknown[], bodies: Captured[] = [], cols: MondayColumns = columns) {
+  const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(init.body as string) as Captured);
+    const body = responses[bodies.length - 1];
+    return { ok: true, status: 200, json: async () => body };
+  });
+  return { client: new HttpMondayClient('https://api.monday.com/v2', 'token', cols, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock), fetchMock };
+}
+
+describe('HttpMondayClient.findOrganizationsByNames', () => {
+  it('looks every name up in one exact-name query, as variables', async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { items_page_by_column_values: { items: [{ id: '7', name: 'Google, LLC' }] } } }], bodies);
+
+    const found = await client.findOrganizationsByNames({ boardId: 3, names: ['Google', 'Google, LLC'] });
+
+    expect(found).toEqual([{ id: '7', name: 'Google, LLC' }]);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.query).toContain('items_page_by_column_values');
+    expect(bodies[0]!.query).not.toContain('Google');
+    expect(bodies[0]!.variables).toEqual({ boardId: 3, columns: [{ column_id: 'name', column_values: ['Google', 'Google, LLC'] }] });
+  });
+
+  it('makes no request for no names', async () => {
+    const { client, fetchMock } = sequencedClient([]);
+    expect(await client.findOrganizationsByNames({ boardId: 3, names: [] })).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('HttpMondayClient.getPersonAffiliations', () => {
+  it("reads the person's linked affiliations, then each one's Organization, Status and Primary", async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient(
+      [
+        { data: { items: [{ id: '10', name: 'Jane', column_values: [{ id: 'people_affs', text: '', linked_item_ids: ['21', '22'] }] }] } },
+        {
+          data: {
+            items: [
+              {
+                id: '21',
+                name: 'Jane — Acme',
+                column_values: [
+                  { id: 'aff_org', text: 'Acme', linked_item_ids: ['501'], linked_items: [{ name: 'Acme' }] },
+                  { id: 'aff_status', text: 'Current' },
+                  { id: 'aff_primary', text: 'v' },
+                ],
+              },
+              {
+                id: '22',
+                name: 'Jane — ?',
+                column_values: [
+                  { id: 'aff_org', text: '', linked_item_ids: [], linked_items: [] },
+                  { id: 'aff_status', text: '' },
+                  { id: 'aff_primary', text: '' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      bodies,
+    );
+
+    const affiliations = await client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg });
+
+    expect(affiliations).toEqual([
+      { id: '21', organizationId: '501', organizationName: 'Acme', statusLabel: 'Current', primary: true },
+      { id: '22', organizationId: null, organizationName: null, statusLabel: null, primary: false },
+    ]);
+    expect(bodies[0]!.variables).toEqual({ itemId: 10 });
+    expect(bodies[0]!.query).toContain('people_affs');
+    expect(bodies[1]!.variables).toEqual({ itemIds: [21, 22] });
+  });
+
+  it('makes one request when the person has no affiliations', async () => {
+    const { client, fetchMock } = sequencedClient([
+      { data: { items: [{ id: '10', name: 'Jane', column_values: [{ id: 'people_affs', text: '', linked_item_ids: [] }] }] } },
+    ]);
+    expect(await client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg })).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HttpMondayClient affiliation writes', () => {
+  it('createAffiliation links person and Organization, Current and Primary, as variables', async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { create_item: { id: '30' } } }], bodies);
+
+    await client.createAffiliation({ employer: employerCfg, itemName: 'Jane — Google', donorItemId: '10', organizationItemId: '501' });
+
+    expect(bodies[0]!.query).toContain('create_item');
+    expect(bodies[0]!.query).not.toContain('Jane');
+    expect(bodies[0]!.variables.boardId).toBe(555);
+    expect(bodies[0]!.variables.itemName).toBe('Jane — Google');
+    expect(JSON.parse(bodies[0]!.variables.columnValues as string)).toEqual({
+      aff_person: { item_ids: [10] },
+      aff_org: { item_ids: [501] },
+      aff_status: { label: 'Current' },
+      aff_primary: { checked: 'true' },
+    });
+  });
+
+  it('updateAffiliation makes an affiliation Current and Primary', async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { change_multiple_column_values: { id: '21' } } }], bodies);
+
+    await client.updateAffiliation({ employer: employerCfg, itemId: '21', makeCurrent: true, primary: true });
+
+    expect(bodies[0]!.query).toContain('change_multiple_column_values');
+    expect(bodies[0]!.variables.boardId).toBe(555);
+    expect(bodies[0]!.variables.itemId).toBe(21);
+    expect(JSON.parse(bodies[0]!.variables.columnValues as string)).toEqual({ aff_status: { label: 'Current' }, aff_primary: { checked: 'true' } });
+  });
+
+  it('updateAffiliation clearing Primary sends only the checkbox, as null', async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { change_multiple_column_values: { id: '22' } } }], bodies);
+
+    await client.updateAffiliation({ employer: employerCfg, itemId: '22', makeCurrent: false, primary: false });
+
+    expect(JSON.parse(bodies[0]!.variables.columnValues as string)).toEqual({ aff_primary: null });
+  });
+});
+
+describe('HttpMondayClient.getDonorContactInfo employer', () => {
+  const donorItem = { id: 'd', name: 'Jane', column_values: [{ id: 'employer_col', text: 'Google, LLC' }] };
+
+  it('reads People → Employer Name', async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { items: [donorItem] } }], bodies);
+    expect((await client.getDonorContactInfo('d')).employer).toBe('Google, LLC');
+    expect(bodies[0]!.query).toContain('employer_col');
+  });
+
+  it("is '' and not queried while the column is the placeholder", async () => {
+    const bodies: Captured[] = [];
+    const { client } = sequencedClient([{ data: { items: [donorItem] } }], bodies, { ...columns, donorEmployer: 'REPLACE_WITH_COLUMN_ID' });
+    expect((await client.getDonorContactInfo('d')).employer).toBe('');
+    expect(bodies[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
   });
 });

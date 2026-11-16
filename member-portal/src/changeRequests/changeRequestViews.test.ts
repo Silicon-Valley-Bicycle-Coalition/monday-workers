@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequestViews';
 import { t } from '../i18n/t';
 
-const sampleDonor = { id: 'donor-1', name: 'Jane <b>Example</b>', email: 'jane@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '', emailOptOut: false, smsOptOut: false, doNotMail: false };
+const sampleDonor = { id: 'donor-1', name: 'Jane <b>Example</b>', email: 'jane@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '', employer: '', emailOptOut: false, smsOptOut: false, doNotMail: false };
 const donors = [
   sampleDonor,
-  { id: 'donor-2', name: 'Sam Example', email: 'jane@example.org', address: '2 Shared Rd', phone: '', preferredLanguage: '', emailOptOut: false, smsOptOut: false, doNotMail: false },
+  { id: 'donor-2', name: 'Sam Example', email: 'jane@example.org', address: '2 Shared Rd', phone: '', preferredLanguage: '', employer: '', emailOptOut: false, smsOptOut: false, doNotMail: false },
 ];
 
 describe('changeRequestFormView', () => {

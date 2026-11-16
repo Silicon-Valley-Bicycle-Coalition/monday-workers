@@ -32,6 +32,9 @@ export interface MondayColumns {
   donationMatchStatus: string;
   donationMatchedBy: string;
   donorDtdLink: string;
+  // People → Employer Name (text). Read only, for the old value on an employer change request;
+  // donation-rollups' employerSync writes it from the Current, Primary affiliation.
+  donorEmployer: string;
 }
 
 // The three donor-facing communication preferences. Each maps to its own gated checkbox column
@@ -74,6 +77,24 @@ export interface ChangeRequestsConfig {
   columns: ChangeRequestColumns;
   dedupeWindowHours: number;
   retentionDays: number;
+  // A donor's own employer answer (spec 2026-11-16-donor-employer-answer-design.md). Absent or
+  // null turns the Employer field off. Optional so older fixtures and configs stay valid.
+  employer?: EmployerAnswerConfig | null;
+}
+
+export interface EmployerAffiliationColumns {
+  personLink: string;
+  organizationLink: string;
+  status: string;
+  primary: string;
+}
+
+export interface EmployerAnswerConfig {
+  affiliationsBoardId: number;
+  affiliationColumns: EmployerAffiliationColumns;
+  currentStatusLabel: string;
+  // People → Affiliations connect column: how the writer finds a person's affiliations.
+  personAffiliationsLink: string;
 }
 
 export interface CardTokensConfig {
@@ -328,6 +349,8 @@ export interface DonorContactInfo {
   address: string;
   phone: string;
   preferredLanguage: string;
+  // People → Employer Name; '' when monday.columns.donorEmployer is still the placeholder.
+  employer: string;
   // null = that preference's Donors-board checkbox column isn't configured yet (still the
   // placeholder id), so the current state is unknowable — distinct from false (unchecked).
   emailOptOut: boolean | null;

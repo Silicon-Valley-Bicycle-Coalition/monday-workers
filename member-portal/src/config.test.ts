@@ -14,6 +14,7 @@ import {
   donationHistoryEnabled,
   eventsEnabled,
   letterCronConfigured,
+  employerAnswerEnabled,
 } from './config';
 
 const validConfig = {
@@ -51,6 +52,7 @@ const validConfig = {
       donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
       donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
       donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
+      donorEmployer: 'text_employer',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
@@ -1022,5 +1024,60 @@ describe('matchLinesEnabled', () => {
     const raw = structuredClone(validConfig);
     delete (raw.monday.columns as Record<string, unknown>).donorDtdLink;
     expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorDtdLink/);
+  });
+});
+
+describe('changeRequests.employer', () => {
+  const employer = {
+    affiliationsBoardId: 555,
+    affiliationColumns: { personLink: 'connect_p', organizationLink: 'connect_o', status: 'status_a', primary: 'check_p' },
+    currentStatusLabel: 'Current',
+    personAffiliationsLink: 'connect_pa',
+  };
+  const withEmployer = (value: unknown) => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as Record<string, any>;
+    raw.changeRequests.employer = value;
+    return raw;
+  };
+
+  it('is off when the block is absent or null', () => {
+    expect(employerAnswerEnabled(validateConfig(Object.assign(structuredClone(validConfig), structuredClone(v2Sections))))).toBe(false);
+    const cfg = validateConfig(withEmployer(null));
+    expect(cfg.changeRequests.employer).toBeNull();
+    expect(employerAnswerEnabled(cfg)).toBe(false);
+  });
+
+  it('is on with a full block and a real donorEmployer column', () => {
+    expect(employerAnswerEnabled(validateConfig(withEmployer(structuredClone(employer))))).toBe(true);
+  });
+
+  it('is off while donorEmployer is the placeholder', () => {
+    const raw = withEmployer(structuredClone(employer));
+    raw.monday.columns.donorEmployer = 'REPLACE_WITH_COLUMN_ID';
+    expect(employerAnswerEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('rejects a block missing affiliationColumns.primary', () => {
+    const block = structuredClone(employer) as Record<string, any>;
+    delete block.affiliationColumns.primary;
+    expect(() => validateConfig(withEmployer(block))).toThrow(/changeRequests\.employer\.affiliationColumns\.primary/);
+  });
+
+  it('rejects a non-positive affiliationsBoardId', () => {
+    expect(() => validateConfig(withEmployer({ ...structuredClone(employer), affiliationsBoardId: 0 }))).toThrow(/changeRequests\.employer\.affiliationsBoardId/);
+  });
+
+  it('rejects a missing currentStatusLabel or personAffiliationsLink', () => {
+    for (const key of ['currentStatusLabel', 'personAffiliationsLink']) {
+      const block = structuredClone(employer) as Record<string, unknown>;
+      delete block[key];
+      expect(() => validateConfig(withEmployer(block))).toThrow(new RegExp(`changeRequests\\.employer\\.${key}`));
+    }
+  });
+
+  it('rejects a config missing monday.columns.donorEmployer', () => {
+    const raw = withEmployer(null);
+    delete raw.monday.columns.donorEmployer;
+    expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorEmployer/);
   });
 });

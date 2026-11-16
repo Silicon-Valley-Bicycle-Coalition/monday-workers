@@ -33,7 +33,8 @@
       "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
-      "donorDtdLink": "REPLACE_WITH_COLUMN_ID"
+      "donorDtdLink": "REPLACE_WITH_COLUMN_ID",
+      "donorEmployer": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {
@@ -85,7 +86,8 @@
       "submittedAt": "submitted_at"
     },
     "dedupeWindowHours": 72,
-    "retentionDays": 180
+    "retentionDays": 180,
+    "employer": null
   },
   "cardTokens": {
     "retentionDays": 30
