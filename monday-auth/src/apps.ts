@@ -10,7 +10,9 @@ export const APPS: Record<AppKey, { scopes: string[]; clientIdVar: string; clien
     clientSecretVar: 'PORTAL_CLIENT_SECRET',
   },
   sync: {
-    scopes: ['boards:read', 'boards:write', 'updates:write', 'assets:read', 'users:read', 'notifications:write', 'docs:write', 'me:read'],
+    // webhooks:read/write: the /oauth/webhooks route subscribes Worker webhooks as this app, so
+    // Monday signs their deliveries (#110).
+    scopes: ['boards:read', 'boards:write', 'updates:write', 'assets:read', 'users:read', 'notifications:write', 'docs:write', 'webhooks:read', 'webhooks:write', 'me:read'],
     clientIdVar: 'SYNC_CLIENT_ID',
     clientSecretVar: 'SYNC_CLIENT_SECRET',
   },

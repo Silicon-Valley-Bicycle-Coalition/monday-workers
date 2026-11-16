@@ -40,7 +40,7 @@ Defined in [`src/apps.ts`](src/apps.ts); the Developer Center settings must matc
 | Key | Scopes |
 |---|---|
 | `portal` | `boards:read`, `me:read` |
-| `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `me:read` |
+| `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `webhooks:read`, `webhooks:write`, `me:read` |
 | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
 
 `me:read` is on every app because the consent check queries `me`. Sandbox and production use
@@ -165,6 +165,9 @@ never hands its tokens out, so `donation-rollups/scripts/setup-webhooks.mjs` and
 `people-reclassification/scripts/setup-promote.mjs` create them through `/oauth/webhooks/sync`
 when `MONDAY_AUTH_URL` and `START_KEY` are set. Per environment, sandbox first:
 
+0. Once per environment: the Staff sync app needs `webhooks:read` and `webhooks:write` (without
+   them every call fails with "missing required scopes" on `Query.webhooks`). Tick both in the
+   Developer Center, deploy this Worker, then re-consent `sync` ("Consent and re-consent" above).
 1. From `monday-auth/`: `npx wrangler deploy --env sandbox --var WEBHOOKS_ENABLED:true` (drop
    `--env sandbox` for production). As with the probe, the command-line `--var` lasts one deploy.
 2. Run the scripts with `MONDAY_AUTH_URL=https://svbc-monday-auth-sandbox.svbc-account.workers.dev`

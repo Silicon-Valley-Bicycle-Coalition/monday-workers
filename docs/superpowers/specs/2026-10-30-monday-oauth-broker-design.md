@@ -89,7 +89,7 @@ Why this works and what it trades away:
 | App | Workers | Scopes |
 |---|---|---|
 | **Portal** | `member-portal` | `boards:read`, `me:read` |
-| **Staff sync** | `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `benevity-import`, `email-log`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync` (postponed, wired anyway) | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `me:read` |
+| **Staff sync** | `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `benevity-import`, `email-log`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync` (postponed, wired anyway) | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `webhooks:read`, `webhooks:write`, `me:read` |
 | **Read-only** | `monday-backup`, `report-digests` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
 
 2026-10-30: me:read added after live consent; the consent check queries `me`.
