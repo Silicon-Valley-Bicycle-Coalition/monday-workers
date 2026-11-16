@@ -80,12 +80,15 @@
   // routes that do D1 work before their shared-secret check ever rejects a bogus delivery.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2041", "simple": { "limit": 60, "period": 60 } }],
   // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
-  // guardrail against a runaway invocation or a surprise bill. See the root README.
-  "limits": { "cpu_ms": 100 },
+  // guardrail against a runaway invocation or a surprise bill. See the root README. 1000, not
+  // 100: the hourly consent sync parses the whole Mailchimp audience (~61k members) and ~25k
+  // Monday items per run (decided 2026-11-16; contact-roles and people-reclassification use 1000).
+  "limits": { "cpu_ms": 1000 },
   "triggers": {
     // Once daily, 15:00 UTC = 8am Pacific (PDT) / 7am Pacific (PST) — Campaigns-board
-    // reconciliation only, see Task 10. Fire hour doesn't affect correctness.
-    "crons": ["0 15 * * *"]
+    // reconciliation, see Task 10. Fire hour doesn't affect correctness. Hourly at :05 — the
+    // consent column sync (src/consent/run.ts CONSENT_CRON; scheduled() dispatches on the string).
+    "crons": ["0 15 * * *", "5 * * * *"]
   },
   "observability": {
     "enabled": true,
@@ -155,9 +158,9 @@
         ]
       },
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2042", "simple": { "limit": 60, "period": 60 } }],
-      "limits": { "cpu_ms": 100 },
+      "limits": { "cpu_ms": 1000 },
       "triggers": {
-        "crons": ["0 15 * * *"]
+        "crons": ["0 15 * * *", "5 * * * *"]
       },
       "observability": {
         "enabled": true,

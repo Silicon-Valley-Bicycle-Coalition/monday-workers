@@ -31,6 +31,8 @@ export function normalizeAddress(text: string): string {
  * The label for an address whose Mailchimp status is `status` (undefined: not in the audience).
  * Archived hides a contact's earlier status, and Mailchimp won't email it, so it reads as an
  * opt-out: Cleaned when the column already says so, otherwise Unsubscribed. Never sendable.
+ * An absent address keeps an existing Unsubscribed or Cleaned: absence is never evidence of
+ * consent (a contact deleted outright, or one a shifted page skipped), so it can't lift an opt-out.
  */
 export function desiredLabel(status: string | undefined, current: string): ConsentLabel {
   switch (status) {
@@ -38,7 +40,8 @@ export function desiredLabel(status: string | undefined, current: string): Conse
     case 'unsubscribed': return 'Unsubscribed';
     case 'cleaned': return 'Cleaned';
     case 'archived': return current === 'Cleaned' ? 'Cleaned' : 'Unsubscribed';
-    // pending (double opt-in unconfirmed), transactional, or absent: no consent, no opt-out.
+    case undefined: return current === 'Unsubscribed' || current === 'Cleaned' ? current : 'Not in Mailchimp';
+    // pending (double opt-in unconfirmed), transactional: no consent, no opt-out.
     default: return 'Not in Mailchimp';
   }
 }

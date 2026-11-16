@@ -36,7 +36,7 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
   const pageSize = opts.pageSize ?? 1000;
   const auth = `Basic ${btoa(`anystring:${opts.apiKey}`)}`;
   let offset = 0;
-  let total = 0;
+  let total: number | null = null;
   let read = 0;
   do {
     const params = new URLSearchParams({ count: String(pageSize), offset: String(offset), fields: FIELDS });
@@ -49,12 +49,18 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
       throw new Error(`mailchimp list members${archived ? ' (archived)' : ''}: HTTP ${response.status} at offset ${offset}`);
     }
     const page = (await response.json()) as { total_items: number; members: { email_address: string; status: string }[] };
+    // Offset paging shifts when a member is archived or deleted mid-read, skipping one while the
+    // final count can still match. A total that moves between pages is that shift: start over
+    // next hour rather than plan on a read with a member missing.
+    if (total !== null && page.total_items !== total) {
+      throw new ConsentShortReadError(`mailchimp list members${archived ? ' (archived)' : ''}: total changed from ${total} to ${page.total_items} while paging`);
+    }
     total = page.total_items;
     for (const m of page.members) into.set(m.email_address.trim().toLowerCase(), m.status);
     read += page.members.length;
     if (page.members.length === 0) break;
     offset += pageSize;
-  } while (offset < total);
+  } while (offset < (total ?? 0));
   if (read !== total) {
     throw new ConsentShortReadError(`mailchimp list members${archived ? ' (archived)' : ''}: read ${read} of ${total}`);
   }

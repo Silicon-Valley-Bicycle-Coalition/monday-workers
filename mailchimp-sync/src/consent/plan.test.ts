@@ -26,7 +26,15 @@ describe('desiredLabel', () => {
     expect(desiredLabel('cleaned', '')).toBe('Cleaned');
     expect(desiredLabel('pending', '')).toBe('Not in Mailchimp');
     expect(desiredLabel('transactional', '')).toBe('Not in Mailchimp');
-    expect(desiredLabel(undefined, 'Unsubscribed')).toBe('Not in Mailchimp');
+    expect(desiredLabel(undefined, 'Not in Mailchimp')).toBe('Not in Mailchimp');
+  });
+
+  it('absent keeps an existing opt-out', () => {
+    // A member skipped by a shifted page, or deleted outright, must not become sendable.
+    expect(desiredLabel(undefined, 'Unsubscribed')).toBe('Unsubscribed');
+    expect(desiredLabel(undefined, 'Cleaned')).toBe('Cleaned');
+    expect(desiredLabel(undefined, 'Subscribed')).toBe('Not in Mailchimp');
+    expect(desiredLabel(undefined, '')).toBe('Not in Mailchimp');
   });
 
   it('archived keeps Cleaned, otherwise Unsubscribed', () => {

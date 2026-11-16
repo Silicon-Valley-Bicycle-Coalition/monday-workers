@@ -83,11 +83,16 @@ Mailchimp status for the address (lowercased, trimmed), to the label written:
 | `cleaned` | Cleaned |
 | `archived` | **Cleaned if the column already says Cleaned, otherwise Unsubscribed** |
 | `pending`, `transactional` | Not in Mailchimp |
-| absent from the audience (all statuses read, archived included) | Not in Mailchimp |
+| absent from the audience (all statuses read, archived included) | **the existing value if it is Unsubscribed or Cleaned, otherwise Not in Mailchimp** |
 
 * Archived → Unsubscribed is the opt-out-preserving reading: Mailchimp won't send to an archived
   contact, and re-adding one needs the person's consent. *(My call, put to David with the approaches on 2026-11-16; he chose the approach without
   objecting to it.)*
+* Absence never lifts an opt-out (added 2026-11-16, from the build's security review). Offset
+  paging can skip a member when another is archived or deleted mid-read, and a contact deleted
+  outright from Mailchimp leaves no status. Either would otherwise read as "Not in Mailchimp",
+  which may be emailed. The reader also treats a `total_items` that changes between pages as a
+  short read. *(My call.)*
 * `pending` (double opt-in not confirmed) and `transactional` carry no marketing consent and no
   opt-out, so "Not in Mailchimp" fits; neither exists in quantity today. *(My call.)*
 * An item whose address column is blank and whose consent column isn't gets its consent

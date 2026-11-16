@@ -4,7 +4,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
-import { tokenProviderFor } from './monday/graphql';
+import { MondayGraphQL, tokenProviderFor } from './monday/graphql';
 import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
 import { D1PendingInboundStore } from './db/pendingInbound';
@@ -17,11 +17,14 @@ import { consumeInboundBatch } from './consumer/inbound';
 import { processInboundDeadLetters, processOutboundDeadLetters } from './consumer/deadLetters';
 import { reconcileCampaigns } from './campaigns/reconcile';
 import { runScheduledReconcile } from './campaigns/scheduled';
+import { CONSENT_CRON, runConsentSync } from './consent/run';
+import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import { environmentOf } from './environment';
 import type { BatchSkipContext } from './writeSwitch';
 import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import { sendAlert } from './alert';
+import { redactEmails } from './logSafe';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -130,8 +133,31 @@ export default {
   // Awaited, not handed to ctx.waitUntil: the runtime gives an awaited scheduled() handler the
   // full 15 minutes, while waitUntil work is only promised 30 seconds after the handler returns.
   // A failed run is logged, not thrown, so Workers Issues shows the error line.
-  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+  async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const config = configFor(env);
+    // Two crons (wrangler.jsonc): the hourly consent sync and the daily Campaigns reconcile. Any
+    // other cron string, or none, runs the reconcile, as the one cron did before.
+    if (event.cron === CONSENT_CRON) {
+      try {
+        const gate = await skipContext(env);
+        // Same tuning as HttpMondayClient's: a few in-process retries; the next hour does the rest.
+        const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
+        await runConsentSync(gate, {
+          config,
+          monday: createConsentMonday((query, variables) => transport.request(query, variables)),
+          readStatuses: () => readMailchimpStatuses({
+            fetchFn: fetch.bind(globalThis),
+            apiBaseUrl: config.mailchimp.apiBaseUrl,
+            apiKey: env.MAILCHIMP_API_KEY,
+            audienceId: config.mailchimp.audienceId,
+          }),
+          alert: (text) => sendAlert(env.SLACK_WEBHOOK_URL, text),
+        });
+      } catch (err) {
+        console.error(`mailchimp-sync consent: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+      }
+      return;
+    }
     try {
       const gate = await skipContext(env);
       await runScheduledReconcile(gate, {

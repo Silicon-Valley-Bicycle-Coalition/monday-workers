@@ -55,6 +55,23 @@ describe('readMailchimpStatuses', () => {
     await expect(readMailchimpStatuses(opts(fetchFn))).rejects.toBeInstanceOf(ConsentShortReadError);
   });
 
+  it('throws ConsentShortReadError when total_items changes between pages', async () => {
+    // a@ is archived after the first page: the list shifts left, c@ is never returned, and the
+    // final count (4 read, total now 4) matches. Only the change in total_items gives it away.
+    const before = ['a', 'b', 'c', 'd', 'e'].map((n) => ({ email_address: `${n}@x.org`, status: 'subscribed' }));
+    const after = before.slice(1);
+    let call = 0;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const params = new URL(String(input)).searchParams;
+      if (params.get('status') === 'archived') return Response.json({ total_items: 0, members: [] });
+      call += 1;
+      const list = call === 1 ? before : after;
+      const offset = Number(params.get('offset'));
+      return Response.json({ total_items: list.length, members: list.slice(offset, offset + 2) });
+    }) as unknown as typeof fetch;
+    await expect(readMailchimpStatuses(opts(fetchFn, 2))).rejects.toBeInstanceOf(ConsentShortReadError);
+  });
+
   it('throws on a non-2xx page, without the key', async () => {
     const fetchFn = vi.fn(async () => new Response('nope', { status: 503 })) as unknown as typeof fetch;
     const err = (await readMailchimpStatuses(opts(fetchFn)).then(() => null, (e: unknown) => e)) as Error;

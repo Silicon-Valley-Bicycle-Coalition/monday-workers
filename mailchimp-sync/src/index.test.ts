@@ -236,6 +236,25 @@ describe('scheduled', () => {
     expect(log).toHaveBeenCalledWith('mailchimp-sync reconcile: no Campaigns board configured (monday.campaignsBoardId is null); skipping');
     log.mockRestore();
   });
+
+  it('scheduled dispatches on event.cron', async () => {
+    const env = fakeEnv();
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void lines.push(line));
+    try {
+      // Production config: consent.enabled is false, so the consent run's one line is the skip.
+      await worker.scheduled({ cron: '5 * * * *' } as ScheduledEvent, env);
+      expect(lines.some((l) => l.includes('consent.enabled is false'))).toBe(true);
+      expect(lines.some((l) => l.includes('no Campaigns board configured'))).toBe(false);
+
+      lines.length = 0;
+      await worker.scheduled({ cron: '0 15 * * *' } as ScheduledEvent, env);
+      expect(lines.some((l) => l.includes('no Campaigns board configured'))).toBe(true);
+      expect(lines.some((l) => l.includes('consent'))).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 describe('request-time config selection', () => {
