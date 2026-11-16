@@ -187,5 +187,8 @@ design's own branch. This design doesn't change it.
 ## Left to the builder
 
 - Copy wording and translations.
-- Whether the login link preserves `#employer` (the magic-link flow lands on the portal home
-  today; a link that loses the anchor is acceptable for v1).
+- **Decided in the build:** the link is `/:locale/portal/change-request?field=employer`, not an
+  `#employer` anchor. The form is one `<select>`, so the query parameter preselects Employer,
+  which is what the anchor was for. The post-gift email links there.
+- Whether the login flow preserves `?field=employer` (the magic-link flow lands on the portal home
+  today; a link that loses it is acceptable for v1).

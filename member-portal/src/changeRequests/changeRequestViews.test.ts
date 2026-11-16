@@ -137,3 +137,23 @@ describe('preferencesResultView', () => {
     expect(html).not.toContain('<script>bad</script>');
   });
 });
+
+describe('changeRequestFormView — employer', () => {
+  const donor = { ...sampleDonor, employer: 'Acme <Corp>' };
+
+  it('offers Employer and shows the current one when enabled', () => {
+    const html = changeRequestFormView([donor], 'en', [], 0, 'on');
+    expect(html).toContain('<option value="employer">Employer</option>');
+    expect(html).toContain('<dt>Employer</dt><dd>Acme &lt;Corp&gt;</dd>');
+  });
+
+  it('preselects Employer', () => {
+    expect(changeRequestFormView([donor], 'en', [], 0, 'preselected')).toContain('<option value="employer" selected>Employer</option>');
+  });
+
+  it('shows neither while off', () => {
+    const html = changeRequestFormView([donor], 'en', []);
+    expect(html).not.toContain('value="employer"');
+    expect(html).not.toContain('<dt>Employer</dt>');
+  });
+});

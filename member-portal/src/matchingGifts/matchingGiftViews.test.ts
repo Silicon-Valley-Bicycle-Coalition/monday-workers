@@ -27,6 +27,20 @@ describe('matchingGiftsView', () => {
   });
 });
 
+describe('matchingGiftsView — employer link', () => {
+  it('links to the employer form when it is on', () => {
+    const html = matchingGiftsView({ publicApiKey: null, ein: null, employerFormUrl: '/en/portal/change-request?field=employer' }, 'en');
+    expect(html).toContain('href="/en/portal/change-request?field=employer"');
+    expect(html).toContain('Tell us where you work');
+  });
+
+  it('has no link when it is off', () => {
+    const html = matchingGiftsView({ publicApiKey: null, ein: null, employerFormUrl: null }, 'en');
+    expect(html).not.toContain('field=employer');
+    expect(html).not.toContain('Tell us where you work');
+  });
+});
+
 describe('matchingGiftsSearchDocument', () => {
   it('embeds the DTD widget with the configured key', () => {
     const html = matchingGiftsSearchDocument('dtd-abc123', 'en');

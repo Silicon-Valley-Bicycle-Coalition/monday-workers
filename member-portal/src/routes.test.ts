@@ -134,6 +134,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
         address: '1 Old St',
         phone: '555-0100',
         preferredLanguage: '',
+        employer: 'Acme',
       })
     ),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
@@ -182,6 +183,7 @@ function fakeMondayWithDonations(): MondayClient {
         address: '1 Old St',
         phone: '555-0100',
         preferredLanguage: '',
+        employer: 'Acme',
       })
     ),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
@@ -1247,6 +1249,64 @@ describe('GET /:locale/portal/change-request', () => {
 
     const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
+  });
+});
+
+describe('/:locale/portal/change-request — employer', () => {
+  function employerConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.monday.columns = { donorEmployer: 'emp_col' } as never;
+    cfg.changeRequests.employer = {
+      affiliationsBoardId: 555,
+      affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' },
+      currentStatusLabel: 'Current',
+      personAffiliationsLink: 'pa',
+    };
+    return cfg;
+  }
+  const emailSender = () => ({ sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) });
+
+  it('preselects Employer from ?field=employer', async () => {
+    const sender = emailSender();
+    const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
+    const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
+    const html = await (await app.request('/en/portal/change-request?field=employer', { headers: { Cookie: cookie } })).text();
+    expect(html).toContain('<option value="employer" selected>');
+  });
+
+  it('ignores any other ?field value', async () => {
+    const sender = emailSender();
+    const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
+    const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
+    const html = await (await app.request('/en/portal/change-request?field=%22%3E%3Cscript%3E', { headers: { Cookie: cookie } })).text();
+    expect(html).toContain('<option value="employer">');
+    expect(html).not.toContain('value="employer" selected');
+    expect(html).not.toContain('"><script>');
+  });
+
+  it('accepts an employer POST only when the answer is on', async () => {
+    for (const [cfg, expectSent] of [[employerConfig(), true], [config, false]] as const) {
+      const sender = emailSender();
+      const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+      const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, changeQueue, config: cfg }));
+      const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
+      await app.request('/en/portal/change-request', {
+        method: 'POST',
+        body: new URLSearchParams({ donorItemId: 'donor-1', field: 'employer', newValue: 'Google' }),
+        headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+      });
+      expect(changeQueue.send.mock.calls.length > 0).toBe(expectSent);
+    }
+  });
+
+  it('links the matching-gifts page to the employer form only when on', async () => {
+    for (const [cfg, expectLink] of [[employerConfig(), true], [config, false]] as const) {
+      const sender = emailSender();
+      const app = createApp(makeDeps({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }), emailSender: sender, config: cfg }));
+      const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
+      const html = await (await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } })).text();
+      expect(html.includes('href="/en/portal/change-request?field=employer"')).toBe(expectLink);
+    }
   });
 });
 

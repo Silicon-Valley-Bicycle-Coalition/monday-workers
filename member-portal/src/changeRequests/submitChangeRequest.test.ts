@@ -24,6 +24,7 @@ function fakeMonday(): MondayClient {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: 'English',
+      employer: 'Acme',
       emailOptOut: false,
       smsOptOut: false,
       doNotMail: true,
@@ -243,5 +244,34 @@ describe('submitChangeRequest — communication preference fields', () => {
     );
 
     expect(result.kind).toBe('invalid');
+  });
+});
+
+describe('submitChangeRequest — employer', () => {
+  it('records People → Employer Name as the old value and enqueues it', async () => {
+    const store = fakeStore();
+    const deps = { ...makeDeps(store), employerEnabled: true };
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'employer', newValue: ' Google ' }, deps);
+    expect(result).toEqual({ kind: 'submitted' });
+    expect(store.createRequest).toHaveBeenCalledWith(expect.objectContaining({ field: 'employer', oldValue: 'Acme', newValue: 'Google' }));
+    expect(deps.queue.send).toHaveBeenCalledWith({ requestId: 42 });
+  });
+
+  it('is a duplicate within the dedupe window', async () => {
+    const store = fakeStore({ findRecentByDedupeHash: vi.fn().mockResolvedValue({ id: 7, status: 'written' }) });
+    const deps = { ...makeDeps(store), employerEnabled: true };
+    expect(await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'employer', newValue: 'Google' }, deps)).toEqual({ kind: 'duplicate' });
+    expect(store.createRequest).not.toHaveBeenCalled();
+  });
+
+  it('is an unknown field while the employer answer is off', async () => {
+    const store = fakeStore();
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'employer', newValue: 'Google' }, makeDeps(store));
+    expect(result).toEqual({ kind: 'invalid', message: 'Unknown field.' });
+    expect(store.createRequest).not.toHaveBeenCalled();
+  });
+
+  it('labels the field Employer for staff', () => {
+    expect(FIELD_LABELS.employer).toBe('Employer');
   });
 });

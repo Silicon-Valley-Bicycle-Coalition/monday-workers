@@ -10,7 +10,14 @@ function donorOption(donor: DonorContactInfo): string {
   return `<option value="${escapeHtml(donor.id)}">${escapeHtml(donor.name)}</option>`;
 }
 
-function donorCurrentValues(donor: DonorContactInfo, locale: Locale): string {
+// 'off': no Employer field; 'on': offered; 'preselected': offered and chosen (?field=employer).
+export type EmployerFieldMode = 'off' | 'on' | 'preselected';
+
+function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode): string {
+  const employerRow =
+    employerField === 'off'
+      ? ''
+      : `<dt>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</dt><dd>${escapeHtml(donor.employer)}</dd>`;
   return `
     <section>
       <h3>${escapeHtml(t(locale, 'changeRequest.currentDetailsHeading', { name: donor.name }))}</h3>
@@ -19,6 +26,7 @@ function donorCurrentValues(donor: DonorContactInfo, locale: Locale): string {
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</dt><dd>${escapeHtml(donor.email)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</dt><dd>${escapeHtml(donor.phone)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</dt><dd>${escapeHtml(donor.preferredLanguage)}</dd>
+        ${employerRow}
       </dl>
     </section>
   `;
@@ -68,13 +76,18 @@ export function changeRequestFormView(
   donors: DonorContactInfo[],
   locale: Locale,
   prefFields: PrefField[],
-  unavailableDonorCount = 0
+  unavailableDonorCount = 0,
+  employerField: EmployerFieldMode = 'off'
 ): string {
+  const employerOption =
+    employerField === 'off'
+      ? ''
+      : `<option value="employer"${employerField === 'preselected' ? ' selected' : ''}>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</option>`;
   return `
     <h1>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h1>
     ${someRecordsUnavailableNote(unavailableDonorCount, locale)}
     <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
-    ${donors.map((d) => donorCurrentValues(d, locale)).join('')}
+    ${donors.map((d) => donorCurrentValues(d, locale, employerField)).join('')}
     <form action="/${locale}/portal/change-request" method="post">
       <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
         <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
@@ -85,6 +98,7 @@ export function changeRequestFormView(
           <option value="email">${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</option>
           <option value="phone">${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</option>
           <option value="language">${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</option>
+          ${employerOption}
         </select>
       </label>
       <label>${escapeHtml(t(locale, 'changeRequest.newValue'))}
