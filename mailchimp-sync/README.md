@@ -291,14 +291,14 @@ written to Mailchimp. Stateless: a failed run, board or item is redone the next 
 | unsubscribed | Unsubscribed |
 | cleaned | Cleaned |
 | archived | Cleaned if it already says Cleaned, otherwise Unsubscribed |
-| pending, transactional | Not in Mailchimp |
+| pending, transactional | the existing value if it's Unsubscribed or Cleaned, otherwise Not in Mailchimp |
 | not in the audience | the existing value if it's Unsubscribed or Cleaned, otherwise Not in Mailchimp |
 | (the item has no address) | left as it is |
 
 Archived and absent addresses read as opt-outs because archiving hides a contact's earlier status
 (25,439 archived in production, most of them cutover Unsubscribed) and absence is never evidence
-of consent. An opt-out recorded on Monday can only be lifted by Mailchimp saying subscribed (or
-pending / transactional).
+of consent; nor is pending (an unconfirmed re-signup) or transactional. An opt-out recorded on
+Monday is lifted only by Mailchimp saying subscribed.
 
 **Safety rails.**
 * **Short read.** A pass that reads fewer members than Mailchimp reports, or whose total changes
@@ -309,7 +309,13 @@ pending / transactional).
   `consent.maxChangesPerRun` (500). Over it, the run writes only the opt-outs, holds every
   sendable change, logs an error with the counts by transition and alerts. Raise the cap in
   config deliberately if a large change is real.
-* **Alerts** go to `SLACK_WEBHOOK_URL` when set (the dead-letter alert's secret), counts only.
+* **Alerts** go to `SLACK_WEBHOOK_URL` when set (the dead-letter alert's secret), counts only,
+  on a tripped cap, a short or failed Mailchimp read (a 5xx, a rotated key), a board that
+  couldn't be read, or any failed item write — every hour it keeps happening, since the sponsor
+  send trusts these columns.
+* **Monday outage.** A 429/5xx/timeout/spent budget (the outage breaker's `isMondayOutage`) stops
+  the run's writes; the rest count as failed and the next hour redoes them. Items carrying an
+  opt-out are written first, so a run cut short has already written the changes that stop mail.
 * A board whose read fails (a mistyped column id in config, say) is logged and skipped; the
   others still run.
 

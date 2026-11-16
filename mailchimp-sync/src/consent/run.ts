@@ -9,6 +9,7 @@ import { dryRunConsentMonday, type BatchSkipContext } from '../writeSwitch';
 import type { Config } from '../types';
 import { applyGuard, planBoard, summarize, toWrites, type ConsentChange } from './plan';
 import { ConsentShortReadError, type ConsentMonday } from './sources';
+import { redactEmails } from '../logSafe';
 
 export const CONSENT_CRON = '5 * * * *';
 
@@ -20,7 +21,7 @@ export interface ConsentRunDeps {
 }
 
 export interface ConsentRunSummary {
-  outcome: 'disabled' | 'skipped' | 'short-read' | 'done';
+  outcome: 'disabled' | 'skipped' | 'short-read' | 'read-failed' | 'done';
   mode: WriteMode;
   // Items read, by board name.
   items: Record<string, number>;
@@ -35,6 +36,7 @@ export interface ConsentRunSummary {
 }
 
 const errName = (err: unknown): string => (err instanceof Error ? err.name : 'UnknownError');
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDeps): Promise<ConsentRunSummary> {
   const { config } = deps;
@@ -55,12 +57,15 @@ export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDep
   try {
     statuses = await deps.readStatuses();
   } catch (err) {
-    if (!(err instanceof ConsentShortReadError)) throw err;
-    // A member missing from the read would plan as "Not in Mailchimp"; write nothing at all.
-    const text = `${prefix} the Mailchimp read came back short (${err.message}); nothing written this run`;
+    // A member missing from the read would plan as "Not in Mailchimp"; write nothing at all. Any
+    // other failure (a 5xx page, a rotated key) also alerts: the sponsor send trusts these
+    // columns, so a sync failing every hour must not be silent.
+    const shortRead = err instanceof ConsentShortReadError;
+    const reason = shortRead ? `the Mailchimp read came back short (${err.message})` : `the Mailchimp read failed (${errName(err)}: ${redactEmails(errText(err))})`;
+    const text = `${prefix} ${reason}; nothing written this run`;
     console.error(text);
     await deps.alert(text);
-    return { ...summary, outcome: 'short-read' };
+    return { ...summary, outcome: shortRead ? 'short-read' : 'read-failed' };
   }
 
   const changes: ConsentChange[] = [];
@@ -93,6 +98,14 @@ export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDep
     if (result.failedItemIds.length > 0) {
       console.error(JSON.stringify({ worker: 'mailchimp-sync', event: 'consent-writes-failed', environment: gate.environment, itemIds: result.failedItemIds }));
     }
+  }
+
+  if (summary.failedBoards.length > 0 || summary.failed > 0) {
+    const parts = [
+      ...(summary.failedBoards.length > 0 ? [`could not read ${summary.failedBoards.join(', ')}`] : []),
+      ...(summary.failed > 0 ? [`${summary.failed} item writes failed`] : []),
+    ];
+    await deps.alert(`${prefix} ${parts.join('; ')}; the next hourly run retries (see the consent-run log line)`);
   }
 
   console.log(JSON.stringify({ worker: 'mailchimp-sync', event: 'consent-run', environment: gate.environment, ...summary }));

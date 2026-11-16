@@ -82,7 +82,7 @@ Mailchimp status for the address (lowercased, trimmed), to the label written:
 | `unsubscribed` | Unsubscribed |
 | `cleaned` | Cleaned |
 | `archived` | **Cleaned if the column already says Cleaned, otherwise Unsubscribed** |
-| `pending`, `transactional` | Not in Mailchimp |
+| `pending`, `transactional` | **the existing value if it is Unsubscribed or Cleaned, otherwise Not in Mailchimp** |
 | absent from the audience (all statuses read, archived included) | **the existing value if it is Unsubscribed or Cleaned, otherwise Not in Mailchimp** |
 
 * Archived → Unsubscribed is the opt-out-preserving reading: Mailchimp won't send to an archived
@@ -93,8 +93,10 @@ Mailchimp status for the address (lowercased, trimmed), to the label written:
   outright from Mailchimp leaves no status. Either would otherwise read as "Not in Mailchimp",
   which may be emailed. The reader also treats a `total_items` that changes between pages as a
   short read. *(My call.)*
-* `pending` (double opt-in not confirmed) and `transactional` carry no marketing consent and no
-  opt-out, so "Not in Mailchimp" fits; neither exists in quantity today. *(My call.)*
+* `pending` (double opt-in not confirmed) and `transactional` carry no marketing consent, so
+  "Not in Mailchimp" fits, except that neither lifts an existing opt-out: an unsubscribed person
+  who resubmits a signup form and never confirms stays Unsubscribed. *(My call; tightened
+  2026-11-16 after the branch review.)*
 * An item whose address column is blank keeps whatever its consent column says. *(My call,
   revised 2026-11-16 after the first production dry run: ~980 items have no address but carry a
   cutover consent value, mostly Not in Mailchimp. Clearing them would trip the cap on the first
@@ -129,7 +131,8 @@ A new module, `src/consent/` (names are the builder's), run from `scheduled()`:
 5. **Write.** `change_multiple_column_values` per item (all of that item's changed consent
    columns in one call), several items aliased per request. A failed item is logged and counted;
    the rest carry on, and the next hour retries it.
-6. **Alert.** A tripped cap or an aborted Mailchimp read posts one line to Slack through the
+6. **Alert.** A tripped cap, a failed or short Mailchimp read, a board that couldn't be read, or
+   any failed item write posts one line to Slack through the
    existing `sendAlert` / `SLACK_WEBHOOK_URL` (unset: log only), once per run, counts only.
 7. **Log** one summary line: items read per board, changes by board and transition, writes
    succeeded and failed, mode. Never an email address or a person's name; item ids and counts

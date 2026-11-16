@@ -19,6 +19,7 @@ import { reconcileCampaigns } from './campaigns/reconcile';
 import { runScheduledReconcile } from './campaigns/scheduled';
 import { CONSENT_CRON, runConsentSync } from './consent/run';
 import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
+import { isMondayOutage } from './monday/outage';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import { environmentOf } from './environment';
 import type { BatchSkipContext } from './writeSwitch';
@@ -144,7 +145,7 @@ export default {
         const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
         await runConsentSync(gate, {
           config,
-          monday: createConsentMonday((query, variables) => transport.request(query, variables)),
+          monday: createConsentMonday((query, variables) => transport.request(query, variables), { isOutage: isMondayOutage }),
           readStatuses: () => readMailchimpStatuses({
             fetchFn: fetch.bind(globalThis),
             apiBaseUrl: config.mailchimp.apiBaseUrl,

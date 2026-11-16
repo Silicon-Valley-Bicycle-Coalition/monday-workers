@@ -82,7 +82,15 @@ const ITEM_FIELDS = 'cursor items { id column_values(ids: $columnIds) { id text 
 interface ColumnValue { id: string; text: string | null; email?: string | null }
 interface ItemsPage { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] }
 
-export function createConsentMonday(request: GraphQLRequest): ConsentMonday {
+export interface ConsentMondayOptions {
+  // True for a Monday outage (429, 5xx, timeout, spent budget): writing stops for the run, since
+  // every further request would fail the same way and the item-by-item fallback could outlast
+  // the cron's wall clock. index.ts passes the outage breaker's isMondayOutage.
+  isOutage?: (err: unknown) => boolean;
+}
+
+export function createConsentMonday(request: GraphQLRequest, options: ConsentMondayOptions = {}): ConsentMonday {
+  const isOutage = options.isOutage ?? (() => false);
   async function writeChunk(chunk: readonly ConsentWrite[]): Promise<void> {
     const vars: Record<string, unknown> = {};
     const decls: string[] = [];
@@ -133,20 +141,31 @@ export function createConsentMonday(request: GraphQLRequest): ConsentMonday {
     async writeConsent(writes) {
       let written = 0;
       const failedItemIds: string[] = [];
+      const giveUpFrom = (index: number) => {
+        for (const w of writes.slice(index)) failedItemIds.push(w.itemId);
+      };
       for (let i = 0; i < writes.length; i += ITEMS_PER_MUTATION) {
         const chunk = writes.slice(i, i + ITEMS_PER_MUTATION);
         try {
           await writeChunk(chunk);
           written += chunk.length;
-        } catch {
+        } catch (err) {
+          if (isOutage(err)) {
+            giveUpFrom(i);
+            return { written, failedItemIds };
+          }
           // One bad item fails the whole aliased request; redo the chunk one item at a time so
           // only that item is left for the next hour.
-          for (const w of chunk) {
+          for (let j = 0; j < chunk.length; j += 1) {
             try {
-              await writeChunk([w]);
+              await writeChunk([chunk[j]!]);
               written += 1;
-            } catch {
-              failedItemIds.push(w.itemId);
+            } catch (itemErr) {
+              if (isOutage(itemErr)) {
+                giveUpFrom(i + j);
+                return { written, failedItemIds };
+              }
+              failedItemIds.push(chunk[j]!.itemId);
             }
           }
         }

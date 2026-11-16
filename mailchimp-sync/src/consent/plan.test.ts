@@ -37,6 +37,16 @@ describe('desiredLabel', () => {
     expect(desiredLabel(undefined, '')).toBe('Not in Mailchimp');
   });
 
+  it('pending and transactional keep an existing opt-out', () => {
+    // Mailchimp sends neither marketing mail; a resubmitted, unconfirmed signup must not lift an
+    // unsubscribe.
+    for (const status of ['pending', 'transactional']) {
+      expect(desiredLabel(status, 'Unsubscribed')).toBe('Unsubscribed');
+      expect(desiredLabel(status, 'Cleaned')).toBe('Cleaned');
+      expect(desiredLabel(status, 'Subscribed')).toBe('Not in Mailchimp');
+    }
+  });
+
   it('archived keeps Cleaned, otherwise Unsubscribed', () => {
     expect(desiredLabel('archived', 'Cleaned')).toBe('Cleaned');
     for (const current of ['Subscribed', 'Unsubscribed', '', 'Not in Mailchimp']) {
@@ -118,6 +128,13 @@ describe('toWrites', () => {
       { boardId: 1, itemId: '1', columnValues: { personalConsent: 'Unsubscribed', householdConsent: 'Cleaned' } },
       { boardId: 1, itemId: '2', columnValues: { personalConsent: 'Cleaned' } },
     ]);
+  });
+});
+
+describe('toWrites order', () => {
+  it('puts items with an opt-out first', () => {
+    const writes = toWrites([change('1', 'Subscribed'), change('2', 'Cleaned'), change('3', 'Not in Mailchimp'), change('4', 'Unsubscribed')]);
+    expect(writes.map((w) => w.itemId)).toEqual(['2', '4', '1', '3']);
   });
 });
 

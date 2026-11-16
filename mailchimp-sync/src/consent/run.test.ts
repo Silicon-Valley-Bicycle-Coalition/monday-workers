@@ -127,6 +127,39 @@ describe('runConsentSync', () => {
     expect(summary.outcome).toBe('done');
   });
 
+  it('a failed Mailchimp read alerts and writes nothing', async () => {
+    const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')] });
+    const d = deps(monday, new Error('mailchimp list members: HTTP 401 at offset 0'));
+    const summary = await runConsentSync(gate('on'), d);
+    expect(summary.outcome).toBe('read-failed');
+    expect(monday.readBoard).not.toHaveBeenCalled();
+    expect(d.alert).toHaveBeenCalledTimes(1);
+    expect(String(d.alert.mock.calls[0]![0])).toContain('HTTP 401');
+  });
+
+  it('a failed board alerts', async () => {
+    const monday = fakeMonday({ 1: new Error('monday down'), 2: [] });
+    const d = deps(monday, new Map());
+    await runConsentSync(gate('on'), d);
+    expect(d.alert).toHaveBeenCalledTimes(1);
+    expect(String(d.alert.mock.calls[0]![0])).toContain('People');
+  });
+
+  it('failed item writes alert', async () => {
+    const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')], 2: [] });
+    monday.writeConsent = vi.fn(async () => ({ written: 0, failedItemIds: ['10'] }));
+    const d = deps(monday, new Map([['a@x.org', 'cleaned']]));
+    await runConsentSync(gate('on'), d);
+    expect(d.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('a clean run does not alert', async () => {
+    const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')], 2: [] });
+    const d = deps(monday, new Map([['a@x.org', 'cleaned']]));
+    await runConsentSync(gate('on'), d);
+    expect(d.alert).not.toHaveBeenCalled();
+  });
+
   it('counts failed item writes', async () => {
     const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')], 2: [] });
     monday.writeConsent = vi.fn(async () => ({ written: 0, failedItemIds: ['10'] }));

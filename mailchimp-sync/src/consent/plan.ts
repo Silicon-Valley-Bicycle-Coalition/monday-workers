@@ -30,8 +30,9 @@ export function normalizeAddress(text: string): string {
  * The label for an address whose Mailchimp status is `status` (undefined: not in the audience).
  * Archived hides a contact's earlier status, and Mailchimp won't email it, so it reads as an
  * opt-out: Cleaned when the column already says so, otherwise Unsubscribed. Never sendable.
- * An absent address keeps an existing Unsubscribed or Cleaned: absence is never evidence of
- * consent (a contact deleted outright, or one a shifted page skipped), so it can't lift an opt-out.
+ * An absent, pending or transactional address keeps an existing Unsubscribed or Cleaned: none is
+ * evidence of consent (a contact deleted outright, one a shifted page skipped, an unconfirmed
+ * re-signup), so none can lift an opt-out.
  */
 export function desiredLabel(status: string | undefined, current: string): ConsentLabel {
   switch (status) {
@@ -39,9 +40,9 @@ export function desiredLabel(status: string | undefined, current: string): Conse
     case 'unsubscribed': return 'Unsubscribed';
     case 'cleaned': return 'Cleaned';
     case 'archived': return current === 'Cleaned' ? 'Cleaned' : 'Unsubscribed';
-    case undefined: return current === 'Unsubscribed' || current === 'Cleaned' ? current : 'Not in Mailchimp';
-    // pending (double opt-in unconfirmed), transactional: no consent, no opt-out.
-    default: return 'Not in Mailchimp';
+    // Absent, pending (double opt-in unconfirmed) or transactional: Mailchimp sends none of them
+    // marketing mail, and none is evidence of consent, so none lifts an existing opt-out.
+    default: return current === 'Unsubscribed' || current === 'Cleaned' ? current : 'Not in Mailchimp';
   }
 }
 
@@ -87,7 +88,11 @@ export function toWrites(changes: readonly ConsentChange[]): ConsentWrite[] {
     }
     write.columnValues[c.consentColumn] = c.to;
   }
-  return [...byItem.values()];
+  // Items carrying an opt-out first, so a run cut short (a Monday outage, the wall clock) has
+  // written the changes that stop mail before the ones that allow it.
+  const writes = [...byItem.values()];
+  const hasOptOut = (w: ConsentWrite) => Object.values(w.columnValues).some((label) => !isSendable(label));
+  return [...writes.filter(hasOptOut), ...writes.filter((w) => !hasOptOut(w))];
 }
 
 // Counts by board, column and transition. Ids and labels only, never an address.

@@ -151,3 +151,31 @@ describe('createConsentMonday.writeConsent', () => {
     expect(result).toEqual({ written: 2, failedItemIds: ['2'] });
   });
 });
+
+describe('createConsentMonday.writeConsent on an outage', () => {
+  it('stops writing and counts the rest as failed', async () => {
+    class Outage extends Error {}
+    let calls = 0;
+    const request = (async () => {
+      calls += 1;
+      throw new Outage('monday 503');
+    }) as GraphQLRequest;
+    const writes = Array.from({ length: 30 }, (_, i) => write(String(i)));
+    const result = await createConsentMonday(request, { isOutage: (err) => err instanceof Outage }).writeConsent(writes);
+    expect(calls).toBe(1);
+    expect(result.written).toBe(0);
+    expect(result.failedItemIds).toHaveLength(30);
+  });
+
+  it('stops mid-fallback when a single-item retry hits an outage', async () => {
+    class Outage extends Error {}
+    let calls = 0;
+    const request = (async () => {
+      calls += 1;
+      throw calls === 1 ? new Error('bad value') : new Outage('monday 503');
+    }) as GraphQLRequest;
+    const result = await createConsentMonday(request, { isOutage: (err) => err instanceof Outage }).writeConsent([write('1'), write('2'), write('3')]);
+    expect(calls).toBe(2);
+    expect(result).toEqual({ written: 0, failedItemIds: ['1', '2', '3'] });
+  });
+});
