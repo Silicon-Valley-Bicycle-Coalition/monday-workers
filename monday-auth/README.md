@@ -40,7 +40,7 @@ Defined in [`src/apps.ts`](src/apps.ts); the Developer Center settings must matc
 | Key | Scopes |
 |---|---|
 | `portal` | `boards:read`, `me:read` |
-| `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `me:read` |
+| `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `webhooks:read`, `webhooks:write`, `me:read` |
 | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
 
 `me:read` is on every app because the consent check queries `me`. Sandbox and production use
@@ -165,13 +165,19 @@ never hands its tokens out, so `donation-rollups/scripts/setup-webhooks.mjs` and
 `people-reclassification/scripts/setup-promote.mjs` create them through `/oauth/webhooks/sync`
 when `MONDAY_AUTH_URL` and `START_KEY` are set. Per environment, sandbox first:
 
+0. Once per environment: the Staff sync app needs `webhooks:read` and `webhooks:write` (without
+   them every call fails with "missing required scopes" on `Query.webhooks`). Tick both in the
+   Developer Center, deploy this Worker, then re-consent `sync` ("Consent and re-consent" above).
 1. From `monday-auth/`: `npx wrangler deploy --env sandbox --var WEBHOOKS_ENABLED:true` (drop
    `--env sandbox` for production). As with the probe, the command-line `--var` lasts one deploy.
 2. Run the scripts with `MONDAY_AUTH_URL=https://svbc-monday-auth-sandbox.svbc-account.workers.dev`
-   (production: `svbc-monday-auth`) and `START_KEY`, pruning or replacing the old personal-token
-   subscriptions: `setup-webhooks.mjs --prune <every board it subscribes>` and
-   `setup-promote.mjs --worker-url … --replace-webhooks`. The broker allows 10 calls a minute,
-   so the client waits out a 429 and the run takes a few minutes.
+   (production: `svbc-monday-auth`) and `START_KEY`: `setup-webhooks.mjs` and
+   `setup-promote.mjs --worker-url …`. The broker allows 10 calls a minute, so the client waits
+   out a 429 and the run takes a few minutes. **First delete the old personal-token
+   subscriptions with the personal token that created them:** Monday lets only a webhook's
+   creator delete it, so through the broker `delete_webhook` returns `null` and leaves them, and
+   `--prune` / `--replace-webhooks` do nothing. The scripts skip an event a board already has, so
+   while the old ones remain nothing new is created. (Sandbox, 2026-11-16: #110.)
 3. `npm run deploy:sandbox` (or `npm run deploy`), which restores `"false"`, and confirm
    `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/webhooks/sync`
    prints `404`.

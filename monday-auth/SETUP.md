@@ -43,7 +43,7 @@ whole step for each environment, naming the sandbox set with a `(sandbox)` suffi
 | Production app name | Sandbox app name | Key | Scopes (exactly these, nothing else) |
 |---|---|---|---|
 | `SVBC Portal` | `SVBC Portal (sandbox)` | `portal` | `boards:read`, `me:read` |
-| `SVBC Staff Sync` | `SVBC Staff Sync (sandbox)` | `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `me:read` |
+| `SVBC Staff Sync` | `SVBC Staff Sync (sandbox)` | `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `webhooks:read`, `webhooks:write`, `me:read` |
 | `SVBC Read-only` | `SVBC Read-only (sandbox)` | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
 
 `me:read` is needed for the consent user check (the callback queries `me`).
@@ -62,7 +62,7 @@ For **each** app (six in all, three per environment):
 - [ ] Leave the **Client ID** and **Client Secret** where they are (Basic information). Don't
       paste them into chat, an issue, or this file; step 3 copies them straight into Cloudflare.
 
-Adding a scope to an app later (as `docs:write` was for `sync`) means **re-consenting that app**:
+Adding a scope to an app later (as `docs:write` and then `webhooks:read`/`webhooks:write` were for `sync`) means **re-consenting that app**:
 update the scope list in the Developer Center and in `src/apps.ts`, then re-run its
 `/oauth/start/<app>` as the integration user. Existing tokens keep the old scopes until then.
 

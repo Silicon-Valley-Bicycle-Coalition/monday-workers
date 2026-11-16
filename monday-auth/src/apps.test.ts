@@ -15,6 +15,8 @@ describe('APPS', () => {
       'users:read',
       'notifications:write',
       'docs:write',
+      'webhooks:read',
+      'webhooks:write',
       'me:read',
     ]);
     expect(APPS.readonly.scopes).toEqual([
