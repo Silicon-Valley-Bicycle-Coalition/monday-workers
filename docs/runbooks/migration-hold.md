@@ -2,10 +2,10 @@
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
-`all writes on`: `donation-rollups` (during the load), `contact-roles`, `quickbooks-sync`, `dtd-sync` and
-`nearby-search` must stay `off` (below), and `all` would turn them on.
+`all writes on`: `donation-rollups` (during the load), `contact-roles`, `impact-attribution`, `quickbooks-sync`,
+`dtd-sync` and `nearby-search` must stay `off` (below), and `all` would turn them on.
 
-The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in four groups that this runbook treats differently:
+The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in groups that this runbook treats differently:
 
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
   `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
@@ -17,6 +17,11 @@ The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in four g
   the smoke tests (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
   it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
   needs catching up, because the next `on` run recomputes every `Contacts` column.
+- **`impact-attribution`**: ships `off`; goes `on` only after its production gate (its README,
+  "Operator setup": the payer summary from an `off` dry run is reviewed and `excludedPayers` filled);
+  never part of a bulk flip. A nightly cron with no queue: under `hold`/`unknown` it skips the night, and
+  under `off` it refreshes its D1 match history and logs what it would propose. Nothing needs catching
+  up: the next `on` run reads the board again and proposes from the full history.
 - **Stays `off`, never part of a bulk flip:** `quickbooks-sync` (postponed indefinitely, decided
   2026-10-28), and `dtd-sync` and `nearby-search` (built, not yet deployed; a missing key reads
   `off`).
@@ -105,7 +110,7 @@ node scripts/flags.mjs donation-rollups writes off --env production
 
 4. Hold the writing-normally group, one Worker at a time. Each Worker's KV key is set first, then
    its main queues are paused (DLQs never are). Don't use `all writes hold`: it would also move
-   `contact-roles`, `donation-rollups`, `quickbooks-sync`, `dtd-sync` and `nearby-search` from `off` to `hold`, and releasing them later
+   `contact-roles`, `impact-attribution`, `donation-rollups`, `quickbooks-sync`, `dtd-sync` and `nearby-search` from `off` to `hold`, and releasing them later
    with `on` would turn them on.
 
 ```sh
@@ -118,7 +123,7 @@ done
    the hold" for what that costs.)
 
 5. Check the result. Every held Worker should read `writes=hold`, queues `paused`;
-   `contact-roles`, `donation-rollups` and the stays-`off` group read `writes=off`; no `MISMATCH`, no `?`. A Worker
+   `contact-roles`, `impact-attribution`, `donation-rollups` and the stays-`off` group read `writes=off`; no `MISMATCH`, no `?`. A Worker
    with no production deploy yet reads its queues as `missing` (and a loop above prints `FAILED`
    for it), which makes `status` exit non-zero: expected for `quickbooks-sync` and
    `nearby-search`, and for any writing-normally Worker not yet deployed to production.
@@ -144,6 +149,8 @@ node scripts/flags.mjs status --env production
   after the flip to `on`.
 - `contact-roles` skips its 10-minute run under `hold`/`unknown` and has nothing to catch up:
   after the flip, the next run recomputes every `Contacts` column.
+- `impact-attribution` skips its nightly run under `hold`/`unknown`; after the flip, the next night
+  proposes as usual (its match history and ledger are unaffected).
 - A `member-portal` letter queued under `hold` but consumed under `off` (someone flipped the
   Worker to `off` instead of `on`) stays stranded as `queued` until a staff re-click.
 - `report-digests` skips each hour's digests under `hold` and does not catch up: after the flip,
