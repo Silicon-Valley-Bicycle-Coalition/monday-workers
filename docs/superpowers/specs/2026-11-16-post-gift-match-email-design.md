@@ -46,8 +46,10 @@ Option 2 and option 1 aren't exclusive later: if the API is bought, `prompt` is 
 
 1. Every gift that `dtd-sync`'s push rules would send to DTD instead gets **one** email from SVBC,
    2–30 days after the gift, saying whether the donor's employer matches and how to request it.
-2. A donor whose employer is a known matcher gets that employer's steps; anyone else gets a short
-   "many employers match; here's how to check" version (or nothing; open question 1).
+2. A donor whose employer is a known matcher gets that employer's steps. A donor with no employer
+   on file is asked "Where do you work?" (#127). A donor whose employer is on file but not a known
+   matcher gets a short "many employers match; here's how to check" version, or nothing (open
+   question 1).
 3. Staff can see on the Donations item that a prompt went out, and when.
 4. The Program Summary board shows prompted → matched for these gifts, per fiscal year.
 
@@ -124,7 +126,8 @@ someone fills in the URLs and deadlines by hand. The script prints; it writes no
 
 A donor's Employer is compared after normalising both sides (lower case, strip punctuation and
 `inc`/`llc`/`corp`), against `name` and every alias. Only an exact match after normalising counts.
-Anything else is "unknown employer".
+That gives three cases: **known matcher**; **no employer on file** (People → Employer Name blank);
+and **not a known matcher** (an Employer that matches no entry).
 
 ### The email
 
@@ -152,9 +155,19 @@ Known employer:
 >
 > [Request your match →]
 
-Unknown employer (if sent at all; open question 1): the middle becomes "Many Bay Area employers
-match their employees' gifts. Ask HR, or search your company's giving portal for Silicon
-Valley Bicycle Coalition," with a link to the member portal's matching-gifts page.
+No employer on file (decided by #127: ask instead of skipping): the middle becomes "Many Bay Area
+employers match their employees' gifts. Where do you work? Tell us, and we'll let you know if
+yours matches," with a link to the member portal's Employer field,
+`{portalBaseUrl}/{locale}/portal/change-request?field=employer` (the portal's
+`employerAnswerEnabled` must be on; the donor signs in first). The answer reaches the CRM through
+`member-portal-writer`: an exact Organization match becomes the donor's Current, Primary
+affiliation, and anything else goes to staff on the Change Requests board (spec
+`2026-11-16-donor-employer-answer-design.md`). The next gift's prompt then has an employer to
+work with.
+
+Not a known matcher (if sent at all; open question 1): the middle becomes "Many Bay Area
+employers match their employees' gifts. Ask HR, or search your company's giving portal for
+Silicon Valley Bicycle Coalition," with a link to the member portal's matching-gifts page.
 
 Footer: SVBC's address, why they got it ("you gave to SVBC on {date}"), and a link to stop
 matching-gift emails (open question 2).
@@ -168,7 +181,7 @@ signed off.
 Same guard pattern as `push`:
 
 1. Insert a D1 row in a new `prompts` table (`monday_item_id` primary key, `donor_item_id`,
-   `variant` known/unknown, `state` pending/sent/failed, `attempts`, `sent_at`). An existing row
+   `variant` known/ask/unknown, `state` pending/sent/failed, `attempts`, `sent_at`). An existing row
    means skip.
 2. Send the email.
 3. Mark the row `sent`, then write the Donations item: **Match Status** → `Prompted` (a new
@@ -199,8 +212,9 @@ from SVBC does about as well as DTD's sequence.
 
 ## Testing
 
-- Unit: the send rule (every skip reason), employer normalising and matching, both email
-  bodies (snapshot, plain text and HTML), D1 ledger states, write switch.
+- Unit: the send rule (every skip reason), employer normalising and matching, every email
+  body (snapshot, plain text and HTML), including the ask variant's Employer-field link, D1
+  ledger states, write switch.
 - Config split test: sandbox and production share no `send_email` destination and no board id.
 - Sandbox: allow-list one staff address, enter a hand gift for a People item with Employer
   "Google", run with writes `off`, then `on`, and confirm one email arrives and the second run
@@ -208,9 +222,11 @@ from SVBC does about as well as DTD's sequence.
 
 ## Open questions
 
-1. **Unknown employer: send or skip?** Sending reaches donors whose employer SVBC hasn't seen
-   match yet. Skipping keeps the email rare and always specific. Recommendation: skip in v1,
-   measure, revisit.
+1. **An employer on file that isn't a known matcher: send or skip?** *(Narrowed 2026-11-16.)* A
+   blank employer is no longer open: #127 decided those donors get the "Where do you work?"
+   version. For an employer SVBC hasn't seen match, sending reaches donors whose employer may
+   match anyway, and skipping keeps the email rare and always specific. Recommendation: skip in
+   v1, measure, revisit.
 2. **Opt-out.** Do Not Solicit is honoured either way. Should the email also carry its own
    unsubscribe link (which would need a route and a People column)? Recommendation: link to
    reply-to-unsubscribe for v1, and have staff tick Do Not Solicit.

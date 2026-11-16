@@ -167,9 +167,10 @@ a statement of fact for the README, not a setup step.
 ### Post-gift email
 
 The post-gift design's open question 1 ("unknown employer: send or skip?") is answered by this
-issue: when People → Employer Name is blank, send the short version asking "Where do you work?"
-with a link to `/:locale/portal/change-request#employer`. That edit belongs on the post-gift
-design's own branch. This design doesn't change it.
+issue for a blank employer: when People → Employer Name is blank, send the short version asking
+"Where do you work?" with a link to `/:locale/portal/change-request?field=employer`. That edit is
+made in `2026-11-16-post-gift-match-email-design.md` (2026-11-16), which keeps the narrower
+question open: whether to email a donor whose employer is on file but isn't a known matcher.
 
 ## Testing
 
