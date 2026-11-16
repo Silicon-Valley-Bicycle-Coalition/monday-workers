@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createApp, type RoutesDeps } from './routes';
 import type { WriteMode } from './flags';
 import type { PassReport, SingleMoveResult } from './pass';
@@ -215,5 +215,83 @@ describe('POST /webhooks/monday/promote', () => {
       expect(deps.promote).not.toHaveBeenCalled();
     }
     expect(await (await post(app().app, 'not json')).json()).toMatchObject({ ok: false });
+  });
+});
+
+// Issue #110: the Authorization JWT Monday signs app-created webhooks with (src/mondayJwt.ts).
+// Token times are relative to the injected clock (deps.now), which the route checks exp against.
+describe('POST /webhooks/monday/promote — webhook JWT', () => {
+  const SIGNING = 'app-signing-secret';
+  const ACCOUNT = '26331880';
+  const nowSec = Math.floor(new Date('2026-10-09T17:00:00.123Z').getTime() / 1000);
+  const event = { event: { pulseId: 123, columnId: 'color_pp', value: { label: { text: 'Promote' } } } };
+  const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const encodeJson = (value: unknown) => b64url(new TextEncoder().encode(JSON.stringify(value)));
+  async function sign(claims: Record<string, unknown>, secret = SIGNING): Promise<string> {
+    const input = `${encodeJson({ alg: 'HS256', typ: 'JWT' })}.${encodeJson(claims)}`;
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    return `${input}.${b64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input))))}`;
+  }
+  const post = (a: ReturnType<typeof app>['app'], body: unknown, authorization?: string, secret = 'hook') =>
+    a.request(`/webhooks/monday/promote?secret=${secret}`, {
+      method: 'POST', body: JSON.stringify(body), headers: authorization !== undefined ? { Authorization: authorization } : {},
+    });
+  const on = { mode: vi.fn(async (): Promise<WriteMode> => 'on') };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('promotes on a valid JWT', async () => {
+    const { app: a, deps } = app({ ...on, jwtPolicy: { signingSecret: SIGNING, accountId: ACCOUNT } });
+    expect((await post(a, event, await sign({ accountId: 26331880, aud: 'http://localhost/webhooks/monday/promote', iat: nowSec, exp: nowSec + 60 }))).status).toBe(200);
+    expect(deps.promote).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['signed with another secret', () => sign({ accountId: 26331880, exp: nowSec + 60 }, 'other')],
+    ['expired', () => sign({ accountId: 26331880, exp: nowSec - 3600 })],
+    ['for another Monday account', () => sign({ accountId: 12345, exp: nowSec + 60 })],
+    ['with a day-long lifetime', () => sign({ accountId: 26331880, iat: nowSec, exp: nowSec + 86_400 })],
+    ['tampered', async () => { const [h, , s] = (await sign({ accountId: 26331880 })).split('.'); return `${h}.${encodeJson({ accountId: 12345 })}.${s}`; }],
+  ])('answers 401 to a token %s and promotes nothing', async (_label, token) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app: a, deps } = app({ ...on, jwtPolicy: { signingSecret: SIGNING, accountId: ACCOUNT } });
+    expect((await post(a, event, await token())).status).toBe(401);
+    expect(deps.promote).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('JWT'));
+  });
+
+  it('accepts a missing JWT with a warning until required, then answers 401', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const loose = app({ ...on, jwtPolicy: { signingSecret: SIGNING, accountId: ACCOUNT } });
+    expect((await post(loose.app, event)).status).toBe(200);
+    expect(loose.deps.promote).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no Authorization JWT'));
+    const strict = app({ ...on, jwtPolicy: { signingSecret: SIGNING, required: true, accountId: ACCOUNT } });
+    expect((await post(strict.app, event)).status).toBe(401);
+    expect(strict.deps.promote).not.toHaveBeenCalled();
+  });
+
+  it('without a signing secret, accepts on the URL secret alone, as before', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { app: a, deps } = app(on);
+    expect((await post(a, event)).status).toBe(200);
+    expect(deps.promote).toHaveBeenCalledOnce();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('still needs the URL secret, and answers the challenge without a JWT even when required', async () => {
+    const { app: a } = app({ ...on, jwtPolicy: { signingSecret: SIGNING, required: true, accountId: ACCOUNT } });
+    expect((await post(a, event, await sign({ accountId: 26331880, exp: nowSec + 60 }), 'nope')).status).toBe(401);
+    const res = await post(a, { challenge: 'abc' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc' });
+  });
+
+  it('fails closed when required without a signing secret', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app: a, deps } = app({ ...on, jwtPolicy: { required: true, accountId: ACCOUNT } });
+    expect((await post(a, event, await sign({ accountId: 26331880, exp: nowSec + 60 }))).status).toBe(401);
+    expect(deps.promote).not.toHaveBeenCalled();
   });
 });

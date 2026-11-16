@@ -25,7 +25,7 @@ describe('config split', () => {
   });
 
   it('the sandbox boards are the CRM Sandbox v3 ones', () => {
-    expect(sandbox.boards).toEqual({ donations: 18431577310, people: 18431577220 });
+    expect(sandbox.boards).toEqual({ donations: 18437342657, people: 18437342592 });
   });
 
   it('production shares no board with the sandbox, or is still a placeholder', () => {

@@ -1,0 +1,16 @@
+{
+  "monday": { "apiUrl": "https://api.monday.com/v2" },
+  "affiliations": {
+    "boardId": "18437342615",
+    "rolesColumn": "SVBC Roles",
+    "statusColumn": "Status",
+    "personColumn": "Person",
+    "orgColumn": "Organization",
+    "currentLabel": "Current"
+  },
+  "boards": [
+    { "name": "Sponsorships", "boardId": "18439568033", "orgColumn": "Sponsor", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
+    { "name": "Grants & Contracts", "boardId": "18439568066", "orgColumn": "Funder", "contactsColumn": "Contacts", "role": "Grants", "enabled": true },
+    { "name": "Donations", "boardId": "18437342657", "orgColumn": "Matched By", "contactsColumn": "Contacts", "role": "Donation Matching", "sparse": true, "enabled": true }
+  ]
+}

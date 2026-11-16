@@ -84,6 +84,8 @@ export class HttpFunraiseClient implements FunraiseClient {
   }
 
   async getSubscription(id: string): Promise<FunraiseSubscription | null> {
+    // encodeURIComponent leaves `.` alone, so `..` would climb out of crm/subscription/.
+    if (!/^\d+$/.test(id)) throw new Error('funraise api: subscription id must be numeric');
     const res = await this.request(`crm/subscription/${encodeURIComponent(id)}`);
     if (res.status === 404) return null;
     if (!res.ok) {

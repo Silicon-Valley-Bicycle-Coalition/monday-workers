@@ -1,4 +1,4 @@
-import type { GiftsStore } from '../db/gifts';
+import type { GiftsStore, OwnerFilter } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
@@ -13,6 +13,8 @@ import { runMembership, type MembershipDetail } from './membership';
 import { runRecurring } from './recurring';
 import { runRollCall } from './rollcall';
 import { runSponsorshipsBackfill } from './sponsorships';
+import { sharedBoardReads, sharedReadPlan } from './boardReads';
+import { DEFAULT_WRITES_PER_RUN, WriteBudget } from './writeBudget';
 import { formatCents, parseAmountCents } from '../money';
 import { runDisposition } from '../flags';
 import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
@@ -67,9 +69,11 @@ export interface CustodianDeps {
   recomputes: OwnerRecomputesStore;
   rollCallCredits: RollCallCreditsStore;
   mondayClient: CustodianMondayClient;
-  queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
+  queue: { sendBatch(messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> };
   config: DonationRollupsConfig;
   now?: Date;
+  // The cron run's shared Monday write budget (issue #90); absent = only each duty's own cap.
+  writeBudget?: WriteBudget;
 }
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
@@ -128,7 +132,12 @@ export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext):
     return;
   }
   const now = deps.now ?? new Date();
-  const d = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  const proxied = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  // One read of each board several duties page, shared across the run (issue #90).
+  // And one write budget for the whole run (issue #90): a duty refused a write reports the rest as
+  // remaining and the next run picks it up.
+  const d: CustodianDeps = { ...proxied, mondayClient: sharedBoardReads(proxied.mondayClient, sharedReadPlan(proxied.config)),
+    writeBudget: new WriteBudget(proxied.config.custodian.writesPerRun ?? DEFAULT_WRITES_PER_RUN) };
   const label = disposition === 'dry-run' ? ' (dry run)' : '';
   for (const duty of dutiesForDate(now, d.config.fiscalYear, await d.gifts.lastRuns(), d.config.donationRollups.sponsorships)) {
     const report = await runDuty(duty, d);
@@ -143,9 +152,9 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
     report =
       duty === 'archive' ? await runArchive(deps, now)
       : duty === 'capacity' ? await runCapacity(deps)
-      : duty === 'sweep' ? await runSweep(deps)
+      : duty === 'sweep' ? await runSweep(deps, now, opts)
       : duty === 'requeue' ? await runRequeue(deps, now)
-      : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
+      : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config, deps.writeBudget)
       : duty === 'recurring' ? await runRecurring(deps)
       : duty === 'sponsorships' ? await runSponsorshipsBackfill(deps, now)
       : duty === 'rollcall' ? await runRollCall(deps, now, { force: opts.force ?? false })
@@ -173,11 +182,13 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const cutoffFY = currentFiscalYear(now, deps.config.fiscalYear) - activeFiscalYears + 1;
   const work = await deps.gifts.getArchivable(cutoffFY);
   const slice = work.slice(0, ARCHIVE_PER_RUN);
-  const remaining = work.length - slice.length;
 
   const archived: string[] = [];
   const failures: { mondayItemId: string; error: string }[] = [];
+  let tried = 0;
   for (const g of slice) {
+    if (deps.writeBudget?.take() === false) break;
+    tried++;
     try {
       await deps.mondayClient.archiveItem(g.mondayItemId);
       archived.push(g.mondayItemId);
@@ -186,6 +197,7 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
     }
   }
   if (archived.length > 0) await deps.gifts.markArchived(archived, now.toISOString());
+  const remaining = work.length - tried;
 
   // Summaries only once the year's archiving is complete — materializing mid-slice would
   // stamp restatements for totals that aren't final yet.
@@ -272,32 +284,64 @@ async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
   };
 }
 
-// July sweep: recompute every owner once so This/Last Year splits roll over at the fiscal
-// boundary even for donors with no new gifts. The recompute queue is donation-keyed, so one
-// representative gift per owner triggers that owner's full recompute. Queue sends count
-// against the Worker's per-invocation subrequest budget (50 on the Free plan) and sendBatch
-// caps at 100 messages, so one invocation covers 3,500 owners and hands the next slice a
-// cursor — an incomplete sweep reports remaining>0 and the route is simply called again
-// (each duty run picks up where the last incomplete one stopped).
-const SWEEP_BATCHES_PER_RUN = 35;
-async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
+// July sweep: recompute owners so This/Last Year splits roll over at the fiscal boundary even for
+// donors with no new gifts. Messages are owner-keyed (issue #88: D1 already knows the owner, so
+// the consumer skips resolving it from a representative gift, which rides along only for logs and
+// the affiliation fan-out).
+//
+// Issue #88 also scopes and paces it against Monday's account-wide 10,000 calls/day:
+// - the fiscal-start sweep ('rollover') covers only owners with a live gift in the two fiscal
+//   years before the new one (from currentFY - 2): theirs are the This/Last Year columns that
+//   move. Everyone else's columns compute the same as before (both $0) and the consumer's hash
+//   check would skip the writes anyway, leaving only the reads. Sponsorship owners ride along when
+//   sponsorships roll on the fiscal year. Membership terms are date-driven too, but the nightly
+//   membership duty already recomputes each anniversary.
+// - the January 1 sweep (calendar sponsorships basis) covers only the Sponsorships owners.
+// - any other sweep (an HTTP run on another day, or ?all=true) covers every owner.
+// - each run enqueues at most custodian.sweepOwnersPerRun owners (default 1,500, ~3,000-6,000
+//   consumer calls) and hands the next slice a cursor. An incomplete sweep reports remaining>0
+//   and dutiesForDate re-runs it every day until it completes, keeping its first slice's scope.
+//   Queue sends count against the per-invocation subrequest budget and sendBatch caps at 100
+//   messages, so 3,500 (35 batches) is the ceiling.
+export const SWEEP_OWNERS_PER_RUN = 1_500;
+async function runSweep(deps: CustodianDeps, now: Date, opts: DutyOptions = {}): Promise<DutyReport> {
   const lastRuns = await deps.gifts.lastRuns();
   const last = lastRuns.find((r) => r.duty === 'sweep')?.report as
-    { detail?: { cursor?: string; remaining?: number } } | undefined;
-  const cursor = (last?.detail?.remaining ?? 0) > 0 ? (last?.detail?.cursor ?? '') : '';
+    { detail?: { cursor?: string; remaining?: number; scope?: string; fromFY?: number } } | undefined;
+  const continuing = opts.all !== true && (last?.detail?.remaining ?? 0) > 0;
+  const cursor = continuing ? (last?.detail?.cursor ?? '') : '';
 
-  const owners = await deps.gifts.ownersWithOneGift(cursor, SWEEP_BATCHES_PER_RUN * 100 + 1);
-  const slice = owners.slice(0, SWEEP_BATCHES_PER_RUN * 100);
+  const { month, day } = localDateParts(now, deps.config.fiscalYear.timeZone);
+  const spon = deps.config.donationRollups.sponsorships;
+  const sponsorshipOwners = spon === null ? undefined
+    : { ownerBoardId: String(spon.organizationsBoardId), giftTypes: [...new Set([...spon.giftTypes, ...spon.inKindGiftTypes])] };
+  const fiscalStart = month === deps.config.fiscalYear.startMonth && day === 1;
+  const scope: 'all' | 'rollover' | 'sponsorships' = opts.all === true ? 'all'
+    : continuing ? (last?.detail?.scope === 'sponsorships' || last?.detail?.scope === 'rollover' ? last.detail.scope : 'all')
+    : fiscalStart ? 'rollover'
+    : spon?.yearBasis === 'calendar' && month === 1 && day === 1 ? 'sponsorships'
+    : 'all';
+  const fromFY = continuing && last?.detail?.fromFY !== undefined ? last.detail.fromFY : currentFiscalYear(now, deps.config.fiscalYear) - 2;
+  const only: OwnerFilter | undefined =
+    scope === 'rollover' ? { kind: 'rollover', fromFY, ...(spon?.yearBasis === 'fiscal' && sponsorshipOwners ? { sponsorships: sponsorshipOwners } : {}) }
+    : scope === 'sponsorships' && sponsorshipOwners ? { kind: 'sponsorships', ...sponsorshipOwners }
+    : undefined;
+
+  const perRun = deps.config.custodian.sweepOwnersPerRun ?? SWEEP_OWNERS_PER_RUN;
+  const owners = await deps.gifts.ownersWithOneGift(cursor, perRun + 1, only);
+  const slice = owners.slice(0, perRun);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
-      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId, sweep: true })));
+      .map((o) => ({ donationItemId: o.mondayItemId, donationBoardId: o.donationBoardId,
+        ownerItemId: o.ownerItemId, ownerBoardId: o.ownerBoardId, sweep: true })));
   }
   const remaining = owners.length - slice.length; // >0 means at least one more slice exists
   return {
     ok: true,
-    summary: `enqueued recompute for ${slice.length} owners` +
-      (remaining > 0 ? ` — more remain, run sweep again to continue` : ''),
-    detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor },
+    summary: `enqueued recompute for ${slice.length} owners (${scope})` +
+      (remaining > 0 ? ` — more remain, continuing next run` : ''),
+    detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor,
+      scope: only === undefined ? 'all' : scope, ...(scope === 'rollover' ? { fromFY } : {}) },
   };
 }
 
@@ -312,7 +356,15 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
 // sends count against the subrequest budget, sendBatch caps at 100.
 const REQUEUE_BATCHES_PER_RUN = 35;
 const REQUEUE_STUCK_AFTER_MS = 24 * 60 * 60 * 1000;
+// Issue #90: neither table was ever pruned. A finished pending row older than this has no
+// coalescing left to do (its next webhook inserts a fresh one); a custodian run older than this is
+// history, except each duty's latest, which carries its cursor.
+const PENDING_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const RUNS_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
+  const prunedPending = await deps.pending.pruneFinished(new Date(now.getTime() - PENDING_RETENTION_MS).toISOString());
+  const prunedRuns = await deps.gifts.pruneRuns(new Date(now.getTime() - RUNS_RETENTION_MS).toISOString());
+  const pruned = { prunedPending, prunedRuns };
   const cutoff = new Date(now.getTime() - REQUEUE_STUCK_AFTER_MS).toISOString();
   const stuck = await deps.pending.listStuck(cutoff, REQUEUE_BATCHES_PER_RUN * 100 + 1);
   const slice = stuck.slice(0, REQUEUE_BATCHES_PER_RUN * 100);
@@ -321,13 +373,13 @@ async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
       .map((r) => ({ ...(r.kind !== 'donation' ? { kind: r.kind } : {}), donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
   }
   const remaining = stuck.length - slice.length;
-  if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0 } };
+  if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0, ...pruned } };
   // Stuck rows mean the consumer lost work earlier — report it, don't just quietly fix it.
   return {
     ok: false,
     summary: `re-enqueued ${slice.length} stuck recomputes received before ${cutoff}` +
       (remaining > 0 ? ' — more remain, continuing next run' : ''),
-    detail: { enqueued: slice.length, remaining, oldest: slice[0]!.receivedAt },
+    detail: { enqueued: slice.length, remaining, oldest: slice[0]!.receivedAt, ...pruned },
   };
 }
 

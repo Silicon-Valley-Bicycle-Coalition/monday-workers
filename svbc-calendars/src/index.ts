@@ -3,6 +3,7 @@ import { validateConfig } from './config';
 import { createFetchSourceEvents } from './adapters/dispatch';
 import { fetchEventsResponse, ALLOWED_ORGANIZERS } from './eventsApi';
 import { widgetResponse } from './widget';
+import { fontResponse } from './fonts';
 import { getSourceCalendar } from './calendarSource';
 import { buildListing, buildListingHtml } from './listing';
 import { getAllSourceStatuses } from './calendarStore';
@@ -72,21 +73,24 @@ async function withCache(cacheKey: Request, ttlSeconds: number, ctx: ExecutionCo
   const fresh = await generate();
   const response = new Response(fresh.body, fresh);
   response.headers.set('X-Cache', 'MISS');
-  // A generator marks a successful-but-incomplete response no-store (eventsApi.ts's partial
-  // multi-organizer feed): serve it, but don't pin it for the TTL.
-  const noStore = /\bno-store\b/i.test(fresh.headers.get('Cache-Control') ?? '');
+  // A generator may shorten the TTL (eventsApi.ts's partial multi-organizer feed sets a short
+  // max-age) or opt out with no-store; it can never lengthen it.
+  const cacheControl = fresh.headers.get('Cache-Control') ?? '';
+  const noStore = /\bno-store\b/i.test(cacheControl);
+  const hinted = /\bmax-age=(\d+)/i.exec(cacheControl);
+  const ttl = hinted ? Math.min(ttlSeconds, parseInt(hinted[1], 10)) : ttlSeconds;
   if (fresh.ok && !noStore) {
     // Set on the response returned to THIS caller too, not just the cached copy — otherwise a
     // MISS response has no Cache-Control while the HIT response served from `cached` on the next
     // request does (it was stored with one), which is an inconsistent, confusing mismatch for
     // any downstream cache/browser respecting standard HTTP caching headers.
-    response.headers.set('Cache-Control', `public, max-age=${ttlSeconds}`);
+    response.headers.set('Cache-Control', `public, max-age=${ttl}`);
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
   return response;
 }
 
-async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> {
+async function handleCalendarIcs(sourceId: string, env: Env, ctx: ExecutionContext): Promise<Response> {
   const source = config.sources.find((s) => s.id === sourceId);
   if (!source) {
     // Deliberately a constant sentinel, not the raw (attacker-controlled) sourceId: a 404 here is
@@ -102,6 +106,7 @@ async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> 
     sendFailureAlert,
     slackWebhookUrl: env.SLACK_WEBHOOK_URL,
     now: () => new Date(),
+    waitUntil: (promise) => ctx.waitUntil(promise),
   });
   recordMetric(env, { route: 'calendars.ics', sourceId, outcome: result.ics === null ? 'error' : result.servedFromFallback ? 'fallback' : 'live' });
   if (result.ics === null) {
@@ -140,6 +145,14 @@ export default {
       }
 
       const url = new URL(request.url);
+
+      // The widget's self-hosted fonts (#123): constant bytes with an immutable cache header, so
+      // like a cache HIT they're served ahead of the rate limiter and cost no upstream work.
+      if (request.method === 'GET' && url.pathname.startsWith('/fonts/')) {
+        const font = fontResponse(url.pathname);
+        if (font) return handleCORS(request, font);
+      }
+
       const organizerId = url.searchParams.get('organizer');
       const organizerAllowed = !organizerId || ALLOWED_ORGANIZERS.includes(organizerId);
       const version = env.CACHE_VERSION || '0';
@@ -201,7 +214,7 @@ export default {
         const sourceId = icsMatch[1];
         const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
         const cacheKey = new Request(`${url.origin}/calendars/${sourceId}.ics?v=${version}`, { method: 'GET' });
-        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarIcs(sourceId, env)));
+        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarIcs(sourceId, env, ctx)));
         if (response.headers.get('X-Cache') === 'HIT') {
           recordMetric(env, { route: 'calendars.ics', sourceId, outcome: 'cache-hit' });
         }

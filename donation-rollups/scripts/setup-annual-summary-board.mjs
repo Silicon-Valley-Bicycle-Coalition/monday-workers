@@ -6,7 +6,7 @@
 //
 // Usage:
 //   MONDAY_API_TOKEN=... node scripts/setup-annual-summary-board.mjs \
-//     --workspace 17141226 --name "Annual Giving Summary (sandbox v2)" [--board <existingId>]
+//     --workspace 18210301 --name "Annual Giving Summary (sandbox v2)" [--board <existingId>]
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
 import { bareTitle } from '../../scripts/lib/column-titles.mjs';

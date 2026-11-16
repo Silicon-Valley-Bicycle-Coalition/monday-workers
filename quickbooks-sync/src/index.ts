@@ -16,8 +16,8 @@ import { tokenProviderFor } from './monday/graphql';
 import { createMondayWebhookApp } from './monday/webhook/route';
 import { HttpQuickBooksClient } from './quickbooks/client';
 import { D1TokenStore } from './quickbooks/tokenStore';
-import { createQbWebhookApp, type QueueLike } from './quickbooks/webhook/route';
-import { checkRequestRateLimit } from './rateLimit';
+import { createQbWebhookApp, type BatchQueueLike, type QueueLike } from './quickbooks/webhook/route';
+import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import type { Env, QueueMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -44,12 +44,15 @@ async function skipContext(env: Env): Promise<BatchSkipContext> {
 }
 
 // env.SYNC_QUEUE is a Cloudflare Queue<QueueMessage>, whose send() resolves to a
-// QueueSendResponse rather than void. Adapt it to the QueueLike interface shared by
-// the webhook routes (Task 11/13), which only needs fire-and-forget enqueueing.
-function toQueueLike(queue: Queue<QueueMessage>): QueueLike {
+// QueueSendResponse rather than void. Adapt it to the webhook routes' fire-and-forget
+// interfaces: the Monday route sends one message, the QuickBooks route a batch (#101).
+function toQueueLike(queue: Queue<QueueMessage>): QueueLike & BatchQueueLike {
   return {
     async send(message: QueueMessage): Promise<void> {
       await queue.send(message);
+    },
+    async sendBatch(messages: QueueMessage[]): Promise<void> {
+      await queue.sendBatch(messages.map((body) => ({ body })));
     },
   };
 }
@@ -62,7 +65,12 @@ export default {
 
     // Checked before any routing, D1, or Monday/QuickBooks work — see README "Reliability:
     // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // A Monday webhook delivery that already passed verification skips it: Monday's own bulk-edit
+    // traffic must not be throttled.
+    return isVerifiedMondayWebhook(request, env.MONDAY_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
 
       const mapStore = new D1MapStore(env.DB);

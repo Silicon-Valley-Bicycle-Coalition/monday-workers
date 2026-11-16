@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   // Secrets (set with `wrangler secret put <NAME>`, never committed):
   //   MONDAY_API_TOKEN         — fallback only while the OAuth cutover is under way: Monday access
@@ -39,12 +40,17 @@
       {
         "queue": "mailchimp-sync-outbound",
         "max_retries": 100,
+        // Floor for a retry that carries no delay of its own: a throw from queue() itself (a missing
+        // secret, a config error, a CPU kill) redelivers the whole batch, and without this it would do
+        // so at once and spend all 100 retries in minutes. Per-message retry({ delaySeconds }) overrides it.
+        "retry_delay": 60,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-outbound-dlq"
       },
       {
         "queue": "mailchimp-sync-inbound",
         "max_retries": 100,
+        "retry_delay": 60,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
       },
@@ -77,7 +83,7 @@
   // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "triggers": {
-    // Once daily, 15:00 UTC = 7am Pacific (PDT) / 8am Pacific (PST) — Campaigns-board
+    // Once daily, 15:00 UTC = 8am Pacific (PDT) / 7am Pacific (PST) — Campaigns-board
     // reconciliation only, see Task 10. Fire hour doesn't affect correctness.
     "crons": ["0 15 * * *"]
   },
@@ -101,6 +107,7 @@
   // and the optional SLACK_WEBHOOK_URL (point it at a sandbox channel, never production's).
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       "d1_databases": [
         {
@@ -121,12 +128,14 @@
           {
             "queue": "mailchimp-sync-outbound-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-outbound-sandbox-dlq"
           },
           {
             "queue": "mailchimp-sync-inbound-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
           },

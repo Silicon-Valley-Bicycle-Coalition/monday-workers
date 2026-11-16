@@ -25,6 +25,8 @@ export interface DonationBoardConfig {
     // Sponsorship audit history (spec 2026-11-02): optional, null/omitted = not configured.
     sponsorshipCycle?: string | null;
     inKindValue?: string | null;
+    // The Matched By relation, read by classify when classification.matchingCompany is set.
+    matchedBy?: string | null;
     sponsorshipPipelineLinks?: string[]; // Donations-side reverse connect columns, one per pipeline board
     // The four chartable labels the custodian's classify duty writes (spec 2026-09-29 §10.1).
     // null = classification off for this board. The webhook ignores changes to these columns.
@@ -36,6 +38,10 @@ export interface ClassificationColumns {
   fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string;
   // Optional: the Acknowledgment Tier status column, kept nightly as a backstop to its automations.
   acknowledgmentTier?: string;
+  // Optional: a status column the nightly classify fills with the name of the company behind a
+  // matching gift (read from the board's `matchedBy` relation). A relation can't be a chart axis;
+  // a status column can. Needs `columns.matchedBy`. Capped by Monday at 40 labels.
+  matchingCompany?: string;
 }
 
 export interface CustodianConfig {
@@ -52,6 +58,12 @@ export interface CustodianConfig {
   // still materialize into D1's annual_summaries either way. Column ids come with it.
   annualSummaryBoardId: number | null;
   annualSummaryColumns: { fiscalYear: string; total: string; giftCount: string; byType: string; restatedAt: string } | null;
+  // Monday writes the whole nightly cron run may make, shared by every duty (issue #90). Optional;
+  // absent = DEFAULT_WRITES_PER_RUN (custodian/writeBudget.ts).
+  writesPerRun?: number;
+  // Owners one sweep run enqueues (issue #88), 1-3,500. Each costs ~2-4 Monday calls in the
+  // consumer, against an account-wide 10,000/day cap. Absent = SWEEP_OWNERS_PER_RUN (custodian.ts).
+  sweepOwnersPerRun?: number;
 }
 
 export interface AffiliationsConfig {
@@ -88,7 +100,8 @@ export interface FiscalYearConfig {
 
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
-  monday: { apiUrl: string; accountUrl: string };
+  // accountId: the Monday account a webhook JWT must name (issue #110, src/mondayJwt.ts).
+  monday: { apiUrl: string; accountUrl: string; accountId?: number };
   fiscalYear: FiscalYearConfig;
   custodian: CustodianConfig;
   affiliations: AffiliationsConfig | null;
@@ -208,7 +221,11 @@ export interface VolunteerBoardConfig {
 // A historical volunteer-hours board (one row per volunteer shift).
 export interface HistoricalVolunteerBoardConfig {
   boardId: number;
-  columns: { volunteer: string; date: string; hours: string; status: string };
+  // `historical` (optional) is the Historical checkbox. Configured: a row that is not Historical
+  // (a live Eventbrite sign-up, which has no hours) counts on status + Volunteer link + date
+  // alone, while a Historical row (migrated 2014-2020) still needs Hours >= 1. Absent: every row
+  // needs Hours >= 1, as before.
+  columns: { volunteer: string; date: string; hours: string; status: string; historical?: string };
   countedStatusLabels: string[];
 }
 
@@ -250,6 +267,10 @@ export interface Env {
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Staff sync app's Signing Secret (issue #110, src/mondayJwt.ts): set = verify any webhook JWT
+  // present; MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
   CUSTODIAN_SECRET?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
@@ -271,6 +292,10 @@ export interface RecomputeQueueMessage extends WriteStamp {
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).
   donationBoardId: string;
+  // The column whose change raised the webhook (donation kind only; absent for item-level events
+  // and for messages enqueued before this field existed). A non-Donor-link column on a donation D1
+  // already links lets the consumer coalesce with no Monday call (issue #89).
+  columnId?: string;
   // Set when this message recomputes a specific OWNER rather than resolving one from the
   // donation: the owner a gift just moved away from (issue #26). donationItemId is then the gift
   // that left, kept for logs. Always recomputed — never coalesced away.

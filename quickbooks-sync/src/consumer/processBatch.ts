@@ -7,7 +7,9 @@ import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
 import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { OutageBreaker } from '../monday/outage';
 import type { EntityType, MapEntry, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
+import { errorClass } from '../logSafe';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -55,6 +57,8 @@ export async function consumeSyncBatch(
   deps: ConsumerDeps,
   gate: BatchSkipContext
 ): Promise<void> {
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: `${message.body.direction}:${message.body.eventId}` };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -63,15 +67,22 @@ export async function consumeSyncBatch(
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processSyncQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+    await processSyncQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx), breaker);
   }
 }
 
 export async function processSyncQueueBatch(
   messages: QueueMessageLike<QueueMessage>[],
-  deps: ConsumerDeps
+  deps: ConsumerDeps,
+  breaker: OutageBreaker = new OutageBreaker()
 ): Promise<void> {
   for (const message of messages) {
+    // Monday is down or rate-limiting (#101): retry with backoff without calling it (or
+    // QuickBooks), rather than spend the transport's in-process attempts again on every message.
+    if (breaker.open) {
+      breaker.defer(message);
+      continue;
+    }
     try {
       if (message.body.direction === 'qb-to-monday') {
         await processQbToMonday(message.body.eventId, deps);
@@ -81,8 +92,12 @@ export async function processSyncQueueBatch(
       message.ack();
     } catch (err) {
       const terminal = isTerminalError(err);
+      const outage = !terminal && breaker.trip(err);
       const error = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
-      console.error(`quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${error}`);
+      console.error(
+        `quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${errorClass(err)} (full text in the row's error column)` +
+          (outage ? ' — Monday unavailable, deferring the rest of the batch' : ''),
+      );
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
       let recorded = false;
@@ -98,11 +113,13 @@ export async function processSyncQueueBatch(
         }
         recorded = true;
       } catch (recordErr) {
-        console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorMessage(recordErr)}`);
+        console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorClass(recordErr)}`);
       }
       // A terminal failure (#33 review) is acked once it's on the row: retrying the same request
       // can only fail the same way. If it couldn't be recorded, retry so it isn't lost silently.
+      // Anything else retries with the shared delay, raised to Monday's hint on an outage.
       if (terminal && recorded) message.ack();
+      else if (outage) breaker.defer(message);
       else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }

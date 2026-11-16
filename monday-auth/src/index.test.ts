@@ -4,6 +4,7 @@ import worker, { PortalToken, ReadOnlyToken, SyncToken } from './index';
 import { TokenBroker } from './broker';
 import type { Env } from './env';
 import { D1AppTokenStore } from './tokenStore';
+import { TEST_ENC_KEY } from '../test/enc-key';
 
 const testEnv = env as unknown as Env;
 
@@ -30,7 +31,7 @@ describe('scheduled', () => {
   });
 
   it('purges abandoned consent rows, and a refresh failure does not skip the purge', async () => {
-    const store = new D1AppTokenStore(env.DB);
+    const store = new D1AppTokenStore(env.DB, TEST_ENC_KEY);
     await store.putPending('stale', 'portal', 'v', 'https://a.test/cb', new Date(Date.now() - 60 * 60_000));
     vi.spyOn(TokenBroker.prototype, 'refreshAllIfDue').mockRejectedValue(new Error('boom'));
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});

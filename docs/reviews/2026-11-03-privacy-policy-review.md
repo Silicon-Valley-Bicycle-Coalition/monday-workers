@@ -41,9 +41,10 @@ details, and giving indicators. "Public sources" wouldn't lead a reader to expec
 
 - 14,131 Salesforce Contacts carry a Windfall ID, and 6,585 of them were on People boards in the
   dry run (`salesforce-import/README.md`). The Windfall subscription has ended, so the data is frozen.
-- The Monday `recent-gifts-wealth` digest emails Net Worth, Philanthropic Giver, Job Title and
-  company for recent donors to staff (`report-digests/README.md`). Recipients are limited to the
-  `bikesiliconvalley.org` domain.
+- The Monday `recent-gifts-wealth` digest emailed Net Worth, Philanthropic Giver, Job Title and
+  company for recent donors to staff, limited to the `bikesiliconvalley.org` domain. *(Since
+  resolved: it is now `recent-gifts`, and no purchased wealth-screening data goes in an email;
+  see `report-digests/README.md`.)*
 - Sending names to a screening vendor is itself a disclosure (see finding 3). That SVBC sent records
   to Windfall is inferred from the integration; confirm what was sent with the staff who ran it.
 

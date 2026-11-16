@@ -6,6 +6,7 @@ import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client
 import type { Config, OutboundSyncMessage } from '../types';
 import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
+import { OutageBreaker } from '../monday/outage';
 import { errorText, memberId, redactEmails } from '../logSafe';
 import { messageDisposition, retryDelaySeconds as baseRetryDelaySeconds } from '../flags';
 import { dryRunOutboundDeps, type BatchSkipContext } from '../writeSwitch';
@@ -14,6 +15,8 @@ export interface QueueMessageLike<T> {
   body: T;
   // Cloudflare's Message.attempts (1 on first delivery). Optional so tests can omit it.
   attempts?: number;
+  // Cloudflare's Message.timestamp — when the message was first sent. Optional so tests can omit it.
+  timestamp?: Date;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
 }
@@ -30,7 +33,12 @@ export async function processOutboundBatch(
   messages: readonly QueueMessageLike<OutboundSyncMessage>[],
   deps: OutboundConsumerDeps,
 ): Promise<void> {
-  for (const message of messages) await handleMessage(message, deps);
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
+  for (const message of messages) {
+    if (breaker.open) breaker.defer(message);
+    else await handleMessage(message, deps, breaker);
+  }
 }
 
 // The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
@@ -41,12 +49,17 @@ export async function consumeOutboundBatch(
   deps: OutboundConsumerDeps,
   gate: BatchSkipContext,
 ): Promise<void> {
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const disposition = messageDisposition(gate.mode, message.body);
     if (disposition === 'retry') {
       message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
+    } else if (breaker.open) {
+      // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+      // spend the transport's in-process attempts again on every remaining message.
+      breaker.defer(message);
     } else if (disposition === 'write') {
-      await handleMessage(message, deps);
+      await handleMessage(message, deps, breaker);
     } else {
       const dry = dryRunOutboundDeps(deps, { ...gate, deliveryId: message.body.donorItemId });
       // The one pending write a dry run makes, so a row can never look like work in flight.
@@ -59,15 +72,21 @@ export async function consumeOutboundBatch(
         message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
         continue;
       }
-      await handleMessage(message, dry);
+      await handleMessage(message, dry, breaker);
     }
   }
 }
 
-async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<void> {
+async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps, breaker: OutageBreaker): Promise<void> {
   const { donorItemId, previousEmail } = message.body;
   try {
+    if (await alreadySynced(message, deps)) {
+      message.ack();
+      return;
+    }
+    const startedAt = new Date().toISOString();
     await processOne(donorItemId, previousEmail, deps);
+    await recordSyncStart(donorItemId, startedAt, deps);
     message.ack();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -86,8 +105,36 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
     if (err instanceof MailchimpPermanentError) {
       message.ack(); // retrying a malformed address fails identically every time
     } else {
+      // A Monday outage also defers the rest of the batch (#101); this message's delay is the same.
+      if (breaker.trip(err)) console.error(`mailchimp-sync outbound consumer: Monday unavailable, deferring the rest of the batch`);
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
+  }
+}
+
+// Every message is a full current-state sync, so one that is queued behind a sync which began
+// after it was enqueued has nothing left to add (#97). A message carrying previousEmail is
+// exempt: the rename must run even if a later sync already happened, and a retry of it (its
+// first attempt failed before the start was recorded) is covered the same way. A failed lookup
+// just means the sync runs.
+async function alreadySynced(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<boolean> {
+  const { donorItemId, previousEmail } = message.body;
+  if (previousEmail !== undefined || message.timestamp === undefined) return false;
+  try {
+    const last = await deps.pendingStore.lastSyncStartedAt(donorItemId);
+    return last !== null && Date.parse(last) > message.timestamp.getTime();
+  } catch (err) {
+    console.error(`mailchimp-sync outbound consumer: could not read last sync for donor "${donorItemId}": ${errorText(err)}`);
+    return false;
+  }
+}
+
+// Bookkeeping only: a failure here must not turn a finished sync into a retry.
+async function recordSyncStart(donorItemId: string, startedAt: string, deps: OutboundConsumerDeps): Promise<void> {
+  try {
+    await deps.pendingStore.recordSyncStart(donorItemId, startedAt);
+  } catch (err) {
+    console.error(`mailchimp-sync outbound consumer: could not record sync start for donor "${donorItemId}": ${errorText(err)}`);
   }
 }
 
@@ -163,11 +210,14 @@ async function processOne(donorItemId: string, previousEmail: string | undefined
 
   // The member's current Near: tags are needed to deactivate the ones Monday's column no longer
   // holds. Only read when this item's own board has a Nearby column: without one its labels read
-  // as none, which must not clear tags the person earned on the other board. A member not in the
-  // audience reads as no tags, and updateMember below still reports 'not-in-audience'.
+  // as none, which must not clear tags the person earned on the other board. Passed as a reader,
+  // so updateMember reads them only after its PATCH has found the member: most Donors never
+  // opted in, and a read first spent a call on each of them (#97).
   const nearbyColumn = donor.onHistorical && historical !== null ? historical.columns.nearby : columns.nearby;
-  const currentTags = nearbyColumn === null ? [] : await mailchimpClient.getMemberTagNames(donor.email);
-  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config, currentTags));
+  const managed = nearbyColumn === null
+    ? managedTags(config)
+    : async () => managedTags(config, await mailchimpClient.getMemberTagNames(donor.email));
+  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managed);
   if (result === 'not-in-audience') {
     // Expected for every Donor who never opted in — Mailchimp owns consent, so this
     // Worker only enriches existing members. 'skipped', not 'written', so it's countable.

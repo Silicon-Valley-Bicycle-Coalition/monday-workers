@@ -1,6 +1,6 @@
 import type { EventbriteSyncConfig } from './types';
 
-const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'] as const;
+const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations', 'volunteers'] as const;
 
 // The placeholder config/svbc.json ships with, and config/sandbox.json's orderIdColumn carries
 // until the Eventbrite Order ID column exists (README "Prerequisite column"). Validation accepts
@@ -26,6 +26,38 @@ const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
   'classLocationColumn', 'homeZipColumn', 'registrantsLinkColumn',
 ] as const;
+
+const VOLUNTEER_COLUMN_KEYS = [
+  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'jobColumn', 'dateColumn', 'statusColumn',
+  'historicalColumn', 'volunteerLinkColumn', 'eventColumn', 'listingColumn', 'ticketTypeColumn',
+] as const;
+
+// The Volunteers board columns this Worker added (setup-volunteers-board.mjs creates them); the
+// other five attendeeSync.volunteers columns already existed. config/svbc.json carries the
+// placeholder in all five until the cutover (docs/runbooks/volunteers-board-cutover.md step 2).
+// ticketTypeColumn (#115) is new too but optional, like attendeePhoneColumn: its placeholder only
+// skips the ticket class, so it isn't part of the switch.
+export const NEW_VOLUNTEER_COLUMN_KEYS = ['eventColumn', 'listingColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn'] as const;
+
+export type VolunteerBoardMode = 'legacy' | 'ready';
+
+// Where a volunteer event's sign-ups live, decided by config alone so a deploy from main before the
+// cutover changes nothing. legacy: all five new columns are the placeholder, so volunteer sign-ups
+// and their class emails stay on Event Registrations (Role = Volunteer), as before the Volunteers
+// board feed. ready: the board is set and all five are real. Anything in between throws: a
+// half-configured cutover must never quietly split one event's volunteers across two boards.
+export function volunteerBoardMode(config: EventbriteSyncConfig): VolunteerBoardMode {
+  const cols = config.attendeeSync.volunteers;
+  const placeholders = NEW_VOLUNTEER_COLUMN_KEYS.filter((key) => cols[key] === PLACEHOLDER_COLUMN_ID);
+  if (placeholders.length === NEW_VOLUNTEER_COLUMN_KEYS.length) return 'legacy';
+  if (placeholders.length > 0) {
+    throw new Error(`config: the Volunteers board is half-configured — attendeeSync.volunteers ${placeholders.join(', ')} still the placeholder; set all five new column ids (or none) before deploying`);
+  }
+  if (config.monday.boards.volunteers === null) {
+    throw new Error('config: the Volunteers board is half-configured — attendeeSync.volunteers columns are set but monday.boards.volunteers is null');
+  }
+  return 'ready';
+}
 
 const PLEDGE_COLUMN_KEYS = [
   'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
@@ -117,7 +149,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
   validateAttendeeSync(cfg.attendeeSync);
   if (cfg.pledge !== undefined) validatePledge(cfg.pledge, monday.boards);
 
-  return cfg as unknown as EventbriteSyncConfig;
+  const config = cfg as unknown as EventbriteSyncConfig;
+  volunteerBoardMode(config); // a half-configured Volunteers board fails here, at load (and in CI)
+  return config;
 }
 
 function requireColumns(group: unknown, path: string, keys: readonly string[]): void {
@@ -150,6 +184,7 @@ function validateAttendeeSync(raw: unknown): void {
   }
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
+  requireColumns(a.volunteers, 'attendeeSync.volunteers', VOLUNTEER_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
   if (!Array.isArray(a.registrantsLinkExcludedEventIds) || a.registrantsLinkExcludedEventIds.some((id) => typeof id !== 'string')) {
     throw new Error('config: "attendeeSync.registrantsLinkExcludedEventIds" must be an array of Eventbrite event ids');

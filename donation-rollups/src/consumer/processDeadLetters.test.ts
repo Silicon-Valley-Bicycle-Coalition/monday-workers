@@ -18,7 +18,8 @@ const QUOTA = new Error("D1_ERROR: Your account has exceeded D1's free tier dail
 
 function fakePendingStore(over: Partial<PendingStore> = {}): PendingStore {
   return {
-    upsertPending: vi.fn().mockResolvedValue('inserted'),
+    upsertPending: vi.fn().mockResolvedValue(undefined),
+    pruneFinished: vi.fn().mockResolvedValue(0),
     listStuck: vi.fn().mockResolvedValue([]),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockImplementation(async (id: string) => ({

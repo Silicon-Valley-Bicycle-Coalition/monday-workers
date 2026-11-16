@@ -1,5 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import type { BenevityImportConfig } from '../types';
+import { BatchLookups } from './batchLookups';
 
 export type PersonResolution =
   | { status: 'resolved'; personItemId: string }
@@ -22,7 +23,10 @@ export async function resolvePerson(
   mondayClient: MondayClient,
   config: BenevityImportConfig,
   row: PersonResolutionRow,
-  organizationItemId: string
+  organizationItemId: string,
+  // Per-batch cache (#101): the Affiliations at an Organization and the Employer matches for a
+  // company are the same for every row of a disbursement. Defaults to a fresh one per call.
+  lookups: BatchLookups = new BatchLookups()
 ): Promise<PersonResolution> {
   const hasEmail = !isWithheld(row.email);
   const hasName = !isWithheld(row.donorFirstName) && !isWithheld(row.donorLastName);
@@ -41,11 +45,10 @@ export async function resolvePerson(
       mondayClient.findItemsByColumnValue(peopleBoardId, peopleColumns.householdEmail, email),
       mondayClient.findItemsByColumnValue(affiliationsBoardId, affiliationsColumns.workEmail, email),
     ]);
-    const workEmailPersonIds = (
-      await Promise.all(
-        workEmailAffiliations.map((affiliation) => mondayClient.getLinkedItemIds(affiliation.id, affiliationsColumns.person))
-      )
-    ).flat();
+    const workEmailPersonIds = await mondayClient.getLinkedItemIds(
+      workEmailAffiliations.map((affiliation) => affiliation.id),
+      affiliationsColumns.person
+    );
 
     const candidateIds = new Set<string>([
       ...byPersonalEmail.map((item) => item.id),
@@ -66,17 +69,25 @@ export async function resolvePerson(
 
   if (hasName) {
     const fullName = `${row.donorFirstName} ${row.donorLastName}`.trim().toLowerCase();
-    const [nameMatches, affiliationsAtOrg, employerTextMatches] = await Promise.all([
+    const [nameMatches, affiliatedPeople, employerTextMatches] = await Promise.all([
       mondayClient.findItemsByName(peopleBoardId, `${row.donorFirstName} ${row.donorLastName}`),
-      mondayClient.findItemsByColumnValue(affiliationsBoardId, affiliationsColumns.organization, organizationItemId),
-      mondayClient.findItemsByColumnValue(peopleBoardId, peopleColumns.employer, row.company),
+      lookups.get(`affiliatedPeople:${organizationItemId}`, async () => {
+        const affiliationsAtOrg = await mondayClient.findItemsByColumnValue(
+          affiliationsBoardId,
+          affiliationsColumns.organization,
+          organizationItemId
+        );
+        return mondayClient.getLinkedItemIds(
+          affiliationsAtOrg.map((a) => a.id),
+          affiliationsColumns.person
+        );
+      }),
+      lookups.get(`employer:${row.company}`, () =>
+        mondayClient.findItemsByColumnValue(peopleBoardId, peopleColumns.employer, row.company)
+      ),
     ]);
     const exactNameMatches = nameMatches.filter((item) => item.name.trim().toLowerCase() === fullName);
-    const affiliatedPersonIds = new Set(
-      (
-        await Promise.all(affiliationsAtOrg.map((a) => mondayClient.getLinkedItemIds(a.id, affiliationsColumns.person)))
-      ).flat()
-    );
+    const affiliatedPersonIds = new Set(affiliatedPeople);
     const employerTextIds = new Set(employerTextMatches.map((item) => item.id));
 
     const employerConfirmed = exactNameMatches.filter(

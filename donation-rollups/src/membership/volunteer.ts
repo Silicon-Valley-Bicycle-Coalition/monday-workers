@@ -33,12 +33,18 @@ export interface HistoricalShiftFacts {
   dateISO: string | null;
   hours: number | null;
   statusLabel: string | null;
+  historical?: boolean;
 }
 
-// The 2014-2020 Volunteers board recorded real hours, so blank there is blank, not one.
+// The 2014-2020 Volunteers board recorded real hours, so blank there is blank, not one. Rows
+// added since (Eventbrite sign-ups, no hours) are not Historical: when the board config names
+// the Historical checkbox, those count on a counted status, a Volunteer link and a date alone.
+// Without that column every row needs Hours >= 1, as before.
 export function historicalShiftQualifies(shift: HistoricalShiftFacts, board: HistoricalVolunteerBoardConfig): boolean {
+  const hoursOk = (board.columns.historical !== undefined && shift.historical !== true)
+    || (shift.hours !== null && shift.hours >= 1);
   return shift.volunteerItemId !== null
     && shift.dateISO !== null
     && shift.statusLabel !== null && board.countedStatusLabels.includes(shift.statusLabel)
-    && shift.hours !== null && shift.hours >= 1;
+    && hoursOk;
 }

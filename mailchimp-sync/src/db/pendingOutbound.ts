@@ -3,6 +3,9 @@ import type { PendingRow, PendingStatus } from '../types';
 export interface PendingOutboundStore {
   upsertPending(donorItemId: string, receivedAt: string): Promise<void>;
   updateStatus(donorItemId: string, status: PendingStatus, error?: string, writtenAt?: string): Promise<void>;
+  // Coalescing (#97): when the last completed sync began, null if none has.
+  lastSyncStartedAt(donorItemId: string): Promise<string | null>;
+  recordSyncStart(donorItemId: string, startedAt: string): Promise<void>;
 }
 
 export class D1PendingOutboundStore implements PendingOutboundStore {
@@ -37,6 +40,21 @@ export class D1PendingOutboundStore implements PendingOutboundStore {
          WHERE donor_item_id = ?1`,
       )
       .bind(donorItemId, status, error ?? null, writtenAt ?? null)
+      .run();
+  }
+
+  async lastSyncStartedAt(donorItemId: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(`SELECT last_sync_started_at FROM pending_outbound_syncs WHERE donor_item_id = ?1`)
+      .bind(donorItemId)
+      .first<{ last_sync_started_at: string | null }>();
+    return row?.last_sync_started_at ?? null;
+  }
+
+  async recordSyncStart(donorItemId: string, startedAt: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE pending_outbound_syncs SET last_sync_started_at = ?2 WHERE donor_item_id = ?1`)
+      .bind(donorItemId, startedAt)
       .run();
   }
 }

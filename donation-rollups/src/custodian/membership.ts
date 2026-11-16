@@ -8,7 +8,9 @@
 import { addMonths } from '../membership/derive';
 import { registrationQualifies, historicalShiftQualifies } from '../membership/volunteer';
 import type { CustodianDeps, DutyReport } from './custodian';
-import type { RecomputeQueueMessage } from '../types';
+import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
+import type { VolunteerActivityRow } from '../db/volunteerActivity';
+import type { HistoricalShiftRecord } from '../monday/client';
 
 export interface MembershipDutyOptions { all: boolean; since: string | null }
 export type MembershipPhase = 'anniversaries' | 'load-volunteers' | 'backfill-terms' | 'enqueue';
@@ -34,11 +36,17 @@ const TRIGGER_ID = 'custodian:membership';
 const ownerMessage = (ownerItemId: string, ownerBoardId: string): RecomputeQueueMessage =>
   ({ donationItemId: TRIGGER_ID, donationBoardId: '', ownerItemId, ownerBoardId });
 
-async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[]): Promise<void> {
-  for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100));
+async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> {
+  for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100), opts);
 }
 
-function membershipBoards(deps: CustodianDeps): { boardId: string; currentTermStart: string }[] {
+// Exported (config-keyed) for the custodian's shared board read (boardReads.ts, issue #90).
+export function membershipTermStartColumns(config: DonationRollupsConfig): { boardId: string; currentTermStart: string }[] {
+  if (config.donationRollups.membership === null) return [];
+  return membershipBoards({ config });
+}
+
+function membershipBoards(deps: Pick<CustodianDeps, 'config'>): { boardId: string; currentTermStart: string }[] {
   return Object.entries(deps.config.donationRollups.ownerColumnsByBoard)
     .filter(([, cols]) => cols.membership !== undefined)
     .map(([boardId, cols]) => ({ boardId, currentTermStart: cols.membership!.currentTermStart }));
@@ -71,13 +79,91 @@ export async function runMembership(
   // An unfinished all=true pass is continued by whoever runs next (the nightly cron, or the
   // route again); a fresh all=true starts over at the first phase.
   const continuing = lastDetail !== null && lastDetail.all && lastDetail.remaining > 0;
-  if (!opts.all && !continuing) return anniversaries;
+  if (!opts.all && !continuing) return loadNightlyVolunteers(deps, now, anniversaries);
   const start: MembershipDetail = continuing
     ? { ...lastDetail!, loadedAtISO: lastDetail!.loadedAtISO ?? null }
     : { all: true, since: opts.since, phase: 'load-volunteers', cursor: '', remaining: 1,
       scanned: 0, enqueued: 0, loaded: 0, backfilled: 0, anniversariesThroughISO: '', loadedAtISO: null };
   const all = await runAll(deps, now, start);
   return { ok: all.ok, summary: `${anniversaries.summary}; ${all.summary}`, detail: all.detail };
+}
+
+// The nightly share of the Volunteers board: new Eventbrite sign-ups reach volunteer_activity
+// here (the board has no webhook), so a Completed row earns credit by the next morning's run
+// rather than waiting for an all=true pass.
+//
+// Order is the guarantee: (1) page and diff every board against D1, writing nothing; (2) enqueue
+// the affected owners' recomputes, delayed so the rows are stored before a recompute reads them;
+// (3) only then store the rows. A failure at any step leaves rows UNSTORED, so the next night
+// diffs them as changed again and re-sends — at-least-once enqueue, never rows stored with
+// their owners unsent. The duplicate recompute that can result is harmless: a recompute is a
+// full re-derivation from D1 plus a fresh Monday read, writing the same values again.
+//
+// Bounded like an all=true slice: at most ENQUEUE_PER_RUN owners (and rows) a night, the rest
+// left unstored for the next night's diff, so the first run after cutover cannot burst.
+export const VOLUNTEER_RECOMPUTE_DELAY_SECONDS = 120;
+
+async function loadNightlyVolunteers(deps: CustodianDeps, now: Date, anniversaries: DutyReport): Promise<DutyReport> {
+  const boardsCfg = deps.config.donationRollups.historicalVolunteerBoards;
+  if (boardsCfg.length === 0) return anniversaries;
+  const failed = (err: unknown): DutyReport => ({ ok: false, detail: anniversaries.detail,
+    summary: `${anniversaries.summary}; Volunteers board load failed: ${err instanceof Error ? err.message : String(err)}` });
+  const membership = new Set(membershipBoards(deps).map((b) => b.boardId));
+  type Change = { boardId: string; s: HistoricalShiftRecord; old: VolunteerActivityRow | undefined; qualifies: boolean };
+  const diff: Change[] = [];
+  try {
+    for (const board of boardsCfg) {
+      const known = new Map((await deps.volunteers.forBoard(String(board.boardId))).map((r) => [r.registrationItemId, r]));
+      let cursor: string | null = null;
+      do {
+        const page = await deps.mondayClient.pageHistoricalShifts(board, cursor);
+        for (const s of page.items) {
+          const old = known.get(s.id);
+          const qualifies = historicalShiftQualifies(s, board);
+          if (old === undefined || old.qualifies !== qualifies || old.ownerItemId !== s.volunteerItemId
+            || old.activityDateISO !== s.dateISO || old.hours !== s.hours) {
+            diff.push({ boardId: String(board.boardId), s, old, qualifies });
+          }
+        }
+        cursor = page.cursor;
+      } while (cursor !== null);
+    }
+    if (diff.length === 0) return anniversaries;
+
+    // Tonight's slice: a stable order, as many changes as fit under the owner cap (an owner is
+    // someone who counted before or counts now) and the row cap.
+    diff.sort((a, b) => (a.boardId + a.s.id < b.boardId + b.s.id ? -1 : 1));
+    const slice: Change[] = [];
+    const counted = new Set<string>();
+    for (const c of diff) {
+      const mine = [c.old?.qualifies ? c.old.ownerItemId : null, c.qualifies ? c.s.volunteerItemId : null].filter((x): x is string => x !== null);
+      const next = new Set([...counted, ...mine]);
+      if (slice.length >= ENQUEUE_PER_RUN || next.size > ENQUEUE_PER_RUN) break;
+      slice.push(c);
+      for (const id of mine) counted.add(id);
+    }
+    const remaining = diff.length - slice.length;
+
+    const boardOf = await deps.mondayClient.getItemsBoardIds(slice.flatMap(({ s }) => (s.volunteerItemId ? [s.volunteerItemId] : [])));
+    const rows = slice.map(({ boardId, s, qualifies }): VolunteerActivityRow => ({ registrationItemId: s.id, boardId,
+      ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boardOf.get(s.volunteerItemId) ?? null : null,
+      activityDateISO: s.dateISO, hours: s.hours, qualifies, source: 'historical' }));
+    const targets = new Map<string, string>();   // owner item id -> its board
+    for (const [i, row] of rows.entries()) {
+      const { old } = slice[i]!;
+      // Whoever counted before and whoever counts now — not a row that counted for no one either way.
+      if (old?.qualifies && old.ownerItemId !== null && old.ownerBoardId !== null && membership.has(old.ownerBoardId)) targets.set(old.ownerItemId, old.ownerBoardId);
+      if (row.qualifies && row.ownerItemId !== null && row.ownerBoardId !== null && membership.has(row.ownerBoardId)) targets.set(row.ownerItemId, row.ownerBoardId);
+    }
+
+    await sendAll(deps, [...targets].map(([id, boardId]) => ownerMessage(id, boardId)), { delaySeconds: VOLUNTEER_RECOMPUTE_DELAY_SECONDS });
+    await deps.volunteers.upsertMany(rows, now.toISOString());
+    return { ok: anniversaries.ok, detail: anniversaries.detail,
+      summary: `${anniversaries.summary}; ${rows.length} volunteer row(s) changed, enqueued ${targets.size} owner(s)` +
+        (remaining > 0 ? ` — ${remaining} more change(s) remain, continuing next run` : '') };
+  } catch (err) {
+    return failed(err);
+  }
 }
 
 // Everyone whose anniversary — Current Term Start + termMonths — falls after lastThroughISO and
@@ -127,8 +213,8 @@ async function runAll(deps: CustodianDeps, now: Date, detail: MembershipDetail):
   }
 }
 
-// Phase 1: the 2014-2020 Volunteers board, then every Event Registrations item, into
-// volunteer_activity. Reads only on Monday; upserts are idempotent, so a crash mid-phase is
+// Phase 1: the Volunteers board (the 2014-2020 history and new Eventbrite sign-ups), then every
+// Event Registrations item of a fork that configures them, into volunteer_activity. Reads only on Monday; upserts are idempotent, so a crash mid-phase is
 // simply re-run.
 async function loadVolunteers(deps: CustodianDeps, now: Date): Promise<number> {
   const nowISO = now.toISOString();

@@ -28,6 +28,12 @@ real board and column ids in `config/sandbox.json`, the write switch, and the ch
      can't be found is a message saying what's missing.
    * Contacts come from the Lat/Lng columns on the source boards; a contact without coordinates
      is counted as skipped.
+   * The three source boards are read concurrently, asking only for each item's name and the
+     Lat/Lng (and name) columns. Each board's list is then kept for 5 minutes, in the isolate and
+     in the data center's Cache API, so a radius change, a second preview and the confirm re-run
+     skip the walk even when they reach a different isolate (#98). A coordinate the geocode cron
+     adds shows up within those 5 minutes. No binding is needed; the Cache API works on the
+     custom domain only, which is the only way this Worker is served.
 2. **Confirm** (`POST /api/confirm`), with a results board and a label (1-60 characters, no
    commas, since commas separate dropdown labels and tags). The Worker re-runs the search itself
    (the preview in the browser is only a picture), drops contacts already linked on that board or
@@ -210,6 +216,8 @@ sandbox boards before production:
       or docs (`listBoards` keeps Monday board `type` `board` only).
 - [ ] The page loads Leaflet and turf with their SRI hashes (no integrity errors in the console).
 - [ ] The Access application's cookie is SameSite Lax or Strict.
+- [ ] A second preview within 5 minutes, and its confirm, return quickly with no Monday
+      `items_page` walk (`wrangler tail --env sandbox`; Monday's API logs show one walk per board).
 
 ## Commands
 

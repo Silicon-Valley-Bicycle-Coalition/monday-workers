@@ -96,6 +96,50 @@ describe('HttpMondayClient', () => {
     expect(schema.groups).toEqual([{ id: 'g1', title: 'Group 1', color: '#037f4c', position: '65536' }]);
   });
 
+  it('fetches schema, first items page and first updates page in one request, then serves them to the page iterators (#95)', async () => {
+    const fetchMock = mockFetchSequence([
+      {
+        data: {
+          boards: [
+            {
+              columns: [],
+              groups: [],
+              items_page: {
+                cursor: null,
+                items: [
+                  {
+                    id: 'i1',
+                    name: 'Item',
+                    state: 'active',
+                    created_at: null,
+                    updated_at: null,
+                    creator_id: null,
+                    group: null,
+                    parent_item: null,
+                    column_values: [],
+                    assets: [],
+                  },
+                ],
+              },
+              updates: [
+                { id: 'u1', item_id: 'i1', body: 'b', text_body: 'b', created_at: null, updated_at: null, creator_id: null, replies: [], assets: [] },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    await client.getBoardSchema('7');
+    const items: string[] = [];
+    for await (const page of client.boardItemPages('7')) items.push(...page.map((i) => i.id));
+    const updates: string[] = [];
+    for await (const page of client.boardUpdatePages('7')) updates.push(...page.map((u) => u.id));
+    expect(items).toEqual(['i1']);
+    expect(updates).toEqual(['u1']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when a board is not found for schema lookup', async () => {
     mockFetchSequence([{ data: { boards: [] } }]);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
@@ -462,6 +506,66 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
       byUser: { 'Sandbox Integration': 300, 'Unknown user': 5 },
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #95: 500 is items_page's maximum. A page that turns out too big for one request (over the
+  // per-query complexity cap, or too slow to answer) is fetched again at half the size.
+  describe('items page size', () => {
+    const rawItem = (id: string) => ({ id, name: id, state: 'active', group: null, parent_item: null, column_values: [], assets: [] });
+    const capError = {
+      errors: [{ message: 'Query has complexity of 6000000, which exceeds max complexity of 5000000', extensions: { code: 'ComplexityException' } }],
+    };
+    const bodyOf = (fetchMock: ReturnType<typeof vi.fn>, n: number) =>
+      JSON.parse((fetchMock.mock.calls[n]![1] as RequestInit).body as string) as { query: string; variables: Record<string, unknown> };
+    const head = (cursor: string | null) => ({
+      data: { boards: [{ columns: [], groups: [], items_page: { cursor, items: [rawItem('i1')] }, updates: [] }] },
+    });
+
+    it('asks for 500 items per page, in the board head query and after it', async () => {
+      const fetchMock = mockFetchSequence([head('c1'), { data: { next_items_page: { cursor: null, items: [rawItem('i2')] } } }]);
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+      await client.getBoardSchema('7');
+      for await (const _ of client.boardItemPages('7'));
+      expect(bodyOf(fetchMock, 0).variables.limit).toBe(500);
+      expect(bodyOf(fetchMock, 1).variables.limit).toBe(500);
+    });
+
+    it('halves a page over the complexity cap, retries the same cursor, and keeps the smaller size for that board', async () => {
+      const fetchMock = mockFetchSequence([
+        head('c1'),
+        capError,
+        { data: { next_items_page: { cursor: 'c2', items: [rawItem('i2')] } } },
+        { data: { next_items_page: { cursor: null, items: [rawItem('i3')] } } },
+      ]);
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+      await client.getBoardSchema('7');
+      const ids: string[] = [];
+      for await (const page of client.boardItemPages('7')) ids.push(...page.map((i) => i.id));
+      expect(ids).toEqual(['i1', 'i2', 'i3']);
+      expect(bodyOf(fetchMock, 2).variables).toEqual({ cursor: 'c1', limit: 250 });
+      expect(bodyOf(fetchMock, 3).variables).toEqual({ cursor: 'c2', limit: 250 });
+    });
+
+    it('halves the board head query too', async () => {
+      const fetchMock = mockFetchSequence([capError, head(null)]);
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+      await client.getBoardSchema('7');
+      expect(bodyOf(fetchMock, 1).variables.limit).toBe(250);
+    });
+
+    it('gives up at 50 items rather than shrinking forever', async () => {
+      const fetchMock = mockFetchSequence([capError, capError, capError, capError, capError]);
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+      await expect(client.getBoardSchema('7')).rejects.toThrow(/exceeds max complexity/);
+      expect(fetchMock.mock.calls.map((_, n) => bodyOf(fetchMock, n).variables.limit)).toEqual([500, 250, 125, 62, 50]);
+    });
+
+    it('does not shrink on an ordinary error', async () => {
+      const fetchMock = mockFetchSequence([{ errors: [{ message: 'Field x does not exist' }] }]);
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+      await expect(client.getBoardSchema('7')).rejects.toThrow(/does not exist/);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   // boards(ids:) returns only active boards unless told otherwise, so an archived board that

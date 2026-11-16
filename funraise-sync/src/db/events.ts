@@ -18,7 +18,9 @@ export interface EventStatusPatch {
   writtenAt?: string;
 }
 
-export type UpsertResult = 'inserted' | 'updated' | 'duplicate';
+// 'stored' covers a first delivery and a newer one for a known entity alike: the webhook only
+// branches on 'duplicate', so the upsert stays one statement with no pre-SELECT (#101).
+export type UpsertResult = 'stored' | 'duplicate';
 
 export interface EventStore {
   upsertEvent(row: NewEvent): Promise<UpsertResult>;
@@ -65,14 +67,6 @@ export class D1EventStore implements EventStore {
   constructor(private db: D1Database) {}
 
   async upsertEvent(row: NewEvent): Promise<UpsertResult> {
-    // The pre-SELECT only classifies the result (inserted vs. updated); dedup
-    // itself is enforced by the unique constraints, so a concurrent insert of
-    // the same delivery still lands on the ON CONFLICT (event_id) DO NOTHING path.
-    const existing = await this.db
-      .prepare(`SELECT event_id FROM events WHERE entity_type = ?1 AND entity_id = ?2`)
-      .bind(row.entityType, row.entityId)
-      .first<{ event_id: string }>();
-
     // A delivery for a known entity replaces the row only if it isn't older than what's stored:
     // at-least-once delivery can replay an earlier edit after a later one was written, and
     // applying it would push stale columns back onto the Monday item. Ordering is by the
@@ -95,8 +89,7 @@ export class D1EventStore implements EventStore {
       .bind(row.eventId, row.entityType, row.entityId, row.rawPayload, row.sentAt, row.receivedAt)
       .run();
 
-    if (result.meta.changes === 0) return 'duplicate';
-    return existing === null ? 'inserted' : 'updated';
+    return result.meta.changes === 0 ? 'duplicate' : 'stored';
   }
 
   async updateStatusByEntity(

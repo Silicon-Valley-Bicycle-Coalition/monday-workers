@@ -11,7 +11,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // One place that wires the broker to real I/O, so tests can spy on it or on TokenBroker.prototype.
 export function brokerFor(env: Env): TokenBroker {
   return new TokenBroker({
-    store: new D1AppTokenStore(env.DB),
+    store: new D1AppTokenStore(env.DB, env.TOKEN_ENC_KEY),
     env,
     fetchFn: fetch,
     now: () => new Date(),
@@ -44,7 +44,7 @@ export class ReadOnlyToken extends AppToken {
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const app = createApp({
-      store: new D1AppTokenStore(env.DB),
+      store: new D1AppTokenStore(env.DB, env.TOKEN_ENC_KEY),
       env,
       fetchFn: fetch,
       now: () => new Date(),
@@ -65,7 +65,7 @@ export default {
       failures.push(`monday-auth: scheduled refresh failed: ${err instanceof Error ? err.message : 'error'}`);
     }
     try {
-      await new D1AppTokenStore(env.DB).purgeExpiredPending(new Date());
+      await new D1AppTokenStore(env.DB, env.TOKEN_ENC_KEY).purgeExpiredPending(new Date());
     } catch (err) {
       failures.push(`monday-auth: purging abandoned consent rows failed: ${err instanceof Error ? err.message : 'error'}`);
     }

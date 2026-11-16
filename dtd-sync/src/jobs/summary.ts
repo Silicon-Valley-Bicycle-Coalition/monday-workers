@@ -11,8 +11,8 @@ export async function runSummary(deps: SummaryDeps, now: Date): Promise<void> {
   const { monday, db, config } = deps;
   const c = config.programSummary;
   const today = now.toISOString().slice(0, 10);
-  const matchingDonations = (await monday.listDonationsDatedSince('2000-01-01')).filter(
-    (i) => i.giftType === MATCHING_GIFT_TYPE && i.date !== null,
+  const matchingDonations = (await monday.listDonationsOfTypeDatedSince(MATCHING_GIFT_TYPE, '2000-01-01')).filter(
+    (i) => i.date !== null,
   );
 
   const currentEnd = Number(fiscalYearOf(today).slice(2));
@@ -26,9 +26,9 @@ export async function runSummary(deps: SummaryDeps, now: Date): Promise<void> {
     const priorDonors = new Set(earlier.map((m) => m.donorItemId).filter((id): id is string => id !== null));
 
     const giftAmountById = new Map<string, number>();
-    for (const giftId of new Set(matches.map((m) => m.matchesGiftItemId).filter((id): id is string => id !== null))) {
-      const gift = await monday.getDonation(giftId);
-      if (gift !== null && gift.amount !== null) giftAmountById.set(giftId, gift.amount);
+    const giftIds = matches.map((m) => m.matchesGiftItemId).filter((id): id is string => id !== null);
+    for (const gift of await monday.getDonations(giftIds)) {
+      if (gift.amount !== null) giftAmountById.set(gift.id, gift.amount);
     }
 
     const records = await recordsForFiscalYear(db, startISO, endISO);

@@ -9,13 +9,25 @@ import type {
   UpdateRecord,
   UpdateReply,
 } from '../types';
-import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
+import { MondayApiError, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 import type { DailyUsage } from '../usage';
 
 const BOARDS_PAGE_SIZE = 50;
-// items_page allows up to 500, but each item now carries column values, typed connect/mirror
-// fragments and asset metadata — 100 keeps one page's complexity and response size modest.
-const ITEMS_PAGE_SIZE = 100;
+// items_page's maximum (issue #95): 5x fewer page requests than 100 on the large boards. A page
+// costs complexity in proportion to its items, so the per-minute budget drains at the same rate
+// per item whatever the page size; what a bigger page risks is one request's own limits. Donations
+// is about 4 KB per item, so a full page is about 2 MB, well inside the 60 s request timeout at the
+// 2-4 s per 100 items measured on 2026-11-04. A page that still proves too big (over the per-query
+// complexity cap, or timing out) is fetched again at half the size, down to the floor, and that
+// board keeps the smaller size (see withItemsLimit).
+const ITEMS_PAGE_SIZE = 500;
+const MIN_ITEMS_PAGE_SIZE = 50;
+
+// The two failures a smaller page can fix. Anything else (a rate limit, an outage) is no better
+// with fewer items, so it goes on to the caller as before.
+function pageTooBig(err: unknown): boolean {
+  return err instanceof MondayApiError && /exceeds max complexity|timed out/i.test(err.message);
+}
 const DOCS_PAGE_SIZE = 50;
 const UPDATES_PAGE_SIZE = 100; // the documented maximum for `updates`
 const BLOCKS_PAGE_SIZE = 100;
@@ -79,6 +91,18 @@ function toUpdate(u: RawUpdate): UpdateRecord {
 // linked item ids and display values are captured through their typed fragments explicitly.
 // Subitems are items of their own `sub_items_board`, backed up like any board; `parent_item`
 // is the link back.
+const UPDATE_FIELDS = `
+  id
+  item_id
+  body
+  text_body
+  created_at
+  updated_at
+  creator_id
+  replies { id body text_body created_at updated_at creator_id }
+  assets { ${ASSET_FIELDS} }
+`;
+
 const ITEM_FIELDS = `
   id
   name
@@ -222,6 +246,9 @@ export type HttpMondayClientOptions = MondayGraphQLOptions;
 // (see MondayGraphQL for the retry/backoff policy).
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
+  // First items page and first updates page, fetched in the same request as the schema (issue #95)
+  // and handed to the next boardItemPages / boardUpdatePages call for that board.
+  private readonly heads = new Map<string, { items: ItemsPage | undefined; updates: RawUpdate[] | undefined }>();
 
   // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
   // MondayGraphQL, which re-asks a provider once on a 401.
@@ -231,6 +258,25 @@ export class HttpMondayClient implements MondayClient {
 
   private graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     return this.transport.request<T>(query, variables);
+  }
+
+  // Each board's items page size, once a page of it has had to shrink.
+  private readonly itemsLimits = new Map<string, number>();
+
+  // Runs one items-page request at the board's page size, halving it while the page is too big.
+  // The cursor stays valid across a failed request, so the retry picks up exactly where it was.
+  private async withItemsLimit<T>(boardId: string, request: (limit: number) => Promise<T>): Promise<T> {
+    for (;;) {
+      const limit = this.itemsLimits.get(boardId) ?? ITEMS_PAGE_SIZE;
+      try {
+        return await request(limit);
+      } catch (err) {
+        if (!pageTooBig(err) || limit <= MIN_ITEMS_PAGE_SIZE) throw err;
+        const smaller = Math.max(MIN_ITEMS_PAGE_SIZE, Math.floor(limit / 2));
+        console.warn(`monday-backup: board ${boardId} items page of ${limit} too big, retrying at ${smaller}`);
+        this.itemsLimits.set(boardId, smaller);
+      }
+    }
   }
 
   async listBoards(): Promise<BoardSummary[]> {
@@ -264,25 +310,35 @@ export class HttpMondayClient implements MondayClient {
 
   // `state: all` in the three queries below: boards(ids:) returns only active boards by default, and
   // listBoards hands us archived ones too.
+  // One request for the schema, the first items page and the first updates page: three calls
+  // per board before it held data, ~520 of the nightly run's calls on ~262 mostly tiny boards.
+  // The later pages still go through boardItemPages / boardUpdatePages.
   async getBoardSchema(boardId: string): Promise<BoardSchema> {
-    const data = await this.graphql<{
-      boards: {
-        columns: { id: string; title: string; type: string; settings_str: string; description: string | null }[];
-        groups: { id: string; title: string; color: string | null; position: string | null }[];
-      }[];
-    }>(
-      `query ($boardId: [ID!]) {
-        boards(ids: $boardId, state: all) {
-          columns { id title type settings_str description }
-          groups { id title color position }
-        }
-      }`,
-      { boardId: [boardId] },
+    const data = await this.withItemsLimit(boardId, (limit) =>
+      this.graphql<{
+        boards: {
+          columns: { id: string; title: string; type: string; settings_str: string; description: string | null }[];
+          groups: { id: string; title: string; color: string | null; position: string | null }[];
+          items_page: ItemsPage | null;
+          updates: RawUpdate[] | null;
+        }[];
+      }>(
+        `query ($boardId: [ID!], $limit: Int!, $updatesLimit: Int!) {
+          boards(ids: $boardId, state: all) {
+            columns { id title type settings_str description }
+            groups { id title color position }
+            items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
+            updates(limit: $updatesLimit, page: 1) { ${UPDATE_FIELDS} }
+          }
+        }`,
+        { boardId: [boardId], limit, updatesLimit: UPDATES_PAGE_SIZE },
+      ),
     );
     const board = data.boards[0];
     if (board === undefined) {
       throw new Error(`monday API: board ${boardId} not found`);
     }
+    this.heads.set(boardId, { items: board.items_page ?? undefined, updates: board.updates ?? [] });
     return {
       columns: board.columns.map((c) => ({
         id: c.id,
@@ -298,23 +354,35 @@ export class HttpMondayClient implements MondayClient {
   // First page through boards { items_page }, then the cheaper root next_items_page with the
   // cursor (cursors stay valid for 60 minutes — far longer than one board takes).
   async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
-    const first = await this.graphql<{ boards: { items_page: ItemsPage }[] }>(
-      `query ($boardId: [ID!], $limit: Int!) {
-        boards(ids: $boardId, state: all) {
-          items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
-        }
-      }`,
-      { boardId: [boardId], limit: ITEMS_PAGE_SIZE },
-    );
-    let page: ItemsPage | undefined = first.boards[0]?.items_page;
+    const head = this.heads.get(boardId);
+    let page: ItemsPage | undefined;
+    if (head?.items !== undefined) {
+      page = head.items;
+      head.items = undefined;
+    } else {
+      const first = await this.withItemsLimit(boardId, (limit) =>
+        this.graphql<{ boards: { items_page: ItemsPage }[] }>(
+          `query ($boardId: [ID!], $limit: Int!) {
+            boards(ids: $boardId, state: all) {
+              items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
+            }
+          }`,
+          { boardId: [boardId], limit },
+        ),
+      );
+      page = first.boards[0]?.items_page;
+    }
     while (page !== undefined) {
       yield page.items.map(toItem);
-      if (page.cursor === null) return;
-      const next: { next_items_page: ItemsPage } = await this.graphql<{ next_items_page: ItemsPage }>(
-        `query ($cursor: String!, $limit: Int!) {
-          next_items_page(cursor: $cursor, limit: $limit) { cursor items { ${ITEM_FIELDS} } }
-        }`,
-        { cursor: page.cursor, limit: ITEMS_PAGE_SIZE },
+      const cursor = page.cursor;
+      if (cursor === null) return;
+      const next: { next_items_page: ItemsPage } = await this.withItemsLimit(boardId, (limit) =>
+        this.graphql<{ next_items_page: ItemsPage }>(
+          `query ($cursor: String!, $limit: Int!) {
+            next_items_page(cursor: $cursor, limit: $limit) { cursor items { ${ITEM_FIELDS} } }
+          }`,
+          { cursor, limit },
+        ),
       );
       page = next.next_items_page;
     }
@@ -324,25 +392,22 @@ export class HttpMondayClient implements MondayClient {
   // query's complexity, while the board-level `updates` field pages them on their own.
   async *boardUpdatePages(boardId: string): AsyncGenerator<UpdateRecord[]> {
     for (let page = 1; ; page++) {
-      const data = await this.graphql<{ boards: { updates: RawUpdate[] | null }[] }>(
-        `query ($boardId: [ID!], $limit: Int!, $page: Int!) {
-          boards(ids: $boardId, state: all) {
-            updates(limit: $limit, page: $page) {
-              id
-              item_id
-              body
-              text_body
-              created_at
-              updated_at
-              creator_id
-              replies { id body text_body created_at updated_at creator_id }
-              assets { ${ASSET_FIELDS} }
+      let updates: RawUpdate[];
+      const head = this.heads.get(boardId);
+      if (page === 1 && head?.updates !== undefined) {
+        updates = head.updates;
+        this.heads.delete(boardId);
+      } else {
+        const data = await this.graphql<{ boards: { updates: RawUpdate[] | null }[] }>(
+          `query ($boardId: [ID!], $limit: Int!, $page: Int!) {
+            boards(ids: $boardId, state: all) {
+              updates(limit: $limit, page: $page) { ${UPDATE_FIELDS} }
             }
-          }
-        }`,
-        { boardId: [boardId], limit: UPDATES_PAGE_SIZE, page },
-      );
-      const updates = data.boards[0]?.updates ?? [];
+          }`,
+          { boardId: [boardId], limit: UPDATES_PAGE_SIZE, page },
+        );
+        updates = data.boards[0]?.updates ?? [];
+      }
       if (updates.length > 0) yield updates.map(toUpdate);
       if (updates.length < UPDATES_PAGE_SIZE) return;
     }

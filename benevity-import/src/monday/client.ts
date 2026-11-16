@@ -14,7 +14,9 @@ export interface MondayAsset {
 export interface MondayClient {
   findItemsByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem[]>;
   findItemsByName(boardId: number, name: string): Promise<MondayItem[]>;
-  getLinkedItemIds(itemId: string, columnId: string): Promise<string[]>;
+  // The ids linked from one board-relation column across several items, flattened (one request
+  // per 100 items; none for an empty list).
+  getLinkedItemIds(itemIds: string[], columnId: string): Promise<string[]>;
   createItem(
     boardId: number,
     itemName: string,
@@ -25,12 +27,19 @@ export interface MondayClient {
   // Archive, not delete: reversible from the board's archive if it was ever the wrong item.
   archiveItem(itemId: string): Promise<void>;
   fetchAsset(assetId: string): Promise<MondayAsset>;
+  // The board an item lives on and the ids of the assets in one of its file columns; null when
+  // the item doesn't exist. Lets the upload webhook refuse an asset id that isn't in the Uploads
+  // board's file column (#106).
+  fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
 }
 
 // API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 // Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
 // backoff (1 minute doubling to an hour — retryDelaySeconds in flags.ts) takes over rather than holding a batch.
+// items(ids:) accepts at most 100 ids per call.
+const ITEMS_BATCH_SIZE = 100;
+
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
 export class HttpMondayClient implements MondayClient {
@@ -60,22 +69,26 @@ export class HttpMondayClient implements MondayClient {
     return this.findItemsByColumnValue(boardId, 'name', name);
   }
 
-  async getLinkedItemIds(itemId: string, columnId: string): Promise<string[]> {
-    const data = await this.transport.request<{
-      items: { column_values: { linked_item_ids?: string[] }[] }[];
-    }>(
-      `query ($itemId: ID!, $columnId: [String!]) {
-        items(ids: [$itemId]) {
-          column_values(ids: $columnId) {
-            ... on BoardRelationValue { linked_item_ids }
+  async getLinkedItemIds(itemIds: string[], columnId: string): Promise<string[]> {
+    const linked: string[] = [];
+    for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
+      const ids = itemIds.slice(i, i + ITEMS_BATCH_SIZE);
+      const data = await this.transport.request<{
+        items: { column_values: { linked_item_ids?: string[] }[] }[];
+      }>(
+        // limit: without it items(ids:) returns at most 25 (Monday's default page size).
+        `query ($ids: [ID!], $columnId: [String!]) {
+          items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) {
+            column_values(ids: $columnId) {
+              ... on BoardRelationValue { linked_item_ids }
+            }
           }
-        }
-      }`,
-      { itemId, columnId: [columnId] }
-    );
-    const item = data.items[0];
-    if (!item || item.column_values.length === 0) return [];
-    return item.column_values[0]?.linked_item_ids ?? [];
+        }`,
+        { ids, columnId: [columnId] }
+      );
+      for (const item of data.items) linked.push(...(item.column_values[0]?.linked_item_ids ?? []));
+    }
+    return linked;
   }
 
   async createItem(
@@ -131,5 +144,30 @@ export class HttpMondayClient implements MondayClient {
       throw new Error(`monday API: asset "${assetId}" not found`);
     }
     return { id: asset.id, name: asset.name, publicUrl: asset.public_url };
+  }
+
+  async fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null> {
+    const data = await this.transport.request<{
+      items: {
+        board: { id: string } | null;
+        column_values: { files?: { asset_id?: string | number }[] | null }[] | null;
+      }[];
+    }>(
+      `query ($itemIds: [ID!]!, $columnIds: [String!]) {
+        items(ids: $itemIds) {
+          board { id }
+          column_values(ids: $columnIds) {
+            ... on FileValue { files { ... on FileAssetValue { asset_id } } }
+          }
+        }
+      }`,
+      { itemIds: [itemId], columnIds: [fileColumnId] }
+    );
+    const item = data.items[0];
+    if (!item?.board) return null;
+    const assetIds = (item.column_values ?? [])
+      .flatMap((value) => value.files ?? [])
+      .flatMap((file) => (file.asset_id === undefined ? [] : [String(file.asset_id)]));
+    return { boardId: String(item.board.id), assetIds };
   }
 }

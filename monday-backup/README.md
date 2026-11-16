@@ -71,8 +71,9 @@ Cloudflare Workflow (src/workflow.ts), one retried step per board or doc, about 
   │     Subitems boards are backed up like any other board.
   │  3. Pull every monday Doc's blocks, paginated, with nesting and position — the one thing the
   │     native export explicitly doesn't cover
-  │  4. Stream each board and each doc, page by page, as JSON Lines (`board-<id>.jsonl`,
-  │     `doc-<id>.jsonl`) into a Drive resumable upload — memory holds one page, never a board
+  │  4. Stream each board and each doc, page by page, as JSON Lines encrypted on the way out
+  │     (`board-<id>.jsonl.enc`, `doc-<id>.jsonl.enc`; see "Snapshot encryption") into a Drive
+  │     resumable upload — memory holds one page, never a board
   │  5. …into one folder per run inside the Shared Drive, named for the date and D1 run id
   │     (e.g. `SVBC Monday Backups/2026-08-25 run-17/`), so a same-day rerun never collides
   │  6. Write a manifest alongside the snapshot (format, run id, the capture window, when each
@@ -113,7 +114,11 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   existing snapshot files or add junk files. Snapshots are dated folders written once and never
   edited, so a Shared Drive manager should treat any snapshot file with more than one revision
   as tampered with (Drive keeps the earlier revisions; restore one from the file's
-  **Manage versions**). If that residual risk ever matters more, the next step is a second
+  **Manage versions**). Since snapshot encryption, an edited encrypted file fails authentication at
+  restore, as does an edited manifest, and the restore refuses plaintext `.jsonl` files whenever a
+  key is given, so a
+  tampered file can't be restored by mistake; it still has to be recovered from **Manage
+  versions**. If that residual risk ever matters more, the next step is a second
   Shared Drive the account isn't a member of, filled by a copy it can't reach. Not built.
 
 ## Cloudflare config (fleet standard)
@@ -173,8 +178,11 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   (`src/usage.ts`, at most three alerts per UTC day, tracked in D1 by migration 0003). Monday caps
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
-  cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 1,500–2,000
-  calls, and once the cap is enforced, hitting it fails each remaining board at once rather than
+  cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 500–700
+  calls (read from the code, not yet measured live; issue #95 cut it from 1,500–2,000): one request
+  per board for its schema, first items page and first updates page together, then items 500 to a
+  page (`src/monday/client.ts`, which halves a page that hits the per-query complexity cap or times
+  out). Once the cap is enforced, hitting it fails each remaining board at once rather than
   retrying (`priorityWorkspaceIds` means the CRM workspace is already captured by then). The limit
   read is `total`, so a purchased API add-on
   raises the thresholds with it. Each check costs one call, 24 a day. Because the limit is
@@ -196,9 +204,10 @@ Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENV
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
 Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
 because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
-sandbox`): a service account that is a Contributor on the sandbox Shared Drive only, and the
-sandbox Slack webhook. Monday access comes from the `MONDAY_AUTH` binding, so no Monday secret is
-needed. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
+sandbox`): a service account that is a Contributor on the sandbox Shared Drive only, the
+sandbox Slack webhook, and the sandbox's own `BACKUP_ENCRYPTION_KEY` (see "Snapshot encryption").
+Monday access comes from the `MONDAY_AUTH` binding, so no Monday secret is needed.
+`npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
@@ -241,6 +250,89 @@ cheaper than a live leaked key, and the watchdog's 36-hour alert covers the gap.
 Shared Drive manager checks the drive's activity panel for files or revisions the Worker didn't
 write (see "Contributor, not Content manager" above), and confirms the account's role is still
 Contributor under **Manage members**.
+
+## Snapshot encryption
+
+Every board and doc file is encrypted before it leaves the Worker (issue #112), so the Shared
+Drive holds ciphertext: an over-broad Drive membership, a compromised staff Google account or a
+leaked service-account key no longer yields a bulk copy of the CRM. `src/drive/encrypted.ts`
+wraps the Drive client; the format is documented at the top of `src/crypto/snapshotCipher.ts`
+(manifest `format: monday-backup/3`, `encryption.scheme: monday-backup-aes256gcm-stream/1`):
+
+* **AES-256-GCM, streamed in 64 KiB frames**, with a per-file key derived by HKDF-SHA256 from the
+  secret and a random per-file salt. Each frame is authenticated, numbered and bound to the file
+  header, and the last one is marked, so a changed, reordered, spliced or truncated file fails to
+  decrypt instead of restoring wrong data.
+* **One secret, `BACKUP_ENCRYPTION_KEY`**: 32 random bytes, base64. **Required.** Without it (or
+  with a malformed one) a run fails at its folder step, before anything is uploaded, and alerts
+  Slack; nothing is ever uploaded in the clear. Production and sandbox each have their own key.
+* **The manifest stays plaintext but is authenticated** (ids, counts, timestamps, error lines, and
+  `encryption.keyId`, the first 8 bytes of the key's SHA-256), so a stale or partial run is
+  still obvious from Drive. Its last field, `manifestMac`, is an HMAC-SHA256 over the JSON of
+  everything before it, under a key HKDF-derived from the secret. The restore checks it before it
+  trusts any field.
+* **Files are bound to their run.** Every frame also authenticates the file's binding,
+  `<snapshot folder>/<file name>` (e.g. `2026-08-25 run-17/board-1.jsonl`). The MACed manifest
+  lists the run's `snapshotFolder` and every file it wrote (`files`). The restore requires the
+  `.enc` files to be exactly that list, with nothing extra and nothing missing, and decrypts each
+  under its binding. A genuine file copied in from another night, or renamed into another board's
+  place, therefore fails. A download folder still named like a run must be the manifest's run.
+* **No downgrade at restore.** With a key given, or any `.enc` file in the folder, the restore
+  refuses every plaintext `.jsonl` whatever the manifest says. It also refuses a manifest that fails
+  its MAC, and a `monday-backup/3`-or-later manifest without `encryption`. Swapping the ciphertext
+  for plaintext and stripping the manifest back to v2 therefore fails. A snapshot with no encrypted
+  files is refused unless the operator passes `--allow-plaintext-snapshot`, with no key; it then
+  restores with a warning that nothing in it is authenticated. That is only for v2 snapshots, from
+  before encryption.
+* **Symmetric, not public-key.** The issue suggested encrypting to a public key whose private
+  half only the restore operator holds. The Worker has to read its own files back (a retried
+  step re-counts a file it already uploaded, `tallyBoardFile` in `src/backup.ts`), so it holds
+  the key itself. What that costs: someone who can read this Worker's secrets can decrypt the
+  snapshots. Only the account's Super Administrators can, and they can already read the live CRM
+  through the Monday binding, so the threat the issue names (the Drive side) is covered.
+* **Reading a snapshot back** is `npm run restore -- … --key-file <path>` (RESTORE.md "The
+  encryption key"), or `npm run decrypt -- <file>.jsonl.enc --key-file <path>` for one file. The
+  restore still reads older `monday-backup/2` snapshots, which are plaintext and need no key
+  but do need `--allow-plaintext-snapshot`.
+
+**Losing the key loses every snapshot encrypted with it.** Keep a copy outside the Shared Drive,
+somewhere the restore operator can reach without Cloudflare or Google, such as a password
+manager they control, as a secure note named for the environment and the key id. Setting it up (production; add
+`--env sandbox` and use a different key for the sandbox):
+
+1. `openssl rand -base64 32` — the key. Don't save it to a file in a repo or on the Shared Drive.
+2. `npx wrangler secret put BACKUP_ENCRYPTION_KEY` and paste it, **before** a build carrying
+   this code deploys (Workers Builds deploys on merge to `main`); otherwise that night's run fails
+   and alerts until it's set.
+3. Store the copy there, with the key id from the next run's
+   `manifest.json` (`encryption.keyId`).
+4. After the next run, check the manifest's `format` is `monday-backup/3`, the files are
+   `*.jsonl.enc`, and `npm run decrypt` with the stored copy opens one of them. That proves the
+   stored copy is the deployed key.
+
+**Rotating** (whenever someone who held the key leaves, or at once if it may have leaked):
+repeat steps 1–4 with a new key. Older snapshots keep needing the old key, so keep the old copy,
+labelled with its key id, for as long as those snapshots are kept (Retention: indefinitely). The
+restore names the key id a snapshot needs. A leaked key exposes every snapshot it encrypted, and
+a Contributor can't delete them: after rotating, a Shared Drive manager decides whether to trash
+the old snapshots.
+
+## Shared Drive membership
+
+Shared Drive membership is still what controls who can download the snapshot files, and the
+plaintext manifests. Older `monday-backup/2` snapshots (2026-11-04 until encryption is deployed)
+are full plaintext CRM copies and stay that way. Keep the membership to the people who could
+restore the CRM anyway, the same rule the root README applies to Cloudflare account members:
+
+* the backup service account, as **Contributor** (see "Contributor, not Content manager");
+* the restore operator(s), as Manager;
+* nobody else, and no groups or "anyone with the link" sharing.
+
+Review it under the Shared Drive's **Manage members** whenever staff change, and at least
+quarterly. Record each review here, with the member list, and remove anyone who doesn't fit
+the list above.
+
+_Membership reviews:_ none recorded yet. Record the first one with the member list as found.
 
 ## Write switch
 

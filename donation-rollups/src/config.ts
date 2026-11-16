@@ -40,7 +40,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
     throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
   }
-  for (const key of ['sponsorshipCycle', 'inKindValue'] as const) {
+  for (const key of ['sponsorshipCycle', 'inKindValue', 'matchedBy'] as const) {
     if (columns[key] !== undefined && columns[key] !== null
       && (typeof columns[key] !== 'string' || columns[key] === '')) {
       throw new Error(`config: donationRollups.donationBoards[${index}].columns.${key} must be a column id string, null, or omitted`);
@@ -64,9 +64,13 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     if (cl.acknowledgmentTier !== undefined && (typeof cl.acknowledgmentTier !== 'string' || cl.acknowledgmentTier === '')) {
       throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.acknowledgmentTier must be a Monday column id string or omitted`);
     }
+    if (cl.matchingCompany !== undefined && (typeof cl.matchingCompany !== 'string' || cl.matchingCompany === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.matchingCompany must be a Monday column id string or omitted`);
+    }
     classification = { fundingStream: cl.fundingStream as string, giftSize: cl.giftSize as string,
       fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string,
-      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}) };
+      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}),
+      ...(cl.matchingCompany !== undefined ? { matchingCompany: cl.matchingCompany as string } : {}) };
   }
   return {
     boardId: b.boardId,
@@ -81,6 +85,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       actingForLink: (columns.actingForLink ?? null) as string | null,
       ...(columns.sponsorshipCycle !== undefined ? { sponsorshipCycle: columns.sponsorshipCycle as string | null } : {}),
       ...(columns.inKindValue !== undefined ? { inKindValue: columns.inKindValue as string | null } : {}),
+      ...(columns.matchedBy !== undefined ? { matchedBy: columns.matchedBy as string | null } : {}),
       ...(links !== undefined ? { sponsorshipPipelineLinks: links as string[] } : {}),
       classification,
     },
@@ -380,6 +385,7 @@ function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean):
       columns: {
         volunteer: columnId(c.volunteer, `${path}.columns.volunteer`), date: columnId(c.date, `${path}.columns.date`),
         hours: columnId(c.hours, `${path}.columns.hours`), status: columnId(c.status, `${path}.columns.status`),
+        ...(c.historical === undefined ? {} : { historical: columnId(c.historical, `${path}.columns.historical`) }),
       },
       countedStatusLabels: nonEmptyLabels(v.countedStatusLabels, `${path}.countedStatusLabels`),
     };
@@ -401,6 +407,9 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   }
   if (typeof monday.accountUrl !== 'string' || !/^https:\/\//.test(monday.accountUrl)) {
     throw new Error('config: "monday.accountUrl" must be an https URL (used for gift-history deep links)');
+  }
+  if (monday.accountId !== undefined && (typeof monday.accountId !== 'number' || !Number.isInteger(monday.accountId) || monday.accountId < 1)) {
+    throw new Error('config: "monday.accountId" must be a positive integer when set (the account webhook JWTs must name, issue #110)');
   }
 
   if (typeof cfg.donationRollups !== 'object' || cfg.donationRollups === null) {
@@ -455,7 +464,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const affiliations = validateAffiliations(cfg.affiliations, donationBoards);
 
   return {
-    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, '') },
+    monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, ''), ...(monday.accountId !== undefined ? { accountId: monday.accountId as number } : {}) },
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
@@ -560,6 +569,15 @@ function validateCustodian(raw: unknown): CustodianConfig {
     }
     annualSummaryColumns = cols as unknown as NonNullable<CustodianConfig['annualSummaryColumns']>;
   }
+  for (const key of ['writesPerRun'] as const) {
+    if (c[key] !== undefined && (typeof c[key] !== 'number' || !Number.isInteger(c[key]) || (c[key] as number) < 1)) {
+      throw new Error(`config: "custodian.${key}" must be a positive integer when set`);
+    }
+  }
+  if (c.sweepOwnersPerRun !== undefined && (typeof c.sweepOwnersPerRun !== 'number' || !Number.isInteger(c.sweepOwnersPerRun)
+    || c.sweepOwnersPerRun < 1 || c.sweepOwnersPerRun > 3_500)) {
+    throw new Error('config: "custodian.sweepOwnersPerRun" must be an integer from 1 to 3500 when set');
+  }
   return {
     activeFiscalYears: c.activeFiscalYears as number,
     workspaceId: c.workspaceId as number,
@@ -567,5 +585,7 @@ function validateCustodian(raw: unknown): CustodianConfig {
     alertItemId: c.alertItemId as number | null,
     annualSummaryBoardId: c.annualSummaryBoardId as number | null,
     annualSummaryColumns,
+    ...(c.writesPerRun !== undefined ? { writesPerRun: c.writesPerRun as number } : {}),
+    ...(c.sweepOwnersPerRun !== undefined ? { sweepOwnersPerRun: c.sweepOwnersPerRun } : {}),
   };
 }

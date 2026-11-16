@@ -23,7 +23,7 @@ function validRaw() {
       },
       tags: {
         activeMember: 'active-member', lapsedMember: 'lapsed-member',
-        lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit',
+        lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor',
       },
     },
     lifetimeTierValue: 'Lifetime',
@@ -82,6 +82,20 @@ describe('validateConfig', () => {
     expect(validateConfig(withNearby('dropdown_x')).monday.columns.nearby).toBe('dropdown_x');
     for (const bad of [undefined, '', 5]) {
       expect(() => validateConfig(withNearby(bad))).toThrow('config: "monday.columns.nearby" must be a column id or null');
+    }
+  });
+
+  it('treats monday.columns.hasActiveRecurringGift as optional, but a present value must be a column id or null', () => {
+    const withRecurring = (value: unknown) => {
+      const raw = validRaw();
+      (raw.monday.columns as Record<string, unknown>).hasActiveRecurringGift = value;
+      return raw;
+    };
+    expect(() => validateConfig(validRaw())).not.toThrow();
+    expect(validateConfig(withRecurring(null)).monday.columns.hasActiveRecurringGift).toBeNull();
+    expect(validateConfig(withRecurring('boolean_x')).monday.columns.hasActiveRecurringGift).toBe('boolean_x');
+    for (const bad of ['', 5]) {
+      expect(() => validateConfig(withRecurring(bad))).toThrow('config: "monday.columns.hasActiveRecurringGift" must be a column id or null');
     }
   });
 

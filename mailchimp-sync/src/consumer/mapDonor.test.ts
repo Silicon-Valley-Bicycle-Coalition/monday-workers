@@ -12,7 +12,7 @@ const CONFIG: Config = {
     },
     tags: {
       activeMember: 'active-member', lapsedMember: 'lapsed-member',
-      lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit',
+      lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor',
     },
   },
   lifetimeTierValue: 'Lifetime',
@@ -24,7 +24,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '2027-01-01', addr1: '1 Main St', city: 'San Jose',
-    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], onHistorical: false, ...overrides,
+    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false, ...overrides,
   };
 }
 
@@ -106,6 +106,17 @@ describe('buildTags — Do Not Solicit', () => {
   });
 });
 
+describe('buildTags: recurring-donor', () => {
+  it('tags an active recurring giver, and omits the tag otherwise so syncTags deactivates it', () => {
+    expect(buildTags(donor({ hasActiveRecurringGift: true }), CONFIG)).toContain('recurring-donor');
+    expect(buildTags(donor({ hasActiveRecurringGift: false }), CONFIG)).not.toContain('recurring-donor');
+  });
+
+  it('is a managed tag', () => {
+    expect(managedTags(CONFIG)).toContain('recurring-donor');
+  });
+});
+
 describe('buildTags: Nearby labels', () => {
   it('appends the prefix plus each Nearby label', () => {
     const tags = buildTags(donor({ nearby: ['Stevens Creek bikeway', 'Bay Trail'] }), CONFIG);
@@ -127,7 +138,7 @@ describe('managedTags', () => {
 
   it('enumerates every configured tag this worker owns, and only those', () => {
     expect(managedTags(CONFIG).sort()).toEqual(
-      ['active-member', 'do-not-solicit', 'has-donated', 'lapsed-member', 'lifetime-member'],
+      ['active-member', 'do-not-solicit', 'has-donated', 'lapsed-member', 'lifetime-member', 'recurring-donor'],
     );
   });
 

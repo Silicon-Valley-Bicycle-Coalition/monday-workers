@@ -104,3 +104,32 @@ describe('Monday token from the monday-auth broker', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 });
+
+// #101: a verified delivery skips the per-IP limiter; anything else is still limited.
+describe('rate limit exemption for verified webhooks', () => {
+  const denyingEnv = () => ({
+    ...env,
+    FUNRAISE_WEBHOOK_SECRET: 's3cret',
+    REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: false }) },
+  }) as unknown as import('./types').Env;
+  const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+
+  it('passes a verified delivery through even when the limiter is exhausted', async () => {
+    const testEnv = denyingEnv();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warns = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await worker.fetch(new Request('https://x.example/webhooks/funraise/transaction?secret=s3cret', { method: 'POST', body: '{}' }), testEnv, ctx);
+      expect(response.status).not.toBe(429);
+      expect(testEnv.REQUEST_RATE_LIMITER.limit).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+      warns.mockRestore();
+    }
+  });
+
+  it('still limits a delivery with the wrong secret', async () => {
+    const response = await worker.fetch(new Request('https://x.example/webhooks/funraise/transaction?secret=guess', { method: 'POST', body: '{}' }), denyingEnv(), ctx);
+    expect(response.status).toBe(429);
+  });
+});

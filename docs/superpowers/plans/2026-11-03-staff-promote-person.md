@@ -129,7 +129,7 @@ Expected: FAIL.
   - `latestActivity` adds both dates to its candidates. Rewrite the header comment: Activities (Logged) counts; the imported Activities board still doesn't.
   - `readActivity`'s `bump` key union adds `'latestLoggedISO'`, and it pages Activities (Logged) with `dateOnly` on Date, counting only `countedTypeLabels`.
   - `personFacts` reads `promotedOn`; `personColumnIdList` includes it. `resolveBoards` resolves both new columns on both boards, so a missing column aborts the pass.
-  - Config values for both files: `"promoteStatus": "Promote to People"`, `"promotedOn": "Promoted On"`, `"promote": { "requestLabel": "Promote", "doneLabel": "Promoted", "failedLabel": "Couldn't promote" }`, and `loggedActivities` as in the spec. Board ids: production `18438042551`, sandbox `18438204391` (`email-log/config/*.json`, `activities-logged`).
+  - Config values for both files: `"promoteStatus": "Promote to People"`, `"promotedOn": "Promoted On"`, `"promote": { "requestLabel": "Promote", "doneLabel": "Promoted", "failedLabel": "Couldn't promote" }`, and `loggedActivities` as in the spec. Board ids: production `18438042551`, sandbox `18438393347` (`email-log/config/*.json`, `activities-logged`).
   - Update the `moveOneToPeople` comment that says it reads "the two activity boards".
 
 - [ ] **Step 4: Run to verify they pass**

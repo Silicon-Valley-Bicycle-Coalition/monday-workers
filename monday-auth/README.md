@@ -1,6 +1,12 @@
 # monday-auth
 
-**Status:** Built and verified in the sandbox (2026-10-31); production deploys at cutover step 0.4.
+**Status:** **Production deployed 2026-10-31** at cutover step 0.4 and consented as SVBC Integration
+the same day (all three apps `ok`); redeployed 2026-11-04 after migration `0003`, latest
+production deploy 2026-11-14 (version `ee055b6a`). Sandbox built and verified 2026-10-31. The #104
+hardening (`/oauth` rate limit, 32-character `START_KEY` minimum, encrypted token columns, trimmed
+`/health`) and the `cpu_ms` limit (#117) went live in both environments on 2026-11-14, after
+`TOKEN_ENC_KEY` was set in each; `/health` decrypted all three apps' tokens (`ok`) afterward.
+Existing plaintext rows are encrypted on their next refresh.
 First-time setup (the integration user, the OAuth apps, secrets, consent) is in
 [`SETUP.md`](SETUP.md). Design and verification results:
 [`docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`](../docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md).
@@ -21,8 +27,8 @@ Each consumer Worker binds to one entrypoint, so its binding decides which app i
 | Entrypoint | App | Used by |
 |---|---|---|
 | `PortalToken` | `portal` | `member-portal` |
-| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer` |
-| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests` |
+| `SyncToken` | `sync` | `funraise-sync`, `donation-rollups`, `dtd-sync`, `mailchimp-sync`, `benevity-import`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync`, `member-portal-writer`, `nearby-search` |
+| `ReadOnlyToken` | `readonly` | `monday-backup`, `report-digests`, `member-map` |
 
 Each exposes `token(rejected?)`, which returns the app's current access token (pass the token that
 got a 401 as `rejected` to force a refresh).
@@ -80,10 +86,11 @@ the invocation, so it shows as an error in the Worker's cron events.
 
 | Route | Purpose |
 |---|---|
-| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok` with `expiresAt` (plus `lastRefreshErrorAt` while refreshes are failing), `needs_consent` or `missing`. No tokens. |
+| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok`, `needs_consent` or `missing`. No tokens, and no expiry or refresh-error times (unauthenticated; #104). Alerts and the cron's logs carry the failure detail. |
 | `GET`/`POST /oauth/start/:app` | Key form, then redirect to Monday's authorize URL (PKCE S256). The key is posted, never in the URL. |
 | `GET /oauth/callback` | Checks `state`, exchanges the code, verifies the authorizing user id, stores the tokens. |
-| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (on in sandbox, off in production). |
+| `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (off in both environments; turn it on for one deploy while verifying). |
+| `POST /oauth/webhooks/:app` | Webhook subscriptions owned by the app, so Monday signs their deliveries with its Signing Secret (#110). Form fields `key`, `op` and: `board` (`list`); `board`, `url`, `event`, optional JSON `config` (`create`); `id` (`delete`). Returns Monday's JSON; errors never carry the token or the URL (whose query is a Worker's secret). A `create`'s `url` must sit under a `WEBHOOK_URL_PREFIXES` entry. Same key gate and limiter; **404 unless `WEBHOOKS_ENABLED` is exactly `true`**. Called by `scripts/lib/broker-webhooks.mjs`, not by hand: see "Re-registering webhooks" below. |
 
 ## Secrets and vars
 
@@ -94,7 +101,8 @@ Set with `npx wrangler secret put NAME [--env sandbox]` (values come from that e
 | `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET` | Portal app |
 | `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET` | Staff sync app |
 | `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET` | Read-only app |
-| `START_KEY` | Operator key for `/oauth/start` and `/oauth/probe`. Keep it in the password manager. |
+| `START_KEY` | Operator key for `/oauth/start`, `/oauth/probe` and `/oauth/webhooks`. At least 32 characters (`openssl rand -hex 32`); a shorter key is refused outright. Keep it in the password manager. |
+| `TOKEN_ENC_KEY` | AES-256-GCM key (`openssl rand -base64 32`) for the `access_token`/`refresh_token` columns in D1 (`enc:v1:` values, column name bound as associated data; `src/tokenCipher.ts`, from quickbooks-sync). **Set it before deploying** a build that reads it: without it every token read and write fails. Rows written earlier as plaintext still read, and the next refresh or consent encrypts them. Losing the key means re-running consent for each app. Use a different value per environment. |
 | `SLACK_WEBHOOK_URL` | The alerts above. Optional in sandbox (alerts then only reach the logs); **required in production**: `/health` must show `"alerts": "configured"`. |
 
 | Var (`wrangler.jsonc`) | Meaning |
@@ -102,7 +110,13 @@ Set with `npx wrangler secret put NAME [--env sandbox]` (values come from that e
 | `EXPECTED_USER_ID` | The only Monday user whose consent is accepted (production `120827741`, sandbox `117112617`). |
 | `MONDAY_SUBDOMAIN` | `bikesiliconvalley`; pins the account on the authorize URL. |
 | `PROBE_ENABLED` | `"true"` turns on `/oauth/probe`; anything else makes it 404. |
+| `WEBHOOKS_ENABLED` | `"true"` turns on `/oauth/webhooks`; anything else makes it 404. |
+| `WEBHOOK_URL_PREFIXES` | Comma-separated `https://host/path/` prefixes a webhook created through `/oauth/webhooks` may point at: `donation-rollups`' and `people-reclassification`'s `/webhooks/monday/` in that environment. Compared as parsed origin plus path, so the `?secret=` query is free and a lookalike host is not. Without it every create is refused: a leaked `START_KEY` must not be able to point a board's events at an outside URL. |
 | `ENVIRONMENT` | `production` or `sandbox`. |
+
+`POST /oauth/*` is limited to 10 attempts a minute per client IP (the `REQUEST_RATE_LIMITER` binding,
+namespaces 2101 production / 2102 sandbox), so `START_KEY` can't be guessed online. The limiter fails open
+if it errors; the key check is the gate.
 
 ## Commands
 
@@ -126,7 +140,7 @@ must be applied before deploying any version that has it.
 
 ## Measuring production scope with the probe
 
-`/oauth/probe` is off in production (`PROBE_ENABLED` is `"false"` in `wrangler.jsonc`). To run the
+`/oauth/probe` is off in both environments (`PROBE_ENABLED` is `"false"` in `wrangler.jsonc`). To run the
 scope check there, turn it on for one deploy from the command line rather than editing the file,
 so the next ordinary deploy turns it off again:
 
@@ -143,3 +157,24 @@ To check that an app can't read one private board, also enter its id in step 2's
 field. `"board": { "id": "...", "empty": true }` means that app's token got nothing back. The
 report never says more about the board than that.
 
+
+## Re-registering webhooks with the Staff sync app (#110)
+
+Monday signs a webhook's deliveries only if an app created it, with that app's token. The broker
+never hands its tokens out, so `donation-rollups/scripts/setup-webhooks.mjs` and
+`people-reclassification/scripts/setup-promote.mjs` create them through `/oauth/webhooks/sync`
+when `MONDAY_AUTH_URL` and `START_KEY` are set. Per environment, sandbox first:
+
+1. From `monday-auth/`: `npx wrangler deploy --env sandbox --var WEBHOOKS_ENABLED:true` (drop
+   `--env sandbox` for production). As with the probe, the command-line `--var` lasts one deploy.
+2. Run the scripts with `MONDAY_AUTH_URL=https://svbc-monday-auth-sandbox.svbc-account.workers.dev`
+   (production: `svbc-monday-auth`) and `START_KEY`, pruning or replacing the old personal-token
+   subscriptions: `setup-webhooks.mjs --prune <every board it subscribes>` and
+   `setup-promote.mjs --worker-url … --replace-webhooks`. The broker allows 10 calls a minute,
+   so the client waits out a 429 and the run takes a few minutes.
+3. `npm run deploy:sandbox` (or `npm run deploy`), which restores `"false"`, and confirm
+   `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/webhooks/sync`
+   prints `404`.
+
+Then continue with the root README's "Monday's signed webhook JWT" steps (live delivery check,
+then `MONDAY_WEBHOOK_JWT_REQUIRED`).

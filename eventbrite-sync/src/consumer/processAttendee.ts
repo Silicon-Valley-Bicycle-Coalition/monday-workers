@@ -1,4 +1,4 @@
-import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { PLACEHOLDER_COLUMN_ID, volunteerBoardMode } from '../config';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
@@ -9,7 +9,18 @@ import { TERMINAL_PREFIX, type AttendeeQueueMessage, type ProcessBatchDeps } fro
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 import { stampOf } from './messages';
 import { processPledge } from './processPledge';
+import { processVolunteer } from './processVolunteer';
 import { linkedItemId } from '../util/itemId';
+import type { EventRow } from '../types';
+
+// How long a `received`/`queued` events row counts as an event message still on its way.
+const EVENT_REQUEST_WINDOW_MS = 10 * 60 * 1000;
+
+function eventRequestInFlight(row: EventRow | null): boolean {
+  if (row === null || (row.status !== 'received' && row.status !== 'queued')) return false;
+  const receivedAt = Date.parse(row.receivedAt);
+  return Number.isFinite(receivedAt) && Date.now() - receivedAt < EVENT_REQUEST_WINDOW_MS;
+}
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
 // item. Attendance is the one column staff also edit, so it is read back from Monday and merged:
@@ -25,16 +36,6 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   // First, before the Events-item wait: a pledge has no Event link, so it doesn't need that item.
   const pledgeEvent = config.pledge?.events[eventId];
   if (pledgeEvent !== undefined) return processPledge(message, pledgeEvent, row, deps);
-
-  const boardId = config.monday.boards['event-registrations'];
-  if (boardId === null) {
-    throw new Error('config: monday.boards["event-registrations"] is not configured');
-  }
-  const cols = config.attendeeSync.registrations;
-  // The idempotency key: without it nothing may be created, as for orders and events.
-  if (cols.attendeeIdColumn === PLACEHOLDER_COLUMN_ID) {
-    throw new Error('config: attendeeSync.registrations.attendeeIdColumn is the placeholder — set the real "Eventbrite Attendee ID" column id on the Event Registrations board before any attendee can be written');
-  }
 
   // The registration links to its Events item, so that item must exist first. Ask for it and retry:
   // the event consumer writes it, and the retry finds it. recordDelivery first, because it is the
@@ -53,22 +54,46 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     return;
   }
   if (eventRow === null || eventRow.mondayItemId === null) {
-    await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
-    await queue.send({ kind: 'event', eventId, action: 'attendee.updated', ...stampOf(message) });
+    // One event message per event, not one per waiting attendee (#96): a row still `received` or
+    // `queued` and recent means the event is already on its way, either from its own webhook or from
+    // an earlier attendee. The window keeps a row stranded in either state (an event message dropped
+    // under `off`, say) from blocking the request for good; every retry after it asks again.
+    if (!eventRequestInFlight(eventRow)) {
+      await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
+      await queue.send({ kind: 'event', eventId, action: 'attendee.updated', ...stampOf(message) });
+    }
     throw new Error(`eventbrite-sync consumer: event "${eventId}" has no Events item yet; requested it, will retry attendee "${attendeeId}"`);
   }
 
-  const attendee = await eventbriteClient.getAttendee(eventId, attendeeId);
+  // Independent reads, so not one after the other.
+  const [attendee, event] = await Promise.all([eventbriteClient.getAttendee(eventId, attendeeId), eventbriteClient.getEvent(eventId)]);
   if (attendee === null) {
     console.warn(`eventbrite-sync consumer: attendee "${attendeeId}" not found in Eventbrite (HTTP 404); marking failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: 'attendee not found in Eventbrite (HTTP 404)' });
     return;
   }
-  const event = await eventbriteClient.getEvent(eventId);
   if (event === null) {
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking attendee "${attendeeId}" failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
+  }
+
+  // Once the Volunteers board is configured, a volunteer event's sign-ups live there: hand off before
+  // any Event Registrations column is read, and never fall back to writing a registration row. Until
+  // then (legacy) they stay Event Registrations rows with Role = Volunteer; a half-configured board throws.
+  const program = mapEvent(event, config, new Date()).program;
+  if (program !== null && config.attendeeSync.volunteerPrograms.includes(program) && volunteerBoardMode(config) === 'ready') {
+    return processVolunteer(message, { row, attendee, event, eventRow }, deps);
+  }
+
+  const boardId = config.monday.boards['event-registrations'];
+  if (boardId === null) {
+    throw new Error('config: monday.boards["event-registrations"] is not configured');
+  }
+  const cols = config.attendeeSync.registrations;
+  // The idempotency key: without it nothing may be created, as for orders and events.
+  if (cols.attendeeIdColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: attendeeSync.registrations.attendeeIdColumn is the placeholder — set the real "Eventbrite Attendee ID" column id on the Event Registrations board before any attendee can be written');
   }
 
   // Adopt before create: the ledger's item id short-circuits the lookup; a miss on both means create.

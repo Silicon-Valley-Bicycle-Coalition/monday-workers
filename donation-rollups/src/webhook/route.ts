@@ -5,9 +5,10 @@ import type { RecomputeKind, RecomputeQueueMessage } from '../types';
 import { secretsMatch } from '../secret';
 import { MONDAY_WEBHOOK_PATH } from '../rateLimit'; // one path, so the limiter exemption can't drift from the route
 import { stampFor, type WriteMode } from '../flags';
+import { checkMondayWebhookJwt, type MondayJwtPolicy } from '../mondayJwt';
 
 export interface QueueLike {
-  send(message: RecomputeQueueMessage): Promise<void>;
+  send(message: RecomputeQueueMessage, opts?: { delaySeconds: number }): Promise<void>;
 }
 
 export interface AppDeps {
@@ -31,18 +32,24 @@ export interface AppDeps {
   // "<boardId>:<columnId>" for the classify duty's own output columns (spec 2026-09-29 §10.2):
   // writing them must not enqueue owner recomputes, or the first classify pass floods the queue.
   ignoredColumnIds: ReadonlySet<string>;
-  // Monday doesn't sign webhooks created through the API's create_webhook mutation (no HMAC
-  // or JWT to verify) — the standard mitigation is a shared secret embedded in the webhook URL
-  // itself, set when subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked
-  // here in constant time. Fails closed (issue #27): undefined/empty rejects every request,
-  // including the subscription handshake — set MONDAY_WEBHOOK_SECRET in .dev.vars for local dev.
+  // First factor: a shared secret embedded in the webhook URL, set when subscribing (e.g.
+  // .../webhooks/monday/donations?secret=...) and checked here in constant time. Fails closed
+  // (issue #27): undefined/empty rejects every request, including the subscription handshake —
+  // set MONDAY_WEBHOOK_SECRET in .dev.vars for local dev.
   webhookSecret?: string;
+  // Second factor (issue #110): a webhook created by an app (here, through monday-auth's Staff
+  // sync app) carries `Authorization: <JWT>` signed with the app's Signing Secret; one created
+  // with a personal token carries none. See src/mondayJwt.ts for the rollout policy. Absent =
+  // no signing secret, so the URL secret alone decides, as before.
+  jwtPolicy?: MondayJwtPolicy;
   // The write switch (flags.ts readWriteMode), read once per delivery that gets enqueued. Ingest
   // runs in every mode — the pending row and the enqueue are this Worker's own bookkeeping, and
   // `hold` keeps the queue paused — but a message enqueued under `off` is stamped dropped, so the
   // consumer dry-runs it even if writes are back `on` by the time it is consumed.
   writeMode: () => Promise<WriteMode>;
 }
+
+export const WEBHOOK_DELAY_SECONDS = 20;
 
 // Ingest-and-enqueue only, same division of labor as every other webhook-driven
 // Worker in this monorepo: resolving the owner and writing to Monday both happen in
@@ -67,8 +74,19 @@ export function createApp(deps: AppDeps) {
 
     // Monday's webhook-subscription verification handshake: echo the challenge back
     // verbatim, no other processing. Sent once, at subscription-creation time.
+    // Answered before the JWT check: the echo has no side effect, and the URL secret already
+    // gated it, so re-registering a subscription never depends on Monday signing the handshake.
     if (typeof body === 'object' && body !== null && 'challenge' in body) {
       return c.json({ challenge: (body as { challenge: unknown }).challenge }, 200);
+    }
+
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {});
+    if (!jwt.accept) {
+      console.error(`donation-rollups webhook: rejected delivery: JWT ${jwt.reason}`);
+      return c.json({ ok: false }, 401);
+    }
+    if (!jwt.verified && jwt.note === 'missing') {
+      console.warn('donation-rollups webhook: delivery carried no Authorization JWT; accepted on the URL secret alone (MONDAY_WEBHOOK_JWT_REQUIRED is not true). Re-register the subscription with the Staff sync app token.');
     }
 
     let donationEvent;
@@ -108,7 +126,15 @@ export function createApp(deps: AppDeps) {
 
     const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ ...(kind !== 'donation' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
+      // The delay (issue #89) lets a burst of edits land — each one re-stamps received_at on the
+      // pending row — before the first message reads Monday, so the rest coalesce on that read.
+      // columnId lets the consumer coalesce a non-link edit from the D1 link, with no Monday call.
+      await deps.queue.send({
+        ...(kind !== 'donation' ? { kind } : {}),
+        donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId,
+        ...(kind === 'donation' && donationEvent.columnId !== null ? { columnId: donationEvent.columnId } : {}),
+        ...stamp,
+      }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
       // A delivery stamped dropped is a dry run from the start: recorded as 'dropped', not
       // 'queued', so the nightly requeue never re-sends it as a live recompute later.
       await deps.pendingStore.updateStatus(donationEvent.donationItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');

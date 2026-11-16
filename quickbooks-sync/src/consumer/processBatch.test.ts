@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { consumeSyncBatch, processSyncQueueBatch, TERMINAL_PREFIX, type QueueMessageLike } from './processBatch';
 import { TerminalError } from '../errors';
+import { MondayApiError } from '../monday/graphql';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
 import { MappingConflictError, type MapStore } from '../db/map';
@@ -60,7 +61,8 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
 
 function fakeQbEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
   return {
-    insertEvent: vi.fn(),
+    recordEvents: vi.fn(),
+    markEvents: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qbEventRow()),
     findByPendingMondayItemId: vi.fn().mockResolvedValue(null),
@@ -1230,5 +1232,87 @@ describe('consumeSyncBatch — write switch', () => {
 
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
     vi.restoreAllMocks();
+  });
+});
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday or QuickBooks, instead of each repeating the transport's in-process attempts.
+describe('consumeSyncBatch — outage breaker', () => {
+  const gateFor = (mode: 'on' | 'hold') => ({
+    worker: 'quickbooks-sync',
+    environment: 'production',
+    mode,
+    logLevel: 'normal' as const,
+    piiKeys: ['name', 'email', 'phone', 'address'],
+  });
+  const msg = (eventId: string, attempts: number) => ({ ...fakeMessage({ direction: 'qb-to-monday', eventId }), attempts });
+
+  async function quietly(fn: () => Promise<void>): Promise<void> {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await fn();
+    } finally {
+      errors.mockRestore();
+    }
+  }
+
+  it('stops calling upstream after a Monday outage and retries the rest of the batch with backoff', async () => {
+    const createItem = vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 504', { httpStatus: 504 }));
+    const quickBooksClient = fakeQuickBooksClient();
+    const qbEventStore = fakeQbEventStore();
+    const messages = [msg('evt-1', 2), msg('evt-2', 1), msg('evt-3', 4)];
+
+    await quietly(() => consumeSyncBatch(messages, {
+      qbEventStore, mondayEventStore: fakeMondayEventStore(), mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient({ createItem }), quickBooksClient, config,
+    }, gateFor('on')));
+
+    expect(createItem).toHaveBeenCalledTimes(1);
+    expect(quickBooksClient.getEntity).toHaveBeenCalledTimes(1);
+    expect(qbEventStore.getEvent).toHaveBeenCalledTimes(1);
+    expect(messages.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    for (const m of messages) expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("raises the deferral to Monday's Retry-After hint", async () => {
+    const createItem = vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 429', { httpStatus: 429, retryAfterSeconds: 400 }));
+    const messages = [msg('evt-1', 1), msg('evt-2', 1)];
+
+    await quietly(() => processSyncQueueBatch(messages, {
+      qbEventStore: fakeQbEventStore(), mondayEventStore: fakeMondayEventStore(), mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient({ createItem }), quickBooksClient: fakeQuickBooksClient(), config,
+    }));
+
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 400 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 400 });
+  });
+
+  it('a per-message failure (a rejected value) does not stop the batch: the next message still runs', async () => {
+    const createItem = vi.fn()
+      .mockRejectedValueOnce(new MondayApiError('monday API: invalid value', { httpStatus: 200, code: 'ColumnValueException' }))
+      .mockResolvedValue({ id: 'item-2' });
+    const messages = [msg('evt-1', 1), msg('evt-2', 1)];
+
+    await quietly(() => consumeSyncBatch(messages, {
+      qbEventStore: fakeQbEventStore(), mondayEventStore: fakeMondayEventStore(), mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient({ createItem }), quickBooksClient: fakeQuickBooksClient(), config,
+    }, gateFor('on')));
+
+    expect(createItem).toHaveBeenCalledTimes(2);
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(messages[1]!.ack).toHaveBeenCalled();
+  });
+
+  it('hold is unchanged: every message backs off and nothing is read', async () => {
+    const qbEventStore = fakeQbEventStore();
+    const messages = [msg('evt-1', 3), msg('evt-2', 1)];
+
+    await consumeSyncBatch(messages, {
+      qbEventStore, mondayEventStore: fakeMondayEventStore(), mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(), quickBooksClient: fakeQuickBooksClient(), config,
+    }, gateFor('hold'));
+
+    expect(messages.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 240 }, { delaySeconds: 60 }]);
+    expect(qbEventStore.getEvent).not.toHaveBeenCalled();
   });
 });

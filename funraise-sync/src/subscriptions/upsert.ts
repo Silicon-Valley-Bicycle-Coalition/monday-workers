@@ -92,8 +92,10 @@ export async function upsertSubscription(
     console.warn(`funraise-sync subscriptions: subscription "${funraiseId}": ${warning}`);
   }
 
-  let donorItemId: string | null = null;
-  if (row.supporter && typeof row.supporter === 'object') {
+  // A ledger row that already resolved a donor reuses it: matchDonor costs 1-3 Monday lookups
+  // and the donor link doesn't move between a subscription's updates (#94).
+  let donorItemId: string | null = existing?.donorItemId ?? null;
+  if (donorItemId === null && row.supporter && typeof row.supporter === 'object') {
     const match = await matchDonor(mondayClient, config, { supporter: row.supporter });
     donorItemId = match.donorItemId;
   }

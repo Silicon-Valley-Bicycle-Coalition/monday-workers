@@ -10,6 +10,8 @@ export interface ValidatedUploadEvent {
   // small staff-facing 'Benevity Uploads' board"), and the route (Task 16) uses it to ignore a
   // change on any other column instead of misreading its `value` shape as a file list.
   columnId: string;
+  // The board the event fired on, checked by the route against the Uploads board (#106).
+  boardId: string;
   assetIds: string[];
 }
 
@@ -36,6 +38,10 @@ function validateColumnChange(body: unknown): { e: Record<string, unknown>; item
 
 export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
   const { e, itemId, columnId } = validateColumnChange(body);
+  const boardId = e.boardId;
+  if (typeof boardId !== 'number' && typeof boardId !== 'string') {
+    throw new Error('benevity webhook: event missing "boardId"');
+  }
 
   const value = e.value;
   const files =
@@ -50,7 +56,7 @@ export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
     throw new Error('benevity webhook: event has no file assetIds');
   }
 
-  return { itemId, columnId, assetIds };
+  return { itemId, columnId, boardId: String(boardId), assetIds };
 }
 
 export interface ValidatedRetryEvent {

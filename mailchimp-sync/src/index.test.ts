@@ -225,20 +225,16 @@ describe('queue dispatch', () => {
 });
 
 describe('scheduled', () => {
-  it('runs reconcileCampaigns and does not throw when it fails', async () => {
+  it('awaits the reconcile run, so its outcome is logged before the handler resolves', async () => {
     const env = fakeEnv();
-    let captured: Promise<unknown> | undefined;
-    const ctx = { waitUntil: vi.fn((p: Promise<unknown>) => { captured = p; }) } as unknown as ExecutionContext;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await worker.scheduled({} as ScheduledEvent, env, ctx);
-
-    expect(ctx.waitUntil).toHaveBeenCalled();
-    // Explicitly await the exact promise scheduled() handed to waitUntil, rather than
-    // relying on reconcileCampaigns rejecting synchronously before this assertion runs.
-    // scheduled()'s own .catch() means this must resolve, even though
-    // config.monday.campaignsBoardId is null in the placeholder config/svbc.json and
-    // reconcileCampaigns itself rejects.
-    await expect(captured).resolves.toBeUndefined();
+    // scheduled() awaits the run: an awaited handler gets the full 15 minutes, while work left in
+    // ctx.waitUntil is only promised 30 seconds. The placeholder config/svbc.json has no Campaigns
+    // board, so the run's one outcome line is the skip.
+    await expect(worker.scheduled({} as ScheduledEvent, env)).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith('mailchimp-sync reconcile: no Campaigns board configured (monday.campaignsBoardId is null); skipping');
+    log.mockRestore();
   });
 });
 

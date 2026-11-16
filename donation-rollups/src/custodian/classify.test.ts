@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { runClassify, CLASSIFY_WRITES_PER_RUN, type ClassifyClient } from './classify';
 import type { DonationRollupsConfig } from '../types';
 import { MondayRateLimitError } from '../monday/client';
+import { WriteBudget } from './writeBudget';
 
 const CL = { fundingStream: 'fs', giftSize: 'gs', fiscalQuarter: 'fq', giftFiscalYear: 'gfy' };
 const config = {
@@ -40,7 +41,7 @@ describe('runClassify', () => {
     const { client, writes } = fakeClient([{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership' }]);
     const report = await runClassify(client, config);
     expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true },
-      values: { fs: { label: 'Membership' }, gs: { label: '$250–999' }, fq: { label: 'FY26 Q2' }, gfy: { label: 'FY2026' } } }]);
+      values: { fs: { label: 'Membership' }, gs: { label: '$200–999' }, fq: { label: 'FY26 Q2' }, gfy: { label: 'FY2026' } } }]);
     expect(report).toMatchObject({ ok: true, detail: { scanned: 1, changed: 1, written: 1, remaining: 0 } });
   });
 
@@ -57,7 +58,7 @@ describe('runClassify', () => {
     // Monday returns label id 5's text for an EMPTY status cell. With "Membership" at id 5 on
     // Funding Stream, a blank gift's text already says "Membership" — only the value shows it's empty.
     const { client, writes } = fakeClient(
-      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$200–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
       2, { '1': { fs: null } });
     await runClassify(client, config);
     expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true }, values: { fs: { label: 'Membership' } } }]);
@@ -65,10 +66,10 @@ describe('runClassify', () => {
 
   it('treats a stored value without a numeric index as blank', async () => {
     const { client, writes } = fakeClient(
-      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$200–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
       2, { '1': { fs: '{}', gs: '' } });
     await runClassify(client, config);
-    expect(writes[0]!.values).toEqual({ fs: { label: 'Membership' }, gs: { label: '$250–999' } });
+    expect(writes[0]!.values).toEqual({ fs: { label: 'Membership' }, gs: { label: '$200–999' } });
   });
 
   it("doesn't clear a blank cell whose text reads as a label", async () => {
@@ -101,6 +102,17 @@ describe('runClassify', () => {
     expect(writes).toHaveLength(CLASSIFY_WRITES_PER_RUN);
     expect(report.detail).toMatchObject({ changed: CLASSIFY_WRITES_PER_RUN + 7, written: CLASSIFY_WRITES_PER_RUN, remaining: 7 });
     expect(report.summary).toMatch(/run classify again/);
+  });
+
+  // Issue #90: the cron run's writes share one budget across duties.
+  it('stops at the run\'s shared write budget and reports the rest as remaining', async () => {
+    const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
+    const { client, writes } = fakeClient(rows, 500);
+    const budget = new WriteBudget(2);
+    const report = await runClassify(client, config, budget);
+    expect(writes.map((w) => w.itemId)).toEqual(['1', '2']);
+    expect(budget.remaining).toBe(0);
+    expect(report.detail).toMatchObject({ changed: 3, written: 2, remaining: 1 });
   });
 
   it('reads amounts with thousands separators', async () => {
@@ -139,8 +151,8 @@ describe('runClassify', () => {
 
     it('sets Major at $200 and Standard below, alongside the other labels', async () => {
       const { client, writes } = fakeClient([
-        { id: '1', am: '200', ...labelled, gs: '$100–249' },
-        { id: '2', am: '199.99', ...labelled, gs: '$100–249' },
+        { id: '1', am: '200', ...labelled, gs: '$200–999' },
+        { id: '2', am: '199.99', ...labelled, gs: '$100–199' },
       ]);
       await runClassify(client, tierConfig);
       expect(writes.map((w) => [w.itemId, w.values])).toEqual([
@@ -151,8 +163,8 @@ describe('runClassify', () => {
 
     it('fixes a wrong tier and skips a right one', async () => {
       const { client, writes } = fakeClient([
-        { id: '1', am: '250', ...labelled, gs: '$250–999', at: 'Standard' },
-        { id: '2', am: '250', ...labelled, gs: '$250–999', at: 'Major' },
+        { id: '1', am: '250', ...labelled, gs: '$200–999', at: 'Standard' },
+        { id: '2', am: '250', ...labelled, gs: '$200–999', at: 'Major' },
       ]);
       await runClassify(client, tierConfig);
       expect(writes.map((w) => [w.itemId, w.values])).toEqual([['1', { at: { label: 'Major' } }]]);
@@ -165,10 +177,101 @@ describe('runClassify', () => {
     });
 
     it('reads the tier only when it is configured', async () => {
-      const { client, writes } = fakeClient([{ id: '1', am: '250', ...labelled, gs: '$250–999' }]);
+      const { client, writes } = fakeClient([{ id: '1', am: '250', ...labelled, gs: '$200–999' }]);
       const report = await runClassify(client, config);
       expect(writes).toEqual([]);
       expect(report.detail).toMatchObject({ changed: 0 });
+    });
+  });
+
+  describe('Matching Company', () => {
+    // The company behind a matching gift, copied from the Matched By relation's linked item name
+    // into a status column so charts can group by it (a relation can't be a chart axis).
+    const mcConfig = { ...config, donationRollups: { donationBoards: [
+      { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', matchedBy: 'mb', classification: { ...CL, matchingCompany: 'mc' } } },
+    ] } } as unknown as DonationRollupsConfig;
+    const labelled = { dt: '2025-08-01', gt: 'Matching Donation', fs: 'Matching Donations', gs: '$100–199', fq: 'FY26 Q1', gfy: 'FY2026' };
+
+    it('copies the linked company name, creating the label on first use', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Google, LLC' }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true },
+        values: { mc: { label: 'Google, LLC' } } }]);
+    });
+
+    it('skips a gift already labelled with the right company', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple', mc: 'Apple' }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('fixes a stale company', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple', mc: 'Google, LLC' }]);
+      await runClassify(client, mcConfig);
+      expect(writes.map((w) => w.values)).toEqual([{ mc: { label: 'Apple' } }]);
+    });
+
+    it('clears the label when the gift has no Matched By link', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, mb: null, mc: 'Apple' }]);
+      await runClassify(client, mcConfig);
+      expect(writes.map((w) => w.values)).toEqual([{ mc: '' }]);
+    });
+
+    it('leaves an ordinary gift with no company alone', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '150', ...labelled, gt: 'Donation', fs: 'Individual Giving', mb: null }]);
+      await runClassify(client, mcConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('does nothing about companies unless both columns are configured', async () => {
+      const { client, writes, reads } = fakeClient([{ id: '1', am: '150', ...labelled, mb: 'Apple' }]);
+      await runClassify(client, config);
+      expect(writes).toEqual([]);
+      expect(reads.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Fiscal Year Ending', () => {
+    const fyConfig = { ...config, donationRollups: { donationBoards: [
+      { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', fiscalYear: 'fy', classification: CL } },
+    ] } } as unknown as DonationRollupsConfig;
+    const labelled = { gt: 'Donation', fs: 'Individual Giving', gs: '< $100', fq: 'FY26 Q1', gfy: 'FY2026' };
+
+    it('stamps a blank Fiscal Year Ending from the date, by the July rule', async () => {
+      const { client, writes } = fakeClient([
+        { id: '1', am: '50', dt: '2025-08-01', ...labelled },
+        { id: '2', am: '50', dt: '2026-06-30', ...labelled, fq: 'FY26 Q4' },
+        { id: '3', am: '50', dt: '2026-07-01', ...labelled, fq: 'FY27 Q1', gfy: 'FY2027' },
+      ]);
+      await runClassify(client, fyConfig);
+      expect(writes.map((w) => [w.itemId, w.values])).toEqual([
+        ['1', { fy: '2026' }], ['2', { fy: '2026' }], ['3', { fy: '2027' }],
+      ]);
+    });
+
+    it('treats a whitespace-only cell as blank', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled, fy: '  ' }]);
+      await runClassify(client, fyConfig);
+      expect(writes[0]!.values).toEqual({ fy: '2026' });
+    });
+
+    it('never overwrites a stamped value, even one that disagrees with the date', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled, fy: '2024' }]);
+      await runClassify(client, fyConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('leaves it blank on a gift with no usable date', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: null, ...labelled, fq: null, gfy: null }],
+        2, { '1': { fq: null, gfy: null } });
+      await runClassify(client, fyConfig);
+      expect(writes.every((w) => !('fy' in w.values))).toBe(true);
+    });
+
+    it('does nothing when the board has no Fiscal Year Ending column', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '50', dt: '2025-08-01', ...labelled }]);
+      await runClassify(client, config);
+      expect(writes).toEqual([]);
     });
   });
 

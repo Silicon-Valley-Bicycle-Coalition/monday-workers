@@ -68,4 +68,15 @@ describe('getSourceCalendar', () => {
 
     expect(sendFailureAlert).toHaveBeenCalledWith('https://hooks.slack.com/x', 'santa-clara', 'Santa Clara', 3, 'third failure');
   });
+
+  it('defers the success KV writes to waitUntil and serves without awaiting them', async () => {
+    const kv = KV();
+    const pending: Promise<unknown>[] = [];
+    const result = await getSourceCalendar(SOURCE, { kv, fetchSourceEvents: vi.fn().mockResolvedValue([]), sendFailureAlert: vi.fn(), slackWebhookUrl: 'https://hooks.slack.com/x', now: () => new Date('2026-08-27T00:00:00Z'), waitUntil: (p) => pending.push(p) });
+    expect(result.servedFromFallback).toBe(false);
+    expect(pending).toHaveLength(1);
+    expect(await getLastKnownGoodIcs(kv, SOURCE.id)).toBeNull();
+    await Promise.all(pending);
+    expect(await getLastKnownGoodIcs(kv, SOURCE.id)).toBe(result.ics);
+  });
 });

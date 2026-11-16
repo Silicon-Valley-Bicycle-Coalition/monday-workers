@@ -47,11 +47,37 @@ mirror was duplicated from the live board (monday keeps column ids on duplicate)
 the tokens available when #66 was fixed couldn't see the sandbox board. If a sandbox send logs
 `bp-feedback-no-email` for an item that has an address, check the ids with `get_board_info`.
 
-No D1/queue here (unlike `funraise-sync`/`quickbooks-sync`) — a missed or duplicate reminder
-email is low-stakes compared to a dropped donation write, so a synchronous send-on-receipt is
-enough. If that stops being true (e.g. monday retries webhooks and duplicate emails become a real
-annoyance), add the dedupe-then-queue shape documented in the parent `CLAUDE.md`'s Architecture
-section.
+No queue here (unlike `funraise-sync`/`quickbooks-sync`): a missed reminder email is low-stakes
+compared to a dropped donation write, so a synchronous send-on-receipt is enough. D1 holds only the
+per-item resend guard below.
+
+### Resend guard (#105)
+
+Anyone holding `WEBHOOK_SECRET` could otherwise loop the endpoint over every BP Request item id
+and re-email every organizer. So before sending, the Worker claims the item in D1 (`DB`, table
+`sends`, `migrations/0001_create_sends.sql`; `src/sendGuard.ts`): an item emailed within
+`resendCooldownHours` (`config/*.json`, 24) gets a 200 `{ "sent": false, "alreadySent": true }`
+and a `bp-feedback-resend-cooldown` log line, and nothing is sent. The claim is one atomic upsert,
+so two concurrent webhooks for an item can't both send. A failed send deletes its own claim, so
+monday's retry still goes out. If D1 can't be read (or the binding or table is missing) the Worker
+sends nothing and answers 503, so monday retries: it fails closed.
+
+To allow a re-send inside the cooldown (say an organizer lost the email), an engineer deletes the
+row: `wrangler d1 execute svbc-bp-feedback-notify --remote --command "DELETE FROM sends WHERE
+item_id = <itemId>"` (`svbc-bp-feedback-notify-sandbox` and `--env sandbox` for the sandbox).
+
+Setup, once per environment, before the first deploy that carries the guard:
+
+```sh
+cd bp-feedback-notify
+wrangler d1 create svbc-bp-feedback-notify                  # paste the id into wrangler.jsonc
+wrangler d1 create svbc-bp-feedback-notify-sandbox          # paste into env.sandbox
+wrangler d1 migrations apply svbc-bp-feedback-notify --remote
+wrangler d1 migrations apply svbc-bp-feedback-notify-sandbox --remote --env sandbox
+```
+
+Without a `database_id`, `wrangler deploy` auto-provisions a database by that name, but it doesn't
+apply migrations; every send answers 503 until they're applied.
 
 ## Monday automation setup
 
@@ -119,6 +145,12 @@ only logs that rejection. Writing `Sent to Organizer` onto the same `Post-Event 
 doesn't re-fire the automation, which triggers only on `Ready to Send`; staff re-trigger a
 failed send by setting it back to `Ready to Send`. A write-back failure is logged and never
 fails the webhook (the email already went out).
+
+**Status-column resend check (#105):** with `sendStatus` set, the item read also fetches that
+status column and the Worker skips the send (200, `{ "sent": false, "alreadySent": true }`,
+`bp-feedback-already-sent`) when it already reads `sentLabel`. Staff re-send by moving the column
+back to `Ready to Send`, though the D1 cooldown (see "Resend guard" above) still applies. A failed
+send never writes `sent`, so a genuine retry still goes through.
 
 Confirmed on the sandbox board on 2026-09-21: the connection's challenge handshake succeeded, and
 a real status-change fired the webhook end-to-end (verified via `wrangler tail`). The only
@@ -221,5 +253,7 @@ npm run deploy         # production: live, and goes straight to real organizers
   `bp-feedback-notify:writes` = `on`, the live board has the `Post-Event Feedback` column
   (`color_mm8rtt99`), and the webhook automation is on, its handshake answered 200. Still open: no
   real item has gone through it yet, so a production email is unconfirmed, and staff need telling
-  about the manual "mark sent" step (`sendStatus` is still `null`). Changing the board's structure
+  about the 24-hour resend cooldown. Since 2026-11-14 (D1 resend guard deployed, `sendStatus` set)
+  the Worker writes `Sent to Organizer` back itself; the column still needs a `Send Failed` label
+  before a failed send can show. Changing the board's structure
   takes board ownership; the `+` column button is simply dead without it.

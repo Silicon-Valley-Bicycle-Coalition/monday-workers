@@ -41,7 +41,13 @@ export async function runPush(deps: PushDeps, now: Date): Promise<PushResult> {
   const cfg = config.push;
 
   const items = await monday.listDonationsDatedSince(windowFloor(cfg, now));
-  const donorIds = [...new Set(items.flatMap((i) => (i.donorItemId === null ? [] : [i.donorItemId])))];
+  // Only fetch donors for gifts that pass every item-level check; with no donor, that is exactly
+  // the 'no-email' outcome.
+  const candidates = items.filter((i) => {
+    const d = pushDecision(i, null, cfg, now);
+    return !d.send && d.reason === 'no-email';
+  });
+  const donorIds = [...new Set(candidates.flatMap((i) => (i.donorItemId === null ? [] : [i.donorItemId])))];
   const donors = new Map<string, PersonItem>();
   if (donorIds.length > 0) for (const p of await monday.getPeople(donorIds)) donors.set(p.id, p);
 

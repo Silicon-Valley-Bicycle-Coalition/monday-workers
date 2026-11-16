@@ -115,7 +115,8 @@ pairing** records how:
    before the match (`pairing.windowMonths`) whose amount is at least the match amount × (1 − 0.01)
    (`pairing.amountTolerance`). A match with no Amount can't be size-checked, so it goes to review.
 3. **Needs review:** anything else (no candidate, several, or no match Amount). Staff pick the gift
-   by hand.
+   by hand. Until they do, the Worker re-evaluates the match once a day (a candidate gift or company
+   may have turned up) rather than every hour; a new match is evaluated on the next run.
 4. **Staff:** a link made by hand and locked by setting Match pairing to `Staff`; the Worker never
    overwrites it.
 

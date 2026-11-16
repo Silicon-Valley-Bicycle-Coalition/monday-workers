@@ -17,7 +17,7 @@ export interface AttendeeStatusPatch {
 export interface AttendeeStore {
   // Insert the attendee on first sight, or bump its delivery count and reset it to 'received' —
   // keeping the Monday item id and People match a previous write recorded.
-  recordDelivery(delivery: NewAttendeeDelivery): Promise<'inserted' | 'updated'>;
+  recordDelivery(delivery: NewAttendeeDelivery): Promise<void>;
   updateStatus(attendeeId: string, status: LedgerStatus, patch?: AttendeeStatusPatch): Promise<void>;
   getAttendee(attendeeId: string): Promise<AttendeeRow | null>;
   listByEvent(eventId: string): Promise<AttendeeRow[]>;
@@ -58,11 +58,7 @@ const COLUMNS =
 export class D1AttendeeStore implements AttendeeStore {
   constructor(private db: D1Database) {}
 
-  async recordDelivery(delivery: NewAttendeeDelivery): Promise<'inserted' | 'updated'> {
-    const existing = await this.db
-      .prepare(`SELECT attendee_id FROM attendees WHERE attendee_id = ?1`)
-      .bind(delivery.attendeeId)
-      .first<{ attendee_id: string }>();
+  async recordDelivery(delivery: NewAttendeeDelivery): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO attendees (attendee_id, event_id, last_action, status, deliveries, received_at)
@@ -77,7 +73,6 @@ export class D1AttendeeStore implements AttendeeStore {
       )
       .bind(delivery.attendeeId, delivery.eventId, delivery.action, delivery.receivedAt)
       .run();
-    return existing === null ? 'inserted' : 'updated';
   }
 
   async updateStatus(attendeeId: string, status: LedgerStatus, patch: AttendeeStatusPatch = {}): Promise<void> {

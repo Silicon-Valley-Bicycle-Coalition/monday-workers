@@ -96,6 +96,8 @@ export interface HistoricalShiftRecord {
   dateISO: string | null;
   hours: number | null;
   statusLabel: string | null;
+  // The Historical checkbox is checked; false when the board config names no such column.
+  historical: boolean;
 }
 
 export type DonationReadColumns = {
@@ -112,6 +114,10 @@ export interface DonationRollupsMondayClient {
   // The owner (Donor or Organization) a Donation item's connect column currently points
   // at — null if the Donation is unlinked (nothing to recompute).
   getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null>;
+  // The same link plus the owner's board in ONE query (issue #89), replacing the
+  // getDonorLinkForDonation + getItemBoardId pair on the hot path. ownerBoardId is null when the
+  // owner is deleted or no longer returned — what getItemBoardId reads as gone.
+  getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null>;
   // Why a Donation's Donor link read back empty (issue #26): 'archived' (board_relation reads
   // empty on archived items — the gift still counts), 'deleted' (gone, or no longer returned),
   // or 'active' (staff genuinely cleared the link — it no longer counts for anyone).
@@ -236,6 +242,36 @@ function checkboxChecked(value: string | null | undefined): boolean {
   }
 }
 
+// The Donations columns the rollcall duty's credits read needs. Exported so the custodian's shared
+// board read (custodian/boardReads.ts, issue #90) requests them alongside classify's.
+export function donationCreditColumnIds(cfg: RollCallConfig['donations']): string[] {
+  const c = cfg.columns;
+  return [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
+    ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])];
+}
+
+// One Donations item, as pageItemsColumnsText reads it, to the credits read's record.
+export function donationCreditFrom(item: ItemColumns, cfg: RollCallConfig['donations'], fiscalYearStartMonth: number): DonationCreditRecord {
+  const c = cfg.columns;
+  const text = (id: string): string => item.text.get(id) ?? '';
+  // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in getDonationsByIds —
+  // the ledger's year for the same gift, so the two never disagree.
+  const fyText = text(c.fiscalYear).trim();
+  const dateISO = text(c.date).trim();
+  const rawFY = fyText === '' ? NaN : Number(fyText);
+  const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
+  return { id: item.id,
+    fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
+    amountCents: parseAmountCents(item.text.get(c.amount)),
+    status: statusLabel(item.text.get(c.status), item.values.get(c.status)),
+    giftType: text(c.giftType).trim(),
+    donorItemIds: item.linkedIds?.get(c.donorLink) ?? [],
+    matchedByItemIds: item.linkedIds?.get(c.matchedBy) ?? [],
+    anonymous: checkboxChecked(item.values.get(c.anonymous)),
+    inKindValueCents: c.inKindValue ? parseAmountCents(item.text.get(c.inKindValue)) : null,
+    recognitionFiscalYear: c.recognitionFiscalYear ? text(c.recognitionFiscalYear).trim() : '' };
+}
+
 export class HttpMondayClient implements DonationRollupsMondayClient {
   private readonly transports = new Map<string, MondayGraphQL>();
 
@@ -295,6 +331,30 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     if (data.items[0]?.state === 'deleted') return null;
     const linked = data.items[0]?.column_values[0]?.linked_item_ids ?? [];
     return linked.length > 0 ? linked[0]! : null;
+  }
+
+  async getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null> {
+    const data = await this.graphql<{
+      items: { state?: string | null; column_values: { id: string; linked_item_ids?: string[];
+        linked_items?: { id: string; state?: string | null; board?: { id: string } | null }[] }[] }[];
+    }>(
+      `query ($itemId: ID!, $columnId: [String!]) {
+        items(ids: [$itemId]) {
+          state
+          column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids linked_items { id state board { id } } } }
+        }
+      }`,
+      { itemId: donationItemId, columnId: [donorLinkColumnId] },
+    );
+    if (data.items[0]?.state === 'deleted') return null;
+    const column = data.items[0]?.column_values[0];
+    const ownerItemId = column?.linked_item_ids?.[0];
+    if (ownerItemId === undefined) return null;
+    // A trashed owner keeps its board in items(ids:) (see getItemBoardId); treat it, and one that
+    // linked_items doesn't return at all, as gone — the caller detaches rather than writing to it.
+    const owner = column?.linked_items?.find((i) => i.id === ownerItemId);
+    const ownerBoardId = owner === undefined || owner.state === 'deleted' ? null : owner.board?.id ?? null;
+    return { ownerItemId, ownerBoardId };
   }
 
   async getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'> {
@@ -489,7 +549,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
             items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
-        { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status], cursor },
+        { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status, ...(c.historical ? [c.historical] : [])], cursor },
       );
     const page = data.boards[0]?.items_page;
     if (page === undefined) return { items: [], cursor: null };
@@ -500,7 +560,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const text = (id: string): string | null => byId.get(id)?.text || null;
         return { id: item.id, volunteerItemId: byId.get(c.volunteer)?.linked_item_ids?.[0] ?? null,
           dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)),
-          statusLabel: statusLabel(byId.get(c.status)?.text, byId.get(c.status)?.value) };
+          statusLabel: statusLabel(byId.get(c.status)?.text, byId.get(c.status)?.value),
+          historical: c.historical ? checkboxChecked(byId.get(c.historical)?.value) : false };
       }),
     };
   }
@@ -529,45 +590,11 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     };
   }
 
+  // The rollcall duty's only read of Donations: an empty read would resolve every stored credit
+  // through getItemsState, so a board Monday doesn't return is an error, not empty (requireBoard).
   async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number) {
-    const c = cfg.columns;
-    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
-      await this.graphql(
-        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
-          boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
-          }
-        }`,
-        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
-          ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])], cursor },
-      );
-    // The rollcall duty's only read of Donations: an empty read would resolve every stored
-    // credit through getItemsState, so a board Monday doesn't return is an error, not empty.
-    const page = data.boards[0]?.items_page;
-    if (page === undefined) throw new Error(`monday API: Donations board ${cfg.boardId} not returned (deleted, or not visible to this token)`);
-    return {
-      cursor: page.cursor,
-      items: page.items.map((item) => {
-        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
-        const status = byId.get(c.status);
-        // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in
-        // getDonationsByIds — the ledger's year for the same gift, so the two never disagree.
-        const fyText = (byId.get(c.fiscalYear)?.text ?? '').trim();
-        const dateISO = (byId.get(c.date)?.text ?? '').trim();
-        const rawFY = fyText === '' ? NaN : Number(fyText);
-        const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
-        return { id: item.id,
-          fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
-          amountCents: parseAmountCents(byId.get(c.amount)?.text),
-          status: statusLabel(status?.text, status?.value),
-          giftType: (byId.get(c.giftType)?.text ?? '').trim(),
-          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],
-          matchedByItemIds: byId.get(c.matchedBy)?.linked_item_ids ?? [],
-          anonymous: checkboxChecked(byId.get(c.anonymous)?.value),
-          inKindValueCents: c.inKindValue ? parseAmountCents(byId.get(c.inKindValue)?.text) : null,
-          recognitionFiscalYear: c.recognitionFiscalYear ? (byId.get(c.recognitionFiscalYear)?.text ?? '').trim() : '' };
-      }),
-    };
+    const page = await this.pageItemsColumnsText(cfg.boardId, donationCreditColumnIds(cfg), cursor, { requireBoard: true });
+    return { cursor: page.cursor, items: page.items.map((item) => donationCreditFrom(item, cfg, fiscalYearStartMonth)) };
   }
 
   async getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>> {

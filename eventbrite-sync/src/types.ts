@@ -65,6 +65,8 @@ export interface MondayBoards {
   'people-live': number | null;
   events: number | null;
   'event-registrations': number | null;
+  // The Volunteers board: sign-ups on a volunteer program's events land here, never on Event Registrations.
+  volunteers: number | null;
   // Set when the config has a pledge block. Here, not in the block, so the write switch's dry run names it.
   'pledge-to-ride'?: number | null;
 }
@@ -203,6 +205,22 @@ export interface EventbriteSyncConfig {
       homeZipColumn: string;
       // Second link to the event, two-way, so its registrants show on the event's card.
       registrantsLinkColumn: string;
+    };
+    // Volunteers board: Eventbrite attendees on volunteering events become items here.
+    volunteers: {
+      attendeeIdColumn: string;
+      attendeeNameColumn: string;
+      attendeeEmailColumn: string;
+      jobColumn: string;
+      dateColumn: string;
+      statusColumn: string;
+      historicalColumn: string;
+      volunteerLinkColumn: string;
+      eventColumn: string;
+      listingColumn: string;
+      // Eventbrite's ticket class name (e.g. "Shift 1"), so one person's two shifts don't read as a
+      // duplicate (#115). The placeholder writes nothing, and doesn't count toward volunteerBoardMode.
+      ticketTypeColumn: string;
     };
     // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
     registrantsLinkExcludedEventIds: string[];

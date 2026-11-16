@@ -8,7 +8,7 @@ const config = testConfig();
 
 function fakeOrderStore(overrides: Partial<OrderStore> = {}): OrderStore {
   return {
-    recordDelivery: vi.fn().mockResolvedValue('inserted'),
+    recordDelivery: vi.fn().mockResolvedValue(undefined),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getOrder: vi.fn().mockResolvedValue(null),
     ...overrides,
@@ -61,7 +61,7 @@ describe('createApp', () => {
   });
 
   it('enqueues a redelivery of a known order too — the consumer re-fetches and writes idempotently', async () => {
-    const orderStore = fakeOrderStore({ recordDelivery: vi.fn().mockResolvedValue('updated') });
+    const orderStore = fakeOrderStore({ recordDelivery: vi.fn().mockResolvedValue(undefined) });
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 

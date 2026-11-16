@@ -251,14 +251,29 @@ export class HttpMondayClient implements MondayClient {
         }
       }
     `;
-    const donorData = await this.request<{ items: MondayItem[] }>(donorQuery, { itemId: donorItemId });
-    const donorItem = donorData.items[0];
+    // The donor item and its donations are independent reads (the donations query needs only
+    // donorItemId), so they run concurrently (#99): one Monday round trip per page, not two.
+    // allSettled, then the donor result first, so a failure surfaces the same error the serial
+    // version did (donor read or not-found before any donations error) and no rejection is left
+    // unhandled.
+    const includeDonations = options.includeDonations ?? true;
+    const [donorResult, donationsResult] = await Promise.allSettled([
+      this.request<{ items: MondayItem[] }>(donorQuery, { itemId: donorItemId }),
+      includeDonations ? this.getDonationsForDonor(donorItemId) : Promise.resolve({ records: [], awaitingDonor: [] }),
+    ]);
+    if (donorResult.status === 'rejected') throw donorResult.reason;
+    const donorItem = donorResult.value.items[0];
     if (!donorItem) {
       throw new Error(`monday: donor item "${donorItemId}" not found`);
     }
-
-    const includeDonations = options.includeDonations ?? true;
-    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId, matchLines ? columnLinkUrl(donorItem, this.columns.donorDtdLink) : null) : [];
+    if (donationsResult.status === 'rejected') throw donationsResult.reason;
+    const { records: donations, awaitingDonor } = donationsResult.value;
+    // The DTD "Waiting for donor" hint needs the donor item's DTD link, so it's attached here,
+    // once both reads are back, rather than inside getDonationsForDonor.
+    const dtdUrl = matchLines ? columnLinkUrl(donorItem, this.columns.donorDtdLink) : null;
+    if (dtdUrl !== null) {
+      for (const i of awaitingDonor) donations[i]!.matchHintUrl = dtdUrl;
+    }
     // With a history floor, the Lifetime Giving rollup would exceed the rows the donor can see,
     // so the total becomes the sum of the kept gifts. Without one, the rollup column is the
     // total, as before. Not loaded at all → '' rather than a misleading zero.
@@ -364,7 +379,9 @@ export class HttpMondayClient implements MondayClient {
     );
   }
 
-  private async getDonationsForDonor(donorItemId: string, dtdUrl: string | null = null): Promise<DonationRecord[]> {
+  // `awaitingDonor` indexes the records that get the DTD "Waiting for donor" hint once the caller
+  // has the donor's DTD link (always empty with match lines off).
+  private async getDonationsForDonor(donorItemId: string): Promise<{ records: DonationRecord[]; awaitingDonor: number[] }> {
     const matchLines = this.matchLinesOn();
     const columnIds = [
       this.columns.donationAmount,
@@ -398,7 +415,7 @@ export class HttpMondayClient implements MondayClient {
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
     }));
-    if (!matchLines) return records;
+    if (!matchLines) return { records, awaitingDonor: [] };
 
     // The donor's Matching Donation rows are already in `kept` (linked to the employee as Donor).
     // Each points at its original gift through Matches gift; attach the latest per gift, and only
@@ -417,11 +434,12 @@ export class HttpMondayClient implements MondayClient {
       const candidate = { date: records[i]!.date, amount: records[i]!.amount, company };
       if (!record.match || candidate.date > record.match.date) record.match = candidate;
     });
+    const awaitingDonor: number[] = [];
     records.forEach((record, i) => {
-      if (record.match || matchRowIndexes.has(i) || dtdUrl === null) return;
-      if (columnText(kept[i]!, this.columns.donationMatchStatus) === 'Waiting for donor') record.matchHintUrl = dtdUrl;
+      if (record.match || matchRowIndexes.has(i)) return;
+      if (columnText(kept[i]!, this.columns.donationMatchStatus) === 'Waiting for donor') awaitingDonor.push(i);
     });
-    return records;
+    return { records, awaitingDonor };
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {

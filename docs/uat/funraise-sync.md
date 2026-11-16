@@ -1,9 +1,9 @@
 # UAT script: Funraise sync
 
-**Status 2026-10-06: testable now.** The sandbox copy was moved onto the `(sandbox v3)` boards
+**Status 2026-10-06: testable now.** The sandbox copy was moved onto the `(sandbox v4)` boards
 on 2026-09-30. The 53 Funraise gifts made since 2026-09-19, which had been held while it still
-pointed at the deleted v2 boards, were added to Donations (sandbox v3) the same evening, and
-Recurring Gifts (sandbox v3) now mirrors all 1,176 Funraise plans. The first new gift after the
+pointed at the deleted v2 boards, were added to Donations (sandbox v4) the same evening, and
+Recurring Gifts (sandbox v4) now mirrors all 1,176 Funraise plans. The first new gift after the
 move arrived on its own nine seconds after it was made.
 
 ## What it does
@@ -18,14 +18,14 @@ Salesforce sync that posts Opportunities today.
 
 Funraise allows one webhook per organization. Until it is repointed at the production copy (a
 cutover step; production began writing gifts 2026-11-02), it points at this sandbox copy, so **a
-real donation made on Funraise lands on Donations (sandbox v3)**, not in some test area. Once
+real donation made on Funraise lands on Donations (sandbox v4)**, not in some test area. Once
 it is repointed, no new real gifts arrive here; the Recurring Gifts copy still refreshes hourly. This is safe: the board is a disposable copy, and the integration only writes
 to Monday. It sends no email and touches nothing in Funraise.
 
 ## Try it
 
 1. **Watch a real gift arrive.** Open
-   [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), **Recent
+   [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657), **Recent
    gifts** tab. The next time a Funraise donation comes in, a new item should appear within about
    ten seconds, with: Amount, Date, Status **Received**, Fiscal Year Ending, Gift Type
    **Donation** (or **Event Ticket** for a paid event), **Thank You Sent** checked (Funraise sent
@@ -40,16 +40,16 @@ to Monday. It sends no email and touches nothing in Funraise.
    morning the gift's Funding Stream, Gift Size, Fiscal Quarter, and Gift Fiscal Year columns fill
    in.
 4. **A new donor.** If the giver isn't matched to anyone on People by Funraise profile or personal
-   email, a new People item is created with their name, email, address, and Funraise Profile link.
+   email, a new People item is created with their name, email, and Funraise Profile link.
    Check it looks like a record you'd be happy to keep.
 5. **Recurring plans.** Open
-   [Recurring Gifts (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577263),
+   [Recurring Gifts (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342630),
    **Active** tab, sorted by Next Payment. A new monthly or yearly donor's plan should appear
    within about an hour of being created in Funraise, with Installment Amount, **Annualized
    Value** (monthly × 12, quarterly × 4), Frequency, Status, Next Payment, Designation, and the
    Donor link. Cancelling a plan in Funraise turns Status to **Cancelled** and clears Next Payment
-   on the next hourly pass. If many plans changed at once it can take a few hours, since each pass
-   handles ten.
+   on the next hourly pass. If very many plans changed at once it can take more than one hourly pass,
+   since each pass handles about 200.
 6. **A refund.** Refunding a gift in Funraise should flip its Donations item to Status
    **Refunded**. See the first item under Don't report these.
 

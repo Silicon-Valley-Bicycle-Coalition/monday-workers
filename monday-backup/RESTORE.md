@@ -30,6 +30,9 @@ machine, never in the Worker.
 * **A Monday token that can write to the target workspace.** Not the backup's own token — that
   integration user is read-only by design. Pass it only as an environment variable for the one
   command; never put it in a file in the repo.
+* **The snapshot encryption key** for an encrypted snapshot (`monday-backup/3`), from the copy
+  kept outside the Shared Drive (README "Snapshot encryption"). Without it an encrypted snapshot
+  can't be read at all.
 * **An empty target workspace.** Restoring beside the originals creates look-alike duplicates, so
   the tool refuses a workspace the snapshot came from unless you pass `--into-source-workspace`,
   and it always suffixes restored names (default ` (restored YYYY-MM-DD)`).
@@ -42,7 +45,10 @@ machine, never in the Worker.
 In the backup Shared Drive, each run is a folder named `YYYY-MM-DD run-N`. Open its
 `manifest.json` and check:
 
-* `format` is `monday-backup/2` (the only format this tool reads);
+* `format` is `monday-backup/3` (encrypted files, from issue #112 on) or `monday-backup/2` (older,
+  plaintext files); this tool reads both;
+* for `monday-backup/3`, `encryption.keyId` names the key the files need (see "The encryption key"
+  below);
 * `errors` is empty — otherwise the snapshot is partial and the listed boards/docs are missing
   from it (the restore also warns about this);
 * `itemCountsByBoard`, `updateCountsByBoard`, `blockCountsByDoc` look plausible for the date.
@@ -69,22 +75,49 @@ manifest give the window, and `capturedAt` says when each board and doc was capt
 ## 2. Download it
 
 In Drive, right-click the run folder → **Download**. Drive zips it; unzip to a local directory,
-e.g. `~/restore/2026-09-24 run-7/`, containing `manifest.json`, `board-<id>.jsonl` and
-`doc-<id>.jsonl` files.
+e.g. `~/restore/2026-09-24 run-7/`, containing `manifest.json` and `board-<id>.jsonl.enc` and
+`doc-<id>.jsonl.enc` files (`.jsonl`, unencrypted, in a `monday-backup/2` snapshot).
+
+### The encryption key
+
+From `monday-backup/3` on, every board and doc file is encrypted (AES-256-GCM; format in
+`src/crypto/snapshotCipher.ts`, key handling in the README's "Snapshot encryption"). The restore
+needs the key the manifest's `encryption.keyId` names. Get it from where the operator keeps it,
+outside the Shared Drive, into a file only you can read, and pass that file with `--key-file`
+(or put the key in `BACKUP_ENCRYPTION_KEY`). Never paste the key itself onto the command line,
+where it lands in shell history. The tool checks the manifest's MAC first, then decrypts in
+memory and checks every file. Any of these stops it, naming the file:
+* a wrong key, or a changed manifest;
+* a file cut short or changed;
+* a file from another run, or renamed;
+* a file missing from the manifest's list, or one not on it;
+* any plaintext `.jsonl` when a key is given;
+* a download folder still named like a run (`YYYY-MM-DD run-N`) that isn't the manifest's run.
+
+Keep the folder name Drive gives the download, or rename it to something that isn't a run name.
+A `monday-backup/2` snapshot is restored **without** a key and only with
+`--allow-plaintext-snapshot`. The tool warns that nothing in it is authenticated, so check in Drive
+that its files each have one revision first. To look inside one file without restoring,
+`npm run decrypt -- <file>.jsonl.enc --key-file <path>` prints it (plaintext CRM data: delete what
+you save).
 
 ## 3. Dry run
 
 ```sh
 cd monday-backup
-npm run restore -- "$HOME/restore/2026-09-24 run-7" --workspace <target-workspace-id>
+npm run restore -- "$HOME/restore/2026-09-24 run-7" --workspace <target-workspace-id> \
+  --key-file "$HOME/restore/backup.key"
 ```
+
+(`--key-file` for an encrypted snapshot, `--allow-plaintext-snapshot` instead for a
+`monday-backup/2` one; repeat it in the commands below.)
 
 Nothing is written. It prints each board and doc it would create, the totals, and every
 warning. Read the warnings — they are the list of things you'll fix by hand afterwards.
 
 Narrow the restore if you only need part of the account:
 
-* `--boards 1234567890,2345678901` — only these snapshot board ids (from the `board-<id>.jsonl`
+* `--boards 1234567890,2345678901` — only these snapshot board ids (from the `board-<id>.jsonl.enc`
   filenames); their subitems boards come along automatically. Links from these boards to boards
   you didn't restore are dropped and reported.
 * `--docs <id,id>` or `--docs none`.
@@ -94,7 +127,7 @@ Narrow the restore if you only need part of the account:
 
 ```sh
 MONDAY_API_TOKEN='<write token>' npm run restore -- "$HOME/restore/2026-09-24 run-7" \
-  --workspace <target-workspace-id> --execute
+  --workspace <target-workspace-id> --key-file "$HOME/restore/backup.key" --execute
 ```
 
 Order of work: boards → groups → columns → items → connect-boards columns → subitems → link
@@ -136,16 +169,18 @@ ambiguous: fix the cause and rerun.
 * If this restore **replaces** production boards, every board and column id changed: update each
   Worker's `config/*.json` that names a board or column id (and anything else that stores Monday
   ids) before re-enabling those Workers.
-* Delete the downloaded snapshot. Keep `restore-ledger.jsonl` only as long as you might need to
+* Delete the downloaded snapshot and your local copy of the key file. Keep `restore-ledger.jsonl` only as long as you might need to
   resume or trace an id, then delete it too (it maps ids, not data, but it's no longer useful).
 
 ## Restore rehearsal (outstanding)
 
 Do this once end to end in the sandbox, then record the result below and close issue #30.
 
-1. ~~Provision the sandbox~~ Done 2026-11-10: `svbc-monday-backup-sandbox` backs up CRM Sandbox v4
+1. Provision the sandbox. Done 2026-11-10: `svbc-monday-backup-sandbox` backs up CRM Sandbox v4
    (`18210301`) into the *Monday Backups (sandbox)* Shared Drive. Run 46 was complete: 18 boards,
-   53,650 items, `errors: []`, 23 minutes.
+   53,650 items, `errors: []`, 23 minutes. It predates snapshot encryption (a plaintext
+   `monday-backup/2` snapshot), so the sandbox also needs its own `BACKUP_ENCRYPTION_KEY` before
+   it runs a build with encryption.
 2. Seed the sandbox boards with representative data. v4 already has several groups, the
    production column types and connect-boards columns, from the load rehearsal. As of 2026-11-10
    it has **no** subitems, no archived board, no Doc, and only a handful of updates (none checked

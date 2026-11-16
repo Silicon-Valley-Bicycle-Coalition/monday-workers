@@ -155,7 +155,7 @@ namespace, cron — and can only email `sandbox@bikesiliconvalley.org`. Provisio
    sender to the group) or every redirected send bounces. Test before deploying:
    `wrangler email sending send --from "login@mail.bikesiliconvalley.org" --to "sandbox@bikesiliconvalley.org" --subject "Sandbox sink test" --text "Test."`
 2. A Monday integration user with a monday CRM member seat (the CRM Sandbox moved to CRM on 2026-10-26) whose only board access is the
-   CRM Sandbox workspace (`17141226`); mint its API token. One shared sandbox user serves every
+   CRM Sandbox workspace (`18210301`); mint its API token. One shared sandbox user serves every
    sandbox Worker (see the design doc §4).
 3. Add `sandbox@bikesiliconvalley.org` as a **verified destination address** in the Cloudflare
    dashboard (Compute → Email Service → Email Routing → Destination Addresses) and click the
@@ -180,7 +180,7 @@ Phase 3 (Email Sending on `mail.bikesiliconvalley.org`) must already be done —
 sends from the same onboarded domain. Commit the `database_id`, then:
 
 Before deploying, open the sandbox "Member Portal Letter Settings (sandbox)" board
-(`18428114991`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
+(`18439574433`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
 config arms the letter cron (`letterCron` filled, `taxLetter` test text present), so a checked
 box with a past start date would queue up to `maxTriggersPerRun` (200) letter emails into the
 `sandbox@` group on the first 09:00 UTC run. Re-check after any sandbox board reshuffle.

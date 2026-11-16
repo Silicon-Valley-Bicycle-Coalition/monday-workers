@@ -19,6 +19,9 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   SLACK_WEBHOOK_URL: string;
+  // 32 random bytes, base64 (`openssl rand -base64 32`): encrypts every snapshot file before upload
+  // (src/crypto/snapshotCipher.ts, issue #112). Required: a run without it fails and alerts.
+  BACKUP_ENCRYPTION_KEY: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }

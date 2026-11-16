@@ -11,7 +11,9 @@ import { secureHeaders } from 'hono/secure-headers';
 //   base-uri 'none'        — an injected <base> can't re-point relative form actions/links.
 //   object-src 'none'      — no plugins.
 //   form-action 'self'     — every form posts (and redirects) same-origin.
-export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+//   font-src 'self'        — Manrope and Poppins are served from /assets/ (#123); no page loads
+//                            a font from anywhere else, Google Fonts included.
+export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; font-src 'self'";
 
 // Not Hono's default no-referrer: under no-referrer, browsers send `Origin: null` on same-origin
 // form POSTs, which would defeat the Origin half of the CSRF check. This still strips path + query
@@ -24,15 +26,14 @@ export const DEFAULT_REFERRER_POLICY = 'strict-origin-when-cross-origin';
 const DEFAULT_CORP = 'same-origin';
 
 // Hono's secureHeaders() writes its headers *after* the handler runs, with .set() — so a CSP,
-// CORP or Referrer-Policy it managed would clobber a route's own (the matching-gifts page's
-// third-party-widget CSP, the email logo's cross-origin CORP, the magic-link confirmation page's
-// same-origin Referrer-Policy). Those three are therefore left out of secureHeaders() and applied
-// below only when the route didn't set one.
+// CORP, Referrer-Policy or X-Frame-Options it managed would clobber a route's own (the
+// matching-gifts search document's sandbox CSP and SAMEORIGIN framing, the email logo's
+// cross-origin CORP, the magic-link confirmation page's same-origin Referrer-Policy). Those four
+// are therefore left out of secureHeaders() and applied below only when the route didn't set one.
 export function securityHeaders(): MiddlewareHandler[] {
   return [
     secureHeaders({
-      // Belt-and-braces for browsers predating CSP frame-ancestors.
-      xFrameOptions: 'DENY',
+      xFrameOptions: false,
       // One year; no includeSubDomains and no preload. The portal is a single host
       // (member.bikesiliconvalley.org, member.sandbox.bikesiliconvalley.org) under a domain
       // whose apex and siblings are run elsewhere: includeSubDomains here would only cover
@@ -54,6 +55,10 @@ export function securityHeaders(): MiddlewareHandler[] {
       await next();
       if (!c.res.headers.has('Content-Security-Policy')) {
         c.res.headers.set('Content-Security-Policy', DEFAULT_CSP);
+      }
+      // Belt-and-braces for browsers predating CSP frame-ancestors.
+      if (!c.res.headers.has('X-Frame-Options')) {
+        c.res.headers.set('X-Frame-Options', 'DENY');
       }
       if (!c.res.headers.has('Referrer-Policy')) {
         c.res.headers.set('Referrer-Policy', DEFAULT_REFERRER_POLICY);

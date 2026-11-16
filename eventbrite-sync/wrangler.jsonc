@@ -3,6 +3,7 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "preview_urls": false,
   "upload_source_maps": true,
   "d1_databases": [
     {
@@ -22,6 +23,10 @@
         // (retryDelaySeconds in src/flags.ts) — so 100 retries ride out about four days of
         // Monday outage (or a write-switch `hold` the queue pause missed) before dead-lettering.
         "max_retries": 100,
+        // Floor for a retry that carries no delay of its own: a throw from queue() itself (a missing
+        // secret, a config error, a CPU kill) redelivers the whole batch, and without this it would do
+        // so at once and spend all 100 retries in minutes. Per-message retry({ delaySeconds }) overrides it.
+        "retry_delay": 60,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (the backfill script is one).
         "max_concurrency": 1,
@@ -71,6 +76,7 @@
   // binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // Triggers are not inheritable either.
       "triggers": { "crons": ["0 * * * *"] },
@@ -88,6 +94,7 @@
           {
             "queue": "eventbrite-sync-writes-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "eventbrite-sync-writes-sandbox-dlq"
           },

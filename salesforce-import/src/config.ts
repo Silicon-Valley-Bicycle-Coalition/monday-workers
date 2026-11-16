@@ -19,6 +19,12 @@ export interface Config {
   // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
   // Donor link, and the records themselves are not emitted as People/Organizations items.
   placeholderDonorSfIds?: string[];
+  // Salesforce ids of One-to-One Accounts that are really organizations: someone typed the org in
+  // as a Contact ("SVBC Volunteer", "San Mateo City Council") and NPSP auto-made the Account.
+  // They migrate as Organizations items so affiliations to them (and their roles) survive, and a
+  // Contact that merely restates the Account's name is not emitted as a Person. Curated by hand;
+  // no name heuristic tells these from a real person's own Account.
+  organizationAccountSfIds?: string[];
   // Salesforce user the Eventbrite package (eb4sf) writes paid ticket orders as (SVBC: "SVBC
   // Integration"). A Closed Won Opportunity created by this user is an event ticket order and
   // migrates as Status Received / Gift Type "Event Ticket" (#43); Closed Won gifts anyone else

@@ -73,11 +73,15 @@ Responsive 3-column grid (2 columns below 768px, 1 column below 480px). Date bad
 
 CSS custom properties on `body`:
 
-- `--svbc-accent: #FCB315` (SVBC gold)
-- `--svbc-dark: #2C2C2C`
+- `--svbc-accent: #FFC700` (SVBC gold, as bikesiliconvalley.org)
+- `--svbc-dark` / `--svbc-text: #303030` (website ink)
 - `--svbc-radius: 10px`
 
-System font stack. No external stylesheets or dependencies.
+The "More Information" link is the website's primary button: a gold pill (300px radius) with black
+Poppins 16px text. Manrope (event titles) and Poppins (everything else) are self-hosted by this
+Worker at `/fonts/*.woff2` (`src/fonts.ts`, #123), since the iframe doesn't inherit the parent
+page's fonts and loading them from Google Fonts would send each visitor's IP address to Google;
+the system stack is the fallback. No external stylesheets or dependencies.
 
 ## Embedding
 

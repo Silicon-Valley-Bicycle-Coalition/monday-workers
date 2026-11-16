@@ -65,12 +65,20 @@ export const MARKED_COLUMNS = {
   'Wealth Screening': { locked: [], history: [...WINDFALL_TITLES] },
   'Organizations': { locked: OWNER_ROLLUPS, history: [...SALESFORCE, 'Salesforce Owner'] },
   'Donations': {
-    locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Funraise ID',
+    locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Matched By Company', 'Funraise ID',
       'Eventbrite Order ID', 'Benevity Transaction ID', 'Match Status', 'DTD Status (raw)', 'Match Company',
-      'Sent to DTD'],
+      'Sent to DTD', 'Contacts'],
     history: [...SALESFORCE, 'Salesforce Owner', 'Finance Class', 'Revenue Code', 'Sponsorship Cycle',
       'Fee Covered', 'In-Kind Value', 'In-Kind Category', 'Soft Credit'],
   },
+  // Contacts is written by contact-roles from the Affiliations board; a hand edit is overwritten.
+  // Only boards whose names are in the workspace are touched, so an environment that lacks one
+  // (the sandbox has no BP Request Form, say) just skips it.
+  'Sponsorships': { locked: ['Contacts'], history: [] },
+  'Grants & Contracts': { locked: ['Contacts'], history: [] },
+  'BP Request Form': { locked: ['Contacts'], history: [] },
+  'Bike Education Lifecycle Tracker': { locked: ['Contacts'], history: [] },
+  'Leads': { locked: ['Contacts'], history: [] },
   'Matching Gift Program': {
     locked: ['Fiscal Year', 'Screened', 'Employer identified', 'Eligible', 'Submitted', 'Matches paid',
       'Match dollars', 'Matched gift dollars', 'New matching companies', 'First-time matched donors', 'As of'],
@@ -101,7 +109,7 @@ export const MARKED_COLUMNS = {
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Active'] },
-  'Volunteers': { locked: [], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
+  'Volunteers': { locked: ['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type'], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
   'Activities': { locked: [], history: [...SALESFORCE, 'Owner'] },
 };
 
@@ -155,6 +163,11 @@ export function planRenames(boards, spec = MARKED_COLUMNS, { suffix = '', remove
     if (!remove) for (const t of want.keys()) if (!present.has(t)) missing.push({ boardName: b.name, title: t });
   }
   return { renames, missing, unmarked };
+}
+
+// True when no suffix was given, or at least one board name ends with it.
+export function suffixMatchesAny(boards, suffix) {
+  return !suffix || boards.some((b) => b.name.endsWith(suffix));
 }
 
 export function formatPlan(plan, { apply }) {
@@ -272,7 +285,15 @@ async function main() {
     return 2;
   }
   const options = { suffix: args.suffix, remove: args.remove };
-  const plan = planRenames(await listBoards(token, args.workspace), MARKED_COLUMNS, options);
+  const boards = await listBoards(token, args.workspace);
+  // A suffix that matches no board means every suffixed board would be skipped while unsuffixed
+  // boards in the workspace still match (the sandbox v4 boards end " (sandbox v4)", not " (Sandbox)").
+  if (!suffixMatchesAny(boards, args.suffix)) {
+    console.error(`no board in workspace ${args.workspace} ends with ${JSON.stringify(args.suffix)}; ` +
+      `check the suffix (boards: ${[...new Set(boards.map((b) => b.name.match(/\(([^)]*)\)$/)?.[0]).filter(Boolean))].join(', ')})`);
+    return 2;
+  }
+  const plan = planRenames(boards, MARKED_COLUMNS, options);
   console.log(formatPlan(plan, args));
   if (!args.apply) return 0;
 

@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeNdjson, readNdjson, appendNdjson, writeJson, readJson, repairTornTail } from './artifacts.js';
+import { writeNdjson, readNdjson, appendNdjson, writeJson, readJson, repairTornTail,
+  writeText } from './artifacts.js';
 
 describe('artifacts', () => {
   let dir: string;
@@ -50,5 +51,46 @@ describe('artifacts', () => {
     const p = join(dir, 'manifest.json');
     await writeJson(p, { counts: { Contact: 3 } });
     expect(await readJson<{ counts: { Contact: number } }>(p)).toEqual({ counts: { Contact: 3 } });
+  });
+});
+
+// data/ holds full donor PII: owner-only regardless of umask (#111).
+describe('artifacts file permissions', () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'sfimp-')); });
+  const mode = (p: string) => statSync(p).mode & 0o777;
+
+  it('creates directories 0700 and files 0600', async () => {
+    const nd = join(dir, 'a', 'b', 'x.ndjson');
+    await writeNdjson(nd, [{ Id: 'a' }]);
+    expect(mode(join(dir, 'a'))).toBe(0o700);
+    expect(mode(join(dir, 'a', 'b'))).toBe(0o700);
+    expect(mode(nd)).toBe(0o600);
+
+    const led = join(dir, 'c', 'ledger.ndjson');
+    await appendNdjson(led, { sfId: '1' });
+    expect(mode(join(dir, 'c'))).toBe(0o700);
+    expect(mode(led)).toBe(0o600);
+
+    const js = join(dir, 'd', 'r.json');
+    await writeJson(js, { ok: true });
+    expect(mode(js)).toBe(0o600);
+
+    const txt = join(dir, 'e', 'r.csv');
+    await writeText(txt, 'a,b\n');
+    expect(readFileSync(txt, 'utf8')).toBe('a,b\n');
+    expect(mode(txt)).toBe(0o600);
+  });
+
+  it('tightens a pre-existing world-readable file and its directory on rewrite', async () => {
+    const sub = join(dir, 'old');
+    mkdirSync(sub);
+    chmodSync(sub, 0o755);
+    const p = join(sub, 'x.json');
+    writeFileSync(p, '{}');
+    chmodSync(p, 0o644);
+    await writeJson(p, { ok: true });
+    expect(mode(p)).toBe(0o600);
+    expect(mode(sub)).toBe(0o700);
   });
 });

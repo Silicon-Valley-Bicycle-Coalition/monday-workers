@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MARKED_COLUMNS, MondayError, applyRenames, isTransient, parseArgs, planRenames, withRetry,
+  MARKED_COLUMNS, MondayError, applyRenames, isTransient, parseArgs, planRenames, suffixMatchesAny, withRetry,
 } from './mark-read-only-columns.mjs';
 import { WINDFALL_TITLES } from './lib/windfall-board.mjs';
 
@@ -40,6 +40,13 @@ describe('planRenames', () => {
     assert.deepEqual(plan.renames.map((r) => r.boardId), ['1']);
   });
 
+  it('suffixMatchesAny rejects a suffix no board ends with (sandbox v4 boards end " (sandbox v4)")', () => {
+    const boards = [board('1', 'Sponsorships (sandbox v4)', []), board('2', 'Pledge to Ride', [])];
+    assert.equal(suffixMatchesAny(boards, ' (Sandbox)'), false);
+    assert.equal(suffixMatchesAny(boards, ' (sandbox v4)'), true);
+    assert.equal(suffixMatchesAny(boards, ''), true);
+  });
+
   it('lists listed titles a matched board does not have, so typos and unbuilt columns show up', () => {
     const plan = planRenames([board('2', 'Donations', [col('d', 'Amount')])], spec);
     assert.deepEqual(plan.missing, [{ boardName: 'Donations', title: 'Funding Stream' }]);
@@ -60,6 +67,13 @@ describe('planRenames', () => {
 });
 
 describe('MARKED_COLUMNS', () => {
+  it('locks Contacts (contact-roles) on the six opportunity boards', () => {
+    for (const name of ['Sponsorships', 'Grants & Contracts', 'BP Request Form', 'Donations', 'Bike Education Lifecycle Tracker', 'Leads']) {
+      assert.ok(MARKED_COLUMNS[name].locked.includes('Contacts'), name);
+    }
+    assert.ok(MARKED_COLUMNS.Donations.locked.includes('Funding Stream'));
+  });
+
   it('never lists a title as both 🔒 and 📜 on one board', () => {
     for (const [name, { locked, history }] of Object.entries(MARKED_COLUMNS)) {
       const both = locked.filter((t) => history.includes(t));

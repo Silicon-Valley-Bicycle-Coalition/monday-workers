@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { resolvePerson } from './people';
+import { BatchLookups } from './batchLookups';
 import type { MondayClient, MondayItem } from '../monday/client';
 import type { BenevityImportConfig } from '../types';
 
@@ -29,6 +30,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
+    fetchItemAssets: vi.fn(),
     ...overrides,
   };
 }
@@ -122,5 +124,45 @@ describe('resolvePerson', () => {
       '99'
     );
     expect(result.status).toBe('unresolved');
+  });
+  it('reads the Person links of every work-email Affiliation in one request', async () => {
+    const getLinkedItemIds = vi.fn().mockResolvedValue(['7']);
+    const monday = fakeMondayClient({
+      findItemsByColumnValue: vi.fn((boardId, columnId) =>
+        columnId === 'work_email'
+          ? Promise.resolve([{ id: 'aff-1', name: 'A' }, { id: 'aff-2', name: 'B' }, { id: 'aff-3', name: 'C' }])
+          : Promise.resolve([])
+      ),
+      getLinkedItemIds,
+    });
+    const result = await resolvePerson(
+      monday,
+      fakeConfig(),
+      { company: 'Acme', donorFirstName: 'Jordan', donorLastName: 'Rivera', email: 'jordan@acme.example' },
+      '1'
+    );
+    expect(result).toEqual({ status: 'resolved', personItemId: '7' });
+    expect(getLinkedItemIds).toHaveBeenCalledTimes(1);
+    expect(getLinkedItemIds).toHaveBeenCalledWith(['aff-1', 'aff-2', 'aff-3'], 'person_link');
+  });
+
+  it("shares an Organization's Affiliation and Employer lookups across rows given the same BatchLookups", async () => {
+    const findItemsByColumnValue = vi.fn((boardId: number, columnId: string, value: string) =>
+      columnId === 'org_link' && value === '99' ? Promise.resolve([{ id: 'aff-1', name: 'Affiliation' }]) : Promise.resolve([])
+    );
+    const getLinkedItemIds = vi.fn().mockResolvedValue(['5']);
+    const monday = fakeMondayClient({
+      findItemsByColumnValue,
+      findItemsByName: vi.fn().mockResolvedValue([{ id: '5', name: 'Jordan Rivera' }] satisfies MondayItem[]),
+      getLinkedItemIds,
+    });
+    const lookups = new BatchLookups();
+    const row = { company: 'Acme', donorFirstName: 'Jordan', donorLastName: 'Rivera', email: 'Not shared by donor' };
+    expect(await resolvePerson(monday, fakeConfig(), row, '99', lookups)).toEqual({ status: 'resolved', personItemId: '5' });
+    expect(await resolvePerson(monday, fakeConfig(), row, '99', lookups)).toEqual({ status: 'resolved', personItemId: '5' });
+
+    expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'org_link')).toHaveLength(1);
+    expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'employer')).toHaveLength(1);
+    expect(getLinkedItemIds).toHaveBeenCalledTimes(1);
   });
 });

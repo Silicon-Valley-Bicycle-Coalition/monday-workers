@@ -5,6 +5,7 @@ import type { WriteStamp } from '../flags';
 export function describeMessage(body: WriteQueueMessage): string {
   if (body.kind === 'event') return `event "${body.eventId}"`;
   if (body.kind === 'attendee') return `attendee "${body.attendeeId}"`;
+  if (body.kind === 'class-email') return `class email ${body.step} for registration "${body.registrationId}" on event "${body.eventId}"`;
   return `order "${body.orderId}"`;
 }
 
@@ -12,6 +13,7 @@ export function describeMessage(body: WriteQueueMessage): string {
 export function messageDeliveryId(body: WriteQueueMessage): string {
   if (body.kind === 'event') return `event:${body.eventId}`;
   if (body.kind === 'attendee') return `attendee:${body.attendeeId}`;
+  if (body.kind === 'class-email') return `class-email:${body.step}:${body.eventId}:${body.registrationId}`;
   return `order:${body.orderId}`;
 }
 

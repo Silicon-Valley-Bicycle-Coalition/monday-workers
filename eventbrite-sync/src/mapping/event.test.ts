@@ -27,6 +27,7 @@ describe('mapEvent', () => {
   it('maps the Pacific class date and day of the start, and normalizes timestamps', () => {
     const m = mapEvent(event(), config, NOW);
     expect(m.itemName).toBe('Adult Learn to Ride');
+    expect(m.eventName).toBe('Adult Learn to Ride');
     // 2026-10-31T02:00Z is the evening of Friday Oct 30 in California.
     expect(m.classDate).toBe('2026-10-30');
     expect(m.classDay).toBe('Friday');

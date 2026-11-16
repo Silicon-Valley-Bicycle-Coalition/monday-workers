@@ -37,10 +37,27 @@ describe('registrationQualifies (decided 2026-10-09: a checked-in volunteer coun
 });
 
 describe('historicalShiftQualifies', () => {
-  const shift = (over = {}) => ({ volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed', ...over });
+  const shift = (over = {}) => ({ volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed', historical: false, ...over });
   it('a Completed shift with hours ≥ 1 and a date qualifies', () => expect(historicalShiftQualifies(shift(), historical)).toBe(true));
   it.each([
-    ['Canceled', shift({ statusLabel: 'Canceled' })], ['blank hours', shift({ hours: null })], ['0.5 hours', shift({ hours: 0.5 })],
+    ['Canceled', shift({ statusLabel: 'Canceled' })], ['blank hours (no `historical` column configured: every row needs hours)', shift({ hours: null })], ['0.5 hours', shift({ hours: 0.5 })],
     ['no date', shift({ dateISO: null })], ['no volunteer', shift({ volunteerItemId: null })],
   ])('does not qualify: %s', (_label, s) => expect(historicalShiftQualifies(s, historical)).toBe(false));
+});
+
+describe('historicalShiftQualifies with the Historical checkbox configured (new Eventbrite rows have no hours)', () => {
+  const withCol: HistoricalVolunteerBoardConfig = { ...historical, columns: { ...historical.columns, historical: 'hist' } };
+  const shift = (over = {}) => ({ volunteerItemId: 'p1', dateISO: '2026-09-01', hours: null, statusLabel: 'Completed', historical: false, ...over });
+  it('a non-Historical Completed shift qualifies with blank hours, or any hours', () => {
+    expect(historicalShiftQualifies(shift(), withCol)).toBe(true);
+    expect(historicalShiftQualifies(shift({ hours: 0 }), withCol)).toBe(true);
+  });
+  it.each([['blank', null], ['0', 0], ['0.5', 0.5]])('a Historical Completed shift with %s hours does not qualify', (_l, hours) =>
+    expect(historicalShiftQualifies(shift({ historical: true, hours }), withCol)).toBe(false));
+  it('a Historical Completed shift with hours ≥ 1 qualifies (unchanged)', () =>
+    expect(historicalShiftQualifies(shift({ historical: true, hours: 2 }), withCol)).toBe(true));
+  it.each([
+    ['Canceled', shift({ statusLabel: 'Canceled' })], ['RSVP', shift({ statusLabel: 'RSVP' })], ['No-Show', shift({ statusLabel: 'No-Show' })],
+    ['no status', shift({ statusLabel: null })], ['no Volunteer link', shift({ volunteerItemId: null })], ['no date', shift({ dateISO: null })],
+  ])('a non-Historical row does not qualify: %s', (_l, s) => expect(historicalShiftQualifies(s, withCol)).toBe(false));
 });

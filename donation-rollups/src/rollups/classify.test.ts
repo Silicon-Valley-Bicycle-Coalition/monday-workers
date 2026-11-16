@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyGift, acknowledgmentTier, FUNDING_STREAMS, GIFT_SIZES } from './classify';
+import { classifyGift, acknowledgmentTier, fiscalYearEnding, FUNDING_STREAMS, GIFT_SIZES } from './classify';
 
 const g = (over: Partial<Parameters<typeof classifyGift>[0]> = {}) =>
   classifyGift({ amountCents: 5000, dateISO: '2025-08-01', giftType: 'Donation', ...over }, 7);
@@ -38,8 +38,8 @@ describe('classifyGift — funding stream', () => {
 
 describe('classifyGift — gift size', () => {
   it.each([
-    [1, '< $100'], [9999, '< $100'], [10000, '$100–249'], [24999, '$100–249'],
-    [25000, '$250–999'], [99999, '$250–999'], [100000, '$1k–4.9k'], [499999, '$1k–4.9k'],
+    [1, '< $100'], [9999, '< $100'], [10000, '$100–199'], [19999, '$100–199'],
+    [20000, '$200–999'], [24999, '$200–999'], [25000, '$200–999'], [99999, '$200–999'], [100000, '$1k–4.9k'], [499999, '$1k–4.9k'],
     [500000, '$5k+'], [12345678, '$5k+'],
   ])('%i cents → %s', (amountCents, size) => {
     expect(g({ amountCents }).giftSize).toBe(size);
@@ -98,5 +98,20 @@ describe('acknowledgmentTier', () => {
   it('is null without a usable amount, so the cell is left alone', () => {
     expect(acknowledgmentTier(null)).toBeNull();
     expect(acknowledgmentTier(NaN)).toBeNull();
+  });
+});
+
+describe('fiscalYearEnding', () => {
+  it('names the fiscal year by the calendar year it ends in', () => {
+    expect(fiscalYearEnding('2025-08-01', 7)).toBe('2026');
+    expect(fiscalYearEnding('2026-06-30', 7)).toBe('2026');
+    expect(fiscalYearEnding('2026-07-01', 7)).toBe('2027');
+    expect(fiscalYearEnding('2025-12-31T10:00:00Z', 7)).toBe('2026');
+  });
+  it('is null for a missing or malformed date', () => {
+    expect(fiscalYearEnding(null, 7)).toBeNull();
+    expect(fiscalYearEnding('', 7)).toBeNull();
+    expect(fiscalYearEnding('2025-13-01', 7)).toBeNull();
+    expect(fiscalYearEnding('not a date', 7)).toBeNull();
   });
 });

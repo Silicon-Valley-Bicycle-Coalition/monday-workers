@@ -1,10 +1,10 @@
 # UAT script: Monday backup
 
-**Status 2026-10-06: nothing to test yet.**
+**Status 2026-11-16: live in production since 2026-11-03; the sandbox copy since 2026-11-10.**
 
-## What it will do
+## What it does
 
-Every night, copy every board, item, comment thread, and doc in the workspace into a dated folder
+Every night, copy every board, item, comment thread, and doc across SVBC's Monday account into a dated folder
 on SVBC's Google Drive, so that after cutover, when Monday holds the only copy of the donor
 records, a mistaken bulk delete or a vendor outage isn't a data loss. A separate restore procedure
 puts a board back from a snapshot. A run takes about an hour. An hourly check raises an alert if no
@@ -12,16 +12,17 @@ complete backup has landed in 36 hours.
 
 ## Where it stands
 
-The sandbox copy works: since 2026-11-10 it backs up the CRM Sandbox v4 boards nightly into the
+Production has run nightly since 2026-11-03; the first complete snapshot landed 2026-11-04. The
+sandbox copy works too: since 2026-11-10 it backs up the CRM Sandbox v4 boards into the
 *Monday Backups (sandbox)* Shared Drive (members only, because the boards hold real donor
 records). The restore rehearsal is still outstanding. None of this is something a staff tester
 can exercise.
 
-## When it becomes testable
+## What to check
 
-The only staff-visible check will be: open the backup folder in Drive the morning after it is
-configured and confirm a dated snapshot folder is there. Watch the status table in the
-[README](README.md).
+The only staff-visible check: open the production backup folder in the Shared Drive and confirm
+there is a dated snapshot folder from last night. Its board and doc files end in `.enc` and won't
+open as text: they are encrypted on purpose, and only the restore tool, with the key, reads them.
 
 ## Known limits, for later
 

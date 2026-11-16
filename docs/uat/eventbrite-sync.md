@@ -4,7 +4,7 @@
 
 **Status 2026-11-02: nothing to test yet for orders.** The sandbox copy has been deployed since
 2026-10-26, but it can't write a gift until the **Eventbrite Order ID** column exists on
-Donations (sandbox v3) and its id is in the sandbox config, and a refund can't be recorded until
+Donations (sandbox v4) and its id is in the sandbox config, and a refund can't be recorded until
 someone adds the **Refunded** Status label there. Production went live on 2026-11-02. This
 script will be updated when the sandbox can take an order.
 
@@ -24,7 +24,7 @@ create Event Registrations items; that is a separate, later integration.
 ## Try it (once it is live in the sandbox)
 
 1. **A paid order.** Buy a ticket on the sandbox test event. Within about ten seconds a new item
-   should appear on [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310),
+   should appear on [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657),
    named `<your name> - <event name>`, with Amount (what you paid, fees included), Date, Status
    **Received**, Gift Type **Event Ticket**, Fiscal Year Ending, Thank You Sent, Eventbrite Order
    ID, and a Donor link to your People item.
@@ -46,8 +46,8 @@ create Event Registrations items; that is a separate, later integration.
 
 - **Refunded** is not yet a Status label on the Donations board, so a refund write fails until
   someone adds it. Already on the pre-cutover list (shared with the Funraise sync).
-- Bike Summit 2026 tickets sold before this goes live will be added in one batch after the
-  Summit (Oct 22), not as they are sold.
+- Bike Summit 2026 tickets sold before this went live are added in one batch by the post-Summit
+  backfill (`scripts/backfill-orders.mjs`), not as they were sold.
 - A ticket's gift has no link to an Event Registrations item. Known limit until the
   registrations integration exists.
 
@@ -62,6 +62,10 @@ For the Bike Education coordinator. Everything here uses a test class and **staf
 only**; never register a real attendee. Each email is a Gmail draft you write. The **Send event
 email** link on the class's Events item opens a page that sends it from your Gmail as `learn@`. In
 the sandbox, every email goes to the sandbox address, whoever is on the list.
+
+**Not testable in the sandbox yet:** the send page and its Events link are configured only in
+production (`attendeeSync.classEmails.pageUrl` is null in `config/sandbox.json`), so the steps
+below wait until the sandbox gets them.
 
 1. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
    should appear on Event Registrations with Attendance **Registered** and the class date, day and
@@ -180,3 +184,12 @@ The board holds real pledges replayed from 2026, so treat it as private.
 
 - Unknown is separate from Outside on purpose. Past reports counted the two together, so Outside looks much smaller.
 - 2025's total on the dashboard is lower than the 3,758 in its report, because that figure includes pledges from outside Eventbrite.
+
+## Volunteers board: try it (staff)
+
+After the volunteer cutover (`docs/runbooks/volunteers-board-cutover.md`).
+
+1. **Recent events view.** Open the Volunteers board and choose the **Recent events** view. Volunteers should be grouped by **Event**, newest event first, with nothing older than about 90 days. Pick one group and confirm its people match who signed up on Eventbrite.
+2. **Stand-alone volunteer event.** Find a volunteer listing with no attendee event. Its volunteers should sit in a group named after the listing itself (Event defaults to it).
+3. **Re-point Event.** On one volunteer's item, change **Event** to the attendee event the shift belongs to. The item should move to that group. Do the same for the other volunteers on that shift so they share one group. After the next Eventbrite change for that person (or the next day), Event should still be the one you picked.
+4. **Hands off.** The 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email) should be marked read-only; leave Historical alone on old rows.

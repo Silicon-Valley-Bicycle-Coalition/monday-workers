@@ -1,3 +1,5 @@
+import { FONT_FACE_CSS } from './fonts';
+
 export function widgetResponse(url: URL, organizerId: string | null, webAnalyticsToken: string): Response {
   const maxEvents = Math.min(parseInt(url.searchParams.get('max') || '20', 10), 50);
   const showImages = url.searchParams.get('images') !== 'false';
@@ -5,7 +7,7 @@ export function widgetResponse(url: URL, organizerId: string | null, webAnalytic
   const layout = url.searchParams.get('layout') === 'grid' ? 'grid' : 'list';
 
   const html = widgetHTML(maxEvents, showImages, showDescriptions, organizerId, layout, webAnalyticsToken);
-  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
+  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=3600' } });
 }
 
 function widgetHTML(
@@ -29,17 +31,21 @@ function widgetHTML(
 <title>SVBC Events</title>
 ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliberately: Cloudflare serves beacon.min.js from its own edge and updates it without version pinning, so a pinned SRI hash would break the beacon the next time Cloudflare ships an update. This is the standard, documented way to load Cloudflare Web Analytics. --><script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${webAnalyticsToken}"}'></script>` : ''}
 <style>
+  /* Manrope/Poppins, self-hosted by this Worker (src/fonts.ts): the widget is an iframe, so it doesn't inherit the site's fonts. */
+  ${FONT_FACE_CSS}
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    --svbc-accent: #FCB315;
+    --svbc-accent: #FFC700;
     --svbc-accent-light: #FEF3D6;
-    --svbc-dark: #2C2C2C;
-    --svbc-dark-hover: #1a1a1a;
-    --svbc-text: #2C2C2C;
+    --svbc-dark: #303030;
+    --svbc-black: #000000;
+    --svbc-accent-hover: #E6B300;
+    --svbc-text: #303030;
     --svbc-text-muted: #6b7280;
     --svbc-border: #e5e7eb;
     --svbc-radius: 10px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --svbc-font-heading: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     color: var(--svbc-text);
     background: transparent;
     max-width: 720px;
@@ -57,7 +63,7 @@ ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliber
   .svbc-date-day { display: block; font-size: 1.5rem; font-weight: 700; line-height: 1; color: var(--svbc-text); }
   .svbc-date-month { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--svbc-dark); margin-top: 2px; }
   .svbc-event-details { flex: 1; min-width: 0; }
-  .svbc-event-title { font-size: 1.15rem; font-weight: 700; line-height: 1.3; margin-bottom: 0.6rem; color: var(--svbc-text); }
+  .svbc-event-title { font-family: var(--svbc-font-heading); letter-spacing: -0.02em; font-size: 1.15rem; font-weight: 500; line-height: 1.3; margin-bottom: 0.6rem; color: var(--svbc-text); }
   .svbc-meta-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--svbc-text-muted); line-height: 1.4; margin-bottom: 0.3rem; }
   .svbc-meta-row:last-child { margin-bottom: 0; }
   .svbc-meta-icon { flex-shrink: 0; width: 16px; height: 16px; color: var(--svbc-accent); }
@@ -65,8 +71,9 @@ ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliber
   .svbc-event-img img { width: 100%; height: auto; display: block; }
   .svbc-event-body { padding: 1.25rem 1.5rem; }
   .svbc-event-summary { font-size: 0.9rem; color: var(--svbc-text-muted); line-height: 1.6; margin-bottom: 1.25rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .svbc-cta { display: inline-block; background: var(--svbc-dark); color: #fff; text-decoration: none; font-size: 0.9rem; font-weight: 600; padding: 0.6rem 1.5rem; border-radius: 6px; transition: background 0.15s ease; }
-  .svbc-cta:hover { background: var(--svbc-dark-hover); }
+  .svbc-cta { display: inline-block; background: var(--svbc-accent); color: var(--svbc-black); border: 1px solid var(--svbc-accent); text-decoration: none; font-size: 16px; font-weight: 400; line-height: 1.2; padding: 16px 20.8px; border-radius: 300px; transition: background 0.15s ease; }
+  .svbc-cta:hover { background: var(--svbc-accent-hover); }
+  .svbc-cta:focus-visible { outline: 2px solid var(--svbc-accent); outline-offset: 2px; }
   .svbc-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 4px; margin-left: 0.5rem; vertical-align: middle; }
   .svbc-badge-free { background: var(--svbc-accent-light); color: var(--svbc-dark); }
   .svbc-badge-paid { background: #fef3c7; color: #92400e; }

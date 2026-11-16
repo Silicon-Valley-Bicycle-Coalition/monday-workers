@@ -7,6 +7,12 @@ import type { PortalCard } from './card/loadCardData';
 import { t } from './i18n/t';
 
 describe('page', () => {
+  it('loads nothing from another origin: fonts come from the portal stylesheet (#123)', () => {
+    const html = page('Title', '<p>body</p>', 'en', { authenticated: true });
+    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    expect(html).not.toMatch(/<(link|script|img)\b[^>]*\b(href|src)="https?:/);
+  });
+
   it('wraps the body in a document with charset, viewport, the given title, and the locale as <html lang>', () => {
     const html = page('Check Your Email — SVBC Member Portal', '<h1>Check your email</h1>', 'es');
     expect(html).toContain('<html lang="es">');

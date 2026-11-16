@@ -15,9 +15,13 @@ import { isTerminalError } from '../errors';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { OutageBreaker } from '../monday/outage';
 import { describeMessage, messageDeliveryId } from './messages';
 import { processEvent } from './processEvent';
 import { processAttendee } from './processAttendee';
+import { processClassEmail } from './processClassEmail';
+import type { ClassEmailKind } from '../db/classEmails';
+import type { AudienceRole } from '../classEmails/plan';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -58,7 +62,22 @@ export type AttendeeQueueMessage = {
   action: string;
 } & WriteStamp;
 
-export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
+// What a class email still needs once it has gone out, one message per recipient and step (#96; see
+// processClassEmail.ts). The route enqueues the timeline step, or the follow-up step directly when no
+// timeline activity is configured; the timeline step chains to the follow-up on success.
+export type ClassEmailQueueMessage = {
+  kind: 'class-email';
+  eventId: string;
+  emailKind: ClassEmailKind;
+  // Which board `registrationId` is an item on, read once by the route.
+  audience: AudienceRole;
+  registrationId: string;
+} & (
+  | { step: 'timeline'; sender: string; subject: string; sentAt: string }
+  | { step: 'follow-up' }
+) & WriteStamp;
+
+export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage | ClassEmailQueueMessage;
 
 export type ConsumerQueue = QueueLike & BatchSender<WriteQueueMessage>;
 
@@ -79,7 +98,11 @@ export interface ProcessBatchDeps {
  * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
  * KV read failure) leaves the message on the queue untouched, backing off like any retry.
  */
-export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], realDeps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+  // An event is fetched from Eventbrite once per batch, however many of its attendees are in it (#96).
+  const deps = { ...realDeps, eventbriteClient: cacheEventReads(realDeps.eventbriteClient) };
+  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  const breaker = new OutageBreaker();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
     const disposition = messageDisposition(gate.mode, message.body);
@@ -88,30 +111,67 @@ export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMes
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx, message.body.kind ?? 'order'));
+    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx, message.body.kind ?? 'order'), breaker);
   }
 }
 
-export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
+// getEvent memoised for the life of one batch, so the seconds-old copy is still "current" in the
+// sense the consumer needs. A failed read is not kept: the next message asks again.
+function cacheEventReads(client: EventbriteClient): EventbriteClient {
+  const events = new Map<string, ReturnType<EventbriteClient['getEvent']>>();
+  return {
+    getOrder: (orderId) => client.getOrder(orderId),
+    getAttendee: (eventId, attendeeId) => client.getAttendee(eventId, attendeeId),
+    getEvent: (eventId) => {
+      let read = events.get(eventId);
+      if (read === undefined) {
+        read = client.getEvent(eventId);
+        events.set(eventId, read);
+        read.catch(() => events.delete(eventId));
+      }
+      return read;
+    },
+  };
+}
+
+export async function processOrderQueueBatch(
+  messages: QueueMessageLike<WriteQueueMessage>[],
+  deps: ProcessBatchDeps,
+  breaker: OutageBreaker = new OutageBreaker(),
+): Promise<void> {
   for (const message of messages) {
     const body = message.body;
     const label = describeMessage(body);
+    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // spend the transport's in-process attempts again on every remaining message.
+    if (breaker.open) {
+      breaker.defer(message);
+      continue;
+    }
     try {
       if (body.kind === 'event') await processEvent(body, deps);
       else if (body.kind === 'attendee') await processAttendee(body, deps);
+      else if (body.kind === 'class-email') await processClassEmail(body, deps);
       else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
       const terminal = isTerminalError(err);
+      const outage = !terminal && breaker.trip(err);
       const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
-      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}${terminal ? ' — fix the cause, then re-drive with the backfill script' : ''}`);
+      console.error(
+        `eventbrite-sync consumer: failed to process ${label}: ${errMsg}` +
+          (terminal ? ' — fix the cause, then re-drive with the backfill script' : '') +
+          (outage ? ' — Monday unavailable, deferring the rest of the batch' : ''),
+      );
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
       let recorded = false;
       try {
         if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
         else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
-        else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
+        else if (body.kind === 'class-email') {
+          // No ledger row to stamp: the failure is only logged above, and the dead-letter line names it.
+        } else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
         recorded = true;
       } catch (recordErr) {
         console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
@@ -119,8 +179,9 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQue
       // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
       // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
       // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
-      // max_retries of 100 (about four days).
+      // max_retries of 100 (about four days), raised to Monday's hint on an outage.
       if (terminal && recorded) message.ack();
+      else if (outage) breaker.defer(message);
       else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }

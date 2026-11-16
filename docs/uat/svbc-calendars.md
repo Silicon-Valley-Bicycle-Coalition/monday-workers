@@ -18,8 +18,9 @@ Cupertino, Campbell, Saratoga, BART, and Caltrain's BATAC), scraped from each ag
 2. Open <https://committees.bikesiliconvalley.org/calendars>. Pick a committee and open its
    `.ics` link; subscribe to it from your calendar app if you like. Does the next meeting date
    match the agency's own site? Committee feeds refresh within 24 hours.
-3. Open <https://committees.bikesiliconvalley.org/status.json>. Every feed should read healthy;
-   a feed whose source site is down serves its last good copy and says so here.
+3. Open <https://committees.bikesiliconvalley.org/status.json>. Every feed should show
+   `consecutiveFailures: 0` and a recent `lastSuccessAt`. A feed whose source site is down shows
+   a rising failure count while its `.ics` keeps serving the last good copy.
 
 ## Don't report these
 

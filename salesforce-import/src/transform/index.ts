@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
-import { dataPath, readNdjson, writeJson, writeNdjson } from '../artifacts.js';
+import { dataPath, readNdjson, writeJson, writeNdjson, writeText } from '../artifacts.js';
+import { csvRow } from '../csv.js';
 import { GeoCache } from '../geocode/cache.js';
 import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
 import type { EnrichmentRow } from '../enrich/index.js';
@@ -12,7 +12,7 @@ import { exactStaffMatcher, parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
-  rosterContactIds, soleContactAccountIds,
+  rosterContactIds, soleContactAccountIds, restatesAccountName,
   type InclusionInput } from './people.js';
 import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpGiftDay, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
@@ -29,12 +29,6 @@ import { AffiliationIndex, attributeOpportunity, attributeRegistration, attribut
 
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
-
-// RFC 4180: quote a field when it holds a comma, quote, or newline; double any quotes inside.
-const csvField = (v: unknown): string => {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 export async function runTransform(args: string[]): Promise<number> {
   const cfg = loadConfig();
@@ -98,8 +92,11 @@ export async function runTransform(args: string[]): Promise<number> {
   // against the Account (gifts, links) re-points at the person. One a contact merge left with no
   // Contact folds into the same-named Contact its gifts name.
   const personNamed = personNamedAccountIds(accounts, contacts, opportunities);
+  // Curated exception: One-to-One Accounts that are really organizations (config) are Organizations.
+  const orgLikeAccountIds = new Set(cfg.organizationAccountSfIds ?? []);
   const orgAccountIds = new Set(accounts
-    .filter((a) => !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string))
+    .filter((a) => orgLikeAccountIds.has(a['Id'] as string) ||
+      (!isOneToOneAccount(a) && !personNamed.has(a['Id'] as string)))
     .map((a) => a['Id'] as string));
 
   // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
@@ -195,6 +192,10 @@ export async function runTransform(args: string[]): Promise<number> {
   for (const c of sortedContacts) {
     const id = c['Id'] as string;
     if (placeholderDonorSfIds.has(id)) continue; // "Anonymous Person" is not a Person
+    // An organization typed in as a Contact is its Organizations item now, not also a Person.
+    const ownAccountId = c['AccountId'] as string | null;
+    if (ownAccountId && orgLikeAccountIds.has(ownAccountId) &&
+        restatesAccountName(c, accountById.get(ownAccountId)?.['Name'])) continue;
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
     boardOf.set(id, board);
@@ -224,7 +225,7 @@ export async function runTransform(args: string[]): Promise<number> {
       emailStats.review++;
       const name = [c['FirstName'], c['LastName']].filter(Boolean).join(' ');
       const candidates = refs.map((ref) => `${ref.sfId}:${accountById.get(ref.orgSfId)?.['Name'] ?? ''}`).join(';');
-      emailReviewRows.push([id, name, r.email, r.domain, candidates].map(csvField).join(','));
+      emailReviewRows.push(csvRow([id, name, r.email, r.domain, candidates]));
     }
   }
   const householdPrimaryOf = new Map<string, string>();   // household email → first contact Id
@@ -267,9 +268,9 @@ export async function runTransform(args: string[]): Promise<number> {
     const att = attributeOpportunity(o, affiliationIndex, orgAccountIds);
     if (att && 'affiliationSfId' in att) attributedOpps.set(o['Id'] as string, att.affiliationSfId);
     else if (att && 'unaffiliated' in att) {
-      unaffiliatedRows.push([o['Id'], att.unaffiliated.contactSfId, att.unaffiliated.orgSfId,
+      unaffiliatedRows.push(csvRow([o['Id'], att.unaffiliated.contactSfId, att.unaffiliated.orgSfId,
         accountById.get(att.unaffiliated.orgSfId)?.['Name'] ?? '', o['Amount'] ?? '',
-        String(o['CloseDate'] ?? '').slice(0, 10)].map(csvField).join(','));
+        String(o['CloseDate'] ?? '').slice(0, 10)]));
     }
   }
   const attributedRegs = new Map<string, { affiliationSfId: string; attribution: 'Auto' | 'Needs review' }>();
@@ -282,9 +283,9 @@ export async function runTransform(args: string[]): Promise<number> {
   // Gifts whose donor falls through to a One-to-One Account (no Primary Contact, no Funraise
   // donor) credit its sole migrated Contact; the rest load donor-less and go to review
   // (decided 2026-10-26, monday-migration docs/24). Built from boardOf, so inclusion is unchanged.
-  const personAccounts = soleContactAccountIds(accounts, contacts, new Set(boardOf.keys()));
+  const personAccounts = soleContactAccountIds(accounts.filter((a) => !orgLikeAccountIds.has(a['Id'] as string)), contacts, new Set(boardOf.keys()));
   const donorAlias = new Map([...personNamed, ...personAccounts.alias]);
-  const personAccountIds = new Set(accounts.filter(isOneToOneAccount).map((a) => a['Id'] as string));
+  const personAccountIds = new Set(accounts.filter((a) => isOneToOneAccount(a) && !orgLikeAccountIds.has(a['Id'] as string)).map((a) => a['Id'] as string));
   let personAccountLinked = 0;
   const personAccountRows: string[] = [];
   const notePersonAccountGift = (accountId: string | null, sfId: unknown, amount: unknown, dateISO: unknown) => {
@@ -292,8 +293,8 @@ export async function runTransform(args: string[]): Promise<number> {
     if (personAccounts.alias.has(accountId)) { personAccountLinked++; return; }
     const reason = personAccounts.unresolved.get(accountId);
     if (reason) {
-      personAccountRows.push([sfId, accountId, accountById.get(accountId)?.['Name'] ?? '', reason, amount ?? '',
-        String(dateISO ?? '').slice(0, 10)].map(csvField).join(','));
+      personAccountRows.push(csvRow([sfId, accountId, accountById.get(accountId)?.['Name'] ?? '', reason, amount ?? '',
+        String(dateISO ?? '').slice(0, 10)]));
     }
   };
   // Personal / organization rollups follow the Donor link, which follows attribution — so
@@ -361,7 +362,7 @@ export async function runTransform(args: string[]): Promise<number> {
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
     const enrichedKey = enriched?.parts ? normalizeAddress(enriched.parts) : null;
     const geoKey = billingKey ?? enrichedKey;
-    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined);
+    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined, orgLikeAccountIds.has(a['Id'] as string));
     if (!p) continue;
     if (enriched) {
       if (!p.columns['Website'] && enriched.website) p.columns['Website'] = enriched.website;
@@ -394,7 +395,7 @@ export async function runTransform(args: string[]): Promise<number> {
   }
   const lostCount = payloads.filter((p) => p.board === 'donations'
     && (p.columns['Status'] as { label?: string } | undefined)?.label === LOST).length;
-  warnings.push(`donations: ${lostCount} gifts Lost — pipeline pitches closed lost or withdrawn, and open ` +
+  warnings.push(`donations: ${lostCount} gifts Closed Lost — pipeline pitches closed lost or withdrawn, and open ` +
     `stages dated before FY${staleBeforeFY} (docs/32)`);
   if (ebOrders.multiOrderOpportunities > 0) {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
@@ -517,16 +518,15 @@ export async function runTransform(args: string[]): Promise<number> {
   warnings.push(`donations: ${archiveCount} of ${donationPayloads.length} flagged for archive ` +
     `(fiscal years before FY${plan.cutoffFY}); peak active ${plan.peakActive}`);
 
-  await mkdir(dataPath('review'), { recursive: true });
   // Always written (header-only when nothing needs review), like unaffiliated-org-gifts.csv
   // below — otherwise a file from a prior run with review rows lingers after a later run
   // resolves them all, silently telling the operator there's still something to review.
-  await writeFile(dataPath('review', 'email-classification.csv'),
-    ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n', 'utf8');
-  await writeFile(dataPath('review', 'unaffiliated-org-gifts.csv'),
-    ['opportunitySfId,contactSfId,orgSfId,orgName,amount,closeDate', ...unaffiliatedRows].join('\n') + '\n', 'utf8');
-  await writeFile(dataPath('review', 'unlinked-person-account-gifts.csv'),
-    ['opportunitySfId,accountSfId,accountName,reason,amount,closeDate', ...personAccountRows].join('\n') + '\n', 'utf8');
+  await writeText(dataPath('review', 'email-classification.csv'),
+    ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n');
+  await writeText(dataPath('review', 'unaffiliated-org-gifts.csv'),
+    ['opportunitySfId,contactSfId,orgSfId,orgName,amount,closeDate', ...unaffiliatedRows].join('\n') + '\n');
+  await writeText(dataPath('review', 'unlinked-person-account-gifts.csv'),
+    ['opportunitySfId,accountSfId,accountName,reason,amount,closeDate', ...personAccountRows].join('\n') + '\n');
   warnings.push(`emails: ${emailStats.work} work, ${emailStats.household} household, ${emailStats.review} review, ` +
     `${emailStats.swapped} swapped` + (emailStats.review > 0 ? ' — see data/review/email-classification.csv' : ''));
   warnings.push(`attribution: ${attributedOpps.size} gifts and ${attributedRegs.size} registrations attributed; ` +

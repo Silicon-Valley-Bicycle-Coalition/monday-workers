@@ -52,6 +52,10 @@
       {
         "queue": "member-portal-letter-emails",
         "max_retries": 100,
+        // Floor for a retry that carries no delay of its own: a throw from queue() itself (a missing
+        // secret, a config error, a CPU kill) redelivers the whole batch, and without this it would do
+        // so at once and spend all 100 retries in minutes. Per-message retry({ delaySeconds }) overrides it.
+        "retry_delay": 60,
         // Same reasoning as the change-requests consumer above.
         "max_concurrency": 1,
         "dead_letter_queue": "member-portal-letter-emails-dlq"
@@ -127,6 +131,7 @@
           {
             "queue": "member-portal-letter-emails-sandbox",
             "max_retries": 100,
+            "retry_delay": 60,
             "max_concurrency": 1,
             "dead_letter_queue": "member-portal-letter-emails-sandbox-dlq"
           }

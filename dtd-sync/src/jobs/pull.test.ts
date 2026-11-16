@@ -5,7 +5,7 @@ import { validateConfig } from '../config';
 import { DtdAuthError } from '../dtd/client';
 import type { DtdDonation } from '../dtd/types';
 import type { DonationItem, DtdMondayClient, PersonItem } from '../monday/client';
-import { getRecord, upsertRecord } from '../db/records';
+import { getRecord, upsertRecord, type StoredRecord } from '../db/records';
 import { recordPush } from '../db/pushes';
 import { getWatermark, setWatermark } from '../db/state';
 import sandbox from '../../config/sandbox.json';
@@ -22,6 +22,13 @@ function item(over: Partial<DonationItem> = {}): DonationItem {
     matchesGiftItemId: null, matchPairing: null, matchStatus: null, sentToDtd: null, updatedAt: '', ...over,
   };
 }
+function stored(id: string): StoredRecord {
+  return {
+    donationIdentifier: id, mondayItemId: null, source: null, status: null, matchingGiftStatus: null, employerStatus: null,
+    companyId: null, companyName: null, matchedAmount: null, donationDatetime: null, updatedSeenAt: '2026-11-01T00:00:00.000Z',
+    unmatched: true, donorEmailHash: null, donationAmount: null,
+  };
+}
 function person(over: Partial<PersonItem> = {}): PersonItem {
   return { id: '900', email: 'pat@example.org', householdEmail: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null, ...over };
 }
@@ -32,6 +39,16 @@ function dtd(over: Partial<DtdDonation> = {}): DtdDonation {
     status: ':waiting-for-donor-action', matching_gift_status: null, employer_identification_status: 'identified',
     matched_amount: null, plugin_link: 'https://example.org/match/abc', ...over,
   };
+}
+
+// First pull windows are 30 days from the previous fiscal year's start, so a window starting on that
+// grid serves only the records dated inside it; any other fetch (watermark runs) serves everything.
+const FY_START = Date.parse('2025-07-01T00:00:00Z');
+const WINDOW_MS = 30 * 86_400_000;
+function servedBy(donations: DtdDonation[], since: string, to: string): DtdDonation[] {
+  const offset = Date.parse(since) - FY_START;
+  if (offset < 0 || offset % WINDOW_MS !== 0) return donations;
+  return donations.filter((d) => d.donation_datetime === null || (d.donation_datetime >= since && d.donation_datetime < to));
 }
 
 interface Harness {
@@ -63,7 +80,7 @@ function harness(donations: DtdDonation[] = []): Harness {
     updatePerson: async (id, values) => { h.personWrites.push({ id, values }); },
   };
   h.deps = {
-    dtd: { getUpdatedDonations: async (since, to) => { h.fetched.push({ since, to }); return h.state.donations; } },
+    dtd: { getUpdatedDonations: async (since, to) => { h.fetched.push({ since, to }); return servedBy(h.state.donations, since, to); } },
     monday: monday as DtdMondayClient, db: env.DB, config,
   };
   return h;
@@ -250,14 +267,40 @@ describe('runPull', () => {
   it('uses the watermark minus the overlap, or the previous fiscal year start on the first run', async () => {
     const h = harness([]);
     await runPull(h.deps, NOW);
-    expect(h.fetched[0]).toEqual({ since: '2025-07-01T00:00:00.000Z', to: NOW.toISOString() });
+    expect(h.fetched[0]!.since).toBe('2025-07-01T00:00:00.000Z');
+    expect(h.fetched.at(-1)!.to).toBe(NOW.toISOString());
     await env.DB.prepare('DELETE FROM sync_state').run();
+    h.fetched.length = 0;
     await runPull(h.deps, new Date('2026-06-30T23:00:00Z')); // still FY2026 → FY2025 started 2024-07-01
-    expect(h.fetched[1]!.since).toBe('2024-07-01T00:00:00.000Z');
+    expect(h.fetched[0]!.since).toBe('2024-07-01T00:00:00.000Z');
     await env.DB.prepare('DELETE FROM sync_state').run();
+    h.fetched.length = 0;
     await setWatermark(env.DB, '2026-11-02T00:00:00.000Z');
     await runPull(h.deps, NOW);
-    expect(h.fetched[2]!.since).toBe(new Date(Date.parse('2026-11-02T00:00:00.000Z') - config.dtd.pullOverlapMinutes * 60_000).toISOString());
+    expect(h.fetched).toHaveLength(1);
+    expect(h.fetched[0]!.since).toBe(new Date(Date.parse('2026-11-02T00:00:00.000Z') - config.dtd.pullOverlapMinutes * 60_000).toISOString());
+  });
+
+  it('first run walks 30-day windows and commits the watermark after each, so a cut-off run resumes', async () => {
+    const h = harness([]);
+    let calls = 0;
+    h.deps.dtd = { getUpdatedDonations: async (since, to) => {
+      h.fetched.push({ since, to });
+      if (++calls === 3) throw new DtdAuthError('stop mid-history'); // simulates the run dying in window 3
+      return [];
+    } };
+    await expect(runPull(h.deps, NOW)).rejects.toThrow();
+    expect(h.fetched[0]!.since).toBe('2025-07-01T00:00:00.000Z');
+    expect(h.fetched[1]!.since).toBe(h.fetched[0]!.to);
+    expect(await getWatermark(env.DB)).toBe(h.fetched[1]!.to); // window 2 committed, 3 not
+  });
+
+  it('stops retrying an unmatched record whose gift is older than the retry age limit', async () => {
+    const h = harness([]);
+    await upsertRecord(env.DB, { ...stored('old'), unmatched: true, donationDatetime: '2026-01-01T00:00:00.000Z' });
+    await upsertRecord(env.DB, { ...stored('recent'), unmatched: true, donationDatetime: '2026-10-20T00:00:00.000Z' });
+    await runPull(h.deps, NOW);
+    expect(h.lookups).toEqual(['fr:recent']);
   });
 
   it('never writes People Employer, only the three DTD columns', async () => {

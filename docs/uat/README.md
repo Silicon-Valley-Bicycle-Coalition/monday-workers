@@ -1,15 +1,11 @@
 # Staff UAT: the Monday.com boards and the integrations behind them
 
-**Last refreshed 2026-11-02** against the Workers deployed to the sandbox. Each script below says
+**Last refreshed 2026-11-11** against the Workers deployed to the sandbox. Each script below says
 when it was last checked.
 
-**The sandbox now has two sets of boards.** Most integrations still run against the
-`(sandbox v3)` boards in
-[CRM Sandbox (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/17141226).
-Donation rollups (giving totals, Donor Level, membership dates) moved on 2026-10-28 to the
-`(sandbox v4)` boards in [CRM Sandbox v4](https://bikesiliconvalley.monday.com/workspaces/18210301),
-and so did People board housekeeping. So a gift you add on Donations (sandbox v3) no longer updates
-that donor's totals; test totals on v4. Each script links the boards it uses.
+**The sandbox is one set of boards:** the `(sandbox v4)` boards in
+[CRM Sandbox v4](https://bikesiliconvalley.monday.com/workspaces/18210301). Every integration
+below runs against it (the earlier v3 workspace is retired). Each script links the boards it uses.
 
 This folder holds the User Acceptance Testing scripts for the parts of SVBC's new CRM that stay
 around after the migration: the Monday.com boards you will work in every day, and the integrations
@@ -29,8 +25,8 @@ You do not need technical knowledge. If you can click around a Monday.com board 
 
 ## Nothing here can break anything real
 
-Everything you will test lives in the two sandbox workspaces above, plus a handful of `(sandbox)` boards and a test web address for the donor portal. Three things to
-know:
+Everything you will test lives in the CRM Sandbox v4 workspace above, plus a test web address for
+the donor portal. Three things to know:
 
 1. **It is real data, but a disposable copy.** The boards hold real donor and member records
    pulled from Salesforce once, as a snapshot. Nothing you edit here changes Salesforce, and the
@@ -69,21 +65,22 @@ Work through the ones for the areas you touch. Each script says what the thing d
 language, what to try, what you should see and how long it takes, and which known gaps not to
 report again.
 
-| Script | What it covers | Status (2026-11-02) |
+| Script | What it covers | Status (2026-11-11) |
 |---|---|---|
-| [Monday boards](monday-boards.md) | Every board in the CRM Sandbox: the views, item cards, and what to try on each. Also the live SVBC-workspace boards (Grants, Events, Sponsorships, Communications) that carry over unchanged. | **Testable now** (v3 boards; giving totals only update on v4) |
+| [Monday boards](monday-boards.md) | Every board in the CRM Sandbox: the views, item cards, and what to try on each. Also the live SVBC-workspace boards (Grants, Events, Sponsorships, Communications) that carry over unchanged. | **Testable now** |
 | [Donation rollups](donation-rollups.md) | Giving totals, Donor Level, membership dates, and the chart columns that update on their own when gifts change | **Testable now** on the **v4** boards (moved 2026-10-28) |
-| [Donor portal](member-portal.md) | Donors log in with their email to see giving history, membership, discounts, and tax letters | **Testable now** (test site, v3 boards) |
-| [Mailchimp sync](mailchimp-sync.md) | Keeps each donor's Mailchimp contact matched to their Monday record | **Testable now** (test audience, v3 boards) |
+| [Donor portal](member-portal.md) | Donors log in with their email to see giving history, membership, discounts, and tax letters | **Testable now** (test site) |
+| [Mailchimp sync](mailchimp-sync.md) | Keeps each donor's Mailchimp contact matched to their Monday record | **Testable now** (test audience) |
 | [Bike Parking feedback email](bp-feedback-notify.md) | Emails an event organizer the feedback form when staff mark the event ready | **Testable now** |
 | [Funraise sync](funraise-sync.md) | Funraise donations and recurring plans flow onto the boards automatically | **Testable until production takes the feed.** Funraise has one webhook; once it points at production, real gifts stop arriving in the sandbox |
 | [Benevity import](benevity-import.md) | Drop a Benevity report on a board and the gifts and matches create themselves | **Testable now** (Retry added 2026-10-19; production live 2026-11-02) |
 | [Report emails](report-digests.md) | Five scheduled emails replacing the Salesforce report subscriptions | **Views testable now; emails blocked**: sandbox sends bounce at the shared inbox |
 | [Eventbrite ticket orders](eventbrite-sync.md) | Paid Eventbrite ticket orders land on the Donations board as gifts | Nothing to test yet: sandbox deployed 2026-10-26, but it can't write a gift until its order column is set up |
-| [People board housekeeping](people-reclassification.md) | Moves people between People and People (Historical) on a rolling seven-year activity window, so People holds only the last seven years of activity | Nothing to test yet (built, not deployed; will run on v4) |
+| [People board housekeeping](people-reclassification.md) | Moves people between People and People (Historical) on a rolling seven-year activity window, so People holds only the last seven years of activity | **Testable now** (live in sandbox and production 2026-11-03) |
+| [Organization contacts](contact-roles.md) | Give a person a role on their affiliation and the opportunity's Contacts column (Sponsorships, Grants & Contracts, Donations) fills itself in within about ten minutes | Nothing to test yet (built 2026-11-11, not deployed; will run on v4) |
 | [QuickBooks sync](quickbooks-sync.md) | Two-way sync of customers, invoices, and products | Postponed indefinitely (2026-10-28) — nothing to test |
-| [Monday backup](monday-backup.md) | Nightly copy of every board to Google Drive | Nothing to test yet |
-| [Member map](member-map.md) | A staff-only map of where SVBC members live, shaded to show the neighborhoods where membership is thin | Nothing to test yet (built 2026-11-02, not deployed) |
+| [Monday backup](monday-backup.md) | Nightly copy of every board to Google Drive | Production live 2026-11-03; sandbox not configured. The only check is the dated folder in the production Drive |
+| [Member map](member-map.md) | A staff-only map of where SVBC members live, shaded to show the neighborhoods where membership is thin | Production live 2026-11-03 (staff-only); see the script |
 | [Public calendars](svbc-calendars.md) | The events widget and committee calendar feeds on bikesiliconvalley.org | Live in production; a five-minute smoke check |
 
 ## How to give feedback
@@ -131,8 +128,8 @@ These apply everywhere and are already on the list:
   rather than grouped sections.
 - **Email Consent reads "Not in Mailchimp" for everyone.** The load ran without the Mailchimp
   consent file. That column is empty, not wrong.
-- **Nobody moves between People and People (Historical) yet.** The split was computed once at
-  import. If you find someone on the wrong board, report it rather than moving them by hand.
+- **Moves between People and People (Historical) run on a schedule** (see People board
+  housekeeping). If you find someone on the wrong board, report it rather than moving them by hand.
 
 ## For staff without repo access
 

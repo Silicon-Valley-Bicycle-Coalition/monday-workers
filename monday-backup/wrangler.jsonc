@@ -58,7 +58,10 @@
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
   // GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (a service account that is a
-  // member of the sandbox Shared Drive only), SLACK_WEBHOOK_URL (#crm-sandbox).
+  // member of the sandbox Shared Drive only), SLACK_WEBHOOK_URL (#crm-sandbox), and
+  // BACKUP_ENCRYPTION_KEY (its own key, never production's; README "Snapshot encryption").
+  // BACKUP_ENCRYPTION_KEY is required in both environments: without it a run fails and alerts
+  // rather than upload plaintext.
   // Monday access comes from the MONDAY_AUTH binding (the sandbox broker, consented as the
   // Sandbox Integration user), not a MONDAY_API_TOKEN secret.
   "env": {

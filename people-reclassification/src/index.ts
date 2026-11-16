@@ -10,7 +10,8 @@ import { moveOneToPeople, runPass, type PassDeps } from './pass';
 import { runDaily } from './daily';
 import { promoteFromWebhook } from './promote';
 import { createApp } from './routes';
-import { checkRequestRateLimit } from './rateLimit';
+import { jwtRequired } from './mondayJwt';
+import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import { errorText } from './logSafe';
 import type { Env } from './types';
 
@@ -30,7 +31,11 @@ export default {
     // configFor validates synchronously and must keep throwing synchronously on a misconfigured
     // ENVIRONMENT, before any routing or rate-limit check.
     configFor(env);
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // Monday's own promote deliveries (passing the URL secret) skip the per-IP limit (issue #110).
+    return isVerifiedMondayWebhook(request, env.PROMOTE_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
       const deps = passDeps(env);
       const app = createApp({
@@ -42,6 +47,10 @@ export default {
         promote: (opts) => promoteFromWebhook(deps, opts).catch((err) => console.error(`promote ${opts.runId}: ${errorText(err)}`)),
         requestLabel: deps.config.promote.requestLabel,
         webhookSecret: env.PROMOTE_WEBHOOK_SECRET,
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(deps.config.monday.accountId !== undefined ? { accountId: String(deps.config.monday.accountId) } : {}),
+        },
         defer: (work) => ctx.waitUntil(work),
       });
       return app.fetch(request, env, ctx);

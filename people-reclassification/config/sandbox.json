@@ -1,7 +1,8 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "accountUrl": "https://bikesiliconvalley.monday.com"
+    "accountUrl": "https://bikesiliconvalley.monday.com",
+    "accountId": 26331880
   },
   "window": { "years": 7, "timeZone": "America/Los_Angeles" },
   "boards": {

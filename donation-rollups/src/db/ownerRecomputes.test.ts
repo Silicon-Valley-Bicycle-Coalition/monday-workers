@@ -11,10 +11,17 @@ describe('D1OwnerRecomputesStore', () => {
   it('records a recompute and reads it back; a later recompute replaces it', async () => {
     const store = new D1OwnerRecomputesStore(env.DB);
     await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T00:00:05Z' });
-    expect(await store.get('o1')).toEqual({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T00:00:05Z' });
+    expect(await store.get('o1')).toEqual({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T00:00:05Z', valuesHash: null, descriptionHash: null });
 
-    await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-02T00:00:00Z', writtenAt: '2026-01-02T00:00:03Z' });
+    await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-02T00:00:00Z', writtenAt: '2026-01-02T00:00:03Z', valuesHash: 'v1', descriptionHash: 'd1' });
+    expect((await store.get('o1'))!.valuesHash).toBe('v1');
     expect((await store.get('o1'))!.fetchedAt).toBe('2026-01-02T00:00:00Z');
+  });
+
+  it('stores the written-values and description hashes (issue #88)', async () => {
+    const store = new D1OwnerRecomputesStore(env.DB);
+    await store.record({ ownerItemId: 'oh', ownerBoardId: '2', fetchedAt: 'f', writtenAt: 'w', valuesHash: 'vh', descriptionHash: 'dh' });
+    expect(await store.get('oh')).toMatchObject({ valuesHash: 'vh', descriptionHash: 'dh' });
   });
 
   it('writtenSince returns the owners whose last successful recompute landed at/after the instant', async () => {

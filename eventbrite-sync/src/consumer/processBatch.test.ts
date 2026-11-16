@@ -596,3 +596,73 @@ describe('message kinds', () => {
     }
   });
 });
+
+// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// without calling Monday, instead of each repeating the transport's in-process attempts.
+describe('outage breaker', () => {
+  const gateFor = (mode: WriteMode): BatchSkipContext => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
+  const depsWith = (orderStore: OrderStore, mondayClient: MondayClient, eventbriteClient = fakeEventbrite(testOrder())) =>
+    ({ orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient, config });
+
+  async function quietly(fn: () => Promise<void>): Promise<void> {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await fn();
+    } finally {
+      errors.mockRestore();
+      logs.mockRestore();
+    }
+  }
+
+  it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {
+    const orderStore = fakeStore(orderRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 502', { httpStatus: 502 }));
+    const mondayClient = fakeMonday({ createItem });
+    const eventbriteClient = fakeEventbrite(testOrder());
+    const messages = [fakeMessage('1', 2), fakeMessage('2', 1), fakeMessage('3', 4)];
+
+    await quietly(() => consumeWriteBatch(messages, depsWith(orderStore, mondayClient, eventbriteClient), gateFor('on')));
+
+    expect(createItem).toHaveBeenCalledTimes(1);
+    expect(eventbriteClient.getOrder).toHaveBeenCalledTimes(1);
+    expect(messages.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 120 }, { delaySeconds: 60 }, { delaySeconds: 480 }]);
+    for (const m of messages) expect(m.ack).not.toHaveBeenCalled();
+  });
+
+  it("raises the deferral to Monday's Retry-After hint", async () => {
+    const mondayClient = fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 429', { httpStatus: 429, retryAfterSeconds: 900 })) });
+    const messages = [fakeMessage('1', 1), fakeMessage('2', 1)];
+
+    await quietly(() => processOrderQueueBatch(messages, depsWith(fakeStore(orderRow({ matchedDonorItemId: '7' })), mondayClient)));
+
+    expect(messages[0]!.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+  });
+
+  it('an Eventbrite failure stays per-message and does not stop the batch', async () => {
+    const eventbriteClient: EventbriteClient = {
+      getOrder: vi.fn().mockRejectedValueOnce(new Error('eventbrite: HTTP 503')).mockResolvedValue(testOrder()),
+      getEvent: vi.fn(),
+      getAttendee: vi.fn(),
+    };
+    const mondayClient = fakeMonday();
+    const messages = [fakeMessage('1', 1), fakeMessage('2', 1)];
+
+    await quietly(() => consumeWriteBatch(messages, depsWith(fakeStore(orderRow({ matchedDonorItemId: '7' })), mondayClient, eventbriteClient), gateFor('on')));
+
+    expect(messages[0]!.retry).toHaveBeenCalled();
+    expect(messages[1]!.ack).toHaveBeenCalled();
+  });
+
+  it('hold is unchanged: every message backs off and nothing is called', async () => {
+    const mondayClient = fakeMonday();
+    const eventbriteClient = fakeEventbrite(testOrder());
+    const messages = [fakeMessage('1', 3), fakeMessage('2', 1)];
+
+    await consumeWriteBatch(messages, depsWith(fakeStore(orderRow()), mondayClient, eventbriteClient), gateFor('hold'));
+
+    expect(messages.map((m) => m.retry.mock.calls[0]?.[0])).toEqual([{ delaySeconds: 240 }, { delaySeconds: 60 }]);
+    expect(eventbriteClient.getOrder).not.toHaveBeenCalled();
+  });
+});

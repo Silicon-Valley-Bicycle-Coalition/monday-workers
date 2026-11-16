@@ -15,7 +15,7 @@ without touching orchestration logic.
 **Tech Stack:** Hono, TypeScript, Vitest, Wrangler (Cloudflare Workers), `@cloudflare/workers-types`.
 
 **Spec:** [`docs/superpowers/specs/2026-08-22-membership-reminders-design.md`](../specs/2026-08-22-membership-reminders-design.md)
-(and the product spec it builds on, [`membership-reminders/README.md`](../../../membership-reminders/README.md))
+(and the product spec it builds on, `membership-reminders/README.md` (since repurposed as `mailchimp-sync`; current spec: [`mailchimp-sync/README.md`](../../../mailchimp-sync/README.md)))
 
 ## Global Constraints
 

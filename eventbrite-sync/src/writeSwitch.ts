@@ -8,7 +8,7 @@ import type { OrderStore } from './db/orders';
 import type { EventStore } from './db/events';
 import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
-import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
+import type { ConsumerQueue, ProcessBatchDeps, WriteQueueMessage } from './consumer/processBatch';
 import type { EndedEventSweepDeps } from './endedEvents/sweep';
 import type { EventbriteSyncConfig, EventRow, MondayBoards } from './types';
 import { PLACEHOLDER_COLUMN_ID } from './config';
@@ -32,6 +32,7 @@ const SINK_NAMES: Record<keyof MondayBoards, string> = {
   'people-live': 'People',
   events: 'Events',
   'event-registrations': 'Event Registrations',
+  volunteers: 'Volunteers',
   'pledge-to-ride': 'Pledge to Ride',
 };
 
@@ -138,7 +139,7 @@ export function dryRunQueue(queue: ConsumerQueue, ctx: SkipContext): ConsumerQue
   return recordingProxy(queue, 'Write queue', { send: undefined, sendBatch: undefined }, ctx);
 }
 
-export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kind: 'order' | 'event' | 'attendee' = 'order'): ProcessBatchDeps {
+export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kind: NonNullable<WriteQueueMessage['kind']> = 'order'): ProcessBatchDeps {
   return {
     ...deps,
     orderStore: dryRunOrderStore(deps.orderStore),

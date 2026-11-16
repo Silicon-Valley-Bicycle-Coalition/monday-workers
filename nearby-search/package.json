@@ -17,8 +17,10 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@turf/turf": "^7.2.0",
-    "hono": "^4.13.3"
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@turf/buffer": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "hono": "^4.13.18"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",

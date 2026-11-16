@@ -193,6 +193,7 @@ export const es: Record<TranslationKey, string> = {
   'matchingGifts.einLine': 'Puede que necesites nuestro número de identificación fiscal (EIN) para el formulario: {{ein}}',
   'matchingGifts.searchHint': 'Busca a tu empleador abajo para consultar su política de donaciones igualadas y encontrar instrucciones para enviar la solicitud.',
   'matchingGifts.searchUnavailable': 'Aquí aparecerá un buscador de empleadores cuando esté configurado. Mientras tanto, tu equipo de recursos humanos o nómina puede decirte si tus donaciones se igualan.',
+  'matchingGifts.searchFrameTitle': 'Búsqueda de donaciones equivalentes del empleador',
   'letterReady.subject': 'Tu carta de donaciones {{year}} de SVBC está lista',
   'letterReady.greeting': 'Hola {{donorName}}:',
   'letterReady.body': 'Tu carta de donaciones de {{year}} ya está disponible en el portal de donantes.',

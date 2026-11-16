@@ -29,10 +29,10 @@ describe('renderEmailLayout', () => {
 
   it('keeps the header band dark regardless of color scheme, since the logo only reads on dark', () => {
     const result = renderEmailLayout({ bodyHtml: '<p>x</p>', bodyText: 'x', logoUrl: LOGO_URL });
-    expect(result.html).toContain('background:#221E1F');
+    expect(result.html).toContain('background:#000000');
     // The dark-mode override block (inside <style>) must not touch the header's background.
     const styleBlock = result.html.slice(result.html.indexOf('<style>'), result.html.indexOf('</style>'));
     expect(styleBlock).toContain('@media (prefers-color-scheme: dark)');
-    expect(styleBlock).not.toContain('#221E1F');
+    expect(styleBlock).not.toContain('#000000');
   });
 });

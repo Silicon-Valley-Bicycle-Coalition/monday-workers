@@ -85,12 +85,37 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts contact-roles/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
       # must stay loadable without a TypeScript compile step.
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
+      exit $status
+
+# funraise-sync/src/monday/outage.ts is the canonical per-batch Monday outage breaker for queue
+# consumers (#101); every queue Worker in the list carries a byte-identical copy. Edit
+# funraise-sync's, then copy it to every path listed.
+monday-outage-copies:
+  stage: test
+  rules:
+    - changes:
+        - "*/src/monday/outage.ts"
+        - .gitlab-ci.yml
+  script:
+    - |
+      status=0
+      roster="benevity-import/src/monday/outage.ts donation-rollups/src/monday/outage.ts eventbrite-sync/src/monday/outage.ts mailchimp-sync/src/monday/outage.ts nearby-search/src/monday/outage.ts quickbooks-sync/src/monday/outage.ts"
+      for copy in $roster; do
+        cmp funraise-sync/src/monday/outage.ts "$copy" || { echo "$copy differs from funraise-sync/src/monday/outage.ts"; status=1; }
+      done
+      # A new copy that isn't in the roster would drift unchecked.
+      for f in */src/monday/outage.ts; do
+        case " funraise-sync/src/monday/outage.ts $roster " in
+          *" $f "*) ;;
+          *) echo "$f is not in the monday-outage-copies roster"; status=1 ;;
+        esac
+      done
       exit $status
 
 # geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search carries
@@ -135,6 +160,39 @@ monday-auth-bindings:
         - .gitlab-ci.yml
   script:
     - node scripts/check-monday-auth-bindings.mjs
+
+# Preview URLs default to on, which would expose non-main code with production bindings (#108).
+# Every wrangler*.jsonc with env.sandbox must set "preview_urls": false at the top level and in
+# env.sandbox.
+preview-urls:
+  stage: test
+  rules:
+    - changes:
+        - "*/wrangler*.jsonc"
+        - scripts/check-preview-urls.mjs
+        - scripts/check-preview-urls.test.mjs
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node --test scripts/check-preview-urls.test.mjs
+    - node scripts/check-preview-urls.mjs
+
+# Rate-limit bindings that share a namespace_id share per-IP counters even with different limits,
+# so one Worker's traffic can 429 another's (#113). Every ratelimits[].namespace_id must be unique.
+rate-limit-namespaces:
+  stage: test
+  rules:
+    - changes:
+        - "*/wrangler*.jsonc"
+        - scripts/check-rate-limit-namespaces.mjs
+        - scripts/check-rate-limit-namespaces.test.mjs
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node --test scripts/check-rate-limit-namespaces.test.mjs
+    - node scripts/check-rate-limit-namespaces.mjs
 
 # Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
 # automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
@@ -258,6 +316,21 @@ people-reclassification:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
 
+contact-roles:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: contact-roles
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run test:scripts
+    - npm run typecheck
+
 member-map:
   extends: .worker_job
   variables:
@@ -375,6 +448,16 @@ deploy-sandbox:people-reclassification:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: people-reclassification
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
+deploy-sandbox:contact-roles:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: contact-roles
   rules:
     - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
       changes:

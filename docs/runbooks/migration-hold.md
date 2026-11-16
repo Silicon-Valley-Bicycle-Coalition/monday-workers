@@ -2,19 +2,24 @@
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
-`all writes on`: three Workers must stay `off` (below), and `all` would turn them on.
+`all writes on`: `donation-rollups` (during the load), `contact-roles`, `quickbooks-sync`, `dtd-sync` and
+`nearby-search` must stay `off` (below), and `all` would turn them on.
 
-The in-scope Workers, in four groups that this runbook treats differently:
+The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in four groups that this runbook treats differently:
 
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
   `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
-  `monday-backup`, `report-digests`.
+  `monday-backup`, `people-reclassification` (live since 2026-11-03), `report-digests`.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
-- **`people-reclassification`**: stays `off` until the staged one-item live check in its README
-  ("Not verified against a live board yet") has passed; never part of a bulk flip.
-- **`quickbooks-sync`**: postponed indefinitely (decided 2026-10-28); stays `off` in both
-  environments and is never part of a bulk flip.
+- **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout: deployed while `off`,
+  its `run-complete` dry-run counts checked, the backfill run and staff roles confirmed, then
+  the smoke tests (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
+  it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
+  needs catching up, because the next `on` run recomputes every `Contacts` column.
+- **Stays `off`, never part of a bulk flip:** `quickbooks-sync` (postponed indefinitely, decided
+  2026-10-28), and `dtd-sync` and `nearby-search` (built, not yet deployed; a missing key reads
+  `off`).
 
 ## Merging / first deploy sequencing
 
@@ -60,7 +65,7 @@ notice), so allow about a minute per Worker that has queues.
 Set the writing-normally group one Worker at a time, never with `all`:
 
 ```sh
-for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -77,7 +82,7 @@ last 15 minutes. An idle queue has no samples, shown as `backlog 0 (no recent sa
 analytics lag a minute or two, so a backlog that just started may read 0 at first. A **paused**
 queue may not be sampled at all: in the 2026-10-28 funraise-sync rehearsal it read
 `backlog 0 (no recent sample)` with 11 messages held. During a hold, count what's held from each
-Worker's D1 ledger (`status = 'queued'`) rather than trusting the backlog column.
+Worker's D1 ledger (`status = 'queued'`; `ingested` for `benevity-import`) rather than trusting the backlog column.
 
 ## Before the load
 
@@ -100,11 +105,11 @@ node scripts/flags.mjs donation-rollups writes off --env production
 
 4. Hold the writing-normally group, one Worker at a time. Each Worker's KV key is set first, then
    its main queues are paused (DLQs never are). Don't use `all writes hold`: it would also move
-   `donation-rollups` and `people-reclassification` from `off` to `hold`, and releasing them later
+   `contact-roles`, `donation-rollups`, `quickbooks-sync`, `dtd-sync` and `nearby-search` from `off` to `hold`, and releasing them later
    with `on` would turn them on.
 
 ```sh
-for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
   node scripts/flags.mjs "$w" writes hold --env production || echo "FAILED: $w"
 done
 ```
@@ -113,7 +118,10 @@ done
    the hold" for what that costs.)
 
 5. Check the result. Every held Worker should read `writes=hold`, queues `paused`;
-   `donation-rollups` and `people-reclassification` read `writes=off`; no `MISMATCH`, no `?`.
+   `contact-roles`, `donation-rollups` and the stays-`off` group read `writes=off`; no `MISMATCH`, no `?`. A Worker
+   with no production deploy yet reads its queues as `missing` (and a loop above prints `FAILED`
+   for it), which makes `status` exit non-zero: expected for `quickbooks-sync` and
+   `nearby-search`, and for any writing-normally Worker not yet deployed to production.
 
 ```sh
 node scripts/flags.mjs status --env production
@@ -134,10 +142,15 @@ node scripts/flags.mjs status --env production
   re-triggering by hand once Monday gives up. The two `benevity-import` routes also return 503
   under `hold`/`unknown`: an upload or Retry during the hold is refused and must be repeated
   after the flip to `on`.
+- `contact-roles` skips its 10-minute run under `hold`/`unknown` and has nothing to catch up:
+  after the flip, the next run recomputes every `Contacts` column.
 - A `member-portal` letter queued under `hold` but consumed under `off` (someone flipped the
   Worker to `off` instead of `on`) stays stranded as `queued` until a staff re-click.
 - `report-digests` skips each hour's digests under `hold` and does not catch up: after the flip,
-  resend any digest that fell due with `POST /digests/run?key=<key>&date=<day it was due>`.
+  resend any digest that fell due with `POST /digests/run?key=<digest>&date=<YYYY-MM-DD it was
+  due>` and `Authorization: Bearer <DIGESTS_SECRET>`.
+- `people-reclassification` skips its daily pass under `hold`, and its Promote route returns 503;
+  a Promote set during the hold stays at Promote and the first daily pass after the flip moves it.
 - `eventbrite-sync` skips its daily missed-order check under `hold`, and the class email send page
   can't claim or release. A send already running still records its result in D1, but its update, No
   Show and People link writes are skipped and not replayed, so check that class's Attendance after
@@ -154,7 +167,7 @@ node scripts/flags.mjs status --env production
    never `all`. The CLI waits 60 s before resuming each Worker's queues.
 
 ```sh
-for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
+for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -172,14 +185,13 @@ node scripts/flags.mjs status --env production
 node scripts/flags.mjs donation-rollups writes on --env production
 ```
 
-4. `people-reclassification` stays `off` until its staged one-item live check passes.
-5. Follow-ups:
+4. Follow-ups:
    - `donation-rollups`: if it was off for more than 24 h, flip it to `on` early enough for the
      queue to drain before the 09:00 UTC custodian requeue, or expect one ATTENTION and duplicate
      (idempotent) recomputes.
    - `monday-backup`: after an off/hold period the 36 h stale-snapshot Slack alert fires after the
      flip until the next 09:00 UTC backup succeeds. Flip shortly before 09:00 or expect one alert.
-     Abandoned-run alerts under `off` are only logged.
+     Abandoned-run alerts are only logged while writes are not `on`.
    - `report-digests`: resend any digest that fell due during the hold (above).
 
 ## Work ingested under `off` is deliberately not written later

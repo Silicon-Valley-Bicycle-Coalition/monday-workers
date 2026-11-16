@@ -193,12 +193,33 @@ export interface MondayTokenSource {
   token(rejected?: string): Promise<string>;
 }
 
+// How long a provider reuses the binding's last answer instead of asking again. Each ask is a
+// service-binding call plus a D1 read in monday-auth, and the transport asks before every request,
+// so a paginated read would otherwise pay it per page. Far inside monday-auth's 10-minute refresh
+// margin, so a reused token is never one about to expire.
+const TOKEN_REUSE_MS = 60_000;
+
 // The binding wins; the fixed MONDAY_API_TOKEN secret is the fallback during the OAuth cutover.
 // An empty MONDAY_API_TOKEN counts as unset, so it fails here instead of sending an empty
 // Authorization header.
+// The last answer per binding, at module scope so it spans requests and providers in one isolate.
+// Keyed by the binding object so two bindings (another environment, a test double) never share a
+// token. It holds the resolved token, never the pending promise: a promise shared between requests
+// would tie one request's I/O to another's.
+const reusedTokens = new WeakMap<object, { token: string; until: number }>();
+
 export function tokenProviderFor(env: { MONDAY_AUTH?: MondayTokenSource; MONDAY_API_TOKEN?: string }): TokenProvider {
   const auth = env.MONDAY_AUTH;
-  if (auth !== undefined) return (rejected) => auth.token(rejected);
+  if (auth !== undefined) {
+    // A rejected token always goes back to the binding.
+    return async (rejected) => {
+      const reused = reusedTokens.get(auth);
+      if (rejected === undefined && reused !== undefined && Date.now() < reused.until) return reused.token;
+      const token = await auth.token(rejected);
+      reusedTokens.set(auth, { token, until: Date.now() + TOKEN_REUSE_MS });
+      return token;
+    };
+  }
   const fixed = env.MONDAY_API_TOKEN;
   if (fixed !== undefined && fixed !== '') return async () => fixed;
   throw new Error('monday auth: neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN is set');

@@ -8,8 +8,8 @@ totals, so use the v4 links below.
 
 Whenever a gift is added, changed, archived, or deleted on the Donations board, this recalculates
 that donor's giving totals on their People or Organizations item within seconds. It also grants
-and extends membership terms when a qualifying gift lands, fills in the four chart columns on
-Donations overnight, and writes one row per closed fiscal year to Annual Giving Summary. In
+and extends membership terms when a qualifying gift lands, fills in the chart columns and
+Acknowledgment Tier on Donations overnight, and writes one row per closed fiscal year to Annual Giving Summary. In
 Salesforce these were NPSP rollups and reports you pulled; here they are columns that stay
 current on their own.
 
@@ -19,8 +19,8 @@ It only writes to Monday. No email, no external system.
 
 On **People**, **People (Historical)**, and **Organizations**: Lifetime Giving, Gift Count, First
 Gift, This Year Amount and Count, Last Year Amount and Count (fiscal years run July to June),
-Largest, Smallest, and Average Gift, Last Gift Date and Amount, and the machine-readable Gift
-Ledger. On People and Organizations only: **Donor Level** (Leadership at $5,000 or more lifetime;
+Largest, Smallest, and Average Gift, Last Gift Date and Amount, the machine-readable Gift
+Ledger, and **Donor Level** (Leadership at $5,000 or more lifetime;
 Major at $500 lifetime or a single gift of $200 or more; Donor for anyone with a gift; blank
 otherwise). On People and People (Historical): Membership Status, Tier, Member Since, Member
 Until. On Affiliations: Attributed Giving, Attributed Gift Count, Last Attributed Gift.
@@ -41,8 +41,7 @@ do not.
 2. **Change it, then remove it.** Edit the Amount; the totals follow. Delete the item (or archive
    it); the totals fall back. Both should take well under a minute.
 3. **Give a membership.** Add a gift with Gift Type **Donation**, Status Received, an Amount of
-   **$1 or more**, and today's **Date**. (An attended volunteer check-in, a registration with Role
-   **Volunteer** and Attendance **Attended**, counts the same way, dated by its event.) The person
+   **$1 or more**, and today's **Date**. The person
    is a member for 13 months from that date: they should gain or extend Member Since and Member
    Until, get Current Term Start, Member Type (New, Continuing, or Lapsed renewal), Membership
    Tier **Member** (or **Lifetime** for $1,000 and up), and Status **Active**. A gift dated
@@ -51,8 +50,8 @@ do not.
    A term is only ever extended, never shortened, so a second gift dated earlier can move Current
    Term Start and Lapse Count, but never shortens Member Until.
 4. **Come back the next morning.** The chart columns on your new gift, Funding Stream, Gift Size,
-   Fiscal Quarter, and Gift Fiscal Year, fill in overnight (the nightly pass runs around 2 am
-   Pacific). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
+   Fiscal Quarter, and Gift Fiscal Year, and its Acknowledgment Tier fill in overnight (the
+   nightly pass runs around 2 am Pacific, 1 am in winter). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
    A gift with Gift Type **Donor Advised Fund**, typed exactly, reads Funding Stream **Donor Advised
    Funds** and renews the donor's membership the way a Donation does.
 5. **Annual Giving Summary.** Open
@@ -68,7 +67,7 @@ spot.
 
 ## Questions we need your answer on
 
-- **Membership gifts.** Today only Gift Type **Donation** grants a term; a gift typed
+- **Membership gifts.** Today only Gift Types **Donation** and **Donor Advised Fund** grant a term; a gift typed
   **Membership** counts toward totals and the Membership funding stream but does not set Member
   Until. Is that right for how membership payments arrive, or should Membership-typed gifts count
   too?
@@ -79,8 +78,6 @@ spot.
 
 ## Don't report these
 
-- **Donor Level may still be blank on some people.** It fills in as a queue works through every
-  donor after the v3 boards were rebuilt; it was still climbing on 2026-09-29.
 - A blank **Fiscal Year Ending** on a gift is fine; the year is derived from Date.
 - The per-donor gift history that was meant to appear in the item's description isn't written on
   this account; the Gift Ledger column carries it instead.
@@ -91,11 +88,11 @@ spot.
   until the next load they are excluded too — that is why FY2026 Individual Giving read about
   $11,900 lower than the Salesforce report on 2026-09-29. The importer now maps them to Received
   / Event Ticket, so expect the gap to close once the boards are reloaded.
-- Funraise and Benevity gifts aren't reaching this board yet; see the
-  [README](README.md#known-gaps-across-the-whole-sandbox).
 
 ## Not testable yet
 
+- **Volunteer-granted memberships.** An attended volunteer registration is meant to grant a term
+  the way a Donation does, but no registration board is connected yet.
 - The **Annual Giving Summary** restate for the current year (happens each July).
 - The nightly **reconcile** check that repairs any drift; it runs, but there is nothing for you to
   see unless it finds a problem.

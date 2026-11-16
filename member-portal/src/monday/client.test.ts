@@ -429,6 +429,74 @@ describe('HttpMondayClient.getMemberPortalData', () => {
     // the response, matching the existing "no expiry" convention.
     expect(data.membershipExpiry).toBe('');
   });
+
+  // #99: the donations query needs only the donor item id, so both reads go out before either
+  // answers — one Monday round trip per page instead of two.
+  it('issues the donor and donations reads concurrently', async () => {
+    const pending: { query: string; resolve: (body: unknown) => void }[] = [];
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((resolve) => {
+          const { query } = JSON.parse(init.body as string) as { query: string };
+          pending.push({ query, resolve: (body) => resolve({ ok: true, status: 200, json: async () => body }) });
+        })
+    );
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    const result = client.getMemberPortalData('donor-1');
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+
+    pending.find((p) => p.query.includes('items(ids'))!.resolve({
+      data: { items: [{ id: 'donor-1', name: 'Jane Donor', column_values: [{ id: 'donated_col', text: '100' }] }] },
+    });
+    pending.find((p) => p.query.includes('items_page'))!.resolve({
+      data: {
+        boards: [
+          {
+            items_page: {
+              cursor: null,
+              items: [
+                {
+                  id: 'donation-1',
+                  column_values: [
+                    { id: 'amount_col', text: '100' },
+                    { id: 'date_col', text: '2026-01-01' },
+                    { id: 'donation_status_col', text: 'Received' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const data = await result;
+    expect(data.name).toBe('Jane Donor');
+    expect(data.donations.map((d) => d.amount)).toEqual(['100']);
+  });
+
+  it('reports the donor-not-found error even when the donations read also fails', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const { query } = JSON.parse(init.body as string) as { query: string };
+      if (query.includes('items_page')) throw new Error('network down');
+      return { ok: true, status: 200, json: async () => ({ data: { items: [] } }) };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 1, fetchMock);
+
+    await expect(client.getMemberPortalData('donor-1')).rejects.toThrow('monday: donor item "donor-1" not found');
+  });
+
+  it('fails when the donations read fails, even though the donor item loaded', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const { query } = JSON.parse(init.body as string) as { query: string };
+      if (query.includes('items_page')) return { ok: true, status: 200, json: async () => ({ errors: [{ message: 'boom' }] }) };
+      return { ok: true, status: 200, json: async () => ({ data: { items: [{ id: 'donor-1', name: 'Jane', column_values: [] }] } }) };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 1, fetchMock);
+
+    await expect(client.getMemberPortalData('donor-1')).rejects.toThrow(/boom/);
+  });
 });
 
 describe('HttpMondayClient donation status filtering', () => {

@@ -34,7 +34,8 @@ const MAX_ATTEMPTS = 5;
 // A file being written to Drive incrementally. Nothing appears in Drive until close() succeeds;
 // abort() (or simply never closing) leaves no partial file behind.
 export interface DriveFileWriter {
-  write(text: string): Promise<void>;
+  // Text is written as UTF-8; bytes as they are.
+  write(data: string | Uint8Array): Promise<void>;
   // Uploads whatever is buffered, completes the upload, and returns the new file's id.
   close(): Promise<string>;
   // Best-effort cancel of the upload session. Never throws.
@@ -43,14 +44,36 @@ export interface DriveFileWriter {
 
 export interface DriveClient {
   ensureFolder(parentFolderId: string, folderName: string): Promise<string>;
-  createFile(folderId: string, filename: string, mimeType: string): Promise<DriveFileWriter>;
+  // `binding` names where the file belongs (`<snapshot folder>/<file name>`, fileBinding in
+  // src/crypto/snapshotCipher.ts); an encrypting client authenticates it, a plain one ignores it.
+  createFile(folderId: string, filename: string, mimeType: string, binding?: string): Promise<DriveFileWriter>;
   uploadJson(folderId: string, filename: string, data: unknown): Promise<void>;
   // A file of this name in the folder, or null. Files only appear once their upload closes, so a
   // match is complete. This is how a retried Workflow step avoids writing a second copy: Drive
   // allows duplicate names, and a Contributor can't delete one (issue #67).
   findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null>;
   // A file's text, one line at a time, without holding the whole file in memory.
-  readLines(fileId: string): AsyncIterable<string>;
+  // `binding` as for createFile.
+  readLines(fileId: string, binding?: string): AsyncIterable<string>;
+  // A file's bytes, chunk by chunk.
+  readBytes(fileId: string, binding?: string): AsyncIterable<Uint8Array>;
+  // How files this client writes are encrypted, for the manifest; absent when they aren't.
+  encryption?(): Promise<{ scheme: string; keyId: string }>;
+}
+
+// Splits a byte stream into its non-empty UTF-8 lines.
+export async function* linesOf(chunks: AsyncIterable<Uint8Array>): AsyncGenerator<string> {
+  const decoder = new TextDecoder();
+  let buffered = '';
+  for await (const chunk of chunks) {
+    // stream: true holds back a multi-byte character split across two chunks.
+    buffered += decoder.decode(chunk, { stream: true });
+    const lines = buffered.split('\n');
+    buffered = lines.pop()!;
+    for (const line of lines) if (line !== '') yield line;
+  }
+  buffered += decoder.decode();
+  if (buffered !== '') yield buffered;
 }
 
 export interface GoogleDriveClientOptions {
@@ -230,21 +253,19 @@ export class GoogleDriveClient implements DriveClient {
     return listed.files[0] ?? null;
   }
 
-  async *readLines(fileId: string): AsyncGenerator<string> {
+  readLines(fileId: string): AsyncGenerator<string> {
+    return linesOf(this.readBytes(fileId));
+  }
+
+  async *readBytes(fileId: string): AsyncGenerator<Uint8Array> {
     // The timeout also covers reading the body, and a snapshot file can be tens of MB.
     const response = await this.driveFetch(`/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&${ALL_DRIVES}`, {}, DOWNLOAD_TIMEOUT_MS);
     if (response.body === null) return;
-    const decoder = new TextDecoder();
-    let buffered = '';
     const reader = response.body.getReader();
     for (;;) {
       const { done, value } = await reader.read();
-      // stream: true holds back a multi-byte character split across two chunks.
-      buffered += done ? decoder.decode() : decoder.decode(value, { stream: true });
-      const lines = buffered.split('\n');
-      buffered = done ? '' : lines.pop()!;
-      for (const line of lines) if (line !== '') yield line;
       if (done) return;
+      yield value;
     }
   }
 
@@ -288,8 +309,8 @@ class ResumableUpload implements DriveFileWriter {
     private filename: string,
   ) {}
 
-  async write(text: string): Promise<void> {
-    const bytes = this.encoder.encode(text);
+  async write(data: string | Uint8Array): Promise<void> {
+    const bytes = typeof data === 'string' ? this.encoder.encode(data) : data;
     this.pending.push(bytes);
     this.total += bytes.length;
     while (this.pending.length >= this.drive.chunkSize) {

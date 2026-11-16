@@ -130,7 +130,8 @@ describe('BOARD_SPECS views', () => {
   it('has the report replacements from the Salesforce usage survey', () => {
     const names = (k: string) => (BOARD_SPECS[k]!.views ?? []).map((v) => v.name);
     expect(names('people-live')).toEqual(expect.arrayContaining(
-      ['Donors', 'Major donors', 'Donors to target', 'Gave last year, not this year', 'Appeal list', 'Members', 'By city']));
+      ['New donors this FY, $200+', 'Donors', 'Major donors', 'Donors to target', 'Gave last year, not this year', 'Appeal list', 'Members', 'By city']));
+    expect(names('event-registrations')).toContain('Volunteers, last 12 months');
     expect(names('donations')).toEqual(expect.arrayContaining(
       ['Recent gifts', 'Revenue by funding stream', 'By gift size', 'By fiscal quarter', 'Major gifts to thank']));
   });
@@ -263,6 +264,28 @@ describe('report-subscription views (docs/35 §3.6)', () => {
   it('the renewals view spans this calendar month and next', () => {
     expect(view('people-live', 'Renewals this month and next')!.filter!.rules).toEqual(
       [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }]);
+  });
+});
+
+describe('Martha\'s reconciliation views', () => {
+  const views = BOARD_SPECS['donations']!.views!.filter((v) => v.name.startsWith('Reconciliation: '));
+
+  it('has the three views, each ungrouped (one footer total) and counting nothing but positive gifts', () => {
+    expect(views.map((v) => v.name)).toEqual(
+      ['Reconciliation: individual gifts', 'Reconciliation: matching gifts', 'Reconciliation: sponsorships']);
+    for (const v of views) {
+      expect(v.groupBy, v.name).toBeUndefined();
+      expect(v.filter!.rules, v.name).toContainEqual({ columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 });
+    }
+  });
+
+  it('keeps Gift Size as a column where the view no longer groups by it', () => {
+    for (const v of views.slice(0, 2)) expect(v.columns, v.name).toContain('Gift Size');
+  });
+
+  it('the individual view leaves out every other revenue stream', () => {
+    const excluded = views[0]!.filter!.rules.filter((r) => r.operator === 'not_contains_text').map((r) => r.compareValue);
+    expect(excluded).toEqual(expect.arrayContaining(['Sponsorship', 'Matching Donation', 'In Kind']));
   });
 });
 

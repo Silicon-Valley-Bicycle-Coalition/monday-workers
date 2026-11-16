@@ -98,6 +98,7 @@ function fakeDeps(overrides: Partial<IngestDeps> = {}): IngestDeps {
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn().mockResolvedValue(undefined),
     fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
+    fetchItemAssets: vi.fn(),
   };
   return {
     mondayClient,

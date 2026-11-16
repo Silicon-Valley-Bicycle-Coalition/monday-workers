@@ -6,6 +6,7 @@ import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webho
 import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
 import { writeSendStatus } from './sendStatus';
+import { claimSend, releaseSend } from './sendGuard';
 import { readFeedbackItem } from './feedbackItem';
 import { tokenProviderFor, type MondayTokenSource, type TokenProvider } from './mondayApi';
 import { redactEmails } from './redactEmails';
@@ -28,6 +29,8 @@ export interface Env extends EnvironmentBindings {
   REQUEST_RATE_LIMITER: RateLimit;
   // Write-switch flags KV (src/flags.ts); a missing binding reads as mode `unknown`.
   FLAGS?: KVNamespace;
+  // Per-item resend guard (src/sendGuard.ts, migrations/). Missing or failing, nothing is sent (503).
+  DB?: D1Database;
 }
 
 const WORKER = 'bp-feedback-notify';
@@ -115,7 +118,12 @@ app.post('/webhook/bp-feedback', async (c) => {
   // The recipient and event name come from the board, never the request body (#66).
   let item;
   try {
-    item = await readFeedbackItem(config.board, token, itemId);
+    item = await readFeedbackItem(
+      config.board,
+      token,
+      itemId,
+      config.sendStatus && { columnId: config.sendStatus.columnId, sentLabel: config.sendStatus.sentLabel },
+    );
   } catch (error) {
     // Transient or not, nothing was sent: a 502 lets monday retry.
     const message = error instanceof Error ? error.message : String(error);
@@ -127,10 +135,34 @@ app.post('/webhook/bp-feedback', async (c) => {
     console.error(JSON.stringify({ event: 'bp-feedback-item-refused', environment, itemId, reason: item.kind }));
     return c.json({ sent: false, itemId }, 404);
   }
+  if (item.kind === 'already-sent') {
+    // A replayed or looped webhook must not email the organizer again (#105). 200, not an error,
+    // so monday doesn't retry; staff re-send by moving the status back to Ready to Send.
+    console.log(JSON.stringify({ event: 'bp-feedback-already-sent', environment, itemId }));
+    return c.json({ sent: false, alreadySent: true, itemId });
+  }
   if (item.kind === 'no-email') {
     console.error(JSON.stringify({ event: 'bp-feedback-no-email', environment, itemId }));
     c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, token, itemId, 'failed'));
     return c.json({ sent: false, itemId }, 422);
+  }
+
+  // Per-item resend guard (#105): works whether or not sendStatus is configured. Fails closed — a
+  // guard we can't check sends nothing, and the 503 lets monday retry.
+  const claimedAt = Date.now();
+  let claimed: boolean;
+  try {
+    if (!c.env.DB) throw new Error('DB binding is not set');
+    claimed = await claimSend(c.env.DB, itemId, claimedAt, config.resendCooldownHours * 3_600_000);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({ event: 'bp-feedback-guard-failed', environment, itemId, error: redactEmails(message, [item.organizerEmail]) }));
+    return c.json({ sent: false, itemId }, 503);
+  }
+  if (!claimed) {
+    // Emailed within the cooldown: a replayed or looped webhook. 200 so monday doesn't retry.
+    console.log(JSON.stringify({ event: 'bp-feedback-resend-cooldown', environment, itemId }));
+    return c.json({ sent: false, alreadySent: true, itemId });
   }
 
   const binding =
@@ -150,6 +182,11 @@ app.post('/webhook/bp-feedback', async (c) => {
     // when configured, written back onto the item — otherwise it is invisible to them.
     const message = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId, error: redactEmails(message, [item.organizerEmail]) }));
+    // Nothing went out, so free the item for monday's retry. Must finish before the retry arrives.
+    await releaseSend(c.env.DB!, itemId, claimedAt).catch((releaseError: unknown) => {
+      const detail = releaseError instanceof Error ? releaseError.message : String(releaseError);
+      console.error(JSON.stringify({ event: 'bp-feedback-guard-release-failed', environment, itemId, error: redactEmails(detail, [item.organizerEmail]) }));
+    });
     c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, token, itemId, 'failed'));
     return c.json({ sent: false, itemId }, 500);
   }

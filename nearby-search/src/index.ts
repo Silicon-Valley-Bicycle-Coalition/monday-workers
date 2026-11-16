@@ -16,7 +16,9 @@ const app = buildApp((env) => {
   return {
     config,
     osm: createOsmClient(config.osm),
-    monday: new HttpNearbyMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+    // The colo's Cache API carries each board's contact list between a preview and its confirm
+    // (client.ts). The cast: this tsconfig also loads the DOM lib, whose CacheStorage has no `default`.
+    monday: new HttpNearbyMondayClient(config.monday.apiUrl, tokenProviderFor(env), {}, (caches as unknown as { default: Cache }).default),
   };
 });
 

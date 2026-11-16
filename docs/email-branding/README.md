@@ -2,7 +2,7 @@
 
 Two versions of the same visual design, for two different sending paths:
 
-- **Worker-sent emails** (member-portal, bp-feedback-notify) use
+- **Worker-sent emails** (member-portal, bp-feedback-notify, report-digests) use
   `src/email/layout.ts`'s `renderEmailLayout()` directly — see the root README's "Branded email
   template" section. Nothing to do here for those; this folder is for the other path.
 - **Monday.com automation emails** — an automation's "Send a custom email" action, configured

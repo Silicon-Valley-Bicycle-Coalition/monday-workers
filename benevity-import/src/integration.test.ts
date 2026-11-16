@@ -78,6 +78,7 @@ describe('benevity-import integration', () => {
       changeColumnValues: vi.fn(),
       archiveItem: vi.fn().mockResolvedValue(undefined),
       fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
+      fetchItemAssets: vi.fn().mockResolvedValue({ boardId: '777', assetIds: ['a1', 'a2'] }),
     };
   });
 
@@ -135,7 +136,7 @@ describe('benevity-import integration', () => {
     const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId }] } } }),
     });
     expect(res.status).toBe(200);
     expect(sentMessages).toEqual([{ assetId, writeStamp: 'dropped' }]);
@@ -160,7 +161,7 @@ describe('benevity-import integration', () => {
     const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     expect(res.status).toBe(200);
     // The webhook only records the upload and hands it to the queue (#74); the consumer ingests it.
@@ -205,7 +206,7 @@ describe('benevity-import integration', () => {
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     await ingestUploads(config);
 
@@ -239,7 +240,7 @@ describe('benevity-import integration', () => {
       const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId }] } } }),
+        body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId }] } } }),
       });
       expect(res.status).toBe(200);
       await ingestUploads(config, { csv: mismatched });
@@ -286,7 +287,7 @@ describe('benevity-import integration', () => {
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     await ingestUploads(config);
 
@@ -361,7 +362,7 @@ describe('benevity-import integration', () => {
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     await ingestUploads(config);
     await drain();
@@ -417,7 +418,7 @@ describe('benevity-import integration', () => {
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     await ingestUploads(config);
     // Nothing imported, nothing queued — and one worklist notice saying so.
@@ -494,7 +495,7 @@ describe('benevity-import integration', () => {
     const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a2' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a2' }] } } }),
     });
     expect(res.status).toBe(200);
     await ingestUploads(config);
@@ -524,7 +525,7 @@ describe('benevity-import integration', () => {
     const badSecret = await app.request(`/webhooks/monday/benevity-upload?secret=wrong-secret`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     expect(badSecret.status).toBe(401);
     expect(sentMessages).toHaveLength(0);
@@ -533,7 +534,7 @@ describe('benevity-import integration', () => {
     const noSecret = await app.request(`/webhooks/monday/benevity-upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     expect(noSecret.status).toBe(401);
     expect(sentMessages).toHaveLength(0);

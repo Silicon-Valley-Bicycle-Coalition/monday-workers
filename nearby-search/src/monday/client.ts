@@ -49,12 +49,33 @@ export function toContact(raw: RawContact, src: SourceBoard): SourcedContact {
   return { id: raw.id, name: named ? named : raw.name, lat, lng, zip: null, kind: src.kind };
 }
 
+// A search walks every contact on three boards, so each board's {id, name, lat, lng} list is kept
+// for a few minutes in two tiers: module scope (the client is rebuilt per request) for the same
+// isolate, and, when the caller passes one, the colo's Cache API, because a preview and its confirm
+// or a radius change often land on different isolates. A snapshot carries its walk time, and a
+// memory entry filled from one expires with it, so neither tier serves anything past the TTL.
+// In-flight walks are shared, and a failed walk is evicted so the next search retries. The Cache
+// API is best-effort: a failed read or write is a miss, never a failed search. Staleness is
+// bounded by the TTL; the geocode cron's new coordinates simply show up within it.
+export const CONTACT_CACHE_TTL_MS = 5 * 60_000;
+const contactCache = new Map<string, { at: number; contacts: Promise<SourcedContact[]> }>();
+export function clearContactCache(): void { contactCache.clear(); }
+
+// Never routed: the Cache API keys on a URL, and this one only names the snapshot. Bump `v1` if
+// SourcedContact's shape changes.
+const SNAPSHOT_URL = 'https://nearby-search.cache.invalid/contacts/v1';
+interface Snapshot { at: number; contacts: SourcedContact[] }
+
 interface Page<T> { cursor: string | null; items: T[] }
 
 export class HttpNearbyMondayClient implements NearbyMondayClient {
   private readonly transport: MondayGraphQL;
+  private readonly snapshots: Cache | undefined;
 
-  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
+  // `snapshots` (the Workers Cache API, caches.default) shares contact lists across isolates; only
+  // the search routes pass it, as nothing else calls listContacts.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}, snapshots?: Cache) {
+    this.snapshots = snapshots;
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options, apiVersion: MONDAY_API_VERSION });
   }
 
@@ -78,7 +99,50 @@ export class HttpNearbyMondayClient implements NearbyMondayClient {
     return out;
   }
 
-  async listContacts(src: SourceBoard): Promise<SourcedContact[]> {
+  listContacts(src: SourceBoard): Promise<SourcedContact[]> {
+    const key = JSON.stringify([src.boardId, src.kind, src.latColumn, src.lngColumn, src.nameColumn]);
+    const hit = contactCache.get(key);
+    if (hit && Date.now() - hit.at < CONTACT_CACHE_TTL_MS) return hit.contacts;
+    const entry = { at: Date.now(), contacts: Promise.resolve<SourcedContact[]>([]) };
+    entry.contacts = this.snapshotOrWalk(src, key, (at) => { entry.at = at; });
+    contactCache.set(key, entry);
+    entry.contacts.catch(() => { if (contactCache.get(key) === entry) contactCache.delete(key); });
+    return entry.contacts;
+  }
+
+  // A fresh Cache API snapshot (its walk time reported through `stamp`), else a walk that is then
+  // stored for the next isolate.
+  private async snapshotOrWalk(src: SourceBoard, key: string, stamp: (at: number) => void): Promise<SourcedContact[]> {
+    const url = `${SNAPSHOT_URL}?key=${encodeURIComponent(key)}`;
+    if (this.snapshots) {
+      try {
+        const res = await this.snapshots.match(url);
+        if (res) {
+          const snap = (await res.json()) as Snapshot;
+          if (Date.now() - snap.at < CONTACT_CACHE_TTL_MS) {
+            stamp(snap.at);
+            return snap.contacts;
+          }
+        }
+      } catch (err) {
+        console.error('nearby-search contact snapshot read failed', err instanceof Error ? err.name : 'unknown');
+      }
+    }
+    const at = Date.now();
+    const contacts = await this.walkContacts(src);
+    if (this.snapshots) {
+      const body: Snapshot = { at, contacts };
+      const res = new Response(JSON.stringify(body), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${CONTACT_CACHE_TTL_MS / 1000}` },
+      });
+      await this.snapshots.put(url, res).catch((err: unknown) => {
+        console.error('nearby-search contact snapshot write failed', err instanceof Error ? err.name : 'unknown');
+      });
+    }
+    return contacts;
+  }
+
+  private async walkContacts(src: SourceBoard): Promise<SourcedContact[]> {
     const columnIds = [src.latColumn, src.lngColumn, ...(src.nameColumn === null ? [] : [src.nameColumn])];
     const items = await this.allItems<RawContact>(src.boardId, 'id name column_values(ids: $columnIds) { id text }', { columnIds }, '$columnIds: [String!]');
     return items.map((raw) => toContact(raw, src));

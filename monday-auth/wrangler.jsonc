@@ -21,12 +21,26 @@
   "vars": {
     "ENVIRONMENT": "production",
     "PROBE_ENABLED": "false",
+    // /oauth/webhooks (#110): off like the probe; turn on for one deploy with --var while
+    // re-registering. A created webhook may only point under one of these prefixes.
+    "WEBHOOKS_ENABLED": "false",
+    "WEBHOOK_URL_PREFIXES": "https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/,https://svbc-people-reclassification.svbc-account.workers.dev/webhooks/monday/",
     // The SVBC Integration user (created 2026-10-30); consent by anyone else is refused.
     "EXPECTED_USER_ID": "120827741",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
   },
+  // Attempt limiter for POST /oauth/* (keyed on CF-Connecting-IP), so START_KEY can't be guessed online (#104).
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } }],
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill (#117). The broker's work is I/O
+  // (D1, auth.monday.com) plus a SHA-256 or AES-GCM call, so 100 ms is ample.
+  "limits": { "cpu_ms": 100 },
   "observability": { "enabled": true, "issues": { "enabled": true } },
 
+  // Secrets (wrangler secret put, per environment): the three apps' client id/secret pairs,
+  // START_KEY (at least 32 characters), TOKEN_ENC_KEY (AES-256-GCM key for the token columns in D1:
+  // `openssl rand -base64 32`; set it BEFORE deploying a build that reads it) and optionally
+  // SLACK_WEBHOOK_URL. See README.md.
   "env": {
     "sandbox": {
       "name": "svbc-monday-auth-sandbox",
@@ -43,11 +57,16 @@
       "triggers": { "crons": ["*/30 * * * *"] },
       "vars": {
         "ENVIRONMENT": "sandbox",
-        "PROBE_ENABLED": "true",
+        // Off by default, like production; turn it on only while verifying (README "Measuring ... probe").
+        "PROBE_ENABLED": "false",
+        "WEBHOOKS_ENABLED": "false",
+        "WEBHOOK_URL_PREFIXES": "https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/webhooks/monday/,https://svbc-people-reclassification-sandbox.svbc-account.workers.dev/webhooks/monday/",
         // Sandbox Integration
         "EXPECTED_USER_ID": "117112617",
         "MONDAY_SUBDOMAIN": "bikesiliconvalley"
       },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2102", "simple": { "limit": 10, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
       "observability": { "enabled": true, "issues": { "enabled": true } }
     }
   }

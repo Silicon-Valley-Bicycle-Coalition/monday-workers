@@ -7,6 +7,7 @@ import { isWithheld } from '../matching/people';
 import { ensureWorklistItem } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage, QueueMessageLike } from './processBatch';
+import { errorClass } from '../logSafe';
 
 // Consumer for benevity-import-writes-dlq and its -sandbox- twin (#60), modelled on
 // mailchimp-sync's (#37). Until this existed nothing consumed them: a gift that exhausted its
@@ -91,7 +92,7 @@ export async function processDeadLetters(
       await deps.rowStore.updateStatus(transactionId, 'needs-review', { error });
       row = { ...found, status: 'needs-review', error };
     } catch (err) {
-      console.error(`benevity-import dlq: could not mark transaction "${transactionId}" dead-lettered: ${errorMessage(err)}`);
+      console.error(`benevity-import dlq: could not mark transaction "${transactionId}" dead-lettered: ${errorClass(err)}`);
       message.retry({ delaySeconds: D1_RETRY_DELAY_SECONDS });
       continue;
     }
@@ -105,7 +106,7 @@ export async function processDeadLetters(
     try {
       await raiseDeadLetterWorklistItem(deps, row);
     } catch (err) {
-      console.error(`benevity-import dlq: could not post the worklist item for transaction "${transactionId}" (the daily sweep retries): ${errorMessage(err)}`);
+      console.error(`benevity-import dlq: could not post the worklist item for transaction "${transactionId}" (the daily sweep retries): ${errorClass(err)}`);
       summary.awaitingWorklist.push(transactionId);
     }
   }
@@ -132,7 +133,7 @@ async function processDeadUpload(
     const upload = await deps.uploadStore.getUploadByAssetId(assetId);
     if (upload !== null && upload.status !== 'parsed') await deps.uploadStore.markError(upload.id);
   } catch (err) {
-    console.error(`benevity-import dlq: could not mark asset "${assetId}" errored: ${errorMessage(err)}`);
+    console.error(`benevity-import dlq: could not mark asset "${assetId}" errored: ${errorClass(err)}`);
     message.retry({ delaySeconds: D1_RETRY_DELAY_SECONDS });
     return;
   }
@@ -160,7 +161,7 @@ export async function sweepDeadLetteredRows(
       await raiseDeadLetterWorklistItem(deps, row);
       posted.push(row.transactionId);
     } catch (err) {
-      console.error(`benevity-import dlq sweep: could not post the worklist item for transaction "${row.transactionId}": ${errorMessage(err)}`);
+      console.error(`benevity-import dlq sweep: could not post the worklist item for transaction "${row.transactionId}": ${errorClass(err)}`);
       failed.push(row.transactionId);
     }
   }

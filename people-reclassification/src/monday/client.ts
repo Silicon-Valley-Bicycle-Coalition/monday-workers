@@ -19,13 +19,24 @@ export interface PageItem {
 
 export interface ItemsPage { items: PageItem[]; cursor: string | null }
 
+// The most ids one items(ids:) query takes (its limit argument's maximum).
+export const ITEMS_BY_ID_LIMIT = 100;
+
+// A server-side filter for pageItems: only items whose date column is on or after dateISO
+// (YYYY-MM-DD). A blank date doesn't match.
+export interface PageFilter { dateOnOrAfter: { columnId: string; dateISO: string } }
+
 // What a pass needs from Monday; the fake in src/pass.test.ts implements the same surface.
 export interface ReclassificationMondayClient {
   getBoardSchema(boardId: number): Promise<BoardSchema | null>;
-  pageItems(boardId: number, columnIds: string[], cursor: string | null): Promise<ItemsPage>;
+  // filter applies from the first page on; pass the same one with every cursor.
+  pageItems(boardId: number, columnIds: string[], cursor: string | null, filter?: PageFilter): Promise<ItemsPage>;
   // Which board an item is on now — settles a 'planned'/'ambiguous' ledger row from an
   // interrupted pass. null = deleted or not visible.
   getItemBoardId(itemId: string): Promise<string | null>;
+  // Which board each of up to ITEMS_BY_ID_LIMIT items is on now. A deleted, archived or invisible item is
+  // left out of the map.
+  getItemBoardIds(itemIds: string[]): Promise<Map<string, string>>;
   // One item's values, for a single-person move. null = deleted or not visible.
   getItemValues(itemId: string, columnIds: string[]): Promise<PageItem | null>;
   moveItemToBoard(itemId: string, boardId: number, groupId: string, mapping: ColumnMapping[]): Promise<void>;
@@ -85,18 +96,23 @@ export class HttpMondayClient implements ReclassificationMondayClient {
     return { id: b.id, name: b.name, itemsCount: b.items_count, itemsLimit: b.items_limit, columns: b.columns, groups: b.groups };
   }
 
-  async pageItems(boardId: number, columnIds: string[], cursor: string | null): Promise<ItemsPage> {
+  async pageItems(boardId: number, columnIds: string[], cursor: string | null, filter?: PageFilter): Promise<ItemsPage> {
+    // The rule goes on the first page only: a cursor already encodes the query it came from.
+    const rule = filter?.dateOnOrAfter;
+    const query = cursor === null && rule !== undefined
+      ? { rules: [{ column_id: rule.columnId, compare_value: ['EXACT', rule.dateISO], operator: 'greater_than_or_equals' }] }
+      : null;
     // 500 is items_page's documented maximum; a People board of ~8k is 16 subrequests.
     const data = await this.graphql<{ boards: { items_page: { cursor: string | null; items: RawItem[] } }[] }>(
-      `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+      `query ($boardId: [ID!], $columnIds: [String!], $cursor: String, $query: ItemsQuery) {
         boards(ids: $boardId) {
-          items_page(limit: 500, cursor: $cursor) {
+          items_page(limit: 500, cursor: $cursor, query_params: $query) {
             cursor
             items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
           }
         }
       }`,
-      { boardId: [String(boardId)], columnIds, cursor },
+      { boardId: [String(boardId)], columnIds, cursor, query },
     );
     const page = data.boards[0]?.items_page;
     if (page === undefined) return { items: [], cursor: null };
@@ -112,6 +128,20 @@ export class HttpMondayClient implements ReclassificationMondayClient {
       { itemId },
     );
     return data.items[0]?.board.id ?? null;
+  }
+
+  async getItemBoardIds(itemIds: string[]): Promise<Map<string, string>> {
+    if (itemIds.length > ITEMS_BY_ID_LIMIT) throw new Error(`getItemBoardIds takes at most ${ITEMS_BY_ID_LIMIT} ids, got ${itemIds.length}`);
+    const found = new Map<string, string>();
+    if (itemIds.length === 0) return found;
+    // items(ids:) returns 25 by default, and without exclude_nonactive it also returns archived and
+    // deleted items — which items_page, and so a full page of the board, never did.
+    const data = await this.graphql<{ items: { id: string; board: { id: string } | null }[] }>(
+      `query ($ids: [ID!]) { items(ids: $ids, limit: ${ITEMS_BY_ID_LIMIT}, exclude_nonactive: true) { id board { id } } }`,
+      { ids: itemIds },
+    );
+    for (const item of data.items) if (item.board !== null) found.set(item.id, item.board.id);
+    return found;
   }
 
   async getItemValues(itemId: string, columnIds: string[]): Promise<PageItem | null> {

@@ -2,37 +2,37 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations": 18431577310,
-      "organizations": 18431577213,
-      "people": 18431577220,
-      "affiliations": 18431577240,
-      "benevityUploads": 18434850887
+      "donations": 18437342657,
+      "organizations": 18437342579,
+      "people": 18437342592,
+      "affiliations": 18437342615,
+      "benevityUploads": 18439574423
     }
   },
   "benevityImport": {
     "minDisbursementDate": "2026-09-16",
     "donationsColumns": {
-      "donor": "board_relation_mm795r2d",
-      "matchedBy": "board_relation_mm795sr8",
-      "amount": "numeric_mm79nz8b",
-      "date": "date_mm7938jk",
-      "disbursementDate": "date_mm7qjw79",
-      "fiscalYearEnding": "text_mm7973ah",
-      "status": "color_mm79q3b3",
-      "giftType": "text_mm79fzs3",
-      "anonymousDonor": "boolean_mm79y64t",
-      "transactionId": "text_mm799bbc"
+      "donor": "board_relation_mm8hhdk7",
+      "matchedBy": "board_relation_mm8hs607",
+      "amount": "numeric_mm8hn1b2",
+      "date": "date_mm8hfsvm",
+      "disbursementDate": "date_mm90rrgv",
+      "fiscalYearEnding": "text_mm8hpk76",
+      "status": "color_mm8hshet",
+      "giftType": "text_mm8h238c",
+      "anonymousDonor": "boolean_mm8h4a5h",
+      "transactionId": "text_mm8hm74r"
     },
     "organizationsNameColumn": "name",
     "peopleColumns": {
-      "personalEmail": "email_mm79m5qa",
-      "householdEmail": "email_mm79ap8n",
-      "employer": "text_mm797f5r"
+      "personalEmail": "email_mm8h4kkb",
+      "householdEmail": "email_mm8hj3f8",
+      "employer": "text_mm8hdpm"
     },
     "affiliationsColumns": {
-      "person": "board_relation_mm794eac",
-      "organization": "board_relation_mm79eymx",
-      "workEmail": "email_mm79wfrt"
+      "person": "board_relation_mm8hvr9x",
+      "organization": "board_relation_mm8h730r",
+      "workEmail": "email_mm8h6cxh"
     },
     "uploadsBoard": {
       "fileColumn": "file_mm7z4ax3",

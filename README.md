@@ -58,6 +58,15 @@ production's apps cannot be reused there. Setup, consent and re-consent are in
 in [the broker design](docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md). The
 sandbox design's [section 4](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) predates the broker.
 
+**Mute the integration users' Monday email.** Monday emails a user every time someone subscribes
+them to a board, so setting up sandbox boards sends a burst of "[You're subscribed]" mail to the
+Sandbox Integration address (a plus-alias of an operator's inbox). No Worker sends these and the
+API has no switch for them: sign in to Monday as the integration user and turn the email
+notifications off under the profile's Notifications settings, or filter that subject in the
+receiving mailbox. Keep any mail filter that narrow, because sign-in and verification mail for the
+user arrives at the same address. Subscribe an integration user only to the private boards its
+Workers need; it already reaches every Main board without being subscribed (#18, below).
+
 **A Monday user's "access" is wider than it looks — measure a token before calling it scoped
 (#18).** Monday shows every *Main* board in every open workspace to every team member, and by
 default lets them edit it, whether or not they were ever added to the board or the workspace;
@@ -72,7 +81,7 @@ production is each Worker's `config/split.test.ts` (the two configs share no id)
 `monday-backup`'s `workspaceIds`, not the token. To see what a token really reaches:
 
 ```sh
-MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
+MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 18210301
 ```
 
 (`MONDAY_API_TOKEN` here is the operator tool's own environment variable, not a Worker secret. The
@@ -125,6 +134,7 @@ open it in a browser. Keep it in step with this table — it carries an "as of" 
 
 | Worker | Status | Priority |
 |---|---|---|
+| [`monday-auth`](monday-auth/README.md) | **Production deployed 2026-10-31** (cutover step 0.4) and consented as SVBC Integration the same day; latest production deploy 2026-11-09 (version `3b31d518`). Sandbox verified 2026-10-31. The #104 hardening (rate-limited `/oauth`, encrypted token columns, trimmed `/health`) and `limits.cpu_ms` (#117) are merged but not deployed: each environment needs a `TOKEN_ENC_KEY` secret first ([README](monday-auth/README.md), "Secrets"). | Migration-blocking: every Monday-writing Worker gets its token here |
 | [`salesforce-import`](salesforce-import/README.md) | Built (merged). **Production config targets the Donors & Contacts workspace (18201685) since 2026-10-26** (3fcaa80, merged !235), and the production boards exist: `donation-rollups`' production config took its board ids from this tool's production load (`boards.json`) on 2026-11-01 (1526652). This repo doesn't record the production load's run dates or its `validate` results. History: full pipeline rehearsed against the **sandbox v2** workspace (2026-08-28, resume 2026-09-08 — monday-migration `docs/18` §9); **batched load re-rehearsed 2026-10-09 → 12** (!211): 27 h 51 min against a ≈ 26.7 h projection, `validate --live` 18 OK / 2 FAIL (the two pre-existing `recon-funraise-*` checks); `configure` builds Find views and an Overview dashboard on each of the 12 CRM boards (!216, !217, merged 2026-10-20), and the importer stamps `Eventbrite Order ID` on migrated ticket gifts (2026-10-19) | **Blocking.** Central migration deliverable — the production load was the cutover |
 | [`funraise-sync`](funraise-sync/README.md) | **Production:** every id in `config/svbc.json` filled 2026-11-01 for Donations, Recurring Gifts and People in workspace 18201685 (aa45bb1); production's first Worker-written gifts came from it on 2026-11-02 (`donation-rollups/README.md`, Acknowledgment Tier backstop). This repo doesn't record when Funraise's webhook was repointed from the sandbox Worker to production. **Sandbox:** `svbc-funraise-sync-sandbox` since 2026-09-19; its `config/sandbox.json` still names the `(sandbox v3)` Donations board (18431577310), not CRM Sandbox v4. History: first deployed and proven end to end 2026-09-18 (route → D1 → queue → consumer, Funraise webhook registered and Enabled, re-proven with its Test button); hourly Recurring Gifts poller built 2026-09-18 and bootstrapped 2026-09-19 (1,175 subscriptions mirrored; design [`docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md`](docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md)); remapped to `(sandbox v3)` 2026-09-30 (ledger rebuilt, 53 held gifts re-driven — README "Rebuilt boards"); write switch rehearsed in the sandbox 2026-10-27/28 (hold → on → off; README "Deploying: the write switch"). | Blocking (feeds the import) |
 | [`quickbooks-sync`](quickbooks-sync/README.md) | **Postponed indefinitely (decided 2026-10-28)** — not shipping at migration. Sandbox write switch set `off` 2026-10-28 (production was already `off`) and its `deploy-sandbox` CI job removed; the code, tests and CI test job stay so it can be picked up again. History: built (merged) — production not deployed; needs real board ids. The Intuit app-review question is resolved 2026-09-21 (a private single-company app still needs Intuit's ~40-minute self-assessment questionnaire, but not the full app-store review). Has a **sandbox environment** on Intuit's sandbox host, deployed as `svbc-quickbooks-sync-sandbox` (by hand — `npm run deploy:sandbox`; merging does not deploy it, see "Deploys"). **D1 and queues provisioned and verified 2026-09-22**: `svbc-quickbooks-sync-sandbox` D1 (id wired 2026-09-20) had a pending migration (`0002_qb_events_pending_monday_item_id`, added 2026-09-21) that had never actually run against it — closed today, both migrations now applied and confirmed via schema check; both queues (`quickbooks-sync-writes-sandbox` and its `-dlq`) confirmed provisioned; config split test, typecheck, unit tests, and a `wrangler deploy --dry-run --env sandbox` all pass. **`MONDAY_API_TOKEN` and `MONDAY_WEBHOOK_SECRET` set 2026-09-22** (the former reuses the shared `Sandbox Integration` user already used by the other sandbox Workers; the latter's local copy is lost, so regenerate and re-set it when the Monday webhook is registered). **Sandbox Customers/Invoices/Products boards created and wired 2026-09-29.** **Still blocked** on staff-side prerequisites before it can process anything live: an Intuit sandbox company and development keys, and a token pair seeded via the OAuth Playground (`QB_CLIENT_ID`/`QB_CLIENT_SECRET`/`QB_WEBHOOK_VERIFIER_TOKEN` remain unset) — see [the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) **Sandbox redeployed from `main` 2026-10-09** (canonical Monday transport, dead-letter retry delay after a D1 failure, production D1 id wired); no D1 migrations were pending. | Postponed indefinitely — not part of cutover |
@@ -138,7 +148,8 @@ open it in a browser. Keep it in step with this table — it carries an "as of" 
 | [`eventbrite-sync`](eventbrite-sync/README.md) | **Deployed: sandbox 2026-10-26, production 2026-11-02** (its README "Deploy"; production config and D1 c579d0d, !291). Pledge to Ride board and dashboard built, not yet configured (its README "Pledge to Ride"). Paid Eventbrite orders → Donations items (Status `Received`, Gift Type `Event Ticket`, buyer matched on People by email; refunds → `Refunded`); design [`docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md`](docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md). Production's order path is filled (`Eventbrite Order ID` `text_mm8n459q`, stamped on migrated ticket gifts by `salesforce-import`); its attendee feed is configured (2026-11-03; class emails go through the send page, not yet deployed) and its webhook is registered, with the 17 live upcoming events backfilled. The production order webhook was registered the same day; the 8 orders placed before that were all $0. **The sandbox order path can't write yet:** `orderIdColumn` in `config/sandbox.json` is `REPLACE_WITH_COLUMN_ID`. Its README doesn't record whether the `Refunded` label (shared with `funraise-sync`) has been added. Ships `scripts/backfill-orders.mjs` for the gap between the final extract and the webhook registration; never backfill an event that sold tickets before 2026 **Grant report built, not deployed (2026-11-06):** a validated Home Zip per registration, off until `homeZipColumn` is set; Grant and the report view are Monday-side setup (its README "Grant report"). | Post-cutover — takes every Eventbrite order after the final extract |
 | [`bp-feedback-notify`](bp-feedback-notify/README.md) | **Live in production 2026-11-03**: writes on, `Post-Event Feedback` column and webhook automation on the live `BP Request Form` board, handshake answered 200; no real item has gone through it yet. **Sandbox confirmed working end-to-end 2026-09-21** (`svbc-bp-feedback-notify-sandbox`): a real status change on `BP Request Form (sandbox)` fired the webhook and the email reached the sandbox sink. Optional Sent/Failed write-back to the item ships disabled (`sendStatus: null`) **Sandbox redeployed from `main` 2026-10-09** (send-outcome logging with redacted recipients, background status write-back, Workers Issues); no D1 migrations were pending. | Post-migration, non-blocking — closes the Organizer Feedback Form gap; nothing depends on it |
 | [`people-reclassification`](people-reclassification/README.md) | **Live in production and sandbox, writes on** (2026-11-03). Sandbox: one live move, then a full pass of 400 moves verified, 0 failed. Production: first live pass 2027-01-01, quarterly; its dry run planned 400 aged-out moves. Board limit is **100,000 items** (decided 2026-11-03; it was sized against 10,000). The periodic pass the plan's "Still open" first bullet asks for: moves People items whose latest activity (Last Gift Date, Member Until, counted event registrations, volunteer hours; Lifetime members and Funraise-linked people never age out) is outside a rolling **7-year** window to People (Historical), and reactivated Historical people back — daily cron that fires a pass on the first of each quarter, when People crosses 85% of the ceiling, or to continue unfinished work; `POST /reclassify/run` on demand. Every write is **dry-run** until the write switch (`people-reclassification:writes`) is `on`; a D1 ledger records every decision. Warns (and optionally raises an IT Requests item) when Historical nears its own ceiling. Staff can promote someone from their item, and a logged call or meeting brings someone back by the next morning (built, not deployed). | Post-cutover, non-blocking — both People boards are at ~8% of the 100,000-item limit; this keeps People to the last seven years of activity |
-| [`report-digests`](report-digests/README.md) | **Deployed: sandbox 2026-10-26, deployed to production 2026-11-01 with writes on** (`svbc-report-digests-sandbox`, secrets set). The recent-gifts digest dropped its Windfall columns (2026-11-06). Five scheduled email digests of Monday board views that replace the seven Salesforce report subscriptions still live in October 2026 (unmatched gifts, membership renewals, recent gifts of $400 and up, with no wealth-screening data, the fiscal year by gift size, last week's gifts). Hourly cron, Pacific schedules in config, recipients as Monday user ids. Why not Monday: scheduled dashboard email is Enterprise-only, and Pro's 5 scheduled PDF exports can't skip an empty run or join a donor's columns. Sandbox sends currently bounce at the sink mailbox (see its README). Every send is gated by the write switch (`report-digests:writes`); a digest due under `hold` is not caught up | Done at cutover: it replaced the Salesforce subscriptions, which would have emailed frozen data from then on |
+| [`contact-roles`](contact-roles/README.md) | **Built, not deployed; no live Monday write has been run** (2026-11-11; design [`docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md`](docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md)). Stateless 10-minute cron that rewrites a read-only `Contacts` column on opportunity boards from confirmed `SVBC Roles` on Current Affiliations (no D1, no queue). Production enabled: Sponsorships and Donations; Grants & Contracts, BP Request Form, Bike Education Lifecycle Tracker and Leads stay disabled until each has an Organization link. Ships **off** (`contact-roles:writes` unset); sandbox rollout and smoke tests come first (its README "Deploy order and rollout checklist"). | Post-migration, non-blocking — staff keep opportunity contacts by hand until it ships |
+| [`report-digests`](report-digests/README.md) | **Deployed: sandbox 2026-10-26, deployed to production 2026-11-01 with writes on** (`svbc-report-digests-sandbox`, secrets set). The recent-gifts digest dropped its Windfall columns (committed 2026-11-06, deployed to production 2026-11-11; the old wealth digest was still sent 2026-11-09, see #81). Five scheduled email digests of Monday board views that replace the seven Salesforce report subscriptions still live in October 2026 (unmatched gifts, membership renewals, recent gifts of $400 and up, with no wealth-screening data, the fiscal year by gift size, last week's gifts). Hourly cron, Pacific schedules in config, recipients as Monday user ids. Why not Monday: scheduled dashboard email is Enterprise-only, and Pro's 5 scheduled PDF exports can't skip an empty run or join a donor's columns. Sandbox sends currently bounce at the sink mailbox (see its README). Every send is gated by the write switch (`report-digests:writes`); a digest due under `hold` is not caught up | Done at cutover: it replaced the Salesforce subscriptions, which would have emailed frozen data from then on |
 | [`member-map`](member-map/README.md) | **Production deployed 2026-11-03** (`map.bikesiliconvalley.org`, behind Access; sandbox on `map.sandbox.bikesiliconvalley.org`). Staff-only map of members over OpenStreetMap, shading the Census block groups where membership is thin (population gap, warm-lead gap, bike lane density), with an Equity Priority Communities outline and member dots linking to Monday. Weekly cron snapshot to private R2; privately geocodes people with no Lat/Lng; read-only (no write switch). Production deploys by hand (`npm run deploy`); CI deploys only the sandbox | Post-migration, non-blocking |
 | [`nearby-search`](nearby-search/README.md) | **Built; sandbox rollout pending** (2026-11-02; design [`docs/superpowers/specs/2026-11-02-nearby-search-design.md`](docs/superpowers/specs/2026-11-02-nearby-search-design.md)). Staff-only map search for People, People (Historical) and Organizations near an address, intersection or road segment (OpenStreetMap), behind Cloudflare Access; confirming a search queues one results-board row per match and a Nearby label on each person, which `mailchimp-sync` syncs as a Mailchimp tag. Hourly Census geocode backfill for contacts without coordinates. Not deployed anywhere: needs D1/queues, the Access application, real board and column ids. Every Monday write is gated by the write switch (`nearby-search:writes`) | Post-cutover, non-blocking — replaces the Salesforce Bike-lane GIS proximity lookups |
 
@@ -198,9 +209,9 @@ than restarted from zero. See that Worker's README.
 
 ## Webhook secrets in the URL (`?secret=`)
 
-Funraise, Eventbrite and Monday webhooks can't send a custom header or a per-delivery signature
-this repo can verify, so every Worker they call authenticates the delivery by a shared secret
-embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
+Funraise and Eventbrite webhooks can't send a custom header or a per-delivery signature this
+repo can verify, and Monday signs only webhooks created by an app (below), so every Worker they
+call authenticates the delivery by a shared secret embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
 `mailchimp-sync` (Monday and Mailchimp routes), `benevity-import`, `member-portal`'s letters
 route, `people-reclassification`'s promote route, `quickbooks-sync`'s Monday route and
 `bp-feedback-notify`. (Intuit signs its own
@@ -228,13 +239,59 @@ deliveries. Mitigations, in every such Worker:
   their own secret in a header (`Authorization: Bearer`, as `report-digests` does), not
   `?secret=`.
 
+### Monday's signed webhook JWT (second factor, #110)
+
+A Monday webhook created **by an app** (with that app's OAuth token) carries
+`Authorization: <JWT>`, HS256-signed with the app's **Signing Secret**; one created with a
+personal API token carries none. `donation-rollups` and `people-reclassification` verify it
+after the URL secret (`src/mondayJwt.ts`, byte-identical in both: WebCrypto HMAC verify, HS256
+only). Every app request is signed with the same secret, so the token is also bound to its use:
+`accountId` (or `dat.account_id`) must equal config `monday.accountId` (26331880, the
+`bikesiliconvalley` account, which holds both the production and sandbox boards; read with
+`query { account { id } }`), `aud`, when present, must name the request's origin and path, and
+`exp`/`nbf`/`iat` are checked when present with 60 s skew, refusing a lifetime (`exp - iat`) or
+age over an hour. Monday's integration docs show `accountId`, `aud` (the endpoint URL), `iat` and
+a 300 s `exp`, but its webhook docs don't list the claims, so `exp` and `aud` stay optional until a
+live sandbox delivery shows them. A signing secret with no `monday.accountId` rejects everything.
+The subscription challenge skips the JWT:
+its echo has no side effect and the URL secret already gates it. Rollout is by config, so a
+deploy ahead of the secret drops nothing:
+
+| `MONDAY_SIGNING_SECRET` (secret) | `MONDAY_WEBHOOK_JWT_REQUIRED` (var) | Delivery without a JWT | Delivery with a JWT |
+|---|---|---|---|
+| unset | not `"true"` | accepted (URL secret only, as before) | accepted, not checked |
+| set | not `"true"` | accepted, logged `delivery carried no Authorization JWT` | must verify, else 401 |
+| set | `"true"` | 401 | must verify, else 401 |
+| unset | `"true"` | 401 (fails closed) | 401 |
+
+Operator path, per Worker and per environment (sandbox first):
+
+1. Copy the Signing Secret of the app that will own the subscriptions: monday.com Developer
+   Center → *SVBC Staff Sync* (the sandbox's own Staff sync app for `--env sandbox`) → Basic
+   Information → Signing Secret. It is not the OAuth client secret (`SYNC_CLIENT_SECRET`).
+2. `wrangler secret put MONDAY_SIGNING_SECRET` (add `--env sandbox` for the sandbox) in
+   `donation-rollups/` and `people-reclassification/`. Any JWT that arrives is now checked.
+3. Re-register the subscriptions as that app, through the monday-auth broker's
+   `/oauth/webhooks/sync` route (the broker never hands its token out): turn the route on for one
+   deploy, then run `setup-webhooks.mjs --prune <boards>` (donation-rollups) and
+   `setup-promote.mjs --worker-url … --replace-webhooks` with `MONDAY_AUTH_URL` and `START_KEY`
+   set. Steps in `monday-auth/README.md` "Re-registering webhooks". Until this is done,
+   deliveries stay unsigned and the warning above keeps firing.
+4. Confirm on a live sandbox delivery that the warning stops and nothing is rejected
+   (`wrangler tail --env sandbox`, look for `JWT`). A `wrong-audience` or `wrong-account`
+   rejection means Monday's webhook claims differ from its integration docs: fix the binding in
+   `src/mondayJwt.ts` before production. If deliveries always carry `exp`, make it required there.
+5. Then set `"MONDAY_WEBHOOK_JWT_REQUIRED": "true"` in that environment's `vars` in
+   `wrangler.jsonc` and deploy. Keep `?secret=` as well: it gates the per-IP limiter exemption
+   and costs nothing.
+
 ## Write switch: off / hold / on
 
 Every Worker that writes to Monday (or sends email) reads a per-Worker mode from a shared
 Workers KV namespace, `FLAGS`, so a migration or an incident can stop writes in seconds without a
 deploy. Design: [`docs/superpowers/specs/2026-10-26-write-switch-design.md`](docs/superpowers/specs/2026-10-26-write-switch-design.md);
 the migration procedure: [`docs/runbooks/migration-hold.md`](docs/runbooks/migration-hold.md).
-In scope, thirteen Workers: `benevity-import`, `bp-feedback-notify`, `donation-rollups`, `dtd-sync`,
+In scope, fourteen Workers: `benevity-import`, `bp-feedback-notify`, `contact-roles`, `donation-rollups`, `dtd-sync`,
 `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
 `monday-backup`, `nearby-search`, `people-reclassification`, `quickbooks-sync` and
 `report-digests` (`svbc-calendars` excluded).
@@ -262,7 +319,7 @@ Worker that should keep writing *before* deploying the build that reads the swit
 example, `member-portal` login returns 503). CI deploys the sandbox from `main`, so the first time:
 create the namespaces, put the sandbox keys `on` (with the real ids filled in locally), and only
 then commit the real ids — the runbook's "Merging / first deploy sequencing" has the steps. Set
-keys one Worker at a time, **never `all writes on`**: `people-reclassification` stays `off` until
+keys one Worker at a time, **never `all writes on`**: `contact-roles` stays `off` until its dry-run counts have been checked and its sandbox smoke tests pass, `people-reclassification` stays `off` until
 its staged one-item live check passes, and `donation-rollups` goes `on` only after its webhooks
 are subscribed.
 
@@ -312,7 +369,7 @@ Combined with 14-day retention, a multi-day Monday outage or a long `hold` queue
 dead-lettering. Error classification (retryable vs terminal) is unchanged per Worker.
 
 **KV namespaces** were created 2026-10-27: `FLAGS` (`1dec1f10ebcc41e7a464179ba2b37628`) and
-`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 13 in-scope `wrangler.jsonc` files carry
+`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 14 in-scope `wrangler.jsonc` files carry
 both ids (forks: create your own with `npx wrangler kv namespace create FLAGS` and
 `npx wrangler kv namespace create sandbox-FLAGS`, and replace them);
 `node scripts/check-worker-flags.mjs --strict` (CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is
@@ -407,7 +464,8 @@ object with an address in it), so it's a backstop, not a proof. A deliberate exc
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares
 one branded layout — dark SVBC-gold header with the logo, light/dark-mode-aware body, plain-text
 part — rather than each Worker sending bare, unstyled HTML. `member-portal/src/email/layout.ts` is
-the source of truth; `bp-feedback-notify/src/email/layout.ts` is a copy, same reasoning as every
+the source of truth; `bp-feedback-notify/src/email/layout.ts` and
+`report-digests/src/email/layout.ts` are copies, same reasoning as every
 other per-Worker copy in this repo (see "Concurrency" above). The logo itself is a PNG (email
 clients don't render the site's inline SVG logo) served by member-portal at `GET /email/logo.png`
 and referenced by every Worker's email config as an absolute URL — regenerate it from

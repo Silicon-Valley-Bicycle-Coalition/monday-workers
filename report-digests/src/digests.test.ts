@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import sandbox from '../config/sandbox.json';
 import { validateConfig } from './config';
-import { buildDigest, MAX_ROWS } from './digests';
+import { buildDigest, formatMoney, MAX_ROWS } from './digests';
+import { MAX_ITEMS } from './monday/client';
 import { localTime } from './schedule';
 import { FakeMonday, item } from '../test/fakeMonday';
 
@@ -20,7 +21,7 @@ describe('unmatched-gifts', () => {
       { column_id: 'anon', operator: 'is_empty', compare_value: [] },
     ]);
     expect(d.count).toBe(1);
-    expect(d.viewUrl).toBe('https://bikesiliconvalley.monday.com/boards/18431577310/views/901');
+    expect(d.viewUrl).toBe('https://bikesiliconvalley.monday.com/boards/18437342657/views/901');
   });
 });
 
@@ -36,7 +37,7 @@ describe('renewals', () => {
     ]);
     expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Early', 'Late']);
     // No view of that name on the fake board: the link falls back to the board.
-    expect(d.viewUrl).toBe('https://bikesiliconvalley.monday.com/boards/18431577220');
+    expect(d.viewUrl).toBe('https://bikesiliconvalley.monday.com/boards/18437342592');
   });
 });
 
@@ -55,6 +56,16 @@ describe('recent-gifts', () => {
     expect(d.sections[0]!.table!.rows.map((r) => r[1])).toEqual(['Donor 1']);
     expect(d.sections[0]!.table!.rows[0]!.slice(-2)).toEqual(['$2,500', 'Major']);
     expect(d.count).toBe(1);
+  });
+  it('looks up only the donors of gifts it lists, and only their two giving columns', async () => {
+    const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('2', '50', '2026-10-02'), gift('4', '900', '2026-10-04', { status: 'Failed' })], donors);
+    await buildDigest('recent-gifts', monday, config, monday8);
+    expect(monday.donorLookups).toEqual([{ ids: ['p1'], titles: ['Lifetime Giving', 'Donor Level'] }]);
+  });
+  it('makes no donor lookup when no gift qualifies', async () => {
+    const monday = new FakeMonday([gift('2', '50', '2026-10-02')], donors);
+    await buildDigest('recent-gifts', monday, config, monday8);
+    expect(monday.donorLookups).toEqual([]);
   });
   it('puts the largest of two qualifying gifts first', async () => {
     const monday = new FakeMonday([gift('1', '500', '2026-10-01'), gift('3', '900', '2026-10-03')]);
@@ -87,6 +98,14 @@ describe('fiscal-year-by-size', () => {
     expect(d.sections[0]!.table!.rows).toEqual([['$5,000+', '1', '$5,000'], ['$100–$499', '2', '$300'], ['Total', '3', '$5,300']]);
     expect(d.subject).toBe('FY2027 to date: $5,300 from 3 gifts');
   });
+  it('totals a fiscal year past the item limit, page by page, reading only the columns it sums', async () => {
+    const many = Array.from({ length: MAX_ITEMS + 1 }, (_, i) => gift(String(i), '10', '2026-09-01'));
+    const monday = new FakeMonday(many);
+    const d = await buildDigest('fiscal-year-by-size', monday, config, monday8);
+    expect(d.subject).toBe(`FY2027 to date: ${formatMoney(10 * (MAX_ITEMS + 1))} from ${(MAX_ITEMS + 1)} gifts`);
+    expect(monday.queries[0]!.paged).toBe(true);
+    expect([...monday.queries[0]!.columnIds].sort()).toEqual(['amount', 'size', 'status']);
+  });
 });
 
 describe('last-week', () => {
@@ -107,7 +126,7 @@ describe('missing board or column', () => {
   it('fails loudly on a placeholder board and on a renamed column', async () => {
     const prod = validateConfig({ ...sandbox, boards: { donations: 0, people: 0 } });
     await expect(buildDigest('last-week', new FakeMonday(), prod, monday8)).rejects.toThrow('not visible');
-    const broken = new FakeMonday([], [], [], [{ id: '18431577310', name: 'Donations', columns: [], views: [] }]);
+    const broken = new FakeMonday([], [], [], [{ id: '18437342657', name: 'Donations', columns: [], views: [] }]);
     await expect(buildDigest('last-week', broken, config, monday8)).rejects.toThrow('has no column "Donor"');
   });
 });

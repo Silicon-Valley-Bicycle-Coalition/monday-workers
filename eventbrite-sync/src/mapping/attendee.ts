@@ -7,6 +7,7 @@ import { homeZipFromAnswers } from './homeZip';
 export type Incoming = 'Registered' | 'Attended' | 'Canceled';
 
 export interface EventFacts {
+  eventName: string;
   classDate: string | null;
   classDay: string | null;
   classLocation: string;

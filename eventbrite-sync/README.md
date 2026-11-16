@@ -178,18 +178,18 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
-| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18431577310` | the only write target |
-| `monday.boards["people-live"]` | People (sandbox v3) | `18431577220` | People (Historical) is not a match target |
+| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18437342657` | the only write target |
+| `monday.boards["people-live"]` | People (sandbox v3) | `18437342592` | People (Historical) is not a match target |
 | `eventbriteSync.orderIdColumn` | Donations → **Eventbrite Order ID** (text) | **missing — prerequisite** | bare order id; the adopt-before-create key |
-| `eventbriteSync.amountColumn` | Donations → Amount (numbers) | `numeric_mm79nz8b` | `costs.gross.major_value` as a number — see "Amount" |
-| `eventbriteSync.statusColumn` | Donations → Status (status) | `color_mm79q3b3` | `placed → Received`, `refunded → Refunded` via `statusLabelMap`; **`Refunded` is not yet a label on the board** (funraise-sync's open item) |
-| `eventbriteSync.dateColumn` | Donations → Date (date) | `date_mm7938jk` | the Pacific calendar day of the order's `created` |
-| `eventbriteSync.thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm7ddybs` | first write only; Eventbrite sends the buyer its own confirmation |
-| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (text) | `text_mm79fzs3` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
-| `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm7973ah` | first write only, derived from the same date as the Date column |
-| `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by bare address; create writes `{ email, text }` |
-| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8swwq5` / `text_mm8s1f86` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
-| `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | `{ item_ids: [n] }` |
+| `eventbriteSync.amountColumn` | Donations → Amount (numbers) | `numeric_mm8hn1b2` | `costs.gross.major_value` as a number — see "Amount" |
+| `eventbriteSync.statusColumn` | Donations → Status (status) | `color_mm8hshet` | `placed → Received`, `refunded → Refunded` via `statusLabelMap`; **`Refunded` is not yet a label on the board** (funraise-sync's open item) |
+| `eventbriteSync.dateColumn` | Donations → Date (date) | `date_mm8hfsvm` | the Pacific calendar day of the order's `created` |
+| `eventbriteSync.thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | first write only; Eventbrite sends the buyer its own confirmation |
+| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (text) | `text_mm8h238c` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
+| `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | first write only, derived from the same date as the Date column |
+| `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm8h4kkb` | lookup by bare address; create writes `{ email, text }` |
+| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
+| `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm8hhdk7` | `{ item_ids: [n] }` |
 
 ## Field mapping
 
@@ -499,12 +499,14 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 |---|---|
 | `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `End Time`, `Arrival Time` (5 minutes before the start), `Spanish Day`, `Spanish Date`, `Spanish Time`, `Spanish Arrival Time`, `Class Location`, and `Event Day`, `Event Date`, `Event Location` with the same values as their Class names), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
 | `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
-| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then, under `waitUntil`, a missed-you sets Attendance to No Show on confirmed rows still Registered (read fresh), and a thank-you links People when the Attendee link is blank. |
+| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then one `class-email` message per sent person goes to the write queue (#96), so the work is retried and is not cut off after the response: a timeline entry (when `timelineActivityId` is set), then for a missed-you Attendance to No Show if the row is still Registered (read fresh), and for a thank-you the People link when the Attendee link is blank. A step that exhausts its retries is only logged by the dead-letter consumer (it has no ledger row); if the messages cannot be queued at all, the Events item gets an update saying so. |
 | `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
 
-* **Who gets each email:** the event's audience with an Attendee Email. The audience is Role =
-  Volunteer when the Events item's Program is one of `attendeeSync.volunteerPrograms` (the feed
-  writes every registration on such an event as a Volunteer), and Role = Participant otherwise.
+* **Who gets each email:** the event's audience with an Attendee Email. For an event whose Events
+  item's Program is one of `attendeeSync.volunteerPrograms`, the audience is its Volunteers-board
+  items once that board is configured (see "Volunteers board"), and Role = Volunteer on Event
+  Registrations before then; for every other event it is Role = Participant on Event
+  Registrations.
   Reminder: Registered, refused once the event has started. Thank-you: Attended, refused until the
   event has ended or when no one in the audience with an Attendee Email is Attended (someone outside
   it, such as a volunteer at a class, or a blank-email row doesn't count).
@@ -545,6 +547,40 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 get a missed-you. The page shows the list first and the coordinator chooses when check-in is
 finished; only "nobody checked in" is refused.
 
+### Volunteers board
+
+Sign-ups on an event whose Program is in `attendeeSync.volunteerPrograms` (`Volunteering`) are
+written to the Volunteers board (`monday.boards.volunteers`), not Event Registrations:
+`src/consumer/processVolunteer.ts`, one item per Eventbrite attendee. Columns, under
+`attendeeSync.volunteers`: **Event** (a relation to Events, staff-editable; defaults to the
+listing's own Events item on create and is never written again), **Eventbrite Listing**,
+**Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Ticket Type** (the
+attendee's `ticket_class_name`, e.g. "Shift 2"; `ticketTypeColumn`, optional: the placeholder
+writes nothing), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
+Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
+Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
+never deleted, so a count of people must leave out Canceled and count attendee ids, not emails:
+one order can hold two shifts, or several people under the buyer's email (#115).
+`donation-rollups` counts only Completed. Class emails
+for these events read the Volunteers board and write No-Show and the People link back there.
+The board's "Recent events" view (grouped by Event, last 90 days) is made by
+`scripts/setup-volunteers-board.mjs --board <id> --events-board <id> [--apply]`, which also
+creates the missing columns and prints their ids for the config; `scripts/backfill-volunteers.mjs`
+moves earlier Role = Volunteer registrations over (`--apply`, `--remap-out`, `--archive`,
+`--env sandbox`, `--limit`, `--pause-ms`; dry run by default). `donation-rollups` counts the
+board as history. Cutover order, rollback and open gaps:
+[`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
+
+**Config is the switch** (`volunteerBoardMode`, `src/config.ts`). The five new column ids
+(`eventColumn`, `listingColumn`, `attendeeIdColumn`, `attendeeNameColumn`, `attendeeEmailColumn`)
+decide which path runs. While all five are `REPLACE_WITH_COLUMN_ID` (production until the
+runbook's step 2), the Worker behaves exactly as before the Volunteers board feed: volunteer
+sign-ups are Event Registrations rows with Role = Volunteer, and their class emails read and write
+Event Registrations. So a deploy from `main` before the cutover changes nothing. Once all five are
+real and `monday.boards.volunteers` is set, the next deploy switches to the Volunteers board. A
+half-filled set (some real, some placeholder, or real columns with a null board) fails config
+validation loudly, in `npm test` and at load; it never falls back to writing registrations.
+
 ### Backfill
 
 `scripts/backfill-attendees.mjs` replays an event's attendees to the deployed Worker, as the order
@@ -559,7 +595,7 @@ Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 
 Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
 **Status:** live in both environments, with no event configured in production yet. Production's board is
 18439165954 (created 2026-11-09, private, backed up); `pledge.events` is empty, so for now the block only
-arms the unconfigured-pledge alarm below. The sandbox board is 18439163372, rehearsed 2026-11-09 with three
+arms the unconfigured-pledge alarm below. The sandbox board is 18439574443, rehearsed 2026-11-09 with three
 real 2026 attendees (complete, placeholder, canceled). The 2027 pledge is due to publish 2027-01-15.
 
 An attendee of an event in `pledge.events` goes to the private **Pledge to Ride** board **instead of**

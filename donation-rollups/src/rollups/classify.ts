@@ -30,9 +30,12 @@ const STREAM_BY_TYPE = new Map<string, string>([
   ['donoradvisedfund', 'Donor Advised Funds'],
 ]);
 
-export const GIFT_SIZES = ['< $100', '$100–249', '$250–999', '$1k–4.9k', '$5k+'] as const;
+// The $200 and $1k edges are the Salesforce "Donation size" buckets staff reported on for years
+// (up to $200 / $200–$1k / $1k+), so those three sum exactly from these five. $200 is also the
+// Major acknowledgment threshold below.
+export const GIFT_SIZES = ['< $100', '$100–199', '$200–999', '$1k–4.9k', '$5k+'] as const;
 const SIZE_UPPER_BOUNDS: [number, string][] = [
-  [10000, '< $100'], [25000, '$100–249'], [100000, '$250–999'], [500000, '$1k–4.9k'],
+  [10000, '< $100'], [20000, '$100–199'], [100000, '$200–999'], [500000, '$1k–4.9k'],
 ];
 
 function giftSize(amountCents: number | null): string {
@@ -57,6 +60,13 @@ function validDate(dateISO: string | null): string | null {
   if (!m) return null;
   const month = Number(m[2]);
   return month >= 1 && month <= 12 ? d : null;
+}
+
+// Fiscal Year Ending, as the text the board column holds ("2026" for July 2025 – June 2026), or
+// null when the date is unusable. Same rule as salesforce-import and funraise-sync stamp.
+export function fiscalYearEnding(dateISO: string | null, fiscalYearStartMonth: number): string | null {
+  const date = validDate(dateISO);
+  return date ? String(fiscalYearFromDate(date, fiscalYearStartMonth)) : null;
 }
 
 export function classifyGift(g: GiftFacts, fiscalYearStartMonth: number): GiftClassification {

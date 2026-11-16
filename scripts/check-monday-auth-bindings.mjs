@@ -30,6 +30,7 @@ export const EXPECTED = {
   'benevity-import': 'SyncToken',
   'eventbrite-sync': 'SyncToken',
   'people-reclassification': 'SyncToken',
+  'contact-roles': 'SyncToken',
   'bp-feedback-notify': 'SyncToken',
   'quickbooks-sync': 'SyncToken',
   'monday-backup': 'ReadOnlyToken',
