@@ -85,6 +85,18 @@ describe('config split: Monday ids', () => {
   });
 });
 
+describe('config split: consent boards', () => {
+  it('the two configs never share a consent board id', () => {
+    const prodIds = production.consent.boards.map((b) => b.boardId);
+    for (const board of sandbox.consent.boards) expect(prodIds).not.toContain(board.boardId);
+  });
+
+  it('sandbox consent is enabled, production starts disabled', () => {
+    expect(sandbox.consent.enabled).toBe(true);
+    expect(production.consent.enabled).toBe(false);
+  });
+});
+
 describe('wrangler.jsonc env.sandbox', () => {
   it('sets only the ENVIRONMENT var, and never at the top level', () => {
     expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });

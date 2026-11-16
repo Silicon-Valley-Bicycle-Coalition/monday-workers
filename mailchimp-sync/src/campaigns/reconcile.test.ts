@@ -9,6 +9,7 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: 999, historical: null, columns: {} as never },
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
+  consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
 };
 
 function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {
