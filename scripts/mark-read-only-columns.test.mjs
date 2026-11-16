@@ -89,6 +89,13 @@ describe('MARKED_COLUMNS', () => {
     assert.ok(MARKED_COLUMNS.Events.locked.includes('Send event email'));
   });
 
+  it('locks the Email Consent columns mailchimp-sync keeps current', () => {
+    for (const board of ['People', 'People (Historical)']) {
+      for (const title of ['Personal Email Consent', 'Household Email Consent']) assert.ok(MARKED_COLUMNS[board].locked.includes(title), `${board}: ${title}`);
+    }
+    assert.ok(MARKED_COLUMNS.Affiliations.locked.includes('Work Email Consent'));
+  });
+
   it('locks what dtd-sync writes, on both People boards and Donations', () => {
     for (const board of ['People', 'People (Historical)']) {
       for (const title of ['DTD Company ID', 'DTD Company', 'DTD match link']) assert.ok(MARKED_COLUMNS[board].locked.includes(title), `${board}: ${title}`);

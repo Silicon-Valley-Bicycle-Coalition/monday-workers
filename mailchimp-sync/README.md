@@ -2,10 +2,11 @@
 
 **Staff UAT script:** [`docs/uat/mailchimp-sync.md`](../docs/uat/mailchimp-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26). Not
-deployed to production; blocked on the same Donors-board prerequisite as everything else
-downstream of `salesforce-import`, plus a Mailchimp audience with the merge fields/Interest
-Categories below. **Sandbox provisioned and verified 2026-09-22**: `svbc-mailchimp-sync-sandbox`
+**Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26).
+**Production deployed and writing** (at least since 2026-11-14; outbound only — see the
+Prerequisites' "Production starts outbound-only"). The [consent column sync](#consent-columns)
+ships with `consent.enabled: false` in production until David's go-ahead. **Sandbox provisioned
+and verified 2026-09-22**: `svbc-mailchimp-sync-sandbox`
 is deployed, with its own D1/queues/secrets, a live "SVBC Sandbox" Mailchimp audience
 (`dfe12eec72`, `us9`), and both Monday/Mailchimp webhooks registered. Verification also caught
 and fixed two bugs invisible to the unit suite — both `HttpMondayClient` and `HttpMailchimpClient`
@@ -36,7 +37,7 @@ directions, so that:
 
 ## Data flow
 
-Three independent flows — see the design doc for full sequence diagrams:
+Four independent flows — see the design doc for full sequence diagrams:
 
 1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
    Mailchimp contact update (merge fields: Member Since/Until, Tier, Status, Address, Total
@@ -70,6 +71,10 @@ Three independent flows — see the design doc for full sequence diagrams:
    message (#97): a member with no Donor item is skipped before any of it, one D1 query resolves
    the batch's interests, and an interest the catalog doesn't know triggers one reconcile for the
    whole batch, run after every member in it was read.
+
+4. **Consent columns (hourly):** a cron at :05 sets the Personal, Household and Work Email Consent
+   columns to each address's current Mailchimp status — see [Consent columns](#consent-columns).
+   Mailchimp → Monday only, by polling, so it needs no audience webhook.
 
 **Retries.** A failed queue message is retried with exponential backoff — 1, 4, then 16 minutes
 across the queue's 3 retries — before landing in its `-dlq` dead-letter queue. When Mailchimp
@@ -258,6 +263,90 @@ Sandbox Integration already subscribe to those private boards (checked 2026-11-0
 `people-reclassification`'s sandbox uses v4, so a real move can't be rehearsed end to end here.
 The v3 Historical board has no State column (`state: null`, so the ZIP gives the state) and its
 DNS Reason Status has no Confirmed label; add one to test the unsubscribe there.
+
+## Consent columns
+
+Monday has one consent column per address column, each a status of Subscribed / Unsubscribed /
+Cleaned / Not in Mailchimp:
+
+| Board | Address | Consent |
+|---|---|---|
+| People, People (Historical) | Personal Email | Personal Email Consent |
+| People, People (Historical) | Household Email | Household Email Consent |
+| Affiliations | Work Email | Work Email Consent |
+
+`salesforce-import` filled them once at cutover. Since 2026-11-16 an hourly cron (`5 * * * *`,
+`src/consent/`) keeps them at Mailchimp's current status, so the Sponsor Outreach send (which
+skips Work Email Consent = Unsubscribed or Cleaned) and staff reading any consent column see the
+real state. Design: `../docs/superpowers/specs/2026-11-16-mailchimp-consent-columns-design.md`.
+
+**Each run** reads every member of the audience (two passes: Mailchimp leaves archived members
+out of its list unless asked), reads the address and consent columns on the boards in
+`consent.boards`, and writes only the values that differ, 25 items per mutation. Nothing is
+written to Mailchimp. Stateless: a failed run, board or item is redone the next hour.
+
+| Mailchimp status for the address | Consent written |
+|---|---|
+| subscribed | Subscribed |
+| unsubscribed | Unsubscribed |
+| cleaned | Cleaned |
+| archived | Cleaned if it already says Cleaned, otherwise Unsubscribed |
+| pending, transactional | Not in Mailchimp |
+| not in the audience | the existing value if it's Unsubscribed or Cleaned, otherwise Not in Mailchimp |
+| (the item has no address) | left as it is |
+
+Archived and absent addresses read as opt-outs because archiving hides a contact's earlier status
+(25,439 archived in production, most of them cutover Unsubscribed) and absence is never evidence
+of consent. An opt-out recorded on Monday can only be lifted by Mailchimp saying subscribed (or
+pending / transactional).
+
+**Safety rails.**
+* **Short read.** A pass that reads fewer members than Mailchimp reports, or whose total changes
+  between pages (a member archived or deleted mid-read shifts the pages), writes nothing that
+  run and alerts.
+* **The cap, by direction.** Changes to Unsubscribed or Cleaned are always written: they can
+  only stop mail. Changes toward a sendable value (Subscribed, Not in Mailchimp) are capped at
+  `consent.maxChangesPerRun` (500). Over it, the run writes only the opt-outs, holds every
+  sendable change, logs an error with the counts by transition and alerts. Raise the cap in
+  config deliberately if a large change is real.
+* **Alerts** go to `SLACK_WEBHOOK_URL` when set (the dead-letter alert's secret), counts only.
+* A board whose read fails (a mistyped column id in config, say) is logged and skipped; the
+  others still run.
+
+**Switches.** `consent.enabled` in `config/*.json`: `true` in the sandbox, `false` in production
+until David's go-ahead; off, each hourly run logs one line. Under the write switch: `on` writes,
+`off` reads and plans and logs a `"writeSwitch":"skipped"` line per write chunk, `hold` / `unknown`
+skip the run (nothing to catch up — the next `on` run writes whatever still differs).
+
+**Logs.** One `{"event":"consent-run"}` line per run: items per board, `transitions` by board,
+column and change, `held`, `written`, `failed`, `failedBoards`. Item ids, column ids and counts,
+never an address.
+
+**Rehearse with the plan script** — read-only, runs whether or not `consent.enabled` is set:
+
+```sh
+MAILCHIMP_API_KEY=... MONDAY_API_TOKEN=... node scripts/consent-plan.mjs --env production
+```
+
+It prints the audience by status, items per board, every planned transition and whether the cap
+would trip. Against production on 2026-11-16 (61,056 members, 24,441 items, 4.4 minutes) it
+planned 138 changes: 37 to Unsubscribed or Cleaned (30 of them were Subscribed), 60 Not in
+Mailchimp → Subscribed (signups since cutover), 40 blanks filled, 1 Work Email Consent filled. No
+Unsubscribed or Cleaned became sendable, and the cap (500) wasn't close.
+
+**Writes to People fire its webhooks.** This Worker's own Donors webhook skips them (consent
+columns aren't in `donorColumnIds`). The consent columns are 🔒 in `MARKED_COLUMNS`
+(`../scripts/mark-read-only-columns.mjs`): a staff edit is overwritten within the hour.
+
+**CPU.** `limits.cpu_ms` is 1000 (was 100) for the ~61,000 Mailchimp members and ~25,000 Monday
+items each run parses. The cap is per Worker, so the webhook routes share it.
+
+**Turning it on in production** (after David's go-ahead):
+1. `node scripts/consent-plan.mjs --env production` and check the transitions with David.
+2. Set `consent.enabled: true` in `config/svbc.json`, merge, `npm run deploy`.
+3. Read the first `consent-run` line after the next :05 (`failed: 0`, nothing held); rerun the
+   plan script — it should plan nothing.
+4. `node ../scripts/mark-read-only-columns.mjs` against production with `--apply`.
 
 ## Resetting for new board ids
 
