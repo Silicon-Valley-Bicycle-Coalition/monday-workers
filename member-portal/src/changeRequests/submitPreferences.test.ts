@@ -10,7 +10,7 @@ const contact: DonorContactInfo = {
   email: 'jane@example.org',
   address: '1 Old St',
   phone: '555-0100',
-  preferredLanguage: 'English',
+  preferredLanguage: 'English', employer: '',
   emailOptOut: false,
   smsOptOut: false,
   doNotMail: true,

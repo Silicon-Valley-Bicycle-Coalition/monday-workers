@@ -1,6 +1,6 @@
 import type { PrefField } from '../types';
 
-export type ChangeRequestField = 'address' | 'email' | 'phone' | 'language' | PrefField;
+export type ChangeRequestField = 'address' | 'email' | 'phone' | 'language' | 'employer' | PrefField;
 
 export interface NewChangeRequest {
   donorItemId: string;

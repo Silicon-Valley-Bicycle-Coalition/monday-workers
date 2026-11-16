@@ -33,7 +33,8 @@
       "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
-      "donorDtdLink": "REPLACE_WITH_COLUMN_ID"
+      "donorDtdLink": "REPLACE_WITH_COLUMN_ID",
+      "donorEmployer": "text_mm8hdpm"
     }
   },
   "email": {
@@ -85,7 +86,18 @@
       "submittedAt": "date_mm7ce5se"
     },
     "dedupeWindowHours": 72,
-    "retentionDays": 180
+    "retentionDays": 180,
+    "employer": {
+      "affiliationsBoardId": 18437342615,
+      "affiliationColumns": {
+        "personLink": "board_relation_mm8hvr9x",
+        "organizationLink": "board_relation_mm8h730r",
+        "status": "color_mm8h68bj",
+        "primary": "boolean_mm8hz6xj"
+      },
+      "currentStatusLabel": "Current",
+      "personAffiliationsLink": "board_relation_mm8hk2s1"
+    }
   },
   "funraise": {
     "manageRecurringUrl": "https://give.funraise.org/login",

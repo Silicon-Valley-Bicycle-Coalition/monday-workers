@@ -615,6 +615,57 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
    staff hold it; a fork needs its own subscription), then set
    `matchingGifts.doubleTheDonationPublicKey` to that **public** plugin key (never a private API
    key — this value is served to every logged-in browser). Done for SVBC; a fork sets its own.
+## v4.1 — Donor-supplied employer
+
+Design: `../docs/superpowers/specs/2026-11-16-donor-employer-answer-design.md` (issue #127). A
+donor can tell SVBC where they work, and an answer that names a known Organization becomes their
+employer affiliation without a staff step.
+
+* **Where:** an **Employer** option on the change-request page, beside Address, Email and Phone.
+  The current value shown is People → Employer Name. `/:locale/portal/change-request?field=employer`
+  preselects it; the matching-gifts page links there ("Tell us where you work…") but never shows
+  the donor's employer, so that page stays free of donor data.
+* **Submit:** the same path as every change request (D1 row, dedupe window, queue, write switch).
+  The D1 `field` is `employer`; no migration.
+* **Apply (writer):** `src/changeRequests/applyEmployer.ts`. The typed name is normalised (case,
+  punctuation, one trailing `Inc`/`LLC`/`Ltd`/`Corp`/`Corporation`/`Co`/`Company` dropped) and
+  looked up on Organizations by exact name, together with the common suffix spellings
+  (`Google` also finds `Google, LLC`). Then:
+  * **exactly one match:** that person's affiliation to it becomes Current and Primary (reused if
+    one exists, created otherwise). Any *other* Primary affiliation loses Primary only; its
+    Status never changes, because Primary on imported data is NPSP's general flag, not
+    "employer", and `contact-roles` reads Current affiliations. `donation-rollups`' `employerSync`
+    then sets People → Employer Name. The writer never writes Employer Name itself.
+  * **none, or several:** nothing is applied.
+* **Staff see every answer** on the Change Requests board, as an item named
+  `Employer change — <donor> (#<id>)` whose Field is one of `Employer (applied)` (New Value names
+  the Organization and any `(previous Primary: <org> (<its Status>))` for staff to mark Former if the
+  donor left), `Employer (no change)`, or `Employer (needs an Organization)` (the typed name, or
+  the matching Organizations when there are several). The log item is the last write, so a
+  retry after a partial run re-reads Monday and finishes rather than repeats.
+* **Write switch:** under `off` the Organization and affiliation reads still run and the
+  affiliation and log writes are skip lines; `hold` waits on the queue like any change request.
+* **Config** (`config/*.json`): `monday.columns.donorEmployer` (People → Employer Name) and
+  `changeRequests.employer` = `{ affiliationsBoardId, affiliationColumns: { personLink,
+  organizationLink, status, primary }, currentStatusLabel, personAffiliationsLink }` (People →
+  Affiliations link), the same ids `donation-rollups` uses. **Gated on `employerAnswerEnabled`:**
+  change requests on, the block non-null, `monday.organizationsBoardId` set and `donorEmployer`
+  not a placeholder. `local.json` ships it off.
+* **Access:** the writer's `SyncToken` identity now also writes the Affiliations board and reads
+  Organizations and Affiliations. It's the one integration user, so no setup step, but the
+  writer is no longer write-only-to-Change-Requests.
+* **Sandbox check, before turning it on in production:** with a test person whose Current,
+  Primary affiliation is at org A, submit org B's exact name, then a made-up name. Expect B
+  Current and Primary, A still Current with Primary off, Employer Name updated by
+  `employerSync`, and two Change Requests items (`applied` naming A, `needs an Organization`).
+  This also confirms the unverified write shapes: a status `{ label }`, a checkbox
+  `{ checked: "true" }`, and clearing a checkbox with `null`. **Also confirm the mirror column:**
+  open the new affiliation for B and check it appears in the test person's Affiliations column
+  (`personAffiliationsLink`) straight away. The writer's only guard against a duplicate
+  affiliation on a retry is reading that column, so it must be the two-way mirror of the
+  affiliation's Person column (`personLink`) and must not lag past the queue's 60 s retry delay.
+  Archived and deleted affiliations are ignored, as in `donation-rollups`.
+
 ## v5 — Event registrations
 
 From the IT Requests board (["Member portal: event

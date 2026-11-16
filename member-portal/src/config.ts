@@ -1,5 +1,5 @@
 import { giftTypeIn } from './letters/giftTypes';
-import type { Config, FunraiseLinkUrls, MondayColumns, PrefField } from './types';
+import type { Config, EmployerAnswerConfig, FunraiseLinkUrls, MondayColumns, PrefField } from './types';
 import { isLocale } from './i18n/locales';
 
 const REQUIRED_TOP_LEVEL = [
@@ -77,6 +77,11 @@ const MATCH_COLUMNS: (keyof MondayColumns)[] = [
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
 // V2_DONOR_COLUMNS.
 const COMM_PREF_COLUMNS: (keyof MondayColumns)[] = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'];
+
+// EMPLOYER_COLUMN only matters to the donor employer answer, gated by employerAnswerEnabled.
+// Presence only, not placeholder-freedom — same treatment as COMM_PREF_COLUMNS.
+const EMPLOYER_COLUMN: (keyof MondayColumns)[] = ['donorEmployer'];
+const EMPLOYER_AFFILIATION_COLUMNS = ['personLink', 'organizationLink', 'status', 'primary'] as const;
 
 // Which Donors-board checkbox column backs each preference field. Also fixes the order the
 // preferences render in on the change-request form.
@@ -193,6 +198,7 @@ export function validateConfig(raw: unknown): Config {
   }
   requireKeys(columns, 'monday.columns', MATCH_COLUMNS);
   requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
+  requireKeys(columns, 'monday.columns', EMPLOYER_COLUMN);
 
   const email = requireObject(cfg, 'email');
   requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
@@ -253,6 +259,7 @@ export function validateConfig(raw: unknown): Config {
   if (typeof changeRequests.retentionDays !== 'number' || changeRequests.retentionDays <= 0) {
     throw new Error('config: "changeRequests.retentionDays" must be a positive number of days');
   }
+  changeRequests.employer = validateEmployerAnswer(changeRequests.employer);
 
   const cardTokens = requireObject(cfg, 'cardTokens');
   requireKeys(cardTokens, 'cardTokens', REQUIRED_CARD_TOKENS_KEYS);
@@ -433,6 +440,42 @@ export function lettersEnabled(config: Config): boolean {
     t.separateGiftsStatement,
   ];
   return strings.every((s) => s !== SIGNOFF_PLACEHOLDER && s.length > 0);
+}
+
+function validateEmployerAnswer(raw: unknown): EmployerAnswerConfig | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object') throw new Error('config: "changeRequests.employer" must be an object or null');
+  const block = raw as Record<string, unknown>;
+  if (typeof block.affiliationsBoardId !== 'number' || !Number.isSafeInteger(block.affiliationsBoardId) || block.affiliationsBoardId <= 0) {
+    throw new Error('config: "changeRequests.employer.affiliationsBoardId" must be a positive board id');
+  }
+  const columns = block.affiliationColumns;
+  if (typeof columns !== 'object' || columns === null) {
+    throw new Error('config: "changeRequests.employer.affiliationColumns" must be an object');
+  }
+  for (const key of EMPLOYER_AFFILIATION_COLUMNS) {
+    const id = (columns as Record<string, unknown>)[key];
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error(`config: "changeRequests.employer.affiliationColumns.${key}" must be a Monday column id string`);
+    }
+  }
+  for (const key of ['currentStatusLabel', 'personAffiliationsLink'] as const) {
+    if (typeof block[key] !== 'string' || (block[key] as string).length === 0) {
+      throw new Error(`config: "changeRequests.employer.${key}" must be a non-empty string`);
+    }
+  }
+  return raw as EmployerAnswerConfig;
+}
+
+// The Employer field shows only with change requests on, an employer block, an Organizations
+// board to match against, and a real People → Employer Name column (the request's old value).
+export function employerAnswerEnabled(config: Config): boolean {
+  return (
+    changeRequestsEnabled(config) &&
+    (config.changeRequests.employer ?? null) !== null &&
+    config.monday.organizationsBoardId !== null &&
+    config.monday.columns.donorEmployer !== PLACEHOLDER_COLUMN_VALUE
+  );
 }
 
 export function changeRequestsEnabled(config: Config): boolean {

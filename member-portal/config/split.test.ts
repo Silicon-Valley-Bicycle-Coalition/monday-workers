@@ -53,7 +53,7 @@ describe('config split: sinks', () => {
 // column id is the placeholder today, so these assertions cannot yet catch a production id copied
 // into sandbox.json. They start biting the moment svbc.json is filled in at cutover.
 describe('config split: board and column ids', () => {
-  it.each(['monday.donorsBoardId', 'monday.donationsBoardId', 'monday.organizationsBoardId', 'letterCron.boardId'])(
+  it.each(['monday.donorsBoardId', 'monday.donationsBoardId', 'monday.organizationsBoardId', 'letterCron.boardId', 'changeRequests.employer.affiliationsBoardId'])(
     '%s is a real sandbox id and production is null or different',
     (path) => {
       const sb = get(sandbox, path);

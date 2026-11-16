@@ -26,6 +26,7 @@ import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
   changeRequestsEnabled,
+  employerAnswerEnabled,
   configuredPrefFields,
   lettersEnabled,
   cardEnabled,
@@ -645,7 +646,13 @@ export function createApp(deps: AppDeps) {
     return c.html(
       page(
         t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
-        changeRequestFormView(donors, locale, configuredPrefFields(deps.config), results.length - donors.length),
+        changeRequestFormView(
+          donors,
+          locale,
+          configuredPrefFields(deps.config),
+          results.length - donors.length,
+          !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on'
+        ),
         locale,
         { authenticated: true }
       )
@@ -697,6 +704,7 @@ export function createApp(deps: AppDeps) {
       queue: stampedQueue(deps.changeQueue, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
+      employerEnabled: employerAnswerEnabled(deps.config),
     });
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale, { authenticated: true }));
   });
@@ -793,8 +801,9 @@ export function createApp(deps: AppDeps) {
     // runs only inside the sandboxed /search document framed below (issue #102).
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
+    const employerFormUrl = employerAnswerEnabled(deps.config) ? `/${locale}/portal/change-request?field=employer` : null;
     return c.html(
-      page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein }, locale), locale, {
+      page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein, employerFormUrl }, locale), locale, {
         authenticated: true,
       })
     );

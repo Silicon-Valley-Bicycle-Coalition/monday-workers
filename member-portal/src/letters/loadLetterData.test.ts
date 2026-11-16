@@ -179,6 +179,7 @@ describe('loadLetterData with the real client (status filtering)', () => {
     donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
     donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
     donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
+    donorEmployer: 'REPLACE_WITH_COLUMN_ID',
   };
 
   const donationItem = (id: string, status: string, amount: string) => ({
