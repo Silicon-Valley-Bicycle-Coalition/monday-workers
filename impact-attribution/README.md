@@ -101,8 +101,9 @@ Run from this directory unless noted. Sandbox first, then production.
 1. ~~Create the D1 databases~~ done 2026-11-16: `svbc-impact-attribution`
    (`1df5c5c8-8804-4b85-90dc-09360a5f2aa5`) and `svbc-impact-attribution-sandbox`
    (`75b7115a-abe0-4bd4-904e-7ca255694906`), ids in `wrangler.jsonc`.
-2. `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env sandbox` (and
-   `svbc-impact-attribution --remote`).
+2. ~~Apply the D1 migrations~~ done 2026-11-16 on both (`0001_create_tables.sql`). For a later
+   migration: `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env
+   sandbox` (and `svbc-impact-attribution --remote`).
 3. Proposed status column: `MONDAY_API_TOKEN=... node scripts/add-proposed-status.mjs --env sandbox
    --execute` (then `--env production`). Then, from the repo root, `node
    scripts/mark-read-only-columns.mjs` for each workspace to add the 🔒, and re-run
