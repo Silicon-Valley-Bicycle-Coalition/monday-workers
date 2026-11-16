@@ -116,7 +116,7 @@ queue message. No D1 migration: `change_requests.field` is unconstrained text.
      Name still follows the donor's answer.
    - Then create a Change Requests item as today, with field `Employer (applied)`, old and new
      values, so staff see it. When a Primary was moved off another affiliation, the new value
-     adds `(previous Primary: <organization>, still Current)` so staff can mark it Former if the
+     adds `(previous Primary: <organization> (<its Status>))` so staff can mark it Former if the
      donor has left.
    - If the matched affiliation was already Current and Primary, write nothing to Affiliations
      and still log the item, with field `Employer (no change)`.

@@ -48,6 +48,7 @@ interface MondayColumnValue {
 interface MondayItem {
   id: string;
   name: string;
+  state?: string; // requested only where noted (active / archived / deleted)
   column_values?: MondayColumnValue[];
 }
 
@@ -700,13 +701,15 @@ export class HttpMondayClient implements MondayClient {
         items(ids: [$itemId]) {
           id
           name
+          state
           column_values(ids: ${JSON.stringify([employer.personAffiliationsLink])}) { id text ... on BoardRelationValue { linked_item_ids } }
         }
       }
     `;
     const linkData = await this.request<{ items: MondayItem[] }>(linkQuery, { itemId: Number(params.donorItemId) });
+    // items(ids:) returns archived and deleted items too; only active ones count (as in donation-rollups).
     const person = linkData.items[0];
-    if (!person) throw new Error(`monday: donor item "${params.donorItemId}" not found`);
+    if (!person || person.state !== 'active') throw new Error(`monday: donor item "${params.donorItemId}" not found`);
     const affiliationIds =
       (person.column_values ?? []).find((c) => c.id === employer.personAffiliationsLink)?.linked_item_ids ?? [];
     if (affiliationIds.length === 0) return [];
@@ -717,6 +720,7 @@ export class HttpMondayClient implements MondayClient {
         items(ids: $itemIds, limit: 100) {
           id
           name
+          state
           column_values(ids: ${JSON.stringify([organizationLink, status, primary])}) {
             id text ... on BoardRelationValue { linked_item_ids linked_items { name } }
           }
@@ -724,7 +728,7 @@ export class HttpMondayClient implements MondayClient {
       }
     `;
     const data = await this.request<{ items: MondayItem[] }>(query, { itemIds: affiliationIds.map(Number) });
-    return data.items.map((item) => {
+    return data.items.filter((item) => item.state === 'active').map((item) => {
       const org = (item.column_values ?? []).find((c) => c.id === organizationLink);
       const statusText = columnText(item, status);
       return {

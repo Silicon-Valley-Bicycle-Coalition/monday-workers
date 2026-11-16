@@ -66,23 +66,27 @@ export type AffiliationPlan =
   | { kind: 'noChange' }
   | { kind: 'apply'; reuseAffiliationId: string | null; clearPrimaryOn: AffiliationRecord[] };
 
-// Primary moves to the matched Organization's affiliation (reused if one exists, the Current one
-// first). Every other Primary loses only Primary: Status on another affiliation never changes.
+// Primary moves to the matched Organization's affiliation (reused if one exists: Current and
+// Primary first, then Current, then any). Every other Primary — including a duplicate to the same
+// Organization — loses only Primary: Status on another affiliation never changes.
 export function planAffiliationChange(
   affiliations: AffiliationRecord[],
   organizationId: string,
   currentStatusLabel: string,
 ): AffiliationPlan {
   const mine = affiliations.filter((a) => a.organizationId === organizationId);
-  const reuse = mine.find((a) => a.statusLabel === currentStatusLabel) ?? mine[0] ?? null;
-  const clearPrimaryOn = affiliations.filter((a) => a.primary && a.organizationId !== organizationId);
-  const alreadyDone = reuse !== null && reuse.statusLabel === currentStatusLabel && reuse.primary;
+  const isCurrent = (a: AffiliationRecord) => a.statusLabel === currentStatusLabel;
+  const reuse = mine.find((a) => isCurrent(a) && a.primary) ?? mine.find(isCurrent) ?? mine[0] ?? null;
+  const clearPrimaryOn = affiliations.filter((a) => a.primary && a.id !== reuse?.id);
+  const alreadyDone = reuse !== null && isCurrent(reuse) && reuse.primary;
   if (alreadyDone && clearPrimaryOn.length === 0) return { kind: 'noChange' };
   return { kind: 'apply', reuseAffiliationId: reuse?.id ?? null, clearPrimaryOn };
 }
 
+// For staff on the log item: each affiliation that lost Primary, with its real Status, so they can
+// mark it Former if the donor has left.
 export function previousPrimaryNote(clearPrimaryOn: AffiliationRecord[]): string {
   if (clearPrimaryOn.length === 0) return '';
-  const names = clearPrimaryOn.map((a) => a.organizationName ?? '(no Organization)').join(', ');
-  return ` (previous Primary: ${names}, still Current)`;
+  const names = clearPrimaryOn.map((a) => `${a.organizationName ?? '(no Organization)'} (${a.statusLabel ?? 'no Status'})`).join(', ');
+  return ` (previous Primary: ${names})`;
 }

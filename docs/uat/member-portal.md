@@ -76,7 +76,7 @@ can safely use any real donor's email address while testing.
     marked **Employer (needs an Organization)**.
   - a different real organization, for a person who already has a Primary employer: the new one
     becomes Primary, and the old one stays **Current** with Primary unticked. The Change Requests
-    item says "previous Primary: …, still Current".
+    item says "previous Primary: … (Current)".
   Every answer should appear on the Change Requests board.
 - **Check a partner discount end to end** — on
   [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579), set

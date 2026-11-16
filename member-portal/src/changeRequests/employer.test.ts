@@ -118,21 +118,42 @@ describe('planAffiliationChange', () => {
   });
 });
 
+describe('planAffiliationChange — same-Organization duplicates', () => {
+  it('clears Primary on a same-Organization duplicate it does not reuse', () => {
+    const current = aff({ id: 'a', organizationId: 'O1' });
+    const dupPrimary = aff({ id: 'b', organizationId: 'O1', statusLabel: 'Former', primary: true });
+    expect(planAffiliationChange([current, dupPrimary], 'O1', 'Current')).toEqual({ kind: 'apply', reuseAffiliationId: 'a', clearPrimaryOn: [dupPrimary] });
+  });
+
+  it('prefers a Current, Primary one, and is not noChange while a duplicate is also Primary', () => {
+    const currentOnly = aff({ id: 'a', organizationId: 'O1' });
+    const done = aff({ id: 'b', organizationId: 'O1', primary: true });
+    const dup = aff({ id: 'c', organizationId: 'O1', statusLabel: 'Former', primary: true });
+    expect(planAffiliationChange([currentOnly, done], 'O1', 'Current')).toEqual({ kind: 'noChange' });
+    expect(planAffiliationChange([currentOnly, done, dup], 'O1', 'Current')).toEqual({ kind: 'apply', reuseAffiliationId: 'b', clearPrimaryOn: [dup] });
+  });
+});
+
 describe('previousPrimaryNote', () => {
+  it('names each previous Primary with its real Status', () => {
+    expect(previousPrimaryNote([aff({ id: 'a', organizationName: 'Acme', statusLabel: 'Former' }), aff({ id: 'b', organizationName: 'Beta', statusLabel: null })]))
+      .toBe(' (previous Primary: Acme (Former), Beta (no Status))');
+  });
+
   it('empty when nothing was cleared', () => {
     expect(previousPrimaryNote([])).toBe('');
   });
 
   it('names the previous Primary', () => {
-    expect(previousPrimaryNote([aff({ id: 'a', organizationName: 'Acme' })])).toBe(' (previous Primary: Acme, still Current)');
+    expect(previousPrimaryNote([aff({ id: 'a', organizationName: 'Acme' })])).toBe(' (previous Primary: Acme (Current))');
   });
 
   it('says (no Organization) for an unlinked one', () => {
-    expect(previousPrimaryNote([aff({ id: 'a' })])).toBe(' (previous Primary: (no Organization), still Current)');
+    expect(previousPrimaryNote([aff({ id: 'a' })])).toBe(' (previous Primary: (no Organization) (Current))');
   });
 
   it('joins several in one parenthesis', () => {
     expect(previousPrimaryNote([aff({ id: 'a', organizationName: 'Acme' }), aff({ id: 'b', organizationName: 'Beta' })]))
-      .toBe(' (previous Primary: Acme, Beta, still Current)');
+      .toBe(' (previous Primary: Acme (Current), Beta (Current))');
   });
 });

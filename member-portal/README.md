@@ -639,7 +639,7 @@ employer affiliation without a staff step.
   * **none, or several:** nothing is applied.
 * **Staff see every answer** on the Change Requests board, as an item named
   `Employer change — <donor> (#<id>)` whose Field is one of `Employer (applied)` (New Value names
-  the Organization and any `(previous Primary: …, still Current)` for staff to mark Former if the
+  the Organization and any `(previous Primary: <org> (<its Status>))` for staff to mark Former if the
   donor left), `Employer (no change)`, or `Employer (needs an Organization)` (the typed name, or
   the matching Organizations when there are several). The log item is the last write, so a
   retry after a partial run re-reads Monday and finishes rather than repeats.
@@ -659,7 +659,12 @@ employer affiliation without a staff step.
   Current and Primary, A still Current with Primary off, Employer Name updated by
   `employerSync`, and two Change Requests items (`applied` naming A, `needs an Organization`).
   This also confirms the unverified write shapes: a status `{ label }`, a checkbox
-  `{ checked: "true" }`, and clearing a checkbox with `null`.
+  `{ checked: "true" }`, and clearing a checkbox with `null`. **Also confirm the mirror column:**
+  open the new affiliation for B and check it appears in the test person's Affiliations column
+  (`personAffiliationsLink`) straight away. The writer's only guard against a duplicate
+  affiliation on a retry is reading that column, so it must be the two-way mirror of the
+  affiliation's Person column (`personLink`) and must not lag past the queue's 60 s retry delay.
+  Archived and deleted affiliations are ignored, as in `donation-rollups`.
 
 ## v5 — Event registrations
 

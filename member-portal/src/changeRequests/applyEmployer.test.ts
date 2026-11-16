@@ -65,7 +65,7 @@ describe('applyEmployerAnswer', () => {
     const m = monday([GOOGLE], [aff({ id: 'acme', organizationId: '9', organizationName: 'Acme', primary: true })]);
     const result = await applyEmployerAnswer(row('Google'), m.deps);
     expect(m.client.updateAffiliation).toHaveBeenCalledWith({ employer, itemId: 'acme', makeCurrent: false, primary: false });
-    expect(result.newValue).toBe('Google (previous Primary: Acme, still Current)');
+    expect(result.newValue).toBe('Google (previous Primary: Acme (Current))');
   });
 
   it('reuses an existing Former affiliation instead of creating one', async () => {

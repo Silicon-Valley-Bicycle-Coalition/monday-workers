@@ -2097,13 +2097,14 @@ describe('HttpMondayClient.getPersonAffiliations', () => {
     const bodies: Captured[] = [];
     const { client } = sequencedClient(
       [
-        { data: { items: [{ id: '10', name: 'Jane', column_values: [{ id: 'people_affs', text: '', linked_item_ids: ['21', '22'] }] }] } },
+        { data: { items: [{ id: '10', name: 'Jane', state: 'active', column_values: [{ id: 'people_affs', text: '', linked_item_ids: ['21', '22'] }] }] } },
         {
           data: {
             items: [
               {
                 id: '21',
                 name: 'Jane — Acme',
+                state: 'active',
                 column_values: [
                   { id: 'aff_org', text: 'Acme', linked_item_ids: ['501'], linked_items: [{ name: 'Acme' }] },
                   { id: 'aff_status', text: 'Current' },
@@ -2113,6 +2114,7 @@ describe('HttpMondayClient.getPersonAffiliations', () => {
               {
                 id: '22',
                 name: 'Jane — ?',
+                state: 'active',
                 column_values: [
                   { id: 'aff_org', text: '', linked_item_ids: [], linked_items: [] },
                   { id: 'aff_status', text: '' },
@@ -2137,9 +2139,40 @@ describe('HttpMondayClient.getPersonAffiliations', () => {
     expect(bodies[1]!.variables).toEqual({ itemIds: [21, 22] });
   });
 
+  it('drops archived and deleted affiliations, and asks for state', async () => {
+    const bodies: Captured[] = [];
+    const affItem = (id: string, state: string) => ({
+      id,
+      name: id,
+      state,
+      column_values: [
+        { id: 'aff_org', text: 'Google', linked_item_ids: ['501'], linked_items: [{ name: 'Google' }] },
+        { id: 'aff_status', text: 'Current' },
+        { id: 'aff_primary', text: 'v' },
+      ],
+    });
+    const { client } = sequencedClient(
+      [
+        { data: { items: [{ id: '10', name: 'Jane', state: 'active', column_values: [{ id: 'people_affs', text: '', linked_item_ids: ['21', '22', '23'] }] }] } },
+        { data: { items: [affItem('21', 'active'), affItem('22', 'archived'), affItem('23', 'deleted')] } },
+      ],
+      bodies,
+    );
+
+    const affiliations = await client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg });
+
+    expect(affiliations.map((a) => a.id)).toEqual(['21']);
+    expect(bodies[1]!.query).toMatch(/\bstate\b/);
+  });
+
+  it('treats an archived person as not found', async () => {
+    const { client } = sequencedClient([{ data: { items: [{ id: '10', name: 'Jane', state: 'archived', column_values: [] }] } }]);
+    await expect(client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg })).rejects.toThrow('not found');
+  });
+
   it('makes one request when the person has no affiliations', async () => {
     const { client, fetchMock } = sequencedClient([
-      { data: { items: [{ id: '10', name: 'Jane', column_values: [{ id: 'people_affs', text: '', linked_item_ids: [] }] }] } },
+      { data: { items: [{ id: '10', name: 'Jane', state: 'active', column_values: [{ id: 'people_affs', text: '', linked_item_ids: [] }] }] } },
     ]);
     expect(await client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg })).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
