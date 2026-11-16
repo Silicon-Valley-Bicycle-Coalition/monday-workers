@@ -7,12 +7,12 @@
   "upload_source_maps": true,
   // Match history (every Matching Donation ever seen, bootstrapped once from the import's
   // artifacts) and the proposals ledger. Create with `npx wrangler d1 create svbc-impact-attribution`
-  // and replace the id below (README "Operator setup").
+  // (README "Operator setup"); created 2026-11-16.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "svbc-impact-attribution",
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "1df5c5c8-8804-4b85-90dc-09360a5f2aa5",
       "migrations_dir": "migrations"
     }
   ],
@@ -45,7 +45,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-impact-attribution-sandbox",
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "database_id": "75b7115a-abe0-4bd4-904e-7ca255694906",
           "migrations_dir": "migrations"
         }
       ],
