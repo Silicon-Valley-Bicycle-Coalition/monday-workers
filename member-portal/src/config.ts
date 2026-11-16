@@ -187,6 +187,10 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
+  // Optional (#115): absent or the placeholder shows the Job alone.
+  if ('volunteerTicketType' in columns && typeof columns.volunteerTicketType !== 'string') {
+    throw new Error('config: "monday.columns.volunteerTicketType" must be a string when present');
+  }
   requireKeys(columns, 'monday.columns', MATCH_COLUMNS);
   requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
 

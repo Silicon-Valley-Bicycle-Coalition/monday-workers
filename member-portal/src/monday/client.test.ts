@@ -757,6 +757,69 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
     expect(shifts).toEqual([{ hours: '3.5', date: '2026-05-02', job: 'Bike Valet', status: 'Completed' }]);
   });
 
+  // #115: one person's Shift 1 and Shift 2 rows for one event read the same without the ticket type.
+  describe('with monday.columns.volunteerTicketType configured', () => {
+    const shiftsResponse = (rows: { job: string; ticket: string }[]) => ({
+      data: {
+        boards: [
+          {
+            items_page: {
+              cursor: null,
+              items: rows.map((r, i) => ({
+                id: `shift-${i}`,
+                column_values: [
+                  { id: 'vol_hours_col', text: '' },
+                  { id: 'vol_date_col', text: '2026-05-02' },
+                  { id: 'vol_job_col', text: r.job },
+                  { id: 'vol_status_col', text: 'Completed' },
+                  { id: 'vol_ticket_col', text: r.ticket },
+                ],
+              })),
+            },
+          },
+        ],
+      },
+    });
+    const ticketColumns: MondayColumns = { ...columns, volunteerTicketType: 'vol_ticket_col' };
+
+    it('appends the ticket type to the job and asks Monday for the column', async () => {
+      const fetchMock = fetchReturning(shiftsResponse([
+        { job: 'Bike to Work Day', ticket: 'Shift 1' },
+        { job: 'Bike to Work Day', ticket: 'Shift 2' },
+      ]));
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token', ticketColumns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+      const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+      expect(shifts.map((s) => s.job)).toEqual(['Bike to Work Day — Shift 1', 'Bike to Work Day — Shift 2']);
+      expect(JSON.stringify(fetchMock.mock.calls[0])).toContain('vol_ticket_col');
+    });
+
+    it('shows the job alone when the ticket type is blank or repeats it, and the ticket type alone when the job is blank', async () => {
+      const fetchMock = fetchReturning(shiftsResponse([
+        { job: 'Tabling', ticket: '' },
+        { job: 'Bike Valet', ticket: 'bike valet' },
+        { job: '', ticket: 'Shift 1' },
+      ]));
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token', ticketColumns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+      const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+      expect(shifts.map((s) => s.job)).toEqual(['Tabling', 'Bike Valet', 'Shift 1']);
+    });
+
+    it('ignores a placeholder ticket type column rather than failing the read', async () => {
+      const fetchMock = fetchReturning(shiftsResponse([{ job: 'Tabling', ticket: 'Shift 1' }]));
+      const placeholder: MondayColumns = { ...columns, volunteerTicketType: 'REPLACE_WITH_COLUMN_ID' };
+      const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholder, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+      const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+      expect(shifts.map((s) => s.job)).toEqual(['Tabling']);
+      expect(JSON.stringify(fetchMock.mock.calls[0])).not.toContain('REPLACE_WITH_COLUMN_ID');
+    });
+  });
+
   it('follows the pagination cursor across pages', async () => {
     const item = (id: string, date: string) => ({
       id,

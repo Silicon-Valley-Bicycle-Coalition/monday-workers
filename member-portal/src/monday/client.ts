@@ -53,6 +53,17 @@ function columnText(item: MondayItem, columnId: string): string {
   return (item.column_values ?? []).find((c) => c.id === columnId)?.text ?? '';
 }
 
+// "Bike to Work Day — Shift 1": the Eventbrite ticket type after the Job (the event name, for
+// eventbrite-sync rows), so two shifts at one event read as two (#115). Either alone when the
+// other is blank; the Job alone when the ticket type only repeats it.
+function jobWithTicketType(job: string, ticketType: string): string {
+  const j = job.trim();
+  const t = ticketType.trim();
+  if (t === '' || t.toLowerCase() === j.toLowerCase()) return j;
+  if (j === '') return t;
+  return `${j} — ${t}`;
+}
+
 // The address on a donor's email column. An email column's value is {"email","text"} JSON, where
 // text is a display label that can differ from the address; a plain text column's value is a JSON
 // string. Falls back to the column's text when value is absent or unparseable.
@@ -460,17 +471,30 @@ export class HttpMondayClient implements MondayClient {
       );
     }
 
+    // Optional, so a missing or placeholder id drops the ticket type instead of failing the read.
+    const ticketColumn = this.columns.volunteerTicketType;
+    const ticketTypeId = ticketColumn !== undefined && ticketColumn !== 'REPLACE_WITH_COLUMN_ID' ? ticketColumn : null;
+
     const items = await this.fetchItemsLinkedToDonor(
       this.volunteersBoardId,
       this.columns.volunteerDonorLink,
       donorItemId,
-      [this.columns.volunteerHours, this.columns.volunteerDate, this.columns.volunteerJob, this.columns.volunteerStatus],
+      [
+        this.columns.volunteerHours,
+        this.columns.volunteerDate,
+        this.columns.volunteerJob,
+        this.columns.volunteerStatus,
+        ...(ticketTypeId !== null ? [ticketTypeId] : []),
+      ],
       false
     );
     return items.map((item) => ({
       hours: columnText(item, this.columns.volunteerHours),
       date: columnText(item, this.columns.volunteerDate),
-      job: columnText(item, this.columns.volunteerJob),
+      job: jobWithTicketType(
+        columnText(item, this.columns.volunteerJob),
+        ticketTypeId !== null ? columnText(item, ticketTypeId) : ''
+      ),
       status: columnText(item, this.columns.volunteerStatus),
     }));
   }

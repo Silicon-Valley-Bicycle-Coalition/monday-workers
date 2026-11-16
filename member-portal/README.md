@@ -674,6 +674,12 @@ what `../salesforce-import` loads from GW Volunteers: a connect-boards link to t
 board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
 (`volunteerJob`), and Status (`volunteerStatus`).
 
+An optional sixth id, `volunteerTicketType` (#115), names eventbrite-sync's Ticket Type column.
+When set, a shift's Job reads "Bike to Work Day — Shift 1", so one person's two shifts at one
+event show as two rather than as a duplicate row. Absent or `REPLACE_WITH_COLUMN_ID` shows the
+Job alone and doesn't gate the feature. Canceled sign-ups never show: they aren't in
+`volunteerHistory.completedStatuses`.
+
 Operator setup for v6, in addition to the v1 steps: after the Volunteers board exists
 post-migration, fill in `monday.volunteersBoardId` and the five `volunteer*` column ids in
 `config/svbc.json`; confirm `volunteerHistory.completedStatuses` matches the board's actual
