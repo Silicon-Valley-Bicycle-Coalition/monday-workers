@@ -9,22 +9,29 @@
 // Without --confirm it fetches open issues and their human notes, writes
 // github-migration-review/<repo>-issues.md (read every line of it) and .json (what will be
 // posted; redact there, the .md is a read-only view), and posts nothing. Confidential GitLab
-// issues are skipped unless --include-confidential. --confirm never fetches: it posts exactly the
+// issues are skipped unless --include-confidential, and internal (confidential) notes unless
+// --include-internal (the review .md counts them per issue). Issues are copied in iid order so
+// GitHub numbers follow GitLab's. A fetch refuses to overwrite an existing cache (your redactions
+// and progress) unless --refetch. --confirm never fetches: it posts exactly the
 // cached JSON, refuses if either file is missing or --from/--to differ from the cache, and records
 // each step (create, note, close) in the JSON as it succeeds, so a crashed run resumes without
 // duplicating anything. An issue already on GitHub is found by its exact footer line.
 // Needs `glab` and `gh` logged in. Logs titles and ids only, never bodies.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rewriteRefs } from './rewrite-gitlab-refs.mjs';
+import { opensFence, rewriteRefs } from './rewrite-gitlab-refs.mjs';
 
 const REVIEW_DIR = 'github-migration-review';
+// The repo root that holds this script, so the gitignored review dir is the same wherever it runs from.
+const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const day = (iso) => String(iso).slice(0, 10);
 
-export function reviewPaths(to) {
+export function reviewPaths(to, root = REPO_ROOT) {
   const repo = to.split('/').pop();
-  return { dir: REVIEW_DIR, md: `${REVIEW_DIR}/${repo}-issues.md`, json: `${REVIEW_DIR}/${repo}-issues.json` };
+  const dir = join(root, REVIEW_DIR);
+  return { dir, md: join(dir, `${repo}-issues.md`), json: join(dir, `${repo}-issues.json`) };
 }
 
 // `glab api --paginate` prints one JSON array per page, back to back. Split them by tracking
@@ -55,17 +62,19 @@ export function parsePages(output) {
 
 const FENCE = /^\s*(`{3,}|~{3,})/;
 const INLINE_CODE = /(`[^`\n]*`)/;
-const MENTION = /(^|[\s(])@([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)/g;
+// A mention starts at start of text or after any character outside [A-Za-z0-9.+\-/`], so markup
+// punctuation (`**@x**`, `"@x"`, `[@x]`) counts but emails and URL paths (`/@x`) do not.
+const MENTION = /(^|[^A-Za-z0-9.+\-/`])@([A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?)/g;
 
 // Wraps @handle in backticks so copied text can't notify real GitHub users. Skips fenced and
-// inline code; an email's `@` follows a word character, so it never matches.
+// inline code.
 export function wrapMentions(text) {
   let fence = null;
   return text
     .split('\n')
     .map((line) => {
       const marker = FENCE.exec(line)?.[1];
-      if (marker && !fence) {
+      if (marker && !fence && opensFence(line, marker)) {
         fence = marker;
         return line;
       }
@@ -93,6 +102,7 @@ export function buildIssue(glIssue, glNotes, project, { maxIssue = Infinity, max
       rewriteRefs(text ?? '', { project, kind: 'markdown', maxIssue, maxMr })
         .text.replace(/\]\(\/uploads\//g, `](https://gitlab.com/${project}/uploads/`),
     );
+  const title = rewriteRefs(glIssue.title ?? '', { project, kind: 'plain', maxIssue, maxMr }).text;
   const parts = [];
   const description = prepare(glIssue.description).trim();
   if (description) parts.push(description);
@@ -103,7 +113,7 @@ export function buildIssue(glIssue, glNotes, project, { maxIssue = Infinity, max
     parts.push(`<details><summary>GitLab discussion (${glNotes.length} comments)</summary>\n\n${notes}\n\n</details>`);
   }
   parts.push(`---\n${footerLine(glIssue)}`);
-  return { title: glIssue.title, body: parts.join('\n\n'), labels: [...(glIssue.labels ?? [])] };
+  return { title, body: parts.join('\n\n'), labels: [...(glIssue.labels ?? [])] };
 }
 
 // `candidates` is `gh issue list --json url,body`. The search is fuzzy, so accept only a body that
@@ -125,6 +135,25 @@ export function checkMeta(meta, { from, to }) {
   return null;
 }
 
+// GitLab internal notes (`internal`, formerly `confidential`) are staff-only; a public GitHub repo
+// must not get them unless the operator opts in.
+export function filterNotes(notes, { includeInternal = false } = {}) {
+  const skipped = includeInternal ? [] : notes.filter((n) => n.internal || n.confidential);
+  return { kept: notes.filter((n) => !skipped.includes(n)), skipped };
+}
+
+// A fetch rewrites the cache, which holds hand redactions and confirm progress.
+export function refetchProblem({ exists, refetch }) {
+  return exists && !refetch
+    ? 'the cached JSON already exists (it may hold your redactions and progress); pass --refetch to overwrite it'
+    : null;
+}
+
+// GitHub numbers follow creation order, so copy oldest first.
+export function sortIssues(issues) {
+  return [...issues].sort((a, b) => a.iid - b.iid);
+}
+
 export function filterIssues(issues, { includeConfidential = false } = {}) {
   const skipped = includeConfidential ? [] : issues.filter((i) => i.confidential);
   return { kept: issues.filter((i) => !skipped.includes(i)), skipped };
@@ -140,7 +169,7 @@ const run = (cmd, args, input) =>
   execFileSync(cmd, args, { encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
 const glabPages = (path) => parsePages(run('glab', ['api', '--paginate', path]));
 
-function renderReview(entries, skipped) {
+export function renderReview(entries, skipped) {
   const out = [
     '# GitHub migration review: read every line for personal data before running --confirm\n',
     'READ-ONLY VIEW. The .json beside this file is what gets posted; make any redaction in that',
@@ -156,6 +185,7 @@ function renderReview(entries, skipped) {
       `## GL#${e.iid}: ${e.title}`,
       `Source: ${e.web_url}`,
       `Labels: ${e.labels.join(', ') || '(none)'}`,
+      ...(e.internalSkipped > 0 ? [`Internal notes skipped: ${e.internalSkipped}`] : []),
       '',
       `${fence}markdown`,
       e.body,
@@ -166,11 +196,18 @@ function renderReview(entries, skipped) {
   return out.join('\n');
 }
 
-function fetchPhase({ from, to, maxIssue, maxMr, includeConfidential }) {
+function fetchPhase({ from, to, maxIssue, maxMr, includeConfidential, includeInternal, refetch }) {
+  const paths = reviewPaths(to);
+  const problem = refetchProblem({ exists: existsSync(paths.json), refetch });
+  if (problem) {
+    console.error(`Refusing to fetch: ${problem}.`);
+    process.exit(1);
+  }
   const enc = encodeURIComponent(from);
   const { kept, skipped } = filterIssues(glabPages(`projects/${enc}/issues?state=opened`), { includeConfidential });
-  const entries = kept.map((issue) => {
-    const notes = glabPages(`projects/${enc}/issues/${issue.iid}/notes?sort=asc`).filter((n) => !n.system);
+  const entries = sortIssues(kept).map((issue) => {
+    const all = glabPages(`projects/${enc}/issues/${issue.iid}/notes?sort=asc`).filter((n) => !n.system);
+    const { kept: notes, skipped: internal } = filterNotes(all, { includeInternal });
     const { title, body, labels } = buildIssue(issue, notes, from, { maxIssue, maxMr });
     return {
       iid: issue.iid,
@@ -180,15 +217,17 @@ function fetchPhase({ from, to, maxIssue, maxMr, includeConfidential }) {
       labels,
       footer: footerLine(issue),
       ghUrl: null,
+      internalSkipped: internal.length,
       noted: notes.some((n) => /^Moved to https:\/\/github\.com\//.test(n.body)),
       closed: false,
     };
   });
-  const paths = reviewPaths(to);
   mkdirSync(paths.dir, { recursive: true });
   writeFileSync(paths.json, JSON.stringify({ meta: { from, to }, entries }, null, 2));
   writeFileSync(paths.md, renderReview(entries, skipped));
   console.log(`${entries.length} open issue(s) fetched from ${from}; ${skipped.length} confidential skipped`);
+  const internalTotal = entries.reduce((n, e) => n + e.internalSkipped, 0);
+  if (internalTotal > 0) console.log(`${internalTotal} internal note(s) skipped (--include-internal to copy)`);
   console.log(`Read ${paths.md}, then re-run with --confirm. Nothing was posted.`);
 }
 
@@ -235,12 +274,14 @@ function confirmPhase({ from, to }) {
 }
 
 function parseArgs(argv) {
-  const args = { from: null, to: null, maxIssue: null, maxMr: null, confirm: false, includeConfidential: false };
+  const args = { from: null, to: null, maxIssue: null, maxMr: null, confirm: false, includeConfidential: false, includeInternal: false, refetch: false };
   const names = { '--from': 'from', '--to': 'to', '--max-issue': 'maxIssue', '--max-mr': 'maxMr' };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     if (flag === '--confirm') args.confirm = true;
     else if (flag === '--include-confidential') args.includeConfidential = true;
+    else if (flag === '--include-internal') args.includeInternal = true;
+    else if (flag === '--refetch') args.refetch = true;
     else if (names[flag]) {
       const v = argv[++i];
       if (v === undefined || v.startsWith('--')) return null;
@@ -256,7 +297,7 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args) {
-    console.error('usage: copy-gitlab-issues.mjs --from <gitlab path> --to <owner/repo> --max-issue N --max-mr N [--include-confidential] [--confirm]');
+    console.error('usage: copy-gitlab-issues.mjs --from <gitlab path> --to <owner/repo> --max-issue N --max-mr N [--include-confidential] [--include-internal] [--refetch] [--confirm]');
     process.exit(2);
   }
   if (args.confirm) confirmPhase(args);
