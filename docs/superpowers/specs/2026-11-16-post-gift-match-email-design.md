@@ -24,8 +24,9 @@ own email sequence and reminders. What SVBC already has instead:
   Organizations). Salesforce-era matches carry the company in the gift name
   (`<Company> - Employer Matching <Donor> <date>`). The 3,020 matches since 2013 name a short list of large local employers (Google, Apple, Netflix, Applied
   Materials, Microsoft, NVIDIA, Expedia, Varian, Intuitive and a few more).
-- **Each donor's employer.** People → Employer (text), loaded from Salesforce's `Employer__c`
-  (about 10,000 contacts), and updated by staff.
+- **Each donor's employer.** People → Employer Name (text), loaded from Salesforce's
+  `Employer__c` (about 10,000 contacts). Staff update it, and `donation-rollups`' `employerSync`
+  writes it from the donor's Current, Primary affiliation.
 - **A way to tell if prompting works.** `dtd-sync`'s pairing job links each Matching Donation to
   the gift it matched, with no DTD key.
 
@@ -79,9 +80,19 @@ A new job, `prompt`, in `dtd-sync`'s hourly cron, after `pairing`. A config swit
 "outreach": {
   "mode": "email",          // "email" → prompt runs, push and pull never run
                             // "dtd"   → push and pull run (needs DTD_PRIVATE_KEY), prompt never runs
+  "employerFormUrl": "https://member.bikesiliconvalley.org/en/portal/change-request?field=employer",
   ...
 }
 ```
+
+`employerFormUrl` is the member portal's Employer field, as a full URL. `dtd-sync` can't read
+`member-portal`'s config, so it doesn't build the link from the portal's `portalBaseUrl` or know
+whether the portal's Employer field (`employerAnswerEnabled`) is on. Setting this key is how an
+operator says it is. Blank or absent → no "Where do you work?" email, and a donor with no employer
+on file is treated like one whose employer isn't a known matcher (below). Sandbox points at
+`member.sandbox.bikesiliconvalley.org`; `config/split.test.ts` fails if the two match. The email
+is English-only in v1, so the link is the `en` portal. The portal's language switcher still
+works after the donor signs in.
 
 `pairing` and `summary` run in both modes.
 
@@ -126,8 +137,10 @@ someone fills in the URLs and deadlines by hand. The script prints; it writes no
 
 A donor's Employer is compared after normalising both sides (lower case, strip punctuation and
 `inc`/`llc`/`corp`), against `name` and every alias. Only an exact match after normalising counts.
-That gives three cases: **known matcher**; **no employer on file** (People → Employer Name blank);
-and **not a known matcher** (an Employer that matches no entry).
+That gives three cases, each a `variant` in the ledger below: **`known`** (a known matcher);
+**`ask`** (no employer on file: People → Employer Name blank, and `outreach.employerFormUrl` set);
+and **`other`** (an Employer Name that matches no entry, or a blank one while `employerFormUrl` is
+unset).
 
 ### The email
 
@@ -157,15 +170,15 @@ Known employer:
 
 No employer on file (decided by #127: ask instead of skipping): the middle becomes "Many Bay Area
 employers match their employees' gifts. Where do you work? Tell us, and we'll let you know if
-yours matches," with a link to the member portal's Employer field,
-`{portalBaseUrl}/{locale}/portal/change-request?field=employer` (the portal's
-`employerAnswerEnabled` must be on; the donor signs in first). The answer reaches the CRM through
+yours matches," with a link to `outreach.employerFormUrl`. The page needs a signed-in donor, so the donor
+signs in first; after sign-in they land on the portal home, not the Employer field (accepted for
+v1 in the donor-employer design). The answer reaches the CRM through
 `member-portal-writer`: an exact Organization match becomes the donor's Current, Primary
 affiliation, and anything else goes to staff on the Change Requests board (spec
 `2026-11-16-donor-employer-answer-design.md`). The next gift's prompt then has an employer to
 work with.
 
-Not a known matcher (if sent at all; open question 1): the middle becomes "Many Bay Area
+Not a known matcher (`other`; if sent at all, open question 1): the middle becomes "Many Bay Area
 employers match their employees' gifts. Ask HR, or search your company's giving portal for
 Silicon Valley Bicycle Coalition," with a link to the member portal's matching-gifts page.
 
@@ -181,7 +194,7 @@ signed off.
 Same guard pattern as `push`:
 
 1. Insert a D1 row in a new `prompts` table (`monday_item_id` primary key, `donor_item_id`,
-   `variant` known/ask/unknown, `state` pending/sent/failed, `attempts`, `sent_at`). An existing row
+   `variant` known/ask/other, `state` pending/sent/failed, `attempts`, `sent_at`). An existing row
    means skip.
 2. Send the email.
 3. Mark the row `sent`, then write the Donations item: **Match Status** → `Prompted` (a new
@@ -197,7 +210,7 @@ donor cooldown reads D1 (`donor_item_id`, `sent_at`), not Monday.
 
 The same `dtd-sync:writes` key every Worker reads:
 
-- `off`: compute and log each decision (`dtd-sync: prompt item <id> would-send known|unknown` or
+- `off`: compute and log each decision (`dtd-sync: prompt item <id> would-send known|ask|other` or
   `skip <reason>`), send nothing, write no D1 row. A gift skipped under `off` that's still in the
   window is considered again after a flip to `on`.
 - `hold` / `unknown`: skip the job.
