@@ -122,6 +122,15 @@ people sharing an inbox already receive each other's receipts, and explicit labe
 silent misattribution. Never fall into the accidental default (first match wins), which can show
 one family member another's giving history unlabeled.
 
+**Return-to after sign-in.** A signed-out GET of any `/<locale>/portal/...` page other than the
+dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
+(`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
+callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
+dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
+tree, with the language switcher's parser (issue #32); anything else is dropped. Known gap: the
+footer language picker sends `location.pathname` only, so switching language on the sign-in page
+drops `next` and sign-in lands on the dashboard.
+
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
 right fit for gating small internal tools to a handful of staff — it's licensed per seat, for
 members of an organization — but this needs to serve every donor with an email on file, not a
@@ -430,7 +439,8 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   every letter-ready email ends with one localized line, "Does your employer match gifts? Tell
   us where you work.", linking to `/<locale>/portal/change-request?field=employer`. It's
   appended after the body, built-in or template, so a template doesn't need (and can't drop) it.
-  The page is session-gated: a donor who clicks it before the login link signs in first.
+  The page is session-gated: a donor who clicks it before the login link signs in first and then
+  lands on the Employer field (return-to after sign-in, below).
 
 How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
 handler — no separate cron trigger): every day the Worker reads the settings board (one cheap

@@ -141,12 +141,14 @@ export function backToPortalLink(locale: Locale): string {
   return `<p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>`;
 }
 
-export function loginFormView(locale: Locale): string {
+// `next` (return-to after sign-in) arrives already validated by routes.ts's portalReturnPath.
+export function loginFormView(locale: Locale, next: string | null = null): string {
+  const nextField = next === null ? '' : `\n      <input type="hidden" name="next" value="${escapeHtml(next)}" />`;
   return `
     <h1>${escapeHtml(t(locale, 'login.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'login.prompt'))}</p>
     <form action="/" method="post">
-      <input type="email" name="email" required />
+      <input type="email" name="email" required />${nextField}
       <button type="submit">${escapeHtml(t(locale, 'login.submit'))}</button>
     </form>
   `;
@@ -183,13 +185,14 @@ export const CONFIRM_LOGIN_SCRIPT = `(function () {
 
 // token is null for a fragment link (CONFIRM_LOGIN_SCRIPT fills it in), or the token from a
 // legacy ?token= link, sent before issue #61, which renders as before with no script.
-export function confirmLoginView(token: string | null, lang: Locale | null, locale: Locale): string {
+export function confirmLoginView(token: string | null, lang: Locale | null, locale: Locale, next: string | null = null): string {
   const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
+  const nextField = next === null ? '' : `\n      <input type="hidden" name="next" value="${escapeHtml(next)}" />`;
   const form = `
     <h1>${escapeHtml(t(locale, 'confirmLogin.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'confirmLogin.body'))}</p>
     <form action="/auth/callback" method="post">
-      <input type="hidden" name="token" value="${escapeHtml(token ?? '')}"${token === null ? ' id="confirm-token"' : ''} />${langField}
+      <input type="hidden" name="token" value="${escapeHtml(token ?? '')}"${token === null ? ' id="confirm-token"' : ''} />${langField}${nextField}
       <button type="submit">${escapeHtml(t(locale, 'confirmLogin.submit'))}</button>
     </form>
   `;

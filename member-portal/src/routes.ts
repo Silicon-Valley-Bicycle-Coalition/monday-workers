@@ -280,6 +280,31 @@ export function createApp(deps: AppDeps) {
     return applyLocaleToPath(target.pathname, locale) + target.search;
   }
 
+  // Return-to after sign-in: the `next` a signed-out donor carries from a portal page, through the
+  // sign-in form and the emailed link, to the callback's redirect. Only a page in the signed-in
+  // tree (/<locale>/portal...) is accepted, parsed the same way as the language switcher's `to`
+  // (sameOriginRedirectPath, issue #32) — so it can't point off-origin, nor at /auth/callback,
+  // /lang or anything else that acts on arrival. Anything else is dropped (null), and sign-in
+  // lands on the dashboard as before.
+  function portalReturnPath(raw: unknown): string | null {
+    if (typeof raw !== 'string' || raw.length === 0) return null;
+    const target = sameOriginRedirectPath(raw);
+    if (target === null) return null;
+    const match = /^\/([^/]+)\/portal(?:\/.*)?$/.exec(target.pathname);
+    if (match === null || !isLocale(match[1]!)) return null;
+    return target.pathname + target.search;
+  }
+
+  // Every session-gated route's "no session" answer. A GET carries the page as `next`, unless
+  // it's the dashboard (where sign-in lands anyway); a POST can't be replayed, so it doesn't.
+  function signInRedirect(c: Context) {
+    if (c.req.method !== 'GET') return c.redirect('/');
+    const url = new URL(c.req.url);
+    const next = portalReturnPath(url.pathname + url.search);
+    if (next === null || /^\/[^/]+\/portal\/?$/.test(next)) return c.redirect('/');
+    return c.redirect(`/?next=${encodeURIComponent(next)}`);
+  }
+
   app.get('/lang/:code', (c) => {
     const locale = setLangCookie(c, c.req.param('code'));
     return c.redirect(langRedirectTarget(c, locale));
@@ -300,7 +325,7 @@ export function createApp(deps: AppDeps) {
 
   app.get('/', (c) => {
     const locale = detectLocale(c);
-    return c.html(page(t(locale, 'title.login') + ' — ' + t(locale, 'site.title'), loginFormView(locale), locale));
+    return c.html(page(t(locale, 'title.login') + ' — ' + t(locale, 'site.title'), loginFormView(locale, portalReturnPath(c.req.query('next'))), locale));
   });
 
   app.post('/', async (c) => {
@@ -313,6 +338,7 @@ export function createApp(deps: AppDeps) {
     // skip rate-limiting and requestLogin entirely — so this branch produces the same generic
     // response as a well-formed but non-matching email, preserving the enumeration guard.
     const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
+    const next = portalReturnPath(body.next);
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
 
     if (email.length > 0) {
@@ -336,7 +362,7 @@ export function createApp(deps: AppDeps) {
             portalBaseUrl: deps.config.auth.portalBaseUrl,
             magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
             now: deps.now,
-          }).catch((err) => {
+          }, next).catch((err) => {
             // Same enumeration-guard rule as below: a failure here must never surface as a
             // different response than the generic one — log and swallow.
             console.error(`member-portal login request failed: ${errorText(err)}`);
@@ -394,7 +420,7 @@ export function createApp(deps: AppDeps) {
     // the token (and the token must never be copied into the /lang redirect URL). The page
     // already renders in the link's own `lang`.
     return c.html(
-      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(legacyToken ?? null, lang, locale), locale, {
+      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(legacyToken ?? null, lang, locale, portalReturnPath(c.req.query('next'))), locale, {
         languagePicker: false,
       })
     );
@@ -438,7 +464,10 @@ export function createApp(deps: AppDeps) {
       path: '/',
       maxAge: deps.config.auth.sessionTtlHours * 3600,
     });
-    // 303: the browser follows a POST's redirect with a GET.
+    // 303: the browser follows a POST's redirect with a GET. The link's lang wins over the
+    // locale segment `next` was captured with, as it does for the dashboard.
+    const next = portalReturnPath(body.next);
+    if (next !== null) return c.redirect(lang === null ? next : applyLocaleToPath(next, lang), 303);
     return c.redirect(`/${lang ?? DEFAULT_LOCALE}/portal`, 303);
   });
 
@@ -451,7 +480,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) {
-      return c.redirect('/');
+      return signInRedirect(c);
     }
 
     // Same degrade-instead-of-fail treatment as volunteer history in loadPortalData: a Monday
@@ -531,7 +560,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/letters', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -552,7 +581,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -599,7 +628,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/events', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!eventsEnabled(deps.config)) {
@@ -624,7 +653,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/change-request', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -662,7 +691,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/change-request', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -712,7 +741,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/change-request/preferences', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -765,7 +794,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/pledges', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     if (!pledgesEnabled(deps.config)) {
@@ -794,7 +823,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/matching-gifts', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
     // This page keeps the app-wide baseline CSP: it runs no third-party JS itself. The DTD widget
@@ -837,7 +866,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/card/:donorItemId/regenerate', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/');
+    if (donorItemIds === null) return signInRedirect(c);
 
     // No dedicated "unavailable" page to render for this anymore (the card is a dashboard
     // widget, not a page) — the widget and its regenerate button only ever render when
