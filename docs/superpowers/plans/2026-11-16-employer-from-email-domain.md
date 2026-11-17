@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Superseded in part (2026-11-17):** Task 1 (`benevity-import`) shipped as written. Tasks 2–8
+> were built as a standalone Worker, then folded into #125's `impact-attribution` Worker as a second
+> job; see the design doc's "Folded into #125's Worker" section for what changed. The standalone
+> build is on the local branch `backup/124-standalone`.
+
 **Goal:** A daily cron in a new `impact-attribution` Worker proposes `Draft` employer affiliations
 from company email domains, and `benevity-import` stops treating unconfirmed affiliations as
 evidence.

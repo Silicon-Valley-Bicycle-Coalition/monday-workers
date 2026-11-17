@@ -20,7 +20,8 @@ The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in groups
   it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
   needs catching up, because the next `on` run recomputes every `Contacts` column.
 - **`impact-attribution`**: ships `off`; goes `on` only after its production gate (its README,
-  "Operator setup": the payer summary from an `off` dry run is reviewed and `excludedPayers` filled);
+  "Operator setup": the payer summary and email-domain domain list from an `off` dry run are
+  reviewed and `excludedPayers` filled);
   never part of a bulk flip. A nightly cron with no queue: under `hold`/`unknown` it skips the night, and
   under `off` it refreshes its D1 match history and logs what it would propose. Nothing needs catching
   up: the next `on` run reads the board again and proposes from the full history.

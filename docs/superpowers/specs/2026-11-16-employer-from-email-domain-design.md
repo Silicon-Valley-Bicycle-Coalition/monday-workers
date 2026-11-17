@@ -1,13 +1,37 @@
 # Employer from email domains: the first slice of `impact-attribution`
 
-**Status:** Design, awaiting review (2026-11-16).
+**Status:** Approved 2026-11-16; built 2026-11-17 as a second job in #125's `impact-attribution`
+Worker (see "Folded into #125's Worker" below, which overrides the rest where they differ).
 **Issue:** #124.
-**Affects:** a new `impact-attribution` Worker (cron only in this slice); the Affiliations board
-(one new column); `benevity-import` (counts `Current` affiliations only). Reads People, People
+**Affects:** the `impact-attribution` Worker (a second nightly job); `benevity-import` (counts
+`Current` affiliations only). Reads People, People
 (Historical), Organizations and Affiliations.
 **Builds on:** `2026-09-08-person-org-email-model-design.md` (the Affiliations board, its `Draft`
 status, the `email_index` and the resolver this Worker will grow into), and `donation-rollups`'
 Employer Name sync (`src/affiliations/employer.ts`).
+
+## Folded into #125's Worker (2026-11-17)
+
+While this was being built, #125 merged its own `impact-attribution` Worker: Draft affiliations from
+repeated matching gifts, with a D1 `proposals` ledger, a 🔒 **Proposed status** column and an
+evidence comment on each Draft. David chose to fold this design into it as a second job rather than
+ship two Workers making the same kind of Draft. What changed from the design below:
+
+- **One cron, two jobs** (`src/nightly.ts`, `0 11 * * *`): matching gifts first, then email
+  domains. A job that throws is logged and the other still runs; the run then fails.
+- **The same Draft as #125's.** Status `Draft`, Proposed status `Current`, and the evidence as a
+  comment ("Proposed from email domain acme.com (Personal Email; Website match). Salesforce
+  employer: …") instead of a 🔒 **Proposed from** text column. No new Affiliations column.
+- **One ledger.** Migration `0002` adds `evidence` (`matches`/`email_domain`) and `domain` to #125's
+  `proposals`; an email-domain row stores match count 0. A pair either job proposed is never
+  proposed again by the other. `employer_proposals` doesn't exist.
+- **`email_index`** arrives in the same migration, unchanged.
+- **Config** is an `emailDomains` section beside #125's keys; boards come from its
+  `peopleBoardIds`, `organizationsBoardId` and `affiliations`.
+- **Write switch, D1 database and CI** are #125's (`impact-attribution:writes`, its placeholder D1
+  ids, created 2026-11-16). The production gate in the README covers both jobs.
+
+The `benevity-import` change below is unchanged, and now protects #125's Drafts too.
 
 ## Why
 
