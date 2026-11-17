@@ -75,7 +75,7 @@ affiliation that staff confirm, never an affiliation that counts on its own.
   no new column. `mapPledge` today sends a mapped question to its field *instead of* Other Answers,
   so `employer` is the one field that goes to both. *(My call: no new board column.)*
 - **Every other event** (volunteer shifts, classes, events): the first answered `text` question
-  whose wording matches `/employer|where do you work|company you work|empleador|d[oó]nde trabajas/i`
+  whose wording matches `/employer|where do you work|company you work|empleador|d[oó]nde trabajas|^\s*company\s*[:*?]?\s*$/i` (a question worded just "Company" counts, added 2026-11-17 after a scan found it on SVBC's Bike to the Future forms)
   (English and Spanish, like the phone pattern). No config per event. This wording fallback also
   applies to a pledge event with no question mapped to `employer`, skipping its `ignoreQuestions`
   (staff list a question there to mean "don't read it"). *(My call: a pattern, as for

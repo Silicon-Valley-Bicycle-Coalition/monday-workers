@@ -14,11 +14,11 @@ function attendee(question: string, answer: string | undefined, type = 'text', q
 }
 
 describe('employerAnswerFrom, by wording', () => {
-  it.each(['Employer', 'Where do you work?', '¿Dónde trabajas?', 'Name of the company you work for'])('matches "%s"', (question) => {
+  it.each(['Employer', 'Where do you work?', '¿Dónde trabajas?', 'Name of the company you work for', 'Company', ' Company: '])('matches "%s"', (question) => {
     expect(employerAnswerFrom(attendee(question, '  Acme Corp '), null)).toBe('Acme Corp');
   });
 
-  it.each(['Do you use Zipcar?', 'Company name for invoice'])('does not match "%s"', (question) => {
+  it.each(['Do you use Zipcar?', 'Company name for invoice', 'Company or club', 'Bike to the Future company sponsors'])('does not match "%s"', (question) => {
     expect(employerAnswerFrom(attendee(question, 'Acme Corp'), null)).toBeNull();
     expect(EMPLOYER_QUESTION.test(question)).toBe(false);
   });
