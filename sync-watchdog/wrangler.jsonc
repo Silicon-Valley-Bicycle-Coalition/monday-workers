@@ -10,8 +10,8 @@
   // docs/superpowers/specs/2026-11-17-sync-failure-alerting-design.md.
   "kv_namespaces": [
     { "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" },
-    // Per-subject alert state (src/state.ts). Created by Task 6 of the plan.
-    { "binding": "STATE", "id": "00000000000000000000000000000000" }
+    // Per-subject alert state (src/state.ts): the sync-watchdog-state namespace.
+    { "binding": "STATE", "id": "fd4cd11d203d4b7fbdf2dd1bbc0bce4a" }
   ],
   // Secrets: CLOUDFLARE_API_TOKEN (Account Analytics Read + Queues Read), SLACK_WEBHOOK_URL
   // (the private staff channel).
@@ -31,7 +31,7 @@
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [
         { "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" },
-        { "binding": "STATE", "id": "00000000000000000000000000000001" }
+        { "binding": "STATE", "id": "e82a6053131d4fd6a90d7cf7e8c852d6" }
       ],
       "limits": { "cpu_ms": 1000 },
       "triggers": {
