@@ -208,3 +208,9 @@ at 25 a night the backlog drains in about six nights.
   delete it the next run proposes it again (logged as `emailDomainLedgerWriteFailed`).
 * A Household Email is shared: `fam@acme.com` proposes Acme for everyone on it. The comment names
   Household Email so staff can tell.
+* The matching-gift job skips only an existing (person, organization) pair, not a person with a
+  Draft elsewhere. If the email-domain job proposed Acme one night and a second matching gift from
+  Globex qualifies later, the person has two Drafts; staff keep one and delete the other (it stays
+  gone).
+* A `domainOverrides` entry whose organization no longer exists is ignored and listed as
+  `staleOverrides` in the `emailDomainProposalDomains` log line; fix or remove it.

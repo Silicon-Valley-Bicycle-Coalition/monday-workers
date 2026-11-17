@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../../test/reset';
 import type { AffiliationRecord } from './domains';
 import { emailIndexRows, rebuildEmailIndex } from './emailIndex';
@@ -47,4 +47,18 @@ describe('rebuildEmailIndex', () => {
     await rebuildEmailIndex(env.DB, rows);
     expect((await indexRows()).length).toBe(1000);
   });
+
+  it('stays well inside D1\'s per-invocation query limit for 30,000 addresses', async () => {
+    const rows = Array.from({ length: 30000 }, (_, i) => ({ address: `p${i}@x.example`, kind: 'personal' as const, personItemIds: [String(i)], affiliationItemId: null }));
+    const batch = vi.spyOn(env.DB, 'batch');
+    try {
+      await rebuildEmailIndex(env.DB, rows);
+      const statements = batch.mock.calls.reduce((n, [s]) => n + s.length, 0);
+      expect(statements).toBeLessThanOrEqual(50);
+    } finally {
+      batch.mockRestore();
+    }
+    expect((await indexRows()).length).toBe(30000);
+  });
 });
+

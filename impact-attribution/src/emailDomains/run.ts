@@ -43,8 +43,14 @@ export async function runEmailDomainProposals(deps: RunDeps, mode: 'on' | 'off')
 
   await rebuildEmailIndex(db, emailIndexRows(people, affiliations));
 
+  // An override pointing at a deleted or merged organization would fail its create every night;
+  // drop it and name it in the domains log line instead.
+  const orgIds = new Set(organizations.map((o) => o.itemId));
+  const overrides = Object.fromEntries(Object.entries(ed.domainOverrides).filter(([, id]) => orgIds.has(id)));
+  const staleOverrides = Object.entries(ed.domainOverrides).filter(([, id]) => !orgIds.has(id))
+    .map(([domain, organizationId]) => ({ domain, organizationId }));
   const domainMap = buildDomainMap(organizations, affiliations, {
-    currentLabel: config.affiliations.labels.current, overrides: ed.domainOverrides, platformDomains: new Set(ed.platformDomains),
+    currentLabel: config.affiliations.labels.current, overrides, platformDomains: new Set(ed.platformDomains),
   });
   const selection = selectProposals({
     people, affiliations, organizations, domainMap,
@@ -106,6 +112,7 @@ export async function runEmailDomainProposals(deps: RunDeps, mode: 'on' | 'off')
     worker: WORKER, environment: deps.environment, operation: 'emailDomainProposalDomains', mode,
     proposedDomains: [...byDomain.values()].sort((a, b) => b.proposals - a.proposals || a.domain.localeCompare(b.domain)),
     ambiguousDomains: [...domainMap.ambiguous].sort(),
+    staleOverrides,
   }));
   return summary;
 }

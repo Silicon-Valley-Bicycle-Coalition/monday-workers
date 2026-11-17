@@ -36,18 +36,21 @@ export function emailIndexRows(people: PersonRecord[], affiliations: Affiliation
   return [...rows.values()];
 }
 
-// D1 binds at most 100 parameters per statement; 4 columns per row.
-const ROWS_PER_INSERT = 25;
+// D1 binds at most 100 parameters per statement and counts each statement against its
+// per-invocation query limit (1,000 on the paid plan), so rows go in as one JSON parameter per
+// statement, 1,000 rows each: 30,000 addresses is 31 statements, still one atomic batch.
+const ROWS_PER_INSERT = 1000;
 
 // Replace-all in one batch, so a reader never sees a half-built index.
 export async function rebuildEmailIndex(db: D1Database, rows: EmailIndexRow[]): Promise<void> {
   const statements: D1PreparedStatement[] = [db.prepare('DELETE FROM email_index')];
+  const insert = db.prepare(
+    `INSERT INTO email_index (address, kind, person_item_ids, affiliation_item_id)
+     SELECT value ->> '$[0]', value ->> '$[1]', value ->> '$[2]', value ->> '$[3]' FROM json_each(?)`,
+  );
   for (let i = 0; i < rows.length; i += ROWS_PER_INSERT) {
     const chunk = rows.slice(i, i + ROWS_PER_INSERT);
-    statements.push(
-      db.prepare(`INSERT INTO email_index (address, kind, person_item_ids, affiliation_item_id) VALUES ${chunk.map(() => '(?, ?, ?, ?)').join(', ')}`)
-        .bind(...chunk.flatMap((r) => [r.address, r.kind, JSON.stringify(r.personItemIds), r.affiliationItemId])),
-    );
+    statements.push(insert.bind(JSON.stringify(chunk.map((r) => [r.address, r.kind, JSON.stringify(r.personItemIds), r.affiliationItemId]))));
   }
   await db.batch(statements);
 }

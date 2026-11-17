@@ -158,7 +158,7 @@ describe('runEmailDomainProposals', () => {
       expect(lines.find((l) => l.operation === 'emailDomainProposalDomains')).toEqual({
         worker: 'impact-attribution', environment: 'production', operation: 'emailDomainProposalDomains', mode: 'off',
         proposedDomains: [{ domain: 'acme.example', organizationId: '501', source: 'Website match', proposals: 2 }],
-        ambiguousDomains: ['twin.example'],
+        ambiguousDomains: ['twin.example'], staleOverrides: [],
       });
     } finally {
       log.mockRestore();
@@ -201,4 +201,20 @@ describe('runEmailDomainProposals', () => {
       log.mockRestore();
     }
   });
+
+  it('ignores a domainOverrides entry whose organization is gone, and logs it', async () => {
+    const monday = setup();
+    monday.people = [person('1', 'Jo Doe', 'jo@merged.example')];
+    const cfg = { ...config, emailDomains: { ...config.emailDomains, domainOverrides: { 'merged.example': '999' } } };
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runEmailDomainProposals({ ...deps(monday), config: cfg }, 'on');
+      const lines = log.mock.calls.map((c) => JSON.parse(String(c[0])));
+      expect(lines.find((l) => l.operation === 'emailDomainProposalDomains').staleOverrides).toEqual([{ domain: 'merged.example', organizationId: '999' }]);
+    } finally {
+      log.mockRestore();
+    }
+    expect(monday.drafts).toEqual([]);
+  });
 });
+
