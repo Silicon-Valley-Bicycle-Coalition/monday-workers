@@ -202,6 +202,8 @@ export const hi: Record<TranslationKey, string> = {
   'letterReady.body': 'आपका {{year}} का दान पत्र अब डोनर पोर्टल में देखने के लिए तैयार है।',
   'letterReady.loginLink': 'देखने के लिए लॉग इन करें',
   'letterReady.expiry': 'यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+  'letterReady.employerPrompt': 'क्या आपका नियोक्ता दान का मिलान करता है? हमें बताएँ कि आप कहाँ काम करते हैं।',
+  'letterReady.employerLink': 'अपना नियोक्ता जोड़ें',
   'portal.matchedBy': '{{company}} द्वारा {{date}} को मैच किया गया: {{amount}}',
   'portal.startMatch': 'आपका नियोक्ता इस दान के बराबर राशि दे सकता है',
 } satisfies Record<TranslationKey, string>;

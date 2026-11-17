@@ -4,7 +4,7 @@ import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import type { Config, LetterSendQueueMessage } from '../types';
 import { loadLetterData } from './loadLetterData';
-import { lettersEnabled, letterCronConfigured } from '../config';
+import { employerAnswerEnabled, lettersEnabled, letterCronConfigured } from '../config';
 import { localeFromMondayLabel, DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
@@ -173,6 +173,11 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
   const loginUrl = magicLinkUrl(deps.config.auth.portalBaseUrl, rawToken, locale);
+  // Issue #127: the portal's Employer field, preselected. Session-gated like every /portal page,
+  // so a donor who clicks it before the login link lands on sign-in first.
+  const employerUrl = employerAnswerEnabled(deps.config)
+    ? `${deps.config.auth.portalBaseUrl}/${locale}/portal/change-request?field=employer`
+    : undefined;
 
   // At-most-once: claim the row (queued → sending) immediately before the send, which is the only
   // step inside the claim window. The email and the D1 status write are two systems with no
@@ -194,6 +199,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
       loginUrl,
       locale,
       bodyTemplate: template ? template : templates.default,
+      ...(employerUrl ? { employerUrl } : {}),
     });
   } catch (sendErr) {
     // The send itself failed, so nothing went out — hand the row back for the retry. A failure

@@ -145,6 +145,38 @@ describe('processLetterSendBatch', () => {
     expect(message.retry).not.toHaveBeenCalled();
   });
 
+  // Issue #127: the letter email invites the donor to add their employer, but only when the
+  // portal's Employer field is actually live.
+  it('passes the locale-prefixed Employer field URL when employer answers are enabled', async () => {
+    const emailSender = fakeEmailSender();
+    const employerConfig: Config = {
+      ...config,
+      changeRequests: {
+        ...config.changeRequests,
+        employer: {
+          affiliationsBoardId: 555,
+          affiliationColumns: { personLink: 'connect_p', organizationLink: 'connect_o', status: 'status_a', primary: 'check_p' },
+          currentStatusLabel: 'Current',
+          personAffiliationsLink: 'connect_pa',
+        },
+      },
+      monday: { ...config.monday, columns: { donorEmployer: 'text_employer' } as never },
+    };
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: employerConfig, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+    const params = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
+    expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/change-request?field=employer`);
+  });
+
+  it('passes no employer URL while employer answers are off', async () => {
+    const emailSender = fakeEmailSender();
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+    expect((emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!.employerUrl).toBeUndefined();
+  });
+
   // Issue #31: the letter email sits in an inbox until the donor gets to it — the login link
   // must outlive the 15-minute interactive magic-link TTL, using its own letterLinkTtlHours.
   it('mints the letter link token with auth.letterLinkTtlHours, not the magic-link minutes', async () => {

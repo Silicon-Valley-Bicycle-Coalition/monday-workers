@@ -202,6 +202,8 @@ export const ja: Record<TranslationKey, string> = {
   'letterReady.body': '{{year}}年の寄付証明レターを寄付者ポータルでご覧いただけます。',
   'letterReady.loginLink': 'ログインして確認する',
   'letterReady.expiry': 'このリンクは有効期限が短く、1回のみご利用いただけます。',
+  'letterReady.employerPrompt': '勤務先に寄付のマッチング制度はありますか？勤務先を教えてください。',
+  'letterReady.employerLink': '勤務先を追加',
   'portal.matchedBy': '{{company}}が{{date}}にマッチング:{{amount}}',
   'portal.startMatch': '勤務先がこの寄付をマッチングしてくれる可能性があります',
 } satisfies Record<TranslationKey, string>;

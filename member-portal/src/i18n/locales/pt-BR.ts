@@ -202,6 +202,8 @@ export const ptBR: Record<TranslationKey, string> = {
   'letterReady.body': 'Sua carta de doações de {{year}} já está disponível no portal do doador.',
   'letterReady.loginLink': 'Entre para vê-la',
   'letterReady.expiry': 'Este link expira em breve e só pode ser usado uma vez.',
+  'letterReady.employerPrompt': 'Seu empregador iguala doações? Conte-nos onde você trabalha.',
+  'letterReady.employerLink': 'Adicione seu empregador',
   'portal.matchedBy': 'Correspondido por {{company}} em {{date}}: {{amount}}',
   'portal.startMatch': 'Seu empregador pode igualar esta doação',
 } satisfies Record<TranslationKey, string>;

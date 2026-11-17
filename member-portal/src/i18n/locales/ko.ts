@@ -202,6 +202,8 @@ export const ko: Record<TranslationKey, string> = {
   'letterReady.body': '{{year}}년 기부 확인서를 기부자 포털에서 확인하실 수 있습니다.',
   'letterReady.loginLink': '로그인하여 확인하기',
   'letterReady.expiry': '이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
+  'letterReady.employerPrompt': '고용주가 기부금을 매칭하나요? 근무하시는 곳을 알려 주세요.',
+  'letterReady.employerLink': '고용주 추가하기',
   'portal.matchedBy': '{{company}}에서 {{date}}에 매칭: {{amount}}',
   'portal.startMatch': '고용주가 이 기부금을 매칭해 줄 수 있습니다',
 } satisfies Record<TranslationKey, string>;

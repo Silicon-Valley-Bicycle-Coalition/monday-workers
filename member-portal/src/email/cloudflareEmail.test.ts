@@ -235,6 +235,58 @@ describe('CloudflareEmailSender', () => {
       expect(message.html).toContain('<p>Hola Juana</p>');
     });
 
+    // Issue #127: January is when donors request matches for last year's gifts.
+    describe('employer ask', () => {
+      const EMPLOYER_URL = 'https://portal.example.org/es/portal/change-request?field=employer';
+
+      it('adds the employer line to both parts of the built-in body when an employerUrl is given', async () => {
+        const binding = fakeBinding();
+        const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC', LOGO_URL);
+
+        await sender.sendLetterReadyEmail({
+          to: 'jane@example.org', donorName: 'Juana', year: 2025, loginUrl: 'https://x/callback', locale: 'es', employerUrl: EMPLOYER_URL,
+        });
+
+        const message = binding.send.mock.calls[0]![0];
+        expect(message.html).toContain(t('es', 'letterReady.employerPrompt'));
+        expect(message.html).toContain(`<a href="${EMPLOYER_URL}"`);
+        expect(message.html).toContain(`>${t('es', 'letterReady.employerLink')}</a>`);
+        expect(message.text).toContain(t('es', 'letterReady.employerPrompt'));
+        expect(message.text).toContain(`${t('es', 'letterReady.employerLink')}: ${EMPLOYER_URL}`);
+        // After the login link, so the letter stays the email's first ask.
+        expect(message.text.indexOf(EMPLOYER_URL)).toBeGreaterThan(message.text.indexOf('https://x/callback'));
+        expect(message.html.indexOf(EMPLOYER_URL)).toBeGreaterThan(message.html.indexOf('https://x/callback'));
+      });
+
+      it('adds it after a staff template body too', async () => {
+        const binding = fakeBinding();
+        const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC', LOGO_URL);
+
+        await sender.sendLetterReadyEmail({
+          to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback', locale: 'en',
+          bodyTemplate: 'Hi {{donorName}}\n\n{{loginUrl}}', employerUrl: EMPLOYER_URL,
+        });
+
+        const message = binding.send.mock.calls[0]![0];
+        expect(message.html).toContain('<p>Hi Jane</p>');
+        expect(message.html).toContain('Does your employer match gifts? Tell us where you work.');
+        expect(message.html).toContain(`<a href="${EMPLOYER_URL}"`);
+        expect(message.text).toContain(`Add your employer: ${EMPLOYER_URL}`);
+      });
+
+      it('leaves the line out when no employerUrl is given', async () => {
+        const binding = fakeBinding();
+        const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC', LOGO_URL);
+
+        await sender.sendLetterReadyEmail({ to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback', locale: 'en' });
+
+        const message = binding.send.mock.calls[0]![0];
+        expect(message.html).not.toContain(t('en', 'letterReady.employerPrompt'));
+        expect(message.text).not.toContain(t('en', 'letterReady.employerPrompt'));
+        expect(message.html).not.toContain('change-request');
+      });
+    });
+
     it('sets the Reply-To header when one is configured', async () => {
       const binding = fakeBinding();
       const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC', LOGO_URL, 'contactus@bikesiliconvalley.org');
