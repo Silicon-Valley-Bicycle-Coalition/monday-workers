@@ -45,4 +45,58 @@ describe('validateConfig', () => {
     expect(configFor({ ENVIRONMENT: 'sandbox' }).affiliations.boardId).toBe(sandbox.affiliations.boardId);
     expect(configFor({}).affiliations.boardId).toBe(production.affiliations.boardId);
   });
+
+  describe('emailDomains (#124)', () => {
+    type Raw = Record<string, any>;
+    const ed = (c: Raw) => c.emailDomains as Raw;
+
+    it('reads the email-domain section from both shipped configs', () => {
+      for (const raw of [production, sandbox]) {
+        const cfg = validateConfig(raw).emailDomains;
+        expect(cfg.people).toEqual({ personalEmail: 'Personal Email', householdEmail: 'Household Email', employerName: 'Employer Name', lastGiftDate: 'Last Gift Date' });
+        expect(cfg.organizationWebsite).toBe('Website');
+        expect(cfg.affiliationWorkEmail).toBe('Work Email');
+        expect(cfg.maxProposalsPerRun).toBe(25);
+      }
+    });
+
+    it('rejects a missing People column title', () => {
+      const c = clone() as Raw;
+      delete ed(c).people.lastGiftDate;
+      expect(() => validateConfig(c)).toThrow(/emailDomains\.people\.lastGiftDate/);
+    });
+
+    it('rejects a non-positive or fractional maxProposalsPerRun', () => {
+      for (const n of [0, -1, 2.5, '25']) {
+        const c = clone() as Raw;
+        ed(c).maxProposalsPerRun = n;
+        expect(() => validateConfig(c), String(n)).toThrow(/emailDomains\.maxProposalsPerRun/);
+      }
+    });
+
+    it('lower-cases every configured domain', () => {
+      const c = clone() as Raw;
+      ed(c).consumerDomains = ['GMail.com'];
+      ed(c).excludedDomains = ['Alumni.Stanford.EDU'];
+      ed(c).domainOverrides = { 'ACME.example': '123' };
+      const cfg = validateConfig(c).emailDomains;
+      expect(cfg.consumerDomains).toEqual(['gmail.com']);
+      expect(cfg.excludedDomains).toEqual(['alumni.stanford.edu']);
+      expect(cfg.domainOverrides).toEqual({ 'acme.example': '123' });
+    });
+
+    it('requires platformDomains, seeded with the social and hosting hosts', () => {
+      const cfg = validateConfig(production).emailDomains;
+      for (const d of ['linkedin.com', 'facebook.com', 'instagram.com', 'linktr.ee', 'eventbrite.com']) expect(cfg.platformDomains, d).toContain(d);
+      const c = clone() as Raw;
+      delete ed(c).platformDomains;
+      expect(() => validateConfig(c)).toThrow(/platformDomains/);
+    });
+
+    it('rejects a domainOverrides value that is not an item id string', () => {
+      const c = clone() as Raw;
+      ed(c).domainOverrides = { 'acme.example': 123 };
+      expect(() => validateConfig(c)).toThrow(/domainOverrides/);
+    });
+  });
 });

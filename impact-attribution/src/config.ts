@@ -21,6 +21,18 @@ export interface ImpactAttributionConfig {
   // item id; the note names the organization for the reader, since names drift.
   excludedPayers: { id: string; note: string }[];
   maxProposalsPerRun: number;
+  // Employer proposals from a donor's company email domain (#124). People and Organizations boards
+  // are peopleBoardIds and organizationsBoardId; Drafts go to `affiliations`.
+  emailDomains: {
+    people: { personalEmail: string; householdEmail: string; employerName: string; lastGiftDate: string };
+    organizationWebsite: string;
+    affiliationWorkEmail: string;
+    consumerDomains: string[];
+    excludedDomains: string[];
+    platformDomains: string[]; // social/hosting hosts: never an organization's own Website domain
+    domainOverrides: Record<string, string>; // domain -> Organizations item id
+    maxProposalsPerRun: number;
+  };
 }
 
 type Json = Record<string, unknown>;
@@ -48,6 +60,42 @@ function idList(o: Json, key: string, path: string): string[] {
     throw new Error(`config: ${path}.${key} must be a non-empty list of numeric id strings`);
   }
   return v as string[];
+}
+
+// Domains are compared lower-cased.
+function domainList(o: Json, key: string, path: string): string[] {
+  const v = o[key];
+  if (!Array.isArray(v) || v.some((d) => typeof d !== 'string' || d.trim() === '')) {
+    throw new Error(`config: ${path}.${key} must be a list of non-empty strings`);
+  }
+  return v.map((d: string) => d.trim().toLowerCase());
+}
+
+function emailDomains(raw: unknown): ImpactAttributionConfig['emailDomains'] {
+  const path = 'emailDomains';
+  const e = obj(raw, path);
+  const people = obj(e.people, `${path}.people`);
+  const overridesRaw = obj(e.domainOverrides, `${path}.domainOverrides`);
+  const domainOverrides: Record<string, string> = {};
+  for (const [domain, itemId] of Object.entries(overridesRaw)) {
+    if (typeof itemId !== 'string' || !/^\d+$/.test(itemId)) {
+      throw new Error(`config: ${path}.domainOverrides["${domain}"] must be an Organizations item id string`);
+    }
+    domainOverrides[domain.trim().toLowerCase()] = itemId;
+  }
+  return {
+    people: {
+      personalEmail: str(people, 'personalEmail', `${path}.people`), householdEmail: str(people, 'householdEmail', `${path}.people`),
+      employerName: str(people, 'employerName', `${path}.people`), lastGiftDate: str(people, 'lastGiftDate', `${path}.people`),
+    },
+    organizationWebsite: str(e, 'organizationWebsite', path),
+    affiliationWorkEmail: str(e, 'affiliationWorkEmail', path),
+    consumerDomains: domainList(e, 'consumerDomains', path),
+    excludedDomains: domainList(e, 'excludedDomains', path),
+    platformDomains: domainList(e, 'platformDomains', path),
+    domainOverrides,
+    maxProposalsPerRun: posInt(e, 'maxProposalsPerRun', path),
+  };
 }
 
 export function validateConfig(raw: unknown): ImpactAttributionConfig {
@@ -85,6 +133,7 @@ export function validateConfig(raw: unknown): ImpactAttributionConfig {
     rule: { windowDays: posInt(rule, 'windowDays', 'rule'), minMatches, currentWithinDays: posInt(rule, 'currentWithinDays', 'rule') },
     excludedPayers,
     maxProposalsPerRun: posInt(root, 'maxProposalsPerRun', 'config'),
+    emailDomains: emailDomains(root.emailDomains),
   };
 }
 
