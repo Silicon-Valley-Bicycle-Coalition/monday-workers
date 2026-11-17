@@ -1,0 +1,97 @@
+[
+  {
+    "dir": "benevity-import",
+    "sandbox": {}
+  },
+  {
+    "dir": "bp-feedback-notify",
+    "sandbox": {}
+  },
+  {
+    "dir": "donation-rollups",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {}
+  },
+  {
+    "dir": "dtd-sync",
+    "extraPaths": ["scripts/lib/**"],
+    "extraTest": "test:scripts"
+  },
+  {
+    "dir": "eventbrite-sync",
+    "extraPaths": [
+      "scripts/lib/**",
+      "scripts/mark-read-only-columns.mjs"
+    ],
+    "sandbox": {}
+  },
+  {
+    "dir": "member-portal",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {}
+  },
+  {
+    "dir": "member-portal",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {
+      "config": "wrangler.writer.jsonc"
+    }
+  },
+  {
+    "dir": "funraise-sync",
+    "sandbox": {}
+  },
+  {
+    "dir": "geo-filter",
+    "extraPaths": ["scripts/lib/**"]
+  },
+  {
+    "dir": "mailchimp-sync",
+    "sandbox": {}
+  },
+  {
+    "dir": "monday-auth",
+    "extraPaths": ["scripts/lib/**"]
+  },
+  {
+    "dir": "monday-backup",
+    "sandbox": {}
+  },
+  {
+    "dir": "nearby-search",
+    "sandbox": {}
+  },
+  {
+    "dir": "people-reclassification",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {}
+  },
+  {
+    "dir": "contact-roles",
+    "extraPaths": ["scripts/lib/**"],
+    "extraTest": "test:scripts",
+    "sandbox": {}
+  },
+  {
+    "dir": "impact-attribution",
+    "extraPaths": ["scripts/lib/**"],
+    "extraTest": "test:scripts",
+    "sandbox": {}
+  },
+  {
+    "dir": "member-map",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {}
+  },
+  { "dir": "quickbooks-sync" },
+  {
+    "dir": "report-digests",
+    "extraPaths": ["scripts/lib/**"],
+    "sandbox": {}
+  },
+  {
+    "dir": "salesforce-import",
+    "extraPaths": ["scripts/lib/**"]
+  },
+  { "dir": "svbc-calendars" }
+]
