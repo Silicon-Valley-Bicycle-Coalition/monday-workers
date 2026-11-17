@@ -64,13 +64,14 @@ export async function setAnswerStates(
   updates: (AnswerKey & { state: AnswerState; orgItemId?: string | null })[],
   now: string,
 ): Promise<void> {
-  if (updates.length === 0) return;
   const set = db.prepare(
     `UPDATE employer_answers SET state = ?, org_item_id = CASE WHEN ? THEN ? ELSE org_item_id END, last_tried_at = ?
      WHERE source = ? AND source_id = ?`,
   );
-  await db.batch(updates.map((u) =>
-    set.bind(u.state, u.orgItemId === undefined ? 0 : 1, u.orgItemId ?? null, now, u.source, u.sourceId)));
+  for (let i = 0; i < updates.length; i += BATCH) {
+    await db.batch(updates.slice(i, i + BATCH).map((u) =>
+      set.bind(u.state, u.orgItemId === undefined ? 0 : 1, u.orgItemId ?? null, now, u.source, u.sourceId)));
+  }
 }
 
 // Records that the nightly run tried to resolve these and left them pending.

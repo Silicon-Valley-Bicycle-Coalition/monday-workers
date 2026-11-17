@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../../test/reset';
 import { pendingAnswers, setAnswerStates, touchPending, upsertAnswer } from './store';
 
@@ -49,5 +49,16 @@ describe('employer answers store', () => {
     await touchPending(env.DB, [{ source: 'eventbrite', sourceId: 'a1' }, { source: 'eventbrite', sourceId: 'a2' }], NOW);
     const { results } = await env.DB.prepare('SELECT source_id, last_tried_at FROM employer_answers ORDER BY source_id').all();
     expect(results).toEqual([{ source_id: 'a1', last_tried_at: NOW }, { source_id: 'a2', last_tried_at: '2026-01-01T00:00:00Z' }]);
+  });
+
+  it('setAnswerStates updates more than one D1 batch of rows', async () => {
+    const keys = Array.from({ length: 150 }, (_, i) => ({ source: 'eventbrite', sourceId: `k${i}` }));
+    for (const k of keys) await upsertAnswer(env.DB, { ...base, sourceId: k.sourceId });
+    const batch = vi.spyOn(env.DB, 'batch');
+    await setAnswerStates(env.DB, keys.map((k) => ({ ...k, state: 'skipped' as const })), NOW);
+    expect(batch).toHaveBeenCalledTimes(2);
+    batch.mockRestore();
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM employer_answers WHERE state = 'skipped' AND last_tried_at = ?").bind(NOW).first<{ n: number }>();
+    expect(row?.n).toBe(150);
   });
 });

@@ -59,13 +59,19 @@ export async function proposedPairs(db: D1Database): Promise<Set<string>> {
   return new Set(results.map((r) => pairKey(r.person_item_id, r.org_item_id)));
 }
 
+// Which evidence a Draft rests on (migration 0002).
+export type ProposalSources = 'matches' | 'answers' | 'both';
+
 export async function recordProposal(
   db: D1Database,
-  p: { personItemId: string; orgItemId: string; affiliationItemId: string; proposedStatus: 'Current' | 'Former'; matchCount: number },
+  p: {
+    personItemId: string; orgItemId: string; affiliationItemId: string; proposedStatus: 'Current' | 'Former'; matchCount: number;
+    sources: ProposalSources;
+  },
   now: string,
 ): Promise<void> {
   await db.prepare(
-    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, now).run();
+    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, sources, proposed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, p.sources, now).run();
 }

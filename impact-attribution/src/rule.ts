@@ -55,21 +55,27 @@ export function qualifyingPairs(matches: MatchRow[], rule: ImpactAttributionConf
 
 export interface SelectSkips { excludedOrgIds: Set<string>; existingPairs: Set<string>; proposedPairs: Set<string> }
 
+export type SkipReason = 'excluded' | 'existing' | 'proposed';
+
+// `skippedCandidates` lets the caller close the answers behind a skipped pair; `skipped` counts them.
 export function selectCandidates(all: Candidate[], skip: SelectSkips, max: number): {
-  chosen: Candidate[]; skipped: { excluded: number; existing: number; proposed: number }; deferred: number;
+  chosen: Candidate[]; skipped: Record<SkipReason, number>; skippedCandidates: Record<SkipReason, Candidate[]>; deferred: number;
 } {
-  const skipped = { excluded: 0, existing: 0, proposed: 0 };
+  const skippedCandidates: Record<SkipReason, Candidate[]> = { excluded: [], existing: [], proposed: [] };
   const eligible: Candidate[] = [];
   for (const c of all) {
     const key = pairKey(c.personItemId, c.orgItemId);
-    if (skip.excludedOrgIds.has(c.orgItemId)) skipped.excluded++;
-    else if (skip.existingPairs.has(key)) skipped.existing++;
-    else if (skip.proposedPairs.has(key)) skipped.proposed++;
+    if (skip.excludedOrgIds.has(c.orgItemId)) skippedCandidates.excluded.push(c);
+    else if (skip.existingPairs.has(key)) skippedCandidates.existing.push(c);
+    else if (skip.proposedPairs.has(key)) skippedCandidates.proposed.push(c);
     else eligible.push(c);
   }
+  const skipped = {
+    excluded: skippedCandidates.excluded.length, existing: skippedCandidates.existing.length, proposed: skippedCandidates.proposed.length,
+  };
   eligible.sort((x, y) => {
     if (x.proposedStatus !== y.proposedStatus) return x.proposedStatus === 'Current' ? -1 : 1;
     return x.latestEvidence < y.latestEvidence ? 1 : x.latestEvidence > y.latestEvidence ? -1 : 0;
   });
-  return { chosen: eligible.slice(0, max), skipped, deferred: Math.max(0, eligible.length - max) };
+  return { chosen: eligible.slice(0, max), skipped, skippedCandidates, deferred: Math.max(0, eligible.length - max) };
 }

@@ -26,6 +26,8 @@ describe('handleRecord', () => {
     ['non-numeric person', { personItemId: 'abc' }],
     ['empty sourceId', { sourceId: '' }],
     ['bad answeredAt', { answeredAt: '11/01/2026' }],
+    ['impossible answeredAt', { answeredAt: '2026-13-45' }],
+    ['answeredAt past the month end', { answeredAt: '2026-02-30' }],
     ['unknown source', { source: 'other' as 'eventbrite' }],
   ])('rejects %s as invalid', async (_n, over) => {
     expect(await handleRecord(env, config, input(over), NOW)).toEqual({ recorded: false, reason: 'invalid' });

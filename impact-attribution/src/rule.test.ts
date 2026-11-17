@@ -67,4 +67,16 @@ describe('selectCandidates', () => {
     expect(skipped).toEqual({ excluded: 1, existing: 1, proposed: 1 });
     expect(deferred).toBe(0);
   });
+
+  it('returns the skipped candidates grouped by reason', () => {
+    const all = [cand('a', 'foundation', 'Current', '2026-01-01'), cand('b', 'o', 'Current', '2026-01-01'), cand('c', 'o', 'Current', '2026-01-01')];
+    const { skippedCandidates } = selectCandidates(all, {
+      excludedOrgIds: new Set(['foundation']), existingPairs: new Set([pairKey('b', 'o')]), proposedPairs: new Set([pairKey('c', 'o')]),
+    }, 25);
+    expect({
+      excluded: skippedCandidates.excluded.map((c) => c.personItemId),
+      existing: skippedCandidates.existing.map((c) => c.personItemId),
+      proposed: skippedCandidates.proposed.map((c) => c.personItemId),
+    }).toEqual({ excluded: ['a'], existing: ['b'], proposed: ['c'] });
+  });
 });

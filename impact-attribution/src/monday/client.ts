@@ -5,6 +5,7 @@
 import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 import type { ImpactAttributionConfig } from '../config';
+import type { OrganizationCandidate } from '../employerName';
 import { pairKey, type MatchRow } from '../rule';
 import type { BoardMatchRead } from '../store';
 
@@ -14,6 +15,8 @@ export interface ImpactMondayClient {
   activeItems(ids: string[]): Promise<Map<string, string>>;
   createDraft(cfg: ImpactAttributionConfig['affiliations'], d: { name: string; personItemId: string; orgItemId: string; proposedStatus: 'Current' | 'Former' }): Promise<string>;
   postUpdate(itemId: string, body: string): Promise<void>;
+  // Exact-name lookup on the Organizations board; the caller compares normalised names.
+  findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]>;
 }
 
 export class ColumnLookupError extends Error {
@@ -68,6 +71,7 @@ const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs
 
 const COLUMN_VALUES = 'column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_items { id board { id } } } }';
 const ID_CHUNK = 100;
+const NAME_CHUNK = 100;
 
 const linksOf = (cv: RawColumnValue | undefined): { id: string; boardId: string }[] =>
   (cv?.linked_items ?? []).map((l) => ({ id: String(l.id), boardId: String(l.board?.id ?? '') }));
@@ -209,5 +213,23 @@ export class HttpMondayClient implements ImpactMondayClient {
       { itemId, body },
       { idempotent: false },
     );
+  }
+
+  // As member-portal's method of the same purpose: one items_page_by_column_values per 100 names,
+  // `any_of` on the name column (Monday's match is exact, hence the caller's name variants). An
+  // Organization found under two names is returned once.
+  async findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]> {
+    const unique = [...new Set(names)];
+    const found = new Map<string, OrganizationCandidate>();
+    for (let i = 0; i < unique.length; i += NAME_CHUNK) {
+      const data = await this.transport.request<{ items_page_by_column_values: { items: { id: string; name: string }[] } }>(
+        `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
+          items_page_by_column_values(board_id: $boardId, limit: 500, columns: $columns) { items { id name } }
+        }`,
+        { boardId, columns: [{ column_id: 'name', column_values: unique.slice(i, i + NAME_CHUNK) }] },
+      );
+      for (const item of data.items_page_by_column_values.items) found.set(String(item.id), { id: String(item.id), name: item.name });
+    }
+    return [...found.values()];
   }
 }

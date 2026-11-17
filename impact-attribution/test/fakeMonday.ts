@@ -50,6 +50,14 @@ export class FakeMonday {
       this.updates.push({ itemId: String(v.itemId), body: String(v.body) });
       return { create_update: { id: String(this.nextId++) } };
     }
+    if (query.includes('items_page_by_column_values')) {
+      // Exact match on the item name, as Monday's lookup is.
+      const columns = v.columns as { column_id: string; column_values: string[] }[];
+      if (columns.length !== 1 || columns[0]!.column_id !== 'name') throw new Error('fake: only a name lookup is supported');
+      const wanted = new Set(columns[0]!.column_values);
+      const items = this.board(v.boardId).items.filter((i) => wanted.has(i.name ?? `item ${i.id}`));
+      return { items_page_by_column_values: { cursor: null, items: items.map((i) => ({ id: i.id, name: i.name ?? `item ${i.id}` })) } };
+    }
     if (query.includes('next_items_page')) {
       const [boardId, start, params] = JSON.parse(String(v.cursor)) as [string, number, Params | null];
       return { next_items_page: this.page(this.board(boardId), start, v.columnIds as string[], params) };

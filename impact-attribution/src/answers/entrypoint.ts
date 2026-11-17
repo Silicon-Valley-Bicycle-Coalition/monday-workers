@@ -23,13 +23,21 @@ export type EmployerAnswerResult =
 
 const MAX_ANSWER_LENGTH = 200;
 
+// A real calendar date, not only the YYYY-MM-DD shape: 2026-13-45 and 2026-02-30 are refused.
+function isCalendarDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const date = new Date(Date.UTC(y!, m! - 1, d!));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m! - 1 && date.getUTCDate() === d;
+}
+
 function isValid(input: EmployerAnswerInput): boolean {
   return typeof input === 'object' && input !== null
     && input.source === 'eventbrite'
     && typeof input.sourceId === 'string' && input.sourceId.trim() !== ''
     && typeof input.personItemId === 'string' && /^\d+$/.test(input.personItemId)
     && typeof input.answer === 'string'
-    && typeof input.answeredAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.answeredAt)
+    && typeof input.answeredAt === 'string' && isCalendarDate(input.answeredAt)
     && typeof input.context === 'string';
 }
 
