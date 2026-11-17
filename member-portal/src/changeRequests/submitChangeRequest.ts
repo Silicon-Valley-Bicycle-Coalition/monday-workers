@@ -17,6 +17,7 @@ export const FIELD_LABELS: Record<ChangeRequestField, string> = {
   email: 'Email',
   phone: 'Phone',
   language: 'Preferred Language',
+  employer: 'Employer',
   emailOptOut: 'Email Opt-Out',
   smsOptOut: 'SMS Opt-Out',
   doNotMail: 'Do Not Mail',
@@ -43,6 +44,8 @@ export interface SubmitDeps {
   queue: { send(message: ChangeQueueMessage): Promise<void> };
   dedupeWindowHours: number;
   now: () => Date;
+  // employerAnswerEnabled(config): off, 'employer' is an unknown field like any other.
+  employerEnabled?: boolean;
 }
 
 function isChangeRequestField(value: string): value is ChangeRequestField {
@@ -58,7 +61,7 @@ export async function submitChangeRequest(
   if (!sessionDonorIds.includes(input.donorItemId)) {
     return { kind: 'invalid', message: 'Unknown donor record.' };
   }
-  if (!isChangeRequestField(input.field)) {
+  if (!isChangeRequestField(input.field) || (input.field === 'employer' && deps.employerEnabled !== true)) {
     return { kind: 'invalid', message: 'Unknown field.' };
   }
   const newValue = input.newValue.trim();
@@ -98,6 +101,7 @@ export async function submitChangeRequest(
       input.field === 'address' ? contact.address :
       input.field === 'email' ? contact.email :
       input.field === 'phone' ? contact.phone :
+      input.field === 'employer' ? contact.employer :
       contact.preferredLanguage;
   }
 

@@ -17,6 +17,9 @@ export interface MondayClient {
   // The ids linked from one board-relation column across several items, flattened (one request
   // per 100 items; none for an empty list).
   getLinkedItemIds(itemIds: string[], columnId: string): Promise<string[]>;
+  // Each item's label in one status column, keyed by item id (null when unset); one request per
+  // 100 items, none for an empty list.
+  getStatusLabels(itemIds: string[], columnId: string): Promise<Map<string, string | null>>;
   createItem(
     boardId: number,
     itemName: string,
@@ -89,6 +92,28 @@ export class HttpMondayClient implements MondayClient {
       for (const item of data.items) linked.push(...(item.column_values[0]?.linked_item_ids ?? []));
     }
     return linked;
+  }
+
+  async getStatusLabels(itemIds: string[], columnId: string): Promise<Map<string, string | null>> {
+    const labels = new Map<string, string | null>();
+    for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
+      const ids = itemIds.slice(i, i + ITEMS_BATCH_SIZE);
+      const data = await this.transport.request<{
+        items: { id: string; column_values: { label?: string | null }[] }[];
+      }>(
+        `query ($ids: [ID!], $columnId: [String!]) {
+          items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) {
+            id
+            column_values(ids: $columnId) {
+              ... on StatusValue { label }
+            }
+          }
+        }`,
+        { ids, columnId: [columnId] }
+      );
+      for (const item of data.items) labels.set(String(item.id), item.column_values[0]?.label ?? null);
+    }
+    return labels;
   }
 
   async createItem(

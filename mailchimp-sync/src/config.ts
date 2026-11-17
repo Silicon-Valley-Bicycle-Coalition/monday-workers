@@ -1,6 +1,6 @@
-import type { Config, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue'] as const;
+const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
 const REQUIRED_DONOR_COLUMNS: (keyof DonorColumnsConfig)[] = [
   'membershipStatus', 'membershipTier', 'memberSince', 'memberUntil',
@@ -75,6 +75,38 @@ function historicalBoard(value: unknown, donorsBoardId: number | null): Historic
   return { boardId: board.boardId, columns: columns as unknown as DonorColumnsConfig };
 }
 
+const nonEmptyString = (v: unknown): v is string => typeof v === 'string' && v !== '';
+
+function consentConfig(value: unknown): ConsentConfig {
+  const consent = requireObject(value, 'consent');
+  if (typeof consent.enabled !== 'boolean') throw new Error('config: "consent.enabled" must be true or false');
+  const max = consent.maxChangesPerRun;
+  if (typeof max !== 'number' || !Number.isInteger(max) || max <= 0) {
+    throw new Error('config: "consent.maxChangesPerRun" must be a positive integer');
+  }
+  if (!Array.isArray(consent.boards) || consent.boards.length === 0) {
+    throw new Error('config: "consent.boards" must be a non-empty array');
+  }
+  const boards = consent.boards.map((raw, i) => {
+    const board = requireObject(raw, `consent.boards[${i}]`);
+    if (!nonEmptyString(board.name) || typeof board.boardId !== 'number') {
+      throw new Error(`config: "consent.boards[${i}]" needs a name and a numeric boardId`);
+    }
+    if (!Array.isArray(board.pairs) || board.pairs.length === 0) {
+      throw new Error(`config: "consent.boards[${i}].pairs" must be a non-empty array`);
+    }
+    const pairs = board.pairs.map((p, j) => {
+      const pair = requireObject(p, `consent.boards[${i}].pairs[${j}]`);
+      if (!nonEmptyString(pair.emailColumn) || !nonEmptyString(pair.consentColumn)) {
+        throw new Error(`config: "consent.boards[${i}].pairs[${j}]" needs emailColumn and consentColumn ids`);
+      }
+      return { emailColumn: pair.emailColumn, consentColumn: pair.consentColumn };
+    });
+    return { name: board.name, boardId: board.boardId, pairs };
+  });
+  return { enabled: consent.enabled, maxChangesPerRun: max, boards };
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -145,5 +177,6 @@ export function validateConfig(raw: unknown): Config {
     lifetimeTierValue: cfg.lifetimeTierValue,
     activeStatusValue: cfg.activeStatusValue,
     dnsConfirmedValue: cfg.dnsConfirmedValue,
+    consent: consentConfig(cfg.consent),
   };
 }

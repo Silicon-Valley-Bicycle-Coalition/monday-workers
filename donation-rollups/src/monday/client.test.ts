@@ -471,7 +471,7 @@ describe('status columns read by stored value (label id 5)', () => {
     expect(page.items[0]!.values).toEqual(new Map([['fs', null], ['gs', '{"index":2}'], ['fq', null]]));
     expect(page.items[0]!.text.get('fs')).toBe('Other Program Revenue');
     const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { query: string };
-    expect(body.query).toMatch(/\{ id text value \.\.\. on BoardRelationValue \{ linked_item_ids \} \}/);
+    expect(body.query).toMatch(/\{ id text value \.\.\. on BoardRelationValue \{ display_value linked_item_ids \} \}/);
   });
   it('pageRecurringGifts reads a blank status as null even when its text is the id-5 label', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
@@ -567,6 +567,18 @@ describe('roll call board writes', () => {
     expect(item).toMatchObject({ id: '7', name: 'Ada', groupId: 'g26' });
     expect(item.linkedIds).toEqual(new Map([['people', ['2', '1']]]));
     expect(sent()[0]!.query).toMatch(/name group \{ id \}/);
+  });
+
+  it('pageItemsColumnsText reads a connect column\'s text from display_value, where Monday puts it', async () => {
+    // At API 2026-07 a board_relation cell's text and value are both null; the linked item names
+    // come only in display_value (production Donations, 2026-11-16, svbc-monday-migration#113).
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: '7', name: 'Gift', group: { id: 'g' },
+      column_values: [{ id: 'mb', text: null, value: null, display_value: 'Google, LLC', linked_item_ids: ['o1'] },
+        { id: 'none', text: null, value: null, display_value: '', linked_item_ids: [] }] }] } }] } });
+    const item = (await client.pageItemsColumnsText(1, ['mb', 'none'], null)).items[0]!;
+    expect(item.text.get('mb')).toBe('Google, LLC');
+    expect(item.text.get('none')).toBeNull();
+    expect(sent()[0]!.query).toMatch(/\.\.\. on BoardRelationValue \{ display_value linked_item_ids \}/);
   });
 
   it('listGroups, createGroup, updateGroupTitle, createItemInGroup, moveItemToGroup and deleteItem send their mutations', async () => {

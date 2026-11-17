@@ -46,11 +46,21 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
    daily pass (8 am Pacific, 7 am in winter) the
    [Mailchimp Campaigns (sandbox)](https://bikesiliconvalley.monday.com/boards/18439574436) board
    should show the change.
+7. **Consent columns.** In the SVBC Sandbox audience, unsubscribe a contact whose address is a
+   person's Personal or Household Email on People (sandbox v4), or a Work Email on
+   [Affiliations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342615). Within
+   the hour (the sync runs at five past), that item's matching **Email Consent** column should
+   say **Unsubscribed**. Resubscribing them in Mailchimp turns it back to **Subscribed** the
+   same way.
 
 ## Don't report these
 
 - A person not already in the audience is skipped; no contact is created. Not a bug.
-- Household Email and any second email address are not synced; only Personal Email is.
+- Household Email and any second email address are not synced to Mailchimp; only Personal Email
+  is. (Their consent columns do still follow Mailchimp, step 7.)
+- A consent column on an item with no address is left as it is, and an address Mailchimp has
+  archived or no longer holds keeps an Unsubscribed or Cleaned it already had. Both deliberate.
+- Editing a consent column by hand doesn't stick: the next hourly run puts Mailchimp's value back.
 - If someone changes their email address *in Mailchimp*, the sync skips them until staff update
   Monday to match.
 - Only People and People (Historical) are watched, not Organizations.

@@ -122,6 +122,15 @@ people sharing an inbox already receive each other's receipts, and explicit labe
 silent misattribution. Never fall into the accidental default (first match wins), which can show
 one family member another's giving history unlabeled.
 
+**Return-to after sign-in.** A signed-out GET of any `/<locale>/portal/...` page other than the
+dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
+(`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
+callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
+dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
+tree, with the language switcher's parser (issue #32); anything else is dropped. The footer
+language picker sends `location.pathname + location.search` as `to`, so switching language on the
+sign-in page keeps `next`.
+
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
 right fit for gating small internal tools to a handful of staff — it's licensed per seat, for
 members of an organization — but this needs to serve every donor with an email on file, not a
@@ -426,6 +435,12 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   template → the built-in copy *in their language* (`letterReady.*` keys exist across all ten
   locales). The subject line always follows the donor's language, and the magic link carries
   `&lang=<locale>` so the portal opens localized — same resolution as the login email.
+* **Employer ask (#127)** — while the portal's Employer field is on (`employerAnswerEnabled`),
+  every letter-ready email ends with one localized line, "Does your employer match gifts? Tell
+  us where you work.", linking to `/<locale>/portal/change-request?field=employer`. It's
+  appended after the body, built-in or template, so a template doesn't need (and can't drop) it.
+  The page is session-gated: a donor who clicks it before the login link signs in first and then
+  lands on the Employer field (return-to after sign-in, below).
 
 How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
 handler — no separate cron trigger): every day the Worker reads the settings board (one cheap
@@ -615,6 +630,75 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
    staff hold it; a fork needs its own subscription), then set
    `matchingGifts.doubleTheDonationPublicKey` to that **public** plugin key (never a private API
    key — this value is served to every logged-in browser). Done for SVBC; a fork sets its own.
+## v4.1 — Donor-supplied employer
+
+Design: `../docs/superpowers/specs/2026-11-16-donor-employer-answer-design.md` (issue #127). A
+donor can tell SVBC where they work, and an answer that names a known Organization becomes their
+employer affiliation without a staff step.
+
+* **Where:** an **Employer** option on the change-request page, beside Address, Email and Phone.
+  The current value shown is People → Employer Name. `/:locale/portal/change-request?field=employer`
+  preselects it; the matching-gifts page links there ("Tell us where you work…") but never shows
+  the donor's employer, so that page stays free of donor data.
+* **Submit:** the same path as every change request (D1 row, dedupe window, queue, write switch).
+  The D1 `field` is `employer`; no migration.
+* **Apply (writer):** `src/changeRequests/applyEmployer.ts`. The typed name is normalised (case,
+  punctuation, one trailing `Inc`/`LLC`/`Ltd`/`Corp`/`Corporation`/`Co`/`Company` dropped) and
+  looked up on Organizations by exact name, together with the common suffix spellings
+  (`Google` also finds `Google, LLC`). Then:
+  * **exactly one match:** that person's affiliation to it becomes Current and Primary (reused if
+    one exists, created otherwise). Any *other* Primary affiliation loses Primary only; its
+    Status never changes, because Primary on imported data is NPSP's general flag, not
+    "employer", and `contact-roles` reads Current affiliations. `donation-rollups`' `employerSync`
+    then sets People → Employer Name. The writer never writes Employer Name itself.
+  * **none, or several:** nothing is applied.
+* **Staff see every answer** on the Change Requests board, as an item named
+  `Employer change — <donor> (#<id>)` whose Field is one of `Employer (applied)` (New Value names
+  the Organization and any `(previous Primary: <org> (<its Status>))` for staff to mark Former if the
+  donor left), `Employer (no change)`, or `Employer (needs an Organization)` (the typed name, or
+  the matching Organizations when there are several). The log item is the last write, so a
+  retry after a partial run re-reads Monday and finishes rather than repeats.
+* **Write switch:** under `off` the Organization and affiliation reads still run and the
+  affiliation and log writes are skip lines; `hold` waits on the queue like any change request.
+* **Config** (`config/*.json`): `monday.columns.donorEmployer` (People → Employer Name) and
+  `changeRequests.employer` = `{ affiliationsBoardId, affiliationColumns: { personLink,
+  organizationLink, status, primary }, currentStatusLabel, personAffiliationsLink }` (People →
+  Affiliations link), the same ids `donation-rollups` uses. **Gated on `employerAnswerEnabled`:**
+  change requests on, the block non-null, `monday.organizationsBoardId` set and `donorEmployer`
+  not a placeholder. `local.json` ships it off.
+* **Access:** the writer's `SyncToken` identity now also writes the Affiliations board and reads
+  Organizations and Affiliations. It's the one integration user, so no setup step, but the
+  writer is no longer write-only-to-Change-Requests.
+* **Sandbox check, before turning it on in production:** with a test person whose Current,
+  Primary affiliation is at org A, submit org B's exact name, then a made-up name. Expect B
+  Current and Primary, A still Current with Primary off, Employer Name updated by
+  `employerSync`, and two Change Requests items (`applied` naming A, `needs an Organization`).
+  This also confirms the unverified write shapes: a status `{ label }`, a checkbox
+  `{ checked: "true" }`, and clearing a checkbox with `null`. **Also confirm the mirror column:**
+  open the new affiliation for B and check it appears in the test person's Affiliations column
+  (`personAffiliationsLink`) straight away. The writer's only guard against a duplicate
+  affiliation on a retry is reading that column, so it must be the two-way mirror of the
+  affiliation's Person column (`personLink`) and must not lag past the queue's 60 s retry delay.
+  Archived and deleted affiliations are ignored, as in `donation-rollups`.
+* **Sandbox check result (2026-11-17): passed, after one Monday fix.** The People → Affiliations
+  column the Salesforce import made was one-way (the import filled both sides itself), so an
+  affiliation created later never appeared in it: Employer Name didn't move and the duplicate
+  guard was blind. Fix: turn on two-way connection (`allowCreateReflectionColumn: true` via
+  `update_column`, in place) on the Affiliations board's Person column. Monday adds a reverse
+  column on People and People (Historical), already filled from every existing link (sandbox:
+  identical to the old column for all 1,765 + 3,471 linked people). Rename the old column to
+  `Affiliations (old one-way)` and the new one to `Affiliations` (title lookups such as
+  `link-employers-to-organizations.mjs` find it by name), then point `personAffiliationsLink`
+  here and `donation-rollups`' `employerSync.ownerColumnsByBoard.*.affiliationsLink` at the new
+  ids. Re-run: the same answer twice gave `no change` with no duplicate, a new employer moved
+  Primary, and `employerSync` set Employer Name within 30 s. **Production done the same way
+  (2026-11-17):** new columns People `board_relation_mm96jvj6`, People (Historical)
+  `board_relation_mm96q5g6`. They add links the old columns had missed (27 + 1 people) and drop
+  one: Alex McIntyre's City of San Bruno affiliation points its Person at his People (Historical)
+  record, not the People copy made on 2026-11-13, which the old column alone listed (staff to
+  decide whether to move it). Delete the `Affiliations (old one-way)` columns once production is
+  verified.
+
 ## v5 — Event registrations
 
 From the IT Requests board (["Member portal: event

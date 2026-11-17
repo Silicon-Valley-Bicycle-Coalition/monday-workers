@@ -37,7 +37,12 @@ export class CloudflareEmailSender implements EmailSender {
     const rendered = template
       ? renderLetterEmailBody(template, { donorName: params.donorName, year: params.year, loginUrl: params.loginUrl })
       : this.defaultLetterReadyBody(params);
-    const body = renderEmailLayout({ bodyHtml: rendered.html, bodyText: rendered.text, logoUrl: this.logoUrl });
+    const employer = params.employerUrl ? this.employerAsk(params.locale, params.employerUrl) : null;
+    const body = renderEmailLayout({
+      bodyHtml: employer ? rendered.html + employer.html : rendered.html,
+      bodyText: employer ? `${rendered.text}\n\n${employer.text}` : rendered.text,
+      logoUrl: this.logoUrl,
+    });
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },
@@ -48,6 +53,18 @@ export class CloudflareEmailSender implements EmailSender {
       html: body.html,
       text: body.text,
     });
+  }
+
+  // Issue #127: donors request employer matches for last year's gifts in January–February, when
+  // this email goes out. Appended after the body — staff template or built-in — so the letter
+  // stays the first ask, and outside the template so staff can't drop it by accident.
+  private employerAsk(locale: SendLetterReadyEmailParams['locale'], employerUrl: string): { html: string; text: string } {
+    const prompt = t(locale, 'letterReady.employerPrompt');
+    const link = t(locale, 'letterReady.employerLink');
+    return {
+      html: `<p>${prompt} <a href="${escapeHtml(employerUrl)}">${link}</a></p>`,
+      text: `${prompt}\n${link}: ${employerUrl}`,
+    };
   }
 
   private defaultLetterReadyBody(params: SendLetterReadyEmailParams): { html: string; text: string } {

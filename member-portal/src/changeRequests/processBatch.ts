@@ -6,6 +6,7 @@ import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 import { logDebug, messageDisposition } from '../flags';
 import { dryRunChangeDeps, type BatchSkipContext } from '../writeSwitch';
 import { errorText } from '../logSafe';
+import { applyEmployerAnswer } from './applyEmployer';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
@@ -114,14 +115,18 @@ async function processOne(requestId: number, deps: ProcessChangeBatchDeps): Prom
     return;
   }
 
+  // An employer answer is applied before it's logged; the log item is the last write, so finding
+  // it above means the whole request is done. Other fields are logged for staff to apply by hand.
+  const logged = row.field === 'employer' ? await applyEmployerAnswer(row, deps) : { fieldLabel, newValue: row.newValue };
+
   await deps.monday.createChangeRequestItem({
     boardId,
     columns: deps.config.changeRequests.columns,
     itemName,
     donorItemId: row.donorItemId,
-    fieldLabel,
+    fieldLabel: logged.fieldLabel,
     oldValue: row.oldValue,
-    newValue: row.newValue,
+    newValue: logged.newValue,
     // Use the row's own submission time, not "now" — this consumer may be processing a retry
     // or a DLQ replay well after the donor actually submitted (see Finding 2).
     submittedAtISO: row.createdAt,

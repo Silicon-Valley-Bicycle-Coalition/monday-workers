@@ -66,5 +66,49 @@
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",
-  "dnsConfirmedValue": "Confirmed"
+  "dnsConfirmedValue": "Confirmed",
+  "consent": {
+    "enabled": true,
+    "maxChangesPerRun": 500,
+    "boards": [
+      {
+        "name": "People",
+        "boardId": 18437909781,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8nx6qg",
+            "consentColumn": "color_mm8ntb35"
+          },
+          {
+            "emailColumn": "email_mm8n2wzk",
+            "consentColumn": "color_mm8nh158"
+          }
+        ]
+      },
+      {
+        "name": "People (Historical)",
+        "boardId": 18437909784,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8nfyfc",
+            "consentColumn": "color_mm8ngfkm"
+          },
+          {
+            "emailColumn": "email_mm8np26g",
+            "consentColumn": "color_mm8nz8gk"
+          }
+        ]
+      },
+      {
+        "name": "Affiliations",
+        "boardId": 18437909787,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8ndy69",
+            "consentColumn": "color_mm8nb7dq"
+          }
+        ]
+      }
+    ]
+  }
 }

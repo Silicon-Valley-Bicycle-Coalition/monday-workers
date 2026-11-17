@@ -130,6 +130,6 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-quickbooks-sync');
     expect((wrangler.triggers as Json).crons).toEqual(['30 9 * * *']);
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 });

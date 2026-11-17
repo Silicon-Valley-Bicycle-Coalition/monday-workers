@@ -16,7 +16,7 @@ const REQUIRED_DONATIONS_COLUMNS = [
 ] as const;
 
 const REQUIRED_PEOPLE_COLUMNS = ['personalEmail', 'householdEmail', 'employer'] as const;
-const REQUIRED_AFFILIATIONS_COLUMNS = ['person', 'organization', 'workEmail'] as const;
+const REQUIRED_AFFILIATIONS_COLUMNS = ['person', 'organization', 'workEmail', 'status'] as const;
 const REQUIRED_WORKLIST_COLUMNS = ['reason', 'name', 'email', 'company', 'amount', 'date'] as const;
 const REQUIRED_RETRY_LABELS = ['needsReview', 'retry', 'queued', 'done'] as const;
 
@@ -81,6 +81,7 @@ export function validateConfig(raw: unknown): BenevityImportConfig {
 
   const affiliationsColumns = requireObject(benevityImport.affiliationsColumns, 'benevityImport.affiliationsColumns');
   requireStringFields(affiliationsColumns, REQUIRED_AFFILIATIONS_COLUMNS, 'benevityImport.affiliationsColumns');
+  requireNonEmptyString(benevityImport.affiliationsCurrentLabel, 'benevityImport.affiliationsCurrentLabel');
 
   const uploadsBoard = requireObject(benevityImport.uploadsBoard, 'benevityImport.uploadsBoard');
   requireNonEmptyString(uploadsBoard.fileColumn, 'benevityImport.uploadsBoard.fileColumn');

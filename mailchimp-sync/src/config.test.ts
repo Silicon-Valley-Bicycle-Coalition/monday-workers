@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
+import production from '../config/svbc.json';
 
 function validRaw() {
   return {
@@ -29,6 +30,11 @@ function validRaw() {
     lifetimeTierValue: 'Lifetime',
     activeStatusValue: 'Active',
     dnsConfirmedValue: 'Confirmed',
+    consent: {
+      enabled: true,
+      maxChangesPerRun: 500,
+      boards: [{ name: 'People', boardId: 1, pairs: [{ emailColumn: 'e1', consentColumn: 'k1' }] }] as unknown[],
+    } as Record<string, unknown>,
   };
 }
 
@@ -197,5 +203,45 @@ describe('validateConfig: monday.historical', () => {
 
   it('needs the People board, since People owns an address both boards hold', () => {
     expect(() => validateConfig(withHistorical({ boardId: 222, columns: COLUMNS }, null))).toThrow('monday.donorsBoardId');
+  });
+});
+
+describe('validateConfig: consent', () => {
+  it('validates the consent block', () => {
+    const config = validateConfig(production);
+    expect(config.consent.boards.map((b) => b.boardId)).toEqual([18437909781, 18437909784, 18437909787]);
+    expect(config.consent.enabled).toBe(true);
+    expect(config.consent.maxChangesPerRun).toBe(500);
+    expect(config.consent.boards[2]!.pairs).toEqual([{ emailColumn: 'email_mm8ndy69', consentColumn: 'color_mm8nb7dq' }]);
+  });
+
+  it('rejects a missing consent block', () => {
+    const raw = validRaw() as Record<string, unknown>;
+    delete raw.consent;
+    expect(() => validateConfig(raw)).toThrow(/consent/);
+  });
+
+  it('rejects a board with no pairs', () => {
+    const raw = validRaw();
+    raw.consent.boards = [{ name: 'People', boardId: 1, pairs: [] }];
+    expect(() => validateConfig(raw)).toThrow(/consent/);
+  });
+
+  it('rejects a pair with a blank column id', () => {
+    const raw = validRaw();
+    raw.consent.boards = [{ name: 'People', boardId: 1, pairs: [{ emailColumn: '', consentColumn: 'k1' }] }];
+    expect(() => validateConfig(raw)).toThrow(/consent/);
+  });
+
+  it('rejects a non-positive maxChangesPerRun', () => {
+    const raw = validRaw();
+    raw.consent.maxChangesPerRun = 0;
+    expect(() => validateConfig(raw)).toThrow(/consent/);
+  });
+
+  it('rejects a non-boolean enabled', () => {
+    const raw = validRaw();
+    raw.consent.enabled = 'yes';
+    expect(() => validateConfig(raw)).toThrow(/consent/);
   });
 });

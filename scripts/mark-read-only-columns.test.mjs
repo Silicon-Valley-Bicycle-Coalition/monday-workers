@@ -74,6 +74,10 @@ describe('MARKED_COLUMNS', () => {
     assert.ok(MARKED_COLUMNS.Donations.locked.includes('Funding Stream'));
   });
 
+  it('locks Proposed status (impact-attribution) on Affiliations', () => {
+    assert.ok(MARKED_COLUMNS.Affiliations.locked.includes('Proposed status'));
+  });
+
   it('never lists a title as both 🔒 and 📜 on one board', () => {
     for (const [name, { locked, history }] of Object.entries(MARKED_COLUMNS)) {
       const both = locked.filter((t) => history.includes(t));
@@ -83,6 +87,13 @@ describe('MARKED_COLUMNS', () => {
 
   it('locks the Send event email link on Events', () => {
     assert.ok(MARKED_COLUMNS.Events.locked.includes('Send event email'));
+  });
+
+  it('locks the Email Consent columns mailchimp-sync keeps current', () => {
+    for (const board of ['People', 'People (Historical)']) {
+      for (const title of ['Personal Email Consent', 'Household Email Consent']) assert.ok(MARKED_COLUMNS[board].locked.includes(title), `${board}: ${title}`);
+    }
+    assert.ok(MARKED_COLUMNS.Affiliations.locked.includes('Work Email Consent'));
   });
 
   it('locks what dtd-sync writes, on both People boards and Donations', () => {

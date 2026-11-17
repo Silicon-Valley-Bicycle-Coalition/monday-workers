@@ -7,8 +7,8 @@ machine, never in the Worker.
 > **Status: not yet rehearsed.** The procedure and tool are unit-tested against mocked APIs only.
 > The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue #30.
 > The sandbox backup works (first complete snapshot 2026-11-10, run 46; first encrypted one
-> 2026-11-16, run 54); seeding the sandbox
-> (step 2) is what's left before the rehearsal can run. Until it has been done once, treat
+> 2026-11-16, run 54), and the sandbox is seeded (run 55 has the seed); the restore itself
+> (step 5 of the rehearsal) is what's left. Until it has been done once, treat
 > any real restore as a first run: dry-run first, restore into an empty workspace, verify.
 
 ## What comes back, and what doesn't
@@ -183,14 +183,28 @@ Do this once end to end in the sandbox, then record the result below and close i
    got its own `BACKUP_ENCRYPTION_KEY` on 2026-11-16 (kept in the operator's password manager,
    `keyId` `4b115f081c9eb7a1`); run 54 that day was the first encrypted one: `monday-backup/3`,
    34 boards, 58,345 items, `errors: []`, 70 minutes.
-2. Seed the sandbox boards with representative data. v4 already has several groups, the
-   production column types and connect-boards columns, from the load rehearsal. As of 2026-11-10
-   it has **no** subitems, no archived board, no Doc, and only a handful of updates (none checked
-   for replies). Add: subitems on a few items, an update with replies, one archived board, and a
-   Doc longer than 100 blocks with nested lists. Seed a copy, not a board other Workers write to.
+2. Seed the sandbox boards with representative data. Done 2026-11-16, all synthetic
+   (`example.org` addresses, "Drill donor NN"), on boards no Worker writes to:
+   * *Restore drill seed (sandbox v4)* `18440274843`: 12 items in 2 groups; status, dropdown,
+     date, numbers, text, long text, email, link, checkbox, and a connect-boards column to
+     Campaigns (sandbox v4) with one- and two-item links; 6 subitems on 3 items (subitems board
+     `18440274955`), one with its own update; 4 item updates, 2 of them with replies (3 replies).
+   * *Restore drill archived (sandbox v4)* `18440274846`: 3 items and an update, then archived.
+   * *Restore drill doc (sandbox v4)*, doc `50403822` (object `18440275037`): about 156 blocks
+     (headings, text with bold/italic/links, bulleted lists nested 3 deep, numbered lists with
+     sub-steps, quotes), last block "The final block of the drill doc…". Monday stores list
+     nesting as `indentation` inside each block's content, not as `parent_block_id`.
+
+   v4 also has real-shaped subitems by now (Sponsorships (sandbox v4), about 3,000), and other
+   rehearsals add boards to it; leave those alone and restore the drill boards plus Campaigns.
 3. Take a snapshot: deploy (`npm run deploy:sandbox`) and wait for the 09:00 UTC run, or trigger one
-   with `npx wrangler workflows trigger svbc-monday-backup-snapshot-sandbox`.
-4. Confirm the run folder and a `manifest.json` with `errors: []`.
+   with `npx wrangler workflows trigger svbc-monday-backup-snapshot-sandbox`. Done 2026-11-16,
+   run 55 (`monday-backup/3`, 42 boards, 1 doc, 64 minutes).
+4. Confirm the run folder and a `manifest.json` with `errors: []`. Done: run 55 has every seed
+   object (`18440274843` 12 items and 4 updates, `18440274955` 6 and 1, `18440274846` 3 and 1,
+   doc `50403822` 156 blocks). The doc's object id `18440275037` is also listed as a board with
+   1 item, because Monday backs a workspace doc with a `document`-type board; the restore skips
+   those and rebuilds the doc from its `doc-` file, so the dry run should list it once.
 5. Create an empty workspace for the rehearsal and follow steps 2–5 above against it (dry run
    first). Narrow it with `--boards` (the seeded boards plus a mid-sized one such as Campaigns,
    2,817 items): a full v4 restore is about one API call per item, roughly 54,000. Monday has

@@ -43,7 +43,9 @@
   "mailchimp": {
     "apiBaseUrl": "https://us9.api.mailchimp.com/3.0",
     "audienceId": "dfe12eec72",
-    "interestCategoryIds": ["5eb58384e1"],
+    "interestCategoryIds": [
+      "5eb58384e1"
+    ],
     "mergeFields": {
       "memberSince": "MEMBSINCE",
       "memberUntil": "MEMBUNTIL",
@@ -64,5 +66,49 @@
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",
-  "dnsConfirmedValue": "Confirmed"
+  "dnsConfirmedValue": "Confirmed",
+  "consent": {
+    "enabled": true,
+    "maxChangesPerRun": 500,
+    "boards": [
+      {
+        "name": "People",
+        "boardId": 18437342592,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8h4kkb",
+            "consentColumn": "color_mm8h9ee2"
+          },
+          {
+            "emailColumn": "email_mm8hj3f8",
+            "consentColumn": "color_mm8hkgaa"
+          }
+        ]
+      },
+      {
+        "name": "People (Historical)",
+        "boardId": 18437342607,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8h8jbh",
+            "consentColumn": "color_mm8h4dfr"
+          },
+          {
+            "emailColumn": "email_mm8hzsdg",
+            "consentColumn": "color_mm8hmyx1"
+          }
+        ]
+      },
+      {
+        "name": "Affiliations",
+        "boardId": 18437342615,
+        "pairs": [
+          {
+            "emailColumn": "email_mm8h6cxh",
+            "consentColumn": "color_mm8hz58t"
+          }
+        ]
+      }
+    ]
+  }
 }

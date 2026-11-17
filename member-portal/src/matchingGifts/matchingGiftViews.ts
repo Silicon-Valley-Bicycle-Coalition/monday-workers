@@ -116,12 +116,20 @@ export interface MatchingGiftsViewOptions {
   publicApiKey: string | null;
   // SVBC's EIN from taxLetter config; null while that's still REPLACE_AFTER_SIGNOFF.
   ein: string | null;
+  // The portal's employer form (change-request page, Employer preselected); null or absent while
+  // employerAnswerEnabled is off.
+  employerFormUrl?: string | null;
 }
 
 // Still renders no donor PII, as a second line of defence behind the sandbox: this is the page
 // that frames third-party JS, so keep it to headings and static guidance.
 export function matchingGiftsView(options: MatchingGiftsViewOptions, locale: Locale): string {
   const einLine = options.ein === null ? '' : `<p>${escapeHtml(t(locale, 'matchingGifts.einLine', { ein: options.ein }))}</p>`;
+  // A link only, never the donor's employer: this page stays free of donor data (see above).
+  const employerLine =
+    (options.employerFormUrl ?? null) === null
+      ? ''
+      : `<p>${escapeHtml(t(locale, 'matchingGifts.employerPrompt'))} <a href="${escapeHtml(options.employerFormUrl!)}">${escapeHtml(t(locale, 'matchingGifts.employerLink'))}</a></p>`;
   const search =
     options.publicApiKey === null
       ? `<p>${escapeHtml(t(locale, 'matchingGifts.searchUnavailable'))}</p>`
@@ -131,6 +139,7 @@ export function matchingGiftsView(options: MatchingGiftsViewOptions, locale: Loc
     <p>${escapeHtml(t(locale, 'matchingGifts.intro'))}</p>
     <p>${escapeHtml(t(locale, 'matchingGifts.howTo'))}</p>
     ${einLine}
+    ${employerLine}
     ${search}
     ${backToPortalLink(locale)}
   `;

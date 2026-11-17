@@ -212,7 +212,7 @@ function rateLimitErrorFrom(err: unknown): MondayRateLimitError | null {
   return new MondayRateLimitError(err.message, retryInSeconds, err.code === 'DAILY_LIMIT_EXCEEDED', err);
 }
 
-interface ColumnValue { id: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
+interface ColumnValue { id: string; text: string | null; value?: string | null; display_value?: string | null; linked_item_ids?: string[] }
 
 // A status cell's label, or null when the cell is empty. Read status columns with this, never
 // by text alone: Monday returns label id 5's text for an EMPTY status cell, so a column with a
@@ -705,7 +705,10 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   }
 
   // Each column's text and raw stored value (null for an empty cell); read status columns
-  // through statusLabel(text, value), not text alone.
+  // through statusLabel(text, value), not text alone. A connect (board_relation) column's text
+  // is its linked item names: Monday returns text: null for those at API 2026-07 and puts the
+  // names only in display_value, so that's read instead — without it, classify's Matched By
+  // Company saw every gift as unlinked and never wrote (svbc-monday-migration#113).
   async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null, opts: { requireBoard?: boolean } = {}):
     Promise<{ items: ItemColumns[]; cursor: string | null }> {
     const data: { boards: { items_page: { cursor: string | null;
@@ -714,7 +717,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
             items_page(limit: 500, cursor: $cursor) { cursor items { id name group { id }
-              column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
+              column_values(ids: $columnIds) { id text value ... on BoardRelationValue { display_value linked_item_ids } } } }
           }
         }`,
         { boardId: [boardId], columnIds, cursor },
@@ -729,7 +732,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const values = new Map<string, string | null>(columnIds.map((id) => [id, null]));
         const linkedIds = new Map<string, string[]>();
         for (const cv of item.column_values) {
-          text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+          const t = cv.text || cv.display_value;
+          text.set(cv.id, t === null || t === undefined || t === '' ? null : t);
           values.set(cv.id, cv.value ?? null);
           if (cv.linked_item_ids !== undefined) linkedIds.set(cv.id, cv.linked_item_ids);
         }

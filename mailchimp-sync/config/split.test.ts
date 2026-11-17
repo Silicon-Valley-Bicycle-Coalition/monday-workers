@@ -85,6 +85,18 @@ describe('config split: Monday ids', () => {
   });
 });
 
+describe('config split: consent boards', () => {
+  it('the two configs never share a consent board id', () => {
+    const prodIds = production.consent.boards.map((b) => b.boardId);
+    for (const board of sandbox.consent.boards) expect(prodIds).not.toContain(board.boardId);
+  });
+
+  it('consent is enabled in both environments', () => {
+    expect(sandbox.consent.enabled).toBe(true);
+    expect(production.consent.enabled).toBe(true);
+  });
+});
+
 describe('wrangler.jsonc env.sandbox', () => {
   it('sets only the ENVIRONMENT var, and never at the top level', () => {
     expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
@@ -146,7 +158,7 @@ describe('wrangler.jsonc env.sandbox', () => {
   });
 
   it('keeps the same cron schedule as production and derives its own name', () => {
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-mailchimp-sync');
   });

@@ -54,7 +54,7 @@
           "migrations_dir": "migrations"
         }
       ],
-      "triggers": { "crons": ["*/30 * * * *"] },
+      "triggers": { "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */ },
       "vars": {
         "ENVIRONMENT": "sandbox",
         // Off by default, like production; turn it on only while verifying (README "Measuring ... probe").

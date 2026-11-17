@@ -320,3 +320,70 @@ describe('consumeChangeQueueBatch (write switch)', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('employer rows', () => {
+  const employer = {
+    affiliationsBoardId: 555,
+    affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' },
+    currentStatusLabel: 'Current',
+    personAffiliationsLink: 'pa',
+  };
+  const employerConfig: Config = { ...config, changeRequests: { ...config.changeRequests, employer } };
+  const employerRow: ChangeRequestRow = { ...row, field: 'employer', oldValue: 'Acme', newValue: 'Google' };
+
+  function employerMonday(existingItem: string | null = null): MondayClient {
+    return {
+      findChangeRequestItem: vi.fn().mockResolvedValue(existingItem),
+      createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+      findOrganizationsByNames: vi.fn().mockResolvedValue([{ id: '501', name: 'Google' }]),
+      getPersonAffiliations: vi.fn().mockResolvedValue([]),
+      createAffiliation: vi.fn().mockResolvedValue(undefined),
+      updateAffiliation: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MondayClient;
+  }
+
+  it('applies the answer, then logs it under the fixed Employer item name', async () => {
+    const store = fakeStore(employerRow);
+    const monday = employerMonday();
+    const message = makeMessage(42);
+
+    await processChangeQueueBatch([message], { store, monday, config: employerConfig });
+
+    expect(monday.createAffiliation).toHaveBeenCalledOnce();
+    expect(monday.createChangeRequestItem).toHaveBeenCalledWith(
+      expect.objectContaining({ itemName: 'Employer change — Jane Example (#42)', fieldLabel: 'Employer (applied)', oldValue: 'Acme', newValue: 'Google' })
+    );
+    expect(store.markWritten).toHaveBeenCalledWith(42, expect.any(String));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('adopts an existing log item without applying again', async () => {
+    const store = fakeStore(employerRow);
+    const monday = employerMonday('77');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await processChangeQueueBatch([makeMessage(42)], { store, monday, config: employerConfig });
+    log.mockRestore();
+
+    expect(monday.findOrganizationsByNames).not.toHaveBeenCalled();
+    expect(monday.createAffiliation).not.toHaveBeenCalled();
+    expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
+    expect(store.markWritten).toHaveBeenCalled();
+  });
+
+  it('under off records the affiliation and log writes as skips and makes none', async () => {
+    const store = fakeStore(employerRow);
+    const monday = employerMonday();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const gate: BatchSkipContext = { worker: 'member-portal', environment: 'production', mode: 'off', logLevel: 'normal', piiKeys: [] };
+
+    await consumeChangeQueueBatch([makeMessage(42)], { store, monday, config: employerConfig }, gate);
+
+    expect(monday.findOrganizationsByNames).toHaveBeenCalled();
+    expect(monday.createAffiliation).not.toHaveBeenCalled();
+    expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
+    const ops = log.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((line) => line.writeSwitch === 'skipped').map((line) => line.operation);
+    expect(ops).toEqual(['createAffiliation', 'createChangeRequestItem']);
+    log.mockRestore();
+  });
+});

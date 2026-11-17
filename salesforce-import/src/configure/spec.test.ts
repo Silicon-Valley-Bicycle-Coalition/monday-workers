@@ -93,6 +93,11 @@ describe('Events send link', () => {
 describe('BOARD_SPECS views', () => {
   const all = Object.entries(BOARD_SPECS).flatMap(([board, s]) => (s.views ?? []).map((v) => ({ board, v })));
 
+  it('Drafts to confirm shows the Current/Former that impact-attribution proposed', () => {
+    const view = BOARD_SPECS['affiliations']!.views!.find((v) => v.name === 'Drafts to confirm')!;
+    expect(view.columns).toEqual(['Person', 'Organization', 'Proposed status', 'Affiliation Role', 'Start', 'Work Email']);
+  });
+
   it('every view has exactly one tag', () => {
     for (const { board, v } of all) expect(v.tag, `${board} / ${v.name}`).toMatch(/^(Worklist|Report|Reference)$/);
   });

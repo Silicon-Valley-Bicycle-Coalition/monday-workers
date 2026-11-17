@@ -1,6 +1,8 @@
 import type { MondayClient } from './client';
+import type { AffiliationRecord, OrganizationCandidate } from '../changeRequests/employer';
 import type {
   ChangeRequestColumns,
+  EmployerAnswerConfig,
   DiscountOrganization,
   DonationRecord,
   DonorContactInfo,
@@ -175,6 +177,7 @@ export class FakeMondayClient implements MondayClient {
       address: donor.address,
       phone: donor.phone,
       preferredLanguage: donor.preferredLanguage,
+      employer: '',
       // No communication-preference columns configured for local preview — same "not
       // knowable yet" null the real client returns for an unconfigured column.
       emailOptOut: null,
@@ -238,5 +241,22 @@ export class FakeMondayClient implements MondayClient {
       `[fakeMondayClient] would create change-request item on board ${params.boardId}: ` +
         `donor ${params.donorItemId} — ${params.fieldLabel}: "${params.oldValue}" -> "${params.newValue}"`
     );
+  }
+
+  // Local preview has no Organizations or Affiliations data: every employer answer goes to staff.
+  async findOrganizationsByNames(_params: { boardId: number; names: string[] }): Promise<OrganizationCandidate[]> {
+    return [];
+  }
+
+  async getPersonAffiliations(_params: { donorItemId: string; employer: EmployerAnswerConfig }): Promise<AffiliationRecord[]> {
+    return [];
+  }
+
+  async createAffiliation(params: { employer: EmployerAnswerConfig; itemName: string; donorItemId: string; organizationItemId: string }): Promise<void> {
+    console.log(`[fakeMondayClient] would create affiliation: donor ${params.donorItemId} -> organization ${params.organizationItemId}`);
+  }
+
+  async updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void> {
+    console.log(`[fakeMondayClient] would update affiliation ${params.itemId}: makeCurrent=${params.makeCurrent} primary=${params.primary}`);
   }
 }

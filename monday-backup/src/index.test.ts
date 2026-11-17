@@ -67,12 +67,12 @@ describe('worker entry point', () => {
     ).rejects.toThrow('ENVIRONMENT');
   });
 
-  it('wrangler.jsonc schedules both the nightly backup and the hourly watchdog, in both environments', () => {
+  it('wrangler.jsonc schedules the nightly backup and hourly watchdog in production only', () => {
     const wrangler = parseJsonc(wranglerText) as Json;
     const sandbox = (wrangler.env as Json).sandbox as Json;
-    for (const block of [wrangler, sandbox]) {
-      expect((block.triggers as Json).crons).toEqual([BACKUP_CRON, WATCHDOG_CRON]);
-    }
+    expect((wrangler.triggers as Json).crons).toEqual([BACKUP_CRON, WATCHDOG_CRON]);
+    // Sandbox crons are disabled to save cost; run handlers manually when testing.
+    expect((sandbox.triggers as Json).crons).toEqual([]);
   });
 
   it('routes the watchdog cron to the watchdog, not a backup run', async () => {

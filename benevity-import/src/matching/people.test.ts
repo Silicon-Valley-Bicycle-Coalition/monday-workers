@@ -12,7 +12,8 @@ function fakeConfig(): BenevityImportConfig {
       donationsColumns: {} as never,
       organizationsNameColumn: 'name',
       peopleColumns: { personalEmail: 'personal_email', householdEmail: 'household_email', employer: 'employer' },
-      affiliationsColumns: { person: 'person_link', organization: 'org_link', workEmail: 'work_email' },
+      affiliationsColumns: { person: 'person_link', organization: 'org_link', workEmail: 'work_email', status: 'aff_status' },
+      affiliationsCurrentLabel: 'Current',
       uploadsBoard: {} as never,
       organizationAliases: {},
       rawRowRetentionDays: 90,
@@ -26,6 +27,8 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     findItemsByColumnValue: vi.fn().mockResolvedValue([]),
     findItemsByName: vi.fn().mockResolvedValue([]),
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
+    // Every affiliation is Current unless a test says otherwise.
+    getStatusLabels: vi.fn((ids: string[]) => Promise.resolve(new Map(ids.map((id) => [id, 'Current'] as [string, string | null])))),
     createItem: vi.fn(),
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn(),
@@ -164,5 +167,50 @@ describe('resolvePerson', () => {
     expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'org_link')).toHaveLength(1);
     expect(findItemsByColumnValue.mock.calls.filter(([, columnId]) => columnId === 'employer')).toHaveLength(1);
     expect(getLinkedItemIds).toHaveBeenCalledTimes(1);
+  });
+
+  describe('counts Current affiliations only (#124)', () => {
+    const labels = (map: Record<string, string | null>) =>
+      vi.fn((ids: string[]) => Promise.resolve(new Map(ids.map((id) => [id, map[id] ?? null] as [string, string | null]))));
+    const emailRow = { company: 'Acme', donorFirstName: 'Jordan', donorLastName: 'Rivera', email: 'jordan@acme.example' };
+    const nameRow = { ...emailRow, email: 'Not shared by donor' };
+
+    for (const label of ['Draft', 'Former']) {
+      it(`ignores a ${label} affiliation's Work Email`, async () => {
+        const getLinkedItemIds = vi.fn((ids: string[]) => Promise.resolve(ids.length > 0 ? ['p1'] : []));
+        const monday = fakeMondayClient({
+          findItemsByColumnValue: vi.fn((boardId, columnId) =>
+            columnId === 'work_email' ? Promise.resolve([{ id: 'a1', name: 'A' }]) : Promise.resolve([])
+          ),
+          getStatusLabels: labels({ a1: label }),
+          getLinkedItemIds,
+        });
+        const result = await resolvePerson(monday, fakeConfig(), emailRow, '1');
+        expect(result).not.toEqual({ status: 'resolved', personItemId: 'p1' });
+      });
+    }
+
+    it("still resolves on a Current affiliation's Work Email", async () => {
+      const monday = fakeMondayClient({
+        findItemsByColumnValue: vi.fn((boardId, columnId) =>
+          columnId === 'work_email' ? Promise.resolve([{ id: 'a1', name: 'A' }]) : Promise.resolve([])
+        ),
+        getStatusLabels: labels({ a1: 'Current' }),
+        getLinkedItemIds: vi.fn((ids: string[]) => Promise.resolve(ids.length > 0 ? ['p1'] : [])),
+      });
+      expect(await resolvePerson(monday, fakeConfig(), emailRow, '1')).toEqual({ status: 'resolved', personItemId: 'p1' });
+    });
+
+    it('a Draft affiliation at the organization does not confirm a name match', async () => {
+      const monday = fakeMondayClient({
+        findItemsByColumnValue: vi.fn((boardId, columnId, value) =>
+          columnId === 'org_link' && value === '99' ? Promise.resolve([{ id: 'a2', name: 'A' }]) : Promise.resolve([])
+        ),
+        findItemsByName: vi.fn().mockResolvedValue([{ id: 'p1', name: 'Jordan Rivera' }] satisfies MondayItem[]),
+        getStatusLabels: labels({ a2: 'Draft' }),
+        getLinkedItemIds: vi.fn((ids: string[]) => Promise.resolve(ids.length > 0 ? ['p1'] : [])),
+      });
+      expect((await resolvePerson(monday, fakeConfig(), nameRow, '99')).status).toBe('unresolved');
+    });
   });
 });

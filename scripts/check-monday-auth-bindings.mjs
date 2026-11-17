@@ -31,6 +31,7 @@ export const EXPECTED = {
   'eventbrite-sync': 'SyncToken',
   'people-reclassification': 'SyncToken',
   'contact-roles': 'SyncToken',
+  'impact-attribution': 'SyncToken',
   'bp-feedback-notify': 'SyncToken',
   'quickbooks-sync': 'SyncToken',
   'monday-backup': 'ReadOnlyToken',

@@ -22,6 +22,7 @@ const CONFIG: Config = {
   lifetimeTierValue: 'Lifetime',
   activeStatusValue: 'Active',
   dnsConfirmedValue: 'Confirmed',
+  consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
 };
 
 function fakeDnsLog(alreadyLogged: string[] = []): DnsUnsubscribeLog {
