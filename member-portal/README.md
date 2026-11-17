@@ -680,6 +680,24 @@ employer affiliation without a staff step.
   affiliation on a retry is reading that column, so it must be the two-way mirror of the
   affiliation's Person column (`personLink`) and must not lag past the queue's 60 s retry delay.
   Archived and deleted affiliations are ignored, as in `donation-rollups`.
+* **Sandbox check result (2026-11-17): passed, after one Monday fix.** The People → Affiliations
+  column the Salesforce import made was one-way (the import filled both sides itself), so an
+  affiliation created later never appeared in it: Employer Name didn't move and the duplicate
+  guard was blind. Fix: turn on two-way connection (`allowCreateReflectionColumn: true` via
+  `update_column`, in place) on the Affiliations board's Person column. Monday adds a reverse
+  column on People and People (Historical), already filled from every existing link (sandbox:
+  identical to the old column for all 1,765 + 3,471 linked people). Rename the old column to
+  `Affiliations (old one-way)` and the new one to `Affiliations` (title lookups such as
+  `link-employers-to-organizations.mjs` find it by name), then point `personAffiliationsLink`
+  here and `donation-rollups`' `employerSync.ownerColumnsByBoard.*.affiliationsLink` at the new
+  ids. Re-run: the same answer twice gave `no change` with no duplicate, a new employer moved
+  Primary, and `employerSync` set Employer Name within 30 s. **Production done the same way
+  (2026-11-17):** new columns People `board_relation_mm96jvj6`, People (Historical)
+  `board_relation_mm96q5g6`. They add links the old columns had missed (27 + 1 people) and drop
+  one: Alex McIntyre's City of San Bruno affiliation points its Person at his People (Historical)
+  record, not the People copy made on 2026-11-13, which the old column alone listed (staff to
+  decide whether to move it). Delete the `Affiliations (old one-way)` columns once production is
+  verified.
 
 ## v5 — Event registrations
 
