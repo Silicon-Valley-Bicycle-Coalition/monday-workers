@@ -28,8 +28,8 @@ ship two Workers making the same kind of Draft. What changed from the design bel
 - **`email_index`** arrives in the same migration, unchanged.
 - **Config** is an `emailDomains` section beside #125's keys; boards come from its
   `peopleBoardIds`, `organizationsBoardId` and `affiliations`.
-- **Write switch, D1 database and CI** are #125's (`impact-attribution:writes`, its placeholder D1
-  ids, created 2026-11-16). The production gate in the README covers both jobs.
+- **Write switch, D1 database and CI** are #125's (`impact-attribution:writes`, its D1 databases,
+  created 2026-11-16; migration `0002` still to apply). The production gate in the README covers both jobs.
 
 The `benevity-import` change below is unchanged, and now protects #125's Drafts too.
 
