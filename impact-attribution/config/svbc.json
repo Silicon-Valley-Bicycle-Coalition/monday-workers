@@ -20,7 +20,9 @@
   "peopleBoardIds": ["18437909781", "18437909784"],
   "organizationsBoardId": "18437909779",
   "rule": { "windowDays": 365, "minMatches": 2, "currentWithinDays": 365 },
-  "excludedPayers": [],
+  "excludedPayers": [
+    { "id": "13432214614", "note": "Applied Materials Foundation: pays Applied Materials employees' matches; the employer is Applied Materials" }
+  ],
   "maxProposalsPerRun": 25,
   "emailDomains": {
     "people": {"personalEmail": "Personal Email", "householdEmail": "Household Email", "employerName": "Employer Name", "lastGiftDate": "Last Gift Date"},
