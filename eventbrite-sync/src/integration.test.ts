@@ -56,7 +56,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
 
     const ack = vi.fn();
     const retry = vi.fn();
-    await processOrderQueueBatch([{ body: captured!, ack, retry }], { orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
+    await processOrderQueueBatch([{ body: captured!, ack, retry }], { employerAnswers: null, orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
     expect(ack).toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
 
@@ -97,7 +97,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
     expect(captured).toEqual({ orderId: '442719216', action: 'order.refunded' });
     expect((await orderStore.getOrder('442719216'))?.deliveries).toBe(2);
 
-    await processOrderQueueBatch([{ body: captured!, ack: vi.fn(), retry: vi.fn() }], { orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
+    await processOrderQueueBatch([{ body: captured!, ack: vi.fn(), retry: vi.fn() }], { employerAnswers: null, orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
 
     expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(
@@ -165,7 +165,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
       }),
       getAttendee: vi.fn().mockResolvedValue({ id: '7001', event_id: '9001', checked_in: true, cancelled: false, refunded: false, profile: { name: 'Pat Rider', first_name: 'Pat', email: 'pat@example.com' } }),
     };
-    const deps = { orderStore, eventStore, attendeeStore, queue, eventbriteClient, mondayClient, config: cfg };
+    const deps = { orderStore, eventStore, attendeeStore, queue, eventbriteClient, mondayClient, config: cfg, employerAnswers: null };
     const drain = async () => {
       while (sent.length > 0) {
         await processOrderQueueBatch([{ body: sent.shift() as never, ack: vi.fn(), retry: vi.fn() }], deps);

@@ -148,6 +148,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
 
   validateAttendeeSync(cfg.attendeeSync);
   if (cfg.pledge !== undefined) validatePledge(cfg.pledge, monday.boards);
+  if (!isObject(cfg.employerAnswers) || typeof cfg.employerAnswers.enabled !== 'boolean') {
+    throw new Error('config: "employerAnswers.enabled" must be a boolean (false keeps employer answers from being handed to impact-attribution)');
+  }
 
   const config = cfg as unknown as EventbriteSyncConfig;
   volunteerBoardMode(config); // a half-configured Volunteers board fails here, at load (and in CI)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { processAttendee } from './processAttendee';
 import { consumeWriteBatch } from './processBatch';
@@ -6,6 +6,7 @@ import { fakeAttendeeStore, fakeEventStore } from '../test/fakeStores';
 import { testConfig, withPledge } from '../test/testConfig';
 import { mondayItem } from '../test/mondayItem';
 import { MondayApiError } from '../monday/graphql';
+import { EMPLOYER_ANSWER, EMPLOYER_ANSWERS, PERSON_ITEM_ID, expectNotWritten, expectRecordedBetween, fakeEmployerSink, peopleLookup, withSink } from '../test/employerAnswers';
 import type { ProcessBatchDeps } from './processBatch';
 import type { EventbriteAttendee } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
@@ -233,6 +234,75 @@ describe('pledges under the write switch', () => {
       expect(text).not.toContain('SecretNeighbor');
       expect(text).not.toContain('SecretSelfDescription');
       expect(text).not.toContain('95014');
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe('pledge employer answers', () => {
+  const pledgeAttendee = () => attendee({ answers: [{ question_id: '11', question: 'Zip', type: 'text', answer: '95014' }, ...EMPLOYER_ANSWERS] });
+
+  it('on create, records the answer after the board write and before the ledger says written', async () => {
+    const sink = fakeEmployerSink();
+    const s = setup({ att: pledgeAttendee(), monday: { findItemByColumnValue: peopleLookup() } });
+    await processAttendee(message, withSink(s.deps, sink));
+    expect(sink.recordEmployerAnswer).toHaveBeenCalledWith({
+      source: 'eventbrite', sourceId: 'a1', personItemId: PERSON_ITEM_ID, answer: EMPLOYER_ANSWER, answeredAt: '2026-05-01', context: 'Pledge to Ride 2026',
+    });
+    expectRecordedBetween(s.mondayClient.createItem as Mock, sink, s.attendeeStore);
+  });
+
+  it('on update, records the answer after the board write and before the ledger says written', async () => {
+    const sink = fakeEmployerSink();
+    const s = setup({ att: pledgeAttendee(), row: row({ mondayItemId: 'p-7' }), monday: { findItemByColumnValue: peopleLookup(), getItems: vi.fn().mockResolvedValue([mondayItem('p-7', 'Pat', {})]) } });
+    await processAttendee(message, withSink(s.deps, sink));
+    expectRecordedBetween(s.mondayClient.changeColumnValues as Mock, sink, s.attendeeStore);
+  });
+
+  it('a thrown hand-over leaves the row unwritten and propagates; the retry adopts the item it created', async () => {
+    const sink = fakeEmployerSink();
+    sink.recordEmployerAnswer.mockRejectedValueOnce(new Error('impact-attribution unreachable'));
+    let created: string | null = null;
+    const s = setup({
+      att: pledgeAttendee(),
+      monday: {
+        findItemByColumnValue: peopleLookup((board) => (board === 444 && created !== null ? { id: created } : null)),
+        createItem: vi.fn().mockImplementation(async () => { created = 'p-1'; return { id: 'p-1' }; }),
+        getItems: vi.fn().mockResolvedValue([mondayItem('p-1', 'Pat', {})]),
+      },
+    });
+    const deps = withSink(s.deps, sink);
+    await expect(processAttendee(message, deps)).rejects.toThrow('impact-attribution unreachable');
+    expectNotWritten(s.attendeeStore);
+    await processAttendee(message, deps);
+    expect(s.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(s.mondayClient.changeColumnValues).toHaveBeenCalledWith(444, 'p-1', expect.anything(), expect.anything());
+    expect(sink.recordEmployerAnswer).toHaveBeenCalledTimes(2);
+    expect(s.attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.objectContaining({ mondayItemId: 'p-1' }));
+  });
+
+  it('a gone item records nothing', async () => {
+    const sink = fakeEmployerSink();
+    const s = setup({ att: pledgeAttendee(), row: row({ mondayItemId: 'p-7' }), monday: { findItemByColumnValue: peopleLookup(), getItems: vi.fn().mockResolvedValue([]) } });
+    await processAttendee(message, withSink(s.deps, sink));
+    expect(sink.recordEmployerAnswer).not.toHaveBeenCalled();
+  });
+
+  it('under off, sends nothing and logs ids only', async () => {
+    const sink = fakeEmployerSink();
+    const s = setup({ att: pledgeAttendee(), monday: { findItemByColumnValue: peopleLookup() } });
+    const full = { ...withSink(s.deps, sink), orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } } as ProcessBatchDeps;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const m = { body: message, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+      await consumeWriteBatch([m], full, { worker: 'eventbrite-sync', environment: 'production', mode: 'off', logLevel: 'debug', piiKeys: ['name', 'email'] });
+      expect(m.ack).toHaveBeenCalled();
+      expect(sink.recordEmployerAnswer).not.toHaveBeenCalled();
+      const text = log.mock.calls.flat().map(String).join('\n');
+      expect(text).toContain('"sink":"Employer answers"');
+      expect(text).not.toContain(EMPLOYER_ANSWER);
+      expect(text).not.toContain('Pledge to Ride 2026');
     } finally {
       log.mockRestore();
     }

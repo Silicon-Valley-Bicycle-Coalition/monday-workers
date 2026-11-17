@@ -65,6 +65,11 @@
   // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
   // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
   // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  // No EMPLOYER_ANSWERS binding here yet: impact-attribution has never been deployed to production,
+  // and a missing binding is the employer-answer hand-over switched off (spec "The binding is
+  // optional", docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md). Add
+  // { "binding": "EMPLOYER_ANSWERS", "service": "svbc-impact-attribution", "entrypoint": "EmployerAnswers" }
+  // once it is.
   "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-eventbrite-sync-sandbox
@@ -114,8 +119,12 @@
         "enabled": true,
         "issues": { "enabled": true }
       },
-      // The sandbox broker, consented as Sandbox Integration.
-      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
+      // The sandbox broker, consented as Sandbox Integration, and the sandbox impact-attribution's
+      // EmployerAnswers RPC (#127), which employer answers are handed to.
+      "services": [
+        { "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" },
+        { "binding": "EMPLOYER_ANSWERS", "service": "svbc-impact-attribution-sandbox", "entrypoint": "EmployerAnswers" }
+      ]
     }
   }
 }

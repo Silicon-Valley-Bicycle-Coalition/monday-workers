@@ -6,6 +6,7 @@ import { MondayApiError } from '../monday/graphql';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeRow, PledgeEventConfig } from '../types';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
+import { pledgeContext, recordEmployerAnswer } from './employerAnswer';
 
 // New labels (a year's new choices, a new Year) appear on their own rather than failing the write.
 const LABELS = { createLabelsIfMissing: true };
@@ -53,6 +54,7 @@ export async function processPledge(message: AttendeeQueueMessage, event: Pledge
     const item = await mondayClient.createItem(boardId, mapping.itemName, mapping.columnValues, LABELS).catch((err: unknown) => {
       throw scrubbed(err);
     });
+    await recordEmployerAnswer(attendee, event, pledgeContext(event), deps);
     await attendeeStore.updateStatus(attendeeId, 'written', { mondayItemId: item.id, writtenAt });
     return;
   }
@@ -69,6 +71,7 @@ export async function processPledge(message: AttendeeQueueMessage, event: Pledge
     await markGone(mondayItemId);
     return;
   }
+  await recordEmployerAnswer(attendee, event, pledgeContext(event), deps);
   await attendeeStore.updateStatus(attendeeId, 'written', { mondayItemId, writtenAt });
 }
 
