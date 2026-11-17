@@ -6,6 +6,8 @@ import { tokenProviderFor } from './monday/graphql';
 import { runProposals } from './run';
 import type { Env } from './types';
 
+export { EmployerAnswers } from './answers/entrypoint';
+
 const WORKER = 'impact-attribution';
 
 export default {

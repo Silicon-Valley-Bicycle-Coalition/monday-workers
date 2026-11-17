@@ -11,6 +11,21 @@ describe('validateConfig', () => {
     expect(validateConfig(sandbox).affiliations.labels.draft).toBe('Draft');
   });
 
+  it('treats an absent employerAnswers as the feature being off', () => {
+    const c = clone();
+    delete c.employerAnswers;
+    expect(validateConfig(c).employerAnswers).toBeUndefined();
+    expect(validateConfig(production).employerAnswers?.maxAgeDays).toBe(365);
+  });
+
+  it('rejects a bad employerAnswers block', () => {
+    const c = clone();
+    c.employerAnswers = { maxAgeDays: 0, ignore: [] };
+    expect(() => validateConfig(c)).toThrow(/maxAgeDays/);
+    c.employerAnswers = { maxAgeDays: 365, ignore: [1] };
+    expect(() => validateConfig(c)).toThrow(/ignore/);
+  });
+
   it('rejects a missing excludedPayers list', () => {
     const c = clone();
     delete c.excludedPayers;

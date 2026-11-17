@@ -21,5 +21,9 @@
   "organizationsBoardId": "18437342579",
   "rule": { "windowDays": 365, "minMatches": 2, "currentWithinDays": 365 },
   "excludedPayers": [],
-  "maxProposalsPerRun": 25
+  "maxProposalsPerRun": 25,
+  "employerAnswers": {
+    "maxAgeDays": 365,
+    "ignore": ["n/a", "na", "none", "no", "retired", "self", "self employed", "selfemployed", "unemployed", "student", "homemaker", "not employed", "-"]
+  }
 }
