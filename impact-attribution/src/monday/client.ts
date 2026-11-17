@@ -131,7 +131,7 @@ export class HttpMondayClient implements ImpactMondayClient {
   async readActiveMatches(cfg: ImpactAttributionConfig): Promise<BoardMatchRead> {
     const d = cfg.donations;
     const cols = await this.columns(d.boardId);
-    const giftType = columnByTitle(cols, d.giftType, d.boardId, 'status').id;
+    const giftType = columnByTitle(cols, d.giftType, d.boardId, 'text').id;
     const matchedBy = columnByTitle(cols, d.matchedBy, d.boardId, 'board_relation').id;
     const donor = columnByTitle(cols, d.donor, d.boardId, 'board_relation').id;
     const date = columnByTitle(cols, d.date, d.boardId, 'date').id;
