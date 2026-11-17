@@ -3,6 +3,8 @@
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  // Cron only: no HTTP surface, so no workers.dev URL.
+  "workers_dev": false,
   "preview_urls": false,
   "upload_source_maps": true,
   // Reads (never writes) each Worker's `<worker>:writes` switch. No write switch of its own: it
@@ -26,6 +28,7 @@
   "env": {
     "sandbox": {
       "name": "svbc-sync-watchdog-sandbox",
+      "workers_dev": false,
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // The sandbox-FLAGS namespace.
