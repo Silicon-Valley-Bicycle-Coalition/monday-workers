@@ -25,7 +25,7 @@ describe('qualifyingPairs', () => {
 
   it('qualifies on any adjacent pair, not just the latest', () => {
     const [c] = qualifyingPairs([match('2019-01-01'), match('2015-03-01'), match('2015-09-01')], RULE, TODAY);
-    expect(c?.latestMatch).toBe('2019-01-01');
+    expect(c?.latestEvidence).toBe('2019-01-01');
     expect(c?.matches.map((m) => m.matchDate)).toEqual(['2019-01-01', '2015-09-01', '2015-03-01']);
   });
 
@@ -45,8 +45,8 @@ describe('qualifyingPairs', () => {
   });
 });
 
-const cand = (personItemId: string, orgItemId: string, proposedStatus: 'Current' | 'Former', latestMatch: string): Candidate =>
-  ({ personItemId, orgItemId, proposedStatus, latestMatch, matches: [] });
+const cand = (personItemId: string, orgItemId: string, proposedStatus: 'Current' | 'Former', latestEvidence: string): Candidate =>
+  ({ personItemId, orgItemId, proposedStatus, latestEvidence, matches: [], answers: [] });
 
 describe('selectCandidates', () => {
   const none = { excludedOrgIds: new Set<string>(), existingPairs: new Set<string>(), proposedPairs: new Set<string>() };

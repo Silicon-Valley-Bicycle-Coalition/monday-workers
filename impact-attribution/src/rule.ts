@@ -1,3 +1,4 @@
+import type { AnswerRow } from './answers/store';
 import type { ImpactAttributionConfig } from './config';
 
 // The pairing rule (spec "The rule"): a person matched by the same organization twice within
@@ -10,14 +11,15 @@ export interface Candidate {
   personItemId: string;
   orgItemId: string;
   proposedStatus: 'Current' | 'Former';
-  latestMatch: string;
+  latestEvidence: string; // latest of the match dates and answer dates
   matches: MatchRow[]; // newest first
+  answers: AnswerRow[]; // newest first
 }
 
 export const pairKey = (personItemId: string, orgItemId: string): string => `${personItemId}:${orgItemId}`;
 
 const DAY_MS = 86_400_000;
-const dayNumber = (isoDate: string): number => {
+export const dayNumber = (isoDate: string): number => {
   const [y, m, d] = isoDate.split('-').map(Number);
   return Date.UTC(y!, m! - 1, d!) / DAY_MS;
 };
@@ -43,8 +45,9 @@ export function qualifyingPairs(matches: MatchRow[], rule: ImpactAttributionConf
       personItemId: latest.personItemId,
       orgItemId: latest.orgItemId,
       proposedStatus: todayDay - days[0]! <= rule.currentWithinDays ? 'Current' : 'Former',
-      latestMatch: latest.matchDate,
+      latestEvidence: latest.matchDate,
       matches: newestFirst,
+      answers: [],
     });
   }
   return out;
@@ -66,7 +69,7 @@ export function selectCandidates(all: Candidate[], skip: SelectSkips, max: numbe
   }
   eligible.sort((x, y) => {
     if (x.proposedStatus !== y.proposedStatus) return x.proposedStatus === 'Current' ? -1 : 1;
-    return x.latestMatch < y.latestMatch ? 1 : x.latestMatch > y.latestMatch ? -1 : 0;
+    return x.latestEvidence < y.latestEvidence ? 1 : x.latestEvidence > y.latestEvidence ? -1 : 0;
   });
   return { chosen: eligible.slice(0, max), skipped, deferred: Math.max(0, eligible.length - max) };
 }

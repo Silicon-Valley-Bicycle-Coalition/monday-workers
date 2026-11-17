@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evidenceComment } from './evidence';
 import type { MatchRow } from './rule';
+import type { AnswerRow } from './answers/store';
 
 const m = (matchDate: string, amountCents: number | null): MatchRow => ({ donationItemId: matchDate, personItemId: 'p', orgItemId: 'o', matchDate, amountCents });
 
@@ -22,5 +23,29 @@ describe('evidenceComment', () => {
 
   it('formats thousands', () => {
     expect(evidenceComment('Acme', [m('2026-01-01', 123456789)])).toContain('$1,234,567.89');
+  });
+
+  const a = (answer: string, answeredAt: string, context = 'Pledge to Ride 2027'): AnswerRow => ({
+    source: 'eventbrite', sourceId: answeredAt + answer, personItemId: 'p', answer, answerNormalized: answer.toLowerCase(),
+    answeredAt, context, state: 'pending', orgItemId: null, receivedAt: answeredAt,
+  });
+
+  it('describes answer-only evidence, one line per answer', () => {
+    expect(evidenceComment('Google', [], [a('Google', '2027-01-20'), a('Alphabet', '2026-12-01')])).toBe(
+      'Proposed from an Eventbrite answer: "Google" (Pledge to Ride 2027, 2027-01-20)\nProposed from an Eventbrite answer: "Alphabet" (Pledge to Ride 2027, 2026-12-01)',
+    );
+  });
+
+  it('puts match lines before answer lines when mixed', () => {
+    expect(evidenceComment('Acme', [m('2026-05-01', 50000)], [a('Acme', '2027-01-20')])).toBe(
+      'Proposed from 1 matching gifts by Acme:\n2026-05-01 $500.00\nProposed from an Eventbrite answer: "Acme" (Pledge to Ride 2027, 2027-01-20)',
+    );
+  });
+
+  it('shows at most 10 answer lines, then how many more', () => {
+    const many = Array.from({ length: 12 }, (_, i) => a('Acme', `2027-01-${String(20 - i).padStart(2, '0')}`));
+    const lines = evidenceComment('Acme', [], many).split('\n');
+    expect(lines).toHaveLength(11);
+    expect(lines[10]).toBe('and 2 more');
   });
 });
