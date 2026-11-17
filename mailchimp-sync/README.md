@@ -345,7 +345,15 @@ columns aren't in `donorColumnIds`). The consent columns are 🔒 in `MARKED_COL
 (`../scripts/mark-read-only-columns.mjs`): a staff edit is overwritten within the hour.
 
 **CPU.** `limits.cpu_ms` is 1000 (was 100) for the ~61,000 Mailchimp members and ~25,000 Monday
-items each run parses. The cap is per Worker, so the webhook routes share it.
+items each run parses. The cap is per Worker, so the webhook routes share it. Measured in the
+sandbox 2026-11-17 00:05 UTC: 73 ms CPU, 94 s wall (22,453 items read; the run is nearly all
+network wait).
+
+**Sandbox, 2026-11-17.** The first deployed run read all three boards (`failedBoards: []`, so the
+Sandbox Integration's Sync token reaches them) and planned 6,232 changes to Not in Mailchimp —
+the sandbox audience holds 2 members, so nearly every sandbox Subscribed is stale. The cap tripped
+as designed: everything held, nothing written, the alert logged. The cap was then raised to
+10,000 in `config/sandbox.json` for one catch-up run and set back to 500 afterwards.
 
 **Turning it on in production** (after David's go-ahead):
 1. `node scripts/consent-plan.mjs --env production` and check the transitions with David.

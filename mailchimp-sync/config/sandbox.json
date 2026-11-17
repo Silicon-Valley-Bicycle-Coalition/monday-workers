@@ -69,7 +69,7 @@
   "dnsConfirmedValue": "Confirmed",
   "consent": {
     "enabled": true,
-    "maxChangesPerRun": 500,
+    "maxChangesPerRun": 10000,
     "boards": [
       {
         "name": "People",
