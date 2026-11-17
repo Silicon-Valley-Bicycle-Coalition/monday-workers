@@ -84,3 +84,10 @@ describe('buildEventConfig 2025', () => {
     expect(notes.join('\n')).toContain('Very familiar/comfortable with cycling');
   });
 });
+
+describe('buildEventConfig employer', () => {
+  it('maps a question worded "Where do you work?" to employer', () => {
+    const { config } = buildEventConfig([q('900', 'text', 'Where do you work?')], 2026);
+    expect(config.questions).toEqual({ 900: 'employer' });
+  });
+});

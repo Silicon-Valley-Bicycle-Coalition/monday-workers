@@ -71,7 +71,7 @@ export interface MondayBoards {
   'pledge-to-ride'?: number | null;
 }
 
-export type PledgeField = 'zip' | 'daysPledged' | 'riderType' | 'heardAbout' | 'whoAsked' | 'consent';
+export type PledgeField = 'zip' | 'daysPledged' | 'riderType' | 'heardAbout' | 'whoAsked' | 'consent' | 'employer';
 
 // One pledge campaign. Questions change every year, so everything keys on this event's own ids.
 export interface PledgeEventConfig {

@@ -63,7 +63,7 @@ const PLEDGE_COLUMN_KEYS = [
   'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
   'daysPledgedColumn', 'riderTypeColumn', 'heardAboutColumn', 'whoAskedColumn', 'consentColumn', 'otherAnswersColumn',
 ] as const;
-const PLEDGE_FIELDS = ['zip', 'daysPledged', 'riderType', 'heardAbout', 'whoAsked', 'consent'];
+const PLEDGE_FIELDS = ['zip', 'daysPledged', 'riderType', 'heardAbout', 'whoAsked', 'consent', 'employer'];
 // The county labels mapPledge assigns itself.
 const PLEDGE_FALLBACK_COUNTIES = ['Outside', 'Unknown'];
 
