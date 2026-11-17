@@ -35,26 +35,34 @@ export function changedWorkers(files, workers, allDirs) {
 
 const ZERO = /^0+$/;
 
-function changedFiles(base, head, mergeBase, cwd) {
+const defaultGit = (cwd) => (...args) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+
+// `git` is injectable for tests: (...args) => stdout. --no-renames lists both the old and the new
+// path of a moved file, so a Worker a file moved out of is still tested.
+export function changedFiles(base, head, mergeBase, cwd, git = defaultGit(cwd)) {
   if (!base || ZERO.test(base)) return null;
-  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   try {
     git('cat-file', '-e', `${base}^{commit}`);
-    return git('diff', '--name-only', `${base}${mergeBase ? '...' : '..'}${head}`).split('\n').filter(Boolean);
+    return git('diff', '--name-only', '--no-renames', `${base}${mergeBase ? '...' : '..'}${head}`).split('\n').filter(Boolean);
   } catch {
     return null;
   }
 }
 
+export function optionValue(argv, name, fallback) {
+  const i = argv.indexOf(name);
+  return i === -1 || argv[i + 1] === undefined ? fallback : argv[i + 1];
+}
+
 function main(argv) {
-  const opt = (name) => argv[argv.indexOf(name) + 1];
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const workers = JSON.parse(readFileSync(join(root, '.github/workers.json'), 'utf8'));
   const allDirs = readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(root, e.name, 'package.json')))
     .map((e) => e.name)
     .sort();
-  const files = changedFiles(argv.includes('--base') ? opt('--base') : '', opt('--head') ?? 'HEAD', argv.includes('--merge-base'), root);
+  const files = changedFiles(optionValue(argv, '--base', ''), optionValue(argv, '--head', 'HEAD'), argv.includes('--merge-base'), root);
   const { test, deploy, unlisted } = changedWorkers(files, workers, allDirs);
   const out = `test=${JSON.stringify(test)}\ndeploy=${JSON.stringify(deploy)}\n`;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, out);

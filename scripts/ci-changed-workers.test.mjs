@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { changedWorkers } from './ci-changed-workers.mjs';
+import { changedFiles, changedWorkers, optionValue } from './ci-changed-workers.mjs';
 
 const workers = [
   { dir: 'alpha', sandbox: {} },
@@ -52,5 +52,45 @@ describe('changedWorkers', () => {
     const r = run(null);
     assert.deepEqual(dirs(r.test), ['alpha', 'donation-rollups', 'dtd-sync', 'eventbrite-sync', 'member-portal']);
     assert.equal(r.deploy.length, 4);
+  });
+});
+
+describe('changedFiles', () => {
+  const fake = (calls, { throwOn } = {}) => (...args) => {
+    calls.push(args);
+    if (throwOn && args[0] === throwOn) throw new Error('boom');
+    return args[0] === 'diff' ? 'a/x.ts\nb/y.ts\n' : '';
+  };
+  it('returns null (everything) for an empty or all-zeros base without calling git', () => {
+    const calls = [];
+    assert.equal(changedFiles('0000000000000000000000000000000000000000', 'HEAD', false, '.', fake(calls)), null);
+    assert.equal(changedFiles('', 'HEAD', false, '.', fake(calls)), null);
+    assert.deepEqual(calls, []);
+  });
+  it('returns null when the base is unreachable (the runner throws)', () => {
+    assert.equal(changedFiles('abc123', 'HEAD', false, '.', fake([], { throwOn: 'cat-file' })), null);
+  });
+  it('returns the file list for a normal base, with rename detection off', () => {
+    const calls = [];
+    assert.deepEqual(changedFiles('abc123', 'def456', false, '.', fake(calls)), ['a/x.ts', 'b/y.ts']);
+    assert.deepEqual(calls[1], ['diff', '--name-only', '--no-renames', 'abc123..def456']);
+  });
+  it('diffs from the merge-base with three dots', () => {
+    const calls = [];
+    changedFiles('abc123', 'def456', true, '.', fake(calls));
+    assert.equal(calls[1].at(-1), 'abc123...def456');
+  });
+});
+
+describe('optionValue', () => {
+  it('returns the value after the flag', () => {
+    assert.equal(optionValue(['--head', 'xyz'], '--head', 'HEAD'), 'xyz');
+  });
+  it('falls back to the default when the flag is absent (not argv[0])', () => {
+    assert.equal(optionValue(['--base', 'abc'], '--head', 'HEAD'), 'HEAD');
+    assert.equal(optionValue([], '--head', 'HEAD'), 'HEAD');
+  });
+  it('falls back when the flag has no value', () => {
+    assert.equal(optionValue(['--head'], '--head', 'HEAD'), 'HEAD');
   });
 });
