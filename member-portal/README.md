@@ -127,9 +127,9 @@ dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
 (`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
 callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
 dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
-tree, with the language switcher's parser (issue #32); anything else is dropped. Known gap: the
-footer language picker sends `location.pathname` only, so switching language on the sign-in page
-drops `next` and sign-in lands on the dashboard.
+tree, with the language switcher's parser (issue #32); anything else is dropped. The footer
+language picker sends `location.pathname + location.search` as `to`, so switching language on the
+sign-in page keeps `next`.
 
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
 right fit for gating small internal tools to a handful of staff — it's licensed per seat, for

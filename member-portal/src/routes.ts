@@ -233,7 +233,7 @@ export function createApp(deps: AppDeps) {
   });
 
   // The language switcher lives in the shared site footer (see views.ts's siteFooter) and so
-  // appears on every route, submitting the browser's current location.pathname as `to` — rather
+  // appears on every route, submitting the browser's current location.pathname + location.search as `to` — rather
   // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
   // accepts any same-origin target. It does so by parsing, not by prefix-matching: a blocklist
   // of string prefixes ("//", "/\") missed "/<TAB>/evil.example" (issue #32), because browsers
@@ -416,9 +416,9 @@ export function createApp(deps: AppDeps) {
     c.header('Referrer-Policy', 'same-origin');
     // The page holds a live token in its DOM, so the one script that may run on it is ours.
     c.header('Content-Security-Policy', `${DEFAULT_CSP}; script-src '${await confirmLoginScriptHash()}'`);
-    // No footer language picker here: it redirects to location.pathname only, which would drop
-    // the token (and the token must never be copied into the /lang redirect URL). The page
-    // already renders in the link's own `lang`.
+    // No footer language picker here: its `to` is pathname + search, which would copy a legacy
+    // link's ?token= into the /lang redirect URL (and this page's CSP blocks its inline handler
+    // anyway). The page already renders in the link's own `lang`.
     return c.html(
       page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(legacyToken ?? null, lang, locale, portalReturnPath(c.req.query('next'))), locale, {
         languagePicker: false,

@@ -537,8 +537,9 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain(t('es', 'confirmLogin.submit'));
   });
 
-  // Review of #31: the footer picker submits only location.pathname, so switching language here
-  // went to /auth/callback without the token and showed "invalid link".
+  // Review of #31: the footer picker submitted only location.pathname, so switching language here
+  // went to /auth/callback without the token and showed "invalid link". It now submits the query
+  // too, which would copy a legacy ?token= into the /lang URL, so the picker stays off here.
   it('omits the footer language picker, which would drop the token', async () => {
     const { app, token } = await requestToken();
     const html = await (await app.request(`/auth/callback?token=${token}`)).text();
@@ -803,6 +804,16 @@ describe('return to the requested page after sign-in', () => {
 
   it('carries next on the sign-in form', async () => {
     const html = await (await createApp(makeDeps()).request(`/?next=${NEXT}`)).text();
+    expect(html).toContain(`<input type="hidden" name="next" value="${EMPLOYER_PATH}" />`);
+  });
+
+  // The footer language picker submits pathname + search as `to`, so switching language on the
+  // sign-in page keeps next.
+  it('keeps next when the donor switches language on the sign-in page', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`/lang?code=es&to=${encodeURIComponent(`/?next=${NEXT}`)}`);
+    expect(res.headers.get('location')).toBe(`/?next=${NEXT}`);
+    const html = await (await app.request(res.headers.get('location')!)).text();
     expect(html).toContain(`<input type="hidden" name="next" value="${EMPLOYER_PATH}" />`);
   });
 

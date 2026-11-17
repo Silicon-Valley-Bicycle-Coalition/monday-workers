@@ -69,9 +69,9 @@ function siteHeader(locale: Locale, authenticated: boolean): string {
 
 // Shared by every page (pre-identity and authenticated alike): basic org contact info plus a
 // language <select> that auto-submits on change — it fills the hidden `to` field with the
-// browser's actual current location.pathname right before submitting, so switching language
-// returns the visitor to wherever they were without this needing to be threaded through every
-// page() call site. No visible submit button: a no-JS visitor can't change the value via this
+// browser's actual current location.pathname + location.search right before submitting, so
+// switching language returns the visitor to wherever they were (the sign-in page's ?next=
+// included) without this needing to be threaded through every page() call site. No visible submit button: a no-JS visitor can't change the value via this
 // <select> in the first place, so there's nothing for a fallback button to submit either.
 function siteFooter(locale: Locale, languagePicker: boolean): string {
   const options = SUPPORTED_LOCALES.map(
@@ -95,7 +95,7 @@ function siteFooter(locale: Locale, languagePicker: boolean): string {
           languagePicker
             ? `<form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
           <input type="hidden" name="to" value="" />
-          <select name="code" onchange="this.form.to.value = location.pathname; this.form.submit()">${options}</select>
+          <select name="code" onchange="this.form.to.value = location.pathname + location.search; this.form.submit()">${options}</select>
         </form>`
             : ''
         }
@@ -109,9 +109,9 @@ function siteFooter(locale: Locale, languagePicker: boolean): string {
 // headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
 // `authenticated` shows the shared header's logout button — every route inside the session-gated
 // /:locale/portal* tree passes true; the pre-identity and public /verify routes leave it false.
-// languagePicker: false drops the footer language <select> — for pages whose state lives in the
-// query string, which the picker's `to` (location.pathname only) would lose. GET /auth/callback
-// is the one: switching language there dropped the token and landed on "invalid link".
+// languagePicker: false drops the footer language <select> — for pages whose query string must
+// not reach the /lang redirect URL. GET /auth/callback is the one: a legacy link carries its token
+// in ?token=, which the picker's `to` (pathname + search) would copy into the /lang URL.
 export function page(
   title: string,
   body: string,
