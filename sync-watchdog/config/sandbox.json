@@ -1,0 +1,26 @@
+{
+  "accountId": "f323cb191edeb5d30acc4d289427a010",
+  "watched": {
+    "benevity-import": { "script": "svbc-benevity-import-sandbox", "expectedWrites": "on", "crons": [] },
+    "bp-feedback-notify": { "script": "svbc-bp-feedback-notify-sandbox", "expectedWrites": "on", "crons": [] },
+    "contact-roles": { "script": "svbc-contact-roles-sandbox", "expectedWrites": "on", "crons": [] },
+    "donation-rollups": { "script": "svbc-donation-rollups-sandbox", "expectedWrites": "on", "crons": [] },
+    "eventbrite-sync": { "script": "svbc-eventbrite-sync-sandbox", "expectedWrites": "on", "crons": [] },
+    "funraise-sync": { "script": "svbc-funraise-sync-sandbox", "expectedWrites": "on", "crons": [] },
+    "mailchimp-sync": { "script": "svbc-mailchimp-sync-sandbox", "expectedWrites": "on", "crons": [] },
+    "member-map": { "script": "svbc-member-map-sandbox", "expectedWrites": null, "crons": [] },
+    "member-portal": { "script": "svbc-member-portal-sandbox", "expectedWrites": "on", "crons": [] },
+    "monday-auth": { "script": "svbc-monday-auth-sandbox", "expectedWrites": null, "crons": [] },
+    "monday-backup": { "script": "svbc-monday-backup-sandbox", "expectedWrites": "on", "crons": [] },
+    "people-reclassification": { "script": "svbc-people-reclassification-sandbox", "expectedWrites": "on", "crons": [] },
+    "report-digests": { "script": "svbc-report-digests-sandbox", "expectedWrites": "on", "crons": [] },
+    "svbc-calendars": { "script": "svbc-calendars-sandbox", "expectedWrites": null, "crons": [] }
+  },
+  "notLive": {
+    "dtd-sync": "not deployed to production",
+    "nearby-search": "not deployed to production (sandbox rollout pending)",
+    "impact-attribution": "production script deployed without its cron and with writes off",
+    "quickbooks-sync": "sandbox only, postponed indefinitely"
+  },
+  "queues": []
+}
