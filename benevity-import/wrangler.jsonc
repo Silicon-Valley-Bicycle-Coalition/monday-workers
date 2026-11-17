@@ -114,7 +114,7 @@
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2002", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "triggers": {
-        "crons": ["15 9 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "observability": {
         "enabled": true,

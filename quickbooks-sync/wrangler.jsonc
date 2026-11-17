@@ -99,7 +99,7 @@
       "vars": { "ENVIRONMENT": "sandbox" },
       // Same purge as production (the split test asserts they match).
       "triggers": {
-        "crons": ["30 9 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "d1_databases": [
         {

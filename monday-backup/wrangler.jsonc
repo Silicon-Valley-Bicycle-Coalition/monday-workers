@@ -81,7 +81,7 @@
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "workflows": [{ "name": "svbc-monday-backup-snapshot-sandbox", "binding": "SNAPSHOT", "class_name": "SnapshotWorkflow" }],
       "triggers": {
-        "crons": ["0 9 * * *", "30 * * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "limits": { "cpu_ms": 300000, "subrequests": 50000 },
       "observability": { "enabled": true, "issues": { "enabled": true } },

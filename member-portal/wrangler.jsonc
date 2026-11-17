@@ -138,7 +138,7 @@
         ]
       },
       "triggers": {
-        "crons": ["0 9 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       // The sandbox broker, consented as Sandbox Integration.
       "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "PortalToken" }],

@@ -148,7 +148,7 @@ describe('wrangler.jsonc env.sandbox', () => {
   });
 
   it('keeps the same cron schedule as production', () => {
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
   it('does not set a name — Wrangler derives svbc-funraise-sync-sandbox', () => {

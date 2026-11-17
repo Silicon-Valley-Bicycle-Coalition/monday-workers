@@ -117,7 +117,7 @@
       "limits": { "cpu_ms": 100 },
       "triggers": {
         // Same two jobs as production (the split test asserts they match).
-        "crons": ["0 * * * *", "0 9 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "observability": {
         "enabled": true,

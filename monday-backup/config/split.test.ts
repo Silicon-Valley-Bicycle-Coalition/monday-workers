@@ -53,7 +53,7 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(sandboxEnv.workers_dev).toBe(false);
     expect(sandboxEnv.preview_urls).toBe(false);
     expect(sandboxEnv.routes).toBeUndefined();
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
   it('has its own D1 database, never production’s', () => {
