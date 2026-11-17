@@ -358,11 +358,13 @@ network wait).
 Sandbox Integration's Sync token reaches them) and planned 6,232 changes to Not in Mailchimp —
 the sandbox audience holds 2 members, so nearly every sandbox Subscribed is stale. The cap tripped
 as designed: everything held, nothing written, the alert logged. The cap was then raised to
-10,000 in `config/sandbox.json` for the catch-up (set it back to 500 once the plan script holds
-nothing). The 01:05 run wrote 1,835 values and was then cancelled by Cloudflare at 15 minutes'
+10,000 in `config/sandbox.json` for the catch-up. The 01:05 run wrote 1,835 values and was then cancelled by Cloudflare at 15 minutes'
 wall time (`outcome: canceled`, 198 ms CPU) with no log line or alert — which is why writes now
 stop at the 12-minute budget. With it, the 02:05 run ended on its own at 12.1 minutes
 (`outcome: done`, `timedOut: true`, 1,250 written, 3,017 left for the next hours, 108 ms CPU).
+The 03:05 and 04:05 runs also stopped at the budget (1,350 and 1,275 written); the 05:05 run
+wrote the last 393 and finished on its own, and every run from 06:05 planned nothing. The cap
+went back to 500 the same day.
 
 **Turning it on in production** (after David's go-ahead):
 1. `node scripts/consent-plan.mjs --env production` and check the transitions with David.
