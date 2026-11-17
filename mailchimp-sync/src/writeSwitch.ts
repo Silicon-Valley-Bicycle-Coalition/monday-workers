@@ -14,6 +14,7 @@ import type { OutboundConsumerDeps } from './consumer/outbound';
 import type { InboundConsumerDeps } from './consumer/inbound';
 import type { ReconcileDeps } from './campaigns/reconcile';
 import type { PendingStatus } from './types';
+import type { ConsentMonday } from './consent/sources';
 
 // Everything a skip line needs except the delivery, which is per message (or per cron run).
 export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
@@ -125,4 +126,12 @@ export function reconcileDepsFor(disposition: 'run' | 'dry-run', deps: Reconcile
     mondayClient: dryRunMonday(deps.mondayClient, ctx),
     campaignItemsStore: dryRunCampaignItemsStore(deps.campaignItemsStore),
   };
+}
+
+// The hourly consent run's Monday writes under `off`: one skip line per writeConsent call (its
+// argument is item ids and labels, never an address), and nothing written.
+export function dryRunConsentMonday(monday: ConsentMonday, ctx: SkipContext): ConsentMonday {
+  return recordingProxy(monday, MONDAY_SINK, {
+    writeConsent: () => ({ written: 0, failedItemIds: [] }),
+  }, ctx);
 }

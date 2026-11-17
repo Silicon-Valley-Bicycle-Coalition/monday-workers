@@ -27,6 +27,7 @@ const CONFIG: Config = {
     tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor' },
   },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
+  consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
 };
 
 const EMAIL = 'someone@example.com';

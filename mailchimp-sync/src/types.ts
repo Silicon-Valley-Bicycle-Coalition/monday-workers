@@ -53,6 +53,19 @@ export interface HistoricalBoardConfig {
   columns: DonorColumnsConfig;
 }
 
+// The Email Consent columns the hourly consent sync keeps current (docs/superpowers/specs/
+// 2026-11-16-mailchimp-consent-columns-design.md): each address column and the status column that
+// holds its Mailchimp consent, per board.
+export interface ConsentPair { emailColumn: string; consentColumn: string }
+export interface ConsentBoard { name: string; boardId: number; pairs: ConsentPair[] }
+export interface ConsentConfig {
+  // false: the hourly run logs one line and does nothing (production until David's go-ahead).
+  enabled: boolean;
+  // Cap on changes toward a sendable value per run; changes to Unsubscribed/Cleaned are uncapped.
+  maxChangesPerRun: number;
+  boards: ConsentBoard[];
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -80,6 +93,7 @@ export interface Config {
   // The DNS Reason Status label a reviewer sets once a Do Not Solicit reason has been checked.
   // Only then does the Worker unsubscribe the contact in Mailchimp — see consumer/outbound.ts.
   dnsConfirmedValue: string;
+  consent: ConsentConfig;
 }
 
 export interface Env {

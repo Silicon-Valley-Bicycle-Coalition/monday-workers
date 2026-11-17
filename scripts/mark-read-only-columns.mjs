@@ -53,7 +53,9 @@ const MEMBERSHIP = [
 const SALESFORCE = ['Salesforce ID', 'Salesforce Debug'];
 const PEOPLE = {
   locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On',
-    'DTD Company ID', 'DTD Company', 'DTD match link'],
+    'DTD Company ID', 'DTD Company', 'DTD match link',
+    // mailchimp-sync's hourly consent sync (2026-11-16) sets these from Mailchimp.
+    'Personal Email Consent', 'Household Email Consent'],
   history: [...SALESFORCE, 'Salesforce Owner'],
 };
 
@@ -91,7 +93,7 @@ export const MARKED_COLUMNS = {
   },
   'Affiliations': {
     // Proposed status is written by impact-attribution on each Draft it proposes.
-    locked: ['Attributed Giving', 'Attributed Gift Count', 'Last Attributed Gift', 'Proposed status'],
+    locked: ['Attributed Giving', 'Attributed Gift Count', 'Last Attributed Gift', 'Proposed status', 'Work Email Consent'],
     history: SALESFORCE,
   },
   'Annual Giving Summary': {

@@ -10,6 +10,8 @@ The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in groups
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
   `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
   `monday-backup`, `people-reclassification` (live since 2026-11-03), `report-digests`.
+  `mailchimp-sync`'s hourly consent column cron (2026-11-16) is stateless: `hold`/`unknown`
+  skip it, `off` dry-runs it, and the next `on` run writes whatever still differs.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
 - **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout: deployed while `off`,
