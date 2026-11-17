@@ -97,15 +97,20 @@ function onPlatform(domain: string, platforms: ReadonlySet<string>): boolean {
 // Walks from the full domain up one label at a time (never down to a bare TLD); the first
 // candidate that is blocked, mapped or ambiguous decides. So an excluded subdomain
 // (alumni.stanford.edu) wins over its mapped parent, while a sibling (cs.stanford.edu) still maps.
-export function lookupDomain(map: DomainMap, domain: string | null, blocked: ReadonlySet<string>): DomainLookup {
+// Under a blocked TLD (`edu`: students share the domain with staff) only an override maps; a
+// Website or Work Email hit there is passed over, and so is an ambiguous one.
+export function lookupDomain(
+  map: DomainMap, domain: string | null, blocked: ReadonlySet<string>, blockedTlds: ReadonlySet<string> = new Set(),
+): DomainLookup {
   if (domain === null) return { kind: 'none' };
   const labels = domain.split('.');
+  const overrideOnly = blockedTlds.has(labels[labels.length - 1]!);
   for (let i = 0; i < labels.length - 1; i++) {
     const candidate = labels.slice(i).join('.');
     if (blocked.has(candidate)) return { kind: 'none' };
     const hit = map.mapped.get(candidate);
-    if (hit) return { kind: 'mapped', domain: candidate, ...hit };
-    if (map.ambiguous.has(candidate)) return { kind: 'ambiguous' };
+    if (hit && (!overrideOnly || hit.source === 'override')) return { kind: 'mapped', domain: candidate, ...hit };
+    if (!overrideOnly && map.ambiguous.has(candidate)) return { kind: 'ambiguous' };
   }
   return { kind: 'none' };
 }

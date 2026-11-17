@@ -216,5 +216,40 @@ describe('runEmailDomainProposals', () => {
     }
     expect(monday.drafts).toEqual([]);
   });
+
+  // Review of !502.
+  it('a Household Email two people share proposes neither of them', async () => {
+    const monday = setup();
+    monday.people = [
+      { ...person('1', 'Jo Doe', 'jo@gmail.com'), householdEmail: 'fam@acme.example' },
+      { ...person('2', 'Al Doe', 'al@gmail.com'), householdEmail: 'fam@acme.example' },
+    ];
+    const summary = await runEmailDomainProposals(deps(monday), 'on');
+    expect(monday.drafts).toEqual([]);
+    expect(summary.skipped.sharedAddress).toBe(2);
+  });
+
+  it('dates the staleness cutoff from the run date: a gift 1095 days back proposes, one day older does not', async () => {
+    const monday = setup();
+    monday.people = [
+      { ...person('1', 'Jo Doe', 'jo@acme.example'), lastGiftDate: '2023-11-18' }, // 1095 days before 2026-11-17
+      { ...person('2', 'Al Roe', 'al@acme.example'), lastGiftDate: '2023-11-17' },
+    ];
+    const summary = await runEmailDomainProposals(deps(monday), 'on');
+    expect(monday.drafts.map((d) => d.personItemId)).toEqual(['1']);
+    expect(summary.skipped.staleEvidence).toBe(1);
+  });
+
+  it('proposes nobody from a People (Historical) item or a university address', async () => {
+    const monday = setup();
+    monday.organizations.push({ itemId: '502', name: 'Stanford University', websiteUrl: 'https://www.stanford.edu' });
+    monday.people = [
+      { ...person('1', 'Jo Doe', 'jo@acme.example'), boardId: config.peopleBoardIds[1]! },
+      person('2', 'Al Roe', 'al@cs.stanford.edu'),
+    ];
+    const summary = await runEmailDomainProposals(deps(monday), 'on');
+    expect(monday.drafts).toEqual([]);
+    expect(summary.skipped.inactiveBoard).toBe(1);
+  });
 });
 

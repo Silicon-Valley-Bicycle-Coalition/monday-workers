@@ -25,6 +25,9 @@ export interface EmailDomainSummary {
   ambiguousDomains: number;
 }
 
+const daysBefore = (isoDate: string, days: number): string =>
+  new Date(Date.parse(`${isoDate}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+
 const errorName = (err: unknown): string => (err instanceof Error ? err.name : 'unknown');
 
 export async function runEmailDomainProposals(deps: RunDeps, mode: 'on' | 'off'): Promise<EmailDomainSummary> {
@@ -41,7 +44,8 @@ export async function runEmailDomainProposals(deps: RunDeps, mode: 'on' | 'off')
   if (people.length === 0) throw new Error('read returned no People; aborting');
   if (organizations.length === 0) throw new Error('read returned no Organizations; aborting');
 
-  await rebuildEmailIndex(db, emailIndexRows(people, affiliations));
+  const indexRows = emailIndexRows(people, affiliations);
+  await rebuildEmailIndex(db, indexRows);
 
   // An override pointing at a deleted or merged organization would fail its create every night;
   // drop it and name it in the domains log line instead.
@@ -55,6 +59,11 @@ export async function runEmailDomainProposals(deps: RunDeps, mode: 'on' | 'off')
   const selection = selectProposals({
     people, affiliations, organizations, domainMap,
     blocked: new Set([...ed.consumerDomains, ...ed.excludedDomains]),
+    blockedTlds: new Set(ed.blockedTlds),
+    proposeFromBoardIds: new Set(ed.proposeFromBoardIds),
+    staleBefore: daysBefore(deps.today, ed.staleAfterDays),
+    // An address more than one person holds, in any capacity, is someone's, not necessarily theirs.
+    sharedAddresses: new Set(indexRows.filter((r) => r.personItemIds.length > 1).map((r) => r.address)),
     proposedPairs: await proposedPairs(db),
     labels: config.affiliations.labels,
     cap: ed.maxProposalsPerRun,

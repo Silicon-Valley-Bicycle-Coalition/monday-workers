@@ -33,6 +33,20 @@ ship two Workers making the same kind of Draft. What changed from the design bel
 
 The `benevity-import` change below is unchanged, and now protects #125's Drafts too.
 
+## Review guards (2026-11-17, after !502)
+
+Four guards against an address naming an old or someone else's job, added after the MR review:
+
+- **Live People board only** (`emailDomains.proposeFromBoardIds`). People (Historical) addresses
+  still feed `email_index` but propose nothing.
+- **Stale gifts:** no proposal when Last Gift Date is older than `emailDomains.staleAfterDays`
+  (1095). No gift on the live board still proposes.
+- **`.edu` maps only by override** (`emailDomains.blockedTlds`): students share the domain with
+  staff, so a university's Website or Work Email isn't enough.
+- **Shared addresses:** an address `email_index` lists for more than one person is ignored (a shared
+  Household Email named the other spouse's employer). The person's other address can still propose.
+
+
 ## Why
 
 Nothing has kept donors' employers current since cutover, and every matching-gift path depends on

@@ -51,7 +51,7 @@
       "mindspring.com",
       "juno.com"
     ],
-    "excludedDomains": [],
+    "excludedDomains": ["stanfordalumni.org"],
     "platformDomains": [
       "linkedin.com",
       "facebook.com",
@@ -73,6 +73,9 @@
       "nextdoor.com"
     ],
     "domainOverrides": {},
+    "blockedTlds": ["edu"],
+    "proposeFromBoardIds": ["18437909781"],
+    "staleAfterDays": 1095,
     "maxProposalsPerRun": 25
   }
 }
