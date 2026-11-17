@@ -19,4 +19,5 @@ CREATE INDEX employer_answers_person ON employer_answers (person_item_id);
 CREATE INDEX employer_answers_state ON employer_answers (state);
 
 -- Which evidence produced a Draft: matching gifts, employer answers, or both.
-ALTER TABLE proposals ADD COLUMN sources TEXT NOT NULL DEFAULT 'matches' CHECK (sources IN ('matches', 'answers', 'both'));
+-- Null on email-domain Drafts (#124) and on rows written before this migration (all matching-gift only).
+ALTER TABLE proposals ADD COLUMN sources TEXT CHECK (sources IS NULL OR sources IN ('matches', 'answers', 'both'));

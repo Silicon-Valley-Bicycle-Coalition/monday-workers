@@ -14,6 +14,7 @@ function fakeConfig(worklistKeyColumn: string | null = 'key_c', retry: typeof RE
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,
       affiliationsColumns: {} as never,
+      affiliationsCurrentLabel: 'Current',
       uploadsBoard: {
         fileColumn: 'file_col',
         worklistGroupId: 'review',

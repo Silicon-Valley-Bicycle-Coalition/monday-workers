@@ -86,9 +86,10 @@ describe('page', () => {
     expect(html).toContain('<option value="es">');
     expect(html).toContain('<option value="vi">');
     expect(html).toContain('<option value="en" selected>');
-    // Auto-submits on select, filling `to` with the browser's actual current path so switching
-    // language returns the visitor to wherever they were, without page() needing to know it.
-    expect(html).toContain(`onchange="this.form.to.value = location.pathname; this.form.submit()"`);
+    // Auto-submits on select, filling `to` with the browser's actual current path and query so
+    // switching language returns the visitor to wherever they were, without page() needing to
+    // know it. The query matters: the sign-in page's ?next= (return-to after sign-in) lives there.
+    expect(html).toContain(`onchange="this.form.to.value = location.pathname + location.search; this.form.submit()"`);
   });
 
   // Distinct from LOCALE_LABELS (the English names round-tripped through Monday's Preferred

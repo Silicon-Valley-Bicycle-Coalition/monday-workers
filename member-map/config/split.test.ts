@@ -37,7 +37,7 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(first(sandboxEnv, 'r2_buckets').bucket_name).not.toBe(first(wrangler, 'r2_buckets').bucket_name);
     expect(first(sandboxEnv, 'ratelimits').namespace_id).not.toBe(first(wrangler, 'ratelimits').namespace_id);
     expect(first(sandboxEnv, 'routes').pattern).not.toBe(first(wrangler, 'routes').pattern);
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
     expect(sandboxEnv.limits).toEqual(wrangler.limits);
   });
 

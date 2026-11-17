@@ -23,6 +23,21 @@ export interface ImpactAttributionConfig {
   maxProposalsPerRun: number;
   // Employer answers handed over by other Workers (Eventbrite). Absent: the feature is off.
   employerAnswers?: { maxAgeDays: number; ignore: string[] };
+  // Employer proposals from a donor's company email domain (#124). People and Organizations boards
+  // are peopleBoardIds and organizationsBoardId; Drafts go to `affiliations`.
+  emailDomains: {
+    people: { personalEmail: string; householdEmail: string; employerName: string; lastGiftDate: string };
+    organizationWebsite: string;
+    affiliationWorkEmail: string;
+    consumerDomains: string[];
+    excludedDomains: string[];
+    platformDomains: string[]; // social/hosting hosts: never an organization's own Website domain
+    domainOverrides: Record<string, string>; // domain -> Organizations item id
+    blockedTlds: string[]; // a domain under one of these maps only through domainOverrides
+    proposeFromBoardIds: string[]; // People boards a proposal may come from (the live board, not Historical)
+    staleAfterDays: number; // a last gift older than this dates the address too far back to propose from
+    maxProposalsPerRun: number;
+  };
 }
 
 type Json = Record<string, unknown>;
@@ -62,6 +77,56 @@ function optionalEmployerAnswers(root: Json): ImpactAttributionConfig['employerA
   return { maxAgeDays: posInt(e, 'maxAgeDays', 'employerAnswers'), ignore: ignore as string[] };
 }
 
+// Domains are compared lower-cased.
+function domainList(o: Json, key: string, path: string): string[] {
+  const v = o[key];
+  if (!Array.isArray(v) || v.some((d) => typeof d !== 'string' || d.trim() === '')) {
+    throw new Error(`config: ${path}.${key} must be a list of non-empty strings`);
+  }
+  return v.map((d: string) => d.trim().toLowerCase());
+}
+
+function emailDomains(raw: unknown, peopleBoardIds: string[]): ImpactAttributionConfig['emailDomains'] {
+  const path = 'emailDomains';
+  const e = obj(raw, path);
+  const people = obj(e.people, `${path}.people`);
+  const overridesRaw = obj(e.domainOverrides, `${path}.domainOverrides`);
+  const domainOverrides: Record<string, string> = {};
+  for (const [domain, itemId] of Object.entries(overridesRaw)) {
+    if (typeof itemId !== 'string' || !/^\d+$/.test(itemId)) {
+      throw new Error(`config: ${path}.domainOverrides["${domain}"] must be an Organizations item id string`);
+    }
+    domainOverrides[domain.trim().toLowerCase()] = itemId;
+  }
+  return {
+    people: {
+      personalEmail: str(people, 'personalEmail', `${path}.people`), householdEmail: str(people, 'householdEmail', `${path}.people`),
+      employerName: str(people, 'employerName', `${path}.people`), lastGiftDate: str(people, 'lastGiftDate', `${path}.people`),
+    },
+    organizationWebsite: str(e, 'organizationWebsite', path),
+    affiliationWorkEmail: str(e, 'affiliationWorkEmail', path),
+    consumerDomains: domainList(e, 'consumerDomains', path),
+    excludedDomains: domainList(e, 'excludedDomains', path),
+    platformDomains: domainList(e, 'platformDomains', path),
+    domainOverrides,
+    blockedTlds: tldList(e, 'blockedTlds', path),
+    proposeFromBoardIds: subsetOf(idList(e, 'proposeFromBoardIds', path), peopleBoardIds, `${path}.proposeFromBoardIds`),
+    staleAfterDays: posInt(e, 'staleAfterDays', path),
+    maxProposalsPerRun: posInt(e, 'maxProposalsPerRun', path),
+  };
+}
+
+function tldList(o: Json, key: string, path: string): string[] {
+  const tlds = domainList(o, key, path);
+  if (tlds.some((t) => t.includes('.'))) throw new Error(`config: ${path}.${key} must hold bare TLDs ("edu", not ".edu")`);
+  return tlds;
+}
+
+function subsetOf(ids: string[], of: string[], path: string): string[] {
+  if (!ids.every((id) => of.includes(id))) throw new Error(`config: ${path} must name boards from peopleBoardIds`);
+  return ids;
+}
+
 export function validateConfig(raw: unknown): ImpactAttributionConfig {
   const root = obj(raw, 'config');
   const monday = obj(root.monday, 'monday');
@@ -99,6 +164,7 @@ export function validateConfig(raw: unknown): ImpactAttributionConfig {
     excludedPayers,
     maxProposalsPerRun: posInt(root, 'maxProposalsPerRun', 'config'),
     ...(employerAnswers ? { employerAnswers } : {}),
+    emailDomains: emailDomains(root.emailDomains, idList(root, 'peopleBoardIds', 'config')),
   };
 }
 

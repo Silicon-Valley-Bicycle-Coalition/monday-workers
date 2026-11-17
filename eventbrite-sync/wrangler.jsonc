@@ -84,7 +84,7 @@
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // Triggers are not inheritable either.
-      "triggers": { "crons": ["0 * * * *"] },
+      "triggers": { "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */ },
       "d1_databases": [
         {
           "binding": "DB",

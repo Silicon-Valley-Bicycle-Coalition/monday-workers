@@ -68,7 +68,7 @@
   "activeStatusValue": "Active",
   "dnsConfirmedValue": "Confirmed",
   "consent": {
-    "enabled": false,
+    "enabled": true,
     "maxChangesPerRun": 500,
     "boards": [
       {

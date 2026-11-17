@@ -252,7 +252,7 @@ describe('wrangler.jsonc env.sandbox', () => {
 
   it('runs the follow-up sweep hourly in both environments (wrangler does not inherit triggers)', () => {
     expect((wrangler.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
-    expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
+    expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
   it('binds EMPLOYER_ANSWERS to the sandbox impact-attribution only; production declares none until it is deployed there', () => {

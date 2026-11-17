@@ -3,7 +3,7 @@ import { environmentOf } from './environment';
 import { readLogLevel, readWriteMode, runDisposition } from './flags';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
-import { runProposals } from './run';
+import { runNightly } from './nightly';
 import type { Env } from './types';
 
 export { EmployerAnswers } from './answers/entrypoint';
@@ -16,8 +16,9 @@ export default {
     return new Response('Not found', { status: 404 });
   },
 
-  // The write mode is read once per run: `on` writes, `off` refreshes the match history and logs
-  // what it would propose, and `hold`/`unknown` skip the run without touching Monday or D1.
+  // The write mode is read once per run and governs both jobs (src/nightly.ts): `on` writes, `off`
+  // refreshes the Worker's own D1 state and logs what it would propose, and `hold`/`unknown` skip
+  // the run without touching Monday or D1.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const mode = await readWriteMode(env, WORKER);
     const disposition = runDisposition(mode);
@@ -31,7 +32,7 @@ export default {
     const config = configFor(env);
     const monday = new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env));
     const now = new Date().toISOString();
-    await runProposals(
+    await runNightly(
       { monday, db: env.DB, config, environment: environmentOf(env), today: now.slice(0, 10), now },
       disposition === 'run' ? 'on' : 'off',
     );

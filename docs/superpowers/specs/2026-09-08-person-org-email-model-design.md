@@ -139,6 +139,11 @@ driven, here and elsewhere." The two are allowed to overlap; that is the point.
 
 ## The resolver: `impact-attribution` Worker
 
+*Started 2026-11-17: the Worker exists (#125, Draft affiliations from repeated matching gifts) and
+its second job rebuilds `email_index` nightly and proposes employers from email domains
+(`2026-11-16-employer-from-email-domain-design.md`, #124). The webhook resolver below is still to
+come.*
+
 *(2026-11-16: the Worker exists, but its only job so far is employer affiliations from repeated
 matching gifts — [`2026-11-16-employer-affiliation-proposals-design.md`](2026-11-16-employer-affiliation-proposals-design.md).
 The resolver below is not built.)*

@@ -122,6 +122,15 @@ people sharing an inbox already receive each other's receipts, and explicit labe
 silent misattribution. Never fall into the accidental default (first match wins), which can show
 one family member another's giving history unlabeled.
 
+**Return-to after sign-in.** A signed-out GET of any `/<locale>/portal/...` page other than the
+dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
+(`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
+callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
+dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
+tree, with the language switcher's parser (issue #32); anything else is dropped. The footer
+language picker sends `location.pathname + location.search` as `to`, so switching language on the
+sign-in page keeps `next`.
+
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
 right fit for gating small internal tools to a handful of staff — it's licensed per seat, for
 members of an organization — but this needs to serve every donor with an email on file, not a
@@ -430,7 +439,8 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   every letter-ready email ends with one localized line, "Does your employer match gifts? Tell
   us where you work.", linking to `/<locale>/portal/change-request?field=employer`. It's
   appended after the body, built-in or template, so a template doesn't need (and can't drop) it.
-  The page is session-gated: a donor who clicks it before the login link signs in first.
+  The page is session-gated: a donor who clicks it before the login link signs in first and then
+  lands on the Employer field (return-to after sign-in, below).
 
 How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
 handler — no separate cron trigger): every day the Worker reads the settings board (one cheap
@@ -670,6 +680,24 @@ employer affiliation without a staff step.
   affiliation on a retry is reading that column, so it must be the two-way mirror of the
   affiliation's Person column (`personLink`) and must not lag past the queue's 60 s retry delay.
   Archived and deleted affiliations are ignored, as in `donation-rollups`.
+* **Sandbox check result (2026-11-17): passed, after one Monday fix.** The People → Affiliations
+  column the Salesforce import made was one-way (the import filled both sides itself), so an
+  affiliation created later never appeared in it: Employer Name didn't move and the duplicate
+  guard was blind. Fix: turn on two-way connection (`allowCreateReflectionColumn: true` via
+  `update_column`, in place) on the Affiliations board's Person column. Monday adds a reverse
+  column on People and People (Historical), already filled from every existing link (sandbox:
+  identical to the old column for all 1,765 + 3,471 linked people). Rename the old column to
+  `Affiliations (old one-way)` and the new one to `Affiliations` (title lookups such as
+  `link-employers-to-organizations.mjs` find it by name), then point `personAffiliationsLink`
+  here and `donation-rollups`' `employerSync.ownerColumnsByBoard.*.affiliationsLink` at the new
+  ids. Re-run: the same answer twice gave `no change` with no duplicate, a new employer moved
+  Primary, and `employerSync` set Employer Name within 30 s. **Production done the same way
+  (2026-11-17):** new columns People `board_relation_mm96jvj6`, People (Historical)
+  `board_relation_mm96q5g6`. They add links the old columns had missed (27 + 1 people) and drop
+  one: Alex McIntyre's City of San Bruno affiliation points its Person at his People (Historical)
+  record, not the People copy made on 2026-11-13, which the old column alone listed (staff to
+  decide whether to move it). Delete the `Affiliations (old one-way)` columns once production is
+  verified.
 
 ## v5 — Event registrations
 

@@ -86,7 +86,7 @@ describe('wrangler.jsonc env.sandbox', () => {
     const prodLimiter = (wrangler.ratelimits as Json[])[0]!;
     const sbLimiter = (sandboxEnv.ratelimits as Json[])[0]!;
     expect(sbLimiter.namespace_id).not.toBe(prodLimiter.namespace_id);
-    expect((sandboxEnv.triggers as Json).crons).toEqual((wrangler.triggers as Json).crons);
+    expect((sandboxEnv.triggers as Json).crons).toEqual([]); // sandbox crons are disabled to save cost
     expect(sandboxEnv.limits).toEqual(wrangler.limits);
   });
 

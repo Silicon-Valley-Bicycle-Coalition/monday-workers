@@ -215,7 +215,7 @@ match upsert does today. Under `hold`/`unknown` the run skips, as today.
 **Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
 an environment, confirm in that same environment:
 
-- [ ] migration `0002_employer_answers.sql` is applied to `impact-attribution`'s D1;
+- [ ] migration `0003_employer_answers.sql` is applied to `impact-attribution`'s D1;
 - [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
 - [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
   fails validation makes every call throw).

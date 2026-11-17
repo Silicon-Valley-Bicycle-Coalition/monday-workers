@@ -537,8 +537,9 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain(t('es', 'confirmLogin.submit'));
   });
 
-  // Review of #31: the footer picker submits only location.pathname, so switching language here
-  // went to /auth/callback without the token and showed "invalid link".
+  // Review of #31: the footer picker submitted only location.pathname, so switching language here
+  // went to /auth/callback without the token and showed "invalid link". It now submits the query
+  // too, which would copy a legacy ?token= into the /lang URL, so the picker stays off here.
   it('omits the footer language picker, which would drop the token', async () => {
     const { app, token } = await requestToken();
     const html = await (await app.request(`/auth/callback?token=${token}`)).text();
@@ -768,6 +769,110 @@ describe('GET /', () => {
     const res = await app.request('/');
     expect(await res.text()).not.toContain('action="/logout"');
   });
+});
+
+// Return-to after sign-in: a donor who opens a portal page without a session (the letter email's
+// "Add your employer" link, #127) signs in and lands back on that page, not the dashboard.
+describe('return to the requested page after sign-in', () => {
+  const EMPLOYER_PATH = '/en/portal/change-request?field=employer';
+  const NEXT = encodeURIComponent(EMPLOYER_PATH);
+
+  async function requestLink(app: ReturnType<typeof createApp>, fields: Record<string, string>) {
+    await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org', ...fields }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+  }
+
+  function loginDeps() {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    return { deps: makeDeps({ monday, emailSender }), emailSender };
+  }
+
+  it('sends a signed-out donor to sign-in with the page they asked for as next', async () => {
+    const res = await createApp(makeDeps()).request(EMPLOYER_PATH);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/?next=${NEXT}`);
+  });
+
+  it('carries no next for the dashboard itself, which is where sign-in lands anyway', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal');
+    expect(res.headers.get('location')).toBe('/');
+  });
+
+  it('carries next on the sign-in form', async () => {
+    const html = await (await createApp(makeDeps()).request(`/?next=${NEXT}`)).text();
+    expect(html).toContain(`<input type="hidden" name="next" value="${EMPLOYER_PATH}" />`);
+  });
+
+  // The footer language picker submits pathname + search as `to`, so switching language on the
+  // sign-in page keeps next.
+  it('keeps next when the donor switches language on the sign-in page', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`/lang?code=es&to=${encodeURIComponent(`/?next=${NEXT}`)}`);
+    expect(res.headers.get('location')).toBe(`/?next=${NEXT}`);
+    const html = await (await app.request(res.headers.get('location')!)).text();
+    expect(html).toContain(`<input type="hidden" name="next" value="${EMPLOYER_PATH}" />`);
+  });
+
+  it.each(['https://evil.example/', '//evil.example', '/%09/evil.example', '/auth/callback', '/lang/es', '/verify/abc', 'javascript:alert(1)'])(
+    'drops next=%s from the sign-in form',
+    async (next) => {
+      const html = await (await createApp(makeDeps()).request(`/?next=${encodeURIComponent(next)}`)).text();
+      expect(html).not.toContain('name="next"');
+    }
+  );
+
+  it('puts next in the emailed link, through the confirm page, and lands there after sign-in', async () => {
+    const { deps, emailSender } = loginDeps();
+    const app = createApp(deps);
+    await requestLink(app, { next: EMPLOYER_PATH });
+
+    const loginUrl = new URL(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+    expect(loginUrl.searchParams.get('next')).toBe(EMPLOYER_PATH);
+
+    const confirmHtml = await (await app.request(`${loginUrl.pathname}${loginUrl.search}`)).text();
+    expect(confirmHtml).toContain('<input type="hidden" name="next" value="/en/portal/change-request?field=employer" />');
+
+    const res = await completeLogin(app, { token: extractToken(loginUrl.href), lang: 'en', next: EMPLOYER_PATH });
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe(EMPLOYER_PATH);
+  });
+
+  it('rewrites next to the emailed link’s language, like the dashboard redirect', async () => {
+    const { deps, emailSender } = loginDeps();
+    const app = createApp(deps);
+    await requestLink(app, {});
+    const token = extractToken(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+    const res = await completeLogin(app, { token, lang: 'es', next: EMPLOYER_PATH });
+    expect(res.headers.get('location')).toBe('/es/portal/change-request?field=employer');
+  });
+
+  it('leaves next out of the emailed link when the form had none or a hostile one', async () => {
+    const { deps, emailSender } = loginDeps();
+    const app = createApp(deps);
+    await requestLink(app, {});
+    await requestLink(app, { next: 'https://evil.example/' });
+    for (const call of emailSender.sendLoginEmail.mock.calls) {
+      expect(new URL(call[0].loginUrl).searchParams.has('next')).toBe(false);
+    }
+  });
+
+  it.each(['https://evil.example/', '//evil.example', '/\tevil.example', '/.//evil.example', '/auth/callback', '/en/portalx', ''])(
+    'ignores next=%j on the callback and lands on the dashboard',
+    async (next) => {
+      const { deps, emailSender } = loginDeps();
+      const app = createApp(deps);
+      await requestLink(app, {});
+      const token = extractToken(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+      const res = await completeLogin(app, { token, lang: 'en', next });
+      expect(res.headers.get('location')).toBe('/en/portal');
+    }
+  );
 });
 
 // #99: the stylesheet and logo are linked from every page at content-hashed paths and cached as
@@ -1021,10 +1126,10 @@ async function loginAndGetCookie(
 }
 
 describe('GET /:locale/portal/letters', () => {
-  it('redirects to / without a session', async () => {
+  it('redirects to sign-in, returning here after, without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/letters');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
+    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fletters');
   });
 
   it('lists a completed year for the logged-in donor with no-store caching', async () => {
@@ -2141,10 +2246,10 @@ describe('GET /verify/:token', () => {
 });
 
 describe('GET /:locale/portal/pledges', () => {
-  it('redirects to / without a session', async () => {
+  it('redirects to sign-in, returning here after, without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/pledges');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
+    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fpledges');
   });
 
   it('renders the logged-in donor pledges with progress and no-store caching', async () => {
@@ -2207,7 +2312,7 @@ describe('GET /:locale/portal/matching-gifts', () => {
   it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/matching-gifts');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
+    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fmatching-gifts');
   });
 
   it('frames the sandboxed search when a public key is configured, with the signed-off EIN', async () => {
@@ -2455,7 +2560,7 @@ describe('GET /:locale/portal/events', () => {
   it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/events');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
+    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fevents');
   });
 
   it('shows the unavailable state while the eventRegistrations board is unconfigured', async () => {

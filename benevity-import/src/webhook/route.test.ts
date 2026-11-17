@@ -17,6 +17,7 @@ function fakeConfig(): BenevityImportConfig {
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,
       affiliationsColumns: {} as never,
+      affiliationsCurrentLabel: 'Current',
       uploadsBoard: {
         fileColumn: 'file_col',
         worklistGroupId: 'review',
@@ -65,6 +66,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     findItemsByColumnValue: vi.fn().mockResolvedValue([]),
     findItemsByName: vi.fn().mockResolvedValue([]),
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
+    getStatusLabels: vi.fn().mockResolvedValue(new Map()),
     createItem: vi.fn().mockResolvedValue({ id: '1', name: 'x' }),
     changeColumnValues: vi.fn(),
     archiveItem: vi.fn().mockResolvedValue(undefined),

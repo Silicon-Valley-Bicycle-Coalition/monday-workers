@@ -204,6 +204,9 @@ Only attempted when the row discloses a name or email.
    worklist with the candidates. Of last year's matched gifts with a known donor, the CRM's email
    for the donor was a personal address about twice as often as a work one, and Benevity may hand
    over either, so this fallback fires regularly.
+   Both steps count only affiliations whose `Status` is `Current` (config
+   `affiliationsCurrentLabel`, column `affiliationsColumns.status`): a `Draft` is an employer
+   `impact-attribution` proposed and staff haven't confirmed (#124), and a `Former` is a past job.
 3. **Never auto-create a Person from a name.** Same rule as the Eventbrite name-match proposal:
    propose, staff confirm. A worklist item carries the row's disclosed fields (name, email,
    company, amount, date) so staff can fix the Person (add the email Benevity disclosed, or create
@@ -430,7 +433,7 @@ operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_A
 `npm run deploy:sandbox` deploys `svbc-benevity-import-sandbox` (`wrangler.jsonc` `env.sandbox`)
 against the CRM Sandbox boards in `config/sandbox.json`, chosen at request time by the
 `ENVIRONMENT` var (`src/environment.ts`); `config/svbc.json` is production and holds
-placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and its `-dlq`), cron,
+placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and its `-dlq`), no cron (disabled to save cost),
 and secrets (`wrangler secret put … --env sandbox`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. This Worker writes only to Monday, so the
 split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
 sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at

@@ -713,7 +713,7 @@ are never logged.
 **Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
 an environment, confirm in that same environment:
 
-- [ ] migration `0002_employer_answers.sql` is applied to `impact-attribution`'s D1;
+- [ ] migration `0003_employer_answers.sql` is applied to `impact-attribution`'s D1;
 - [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
 - [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
   fails validation makes every call throw).
@@ -724,7 +724,7 @@ missing `employerAnswers` block is refused as `disabled`, so nothing is recorded
 
 **Operator steps.** In order, sandbox first:
 
-1. `impact-attribution`: apply migration `0002_employer_answers.sql`
+1. `impact-attribution`: apply migration `0003_employer_answers.sql`
    (`npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env sandbox`; production
    at its rollout) and deploy it (`npm run deploy:sandbox`) **before** deploying this Worker's sandbox, so the
    binding resolves.

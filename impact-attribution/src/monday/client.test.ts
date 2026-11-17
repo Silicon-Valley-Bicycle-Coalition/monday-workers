@@ -11,6 +11,7 @@ const cfg: ImpactAttributionConfig = validateConfig({
   affiliations: { ...production.affiliations, boardId: '900' },
   peopleBoardIds: ['301', '302'],
   organizationsBoardId: '400',
+  emailDomains: { ...production.emailDomains, proposeFromBoardIds: ['301'] },
 });
 
 const raw = (over: Partial<RawMatchItem> = {}): RawMatchItem => ({
@@ -42,7 +43,7 @@ describe('parseMatchItem', () => {
 });
 
 const DONATION_COLUMNS = [
-  { id: 'gt', title: 'Gift Type', type: 'status' },
+  { id: 'gt', title: 'Gift Type', type: 'text' },
   { id: 'mb', title: 'Matched By', type: 'board_relation' },
   { id: 'dn', title: 'Donor', type: 'board_relation' },
   { id: 'dt', title: 'Date', type: 'date' },
@@ -172,3 +173,66 @@ describe('findOrganizationsByNames', () => {
     expect(f.requests).toEqual([]);
   });
 });
+
+// Email-domain proposals (#124): People, Organizations and Affiliations reads.
+describe('email-domain reads', () => {
+  const PEOPLE_COLUMNS = [
+    { id: 'pe', title: 'Personal Email', type: 'email' },
+    { id: 'he', title: 'Household Email', type: 'email' },
+    { id: 'en', title: '📜 Employer Name', type: 'text' },
+    { id: 'lg', title: '🔒 Last Gift Date', type: 'date' },
+  ];
+  const AFF_WITH_WORK = [...AFF_COLUMNS, { id: 'we', title: '📜 Work Email', type: 'email' }];
+
+  function domainFake(): FakeMonday {
+    const f = fake();
+    f.boards.get('900')!.columns = AFF_WITH_WORK;
+    f.addBoard({
+      id: '301', columns: PEOPLE_COLUMNS,
+      items: [
+        { id: '1', name: 'Jo Doe', cells: { pe: { email: ' Jo@Acme.Example ', text: 'Jo - jo@acme.example' }, en: { text: 'Acme Inc' }, lg: { date: '2026-10-01', text: 'Oct 1' } } },
+        { id: '2', name: 'Al Roe', cells: {} },
+      ],
+    });
+    f.addBoard({
+      id: '400', columns: [{ id: 'web', title: 'Website', type: 'link' }],
+      items: [{ id: 'o1', name: 'Google', cells: { web: { url: 'https://www.Google.com/about', text: 'Google - https://www.Google.com/about' } } }],
+    });
+    f.boards.get('900')!.items = [
+      { id: 'a1', cells: { pe: { linked: [{ id: '1', board: '301' }] }, or: { linked: [{ id: 'o1', board: '400' }] }, st: { label: 'Current', text: 'Current' }, we: { email: 'JO@google.com' } } },
+      { id: 'a2', cells: {} },
+    ];
+    return f;
+  }
+  const client = (f: FakeMonday) => new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+
+  it('lists People with lower-cased emails (not the labelled text), gift date, employer and board', async () => {
+    expect(await client(domainFake()).listPeople('301', cfg.emailDomains.people)).toEqual([
+      { itemId: '1', boardId: '301', name: 'Jo Doe', personalEmail: 'jo@acme.example', householdEmail: null, employerName: 'Acme Inc', lastGiftDate: '2026-10-01' },
+      { itemId: '2', boardId: '301', name: 'Al Roe', personalEmail: null, householdEmail: null, employerName: null, lastGiftDate: null },
+    ]);
+  });
+
+  it("reads an organization's website from the link's url, not its text", async () => {
+    expect(await client(domainFake()).listOrganizations('400', 'Website')).toEqual([{ itemId: 'o1', name: 'Google', websiteUrl: 'https://www.Google.com/about' }]);
+  });
+
+  it('lists affiliations with status label and Work Email, keeping half-filled ones', async () => {
+    expect(await client(domainFake()).listAffiliations(cfg.affiliations, 'Work Email')).toEqual([
+      { itemId: 'a1', personIds: ['1'], organizationIds: ['o1'], status: 'Current', workEmail: 'jo@google.com' },
+      { itemId: 'a2', personIds: [], organizationIds: [], status: null, workEmail: null },
+    ]);
+  });
+
+  it('a missing column title throws naming it', async () => {
+    await expect(client(domainFake()).listOrganizations('400', 'Homepage')).rejects.toThrow(/Homepage/);
+  });
+
+  it('pages through every People item', async () => {
+    const f = domainFake();
+    f.pageSize = 500;
+    f.boards.get('301')!.items = Array.from({ length: 1200 }, (_, i) => ({ id: String(i + 1), cells: {} }));
+    expect(await client(f).listPeople('301', cfg.emailDomains.people)).toHaveLength(1200);
+  });
+});
+

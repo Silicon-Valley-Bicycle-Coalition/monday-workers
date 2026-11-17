@@ -6,8 +6,9 @@
 
 export interface FakeColumn { id: string; title: string; type: string }
 export interface FakeLink { id: string; board: string }
-// Per-column cell: text for status/date/numbers/text, linked items for board_relation.
-export interface FakeCell { text?: string | null; linked?: FakeLink[] }
+// Per-column cell: text for status/date/numbers/text, linked items for board_relation, and the
+// typed value (email, url, date, label) the client reads through a fragment instead of `text`.
+export interface FakeCell { text?: string | null; linked?: FakeLink[]; email?: string | null; url?: string | null; date?: string | null; label?: string | null }
 export interface FakeItem { id: string; name?: string; state?: string; cells: Record<string, FakeCell> }
 export interface FakeBoard { id: string; columns: FakeColumn[]; items: FakeItem[] }
 
@@ -106,11 +107,16 @@ export class FakeMonday {
       cursor: next,
       items: slice.map((item) => ({
         id: item.id,
+        name: item.name ?? `item ${item.id}`,
         column_values: columnIds.map((id) => {
           const cell = item.cells[id] ?? {};
           return {
             id, text: cell.text ?? null,
             ...(cell.linked !== undefined ? { linked_items: cell.linked.map((l) => ({ id: l.id, board: { id: l.board } })) } : {}),
+            ...(cell.email !== undefined ? { email: cell.email } : {}),
+            ...(cell.url !== undefined ? { url: cell.url } : {}),
+            ...(cell.date !== undefined ? { date: cell.date } : {}),
+            ...(cell.label !== undefined ? { label: cell.label } : {}),
           };
         }),
       })),

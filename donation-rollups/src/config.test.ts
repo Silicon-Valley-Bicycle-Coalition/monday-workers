@@ -263,8 +263,8 @@ describe('validateConfig — affiliations block', () => {
         currentStatusLabel: 'Current',
         columns: { organizationLink: 'board_relation_mm8h730r', status: 'color_mm8h68bj', primary: 'boolean_mm8hz6xj' },
         ownerColumnsByBoard: {
-          '18437342592': { employerName: 'text_mm8hdpm', affiliationsLink: 'board_relation_mm8hk2s1' },
-          '18437342607': { employerName: 'text_mm8h2x1t', affiliationsLink: 'board_relation_mm8htenw' },
+          '18437342592': { employerName: 'text_mm8hdpm', affiliationsLink: 'board_relation_mm966ap8' },
+          '18437342607': { employerName: 'text_mm8h2x1t', affiliationsLink: 'board_relation_mm963mdt' },
         },
       },
     });

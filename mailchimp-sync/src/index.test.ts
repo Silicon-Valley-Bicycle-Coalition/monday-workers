@@ -241,10 +241,11 @@ describe('scheduled', () => {
     const env = fakeEnv();
     const lines: string[] = [];
     const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void lines.push(line));
+    const warn = vi.spyOn(console, 'warn').mockImplementation((line: string) => void lines.push(line));
     try {
-      // Production config: consent.enabled is false, so the consent run's one line is the skip.
-      await worker.scheduled({ cron: '5 * * * *' } as ScheduledEvent, env);
-      expect(lines.some((l) => l.includes('consent.enabled is false'))).toBe(true);
+      // Under hold the consent run's one line is its skip, so nothing reaches Mailchimp or Monday.
+      await worker.scheduled({ cron: '5 * * * *' } as ScheduledEvent, fakeEnv({ FLAGS: flags('hold') }));
+      expect(lines.some((l) => l.includes('skipping the consent run'))).toBe(true);
       expect(lines.some((l) => l.includes('no Campaigns board configured'))).toBe(false);
 
       lines.length = 0;
@@ -253,6 +254,7 @@ describe('scheduled', () => {
       expect(lines.some((l) => l.includes('consent'))).toBe(false);
     } finally {
       log.mockRestore();
+      warn.mockRestore();
     }
   });
 });

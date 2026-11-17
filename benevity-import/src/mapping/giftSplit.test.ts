@@ -23,6 +23,7 @@ function fakeConfig(): BenevityImportConfig {
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,
       affiliationsColumns: {} as never,
+      affiliationsCurrentLabel: 'Current',
       uploadsBoard: {} as never,
       organizationAliases: {},
       rawRowRetentionDays: 90,

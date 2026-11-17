@@ -1,6 +1,6 @@
 import { pairKey, type MatchRow } from './rule';
 
-// D1 access for the match history and the proposals ledger (spec "Where the evidence comes from"
+// D1 access for the match history and the proposals ledger shared with email-domain proposals (spec "Where the evidence comes from"
 // and "The ledger"). The history outlives the board: a gift archived on Monday reads empty there,
 // so a row the board no longer returns is kept, never deleted.
 
@@ -59,19 +59,24 @@ export async function proposedPairs(db: D1Database): Promise<Set<string>> {
   return new Set(results.map((r) => pairKey(r.person_item_id, r.org_item_id)));
 }
 
-// Which evidence a Draft rests on (migration 0002).
+// One ledger for both jobs (#124): a pair proposed from matching gifts or from an email domain is
+// never proposed again by either. `evidence` says which job made the Draft; an email-domain
+// proposal carries its domain and match count 0.
+// `sources` (migration 0003) says which evidence a matching-gift-job Draft rests on: gifts,
+// Eventbrite employer answers, or both. Null on email-domain Drafts and rows before 0003.
 export type ProposalSources = 'matches' | 'answers' | 'both';
 
 export async function recordProposal(
   db: D1Database,
   p: {
     personItemId: string; orgItemId: string; affiliationItemId: string; proposedStatus: 'Current' | 'Former'; matchCount: number;
-    sources: ProposalSources;
+    sources?: ProposalSources;
+    evidence?: 'matches' | 'email_domain'; domain?: string | null;
   },
   now: string,
 ): Promise<void> {
   await db.prepare(
-    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, sources, proposed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, p.sources, now).run();
+    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at, evidence, domain, sources)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, now, p.evidence ?? 'matches', p.domain ?? null, p.sources ?? null).run();
 }

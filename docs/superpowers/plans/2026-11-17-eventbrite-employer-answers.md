@@ -43,7 +43,7 @@
 | `member-portal/src/changeRequests/employer.ts` | modify | imports the above; keeps affiliation planning |
 | `impact-attribution/src/employerName.ts` | create (byte-identical copy) | — |
 | `.gitlab-ci.yml` | modify | `employer-name-copies` job |
-| `impact-attribution/migrations/0002_employer_answers.sql` | create | `employer_answers` table; `proposals.sources` |
+| `impact-attribution/migrations/0003_employer_answers.sql` | create | `employer_answers` table; `proposals.sources` |
 | `impact-attribution/src/answers/store.ts` | create | answer D1 reads/writes |
 | `impact-attribution/src/answers/entrypoint.ts` | create | `EmployerAnswers` `WorkerEntrypoint`, validation |
 | `impact-attribution/src/answers/rule.ts` | create | expire, supersede, merge into candidates (pure) |
@@ -73,7 +73,7 @@
 ### Task 2: Answer storage and the `EmployerAnswers` RPC
 
 **Files:**
-- Create: `impact-attribution/migrations/0002_employer_answers.sql`, `src/answers/store.ts`, `src/answers/store.test.ts`, `src/answers/entrypoint.ts`, `src/answers/entrypoint.test.ts`
+- Create: `impact-attribution/migrations/0003_employer_answers.sql`, `src/answers/store.ts`, `src/answers/store.test.ts`, `src/answers/entrypoint.ts`, `src/answers/entrypoint.test.ts`
 - Modify: `src/config.ts`, `src/config.test.ts`, `config/sandbox.json`, `config/svbc.json`, `src/index.ts`, `src/types.ts`
 
 **Interfaces:**

@@ -55,4 +55,18 @@ describe('proposals ledger', () => {
     expect(await proposedPairs(env.DB)).toEqual(new Set([pairKey('p1', 'o1')]));
     expect(await env.DB.prepare('SELECT sources FROM proposals').first()).toEqual({ sources: 'both' });
   });
+
+  it('records an email-domain proposal with its evidence and domain; a matches one defaults to matches', async () => {
+    await recordProposal(env.DB, { personItemId: 'p1', orgItemId: 'o1', affiliationItemId: 'a1', proposedStatus: 'Former', matchCount: 3 }, NOW);
+    await recordProposal(env.DB, {
+      personItemId: 'p2', orgItemId: 'o1', affiliationItemId: 'a2', proposedStatus: 'Current', matchCount: 0, evidence: 'email_domain', domain: 'acme.example',
+    }, NOW);
+    const { results } = await env.DB.prepare('SELECT person_item_id, evidence, domain, match_count FROM proposals ORDER BY person_item_id').all();
+    expect(results).toEqual([
+      { person_item_id: 'p1', evidence: 'matches', domain: null, match_count: 3 },
+      { person_item_id: 'p2', evidence: 'email_domain', domain: 'acme.example', match_count: 0 },
+    ]);
+    expect(await proposedPairs(env.DB)).toEqual(new Set([pairKey('p1', 'o1'), pairKey('p2', 'o1')]));
+  });
 });
+
