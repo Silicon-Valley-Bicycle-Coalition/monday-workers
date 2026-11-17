@@ -75,6 +75,36 @@ describe('rewriteRefs leaves alone', () => {
   });
 });
 
+describe('rewriteRefs number limits', () => {
+  const lim = (t, o) => rewriteRefs(t, { project, kind: 'code', ...o }).text;
+  it('leaves leading-zero numbers alone', () => assert.equal(lim('- #000 black', {}), '- #000 black'));
+  it('leaves numbers above maxIssue alone', () => {
+    assert.equal(lim('#888', { maxIssue: 127 }), '#888');
+    assert.equal(lim('#127', { maxIssue: 127 }), 'GL#127');
+    assert.equal(lim('#128', { maxIssue: 127 }), '#128');
+  });
+  it('limits merge requests by maxMr', () => {
+    assert.equal(lim('!509', { maxMr: 509 }), 'GL!509');
+    assert.equal(lim('!510', { maxMr: 509 }), '!510');
+    assert.equal(lim('#510', { maxMr: 509 }), 'GL#510');
+  });
+});
+
+describe('rewriteRefs CSS context', () => {
+  it('rewrites refs after a colon in prose', () => {
+    assert.equal(code('Refs: #101').text, 'Refs: GL#101');
+    assert.equal(code('Blocked by: #123').text, 'Blocked by: GL#123');
+  });
+  it('skips colours', () => {
+    for (const t of ['  color: #333;', '.a { color: #333 }', 'border: 1px solid #ccc']) {
+      assert.equal(code(t).text, t);
+    }
+  });
+  it('closes a fence only with the same marker', () => {
+    assert.equal(md('```js\n#1\n~~~\n#2\n```\n#3').text, `\`\`\`js\n#1\n~~~\n#2\n\`\`\`\n[GL#3](${base}/issues/3)`);
+  });
+});
+
 describe('rewriteRefs changes', () => {
   it('reports one entry per rewrite with original index', () => {
     const input = `a #1, b !22\n\`\`\`\n#3\n\`\`\`\n${base}/issues/4 [x](y) (#5)`;

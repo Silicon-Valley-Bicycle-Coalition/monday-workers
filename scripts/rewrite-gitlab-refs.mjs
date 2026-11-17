@@ -3,7 +3,10 @@
 // explicit, repo-qualified references, so they stay meaningful after the move to GitHub (where
 // `#58` would point at a different issue). Markdown gets `[GL#58](url)`; code (and markdown inline code) gets `GL#58`.
 //
-//   node scripts/rewrite-gitlab-refs.mjs --project <gitlab path> [--write] [paths…]
+//   node scripts/rewrite-gitlab-refs.mjs --project <gitlab path> --max-issue N --max-mr N [--write] [paths…]
+//
+// --max-issue/--max-mr are the highest real issue / MR numbers; larger or zero-padded numbers
+// (`#888`, `#000`: colours, not references) are left alone.
 //
 // Default is a dry run printing `file:line  from → to`; `--write` applies. With no paths it walks
 // `git ls-files` filtered to the extensions below.
@@ -13,15 +16,20 @@ import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const EXTENSIONS = new Set(['.md', '.ts', '.mjs', '.js', '.jsonc', '.json', '.yml', '.yaml', '.html', '.sh']);
-const CSS_COLOUR = /:\s*#[0-9a-fA-F]{3,8}\b/;
 const LINK = /\[[^\]]*\]\([^)]*\)/g;
 const INLINE_CODE = /`[^`\n]*`/g;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A `#NNN` after `:` is a CSS colour when the line looks like CSS: it ends in `;` or sits in a
+// rule with `{`. (A hex token with letters a-f never matches the digits-only pattern anyway.)
+function isCssColour(line, start, end) {
+  return /:\s*$/.test(line.slice(0, start)) && (line[end] === ';' || line.includes('{'));
+}
 
 // Returns { text, changes } where each change is { index, from, to } and `index` is the offset of
 // `from` in the original `text`.
-export function rewriteRefs(text, { project, kind }) {
+export function rewriteRefs(text, { project, kind, maxIssue = Infinity, maxMr = Infinity }) {
   const markdown = kind === 'markdown';
   const baseUrl = `https://gitlab.com/${project}/-`;
   // Alternation: a full URL, or a bare ref after start/whitespace/( [ , ; : with 1-4 digits that
@@ -32,15 +40,18 @@ export function rewriteRefs(text, { project, kind }) {
     'g',
   );
   const changes = [];
-  let inFence = false;
+  let fence = null; // opening marker while inside a fenced block
   let lineStart = 0;
   const out = [];
 
   for (const line of text.split('\n')) {
     let result = line;
-    if (markdown && FENCE.test(line)) {
-      inFence = !inFence;
-    } else if (!(markdown && inFence) && !CSS_COLOUR.test(line)) {
+    const marker = markdown ? FENCE.exec(line)?.[1] : null;
+    if (marker && !fence) {
+      fence = marker;
+    } else if (marker && fence && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) {
+      fence = null;
+    } else if (!(markdown && fence)) {
       const links = markdown ? [...line.matchAll(LINK)].map((m) => [m.index, m.index + m[0].length]) : [];
       const inLink = (i) => links.some(([a, b]) => i >= a && i < b);
       // A link inside an inline code span would render as raw text, so those get the plain label.
@@ -56,6 +67,8 @@ export function rewriteRefs(text, { project, kind }) {
         if (!isUrl && m[4] === '!' && line[start + from.length] === '=') continue;
         const isMr = isUrl ? m[1] === 'merge_requests' : m[4] === '!';
         const number = isUrl ? m[2] : m[5];
+        if (!isUrl && (number.startsWith('0') || Number(number) > (isMr ? maxMr : maxIssue))) continue;
+        if (!isUrl && isCssColour(line, start, start + from.length)) continue;
         const label = `GL${isMr ? '!' : '#'}${number}`;
         const url = `${baseUrl}/${isMr ? 'merge_requests' : 'issues'}/${number}`;
         const to = markdown && !inCode(start) ? `[${label}](${url})` : label;
@@ -72,21 +85,30 @@ export function rewriteRefs(text, { project, kind }) {
 }
 
 function parseArgs(argv) {
-  const args = { project: null, write: false, paths: [] };
+  const args = { project: null, maxIssue: null, maxMr: null, write: false, paths: [] };
+  const value = (i) => (argv[i + 1] === undefined || argv[i + 1].startsWith('--') ? null : argv[i + 1]);
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--project') args.project = argv[++i];
-    else if (argv[i] === '--write') args.write = true;
-    else args.paths.push(argv[i]);
+    const flag = argv[i];
+    if (flag === '--write') args.write = true;
+    else if (flag === '--project' || flag === '--max-issue' || flag === '--max-mr') {
+      const v = value(i);
+      if (v === null) return null;
+      i++;
+      if (flag === '--project') args.project = v;
+      else if (!/^\d+$/.test(v)) return null;
+      else args[flag === '--max-issue' ? 'maxIssue' : 'maxMr'] = Number(v);
+    } else args.paths.push(flag);
   }
-  return args;
+  return args.project && args.maxIssue !== null && args.maxMr !== null ? args : null;
 }
 
 function main() {
-  const { project, write, paths } = parseArgs(process.argv.slice(2));
-  if (!project) {
-    console.error('usage: rewrite-gitlab-refs.mjs --project <gitlab path> [--write] [paths…]');
+  const args = parseArgs(process.argv.slice(2));
+  if (!args) {
+    console.error('usage: rewrite-gitlab-refs.mjs --project <gitlab path> --max-issue N --max-mr N [--write] [paths…]');
     process.exit(2);
   }
+  const { project, maxIssue, maxMr, write, paths } = args;
   const files = paths.length > 0
     ? paths
     : execFileSync('git', ['ls-files'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -97,6 +119,8 @@ function main() {
     const original = readFileSync(file, 'utf8');
     const { text, changes } = rewriteRefs(original, {
       project,
+      maxIssue,
+      maxMr,
       kind: extname(file) === '.md' ? 'markdown' : 'code',
     });
     for (const c of changes) {
