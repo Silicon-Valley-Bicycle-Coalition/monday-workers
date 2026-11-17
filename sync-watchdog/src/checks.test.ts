@@ -49,6 +49,13 @@ describe('cronSubjects', () => {
     expect(daily.health).toEqual({ ok: true });
   });
 
+  it('asks for runs since now − maxGapHours only (keeps GraphQL ranges short)', async () => {
+    const sinces: Record<string, string> = {};
+    await cronSubjects(cfg, api({ lastScheduledRun: async (_s, cron, since) => { sinces[cron] = since.toISOString(); return null; } }), armedLongAgo(), NOW);
+    expect(sinces['0 * * * *']).toBe(hoursAgo(3).toISOString());
+    expect(sinces['0 9 * * *']).toBe(hoursAgo(48).toISOString());
+  });
+
   it('a subject armed less than maxGapHours ago is ok even with no runs', async () => {
     const states = new Map<string, SubjectState>([
       ['cron:funraise-sync:0 * * * *', { armedAt: hoursAgo(1).toISOString(), bad: false, lastAlertAt: null, detail: null }],

@@ -70,6 +70,12 @@ describe('queueBacklog', () => {
     expect(await api.queueBacklog('funraise-sync-writes')).toEqual({ count: 0, oldestAgeHours: null });
   });
 
+  it('throws CloudflareApiError for a non-empty queue with no oldest-message timestamp', async () => {
+    const noTimestamp = { success: true, errors: [], result: { backlog_count: 5, backlog_bytes: 10 } };
+    const api = cloudflareApi(ACCOUNT, 'tok', stub((u) => (u.endsWith('/queues?per_page=100') ? json(queue.list) : json(noTimestamp))).fetcher, () => NOW);
+    await expect(api.queueBacklog('funraise-sync-writes')).rejects.toBeInstanceOf(CloudflareApiError);
+  });
+
   it('throws CloudflareApiError for an unknown queue name', async () => {
     const api = cloudflareApi(ACCOUNT, 'tok', stub(routes).fetcher, () => NOW);
     await expect(api.queueBacklog('no-such-queue')).rejects.toBeInstanceOf(CloudflareApiError);

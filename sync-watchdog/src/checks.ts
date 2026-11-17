@@ -26,7 +26,9 @@ export async function cronSubjects(
   const jobs = Object.entries(cfg.watched).flatMap(([worker, w]) =>
     w.crons.map(async ({ cron, maxGapHours }): Promise<SubjectResult> => {
       const subject = `cron:${worker}:${cron}`;
-      const lookback = 2 * maxGapHours;
+      // Only the window that decides health: a wider one buys nothing and risks the dataset's
+      // maximum query range.
+      const lookback = maxGapHours;
       try {
         const lastRun = await api.lastScheduledRun(w.script, cron, new Date(now.getTime() - lookback * HOUR_MS));
         const armedAt = Date.parse(states.get(subject)?.armedAt ?? now.toISOString());

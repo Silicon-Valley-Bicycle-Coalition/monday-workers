@@ -96,10 +96,13 @@ export function cloudflareApi(
       const m = (await rest(`/queues/${id}/metrics`)) as Json | null;
       const count = m?.backlog_count;
       if (typeof count !== 'number') throw new CloudflareApiError(`queue "${queueName}": metrics missing backlog_count`);
+      if (count === 0) return { count, oldestAgeHours: null };
       const oldest = m?.oldest_message_timestamp_ms;
-      const oldestAgeHours =
-        count > 0 && typeof oldest === 'number' && oldest > 0 ? (now().getTime() - oldest) / 3_600_000 : null;
-      return { count, oldestAgeHours };
+      // A backlog we can't date is a failed check, never a healthy queue.
+      if (typeof oldest !== 'number' || oldest <= 0) {
+        throw new CloudflareApiError(`queue "${queueName}": ${count} messages but no oldest_message_timestamp_ms`);
+      }
+      return { count, oldestAgeHours: (now().getTime() - oldest) / 3_600_000 };
     },
   };
 }
