@@ -1,6 +1,6 @@
 import { dayNumber, pairKey } from '../rule';
 import type { Candidate } from '../rule';
-import type { AnswerRow } from './store';
+import { isLater, type AnswerRow, type AnswerTime } from './store';
 
 // Pure rules for employer answers (design "Proposing it" and "Latest answer only").
 
@@ -9,20 +9,26 @@ const newestFirst = (x: AnswerRow, y: AnswerRow): number =>
 
 // Expires answers more than `maxAgeDays` old (exactly maxAgeDays is kept), then, per person, keeps
 // only the latest answer (ties: latest receivedAt) and any other row with the same normalised text.
-export function expireAndSupersede(rows: AnswerRow[], today: string, maxAgeDays: number): {
+// A pending answer older than that person's latest already-proposed answer (`latestProposed`; same
+// day: earlier receivedAt) is superseded too, so a late-arriving older answer never becomes a Draft.
+export function expireAndSupersede(
+  rows: AnswerRow[], today: string, maxAgeDays: number, latestProposed: ReadonlyMap<string, AnswerTime> = new Map(),
+): {
   live: AnswerRow[]; expired: AnswerRow[]; superseded: AnswerRow[];
 } {
   const todayDay = dayNumber(today);
   const expired: AnswerRow[] = [];
+  const superseded: AnswerRow[] = [];
   const byPerson = new Map<string, AnswerRow[]>();
   for (const r of rows) {
     if (todayDay - dayNumber(r.answeredAt) > maxAgeDays) { expired.push(r); continue; }
+    const proposed = latestProposed.get(r.personItemId);
+    if (proposed !== undefined && isLater(proposed, r)) { superseded.push(r); continue; }
     const list = byPerson.get(r.personItemId);
     if (list === undefined) byPerson.set(r.personItemId, [r]);
     else list.push(r);
   }
   const live: AnswerRow[] = [];
-  const superseded: AnswerRow[] = [];
   for (const list of byPerson.values()) {
     const winner = [...list].sort(newestFirst)[0]!;
     for (const r of list) (r.answerNormalized === winner.answerNormalized ? live : superseded).push(r);

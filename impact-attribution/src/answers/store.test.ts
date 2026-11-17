@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../../test/reset';
-import { pendingAnswers, setAnswerStates, touchPending, upsertAnswer } from './store';
+import { latestProposedAnswers, pendingAnswers, setAnswerStates, touchPending, upsertAnswer } from './store';
 
 const NOW = '2026-11-17T11:00:00Z';
 const base = {
@@ -49,6 +49,17 @@ describe('employer answers store', () => {
     await touchPending(env.DB, [{ source: 'eventbrite', sourceId: 'a1' }, { source: 'eventbrite', sourceId: 'a2' }], NOW);
     const { results } = await env.DB.prepare('SELECT source_id, last_tried_at FROM employer_answers ORDER BY source_id').all();
     expect(results).toEqual([{ source_id: 'a1', last_tried_at: NOW }, { source_id: 'a2', last_tried_at: '2026-01-01T00:00:00Z' }]);
+  });
+
+  it('latestProposedAnswers returns each listed person\'s latest proposed answer only', async () => {
+    await upsertAnswer(env.DB, { ...base, sourceId: 'p-old', answeredAt: '2026-01-01' });
+    await upsertAnswer(env.DB, { ...base, sourceId: 'p-new', answeredAt: '2026-06-01', receivedAt: '2026-06-01T01:00:00Z' });
+    await upsertAnswer(env.DB, { ...base, sourceId: 'p-tie', answeredAt: '2026-06-01', receivedAt: '2026-06-01T02:00:00Z' });
+    await upsertAnswer(env.DB, { ...base, sourceId: 'pending', answeredAt: '2027-01-01' });
+    await upsertAnswer(env.DB, { ...base, sourceId: 'other', personItemId: '200', answeredAt: '2026-03-01' });
+    await setAnswerStates(env.DB, ['p-old', 'p-new', 'p-tie', 'other'].map((sourceId) => ({ source: 'eventbrite', sourceId, state: 'proposed' as const })), NOW);
+    expect(await latestProposedAnswers(env.DB, ['100', '100', '300'])).toEqual(new Map([['100', { answeredAt: '2026-06-01', receivedAt: '2026-06-01T02:00:00Z' }]]));
+    expect(await latestProposedAnswers(env.DB, [])).toEqual(new Map());
   });
 
   it('setAnswerStates updates more than one D1 batch of rows', async () => {

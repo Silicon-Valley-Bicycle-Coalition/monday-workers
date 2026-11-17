@@ -1,5 +1,5 @@
 import { answerCandidates, expireAndSupersede, mergeCandidates } from './answers/rule';
-import { pendingAnswers, setAnswerStates, touchPending, type AnswerRow, type AnswerState } from './answers/store';
+import { latestProposedAnswers, pendingAnswers, setAnswerStates, touchPending, type AnswerRow, type AnswerState } from './answers/store';
 import type { ImpactAttributionConfig } from './config';
 import { organizationNameVariants, pickOrganization } from './employerName';
 import type { Environment } from './environment';
@@ -52,7 +52,7 @@ export async function runProposals(deps: RunDeps, mode: 'on' | 'off'): Promise<R
   const { upserted, deleted } = await refreshMatches(db, { stored: read.stored, rejectedIds: [...read.rejectedIds, ...cleared] }, deps.now);
 
   const qualifying = qualifyingPairs(await allMatches(db), config.rule, deps.today);
-  const answers = await resolveAnswers(deps);
+  const answers = await answerStep(deps);
   const candidates = mergeCandidates(qualifying, answers.candidates);
   const skips = {
     excludedOrgIds: new Set(config.excludedPayers.map((p) => p.id)),
@@ -153,16 +153,33 @@ async function markAnswers(deps: RunDeps, answers: { row: AnswerRow; orgItemId: 
   await setAnswerStates(deps.db, answers.map(({ row, orgItemId }) => ({ source: row.source, sourceId: row.sourceId, state, orgItemId })), deps.now);
 }
 
+const NO_ANSWERS: ResolvedAnswers = { candidates: [], expired: 0, superseded: 0, resolved: 0, unresolved: 0 };
+
+// A failing answer step (D1, the Organizations lookup) must not cost the night's match proposals:
+// log the error class and message (never answer text) and carry on with no answer candidates.
+async function answerStep(deps: RunDeps): Promise<ResolvedAnswers> {
+  try {
+    return await resolveAnswers(deps);
+  } catch (err) {
+    const name = err instanceof Error ? err.name : typeof err;
+    console.error(`${WORKER}: answer step failed: ${name}: ${errorText(err)}`);
+    return NO_ANSWERS;
+  }
+}
+
 interface ResolvedAnswers { candidates: Candidate[]; expired: number; superseded: number; resolved: number; unresolved: number }
 
-// Design "Proposing it" steps 1–4: expire and supersede pending answers, then resolve each live one
+// Design "Proposing it" steps 1–4: expire and supersede pending answers (also against each
+// person's latest proposed answer), then resolve each live one
 // to an Organization by name. Every live answer is stamped `last_tried_at`; one that resolves to
 // zero or several Organizations stays pending for the next night. The D1 changes happen under
 // `off` too. Without `employerAnswers` config the step doesn't run.
 async function resolveAnswers(deps: RunDeps): Promise<ResolvedAnswers> {
   const settings = deps.config.employerAnswers;
-  if (settings === undefined) return { candidates: [], expired: 0, superseded: 0, resolved: 0, unresolved: 0 };
-  const { live, expired, superseded } = expireAndSupersede(await pendingAnswers(deps.db), deps.today, settings.maxAgeDays);
+  if (settings === undefined) return NO_ANSWERS;
+  const pending = await pendingAnswers(deps.db);
+  const latestProposed = await latestProposedAnswers(deps.db, pending.map((r) => r.personItemId));
+  const { live, expired, superseded } = expireAndSupersede(pending, deps.today, settings.maxAgeDays, latestProposed);
   await setAnswerStates(deps.db, [
     ...expired.map((r) => ({ source: r.source, sourceId: r.sourceId, state: 'expired' as const })),
     ...superseded.map((r) => ({ source: r.source, sourceId: r.sourceId, state: 'superseded' as const })),

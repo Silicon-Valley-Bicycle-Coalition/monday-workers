@@ -51,15 +51,19 @@ export class FakeMonday {
       return { create_update: { id: String(this.nextId++) } };
     }
     if (query.includes('items_page_by_column_values')) {
-      // Exact match on the item name, as Monday's lookup is.
+      // Exact match on the item name, as Monday's lookup is; paged by pageSize like items_page.
       const columns = v.columns as { column_id: string; column_values: string[] }[];
       if (columns.length !== 1 || columns[0]!.column_id !== 'name') throw new Error('fake: only a name lookup is supported');
-      const wanted = new Set(columns[0]!.column_values);
-      const items = this.board(v.boardId).items.filter((i) => wanted.has(i.name ?? `item ${i.id}`));
-      return { items_page_by_column_values: { cursor: null, items: items.map((i) => ({ id: i.id, name: i.name ?? `item ${i.id}` })) } };
+      return { items_page_by_column_values: this.namePage(String(v.boardId), columns[0]!.column_values, 0) };
     }
     if (query.includes('next_items_page')) {
-      const [boardId, start, params] = JSON.parse(String(v.cursor)) as [string, number, Params | null];
+      const cursor = JSON.parse(String(v.cursor)) as unknown[];
+      if (cursor[0] === 'names') {
+        const [, boardId, names, start] = cursor as [string, string, string[], number];
+        if (query.includes('column_values')) throw new Error('fake: a name-lookup page asks for id and name only');
+        return { next_items_page: this.namePage(boardId, names, start) };
+      }
+      const [boardId, start, params] = cursor as [string, number, Params | null];
       return { next_items_page: this.page(this.board(boardId), start, v.columnIds as string[], params) };
     }
     if (query.includes('items_page')) {
@@ -84,6 +88,13 @@ export class FakeMonday {
       const cell = item.cells[r.column_id];
       return (cell?.linked?.length ?? 0) > 0 || (cell?.text ?? '') !== '';
     });
+  }
+
+  private namePage(boardId: string, names: string[], start: number) {
+    const wanted = new Set(names);
+    const all = this.board(boardId).items.filter((i) => wanted.has(i.name ?? `item ${i.id}`));
+    const next = start + this.pageSize < all.length ? JSON.stringify(['names', boardId, names, start + this.pageSize]) : null;
+    return { cursor: next, items: all.slice(start, start + this.pageSize).map((i) => ({ id: i.id, name: i.name ?? `item ${i.id}` })) };
   }
 
   private page(board: FakeBoard, start: number, columnIds: string[], params: Params | null) {

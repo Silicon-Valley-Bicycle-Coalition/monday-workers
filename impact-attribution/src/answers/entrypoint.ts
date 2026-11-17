@@ -21,7 +21,9 @@ export type EmployerAnswerResult =
   | { recorded: true }
   | { recorded: false; reason: 'disabled' | 'invalid' | 'non-answer' | 'closed' };
 
-const MAX_ANSWER_LENGTH = 200;
+// Answer and context are both stored trimmed and cut to 200 characters.
+const MAX_TEXT_LENGTH = 200;
+const capped = (s: string): string => s.trim().slice(0, MAX_TEXT_LENGTH).trim();
 
 // A real calendar date, not only the YYYY-MM-DD shape: 2026-13-45 and 2026-02-30 are refused.
 function isCalendarDate(s: string): boolean {
@@ -62,7 +64,7 @@ export async function handleRecord(
     log(input, 'invalid');
     return { recorded: false, reason: 'invalid' };
   }
-  const answer = input.answer.trim().slice(0, MAX_ANSWER_LENGTH).trim();
+  const answer = capped(input.answer);
   const answerNormalized = normalizeEmployerName(answer);
   const ignored = settings.ignore.map(normalizeEmployerName);
   if (answerNormalized === '' || ignored.includes(answerNormalized)) {
@@ -71,7 +73,7 @@ export async function handleRecord(
   }
   const outcome = await upsertAnswer(env.DB, {
     source: input.source, sourceId: input.sourceId, personItemId: input.personItemId, answer, answerNormalized,
-    answeredAt: input.answeredAt, context: input.context, receivedAt: now,
+    answeredAt: input.answeredAt, context: capped(input.context), receivedAt: now,
   });
   log(input, outcome);
   return outcome === 'closed' ? { recorded: false, reason: 'closed' } : { recorded: true };

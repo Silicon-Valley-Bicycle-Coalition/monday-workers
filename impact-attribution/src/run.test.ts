@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDb } from '../test/reset';
 import production from '../config/svbc.json';
 import { validateConfig } from './config';
-import { upsertAnswer } from './answers/store';
+import { setAnswerStates, upsertAnswer } from './answers/store';
 import { normalizeEmployerName, type OrganizationCandidate } from './employerName';
 import type { ImpactMondayClient } from './monday/client';
 import { pairKey, type MatchRow } from './rule';
@@ -339,6 +339,29 @@ describe('runProposals: employer answers', () => {
     expect(await proposalRows()).toEqual([]);
     expect((await answerRows()).a1).toMatchObject({ state: 'pending', last_tried_at: NOW });
     expect(summary).toMatchObject({ failed: 1, answers: { pending: 1, proposed: 0 } });
+  });
+
+  it('supersedes a late-arriving answer older than the person\'s latest proposed one instead of proposing it', async () => {
+    await answer('new', 'p1', 'Google', '2027-02-01');
+    await setAnswerStates(env.DB, [{ source: 'eventbrite', sourceId: 'new', state: 'proposed', orgItemId: 'o5' }], NOW);
+    await answer('backfill', 'p1', 'Initech', '2026-10-01');
+    const monday = withOrgs([{ id: 'o5', name: 'Google, LLC' }, { id: 'o6', name: 'Initech' }]);
+    const summary = await runProposals({ ...deps(monday), today: '2027-02-02' }, 'on');
+    expect(monday.drafts).toEqual([]);
+    expect((await answerRows()).backfill!.state).toBe('superseded');
+    expect(summary.answers).toEqual({ ...ZERO_ANSWERS, superseded: 1 });
+  });
+
+  it('a failing answer step is logged without answer text and the match proposals still run', async () => {
+    await answer('a1', 'p2', 'Secretco Widgets');
+    const monday = withOrgs([], [match('d1', 'p1', 'o1', '2026-03-01'), match('d2', 'p1', 'o1', '2026-09-01')]);
+    monday.findOrganizationsByNames = async () => { throw new TypeError('lookup exploded'); };
+    const summary = await runProposals(deps(monday), 'on');
+    expect(monday.drafts.map((d) => [d.personItemId, d.orgItemId])).toEqual([['p1', 'o1']]);
+    expect(summary.answers).toEqual(ZERO_ANSWERS);
+    expect(logs).toContain('impact-attribution: answer step failed: TypeError: lookup exploded');
+    expect(logs.join('\n')).not.toContain('Secretco');
+    expect((await answerRows()).a1!.state).toBe('pending');
   });
 
   it('under off: writes nothing to Monday or the ledger, still updates answer states, and logs no answer text', async () => {

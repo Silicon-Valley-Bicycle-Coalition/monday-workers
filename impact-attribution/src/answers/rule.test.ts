@@ -55,6 +55,19 @@ describe('expireAndSupersede', () => {
     expect(r.live).toHaveLength(2);
   });
 
+  it('supersedes a pending answer older than the person\'s latest proposed answer (same day: earlier receivedAt)', () => {
+    const late = ans({ sourceId: 'late', answeredAt: '2026-03-01' });
+    const sameDayEarlier = ans({ sourceId: 'early', answeredAt: '2026-06-01', receivedAt: '2026-06-01T00:00:00Z', answerNormalized: 'x' });
+    const newer = ans({ sourceId: 'newer', personItemId: 'q', answeredAt: '2026-07-01' });
+    const proposed = new Map([
+      ['p', { answeredAt: '2026-06-01', receivedAt: '2026-06-01T05:00:00Z' }],
+      ['q', { answeredAt: '2026-06-01', receivedAt: '2026-06-01T05:00:00Z' }],
+    ]);
+    const r = expireAndSupersede([late, sameDayEarlier, newer], '2026-11-17', 365, proposed);
+    expect(r.superseded.map((x) => x.sourceId).sort()).toEqual(['early', 'late']);
+    expect(r.live.map((x) => x.sourceId)).toEqual(['newer']);
+  });
+
   it('expires first, then supersedes among the rest', () => {
     const old = ans({ sourceId: 'old', answeredAt: '2024-01-01', answerNormalized: 'old' });
     const cur = ans({ sourceId: 'cur', answeredAt: '2026-01-01' });

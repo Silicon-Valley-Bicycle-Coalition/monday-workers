@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FakeMonday, type FakeItem } from '../../test/fakeMonday';
 import { validateConfig, type ImpactAttributionConfig } from '../config';
+import { organizationNameVariants, pickOrganization } from '../employerName';
 import production from '../../config/svbc.json';
 import { HttpMondayClient, parseMatchItem, type RawMatchItem } from './client';
 
@@ -148,6 +149,20 @@ describe('findOrganizationsByNames', () => {
     const lookups = f.requests.filter((r) => r.query.includes('items_page_by_column_values'));
     expect(lookups).toHaveLength(2);
     expect(lookups.every((r) => r.variables.boardId === '400' && r.variables.columns[0].column_values.length <= 100)).toBe(true);
+  });
+
+  it('follows next_items_page, so a same-name Organization on a later page still makes the answer ambiguous', async () => {
+    const f = fake();
+    f.pageSize = 1;
+    f.addBoard({ id: '400', columns: [], items: [
+      { id: '1', name: 'Google, LLC', cells: {} },
+      { id: '2', name: 'Google Inc.', cells: {} },
+    ] });
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+    const found = await client.findOrganizationsByNames('400', organizationNameVariants('Google'));
+    expect(found.map((o) => o.id).sort()).toEqual(['1', '2']);
+    expect(f.requests.filter((r) => r.query.includes('next_items_page'))).toHaveLength(1);
+    expect(pickOrganization('Google', found).kind).toBe('several');
   });
 
   it('sends nothing for no names', async () => {

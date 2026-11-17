@@ -49,6 +49,13 @@ describe('handleRecord', () => {
     expect(row!.received_at).toBe(NOW);
   });
 
+  it('stores the context trimmed and cut to 200 characters, like the answer', async () => {
+    const long = 'c'.repeat(199) + ' ' + 'd'.repeat(300);
+    expect(await handleRecord(env, config, input({ context: `  ${long}` }), NOW)).toEqual({ recorded: true });
+    const row = await env.DB.prepare('SELECT context FROM employer_answers').first<{ context: string }>();
+    expect(row!.context).toBe('c'.repeat(199));
+  });
+
   it('replaces a pending answer and reports closed once decided', async () => {
     await handleRecord(env, config, input(), NOW);
     expect(await handleRecord(env, config, input({ answer: 'Apple Inc.' }), NOW)).toEqual({ recorded: true });
