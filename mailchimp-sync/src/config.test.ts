@@ -210,7 +210,7 @@ describe('validateConfig: consent', () => {
   it('validates the consent block', () => {
     const config = validateConfig(production);
     expect(config.consent.boards.map((b) => b.boardId)).toEqual([18437909781, 18437909784, 18437909787]);
-    expect(config.consent.enabled).toBe(false);
+    expect(config.consent.enabled).toBe(true);
     expect(config.consent.maxChangesPerRun).toBe(500);
     expect(config.consent.boards[2]!.pairs).toEqual([{ emailColumn: 'email_mm8ndy69', consentColumn: 'color_mm8nb7dq' }]);
   });

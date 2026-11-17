@@ -5,7 +5,8 @@
 **Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26).
 **Production deployed and writing** (at least since 2026-11-14; outbound only — see the
 Prerequisites' "Production starts outbound-only"). The [consent column sync](#consent-columns)
-ships with `consent.enabled: false` in production until David's go-ahead. **Sandbox provisioned
+is on in production since 2026-11-17 (David's go-ahead; that day's plan: 141 changes, 37 of them
+opt-outs). **Sandbox provisioned
 and verified 2026-09-22**: `svbc-mailchimp-sync-sandbox`
 is deployed, with its own D1/queues/secrets, a live "SVBC Sandbox" Mailchimp audience
 (`dfe12eec72`, `us9`), and both Monday/Mailchimp webhooks registered. Verification also caught

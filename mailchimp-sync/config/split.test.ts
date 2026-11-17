@@ -91,9 +91,9 @@ describe('config split: consent boards', () => {
     for (const board of sandbox.consent.boards) expect(prodIds).not.toContain(board.boardId);
   });
 
-  it('sandbox consent is enabled, production starts disabled', () => {
+  it('consent is enabled in both environments', () => {
     expect(sandbox.consent.enabled).toBe(true);
-    expect(production.consent.enabled).toBe(false);
+    expect(production.consent.enabled).toBe(true);
   });
 });
 
