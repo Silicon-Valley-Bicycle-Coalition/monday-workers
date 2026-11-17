@@ -1,6 +1,6 @@
 # impact-attribution
 
-**Status: built, not deployed. No live Monday write has been run.** Its first and only job so far
+**Status: sandbox deployed 2026-11-16 with writes off; production not deployed. No live Monday write has been run.** Its first and only job so far
 is employer affiliations from repeated matching gifts (issue #125). Every Monday write ships **off**
 (`impact-attribution:writes` unset, which means `off`).
 Design: [`docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md`](../docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md);
@@ -98,29 +98,33 @@ board id. Validated at startup (`src/config.ts`). Column titles are bare titles,
 
 Run from this directory unless noted. Sandbox first, then production.
 
-1. `npx wrangler d1 create svbc-impact-attribution-sandbox` (and `svbc-impact-attribution`); put the
-   ids in `wrangler.jsonc` (`REPLACE_WITH_SANDBOX_D1_ID`, `REPLACE_WITH_D1_ID`).
-2. `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env sandbox` (and
-   `svbc-impact-attribution --remote`).
-3. Proposed status column: `MONDAY_API_TOKEN=... node scripts/add-proposed-status.mjs --env sandbox
-   --execute` (then `--env production`). Then, from the repo root, `node
-   scripts/mark-read-only-columns.mjs` for each workspace to add the 🔒, and re-run
-   `salesforce-import`'s configure step so **Drafts to confirm** shows the column (until the column
-   exists, configure reports that view as `unknown column "Proposed status"`).
-4. Match history, once per environment. Production, from the import's artifacts (read-only; they are
-   gitignored and irreplaceable):
+1. ~~Create the D1 databases~~ done 2026-11-16: `svbc-impact-attribution`
+   (`1df5c5c8-8804-4b85-90dc-09360a5f2aa5`) and `svbc-impact-attribution-sandbox`
+   (`75b7115a-abe0-4bd4-904e-7ca255694906`), ids in `wrangler.jsonc`.
+2. ~~Apply the D1 migrations~~ done 2026-11-16 on both (`0001_create_tables.sql`). For a later
+   migration: `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env
+   sandbox` (and `svbc-impact-attribution --remote`).
+3. ~~Proposed status column~~ done 2026-11-16 on both Affiliations boards with
+   `scripts/add-proposed-status.mjs --env sandbox|production --execute`, and marked `🔒 Proposed
+   status` (production through `scripts/mark-read-only-columns.mjs --workspace 18201685 --apply`;
+   sandbox by renaming the one column, because that workspace's run would also have renamed 11
+   unrelated Wealth Screening columns). **Still to do by hand:** add Proposed status to the
+   existing **Drafts to confirm** view on both boards (production view 289689214, sandbox
+   289083044). `salesforce-import`'s configure only creates a view that doesn't exist yet, and the
+   API doesn't return a view's current column settings, so overwriting it could undo staff changes.
+4. ~~Match history~~ done 2026-11-16 in production: 1,964 matches, 424 person–company pairs,
+   2016-04-06 to 2026-10-28, from the import's artifacts (read-only; they are gitignored and
+   irreplaceable):
    ```sh
    B=../../monday-migration/backup/salesforce-import-data-2026-10-31
    node scripts/bootstrap-matches.mjs --payloads $B/transform/payloads.ndjson \
      --ledger $B/load/ledger.ndjson --boards $B/load/boards.json --out /tmp/bootstrap.sql
    npx wrangler d1 execute svbc-impact-attribution --remote --file=/tmp/bootstrap.sql
    ```
-   A dry check on 2026-11-16 gave 1,964 rows from 3,067 matching gifts (831 had an organization as
-   Donor, 242 no migrated person, 30 no organization link). The sandbox has no import artifacts of
-   its own: skip this step there and let the nightly read fill `matches`, or hand-load a few rows.
-5. `node ../scripts/flags.mjs impact-attribution writes off --env sandbox`, `npm run
-   deploy:sandbox`, and read the next night's log line (or trigger the cron with `wrangler dev
-   --env sandbox --test-scheduled`).
+   (831 matching gifts had an organization as Donor, 242 no migrated person, 30 no organization
+   link.) The sandbox has no import artifacts of its own: its nightly read fills `matches`.
+5. ~~Sandbox deploy, writes off~~ done 2026-11-16 (version `15807c85`; `impact-attribution:writes
+   off` set in `sandbox-FLAGS`). Read the next 11:00 UTC run's JSON log line in Workers Logs.
 6. Sandbox: `writes on`, check the Drafts in **Drafts to confirm** against a few known people.
 7. Production: `writes off`, `npm run deploy`, wait for one dry run.
 8. **Gate (decided 2026-11-16): David reviews the dry run's `payers` summary** and marks the
