@@ -159,10 +159,10 @@ Run from this directory unless noted. Sandbox first, then production.
 2. ~~Apply the D1 migrations~~ done 2026-11-16 on both (`0001_create_tables.sql`). For a later
    migration: `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env
    sandbox` (and `svbc-impact-attribution --remote`).
-   **Pending (#124):** `0002_email_domain_proposals.sql` (`proposals.evidence`/`domain`,
-   `email_index`) on both. The sandbox one goes **before this merges**: CI deploys the sandbox on
-   every merge to `main` without applying migrations, and until `0002` is there the email-domain
-   job fails each night (the matching-gift job still runs).
+   `0002_email_domain_proposals.sql` (#124: `proposals.evidence`/`domain`, `email_index`): applied
+   to the sandbox 2026-11-17; **production still to do**, before the production deploy that carries
+   the email-domain job. CI deploys the sandbox on every merge to `main` without applying
+   migrations, so a later migration goes to the sandbox before its MR merges.
 3. ~~Proposed status column~~ done 2026-11-16 on both Affiliations boards with
    `scripts/add-proposed-status.mjs --env sandbox|production --execute`, and marked `🔒 Proposed
    status` (production through `scripts/mark-read-only-columns.mjs --workspace 18201685 --apply`;
