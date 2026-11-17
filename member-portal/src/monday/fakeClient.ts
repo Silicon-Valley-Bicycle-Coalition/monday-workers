@@ -1,5 +1,6 @@
 import type { MondayClient } from './client';
-import type { AffiliationRecord, OrganizationCandidate } from '../changeRequests/employer';
+import type { AffiliationRecord } from '../changeRequests/employer';
+import type { OrganizationCandidate } from '../changeRequests/employerName';
 import type {
   ChangeRequestColumns,
   EmployerAnswerConfig,

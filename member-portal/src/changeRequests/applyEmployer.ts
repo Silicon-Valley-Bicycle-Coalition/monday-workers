@@ -1,7 +1,8 @@
 import type { ChangeRequestRow } from '../db/changeRequests';
 import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
-import { organizationNameVariants, pickOrganization, planAffiliationChange, previousPrimaryNote } from './employer';
+import { planAffiliationChange, previousPrimaryNote } from './employer';
+import { organizationNameVariants, pickOrganization } from './employerName';
 
 // Staff-facing Field values on the Change Requests log item (English, like FIELD_LABELS).
 export const EMPLOYER_LABELS = {
