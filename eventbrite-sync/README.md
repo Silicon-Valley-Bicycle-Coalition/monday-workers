@@ -675,11 +675,12 @@ confirm**. This Worker only collects: it never writes to Affiliations. Design:
 [`docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md`](../docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md)
 (issue #127); the proposing side is in `../impact-attribution/README.md`.
 
-**Which answers.** Pledge to Ride: a question mapped to `employer` in `pledge.events` (the config
-script maps wording like "Where do you work?" or "employer"). Every other event: the first answered
-`text` question worded like `EMPLOYER_QUESTION` in `src/mapping/employer.ts` (employer, where do you
-work, company you work, and Spanish equivalents); no per-event config. "Company name for invoice" does
-not match. A pledge's employer answer still goes to **Other Answers** as before; no new column.
+**Which answers.** A pledge event with a question mapped to `employer` in `pledge.events` uses that
+question (the config script maps wording like "Where do you work?" or "employer"). Otherwise, for any
+event, the first answered `text` question worded like `EMPLOYER_QUESTION` in `src/mapping/employer.ts`
+(employer, where do you work, company you work, and Spanish equivalents), skipping a pledge event's
+`ignoreQuestions` (staff list a question there to mean "don't read it"); no per-event config. "Company
+name for invoice" does not match. A pledge's employer answer still goes to **Other Answers** as before; no new column.
 
 **Who.** Only the attendee's own email counts (not a placeholder `Info Requested`). It's looked up on
 People's email column with `findItemByColumnValue`, never `matchPerson`, so a miss creates nothing:
@@ -690,8 +691,10 @@ and refunded attendees aren't recorded; a no-show is.
 service binding (entrypoint `EmployerAnswers`) after the board write and before the ledger row is
 marked `written`. A `{ recorded: false, reason }` result is logged (ids and reason only) and the
 message carries on. A transient failure throws, so the message retries, adopts its existing board
-item and repeats the call; a pledge or registration never dead-letters because an answer couldn't be
-recorded. The answer is trimmed to 200 characters, `answeredAt` is the attendee's created date, and
+item and repeats the call. A refusal never dead-letters a pledge or registration, but a persistent
+`impact-attribution` failure (migration not applied, entrypoint not deployed, config that throws) does:
+the message retries for about four days and then dead-letters, after its board item already exists, so
+no board data is lost, only the answer. The answer and the context are each trimmed to 200 characters, `answeredAt` is the attendee's created date, and
 `context` is the event name (`Pledge to Ride <year>` for a pledge). The answer text, the context and the email
 are never logged.
 
@@ -707,13 +710,25 @@ are never logged.
   records. Under `off` the dry-run sink (`dryRunEmployerAnswers` in `src/writeSwitch.ts`) logs ids
   only (source, attendee id, People item id), sends nothing, and the People lookup, being a read, still happens.
 
+**Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
+an environment, confirm in that same environment:
+
+- [ ] migration `0002_employer_answers.sql` is applied to `impact-attribution`'s D1;
+- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
+  fails validation makes every call throw).
+
+A missing migration, entrypoint or loadable config makes every call throw: each answered attendee's
+message retries for about four days and then dead-letters, after its board item already exists. A
+missing `employerAnswers` block is refused as `disabled`, so nothing is recorded.
+
 **Operator steps.** In order, sandbox first:
 
 1. `impact-attribution`: apply migration `0002_employer_answers.sql`
    (`npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env sandbox`; production
    at its rollout) and deploy it (`npm run deploy:sandbox`) **before** deploying this Worker's sandbox, so the
    binding resolves.
-2. Set `employerAnswers.enabled` to `true` in `config/sandbox.json`, deploy `eventbrite-sync` sandbox,
+2. Run the pre-enable checklist above for sandbox, then set `employerAnswers.enabled` to `true` in `config/sandbox.json`, deploy `eventbrite-sync` sandbox,
    and replay one past event: `node scripts/backfill-attendees.mjs --env sandbox --event-id <id> --worker-url …`.
 3. Production: see the three rollout steps in `../impact-attribution/README.md` ("Rollout of employer answers").
 

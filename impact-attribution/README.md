@@ -71,7 +71,8 @@ affiliation that counts on its own. Spec: "Proposing it" in the design above.
 source: 'eventbrite', sourceId, personItemId, answer, answeredAt, context })`. It returns `{ recorded:
 true }`, or `{ recorded: false, reason }` for anything that will never pass (`disabled`: no
 `employerAnswers` config; `invalid`; `non-answer`: blank or on the `ignore` list; `closed`: the row was
-already decided). It throws only on a transient failure (D1), so the caller retries. It is an upsert on
+already decided). It throws only on a transient failure (D1), so the caller retries. The answer and
+the context are each stored trimmed and cut to 200 characters. It is an upsert on
 `(source, source_id)`: a `pending` row is replaced by a later, changed answer; once the row is
 `proposed`, `skipped`, `expired` or `superseded` it is left alone. Logs carry ids and the result, never
 the answer or context.
@@ -93,7 +94,9 @@ Monday comments; it is never logged.
 
 1. Pending answers older than `maxAgeDays` are `expired`.
 2. Per person only the latest `answered_at` answer (plus any with the same normalised text) stays; the
-   rest are `superseded`, even while the latest is unresolved. This is among answers only; a pair
+   rest are `superseded`, even while the latest is unresolved. A pending answer older than that
+   person's latest `proposed` answer (same day: earlier `received_at`), such as a backfill arriving
+   after a newer answer was proposed, is `superseded` too. This is among answers only; a pair
    that qualifies from matching gifts is proposed by its own rule.
 3. Each distinct answer is resolved to an Organization with one name query (`findOrganizationsByNames`
    on `organizationsBoardId`; `normalizeEmployerName`, `organizationNameVariants` and `pickOrganization`
@@ -108,6 +111,10 @@ Monday comments; it is never logged.
 6. A created Draft is recorded in `proposals` (`sources` is `matches`, `answers` or `both`; `match_count`
    0 for an answer-only Draft), its answers become `proposed`, and the comment gets a line per answer:
    `Proposed from an Eventbrite answer: "<answer>" (<event>, <date>)`, after any match lines.
+
+If the answer step itself throws (D1, the Organizations lookup), the run logs
+`impact-attribution: answer step failed: <error class>: <message>` (never answer text) and carries on
+with match proposals only; answers left `pending` are tried again the next night.
 
 If marking the answers `proposed` fails after the Draft is created, the `proposals` ledger row still
 stops a second Draft and the next run marks them `skipped`, so a `skipped` answer can belong to a pair
@@ -136,14 +143,27 @@ answer-only pairs as well; `qualifying` counts match pairs only.
    Whoever configures the event marks that question `ignoreQuestions` until this ships, or maps it
    to `employer` once it has.
 2. Ship both Workers with `employerAnswers.enabled` false in `eventbrite-sync`. Turn it on in
-   sandbox and replay one past event with `backfill-attendees.mjs --env sandbox`.
+   sandbox (after the pre-enable checklist below) and replay one past event with `backfill-attendees.mjs --env sandbox`.
    Production `eventbrite-sync` deploys without the binding, so the 2027 pledge config never waits
    on this. Order in the sandbox: apply migration `0002` and deploy `impact-attribution` sandbox
    **before** `eventbrite-sync` sandbox, so the service binding resolves.
-3. Production: deploy `impact-attribution` (its own gate: the `excludedPayers` review), then add the
-   binding to `eventbrite-sync` production and enable it. Then backfill the 2027 pledges, so answers
-   given before this step are recorded. Apply `0002` to the production D1 first
-   (`npx wrangler d1 migrations apply svbc-impact-attribution --remote`).
+3. Production: apply `0002` to the production D1
+   (`npx wrangler d1 migrations apply svbc-impact-attribution --remote`), deploy `impact-attribution`
+   (its own gate: the `excludedPayers` review), then add the binding to `eventbrite-sync` production
+   and, once the checklist below passes, enable it. Then backfill the 2027 pledges, so answers given
+   before this step are recorded.
+
+**Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
+an environment, confirm in that same environment:
+
+- [ ] migration `0002_employer_answers.sql` is applied to this Worker's D1;
+- [ ] this Worker is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] this Worker's `config/*.json` has an `employerAnswers` block (and loads: a config that
+  fails validation makes every call throw).
+
+A missing migration, entrypoint or loadable config makes every call throw: each answered attendee's
+message retries for about four days and then dead-letters, after its board item already exists. A
+missing `employerAnswers` block is refused as `disabled`, so nothing is recorded.
 
 Each answered attendee costs one extra People read in `eventbrite-sync`, so pace that backfill as its
 README advises.

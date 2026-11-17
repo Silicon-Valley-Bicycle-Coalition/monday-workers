@@ -76,7 +76,9 @@ affiliation that staff confirm, never an affiliation that counts on its own.
   so `employer` is the one field that goes to both. *(My call: no new board column.)*
 - **Every other event** (volunteer shifts, classes, events): the first answered `text` question
   whose wording matches `/employer|where do you work|company you work|empleador|d[oó]nde trabajas/i`
-  (English and Spanish, like the phone pattern). No config per event. *(My call: a pattern, as for
+  (English and Spanish, like the phone pattern). No config per event. This wording fallback also
+  applies to a pledge event with no question mapped to `employer`, skipping its `ignoreQuestions`
+  (staff list a question there to mean "don't read it"). *(My call: a pattern, as for
   phone and zip, rather than a configured question id per event; staff create dozens of events.)*
 - Blank answers, and answers that normalise to a configured non-answer (`n/a`, `none`, `retired`,
   `self employed`, `unemployed`, `student`, …; `impact-attribution` config `employerAnswers.ignore`)
@@ -103,7 +105,7 @@ recordEmployerAnswer({
   personItemId: string,
   answer: string,         // as typed, trimmed, ≤ 200 chars
   answeredAt: string,     // attendee created date, YYYY-MM-DD
-  context: string,        // event name, for the staff comment
+  context: string,        // event name, for the staff comment; trimmed, ≤ 200 chars
 }): Promise<void>
 ```
 
@@ -123,8 +125,11 @@ marked `written`.
   never pass: config absent, validation. `eventbrite-sync` logs ids and the reason, and carries on.
 - It **throws** only on transient failures: D1 errors, or the service being unreachable. Then the
   message retries, the board write adopts its existing item (as today), and the call repeats.
-- A pledge or registration therefore never dead-letters because of an answer that can't be
-  recorded. *(My call.)*
+- A refusal therefore never dead-letters a pledge or registration. A persistent failure on the
+  `impact-attribution` side (migration not applied, entrypoint not deployed, config that throws) does:
+  the message retries for about four days and dead-letters after its board item exists, so no board
+  data is lost, only the answer. The rollout's pre-enable checklist guards against it. *(My call;
+  corrected after the final review.)*
 
 **Idempotent and updatable.** The call is an upsert on `(source, source_id)`. While the row is
 still `pending`, a later `attendee.updated` with a changed answer replaces it. Once the row is
@@ -154,7 +159,8 @@ After the match step, before choosing candidates:
    answer with the latest `answered_at`, plus any others with the same `answer_normalized`. Mark the
    rest `superseded`: someone who said "Google" in 2026 and "Apple" in 2027 gets one Draft, for
    Apple. This holds even while the latest answer is still unresolved: the older one doesn't stand
-   in for it. It applies only among answers. A pair qualifying from matching gifts is proposed by
+   in for it. A pending answer older than the person's latest `proposed` answer (same day: earlier
+   `received_at`), such as a backfill arriving after a newer answer was proposed, is `superseded` too. It applies only among answers. A pair qualifying from matching gifts is proposed by
    its own rule, regardless of answers.
 3. Resolve each distinct `answer_normalized` to an Organization: one `items_page_by_column_values`
    query on Organizations `name`, `any_of` the name variants (as the portal writer does), up to 100
@@ -199,12 +205,24 @@ match upsert does today. Under `hold`/`unknown` the run skips, as today.
    Whoever configures the event marks that question `ignoreQuestions` until this ships, or maps it
    to `employer` once it has.
 2. Ship both Workers with `employerAnswers.enabled` false in `eventbrite-sync`. Turn it on in
-   sandbox and replay one past event with `backfill-attendees.mjs --env sandbox`.
+   sandbox (after the pre-enable checklist below) and replay one past event with `backfill-attendees.mjs --env sandbox`.
    Production `eventbrite-sync` deploys without the binding, so the 2027 pledge config never waits
    on this.
 3. Production: deploy `impact-attribution` (its own gate: the `excludedPayers` review), then add the
    binding to `eventbrite-sync` production and enable it. Then backfill the 2027 pledges, so answers
    given before this step are recorded.
+
+**Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
+an environment, confirm in that same environment:
+
+- [ ] migration `0002_employer_answers.sql` is applied to `impact-attribution`'s D1;
+- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
+  fails validation makes every call throw).
+
+A missing migration, entrypoint or loadable config makes every call throw: each answered attendee's
+message retries for about four days and then dead-letters, after its board item already exists. A
+missing `employerAnswers` block is refused as `disabled`, so nothing is recorded.
 
 ## Testing
 
