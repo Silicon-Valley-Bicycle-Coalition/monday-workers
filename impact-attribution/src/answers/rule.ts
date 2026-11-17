@@ -5,7 +5,7 @@ import type { AnswerRow } from './store';
 // Pure rules for employer answers (design "Proposing it" and "Latest answer only").
 
 const newestFirst = (x: AnswerRow, y: AnswerRow): number =>
-  x.answeredAt !== y.answeredAt ? (x.answeredAt < y.answeredAt ? 1 : -1) : x.receivedAt < y.receivedAt ? 1 : x.receivedAt > y.receivedAt ? -1 : 0;
+  x.answeredAt !== y.answeredAt ? (x.answeredAt < y.answeredAt ? 1 : -1) : x.receivedAt !== y.receivedAt ? (x.receivedAt < y.receivedAt ? 1 : -1) : x.sourceId < y.sourceId ? 1 : x.sourceId > y.sourceId ? -1 : 0;
 
 // Expires answers more than `maxAgeDays` old (exactly maxAgeDays is kept), then, per person, keeps
 // only the latest answer (ties: latest receivedAt) and any other row with the same normalised text.

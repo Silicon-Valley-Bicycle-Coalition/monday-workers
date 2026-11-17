@@ -34,6 +34,14 @@ describe('expireAndSupersede', () => {
     expect(r.superseded.map((v) => v.sourceId)).toEqual(['x']);
   });
 
+  it('breaks full ties by sourceId so input order does not matter', () => {
+    const x = ans({ sourceId: 'x', answerNormalized: 'x' });
+    const y = ans({ sourceId: 'y', answerNormalized: 'y' });
+    for (const rows of [[x, y], [y, x]]) {
+      expect(expireAndSupersede(rows, '2026-11-17', 365).live.map((v) => v.sourceId)).toEqual(['y']);
+    }
+  });
+
   it('keeps every row that normalises like the winner', () => {
     const a = ans({ sourceId: 'a', answeredAt: '2026-05-01' });
     const b = ans({ sourceId: 'b', answeredAt: '2026-06-01', answer: 'GOOGLE' });

@@ -8,6 +8,10 @@ const MAX_LINES = 10;
 const dollars = (cents: number): string =>
   `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Monday renders update bodies as HTML, and answers are public free text.
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 export function evidenceComment(orgName: string, matches: MatchRow[], answers: AnswerRow[] = []): string {
   const out: string[] = [];
   if (matches.length > 0 || answers.length === 0) {
@@ -16,7 +20,7 @@ export function evidenceComment(orgName: string, matches: MatchRow[], answers: A
     out.push(`Proposed from ${matches.length} matching gifts by ${orgName}:`, ...lines);
   }
   if (answers.length > 0) {
-    out.push(...answers.slice(0, MAX_LINES).map((a) => `Proposed from an Eventbrite answer: "${a.answer}" (${a.context}, ${a.answeredAt})`));
+    out.push(...answers.slice(0, MAX_LINES).map((a) => `Proposed from an Eventbrite answer: "${escapeHtml(a.answer)}" (${escapeHtml(a.context)}, ${a.answeredAt})`));
     if (answers.length > MAX_LINES) out.push(`and ${answers.length - MAX_LINES} more`);
   }
   return out.join('\n');

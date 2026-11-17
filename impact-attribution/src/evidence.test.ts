@@ -48,4 +48,10 @@ describe('evidenceComment', () => {
     expect(lines).toHaveLength(11);
     expect(lines[10]).toBe('and 2 more');
   });
+
+  it('HTML-escapes the answer and context', () => {
+    const out = evidenceComment('Acme', [], [a('<a href="x">Acme</a> & Co', '2027-01-20', '"Gala" <b>')]);
+    expect(out).toBe('Proposed from an Eventbrite answer: "&lt;a href=&quot;x&quot;&gt;Acme&lt;/a&gt; &amp; Co" (&quot;Gala&quot; &lt;b&gt;, 2027-01-20)');
+    expect(out).not.toContain('<');
+  });
 });
