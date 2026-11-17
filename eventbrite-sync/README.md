@@ -12,8 +12,8 @@ with its own D1 and queues; its attendee feed is configured (2026-11-03) with th
 `Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
 [`docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md`](../docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md);
-see "Attendee feed and class emails" below). Rehearsed in the sandbox only; production still needs
-the items in "Open".
+see "Attendee feed and class emails" below). Live in production since 2026-11-03; the first real
+class emails went out 2026-11-11. What's still open is under "Open".
 **Priority:** Post-cutover (2026-10-23). Bike Summit 2026 (Oct 22) now sells out *before*
 cutover, so `eb4sf` puts its orders in Salesforce and `salesforce-import` carries them over as
 Event Ticket gifts with their order ids; this Worker takes every order after that, and the
@@ -456,8 +456,9 @@ Same dashboard route as the order webhook: Payload URL
 
 Eventbrite stores `attendee.checked_in` and `attendee.checked_out` as `barcode.checked_in` and
 `barcode.un_checked_in` (production's webhook read back that way on 2026-11-03), and the Worker
-ignores an action its config doesn't list, so the config lists both spellings. No real check-in
-delivery has been seen yet, so which spelling arrives, and its `api_url` shape, are unconfirmed.
+ignores an action its config doesn't list, so the config lists both spellings. Production's first
+check-ins (2026-11-08 to 11-14, four events) arrived as `barcode.checked_in` and were written; no
+`attendee.checked_in` delivery has been seen.
 
 ### Event Status after the event ends
 
@@ -629,7 +630,10 @@ pledges, with their answers and phones, to Event Registrations, which all staff 
 2. `node scripts/pledge-event-config.mjs --event-id <id> --year <n>` prints its `pledge.events` block and
    what to review. Paste it into `config/svbc.json`, and **deploy before the event is published**.
 3. Update the dashboard's Year filter.
-4. After publishing, make one test pledge, see the item appear, cancel it, and see it read `Canceled`.
+4. Add the employer question to the draft: "Where do you work? (Many employers match donations and
+   volunteer time.)" Step 2's script maps it to `employer` (the answer still lands in Other Answers; see
+   "Employer answers"). Until a build with `employer` deploys, mark it `ignoreQuestions` instead.
+5. After publishing, make one test pledge, see the item appear, cancel it, and see it read `Canceled`.
    Whether a cancellation sends `attendee.updated` hasn't been observed. If it doesn't, re-run the backfill
    before reading report figures.
 
@@ -663,6 +667,75 @@ sandbox with `backfill-attendees.mjs --env sandbox` instead, and delete the sand
 publishes a limit of 2,000 calls an hour that the Worker's other traffic shares. Confirm it, and use
 `--pause-ms 2000` or slower. Check the ledger first: the same `monday_item_id` problem as the recovery above
 applies to any configured event that already has rows.
+
+## Employer answers
+
+An attendee who answers an employer question ("Where do you work?") has the answer handed to
+`impact-attribution`, which proposes a **Draft** Affiliation for staff to confirm in **Drafts to
+confirm**. This Worker only collects: it never writes to Affiliations. Design:
+[`docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md`](../docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md)
+(issue #127); the proposing side is in `../impact-attribution/README.md`.
+
+**Which answers.** A pledge event with a question mapped to `employer` in `pledge.events` uses that
+question (the config script maps wording like "Where do you work?" or "employer"). Otherwise, for any
+event, the first answered `text` question worded like `EMPLOYER_QUESTION` in `src/mapping/employer.ts`
+(employer, where do you work, company you work, and Spanish equivalents), skipping a pledge event's
+`ignoreQuestions` (staff list a question there to mean "don't read it"); no per-event config. "Company
+name for invoice" does not match. A pledge's employer answer still goes to **Other Answers** as before; no new column.
+
+**Who.** Only the attendee's own email counts (not a placeholder `Info Requested`). It's looked up on
+People's email column with `findItemByColumnValue`, never `matchPerson`, so a miss creates nothing:
+no People match, nothing recorded. The lookup is one extra People read per answered attendee. Canceled
+and refunded attendees aren't recorded; a no-show is.
+
+**Hand-over.** `src/consumer/employerAnswer.ts` calls `recordEmployerAnswer` on the `EMPLOYER_ANSWERS`
+service binding (entrypoint `EmployerAnswers`) after the board write and before the ledger row is
+marked `written`. A `{ recorded: false, reason }` result is logged (ids and reason only) and the
+message carries on. A transient failure throws, so the message retries, adopts its existing board
+item and repeats the call. A refusal never dead-letters a pledge or registration, but a persistent
+`impact-attribution` failure (migration not applied, entrypoint not deployed, config that throws) does:
+the message retries for about four days and then dead-letters, after its board item already exists, so
+no board data is lost, only the answer. The answer and the context are each trimmed to 200 characters, `answeredAt` is the attendee's created date, and
+`context` is the event name (`Pledge to Ride <year>` for a pledge). The answer text, the context and the email
+are never logged.
+
+**Switches.**
+
+* `employerAnswers.enabled` in `config/*.json` is **`false` in both** `svbc.json` and `sandbox.json`.
+  The sandbox binding alone doesn't turn it on; set it to `true` to use it.
+* The binding is optional. **Production's `wrangler.jsonc` has no `EMPLOYER_ANSWERS` binding** until
+  `impact-attribution` is deployed to production (a comment there gives the line to add); a missing
+  binding behaves exactly like `enabled: false`, so the 2027 pledge config never waits on this.
+  Sandbox binds `svbc-impact-attribution-sandbox`; `config/split.test.ts` checks the service names differ.
+* Under the write switch, `off` and `hold` follow the consumer's existing disposition: only `on`
+  records. Under `off` the dry-run sink (`dryRunEmployerAnswers` in `src/writeSwitch.ts`) logs ids
+  only (source, attendee id, People item id), sends nothing, and the People lookup, being a read, still happens.
+
+**Pre-enable checklist.** Before setting `eventbrite-sync`'s `employerAnswers.enabled` to `true` in
+an environment, confirm in that same environment:
+
+- [ ] migration `0003_employer_answers.sql` is applied to `impact-attribution`'s D1;
+- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
+  fails validation makes every call throw).
+
+A missing migration, entrypoint or loadable config makes every call throw: each answered attendee's
+message retries for about four days and then dead-letters, after its board item already exists. A
+missing `employerAnswers` block is refused as `disabled`, so nothing is recorded.
+
+**Operator steps.** In order, sandbox first:
+
+1. `impact-attribution`: apply migration `0003_employer_answers.sql`
+   (`npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env sandbox`; production
+   at its rollout) and deploy it (`npm run deploy:sandbox`) **before** deploying this Worker's sandbox, so the
+   binding resolves.
+2. Run the pre-enable checklist above for sandbox, then set `employerAnswers.enabled` to `true` in `config/sandbox.json`, deploy `eventbrite-sync` sandbox,
+   and replay one past event: `node scripts/backfill-attendees.mjs --env sandbox --event-id <id> --worker-url …`.
+3. Production: see the three rollout steps in `../impact-attribution/README.md` ("Rollout of employer answers").
+
+A backfill records answers given before the switch was on, or by an attendee who joined People later;
+a normal webhook delivery doesn't revisit those. For backfill pacing, each answered attendee adds one
+People read to the costs in "Backfill pace" under Pledge to Ride, so keep the `--pause-ms` advice there.
 
 ## Resetting for new board ids
 
@@ -744,7 +817,7 @@ Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fa
 
 ## Deploy
 
-Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002. Production's attendee feed config was filled on 2026-11-03; only the order webhook is registered there so far. This is the order (sandbox first, `--env sandbox` on every command,
+Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002 (production has 0003, the class email ledger, too). Production's attendee feed config was filled on 2026-11-03, and both webhooks were registered that day (see the top of this README). This is the order (sandbox first, `--env sandbox` on every command,
 then production at cutover without it):
 
 ```sh
@@ -825,8 +898,12 @@ beyond the table above:
 0. **Production event emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
    (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
    `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
-   Still open: a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
-   in `wrangler.jsonc`). After the 2026-11-09 generic change deploys: rename the column
+   First real sends (checked 2026-11-17): Kendra's reminder on 2026-11-11 (6 people) and, on 2026-11-14,
+   a thank-you (7) and a second class's reminder (9), with timeline entries on the recipients' items; check-ins have
+   arrived since 2026-11-08. Still open: a first missed-you, and a timed run of `result` on a 26-person
+   roster (the CPU limit in `wrangler.jsonc`). The 2026-11-09 generic change is deployed (the 2026-11-14
+   updates read "Event email"), but as of 2026-11-17 the column is still `🔒 Send class email` and
+   five Volunteering and Group Rides events dated November–December have no link. Still to do: rename the column
    `🔒 Send event email` (`MARKED_COLUMNS` already has the new title), run
    `scripts/backfill-send-links.mjs`, and redeploy the page with its matching wording.
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the

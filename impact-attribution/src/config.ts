@@ -21,6 +21,8 @@ export interface ImpactAttributionConfig {
   // item id; the note names the organization for the reader, since names drift.
   excludedPayers: { id: string; note: string }[];
   maxProposalsPerRun: number;
+  // Employer answers handed over by other Workers (Eventbrite). Absent: the feature is off.
+  employerAnswers?: { maxAgeDays: number; ignore: string[] };
   // Employer proposals from a donor's company email domain (#124). People and Organizations boards
   // are peopleBoardIds and organizationsBoardId; Drafts go to `affiliations`.
   emailDomains: {
@@ -63,6 +65,16 @@ function idList(o: Json, key: string, path: string): string[] {
     throw new Error(`config: ${path}.${key} must be a non-empty list of numeric id strings`);
   }
   return v as string[];
+}
+
+function optionalEmployerAnswers(root: Json): ImpactAttributionConfig['employerAnswers'] {
+  if (root.employerAnswers === undefined) return undefined;
+  const e = obj(root.employerAnswers, 'employerAnswers');
+  const ignore = e.ignore;
+  if (!Array.isArray(ignore) || !ignore.every((x) => typeof x === 'string')) {
+    throw new Error('config: employerAnswers.ignore must be a list of strings');
+  }
+  return { maxAgeDays: posInt(e, 'maxAgeDays', 'employerAnswers'), ignore: ignore as string[] };
 }
 
 // Domains are compared lower-cased.
@@ -130,6 +142,7 @@ export function validateConfig(raw: unknown): ImpactAttributionConfig {
     const o = obj(p, `excludedPayers[${i}]`);
     return { id: str(o, 'id', `excludedPayers[${i}]`), note: str(o, 'note', `excludedPayers[${i}]`) };
   });
+  const employerAnswers = optionalEmployerAnswers(root);
   return {
     monday: { apiUrl: str(monday, 'apiUrl', 'monday') },
     donations: {
@@ -150,6 +163,7 @@ export function validateConfig(raw: unknown): ImpactAttributionConfig {
     rule: { windowDays: posInt(rule, 'windowDays', 'rule'), minMatches, currentWithinDays: posInt(rule, 'currentWithinDays', 'rule') },
     excludedPayers,
     maxProposalsPerRun: posInt(root, 'maxProposalsPerRun', 'config'),
+    ...(employerAnswers ? { employerAnswers } : {}),
     emailDomains: emailDomains(root.emailDomains, idList(root, 'peopleBoardIds', 'config')),
   };
 }

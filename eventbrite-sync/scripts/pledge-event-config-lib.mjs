@@ -8,6 +8,7 @@ const FIELD_RULES = [
   [/how did you hear/i, 'heardAbout'],
   [/who asked you/i, 'whoAsked'],
   [/authorize/i, 'consent'],
+  [/where do you work|employer/i, 'employer'],
 ];
 // Nobody asked for these on a board; they stay in Eventbrite.
 const IGNORED = [/^age\b/i, /^ethnicity/i, /^gender/i];

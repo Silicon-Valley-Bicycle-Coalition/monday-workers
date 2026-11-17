@@ -118,6 +118,7 @@ export default {
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
+      employerAnswers: env.EMPLOYER_ANSWERS ?? null,
     }, gate);
   },
 

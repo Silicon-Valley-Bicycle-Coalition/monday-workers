@@ -64,6 +64,7 @@ export function testConfig(
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },
       peopleEmailColumn: 'people_email_col',
     },
+    employerAnswers: { enabled: true },
   };
 }
 

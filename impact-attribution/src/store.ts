@@ -62,16 +62,21 @@ export async function proposedPairs(db: D1Database): Promise<Set<string>> {
 // One ledger for both jobs (#124): a pair proposed from matching gifts or from an email domain is
 // never proposed again by either. `evidence` says which job made the Draft; an email-domain
 // proposal carries its domain and match count 0.
+// `sources` (migration 0003) says which evidence a matching-gift-job Draft rests on: gifts,
+// Eventbrite employer answers, or both. Null on email-domain Drafts and rows before 0003.
+export type ProposalSources = 'matches' | 'answers' | 'both';
+
 export async function recordProposal(
   db: D1Database,
   p: {
     personItemId: string; orgItemId: string; affiliationItemId: string; proposedStatus: 'Current' | 'Former'; matchCount: number;
+    sources?: ProposalSources;
     evidence?: 'matches' | 'email_domain'; domain?: string | null;
   },
   now: string,
 ): Promise<void> {
   await db.prepare(
-    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at, evidence, domain)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, now, p.evidence ?? 'matches', p.domain ?? null).run();
+    `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at, evidence, domain, sources)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(p.personItemId, p.orgItemId, p.affiliationItemId, p.proposedStatus, p.matchCount, now, p.evidence ?? 'matches', p.domain ?? null, p.sources ?? null).run();
 }

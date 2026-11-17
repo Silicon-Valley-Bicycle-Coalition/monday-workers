@@ -28,6 +28,7 @@ class FakeClient implements ImpactMondayClient {
   async listPeople(boardId: string) { return this.people.filter((p) => p.boardId === boardId); }
   async listOrganizations() { return this.organizations; }
   async listAffiliations() { return this.affiliations; }
+  async findOrganizationsByNames() { return []; } // the employer-answer step (#127); unused here
   async createDraft(_cfg: unknown, d: { name: string; personItemId: string; orgItemId: string; proposedStatus: 'Current' | 'Former' }) {
     if (this.failCreate) throw new Error('monday down');
     this.drafts.push(d);

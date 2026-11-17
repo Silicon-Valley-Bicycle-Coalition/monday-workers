@@ -10,6 +10,7 @@ import { isItemGone } from '../monday/itemGone';
 import type { AttendeeRow, EventRow } from '../types';
 import { linkedItemId } from '../util/itemId';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
+import { recordEmployerAnswer } from './employerAnswer';
 
 export interface VolunteerContext {
   row: AttendeeRow;
@@ -114,10 +115,12 @@ export async function processVolunteer(message: AttendeeQueueMessage, ctx: Volun
       await markGone(mondayItemId);
       return;
     }
+    await recordEmployerAnswer(attendee, null, event.name?.text ?? '', deps);
     await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId, writtenAt });
     return;
   }
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, { ...columnValues, [cols.eventColumn]: listing, [cols.listingColumn]: listing });
+  await recordEmployerAnswer(attendee, null, event.name?.text ?? '', deps);
   await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId: item.id, writtenAt });
 }

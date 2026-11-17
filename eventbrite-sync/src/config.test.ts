@@ -24,6 +24,16 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).not.toThrow();
   });
 
+  it('requires employerAnswers.enabled to be a boolean', () => {
+    const cfg = valid();
+    delete cfg.employerAnswers;
+    expect(() => validateConfig(cfg)).toThrow('employerAnswers.enabled');
+    cfg.employerAnswers = { enabled: 'yes' };
+    expect(() => validateConfig(cfg)).toThrow('employerAnswers.enabled');
+    cfg.employerAnswers = { enabled: false };
+    expect(validateConfig(cfg).employerAnswers.enabled).toBe(false);
+  });
+
   it('rejects a non-object', () => {
     expect(() => validateConfig('nope')).toThrow('config: expected an object');
   });

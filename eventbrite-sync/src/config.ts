@@ -63,7 +63,7 @@ const PLEDGE_COLUMN_KEYS = [
   'attendeeIdColumn', 'yearColumn', 'statusColumn', 'dateColumn', 'emailColumn', 'detailsColumn', 'zipColumn', 'countyColumn',
   'daysPledgedColumn', 'riderTypeColumn', 'heardAboutColumn', 'whoAskedColumn', 'consentColumn', 'otherAnswersColumn',
 ] as const;
-const PLEDGE_FIELDS = ['zip', 'daysPledged', 'riderType', 'heardAbout', 'whoAsked', 'consent'];
+const PLEDGE_FIELDS = ['zip', 'daysPledged', 'riderType', 'heardAbout', 'whoAsked', 'consent', 'employer'];
 // The county labels mapPledge assigns itself.
 const PLEDGE_FALLBACK_COUNTIES = ['Outside', 'Unknown'];
 
@@ -148,6 +148,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
 
   validateAttendeeSync(cfg.attendeeSync);
   if (cfg.pledge !== undefined) validatePledge(cfg.pledge, monday.boards);
+  if (!isObject(cfg.employerAnswers) || typeof cfg.employerAnswers.enabled !== 'boolean') {
+    throw new Error('config: "employerAnswers.enabled" must be a boolean (false keeps employer answers from being handed to impact-attribution)');
+  }
 
   const config = cfg as unknown as EventbriteSyncConfig;
   volunteerBoardMode(config); // a half-configured Volunteers board fails here, at load (and in CI)

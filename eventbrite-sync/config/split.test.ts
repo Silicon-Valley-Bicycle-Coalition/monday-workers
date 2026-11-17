@@ -255,6 +255,18 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
+  it('binds EMPLOYER_ANSWERS to the sandbox impact-attribution only; production declares none until it is deployed there', () => {
+    const binding = (scope: Json) => (scope.services as { binding: string; service: string; entrypoint?: string }[] | undefined)?.find((s) => s.binding === 'EMPLOYER_ANSWERS');
+    expect(binding(sandboxEnv)).toEqual({ binding: 'EMPLOYER_ANSWERS', service: 'svbc-impact-attribution-sandbox', entrypoint: 'EmployerAnswers' });
+    expect(binding(sandboxEnv)!.service).toMatch(/-sandbox$/);
+    expect(binding(wrangler)).toBeUndefined();
+  });
+
+  it('ships employerAnswers off in both configs', () => {
+    expect(production.employerAnswers).toEqual({ enabled: false });
+    expect(sandbox.employerAnswers).toEqual({ enabled: false });
+  });
+
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-eventbrite-sync');
