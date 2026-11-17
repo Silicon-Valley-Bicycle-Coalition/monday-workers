@@ -2,7 +2,9 @@ import type { ImpactAttributionConfig } from './config';
 
 // The pairing rule (spec "The rule"): a person matched by the same organization twice within
 // `windowDays` (inclusive) is proposed as affiliated with it — Current if their latest match by it
-// is within `currentWithinDays` of today, otherwise Former.
+// is within `currentWithinDays` of today, otherwise Former. A person can have only one current
+// employer: when two companies both qualify as Current, the one with the older latest match is
+// proposed as Former (selectCandidates).
 
 export interface MatchRow { donationItemId: string; personItemId: string; orgItemId: string; matchDate: string; amountCents: number | null }
 
@@ -12,6 +14,8 @@ export interface Candidate {
   proposedStatus: 'Current' | 'Former';
   latestMatch: string;
   matches: MatchRow[]; // newest first
+  // Set when this was Current by the rule but a newer employer's matches demoted it to Former.
+  supersededBy?: { orgItemId: string; latestMatch: string };
 }
 
 export const pairKey = (personItemId: string, orgItemId: string): string => `${personItemId}:${orgItemId}`;
@@ -57,7 +61,7 @@ export function selectCandidates(all: Candidate[], skip: SelectSkips, max: numbe
 } {
   const skipped = { excluded: 0, existing: 0, proposed: 0 };
   const eligible: Candidate[] = [];
-  for (const c of all) {
+  for (const c of demoteSuperseded(all, skip.excludedOrgIds)) {
     const key = pairKey(c.personItemId, c.orgItemId);
     if (skip.excludedOrgIds.has(c.orgItemId)) skipped.excluded++;
     else if (skip.existingPairs.has(key)) skipped.existing++;
@@ -69,4 +73,22 @@ export function selectCandidates(all: Candidate[], skip: SelectSkips, max: numbe
     return x.latestMatch < y.latestMatch ? 1 : x.latestMatch > y.latestMatch ? -1 : 0;
   });
   return { chosen: eligible.slice(0, max), skipped, deferred: Math.max(0, eligible.length - max) };
+}
+
+// Among one person's Current candidates, only the company with the newest latest match stays
+// Current; the others become Former, naming it. Pairs that already have an affiliation or a past
+// proposal still count as the newer employer (they are only skipped later), and an excluded payer
+// (a foundation) never does. Two companies whose latest matches share a day both stay Current.
+function demoteSuperseded(all: Candidate[], excludedOrgIds: Set<string>): Candidate[] {
+  const newest = new Map<string, Candidate>();
+  for (const c of all) {
+    if (c.proposedStatus !== 'Current' || excludedOrgIds.has(c.orgItemId)) continue;
+    const best = newest.get(c.personItemId);
+    if (best === undefined || c.latestMatch > best.latestMatch) newest.set(c.personItemId, c);
+  }
+  return all.map((c) => {
+    const best = newest.get(c.personItemId);
+    if (c.proposedStatus !== 'Current' || best === undefined || c.latestMatch >= best.latestMatch) return c;
+    return { ...c, proposedStatus: 'Former', supersededBy: { orgItemId: best.orgItemId, latestMatch: best.latestMatch } };
+  });
 }
