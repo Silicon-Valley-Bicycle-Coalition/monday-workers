@@ -18,11 +18,18 @@ const aff = (over: Partial<AffiliationRecord>): AffiliationRecord => ({
   itemId: 'a1', personIds: ['100'], organizationIds: ['o1'], status: 'Current', workEmail: null, ...over,
 });
 
-function select(people: PersonRecord[], affiliations: AffiliationRecord[] = [], extra: { proposedPairs?: Set<string>; cap?: number } = {}) {
+function select(
+  people: PersonRecord[], affiliations: AffiliationRecord[] = [],
+  extra: { proposedPairs?: Set<string>; cap?: number; staleBefore?: string | null; sharedAddresses?: Set<string> } = {},
+) {
   return selectProposals({
     people, affiliations, organizations,
     domainMap: buildDomainMap(organizations, affiliations, { currentLabel: 'Current', overrides: {} }),
     blocked: new Set(['gmail.com']),
+    blockedTlds: new Set(['edu']),
+    proposeFromBoardIds: new Set(['18437909781']),
+    staleBefore: extra.staleBefore ?? null,
+    sharedAddresses: extra.sharedAddresses ?? new Set(),
     proposedPairs: extra.proposedPairs ?? new Set(),
     labels, cap: extra.cap ?? 25,
   });
@@ -103,11 +110,6 @@ describe('selectProposals', () => {
     expect(select([person()], [aff({ personIds: [], status: 'Current' })]).proposals).toHaveLength(1);
   });
 
-  it('proposes for a People (Historical) person and keeps their board', () => {
-    const { proposals } = select([person({ boardId: '18437909784' })]);
-    expect(proposals[0]!.person.boardId).toBe('18437909784');
-  });
-
   it('takes recent donors first and defers the rest past the cap', () => {
     const people: PersonRecord[] = [];
     for (let i = 0; i < 30; i++) {
@@ -131,5 +133,43 @@ describe('selectProposals', () => {
     const r = select([person({ itemId: '30' }), person({ itemId: '4' }), person({ itemId: '200' })], [], { cap: 2 });
     expect(r.proposals.map((p) => p.person.itemId)).toEqual(['4', '30']);
     expect(r.deferred).toBe(1);
+  });
+
+  // Review of !502: evidence that is probably out of date, or that names someone else's employer.
+  describe('stale or borrowed evidence', () => {
+    it('never proposes from a People (Historical) item, though its addresses still feed the index', () => {
+      const r = select([person({ boardId: '18437909784' })]);
+      expect(r.proposals).toEqual([]);
+      expect(r.skipped.inactiveBoard).toBe(1);
+    });
+
+    it('skips a person whose last gift is older than the cutoff', () => {
+      const r = select([person({ lastGiftDate: '2019-06-30' })], [], { staleBefore: '2023-11-17' });
+      expect(r.proposals).toEqual([]);
+      expect(r.skipped.staleEvidence).toBe(1);
+    });
+
+    it('still proposes a gift on the cutoff day and a person with no gift on the live board', () => {
+      const r = select([person({ lastGiftDate: '2023-11-17' }), person({ itemId: '101' })], [], { staleBefore: '2023-11-17' });
+      expect(r.proposals.map((p) => p.person.itemId)).toEqual(['100', '101']);
+    });
+
+    it('ignores an address held by more than one person, so a spouse is not proposed at the other\'s employer', () => {
+      const r = select(
+        [person({ personalEmail: 'jo@gmail.com', householdEmail: 'fam@globex.example' })], [],
+        { sharedAddresses: new Set(['fam@globex.example']) },
+      );
+      expect(r.proposals).toEqual([]);
+      expect(r.skipped.sharedAddress).toBe(1);
+    });
+
+    it('still proposes from an unshared Personal Email when the Household Email is shared', () => {
+      const r = select(
+        [person({ householdEmail: 'fam@globex.example' })], [],
+        { sharedAddresses: new Set(['fam@globex.example']) },
+      );
+      expect(r.proposals[0]).toMatchObject({ organizationId: 'o1' });
+      expect(r.skipped.twoEmployers).toBe(0);
+    });
   });
 });

@@ -132,3 +132,35 @@ describe('lookupDomain', () => {
     expect(lookupDomain(map, null, new Set())).toEqual({ kind: 'none' });
   });
 });
+
+describe('lookupDomain with blocked TLDs (review of !502)', () => {
+  const orgs: OrganizationRecord[] = [
+    { itemId: 'su', name: 'Stanford University', websiteUrl: 'https://www.stanford.edu' },
+    { itemId: 'sjsu', name: 'San José State University', websiteUrl: 'https://sjsu.edu' },
+  ];
+  const tlds = new Set(['edu']);
+
+  it('does not map a university domain from its Website: students share it with staff', () => {
+    const map = buildDomainMap(orgs, [], { currentLabel: 'Current', overrides: {} });
+    expect(lookupDomain(map, 'stanford.edu', new Set(), tlds)).toEqual({ kind: 'none' });
+    expect(lookupDomain(map, 'cs.stanford.edu', new Set(), tlds)).toEqual({ kind: 'none' });
+  });
+
+  it('does not map one from a Current Work Email either', () => {
+    const affs = [{ itemId: 'a', personIds: ['1'], organizationIds: ['sjsu'], status: 'Current', workEmail: 'x@sjsu.edu' }];
+    const map = buildDomainMap(orgs, affs, { currentLabel: 'Current', overrides: {} });
+    expect(lookupDomain(map, 'sjsu.edu', new Set(), tlds)).toEqual({ kind: 'none' });
+  });
+
+  it('maps one an override names, subdomains included, and an excluded subdomain still wins', () => {
+    const map = buildDomainMap(orgs, [], { currentLabel: 'Current', overrides: { 'stanford.edu': 'su' } });
+    expect(lookupDomain(map, 'cs.stanford.edu', new Set(), tlds)).toMatchObject({ kind: 'mapped', organizationId: 'su', source: 'override' });
+    expect(lookupDomain(map, 'alumni.stanford.edu', new Set(['alumni.stanford.edu']), tlds)).toEqual({ kind: 'none' });
+  });
+
+  it('does not report an ambiguous university domain as ambiguous: it is blocked', () => {
+    const map = buildDomainMap([...orgs, { itemId: 'su2', name: 'Stanford dup', websiteUrl: 'stanford.edu' }], [], { currentLabel: 'Current', overrides: {} });
+    expect(lookupDomain(map, 'stanford.edu', new Set(), tlds)).toEqual({ kind: 'none' });
+  });
+});
+

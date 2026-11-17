@@ -22,7 +22,9 @@ export interface Proposal {
   proposedFrom: string;
 }
 
-export type SkipReason = 'hasCurrentOrDraft' | 'formerAtOrg' | 'alreadyProposed' | 'twoEmployers' | 'ambiguousDomain';
+export type SkipReason =
+  | 'inactiveBoard' | 'staleEvidence' | 'sharedAddress'
+  | 'hasCurrentOrDraft' | 'formerAtOrg' | 'alreadyProposed' | 'twoEmployers' | 'ambiguousDomain';
 
 export interface Selection { proposals: Proposal[]; deferred: number; skipped: Record<SkipReason, number> }
 
@@ -34,12 +36,19 @@ export function selectProposals(input: {
   organizations: OrganizationRecord[];
   domainMap: DomainMap;
   blocked: ReadonlySet<string>;
+  blockedTlds: ReadonlySet<string>; // only an override maps a domain under these (students share .edu with staff)
+  // An address is evidence of the person's own current job only on the live People board, with a
+  // gift on or after staleBefore (YYYY-MM-DD; no gift is fine there), and when no one else holds it.
+  proposeFromBoardIds: ReadonlySet<string>;
+  staleBefore: string | null;
+  sharedAddresses: ReadonlySet<string>;
   proposedPairs: ReadonlySet<string>;
   labels: { current: string; draft: string; former: string };
   cap: number;
 }): Selection {
   const { labels } = input;
   const skipped: Record<SkipReason, number> = {
+    inactiveBoard: 0, staleEvidence: 0, sharedAddress: 0,
     hasCurrentOrDraft: 0, formerAtOrg: 0, alreadyProposed: 0, twoEmployers: 0, ambiguousDomain: 0,
   };
   const orgName = new Map(input.organizations.map((o) => [o.itemId, o.name]));
@@ -58,17 +67,32 @@ export function selectProposals(input: {
   for (const person of input.people) {
     if (seen.has(person.itemId)) continue;
     seen.add(person.itemId);
+    const lookup = (address: string | null): DomainLookup =>
+      lookupDomain(input.domainMap, emailDomain(address), input.blocked, input.blockedTlds);
     const sources: [string, DomainLookup][] = [
-      ['Personal Email', lookupDomain(input.domainMap, emailDomain(person.personalEmail), input.blocked)],
-      ['Household Email', lookupDomain(input.domainMap, emailDomain(person.householdEmail), input.blocked)],
+      ['Personal Email', lookup(person.personalEmail)],
+      ['Household Email', lookup(person.householdEmail)],
     ];
-    const mapped = sources.filter((s): s is [string, Mapped] => s[1].kind === 'mapped');
+    // A shared address (usually a Household Email) names whoever's employer it is, not necessarily
+    // this person's. It is dropped before anything else is decided from it.
+    const addresses = [person.personalEmail, person.householdEmail];
+    const own = sources.filter((_, i) => !input.sharedAddresses.has(addresses[i] ?? ''));
+    const mapped = own.filter((s): s is [string, Mapped] => s[1].kind === 'mapped');
     if (mapped.length === 0) {
-      if (sources.some(([, l]) => l.kind === 'ambiguous')) skipped.ambiguousDomain++;
+      if (sources.some(([, l]) => l.kind === 'mapped')) skipped.sharedAddress++;
+      else if (own.some(([, l]) => l.kind === 'ambiguous')) skipped.ambiguousDomain++;
       continue;
     }
     if (new Set(mapped.map(([, l]) => l.organizationId)).size > 1) { skipped.twoEmployers++; continue; }
     const [sourceColumn, hit] = mapped[0]!;
+
+    // An old address is likely an old job: People (Historical) holds people with no recent activity,
+    // and a last gift years ago dates the address at least that far back.
+    if (!input.proposeFromBoardIds.has(person.boardId)) { skipped.inactiveBoard++; continue; }
+    if (input.staleBefore !== null && person.lastGiftDate !== null && person.lastGiftDate < input.staleBefore) {
+      skipped.staleEvidence++;
+      continue;
+    }
 
     const theirs = affiliationsByPerson.get(person.itemId) ?? [];
     if (theirs.some((a) => a.status === labels.current || a.status === labels.draft)) { skipped.hasCurrentOrDraft++; continue; }

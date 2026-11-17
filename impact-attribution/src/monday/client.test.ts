@@ -10,6 +10,7 @@ const cfg: ImpactAttributionConfig = validateConfig({
   affiliations: { ...production.affiliations, boardId: '900' },
   peopleBoardIds: ['301', '302'],
   organizationsBoardId: '400',
+  emailDomains: { ...production.emailDomains, proposeFromBoardIds: ['301'] },
 });
 
 const raw = (over: Partial<RawMatchItem> = {}): RawMatchItem => ({

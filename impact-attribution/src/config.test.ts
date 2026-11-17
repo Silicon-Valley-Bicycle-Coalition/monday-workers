@@ -85,6 +85,30 @@ describe('validateConfig', () => {
       expect(cfg.domainOverrides).toEqual({ 'acme.example': '123' });
     });
 
+    it('ships the review-of-!502 guards: live People only, a staleness cutoff, .edu blocked', () => {
+      const prod = validateConfig(production);
+      expect(prod.emailDomains.proposeFromBoardIds).toEqual(['18437909781']);
+      expect(prod.emailDomains.staleAfterDays).toBe(1095);
+      expect(prod.emailDomains.blockedTlds).toEqual(['edu']);
+      const sb = validateConfig(sandbox);
+      expect(sb.emailDomains.proposeFromBoardIds).toEqual([sb.peopleBoardIds[0]]);
+    });
+
+    it('rejects a proposeFromBoardIds entry that is not one of peopleBoardIds', () => {
+      const c = clone() as Raw;
+      ed(c).proposeFromBoardIds = ['123'];
+      expect(() => validateConfig(c)).toThrow(/emailDomains\.proposeFromBoardIds/);
+    });
+
+    it('rejects a missing staleAfterDays and a dotted blockedTlds entry', () => {
+      const c = clone() as Raw;
+      delete ed(c).staleAfterDays;
+      expect(() => validateConfig(c)).toThrow(/emailDomains\.staleAfterDays/);
+      const d = clone() as Raw;
+      ed(d).blockedTlds = ['.edu'];
+      expect(() => validateConfig(d)).toThrow(/emailDomains\.blockedTlds/);
+    });
+
     it('requires platformDomains, seeded with the social and hosting hosts', () => {
       const cfg = validateConfig(production).emailDomains;
       for (const d of ['linkedin.com', 'facebook.com', 'instagram.com', 'linktr.ee', 'eventbrite.com']) expect(cfg.platformDomains, d).toContain(d);

@@ -31,6 +31,9 @@ export interface ImpactAttributionConfig {
     excludedDomains: string[];
     platformDomains: string[]; // social/hosting hosts: never an organization's own Website domain
     domainOverrides: Record<string, string>; // domain -> Organizations item id
+    blockedTlds: string[]; // a domain under one of these maps only through domainOverrides
+    proposeFromBoardIds: string[]; // People boards a proposal may come from (the live board, not Historical)
+    staleAfterDays: number; // a last gift older than this dates the address too far back to propose from
     maxProposalsPerRun: number;
   };
 }
@@ -71,7 +74,7 @@ function domainList(o: Json, key: string, path: string): string[] {
   return v.map((d: string) => d.trim().toLowerCase());
 }
 
-function emailDomains(raw: unknown): ImpactAttributionConfig['emailDomains'] {
+function emailDomains(raw: unknown, peopleBoardIds: string[]): ImpactAttributionConfig['emailDomains'] {
   const path = 'emailDomains';
   const e = obj(raw, path);
   const people = obj(e.people, `${path}.people`);
@@ -94,8 +97,22 @@ function emailDomains(raw: unknown): ImpactAttributionConfig['emailDomains'] {
     excludedDomains: domainList(e, 'excludedDomains', path),
     platformDomains: domainList(e, 'platformDomains', path),
     domainOverrides,
+    blockedTlds: tldList(e, 'blockedTlds', path),
+    proposeFromBoardIds: subsetOf(idList(e, 'proposeFromBoardIds', path), peopleBoardIds, `${path}.proposeFromBoardIds`),
+    staleAfterDays: posInt(e, 'staleAfterDays', path),
     maxProposalsPerRun: posInt(e, 'maxProposalsPerRun', path),
   };
+}
+
+function tldList(o: Json, key: string, path: string): string[] {
+  const tlds = domainList(o, key, path);
+  if (tlds.some((t) => t.includes('.'))) throw new Error(`config: ${path}.${key} must hold bare TLDs ("edu", not ".edu")`);
+  return tlds;
+}
+
+function subsetOf(ids: string[], of: string[], path: string): string[] {
+  if (!ids.every((id) => of.includes(id))) throw new Error(`config: ${path} must name boards from peopleBoardIds`);
+  return ids;
 }
 
 export function validateConfig(raw: unknown): ImpactAttributionConfig {
@@ -133,7 +150,7 @@ export function validateConfig(raw: unknown): ImpactAttributionConfig {
     rule: { windowDays: posInt(rule, 'windowDays', 'rule'), minMatches, currentWithinDays: posInt(rule, 'currentWithinDays', 'rule') },
     excludedPayers,
     maxProposalsPerRun: posInt(root, 'maxProposalsPerRun', 'config'),
-    emailDomains: emailDomains(root.emailDomains),
+    emailDomains: emailDomains(root.emailDomains, idList(root, 'peopleBoardIds', 'config')),
   };
 }
 

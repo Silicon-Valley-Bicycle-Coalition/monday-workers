@@ -48,8 +48,9 @@ Cloudflare cron 0 11 * * * ──► read write mode (once): on → run · off �
    read People + People (Historical), Organizations, Affiliations ──► rebuild D1 `email_index`
                                    │
                                    ▼
-   email domain → organization map ──► people with a company Personal/Household Email and no
-     Current or Draft affiliation, not Former there, not in `proposals` ──► recent donors first,
+   email domain → organization map ──► live-board people with a company Personal/Household Email
+     nobody else holds, a gift in the last 3 years (or none), no Current or Draft affiliation, not
+     Former there, not in `proposals` ──► recent donors first,
      emailDomains.maxProposalsPerRun (25) ──► create Draft (Proposed status Current) ──► record
      in `proposals` ──► post evidence comment
 ```
@@ -83,11 +84,22 @@ email domains to Organizations from what the CRM already holds, in this order:
 Sources that disagree make a domain ambiguous: it proposes nothing, and the run logs it, until an
 override settles it. A subdomain walks up to its parent (`cs.stanford.edu` → `stanford.edu`), but
 a consumer or excluded domain on the way stops it (`emailDomains.consumerDomains`,
-`excludedDomains`).
+`excludedDomains`). A domain under a blocked TLD (`emailDomains.blockedTlds`: `edu`) maps only
+through an override: students share a university's domain with its staff, so neither its Website
+nor a Work Email is enough. An override on `stanford.edu` covers its subdomains too, so pair it with
+`excludedDomains` entries for the alumni ones.
 
 A person gets a proposal when their Personal or Household Email maps to one organization (two
 addresses mapping to two organizations: skipped) and they have no Current or Draft affiliation
-anywhere, no Former one at that organization, and the pair isn't in `proposals`. Recent donors go
+anywhere, no Former one at that organization, and the pair isn't in `proposals`. Three guards keep
+an address from naming an old or someone else's job:
+
+* only people on the live People board (`emailDomains.proposeFromBoardIds`); People (Historical)
+  addresses still go into `email_index`;
+* no proposal when the Last Gift Date is older than `emailDomains.staleAfterDays` (1095); a person
+  with no gift on the live board is still proposed;
+* an address more than one person holds (a shared Household Email, usually) is ignored, so a spouse
+  isn't proposed at the other's employer. The person's other address can still propose. Recent donors go
 first (Last Gift Date, newest first; no gift last), 25 a night.
 
 The Draft is the same as the matching-gift job's: `<Person> @ <Organization>`, Status `Draft`,
@@ -133,7 +145,9 @@ board id. Validated at startup (`src/config.ts`). Column titles are bare titles,
 * `emailDomains` (#124): column titles `people` (`personalEmail`, `householdEmail`,
   `employerName`, `lastGiftDate`), `organizationWebsite`, `affiliationWorkEmail`; domain lists
   `consumerDomains`, `excludedDomains`, `platformDomains` (lower-cased at startup);
-  `domainOverrides` (domain → Organizations item id); its own `maxProposalsPerRun` (25).
+  `domainOverrides` (domain → Organizations item id); `blockedTlds` (`edu`, bare TLDs only);
+  `proposeFromBoardIds` (the live People board; must be one of `peopleBoardIds`);
+  `staleAfterDays` (1095); its own `maxProposalsPerRun` (25).
 
 ## Write switch
 
@@ -191,8 +205,9 @@ Run from this directory unless noted. Sandbox first, then production.
    `excludedPayers` in `config/svbc.json` with a note naming each, deploy, and wait for one more dry
    run to confirm. No production `on` before this. In the same pass, read the
    `emailDomainProposalDomains` line: add an `excludedDomains` entry for any domain that isn't an
-   employer (a university's alumni address, an ISP missing from `consumerDomains`) and a
-   `domainOverrides` entry for each ambiguous domain worth settling.
+   employer (an ISP missing from `consumerDomains`, an alumni domain outside `.edu`) and a
+   `domainOverrides` entry for each ambiguous domain worth settling. A university only proposes
+   once it has an override (`.edu` is blocked).
 9. `node ../scripts/flags.mjs impact-attribution writes on --env production`.
 
 From the artifacts, about 133 pairs qualify (56 Current) before existing affiliations are removed;
@@ -208,8 +223,10 @@ at 25 a night the backlog drains in about six nights.
 * An email-domain proposal whose ledger write failed after the Draft was created isn't in
   `proposals`. The Draft keeps the person from being proposed again while it exists, but if staff
   delete it the next run proposes it again (logged as `emailDomainLedgerWriteFailed`).
-* A Household Email is shared: `fam@acme.com` proposes Acme for everyone on it. The comment names
-  Household Email so staff can tell.
+* A Household Email only one person in the CRM holds can still be a spouse's work address. The
+  comment names Household Email so staff can tell.
+* Last Gift Date is the only clock on an address. A live-board person who has never given is
+  proposed whatever the address's age.
 * The matching-gift job skips only an existing (person, organization) pair, not a person with a
   Draft elsewhere. If the email-domain job proposed Acme one night and a second matching gift from
   Globex qualifies later, the person has two Drafts; staff keep one and delete the other (it stays
