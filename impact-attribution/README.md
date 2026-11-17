@@ -164,9 +164,9 @@ board id. Validated at startup (`src/config.ts`). Column titles are bare titles,
 
 Run from this directory unless noted. Sandbox first, then production.
 
-0. Deploy `benevity-import` with its Current-only affiliation filter (#124) before this Worker
-   writes anything in that environment: until then a Draft would count when Benevity resolves a
-   donor.
+0. ~~Deploy `benevity-import` with its Current-only affiliation filter~~ done 2026-11-17 in both
+   environments (production `a0e1b206`, sandbox `bd5e1efd`). It must precede this Worker's writes
+   in an environment: without it a Draft would count when Benevity resolves a donor.
 1. ~~Create the D1 databases~~ done 2026-11-16: `svbc-impact-attribution`
    (`1df5c5c8-8804-4b85-90dc-09360a5f2aa5`) and `svbc-impact-attribution-sandbox`
    (`75b7115a-abe0-4bd4-904e-7ca255694906`), ids in `wrangler.jsonc`.
@@ -174,17 +174,16 @@ Run from this directory unless noted. Sandbox first, then production.
    migration: `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env
    sandbox` (and `svbc-impact-attribution --remote`).
    `0002_email_domain_proposals.sql` (#124: `proposals.evidence`/`domain`, `email_index`): applied
-   to the sandbox 2026-11-17; **production still to do**, before the production deploy that carries
-   the email-domain job. CI deploys the sandbox on every merge to `main` without applying
+   to the sandbox and production 2026-11-17. CI deploys the sandbox on every merge to `main` without applying
    migrations, so a later migration goes to the sandbox before its MR merges.
 3. ~~Proposed status column~~ done 2026-11-16 on both Affiliations boards with
    `scripts/add-proposed-status.mjs --env sandbox|production --execute`, and marked `🔒 Proposed
    status` (production through `scripts/mark-read-only-columns.mjs --workspace 18201685 --apply`;
    sandbox by renaming the one column, because that workspace's run would also have renamed 11
-   unrelated Wealth Screening columns). **Still to do by hand:** add Proposed status to the
-   existing **Drafts to confirm** view on both boards (production view 289689214, sandbox
-   289083044). `salesforce-import`'s configure only creates a view that doesn't exist yet, and the
-   API doesn't return a view's current column settings, so overwriting it could undo staff changes.
+   unrelated Wealth Screening columns). Proposed status is shown in the **Drafts to confirm** view
+   on both boards (production view 289689214, sandbox 289083044; checked 2026-11-17). That is a
+   hand setting in the view's Hide menu: `salesforce-import`'s configure only creates a view that
+   doesn't exist yet, and the API doesn't return a view's column settings.
 4. ~~Match history~~ done 2026-11-16 in production: 1,964 matches, 424 person–company pairs,
    2016-04-06 to 2026-10-28, from the import's artifacts (read-only; they are gitignored and
    irreplaceable):
@@ -196,10 +195,15 @@ Run from this directory unless noted. Sandbox first, then production.
    ```
    (831 matching gifts had an organization as Donor, 242 no migrated person, 30 no organization
    link.) The sandbox has no import artifacts of its own: its nightly read fills `matches`.
-5. ~~Sandbox deploy, writes off~~ done 2026-11-16 (version `15807c85`; `impact-attribution:writes
-   off` set in `sandbox-FLAGS`). Read the next 11:00 UTC run's JSON log line in Workers Logs.
-6. Sandbox: `writes on`, check the Drafts in **Drafts to confirm** against a few known people.
-7. Production: `writes off`, `npm run deploy`, wait for one dry run.
+5. ~~Sandbox deploy, writes off~~ done 2026-11-16 (version `15807c85`).
+6. ~~Sandbox `writes on`~~ done 2026-11-17 (version `979e0f75`): one run made 35 Drafts (20
+   matching gifts, 15 email domains), all Proposed status Current with their comment. **Still to
+   do:** check them in **Drafts to confirm** against a few known people. Sandbox crons are off
+   (`triggers.crons: []`), so a sandbox run is started by hand: `npx wrangler dev --env sandbox
+   --remote --test-scheduled`, then request `/__scheduled`. The run happens against the sandbox D1
+   and boards even though the request may hang with no logs; confirm it from `proposals` in D1.
+7. ~~Production: `writes off`, `npm run deploy`~~ done 2026-11-17 (version `971344ab`, migration
+   `0002` applied first). The first dry run is 2026-11-18 at 11:00 UTC.
 8. **Gate (decided 2026-11-16): David reviews the dry run's `payers` summary** and marks the
    foundations, donor-advised-fund sponsors and other non-employers. Put their ids in
    `excludedPayers` in `config/svbc.json` with a note naming each, deploy, and wait for one more dry
