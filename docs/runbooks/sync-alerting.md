@@ -31,10 +31,29 @@ redeploy `sync-watchdog`.
 
 ## Workers Issues automations (dashboard)
 
-One per production script, each to the `staff-slack-private` Chat destination, with occurrence
-threshold 1 and recurrence after 24 h of inactivity. They are created **disabled** and turned on
-once the backlog of known production issues has been triaged.
+Two per production script, both to the `staff-slack-private` Chat destination (a Slack incoming
+webhook into the private staff channel): **When an issue occurs once** (occurrence threshold 1)
+and **When an issue recurs after 24 hours** (recurrence after inactivity). Each automation holds
+one trigger, which is why there are two. All 34 were created **disabled** on 2026-11-17, and
+are turned on once the backlog of known production issues has been triaged. To recreate one:
+the Worker's **Issues → Automations → Add automation**.
 
-| Script | Triggers | Destination | Enabled |
+| Script | Occurs once | Recurs after 24 h | Enabled |
 |---|---|---|---|
-| _filled in when the automations are created_ | | | |
+| `svbc-benevity-import` | ✓ | ✓ | no |
+| `svbc-bp-feedback-notify` | ✓ | ✓ | no |
+| `svbc-calendars` | ✓ | ✓ | no |
+| `svbc-contact-roles` | ✓ | ✓ | no |
+| `svbc-donation-rollups` | ✓ | ✓ | no |
+| `svbc-eventbrite-sync` | ✓ | ✓ | no |
+| `svbc-funraise-sync` | ✓ | ✓ | no |
+| `svbc-impact-attribution` | ✓ | ✓ | no |
+| `svbc-mailchimp-sync` | ✓ | ✓ | no |
+| `svbc-member-map` | ✓ | ✓ | no |
+| `svbc-member-portal` | ✓ | ✓ | no |
+| `svbc-member-portal-writer` | ✓ | ✓ | no |
+| `svbc-monday-auth` | ✓ | ✓ | no |
+| `svbc-monday-backup` | ✓ | ✓ | no |
+| `svbc-people-reclassification` | ✓ | ✓ | no |
+| `svbc-report-digests` | ✓ | ✓ | no |
+| `svbc-sync-watchdog` | ✓ | ✓ | no |
