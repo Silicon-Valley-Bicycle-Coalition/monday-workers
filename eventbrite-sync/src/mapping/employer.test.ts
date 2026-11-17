@@ -60,6 +60,14 @@ describe('employerAnswerFrom, with a pledge event', () => {
     expect(employerAnswerFrom(attendee('Employer', 'Acme', 'text', '999'), event)).toBe('Acme');
   });
 
+  it('skips a question in the event\'s ignoreQuestions when falling back to wording', () => {
+    const ignoring = { ...event, ignoreQuestions: ['999'] };
+    expect(employerAnswerFrom(attendee('Employer', 'Ignored Co', 'text', '999'), ignoring)).toBeNull();
+    const a = attendee('Employer', 'Ignored Co', 'text', '999');
+    a.answers!.push({ question_id: '998', question: 'Where do you work?', type: 'text', answer: 'Read Co' });
+    expect(employerAnswerFrom(a, ignoring)).toBe('Read Co');
+  });
+
   it('does not fall back when the mapped question is blank', () => {
     const a = attendee('Employer', 'Wording Co', 'text', '999');
     a.answers!.push({ question_id: '123', question: 'Organization', type: 'text', answer: ' ' });

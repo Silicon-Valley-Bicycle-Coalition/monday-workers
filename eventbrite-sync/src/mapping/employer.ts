@@ -6,7 +6,8 @@ export const EMPLOYER_QUESTION = /employer|where do you work|company you work|em
 
 /**
  * The attendee's employer answer, trimmed, or null. A pledge event's question mapped to `employer`
- * wins; with none mapped, the first non-blank answer to a text question worded like one. Never
+ * wins; with none mapped, the first non-blank answer to a text question worded like one, skipping
+ * a pledge event's `ignoreQuestions` (staff list a question there to mean "don't read it"). Never
  * logs the answer: it is whatever a person typed.
  */
 export function employerAnswerFrom(attendee: EventbriteAttendee, pledgeEvent: PledgeEventConfig | null): string | null {
@@ -21,7 +22,9 @@ export function employerAnswerFrom(attendee: EventbriteAttendee, pledgeEvent: Pl
     }
     return null;
   }
+  const ignored = pledgeEvent?.ignoreQuestions ?? [];
   for (const entry of answers) {
+    if (typeof entry?.question_id === 'string' && ignored.includes(entry.question_id)) continue;
     if (entry?.type !== 'text' || typeof entry.question !== 'string' || !EMPLOYER_QUESTION.test(entry.question)) continue;
     const value = trimmed(entry.answer);
     if (value !== null) return value;
