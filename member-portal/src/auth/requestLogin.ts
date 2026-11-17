@@ -15,7 +15,8 @@ export interface RequestLoginDeps {
   now: () => Date;
 }
 
-export async function requestLogin(email: string, localeHint: Locale, deps: RequestLoginDeps): Promise<void> {
+// `next`: the portal page the donor was headed to (routes.ts validates it), carried in the link.
+export async function requestLogin(email: string, localeHint: Locale, deps: RequestLoginDeps, next: string | null = null): Promise<void> {
   const matches = await deps.monday.findDonorsByEmail(email);
   if (matches.length === 0) {
     return;
@@ -38,6 +39,6 @@ export async function requestLogin(email: string, localeHint: Locale, deps: Requ
     expiresAt,
   });
 
-  const loginUrl = magicLinkUrl(deps.portalBaseUrl, rawToken, locale);
+  const loginUrl = magicLinkUrl(deps.portalBaseUrl, rawToken, locale, next);
   await deps.emailSender.sendLoginEmail({ to: email, loginUrl, locale });
 }
