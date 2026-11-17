@@ -1,0 +1,14 @@
+{
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "workersInvocationsScheduled": [
+            { "scriptName": "svbc-funraise-sync", "cron": "0 * * * *", "datetime": "2026-11-17T18:00:01Z", "status": "success" }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}
