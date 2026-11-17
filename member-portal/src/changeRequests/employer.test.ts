@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  normalizeEmployerName,
-  organizationNameVariants,
-  pickOrganization,
-  planAffiliationChange,
-  previousPrimaryNote,
-  type AffiliationRecord,
-} from './employer';
+import { planAffiliationChange, previousPrimaryNote, type AffiliationRecord } from './employer';
+import { normalizeEmployerName, organizationNameVariants, pickOrganization } from './employerName';
 
 const aff = (over: Partial<AffiliationRecord> & { id: string }): AffiliationRecord => ({
   organizationId: null,

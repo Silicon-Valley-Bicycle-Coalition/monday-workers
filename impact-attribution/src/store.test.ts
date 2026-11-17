@@ -50,9 +50,10 @@ describe('refreshMatches', () => {
 describe('proposals ledger', () => {
   beforeEach(resetDb);
 
-  it('recordProposal then proposedPairs returns the key', async () => {
-    await recordProposal(env.DB, { personItemId: 'p1', orgItemId: 'o1', affiliationItemId: 'a1', proposedStatus: 'Former', matchCount: 3 }, NOW);
+  it('recordProposal then proposedPairs returns the key, and the row keeps its sources', async () => {
+    await recordProposal(env.DB, { personItemId: 'p1', orgItemId: 'o1', affiliationItemId: 'a1', proposedStatus: 'Former', matchCount: 3, sources: 'both' }, NOW);
     expect(await proposedPairs(env.DB)).toEqual(new Set([pairKey('p1', 'o1')]));
+    expect(await env.DB.prepare('SELECT sources FROM proposals').first()).toEqual({ sources: 'both' });
   });
 
   it('records an email-domain proposal with its evidence and domain; a matches one defaults to matches', async () => {

@@ -37,7 +37,8 @@ export function mapPledge(
     if (typeof answer !== 'string' || answer.trim() === '' || typeof questionId !== 'string') continue;
     if (event.ignoreQuestions.includes(questionId)) continue;
     const field = event.questions[questionId];
-    if (field === undefined || (LABEL_FIELDS.includes(field) && !canLabel(answer, field, type, event))) {
+    // An employer answer is not a column: the registration write only carries it in Other Answers.
+    if (field === undefined || field === 'employer' || (LABEL_FIELDS.includes(field) && !canLabel(answer, field, type, event))) {
       other.push(`${question ?? questionId}: ${answer}`);
     } else {
       fields.set(field, answer);

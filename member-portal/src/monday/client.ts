@@ -16,7 +16,8 @@ import type {
   PledgeRecord,
   VolunteerShift,
 } from '../types';
-import type { AffiliationRecord, OrganizationCandidate } from '../changeRequests/employer';
+import type { AffiliationRecord } from '../changeRequests/employer';
+import type { OrganizationCandidate } from '../changeRequests/employerName';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { MondayGraphQL, type TokenProvider } from './graphql';

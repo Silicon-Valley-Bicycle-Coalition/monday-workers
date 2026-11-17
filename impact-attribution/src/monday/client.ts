@@ -6,6 +6,7 @@
 import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 import type { ImpactAttributionConfig } from '../config';
+import type { OrganizationCandidate } from '../employerName';
 import { pairKey, type MatchRow } from '../rule';
 import type { BoardMatchRead } from '../store';
 import type { AffiliationRecord, OrganizationRecord } from '../emailDomains/domains';
@@ -17,6 +18,8 @@ export interface ImpactMondayClient {
   activeItems(ids: string[]): Promise<Map<string, string>>;
   createDraft(cfg: ImpactAttributionConfig['affiliations'], d: { name: string; personItemId: string; orgItemId: string; proposedStatus: 'Current' | 'Former' }): Promise<string>;
   postUpdate(itemId: string, body: string): Promise<void>;
+  // Exact-name lookup on the Organizations board; the caller compares normalised names.
+  findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]>;
   // Email-domain proposals (#124): whole-board reads of People, Organizations and Affiliations.
   listPeople(boardId: string, cols: ImpactAttributionConfig['emailDomains']['people']): Promise<PersonRecord[]>;
   listOrganizations(boardId: string, websiteTitle: string): Promise<OrganizationRecord[]>;
@@ -71,6 +74,7 @@ interface RawColumnValue {
 }
 interface RawItem { id: string; name: string; column_values: RawColumnValue[] }
 interface ItemsPage { cursor: string | null; items: RawItem[] }
+interface NamePage { cursor: string | null; items: { id: string; name: string }[] }
 
 // A nightly run has no queue behind it: the transport's own retries ride out a blip, and a longer
 // failure fails the run for the next night to redo.
@@ -82,6 +86,7 @@ const COLUMN_VALUES = `column_values(ids: $columnIds) { id text
   ... on BoardRelationValue { linked_items { id board { id } } }
   ... on EmailValue { email } ... on LinkValue { url } ... on DateValue { date } ... on StatusValue { label } }`;
 const ID_CHUNK = 100;
+const NAME_CHUNK = 100;
 
 const linksOf = (cv: RawColumnValue | undefined): { id: string; boardId: string }[] =>
   (cv?.linked_items ?? []).map((l) => ({ id: String(l.id), boardId: String(l.board?.id ?? '') }));
@@ -225,6 +230,38 @@ export class HttpMondayClient implements ImpactMondayClient {
       { itemId, body },
       { idempotent: false },
     );
+  }
+
+  // As member-portal's method of the same purpose: one items_page_by_column_values per 100 names,
+  // `any_of` on the name column (Monday's match is exact, hence the caller's name variants), each
+  // followed through next_items_page until the cursor runs out: a dropped page could hide a second
+  // same-name Organization and turn "several" into "one". An Organization found under two names
+  // is returned once.
+  async findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]> {
+    const unique = [...new Set(names)];
+    const found = new Map<string, OrganizationCandidate>();
+    const add = (items: { id: string; name: string }[]): void => {
+      for (const item of items) found.set(String(item.id), { id: String(item.id), name: item.name });
+    };
+    for (let i = 0; i < unique.length; i += NAME_CHUNK) {
+      const data = await this.transport.request<{ items_page_by_column_values: NamePage }>(
+        `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
+          items_page_by_column_values(board_id: $boardId, limit: 500, columns: $columns) { cursor items { id name } }
+        }`,
+        { boardId, columns: [{ column_id: 'name', column_values: unique.slice(i, i + NAME_CHUNK) }] },
+      );
+      let page = data.items_page_by_column_values;
+      add(page.items);
+      while (page.cursor !== null && page.cursor !== undefined) {
+        const next = await this.transport.request<{ next_items_page: NamePage }>(
+          `query ($cursor: String!) { next_items_page(limit: 500, cursor: $cursor) { cursor items { id name } } }`,
+          { cursor: page.cursor },
+        );
+        page = next.next_items_page;
+        add(page.items);
+      }
+    }
+    return [...found.values()];
   }
 
   async listPeople(boardId: string, cols: ImpactAttributionConfig['emailDomains']['people']): Promise<PersonRecord[]> {

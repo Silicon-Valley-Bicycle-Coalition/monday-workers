@@ -1,5 +1,6 @@
 import type { MondayTokenSource } from './monday/graphql';
 import type { WriteQueueMessage } from './consumer/processBatch';
+import type { EmployerAnswerSink } from './consumer/employerAnswer';
 
 // Ledger statuses. 'received'/'queued' are the route's; the consumer ends a row at 'written'
 // (a Donations item exists for it), 'skipped' (not giving: unmapped status or a free order — see
@@ -71,7 +72,7 @@ export interface MondayBoards {
   'pledge-to-ride'?: number | null;
 }
 
-export type PledgeField = 'zip' | 'daysPledged' | 'riderType' | 'heardAbout' | 'whoAsked' | 'consent';
+export type PledgeField = 'zip' | 'daysPledged' | 'riderType' | 'heardAbout' | 'whoAsked' | 'consent' | 'employer';
 
 // One pledge campaign. Questions change every year, so everything keys on this event's own ids.
 export interface PledgeEventConfig {
@@ -236,19 +237,25 @@ export interface EventbriteSyncConfig {
     peopleEmailColumn: string;
   };
   pledge?: PledgeConfig;
+  // Employer answers handed to impact-attribution's EmployerAnswers RPC (#127). Off unless
+  // `enabled` and the EMPLOYER_ANSWERS binding is present.
+  employerAnswers: { enabled: boolean };
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets, the narrowed queue message type, and MONDAY_AUTH are declared here. MONDAY_AUTH is
 // generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
-export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH' | 'EMPLOYER_ANSWERS'> {
   WRITE_QUEUE: Queue<WriteQueueMessage>;
   // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
   // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
   // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
+  // impact-attribution's EmployerAnswers entrypoint (wrangler.jsonc services), restated as its RPC
+  // shape. Sandbox only for now: missing = the feature is off (spec "The binding is optional").
+  EMPLOYER_ANSWERS?: EmployerAnswerSink;
   // Eventbrite private token (`wrangler secret put EVENTBRITE_PRIVATE_TOKEN`), sent as
   // `Authorization: Bearer` on every order fetch. Optional in the type because secrets aren't
   // declared in wrangler.jsonc; the consumer fails every message (retry, then DLQ) until it is set.

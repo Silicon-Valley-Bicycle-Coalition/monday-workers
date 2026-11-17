@@ -66,6 +66,17 @@ jobs:
         if: ${{ !cancelled() }}
         run: cmp geo-filter/src/geometry.ts nearby-search/src/geometry.ts
 
+      # member-portal/src/changeRequests/employerName.ts is the canonical employer-name matching
+      # (#127); impact-attribution carries a byte-identical copy. Edit member-portal's, then copy it
+      # over. Strip-only TypeScript, like graphql.ts.
+      - name: employer-name-copies
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          cmp member-portal/src/changeRequests/employerName.ts impact-attribution/src/employerName.ts || { echo "impact-attribution/src/employerName.ts differs from member-portal/src/changeRequests/employerName.ts"; status=1; }
+          node --input-type=module -e "await import('./member-portal/src/changeRequests/employerName.ts')" || status=1
+          exit $status
+
       # The write switch (off/hold/on) lives in one module, member-portal/src/flags.ts. Every
       # in-scope Worker carries a byte-identical copy and the same FLAGS KV namespace ids; edit the
       # canonical file, then copy it over the others. --strict: a Worker without the module fails.

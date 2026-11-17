@@ -3,13 +3,14 @@
 // maps and matches exactly as a live run would; only the last step — the Monday write or the D1
 // bookkeeping that records it — is swapped out here. The Eventbrite client is GET-only and passes
 // through untouched.
-import { DEFAULT_PII_KEYS, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
+import { DEFAULT_PII_KEYS, logSkip, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
 import type { OrderStore } from './db/orders';
 import type { EventStore } from './db/events';
 import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ConsumerQueue, ProcessBatchDeps, WriteQueueMessage } from './consumer/processBatch';
 import type { EndedEventSweepDeps } from './endedEvents/sweep';
+import type { EmployerAnswerSink } from './consumer/employerAnswer';
 import type { EventbriteSyncConfig, EventRow, MondayBoards } from './types';
 import { PLACEHOLDER_COLUMN_ID } from './config';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
@@ -139,6 +140,22 @@ export function dryRunQueue(queue: ConsumerQueue, ctx: SkipContext): ConsumerQue
   return recordingProxy(queue, 'Write queue', { send: undefined, sendBatch: undefined }, ctx);
 }
 
+/**
+ * The employer-answer hand-over under a dry run: nothing reaches impact-attribution; each call is
+ * a skip line under "Employer answers" carrying only the source and ids. Unlike recordingProxy,
+ * the input is cut down before it is logged, so not even a debug line holds the answer or the
+ * event name. Resolves `{ recorded: true }`, the outcome a live call would most likely have.
+ */
+export function dryRunEmployerAnswers(sink: EmployerAnswerSink | null | undefined, ctx: SkipContext): EmployerAnswerSink | null {
+  if (sink === null || sink === undefined) return null;
+  return {
+    recordEmployerAnswer: async ({ source, sourceId, personItemId }) => {
+      logSkip(ctx, 'Employer answers', 'recordEmployerAnswer', [{ source, sourceId, personItemId }]);
+      return { recorded: true };
+    },
+  };
+}
+
 export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kind: NonNullable<WriteQueueMessage['kind']> = 'order'): ProcessBatchDeps {
   return {
     ...deps,
@@ -147,6 +164,7 @@ export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kin
     attendeeStore: dryRunAttendeeStore(deps.attendeeStore),
     queue: dryRunQueue(deps.queue, ctx),
     mondayClient: dryRunMondayClient(deps.mondayClient, deps.config.monday.boards, ctx),
+    employerAnswers: dryRunEmployerAnswers(deps.employerAnswers, ctx),
   };
 }
 

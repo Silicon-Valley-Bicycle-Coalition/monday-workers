@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { applyEmployerAnswer, EMPLOYER_LABELS } from './applyEmployer';
 import type { ChangeRequestRow } from '../db/changeRequests';
 import type { MondayClient } from '../monday/client';
-import type { AffiliationRecord, OrganizationCandidate } from './employer';
+import type { AffiliationRecord } from './employer';
+import type { OrganizationCandidate } from './employerName';
 import type { Config, EmployerAnswerConfig } from '../types';
 
 const employer: EmployerAnswerConfig = {

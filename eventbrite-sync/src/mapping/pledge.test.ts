@@ -177,6 +177,16 @@ describe('mapPledge', () => {
   it('cuts the item name to 255', () => {
     expect(map(attendee({ profile: { name: 'n'.repeat(300), email: 'pat@example.com' } })).itemName).toHaveLength(255);
   });
+
+  it('puts an employer answer in Other Answers and in no other column', () => {
+    const employerEvent = { ...event, questions: { ...event.questions, '77': 'employer' as const } };
+    const a = attendee({ answers: [answer('11', '95014'), answer('77', 'Acme Corp')] });
+    const m = mapPledge(a, null, employerEvent, pledge);
+    expect(m.columnValues).toEqual({
+      ...map(attendee()).columnValues,
+      p_other: { text: 'Question 77: Acme Corp' },
+    });
+  });
 });
 
 describe('the shipped zip list', () => {

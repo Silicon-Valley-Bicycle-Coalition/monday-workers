@@ -10,6 +10,7 @@ import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 import { stampOf } from './messages';
 import { processPledge } from './processPledge';
 import { processVolunteer } from './processVolunteer';
+import { recordEmployerAnswer } from './employerAnswer';
 import { linkedItemId } from '../util/itemId';
 import type { EventRow } from '../types';
 
@@ -162,6 +163,8 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
 
   const writtenAt = new Date().toISOString();
   const person = personItemId === null ? {} : { matchedPersonItemId: personItemId };
+  // The employer answer's staff-comment context: the event's name, from the read already made.
+  const context = event.name?.text ?? '';
   if (mondayItemId !== null) {
     try {
       // `name` is the item name: keeps it in step with the attendee's name in Eventbrite — only a
@@ -173,12 +176,14 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
       await markGone(mondayItemId);
       return;
     }
+    await recordEmployerAnswer(attendee, null, context, deps);
     await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId, writtenAt });
     await addRegistrantsLink(mondayItemId);
     return;
   }
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, columnValues);
+  await recordEmployerAnswer(attendee, null, context, deps);
   await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId: item.id, writtenAt });
   await addRegistrantsLink(item.id);
 }

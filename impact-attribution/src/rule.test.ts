@@ -25,7 +25,7 @@ describe('qualifyingPairs', () => {
 
   it('qualifies on any adjacent pair, not just the latest', () => {
     const [c] = qualifyingPairs([match('2019-01-01'), match('2015-03-01'), match('2015-09-01')], RULE, TODAY);
-    expect(c?.latestMatch).toBe('2019-01-01');
+    expect(c?.latestEvidence).toBe('2019-01-01');
     expect(c?.matches.map((m) => m.matchDate)).toEqual(['2019-01-01', '2015-09-01', '2015-03-01']);
   });
 
@@ -45,8 +45,8 @@ describe('qualifyingPairs', () => {
   });
 });
 
-const cand = (personItemId: string, orgItemId: string, proposedStatus: 'Current' | 'Former', latestMatch: string): Candidate =>
-  ({ personItemId, orgItemId, proposedStatus, latestMatch, matches: [] });
+const cand = (personItemId: string, orgItemId: string, proposedStatus: 'Current' | 'Former', latestEvidence: string): Candidate =>
+  ({ personItemId, orgItemId, proposedStatus, latestEvidence, matches: [], answers: [] });
 
 describe('selectCandidates', () => {
   const none = { excludedOrgIds: new Set<string>(), existingPairs: new Set<string>(), proposedPairs: new Set<string>() };
@@ -68,6 +68,18 @@ describe('selectCandidates', () => {
     expect(deferred).toBe(0);
   });
 
+  it('returns the skipped candidates grouped by reason', () => {
+    const all = [cand('a', 'foundation', 'Current', '2026-01-01'), cand('b', 'o', 'Current', '2026-01-01'), cand('c', 'o', 'Current', '2026-01-01')];
+    const { skippedCandidates } = selectCandidates(all, {
+      excludedOrgIds: new Set(['foundation']), existingPairs: new Set([pairKey('b', 'o')]), proposedPairs: new Set([pairKey('c', 'o')]),
+    }, 25);
+    expect({
+      excluded: skippedCandidates.excluded.map((c) => c.personItemId),
+      existing: skippedCandidates.existing.map((c) => c.personItemId),
+      proposed: skippedCandidates.proposed.map((c) => c.personItemId),
+    }).toEqual({ excluded: ['a'], existing: ['b'], proposed: ['c'] });
+  });
+
   // A person who changed jobs: both companies' matches are within the Current window, but only the
   // newer employer can be the current one.
   describe('a newer employer supersedes an older one', () => {
@@ -76,7 +88,7 @@ describe('selectCandidates', () => {
       const { chosen } = selectCandidates(all, none, 25);
       expect(chosen.map((c) => [c.orgItemId, c.proposedStatus, c.supersededBy])).toEqual([
         ['goog', 'Current', undefined],
-        ['msft', 'Former', { orgItemId: 'goog', latestMatch: '2026-09-11' }],
+        ['msft', 'Former', { orgItemId: 'goog', latestEvidence: '2026-09-11', source: 'matches' }],
       ]);
     });
 
@@ -93,6 +105,16 @@ describe('selectCandidates', () => {
         { ...none, excludedOrgIds: new Set(['foundation']) }, 25,
       );
       expect(chosen.map((c) => [c.orgItemId, c.proposedStatus])).toEqual([['amat', 'Current']]);
+    });
+
+    it('lets a newer employer answer supersede an older matching-gift employer, and says so', () => {
+      const answer = { ...cand('p1', 'goog', 'Current', '2027-01-20'), answers: [{ answeredAt: '2027-01-20' } as never] };
+      const matched = { ...cand('p1', 'msft', 'Current', '2026-09-01'), matches: [{ matchDate: '2026-09-01' } as never] };
+      const { chosen } = selectCandidates([matched, answer], none, 25);
+      expect(chosen.map((c) => [c.orgItemId, c.proposedStatus, c.supersededBy])).toEqual([
+        ['goog', 'Current', undefined],
+        ['msft', 'Former', { orgItemId: 'goog', latestEvidence: '2027-01-20', source: 'answer' }],
+      ]);
     });
 
     it('keeps both Current when their latest matches fall on the same day', () => {

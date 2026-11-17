@@ -5,5 +5,6 @@ import { env } from 'cloudflare:workers';
 export async function resetDb(): Promise<void> {
   await env.DB.batch([
     env.DB.prepare('DELETE FROM matches'), env.DB.prepare('DELETE FROM proposals'), env.DB.prepare('DELETE FROM email_index'),
+    env.DB.prepare('DELETE FROM employer_answers'),
   ]);
 }

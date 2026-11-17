@@ -6,6 +6,7 @@ import type { BatchSender } from '../util/sendBatch';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
+import type { EmployerAnswerSink } from './employerAnswer';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { isItemGone } from '../monday/itemGone';
 import { mapOrder } from '../mapping/order';
@@ -90,6 +91,8 @@ export interface ProcessBatchDeps {
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
+  // impact-attribution's EmployerAnswers RPC (#127); null when the binding is absent (feature off).
+  employerAnswers: EmployerAnswerSink | null;
 }
 
 /**

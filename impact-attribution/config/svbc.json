@@ -24,6 +24,10 @@
     { "id": "13432214614", "note": "Applied Materials Foundation: pays Applied Materials employees' matches; the employer is Applied Materials" }
   ],
   "maxProposalsPerRun": 25,
+  "employerAnswers": {
+    "maxAgeDays": 365,
+    "ignore": ["n/a", "na", "none", "no", "retired", "self", "self employed", "selfemployed", "unemployed", "student", "homemaker", "not employed", "-"]
+  },
   "emailDomains": {
     "people": {"personalEmail": "Personal Email", "householdEmail": "Household Email", "employerName": "Employer Name", "lastGiftDate": "Last Gift Date"},
     "organizationWebsite": "Website",
