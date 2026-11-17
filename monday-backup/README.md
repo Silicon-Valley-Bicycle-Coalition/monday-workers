@@ -202,7 +202,7 @@ which snapshots the boards in the workspace named by `workspaceIds` (CRM Sandbox
 Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENVIRONMENT` var,
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
-Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
+Own D1, no cron (sandbox crons are disabled to save cost; trigger runs manually), no public surface. The sandbox config leaves `apiUsageAlerts` off,
 because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
 sandbox`): a service account that is a Contributor on the sandbox Shared Drive only, the
 sandbox Slack webhook, and the sandbox's own `BACKUP_ENCRYPTION_KEY` (see "Snapshot encryption").

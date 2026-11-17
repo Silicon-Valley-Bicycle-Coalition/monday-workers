@@ -53,7 +53,7 @@
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "limits": { "cpu_ms": 30000 },
       "triggers": {
-        "crons": ["0 11 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "observability": {
         "enabled": true,

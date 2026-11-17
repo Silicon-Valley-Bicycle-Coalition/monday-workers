@@ -252,7 +252,7 @@ describe('wrangler.jsonc env.sandbox', () => {
 
   it('runs the follow-up sweep hourly in both environments (wrangler does not inherit triggers)', () => {
     expect((wrangler.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
-    expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
+    expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {

@@ -140,7 +140,7 @@
       // Same as the top-level limit: see its comment.
       "limits": { "cpu_ms": 30000 },
       "triggers": {
-        "crons": ["0 9 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "observability": {
         "enabled": true,

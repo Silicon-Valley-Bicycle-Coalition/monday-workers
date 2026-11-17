@@ -107,7 +107,7 @@
         "CF_WEB_ANALYTICS_TOKEN": ""
       },
       "triggers": {
-        "crons": ["0 13 * * *"]
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
       },
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2062", "simple": { "limit": 120, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
