@@ -32,4 +32,33 @@ describe('D1 schema', () => {
     await env.DB.prepare(insert).run();
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM matches').first<{ n: number }>())?.n).toBe(1);
   });
+
+  it('records which evidence a proposal rests on, matches by default (#124)', async () => {
+    await env.DB.prepare(
+      `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at)
+       VALUES ('10', '20', '30', 'Current', 2, '2026-11-16T00:00:00Z')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at, evidence, domain)
+       VALUES ('11', '20', '31', 'Current', 0, '2026-11-16T00:00:00Z', 'email_domain', 'acme.example')`,
+    ).run();
+    const rows = (await env.DB.prepare('SELECT person_item_id, evidence, domain FROM proposals ORDER BY person_item_id').all()).results;
+    expect(rows).toEqual([
+      { person_item_id: '10', evidence: 'matches', domain: null },
+      { person_item_id: '11', evidence: 'email_domain', domain: 'acme.example' },
+    ]);
+  });
+
+  it('refuses an unknown evidence kind', async () => {
+    await expect(env.DB.prepare(
+      `INSERT INTO proposals (person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count, proposed_at, evidence)
+       VALUES ('10', '20', '30', 'Current', 0, '2026-11-16T00:00:00Z', 'hunch')`,
+    ).run()).rejects.toThrow();
+  });
+
+  it('holds one email_index row per address', async () => {
+    const insert = `INSERT INTO email_index (address, kind, person_item_ids, affiliation_item_id) VALUES ('jo@acme.example', 'personal', '["1"]', NULL)`;
+    await env.DB.prepare(insert).run();
+    await expect(env.DB.prepare(insert).run()).rejects.toThrow();
+  });
 });

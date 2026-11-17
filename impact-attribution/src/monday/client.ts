@@ -1,5 +1,6 @@
-// Reads active Matching Donations and the Affiliations board, checks items still exist, and writes
-// Draft Affiliations with an evidence comment. Columns are resolved by title once per board
+// Reads active Matching Donations, the Affiliations board and (for email-domain proposals) People
+// and Organizations, checks items still exist, and writes Draft Affiliations with an evidence
+// comment. Columns are resolved by title once per board
 // (through bareTitle, so "🔒 Proposed status" is found by "Proposed status"); a missing one, or one
 // of the wrong type, throws ColumnLookupError.
 import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
@@ -7,6 +8,8 @@ import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type Toke
 import type { ImpactAttributionConfig } from '../config';
 import { pairKey, type MatchRow } from '../rule';
 import type { BoardMatchRead } from '../store';
+import type { AffiliationRecord, OrganizationRecord } from '../emailDomains/domains';
+import type { PersonRecord } from '../emailDomains/select';
 
 export interface ImpactMondayClient {
   readActiveMatches(cfg: ImpactAttributionConfig): Promise<BoardMatchRead>;
@@ -14,6 +17,10 @@ export interface ImpactMondayClient {
   activeItems(ids: string[]): Promise<Map<string, string>>;
   createDraft(cfg: ImpactAttributionConfig['affiliations'], d: { name: string; personItemId: string; orgItemId: string; proposedStatus: 'Current' | 'Former' }): Promise<string>;
   postUpdate(itemId: string, body: string): Promise<void>;
+  // Email-domain proposals (#124): whole-board reads of People, Organizations and Affiliations.
+  listPeople(boardId: string, cols: ImpactAttributionConfig['emailDomains']['people']): Promise<PersonRecord[]>;
+  listOrganizations(boardId: string, websiteTitle: string): Promise<OrganizationRecord[]>;
+  listAffiliations(cfg: ImpactAttributionConfig['affiliations'], workEmailTitle: string): Promise<AffiliationRecord[]>;
 }
 
 export class ColumnLookupError extends Error {
@@ -49,29 +56,38 @@ export function parseMatchItem(item: RawMatchItem, cfg: ImpactAttributionConfig)
 
 interface BoardColumn { id: string; title: string; type: string }
 
-function columnByTitle(columns: BoardColumn[], title: string, boardId: string, type: string): BoardColumn {
+function columnByTitle(columns: BoardColumn[], title: string, boardId: string, type?: string): BoardColumn {
   const matches = columns.filter((c) => bareTitle(c.title) === bareTitle(title));
   if (matches.length === 0) throw new ColumnLookupError(`board ${boardId}: no column titled "${title}"`);
   if (matches.length > 1) throw new ColumnLookupError(`board ${boardId}: ${matches.length} columns titled "${title}"; rename one`);
   const col = matches[0]!;
-  if (col.type !== type) throw new ColumnLookupError(`board ${boardId}: column "${title}" is type "${col.type}", expected "${type}"`);
+  if (type !== undefined && col.type !== type) throw new ColumnLookupError(`board ${boardId}: column "${title}" is type "${col.type}", expected "${type}"`);
   return col;
 }
 
-interface RawColumnValue { id: string; text: string | null; linked_items?: { id: string | number; board: { id: string | number } | null }[] | null }
-interface RawItem { id: string; column_values: RawColumnValue[] }
+interface RawColumnValue {
+  id: string; text: string | null; linked_items?: { id: string | number; board: { id: string | number } | null }[] | null;
+  email?: string | null; url?: string | null; date?: string | null; label?: string | null;
+}
+interface RawItem { id: string; name: string; column_values: RawColumnValue[] }
 interface ItemsPage { cursor: string | null; items: RawItem[] }
 
 // A nightly run has no queue behind it: the transport's own retries ride out a blip, and a longer
 // failure fails the run for the next night to redo.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
-const COLUMN_VALUES = 'column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_items { id board { id } } } }';
+// Typed fragments where `text` misleads: an email's or link's text can carry a label ("Jo -
+// jo@acme.example"), and a date's text follows the account's display format.
+const COLUMN_VALUES = `column_values(ids: $columnIds) { id text
+  ... on BoardRelationValue { linked_items { id board { id } } }
+  ... on EmailValue { email } ... on LinkValue { url } ... on DateValue { date } ... on StatusValue { label } }`;
 const ID_CHUNK = 100;
 
 const linksOf = (cv: RawColumnValue | undefined): { id: string; boardId: string }[] =>
   (cv?.linked_items ?? []).map((l) => ({ id: String(l.id), boardId: String(l.board?.id ?? '') }));
 const textOf = (cv: RawColumnValue | undefined): string | null => (cv?.text === undefined || cv.text === null || cv.text === '' ? null : cv.text);
+const blank = (s: string | null | undefined): string | null => (s === undefined || s === null || s.trim() === '' ? null : s);
+const emailOf = (cv: RawColumnValue | undefined): string | null => blank(cv?.email)?.trim().toLowerCase() ?? null;
 
 const numericIds = (ids: string[], what: string): number[] => {
   if (!ids.every((id) => /^\d+$/.test(id) && Number.isSafeInteger(Number(id)))) throw new Error(`${what}: item id is not numeric`);
@@ -109,7 +125,7 @@ export class HttpMondayClient implements ImpactMondayClient {
     const items: RawItem[] = [];
     const first = await this.transport.request<{ boards: { items_page: ItemsPage }[] }>(
       `query ($boardId: [ID!], $columnIds: [String!], $query: ItemsQuery) {
-        boards(ids: $boardId) { items_page(limit: 500, query_params: $query) { cursor items { id ${COLUMN_VALUES} } } }
+        boards(ids: $boardId) { items_page(limit: 500, query_params: $query) { cursor items { id name ${COLUMN_VALUES} } } }
       }`,
       { boardId: [boardId], columnIds, query: queryParams },
     );
@@ -118,7 +134,7 @@ export class HttpMondayClient implements ImpactMondayClient {
     while (page.cursor !== null) {
       const next = await this.transport.request<{ next_items_page: ItemsPage }>(
         `query ($cursor: String!, $columnIds: [String!]) {
-          next_items_page(limit: 500, cursor: $cursor) { cursor items { id ${COLUMN_VALUES} } }
+          next_items_page(limit: 500, cursor: $cursor) { cursor items { id name ${COLUMN_VALUES} } }
         }`,
         { cursor: page.cursor, columnIds },
       );
@@ -209,5 +225,43 @@ export class HttpMondayClient implements ImpactMondayClient {
       { itemId, body },
       { idempotent: false },
     );
+  }
+
+  async listPeople(boardId: string, cols: ImpactAttributionConfig['emailDomains']['people']): Promise<PersonRecord[]> {
+    const c = await this.columns(boardId);
+    const personal = columnByTitle(c, cols.personalEmail, boardId, 'email').id;
+    const household = columnByTitle(c, cols.householdEmail, boardId, 'email').id;
+    const employer = columnByTitle(c, cols.employerName, boardId).id;
+    const lastGift = columnByTitle(c, cols.lastGiftDate, boardId, 'date').id;
+    return (await this.pageAll(boardId, [personal, household, employer, lastGift], null)).map((item) => {
+      const by = new Map(item.column_values.map((cv) => [cv.id, cv]));
+      return {
+        itemId: String(item.id), boardId, name: item.name,
+        personalEmail: emailOf(by.get(personal)), householdEmail: emailOf(by.get(household)),
+        employerName: blank(by.get(employer)?.text), lastGiftDate: blank(by.get(lastGift)?.date),
+      };
+    });
+  }
+
+  async listOrganizations(boardId: string, websiteTitle: string): Promise<OrganizationRecord[]> {
+    const website = columnByTitle(await this.columns(boardId), websiteTitle, boardId, 'link').id;
+    return (await this.pageAll(boardId, [website], null)).map((item) => ({
+      itemId: String(item.id), name: item.name, websiteUrl: blank(item.column_values.find((cv) => cv.id === website)?.url),
+    }));
+  }
+
+  async listAffiliations(cfg: ImpactAttributionConfig['affiliations'], workEmailTitle: string): Promise<AffiliationRecord[]> {
+    const c = await this.columns(cfg.boardId);
+    const person = columnByTitle(c, cfg.person, cfg.boardId, 'board_relation').id;
+    const org = columnByTitle(c, cfg.organization, cfg.boardId, 'board_relation').id;
+    const status = columnByTitle(c, cfg.status, cfg.boardId, 'status').id;
+    const workEmail = columnByTitle(c, workEmailTitle, cfg.boardId, 'email').id;
+    return (await this.pageAll(cfg.boardId, [person, org, status, workEmail], null)).map((item) => {
+      const by = new Map(item.column_values.map((cv) => [cv.id, cv]));
+      return {
+        itemId: String(item.id), personIds: linksOf(by.get(person)).map((l) => l.id), organizationIds: linksOf(by.get(org)).map((l) => l.id),
+        status: blank(by.get(status)?.label), workEmail: emailOf(by.get(workEmail)),
+      };
+    });
   }
 }

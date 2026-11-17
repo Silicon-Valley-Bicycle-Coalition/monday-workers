@@ -26,7 +26,8 @@ function fakeConfig(): BenevityImportConfig {
       },
       organizationsNameColumn: 'name',
       peopleColumns: { personalEmail: 'personal_email_c', householdEmail: 'household_email_c', employer: 'employer_c' },
-      affiliationsColumns: { person: 'person_c', organization: 'org_c', workEmail: 'work_email_c' },
+      affiliationsColumns: { person: 'person_c', organization: 'org_c', workEmail: 'work_email_c', status: 'aff_status_c' },
+      affiliationsCurrentLabel: 'Current',
       uploadsBoard: {
         fileColumn: 'file_c', worklistGroupId: 'review',
         worklistColumns: { reason: 'reason_c', name: 'name_c', email: 'email_c', company: 'company_c', amount: 'amount_c', date: 'date_c' },
@@ -74,6 +75,7 @@ describe('benevity-import integration', () => {
         Promise.resolve(name === 'Acme, Inc.' ? [{ id: '99', name: 'Acme, Inc.' }] : [])
       ),
       getLinkedItemIds: vi.fn().mockResolvedValue([]),
+      getStatusLabels: vi.fn().mockResolvedValue(new Map()),
       createItem: vi.fn().mockResolvedValue({ id: '501', name: 'x' }),
       changeColumnValues: vi.fn(),
       archiveItem: vi.fn().mockResolvedValue(undefined),

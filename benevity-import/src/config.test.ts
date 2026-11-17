@@ -36,7 +36,9 @@ const validConfig = {
       person: 'person_col',
       organization: 'organization_col',
       workEmail: 'work_email_col',
+      status: 'aff_status_col',
     },
+    affiliationsCurrentLabel: 'Current',
     uploadsBoard: {
       fileColumn: 'file_col',
       worklistGroupId: 'review',
@@ -83,6 +85,16 @@ describe('validateConfig', () => {
       benevityImport: { ...validConfig.benevityImport, minDonationDate: '2026-10-09' },
     };
     expect(() => validateConfig(stale)).toThrow(/minDonationDate.*minDisbursementDate/);
+  });
+
+  it('requires the Affiliations status column and the Current label (#124)', () => {
+    const { status, ...noStatus } = validConfig.benevityImport.affiliationsColumns;
+    expect(() => validateConfig({
+      ...validConfig, benevityImport: { ...validConfig.benevityImport, affiliationsColumns: noStatus },
+    })).toThrow(/affiliationsColumns\.status/);
+    expect(() => validateConfig({
+      ...validConfig, benevityImport: { ...validConfig.benevityImport, affiliationsCurrentLabel: '' },
+    })).toThrow(/affiliationsCurrentLabel/);
   });
 
   it('rejects a non-positive retention window', () => {

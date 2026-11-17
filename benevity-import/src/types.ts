@@ -81,7 +81,11 @@ export interface BenevityImportConfig {
       person: string;
       organization: string;
       workEmail: string;
+      status: string;
     };
+    // Only affiliations with this Status count as employer evidence: a Draft is an unconfirmed
+    // proposal (impact-attribution, #124) and a Former is a past job.
+    affiliationsCurrentLabel: string;
     uploadsBoard: UploadsBoardConfig;
     // Raw Benevity "Company" string -> canonical Organizations item name, e.g.
     // {"Google, LLC": "Google"}. A hit here is retried through the same name lookup as an
