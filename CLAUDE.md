@@ -17,8 +17,13 @@ out alongside this one) — not published, not required to build the Worker.
 
 **There is no root-level Worker code** — each Worker is self-contained in its own subdirectory,
 and every one now holds a full implementation. The root-level exception is `scripts/`:
-dependency-free `.mjs` files with `node:test` tests beside them (the `log-safety` CI job runs
+dependency-free `.mjs` files with `node:test` tests beside them (the `log-safety` step of `.github/workflows/checks.yml` runs
 both the tests and the check below).
+
+CI is GitHub Actions: `.github/workflows/checks.yml` (one `checks` job: the copy rosters and the
+checks below) and `.github/workflows/workers.yml` (per-Worker test matrix and sandbox deploys, from
+the roster in `.github/workers.json`; `scripts/ci-changed-workers.mjs` picks what changed and fails
+when a Worker directory isn't listed). `.gitlab-ci.yml` mirrors them until the GitHub cutover.
 
 - CI checks: `check-log-safety.mjs` fails on `console.*()` calls that could log an email address
   (the pre-commit hook also runs it with `--staged`; by hand, `node scripts/check-log-safety.mjs`),
@@ -155,7 +160,7 @@ Google Fonts from a Worker page.
 name the *bare* title. Anything that finds a Monday column by title must compare through
 `bareTitle` from `scripts/lib/column-titles.mjs`, never `c.title === title`. Otherwise a marked
 column reads as missing, and an idempotent setup script creates a duplicate under the bare title.
-A Worker that imports the module adds `scripts/lib/**/*` to its CI job rules, as `monday-auth` does.
+A Worker that imports the module adds `scripts/lib/**` to its `extraPaths` in `.github/workers.json`, as `monday-auth` does.
 When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run the script.
 
 **The staff "Enter a gift" form shows every Donations column unless hidden.** A Monday form view
@@ -188,8 +193,8 @@ them. Design: `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). The
 Workers that carry it are `IN_SCOPE` in `scripts/check-worker-flags.mjs`; `svbc-calendars`,
 `monday-auth` and `member-map` (which only reads Monday) don't. `member-portal/src/flags.ts` is
-canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the CI
-job `worker-flags-copies` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
+canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the
+`worker-flags-copies` step of `checks.yml` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
 FLAGS KV ids match across `wrangler.jsonc` files). Same rule as `graphql.ts`: edit the canonical
 file, copy it over the rest, never edit a copy; it must stay strip-only TypeScript (no enums,
 namespaces, constructor parameter properties). Operator CLI: `scripts/flags.mjs` (`<worker|all>
@@ -222,10 +227,10 @@ and `sandbox-FLAGS`. Runbook, including each Worker's behavior under `hold`:
 is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, non-idempotent
 writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.ts` and tune it
 through constructor options in their own `client.ts`, never by editing the copy. The
-`monday-graphql-copies` CI job fails on drift, and its `for copy in …` list is the roster: edit
+`monday-graphql-copies` step of `checks.yml` fails on drift, and its `for copy in …` list is the roster: edit
 the canonical file, copy it to every path listed, and add a Worker's path there when moving it
 over. `nearby-search` also carries a byte-identical copy of `geo-filter/src/geometry.ts` (the
-corridor and point logic), enforced by the `geo-geometry-copies` CI job; edit geo-filter's, then
+corridor and point logic), enforced by the `geo-geometry-copies` step of `checks.yml`; edit geo-filter's, then
 copy it over.
 
 - `salesforce-import` deliberately keeps its own client (`src/load/monday.ts`): it's the one every
@@ -245,14 +250,14 @@ copy it over.
 - Queue consumers stop calling Monday for the rest of a batch once one message fails on an
   outage (429, 5xx, timeout, spent budget or daily limit) and retry the rest with backoff (#101).
   The breaker is `funraise-sync/src/monday/outage.ts`, copied byte-identical like `graphql.ts`;
-  the `monday-outage-copies` CI job holds the roster. A new queue Worker copies it in.
+  the `monday-outage-copies` step of `checks.yml` holds the roster. A new queue Worker copies it in.
 
 **Monday API tokens are least-privilege by design:** a Worker gets Monday access from the
 `monday-auth` broker, not from a token of its own. One integration user (SVBC Integration; Sandbox
 Integration in the sandbox) authorizes three OAuth apps (Portal, Staff sync, Read-only, each
 environment with its own set), the broker holds the tokens, and a Worker's `MONDAY_AUTH` service
 binding picks its app by entrypoint (`PortalToken`, `SyncToken`, `ReadOnlyToken`; the
-`monday-auth-bindings` CI job checks the mapping). New Workers bind an entrypoint instead of
+`monday-auth-bindings` step of `checks.yml` checks the mapping). New Workers bind an entrypoint instead of
 adding a `MONDAY_API_TOKEN` secret; never use a staff member's personal token. Leftovers from the
 OAuth cutover: `benevity-import`, `mailchimp-sync`, `monday-backup`, `quickbooks-sync` and
 `report-digests` still declare an optional `MONDAY_API_TOKEN` fallback (don't add new uses), and

@@ -374,7 +374,7 @@ dead-lettering. Error classification (retryable vs terminal) is unchanged per Wo
 `sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 14 in-scope `wrangler.jsonc` files carry
 both ids (forks: create your own with `npx wrangler kv namespace create FLAGS` and
 `npx wrangler kv namespace create sandbox-FLAGS`, and replace them);
-`node scripts/check-worker-flags.mjs --strict` (CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is
+`node scripts/check-worker-flags.mjs --strict` (`worker-flags-copies` step of `.github/workflows/checks.yml`) verifies they match and that every Worker's `src/flags.ts` is
 byte-identical to the canonical `member-portal/src/flags.ts`.
 
 ## Reliability: traffic and cost limits
@@ -453,7 +453,7 @@ carry a `src/logSafe.ts` whose `errorText()`/`redactEmails()` scrub addresses fr
 before it's logged, because Mailchimp and email-send errors quote the recipient. `mailchimp-sync`
 logs a Mailchimp member by its `memberId()`, the subscriber hash Mailchimp's API and UI use.
 
-CI enforces this with the `log-safety` job: [`scripts/check-log-safety.mjs`](scripts/check-log-safety.mjs)
+CI enforces this with the `log-safety` step of `.github/workflows/checks.yml`: [`scripts/check-log-safety.mjs`](scripts/check-log-safety.mjs)
 fails on any `console.*()` call whose arguments name an `email`/`recipient` identifier or a
 `.to`/`.cc`/`.bcc` field, unless it's wrapped in one of those helpers. Run it locally with
 `node scripts/check-log-safety.mjs`. It can't see through indirection (a variable holding an
@@ -500,8 +500,8 @@ gets a *second*
 Workers Builds connection to the same repo and root directory, deploy command
 `npx wrangler deploy --env sandbox`, also tracking `main` — see each Worker's README "Sandbox
 environment" section for its specific Worker name. **Verify in the dashboard before relying on
-it:** if Cloudflare refuses two connections on one root directory, `.gitlab-ci.yml`'s
-`deploy-sandbox:<worker>` jobs are the fallback — same deploy command, run on `main`, gated on a
+it:** if Cloudflare refuses two connections on one root directory, `.github/workflows/workers.yml`'s
+`deploy-sandbox` job (`.gitlab-ci.yml`'s `deploy-sandbox:<worker>` jobs, until the GitHub cutover) is the fallback — same deploy command, run on `main`, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so they stay inert until that variable is actually set (so
 turning on the fallback never risks a double deploy alongside a working dashboard connection).
 When adding it (#58): mark it **Protected, Masked and Hidden** — Protected is what keeps it out of

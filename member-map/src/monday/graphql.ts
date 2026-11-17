@@ -4,7 +4,7 @@
 //
 // CANONICAL COPY (#35). This file is byte-identical in every Worker that uses it, so each Worker
 // stays self-contained and forkable on its own — no shared package. The CI job
-// `monday-graphql-copies` in .gitlab-ci.yml fails if any copy differs from
+// `monday-graphql-copies` in .github/workflows/checks.yml fails if any copy differs from
 // monday-backup/src/monday/graphql.ts. To change it, edit that file and copy it over every
 // path the job lists. Keep Worker-specific behaviour in each Worker's own client, via the options.
 //
