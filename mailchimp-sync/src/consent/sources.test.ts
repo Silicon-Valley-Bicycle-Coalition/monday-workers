@@ -179,3 +179,32 @@ describe('createConsentMonday.writeConsent on an outage', () => {
     expect(result).toEqual({ written: 0, failedItemIds: ['1', '2', '3'] });
   });
 });
+
+describe('createConsentMonday.writeConsent past its deadline', () => {
+  it('stops before the next chunk and counts the rest as failed', async () => {
+    let clock = 0;
+    let calls = 0;
+    const request = (async () => {
+      calls += 1;
+      clock += 1000; // each mutation takes a second
+      return {};
+    }) as GraphQLRequest;
+    const writes = Array.from({ length: 60 }, (_, i) => write(String(i)));
+    const result = await createConsentMonday(request, { now: () => clock }).writeConsent(writes, { deadline: 1500 });
+    expect(calls).toBe(2);
+    expect(result.written).toBe(50);
+    expect(result.failedItemIds).toEqual(Array.from({ length: 10 }, (_, i) => String(50 + i)));
+    expect(result.timedOut).toBe(true);
+  });
+
+  it('stops the item-by-item fallback at the deadline too', async () => {
+    let clock = 0;
+    const request = (async (query: string) => {
+      clock += 1000;
+      if ((query.match(/change_multiple_column_values/g) ?? []).length > 1) throw new Error('chunk failed');
+      return {};
+    }) as GraphQLRequest;
+    const result = await createConsentMonday(request, { now: () => clock }).writeConsent([write('1'), write('2'), write('3')], { deadline: 1500 });
+    expect(result).toEqual({ written: 1, failedItemIds: ['2', '3'], timedOut: true });
+  });
+});

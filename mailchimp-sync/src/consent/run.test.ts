@@ -166,4 +166,26 @@ describe('runConsentSync', () => {
     const summary = await runConsentSync(gate('on'), deps(monday, new Map([['a@x.org', 'cleaned']])));
     expect(summary).toMatchObject({ written: 0, failed: 1 });
   });
+
+  it('gives the writes a 12-minute budget from the start of the run', async () => {
+    let clock = 5_000;
+    const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')], 2: [] });
+    const d = { ...deps(monday, new Map([['a@x.org', 'cleaned']])), now: () => clock };
+    d.readStatuses = vi.fn(async () => {
+      clock += 90_000; // the reads take time; the budget still counts from the start
+      return new Map([['a@x.org', 'cleaned']]);
+    });
+    await runConsentSync(gate('on'), d);
+    expect(monday.writeConsent).toHaveBeenCalledWith(expect.any(Array), { deadline: 5_000 + 12 * 60_000 });
+  });
+
+  it('a run that runs out of time alerts', async () => {
+    const monday = fakeMonday({ 1: [item('10', 'a@x.org', 'Subscribed')], 2: [] });
+    monday.writeConsent = vi.fn(async () => ({ written: 0, failedItemIds: ['10'], timedOut: true }));
+    const d = deps(monday, new Map([['a@x.org', 'cleaned']]));
+    const summary = await runConsentSync(gate('on'), d);
+    expect(summary).toMatchObject({ failed: 1, timedOut: true });
+    expect(d.alert).toHaveBeenCalledTimes(1);
+    expect(String(d.alert.mock.calls[0]![0])).toContain('write budget');
+  });
 });

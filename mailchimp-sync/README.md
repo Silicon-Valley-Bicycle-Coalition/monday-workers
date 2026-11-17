@@ -316,6 +316,11 @@ Monday is lifted only by Mailchimp saying subscribed.
 * **Monday outage.** A 429/5xx/timeout/spent budget (the outage breaker's `isMondayOutage`) stops
   the run's writes; the rest count as failed and the next hour redoes them. Items carrying an
   opt-out are written first, so a run cut short has already written the changes that stop mail.
+* **Write budget.** Writes stop 12 minutes after the run starts (`CONSENT_WRITE_BUDGET_MS`):
+  Cloudflare cancels a cron invocation at 15 minutes of wall time, before its log line or alert.
+  Monday paces the writes at about 2 items a second, so a run writes roughly 1,500 items; the
+  rest count as failed (`timedOut: true`), alert, and the next hour carries on. Steady state is a
+  handful of changes an hour.
 * A board whose read fails (a mistyped column id in config, say) is logged and skipped; the
   others still run.
 
@@ -325,7 +330,7 @@ until David's go-ahead; off, each hourly run logs one line. Under the write swit
 skip the run (nothing to catch up — the next `on` run writes whatever still differs).
 
 **Logs.** One `{"event":"consent-run"}` line per run: items per board, `transitions` by board,
-column and change, `held`, `written`, `failed`, `failedBoards`. Item ids, column ids and counts,
+column and change, `held`, `written`, `failed`, `failedBoards`, `timedOut`. Item ids, column ids and counts,
 never an address.
 
 **Rehearse with the plan script** — read-only, runs whether or not `consent.enabled` is set:
@@ -353,7 +358,10 @@ network wait).
 Sandbox Integration's Sync token reaches them) and planned 6,232 changes to Not in Mailchimp —
 the sandbox audience holds 2 members, so nearly every sandbox Subscribed is stale. The cap tripped
 as designed: everything held, nothing written, the alert logged. The cap was then raised to
-10,000 in `config/sandbox.json` for one catch-up run and set back to 500 afterwards.
+10,000 in `config/sandbox.json` for the catch-up (set it back to 500 once the plan script holds
+nothing). The 01:05 run wrote 1,835 values and was then cancelled by Cloudflare at 15 minutes'
+wall time (`outcome: canceled`, 198 ms CPU) with no log line or alert — which is why writes now
+stop at the 12-minute budget.
 
 **Turning it on in production** (after David's go-ahead):
 1. `node scripts/consent-plan.mjs --env production` and check the transitions with David.

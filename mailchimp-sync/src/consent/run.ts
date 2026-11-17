@@ -13,11 +13,17 @@ import { redactEmails } from '../logSafe';
 
 export const CONSENT_CRON = '5 * * * *';
 
+// The platform cancels a cron invocation at 15 minutes of wall time, before its log line or
+// alert. Writes stop at 12 minutes from the start of the run (Monday paces them at roughly 2 items
+// a second, so ~1,500 items fit after the reads) and the rest wait for the next hour.
+export const CONSENT_WRITE_BUDGET_MS = 12 * 60_000;
+
 export interface ConsentRunDeps {
   config: Config;
   monday: ConsentMonday;
   readStatuses: () => Promise<Map<string, string>>;
   alert: (text: string) => Promise<void>;
+  now?: () => number;
 }
 
 export interface ConsentRunSummary {
@@ -33,6 +39,8 @@ export interface ConsentRunSummary {
   failed: number;
   // Boards whose read failed; the others still ran.
   failedBoards: string[];
+  // Writes stopped at CONSENT_WRITE_BUDGET_MS; the unwritten items count in `failed`.
+  timedOut: boolean;
 }
 
 const errName = (err: unknown): string => (err instanceof Error ? err.name : 'UnknownError');
@@ -40,7 +48,8 @@ const errText = (err: unknown): string => (err instanceof Error ? err.message : 
 
 export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDeps): Promise<ConsentRunSummary> {
   const { config } = deps;
-  const summary: ConsentRunSummary = { outcome: 'done', mode: gate.mode, items: {}, transitions: {}, held: 0, written: 0, failed: 0, failedBoards: [] };
+  const deadline = (deps.now ?? Date.now)() + CONSENT_WRITE_BUDGET_MS;
+  const summary: ConsentRunSummary = { outcome: 'done', mode: gate.mode, items: {}, transitions: {}, held: 0, written: 0, failed: 0, failedBoards: [], timedOut: false };
   const prefix = `mailchimp-sync consent (${gate.environment}):`;
 
   if (!config.consent.enabled) {
@@ -92,9 +101,10 @@ export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDep
   const monday = disposition === 'dry-run' ? dryRunConsentMonday(deps.monday, { ...gate, deliveryId: 'consent-cron' }) : deps.monday;
   const writes = toWrites(allowed);
   if (writes.length > 0) {
-    const result = await monday.writeConsent(writes);
+    const result = await monday.writeConsent(writes, { deadline });
     summary.written = result.written;
     summary.failed = result.failedItemIds.length;
+    summary.timedOut = result.timedOut === true;
     if (result.failedItemIds.length > 0) {
       console.error(JSON.stringify({ worker: 'mailchimp-sync', event: 'consent-writes-failed', environment: gate.environment, itemIds: result.failedItemIds }));
     }
@@ -103,7 +113,8 @@ export async function runConsentSync(gate: BatchSkipContext, deps: ConsentRunDep
   if (summary.failedBoards.length > 0 || summary.failed > 0) {
     const parts = [
       ...(summary.failedBoards.length > 0 ? [`could not read ${summary.failedBoards.join(', ')}`] : []),
-      ...(summary.failed > 0 ? [`${summary.failed} item writes failed`] : []),
+      ...(summary.timedOut ? [`the run reached its write budget (${CONSENT_WRITE_BUDGET_MS / 60_000} minutes) with ${summary.failed} items unwritten`]
+        : summary.failed > 0 ? [`${summary.failed} item writes failed`] : []),
     ];
     await deps.alert(`${prefix} ${parts.join('; ')}; the next hourly run retries (see the consent-run log line)`);
   }

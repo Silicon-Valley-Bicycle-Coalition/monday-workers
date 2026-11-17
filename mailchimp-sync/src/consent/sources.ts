@@ -72,7 +72,14 @@ export type GraphQLRequest = <T>(query: string, variables: Record<string, unknow
 
 export interface ConsentMonday {
   readBoard(board: ConsentBoard): Promise<ConsentItem[]>;
-  writeConsent(writes: readonly ConsentWrite[]): Promise<{ written: number; failedItemIds: string[] }>;
+  writeConsent(writes: readonly ConsentWrite[], options?: { deadline?: number }): Promise<ConsentWriteResult>;
+}
+
+export interface ConsentWriteResult {
+  written: number;
+  failedItemIds: string[];
+  // Writing stopped at the deadline; failedItemIds holds what was left.
+  timedOut?: boolean;
 }
 
 const PAGE = 500;
@@ -87,10 +94,13 @@ export interface ConsentMondayOptions {
   // every further request would fail the same way and the item-by-item fallback could outlast
   // the cron's wall clock. index.ts passes the outage breaker's isMondayOutage.
   isOutage?: (err: unknown) => boolean;
+  // The clock writeConsent checks its deadline against; tests pass a fake one.
+  now?: () => number;
 }
 
 export function createConsentMonday(request: GraphQLRequest, options: ConsentMondayOptions = {}): ConsentMonday {
   const isOutage = options.isOutage ?? (() => false);
+  const now = options.now ?? Date.now;
   async function writeChunk(chunk: readonly ConsentWrite[]): Promise<void> {
     const vars: Record<string, unknown> = {};
     const decls: string[] = [];
@@ -138,13 +148,20 @@ export function createConsentMonday(request: GraphQLRequest, options: ConsentMon
       return items;
     },
 
-    async writeConsent(writes) {
+    async writeConsent(writes, { deadline } = {}) {
       let written = 0;
       const failedItemIds: string[] = [];
       const giveUpFrom = (index: number) => {
         for (const w of writes.slice(index)) failedItemIds.push(w.itemId);
       };
+      // Checked before each request, so the run ends on its own terms (with its log line and
+      // alert) instead of being cancelled by the platform's wall-time limit mid-write.
+      const pastDeadline = () => deadline !== undefined && now() >= deadline;
       for (let i = 0; i < writes.length; i += ITEMS_PER_MUTATION) {
+        if (pastDeadline()) {
+          giveUpFrom(i);
+          return { written, failedItemIds, timedOut: true };
+        }
         const chunk = writes.slice(i, i + ITEMS_PER_MUTATION);
         try {
           await writeChunk(chunk);
@@ -157,6 +174,10 @@ export function createConsentMonday(request: GraphQLRequest, options: ConsentMon
           // One bad item fails the whole aliased request; redo the chunk one item at a time so
           // only that item is left for the next hour.
           for (let j = 0; j < chunk.length; j += 1) {
+            if (pastDeadline()) {
+              giveUpFrom(i + j);
+              return { written, failedItemIds, timedOut: true };
+            }
             try {
               await writeChunk([chunk[j]!]);
               written += 1;
