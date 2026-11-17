@@ -6,6 +6,14 @@ describe('realEmail', () => {
   it('trims an address', () => expect(realEmail('  pat@example.org ')).toBe('pat@example.org'));
   it('rejects blank', () => expect(realEmail('')).toBeNull());
   it('rejects a non-string', () => expect(realEmail(null)).toBeNull());
+  // #115: Eventbrite hands some attendees a generated, bracketed address that Monday's email column
+  // rejects ("email is not valid"), failing the whole row write. Shape only; the real ones are longer.
+  it('rejects the bracketed stand-in address', () =>
+    expect(realEmail('[abcd-efghijk-12345678901234567890]-1234567890@example.com')).toBeNull());
+  it('rejects an address with whitespace inside', () => expect(realEmail('pat rider@example.org')).toBeNull());
+  it('rejects an address with no dot in the domain', () => expect(realEmail('pat@localhost')).toBeNull());
+  it('rejects two @ signs', () => expect(realEmail('pat@@example.org')).toBeNull());
+  it('keeps plus, dots and hyphens', () => expect(realEmail('pat.r+bikes@mail.example-club.org')).toBe('pat.r+bikes@mail.example-club.org'));
 });
 
 describe('realName', () => {
