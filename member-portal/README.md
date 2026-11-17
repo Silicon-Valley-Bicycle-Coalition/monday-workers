@@ -691,9 +691,13 @@ employer affiliation without a staff step.
   `link-employers-to-organizations.mjs` find it by name), then point `personAffiliationsLink`
   here and `donation-rollups`' `employerSync.ownerColumnsByBoard.*.affiliationsLink` at the new
   ids. Re-run: the same answer twice gave `no change` with no duplicate, a new employer moved
-  Primary, and `employerSync` set Employer Name within 30 s. **Production still needs the same
-  column change** before `config/svbc.json` (here and in `donation-rollups`) can take the new ids;
-  delete the old columns only after production is verified.
+  Primary, and `employerSync` set Employer Name within 30 s. **Production done the same way
+  (2026-11-17):** new columns People `board_relation_mm96jvj6`, People (Historical)
+  `board_relation_mm96q5g6`. They add links the old columns had missed (27 + 1 people) and drop
+  one: Alex McIntyre's City of San Bruno affiliation points its Person at his People (Historical)
+  record, not the People copy made on 2026-11-13, which the old column alone listed (staff to
+  decide whether to move it). Delete the `Affiliations (old one-way)` columns once production is
+  verified.
 
 ## v5 — Event registrations
 
