@@ -61,7 +61,11 @@ A storable match is a Donations item with Gift Type `Matching Donation`, exactly
 Organizations, exactly one Donor on People or People (Historical), and a Date. A (person,
 organization) pair qualifies when any two of its matches are at most 365 days apart (same-day
 matches count). The Draft's **Proposed status** is **Current** if the pair's latest match is within
-365 days of the run date, otherwise **Former**.
+365 days of the run date, otherwise **Former**. A person has one current employer: when two
+companies both come out Current, the one whose latest match is older is proposed as **Former**, and
+its comment names the newer one ("Proposed as Former: Google, LLC has matched since (latest
+2026-09-11)"). The newer company counts even if it already has an Affiliation or was proposed
+before; an excluded payer never does, and two latest matches on the same day leave both Current.
 
 A proposal is one Affiliations item named `<Person> @ <Organization>`, with Person, Organization,
 Status `Draft` and the 🔒 **Proposed status** column set (Start, End, Role and Work Email left
