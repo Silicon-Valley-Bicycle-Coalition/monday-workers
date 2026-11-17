@@ -232,6 +232,9 @@ copy it over.
   load rehearsal validated, its `gqlPartial()` (per-alias results from multi-create requests) has
   no transport equivalent, and `gqlLegacy()` must stay verbatim for `load --sequential`. Revisit
   only if the import runs again; until then port any new failure mode between the two by hand.
+- `employerName.ts` follows the same copy model: canonical at `member-portal/src/changeRequests/employerName.ts`,
+  byte-identical copy at `impact-attribution/src/employerName.ts`, held by the `employer-name-copies` CI
+  job. Edit member-portal's, then copy it over; strip-only TypeScript.
 - A Worker's `.mjs` scripts import that Worker's copy directly (`import { MondayGraphQL } from
   '../src/monday/graphql.ts'`) through Node's built-in type stripping (Node 22.18+ / 23.6+), so
   the file must stay strip-only-compatible — no constructor parameter properties, enums or
