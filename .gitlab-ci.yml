@@ -331,6 +331,22 @@ people-reclassification:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
 
+sync-watchdog:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: sync-watchdog
+  rules:
+    # config/coverage.test.ts reads every Worker's wrangler.jsonc and the IN_SCOPE roster.
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - "*/wrangler.jsonc"
+        - scripts/check-worker-flags.mjs
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run typecheck
+
 contact-roles:
   extends: .worker_job
   variables:

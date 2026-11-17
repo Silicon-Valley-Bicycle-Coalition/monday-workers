@@ -1,0 +1,49 @@
+{
+  "name": "svbc-sync-watchdog",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  // Cron only: no HTTP surface, so no workers.dev URL.
+  "workers_dev": false,
+  "preview_urls": false,
+  "upload_source_maps": true,
+  // Reads (never writes) each Worker's `<worker>:writes` switch. No write switch of its own: it
+  // writes nothing to Monday, only to Slack. Design:
+  // docs/superpowers/specs/2026-11-17-sync-failure-alerting-design.md.
+  "kv_namespaces": [
+    { "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" },
+    // Per-subject alert state (src/state.ts): the sync-watchdog-state namespace.
+    { "binding": "STATE", "id": "fd4cd11d203d4b7fbdf2dd1bbc0bce4a" }
+  ],
+  // Secrets: CLOUDFLARE_API_TOKEN (Account Analytics Read + Queues Read), SLACK_WEBHOOK_URL
+  // (the private staff channel).
+  "limits": { "cpu_ms": 1000 },
+  "triggers": {
+    "crons": ["40 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  "env": {
+    "sandbox": {
+      "name": "svbc-sync-watchdog-sandbox",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": { "ENVIRONMENT": "sandbox" },
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [
+        { "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" },
+        { "binding": "STATE", "id": "e82a6053131d4fd6a90d7cf7e8c852d6" }
+      ],
+      "limits": { "cpu_ms": 1000 },
+      "triggers": {
+        "crons": [] /* Sandbox crons disabled to save cost; run handlers manually when testing. */
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}

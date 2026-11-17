@@ -1,0 +1,48 @@
+{
+  "accountId": "f323cb191edeb5d30acc4d289427a010",
+  "watched": {
+    "benevity-import": { "script": "svbc-benevity-import", "expectedWrites": "on", "crons": [{ "cron": "15 9 * * *", "maxGapHours": 48 }] },
+    "bp-feedback-notify": { "script": "svbc-bp-feedback-notify", "expectedWrites": "on", "crons": [] },
+    "contact-roles": { "script": "svbc-contact-roles", "expectedWrites": "off", "crons": [{ "cron": "*/10 * * * *", "maxGapHours": 3 }] },
+    "donation-rollups": { "script": "svbc-donation-rollups", "expectedWrites": "on", "crons": [{ "cron": "0 9 * * *", "maxGapHours": 48 }] },
+    "eventbrite-sync": { "script": "svbc-eventbrite-sync", "expectedWrites": "on", "crons": [{ "cron": "0 * * * *", "maxGapHours": 3 }] },
+    "funraise-sync": {
+      "script": "svbc-funraise-sync",
+      "expectedWrites": "on",
+      "crons": [{ "cron": "0 * * * *", "maxGapHours": 3 }, { "cron": "0 9 * * *", "maxGapHours": 48 }]
+    },
+    "mailchimp-sync": {
+      "script": "svbc-mailchimp-sync",
+      "expectedWrites": "on",
+      "crons": [{ "cron": "0 15 * * *", "maxGapHours": 48 }, { "cron": "5 * * * *", "maxGapHours": 3 }]
+    },
+    "member-map": { "script": "svbc-member-map", "expectedWrites": null, "crons": [{ "cron": "0 13 * * 1", "maxGapHours": 192 }] },
+    "member-portal": { "script": "svbc-member-portal", "expectedWrites": "on", "crons": [{ "cron": "0 9 * * *", "maxGapHours": 48 }] },
+    "monday-auth": { "script": "svbc-monday-auth", "expectedWrites": null, "crons": [{ "cron": "*/30 * * * *", "maxGapHours": 3 }] },
+    "monday-backup": {
+      "script": "svbc-monday-backup",
+      "expectedWrites": "on",
+      "crons": [{ "cron": "0 9 * * *", "maxGapHours": 48 }, { "cron": "30 * * * *", "maxGapHours": 3 }]
+    },
+    "people-reclassification": { "script": "svbc-people-reclassification", "expectedWrites": "on", "crons": [{ "cron": "0 10 * * *", "maxGapHours": 48 }] },
+    "report-digests": { "script": "svbc-report-digests", "expectedWrites": "on", "crons": [{ "cron": "0 * * * *", "maxGapHours": 3 }] },
+    "svbc-calendars": { "script": "svbc-calendars", "expectedWrites": null, "crons": [{ "cron": "0 13 * * *", "maxGapHours": 48 }] }
+  },
+  "notLive": {
+    "dtd-sync": "not deployed to production",
+    "nearby-search": "not deployed to production (sandbox rollout pending)",
+    "impact-attribution": "production script deployed without its cron and with writes off",
+    "quickbooks-sync": "sandbox only, postponed indefinitely"
+  },
+  "queues": [
+    { "name": "benevity-import-writes", "maxBacklogAgeHours": 6 },
+    { "name": "donation-rollups-recompute", "maxBacklogAgeHours": 6 },
+    { "name": "eventbrite-sync-writes", "maxBacklogAgeHours": 6 },
+    { "name": "funraise-sync-writes", "maxBacklogAgeHours": 6 },
+    { "name": "mailchimp-sync-outbound", "maxBacklogAgeHours": 6 },
+    { "name": "mailchimp-sync-inbound", "maxBacklogAgeHours": 6 },
+    { "name": "svbc-member-map-refresh", "maxBacklogAgeHours": 6 },
+    { "name": "member-portal-change-requests", "maxBacklogAgeHours": 6 },
+    { "name": "member-portal-letter-emails", "maxBacklogAgeHours": 6 }
+  ]
+}

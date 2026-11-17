@@ -93,5 +93,29 @@
     "dir": "salesforce-import",
     "extraPaths": ["scripts/lib/**"]
   },
-  { "dir": "svbc-calendars" }
+  { "dir": "svbc-calendars" },
+  {
+    "dir": "sync-watchdog",
+    "extraPaths": [
+      "scripts/check-worker-flags.mjs",
+      "benevity-import/wrangler.jsonc",
+      "bp-feedback-notify/wrangler.jsonc",
+      "contact-roles/wrangler.jsonc",
+      "donation-rollups/wrangler.jsonc",
+      "dtd-sync/wrangler.jsonc",
+      "eventbrite-sync/wrangler.jsonc",
+      "funraise-sync/wrangler.jsonc",
+      "impact-attribution/wrangler.jsonc",
+      "mailchimp-sync/wrangler.jsonc",
+      "member-map/wrangler.jsonc",
+      "member-portal/wrangler.jsonc",
+      "monday-auth/wrangler.jsonc",
+      "monday-backup/wrangler.jsonc",
+      "nearby-search/wrangler.jsonc",
+      "people-reclassification/wrangler.jsonc",
+      "quickbooks-sync/wrangler.jsonc",
+      "report-digests/wrangler.jsonc",
+      "svbc-calendars/wrangler.jsonc"
+    ]
+  }
 ]

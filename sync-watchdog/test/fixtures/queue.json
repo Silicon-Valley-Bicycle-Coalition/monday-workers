@@ -1,0 +1,16 @@
+{
+  "list": {
+    "success": true,
+    "errors": [],
+    "result": [
+      { "queue_id": "q-funraise", "queue_name": "funraise-sync-writes" },
+      { "queue_id": "q-eventbrite", "queue_name": "eventbrite-sync-writes" }
+    ],
+    "result_info": { "page": 1, "per_page": 100, "total_count": 2 }
+  },
+  "metrics": {
+    "success": true,
+    "errors": [],
+    "result": { "backlog_count": 4, "backlog_bytes": 2048, "oldest_message_timestamp_ms": 1795442400000 }
+  }
+}

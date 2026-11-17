@@ -192,7 +192,8 @@ them. Design: `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 **Write switch (off / hold / on), per Worker, in the shared `FLAGS` KV namespace** (`<worker>:writes`;
 missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). The
 Workers that carry it are `IN_SCOPE` in `scripts/check-worker-flags.mjs`; `svbc-calendars`,
-`monday-auth` and `member-map` (which only reads Monday) don't. `member-portal/src/flags.ts` is
+`monday-auth`, `member-map` (which only reads Monday) and `sync-watchdog` (which only reads
+`FLAGS` and posts to Slack) don't. `member-portal/src/flags.ts` is
 canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the
 `worker-flags-copies` step of `checks.yml` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
 FLAGS KV ids match across `wrangler.jsonc` files). Same rule as `graphql.ts`: edit the canonical
