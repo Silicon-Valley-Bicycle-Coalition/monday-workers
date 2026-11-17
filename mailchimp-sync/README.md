@@ -361,7 +361,8 @@ as designed: everything held, nothing written, the alert logged. The cap was the
 10,000 in `config/sandbox.json` for the catch-up (set it back to 500 once the plan script holds
 nothing). The 01:05 run wrote 1,835 values and was then cancelled by Cloudflare at 15 minutes'
 wall time (`outcome: canceled`, 198 ms CPU) with no log line or alert — which is why writes now
-stop at the 12-minute budget.
+stop at the 12-minute budget. With it, the 02:05 run ended on its own at 12.1 minutes
+(`outcome: done`, `timedOut: true`, 1,250 written, 3,017 left for the next hours, 108 ms CPU).
 
 **Turning it on in production** (after David's go-ahead):
 1. `node scripts/consent-plan.mjs --env production` and check the transitions with David.
