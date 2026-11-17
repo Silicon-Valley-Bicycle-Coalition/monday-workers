@@ -41,7 +41,7 @@ describe('parseMatchItem', () => {
 });
 
 const DONATION_COLUMNS = [
-  { id: 'gt', title: 'Gift Type', type: 'status' },
+  { id: 'gt', title: 'Gift Type', type: 'text' },
   { id: 'mb', title: 'Matched By', type: 'board_relation' },
   { id: 'dn', title: 'Donor', type: 'board_relation' },
   { id: 'dt', title: 'Date', type: 'date' },
