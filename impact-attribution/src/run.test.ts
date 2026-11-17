@@ -95,6 +95,17 @@ describe('runProposals (on)', () => {
     expect(summary).toMatchObject({ matchesRead: 2, qualifying: 1, proposed: 1, failed: 0, deferred: 0 });
   });
 
+  it('proposes the older of two employers as Former and says which one superseded it', async () => {
+    const monday = clientWith([
+      match('d1', 'p1', 'o1', '2026-02-01'), match('d2', 'p1', 'o1', '2026-03-01'),
+      match('d3', 'p1', 'o2', '2026-08-01'), match('d4', 'p1', 'o2', '2026-09-01'),
+    ]);
+    monday.existing = new Set([pairKey('p1', 'o2')]); // staff already have the newer employer
+    await runProposals(deps(monday), 'on');
+    expect(monday.drafts).toEqual([{ name: `${PERSON_NAME} @ Acme Corp`, personItemId: 'p1', orgItemId: 'o1', proposedStatus: 'Former' }]);
+    expect(monday.updates[0]!.body).toContain('Proposed as Former: Globex has matched since (latest 2026-09-01).');
+  });
+
   it('judges pairs from the stored history, not only from what the board returns', async () => {
     await env.DB.prepare(
       `INSERT INTO matches (donation_item_id, person_item_id, org_item_id, match_date, amount_cents, source, seen_at)

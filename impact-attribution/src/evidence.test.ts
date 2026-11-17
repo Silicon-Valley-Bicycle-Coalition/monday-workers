@@ -54,4 +54,18 @@ describe('evidenceComment', () => {
     expect(out).toBe('Proposed from an Eventbrite answer: "&lt;a href=&quot;x&quot;&gt;Acme&lt;/a&gt; &amp; Co" (&quot;Gala&quot; &lt;b&gt;, 2027-01-20)');
     expect(out).not.toContain('<');
   });
+
+  it('says when the newer employer came from the person\'s own answer', () => {
+    expect(evidenceComment('Microsoft', [m('2026-09-01', 1000)], [], { orgName: 'Google, LLC', latestEvidence: '2027-01-20', source: 'answer' })).toBe(
+      'Proposed from 1 matching gifts by Microsoft:\n2026-09-01 $10.00\nProposed as Former: named Google, LLC as their employer since (latest 2027-01-20).',
+    );
+  });
+
+  it('says why a Draft is Former when a newer employer superseded it', () => {
+    expect(evidenceComment('Microsoft', [m('2026-03-27', 1000), m('2026-03-02', 500)], [], { orgName: 'Google, LLC', latestEvidence: '2026-09-11', source: 'matches' })).toBe(
+      'Proposed from 2 matching gifts by Microsoft:\n2026-03-27 $10.00\n2026-03-02 $5.00\n' +
+      'Proposed as Former: Google, LLC has matched since (latest 2026-09-11).',
+    );
+  });
 });
+

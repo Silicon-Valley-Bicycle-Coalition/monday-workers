@@ -73,7 +73,9 @@ export async function runProposals(deps: RunDeps, mode: 'on' | 'off'): Promise<R
   while (live.length < max && checked < eligible.length) {
     const chunk = eligible.slice(checked, checked + (max - live.length));
     checked += chunk.length;
-    for (const [id, name] of await monday.activeItems(chunk.flatMap((c) => [c.personItemId, c.orgItemId]))) names.set(id, name);
+    // A superseding employer's name is read too, for the Former Draft's comment.
+    const ids = chunk.flatMap((c) => [c.personItemId, c.orgItemId, ...(c.supersededBy ? [c.supersededBy.orgItemId] : [])]);
+    for (const [id, name] of await monday.activeItems([...new Set(ids)])) names.set(id, name);
     for (const c of chunk) {
       if (names.has(c.personItemId) && names.has(c.orgItemId)) {
         live.push(c);
@@ -139,7 +141,10 @@ async function propose(deps: RunDeps, c: Candidate, names: Map<string, string>, 
     console.error(`${WORKER}: marking answers proposed for affiliation ${affiliationItemId} failed: ${errorText(err)}`);
   }
   try {
-    await deps.monday.postUpdate(affiliationItemId, evidenceComment(orgName, c.matches, c.answers));
+    const newer = c.supersededBy
+      ? { orgName: names.get(c.supersededBy.orgItemId) ?? 'a newer employer', latestEvidence: c.supersededBy.latestEvidence, source: c.supersededBy.source }
+      : undefined;
+    await deps.monday.postUpdate(affiliationItemId, evidenceComment(orgName, c.matches, c.answers, newer));
   } catch (err) {
     // The Draft is the proposal; a missing comment doesn't undo it.
     console.error(`${WORKER}: evidence comment on affiliation ${affiliationItemId} failed: ${errorText(err)}`);

@@ -3,7 +3,9 @@ import type { ImpactAttributionConfig } from './config';
 
 // The pairing rule (spec "The rule"): a person matched by the same organization twice within
 // `windowDays` (inclusive) is proposed as affiliated with it — Current if their latest match by it
-// is within `currentWithinDays` of today, otherwise Former.
+// is within `currentWithinDays` of today, otherwise Former. A person can have only one current
+// employer: when two companies both qualify as Current, the one with the older latest match is
+// proposed as Former (selectCandidates).
 
 export interface MatchRow { donationItemId: string; personItemId: string; orgItemId: string; matchDate: string; amountCents: number | null }
 
@@ -14,6 +16,9 @@ export interface Candidate {
   latestEvidence: string; // latest of the match dates and answer dates
   matches: MatchRow[]; // newest first
   answers: AnswerRow[]; // newest first
+  // Set when this was Current but a newer employer demoted it to Former: by matching gifts, or by
+  // the person naming that employer in an answer.
+  supersededBy?: { orgItemId: string; latestEvidence: string; source: 'matches' | 'answer' };
 }
 
 export const pairKey = (personItemId: string, orgItemId: string): string => `${personItemId}:${orgItemId}`;
@@ -63,7 +68,7 @@ export function selectCandidates(all: Candidate[], skip: SelectSkips, max: numbe
 } {
   const skippedCandidates: Record<SkipReason, Candidate[]> = { excluded: [], existing: [], proposed: [] };
   const eligible: Candidate[] = [];
-  for (const c of all) {
+  for (const c of demoteSuperseded(all, skip.excludedOrgIds)) {
     const key = pairKey(c.personItemId, c.orgItemId);
     if (skip.excludedOrgIds.has(c.orgItemId)) skippedCandidates.excluded.push(c);
     else if (skip.existingPairs.has(key)) skippedCandidates.existing.push(c);
@@ -78,4 +83,25 @@ export function selectCandidates(all: Candidate[], skip: SelectSkips, max: numbe
     return x.latestEvidence < y.latestEvidence ? 1 : x.latestEvidence > y.latestEvidence ? -1 : 0;
   });
   return { chosen: eligible.slice(0, max), skipped, skippedCandidates, deferred: Math.max(0, eligible.length - max) };
+}
+
+// Among one person's Current candidates, only the company with the newest evidence (latest match or
+// answer) stays Current; the others become Former, naming it. Pairs that already have an affiliation
+// or a past proposal still count as the newer employer (they are only skipped later), and an
+// excluded payer (a foundation) never does. Two companies whose latest evidence shares a day both
+// stay Current.
+function demoteSuperseded(all: Candidate[], excludedOrgIds: Set<string>): Candidate[] {
+  const newest = new Map<string, Candidate>();
+  for (const c of all) {
+    if (c.proposedStatus !== 'Current' || excludedOrgIds.has(c.orgItemId)) continue;
+    const best = newest.get(c.personItemId);
+    if (best === undefined || c.latestEvidence > best.latestEvidence) newest.set(c.personItemId, c);
+  }
+  return all.map((c) => {
+    const best = newest.get(c.personItemId);
+    if (c.proposedStatus !== 'Current' || best === undefined || c.latestEvidence >= best.latestEvidence) return c;
+    // A match on the newest day wins the wording over an answer the same day.
+    const source = best.answers[0]?.answeredAt === best.latestEvidence && best.matches[0]?.matchDate !== best.latestEvidence ? 'answer' : 'matches';
+    return { ...c, proposedStatus: 'Former', supersededBy: { orgItemId: best.orgItemId, latestEvidence: best.latestEvidence, source } };
+  });
 }

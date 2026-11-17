@@ -12,8 +12,8 @@ with its own D1 and queues; its attendee feed is configured (2026-11-03) with th
 `Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
 [`docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md`](../docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md);
-see "Attendee feed and class emails" below). Rehearsed in the sandbox only; production still needs
-the items in "Open".
+see "Attendee feed and class emails" below). Live in production since 2026-11-03; the first real
+class emails went out 2026-11-11. What's still open is under "Open".
 **Priority:** Post-cutover (2026-10-23). Bike Summit 2026 (Oct 22) now sells out *before*
 cutover, so `eb4sf` puts its orders in Salesforce and `salesforce-import` carries them over as
 Event Ticket gifts with their order ids; this Worker takes every order after that, and the
@@ -456,8 +456,9 @@ Same dashboard route as the order webhook: Payload URL
 
 Eventbrite stores `attendee.checked_in` and `attendee.checked_out` as `barcode.checked_in` and
 `barcode.un_checked_in` (production's webhook read back that way on 2026-11-03), and the Worker
-ignores an action its config doesn't list, so the config lists both spellings. No real check-in
-delivery has been seen yet, so which spelling arrives, and its `api_url` shape, are unconfirmed.
+ignores an action its config doesn't list, so the config lists both spellings. Production's first
+check-ins (2026-11-08 to 11-14, four events) arrived as `barcode.checked_in` and were written; no
+`attendee.checked_in` delivery has been seen.
 
 ### Event Status after the event ends
 
@@ -816,7 +817,7 @@ Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fa
 
 ## Deploy
 
-Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002. Production's attendee feed config was filled on 2026-11-03; only the order webhook is registered there so far. This is the order (sandbox first, `--env sandbox` on every command,
+Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002 (production has 0003, the class email ledger, too). Production's attendee feed config was filled on 2026-11-03, and both webhooks were registered that day (see the top of this README). This is the order (sandbox first, `--env sandbox` on every command,
 then production at cutover without it):
 
 ```sh
@@ -897,8 +898,12 @@ beyond the table above:
 0. **Production event emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
    (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
    `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
-   Still open: a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
-   in `wrangler.jsonc`). After the 2026-11-09 generic change deploys: rename the column
+   First real sends (checked 2026-11-17): Kendra's reminder on 2026-11-11 (6 people) and, on 2026-11-14,
+   a thank-you (7) and a second class's reminder (9), with timeline entries on the recipients' items; check-ins have
+   arrived since 2026-11-08. Still open: a first missed-you, and a timed run of `result` on a 26-person
+   roster (the CPU limit in `wrangler.jsonc`). The 2026-11-09 generic change is deployed (the 2026-11-14
+   updates read "Event email"), but as of 2026-11-17 the column is still `🔒 Send class email` and
+   five Volunteering and Group Rides events dated November–December have no link. Still to do: rename the column
    `🔒 Send event email` (`MARKED_COLUMNS` already has the new title), run
    `scripts/backfill-send-links.mjs`, and redeploy the page with its matching wording.
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the

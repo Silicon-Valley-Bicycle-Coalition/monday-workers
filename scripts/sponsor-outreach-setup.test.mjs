@@ -256,7 +256,10 @@ describe('link-pipeline command', () => {
   });
   it('--apply links exactly the matched, unlinked items', async () => {
     const m = fakeMonday(boards());
-    await run({ ...args, apply: true }, { gql: m.gql, ...sink(), writeFile: () => {} });
+    // Inject the ledger read: the default reads the real filesystem beside --out, so a stray
+    // /tmp/x file or ledger on the test machine changed the outcome.
+    const noLedger = (p) => { throw Object.assign(new Error(`no ${p}`), { code: 'ENOENT' }); };
+    await run({ ...args, apply: true }, { gql: m.gql, ...sink(), readFile: noLedger, writeFile: () => {} });
     assert.deepEqual(m.mutations.map((x) => [x.vars.item, JSON.parse(x.vars.values)]), [['i1', { org: { item_ids: [501] } }]]);
   });
   it('a dry run works before the column exists; --apply refuses', async () => {

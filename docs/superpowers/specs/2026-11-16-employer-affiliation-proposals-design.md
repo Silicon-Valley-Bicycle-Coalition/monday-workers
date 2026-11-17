@@ -83,6 +83,12 @@ Two matches on the same day count (recurring payroll matches qualify, as the iss
 
 * **Current** if the pair's latest match Date is within 365 days of the run date, else **Former**.
   The window is measured from the latest match overall, not the latest qualifying pair.
+* **One current employer** *(added 2026-11-17, after the sandbox run: a donor matched by Microsoft
+  until March and by Google from August got two Current Drafts)*. When several of a person's pairs
+  come out Current, only the one with the newest latest match stays Current; the others are
+  proposed as Former, and the comment names the newer company. Pairs already affiliated or
+  proposed still count as the newer employer; excluded payers don't; a tie on the latest date
+  leaves both Current.
 
 ### What a proposal is
 

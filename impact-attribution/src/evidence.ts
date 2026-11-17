@@ -2,7 +2,8 @@ import type { AnswerRow } from './answers/store';
 import type { MatchRow } from './rule';
 
 // The comment posted on each Draft so staff can judge it without leaving the item (spec "What a
-// proposal is"): the matches it rests on, newest first, at most 10 lines.
+// proposal is"): the matches it rests on, newest first, at most 10 lines, and, for a Draft a newer
+// employer demoted to Former, which one.
 const MAX_LINES = 10;
 
 const dollars = (cents: number): string =>
@@ -12,7 +13,10 @@ const dollars = (cents: number): string =>
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-export function evidenceComment(orgName: string, matches: MatchRow[], answers: AnswerRow[] = []): string {
+export function evidenceComment(
+  orgName: string, matches: MatchRow[], answers: AnswerRow[] = [],
+  supersededBy?: { orgName: string; latestEvidence: string; source: 'matches' | 'answer' },
+): string {
   const out: string[] = [];
   if (matches.length > 0 || answers.length === 0) {
     const lines = matches.slice(0, MAX_LINES).map((m) => `${m.matchDate} ${m.amountCents === null ? '(no amount)' : dollars(m.amountCents)}`);
@@ -22,6 +26,11 @@ export function evidenceComment(orgName: string, matches: MatchRow[], answers: A
   if (answers.length > 0) {
     out.push(...answers.slice(0, MAX_LINES).map((a) => `Proposed from an Eventbrite answer: "${escapeHtml(a.answer)}" (${escapeHtml(a.context)}, ${a.answeredAt})`));
     if (answers.length > MAX_LINES) out.push(`and ${answers.length - MAX_LINES} more`);
+  }
+  if (supersededBy) {
+    out.push(supersededBy.source === 'matches'
+      ? `Proposed as Former: ${supersededBy.orgName} has matched since (latest ${supersededBy.latestEvidence}).`
+      : `Proposed as Former: named ${supersededBy.orgName} as their employer since (latest ${supersededBy.latestEvidence}).`);
   }
   return out.join('\n');
 }
