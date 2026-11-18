@@ -8,8 +8,8 @@ export interface RequestRateLimiter {
 export const WEBHOOK_PATHS: ReadonlySet<string> = new Set(['/webhooks/eventbrite/order', '/webhooks/eventbrite/attendee']);
 
 // A burst of genuine deliveries (Eventbrite sends a group order or an on-sale minute from a small
-// pool of IPs) must not draw 429s from the per-IP limiter (#101; mailchimp-sync and
-// donation-rollups learned this first, issue #27). A delivery that passes the route's own check
+// pool of IPs) must not draw 429s from the per-IP limiter (GL#101; mailchimp-sync and
+// donation-rollups learned this first, issue GL#27). A delivery that passes the route's own check
 // (POST, exact webhook path, matching secret in X-Webhook-Secret or ?secret=) skips the limiter;
 // anything else, a guessed secret or the right secret on another route, is limited as before, so
 // the exemption can't be reached without the secret. Costs one SHA-256 pair per request, no I/O.

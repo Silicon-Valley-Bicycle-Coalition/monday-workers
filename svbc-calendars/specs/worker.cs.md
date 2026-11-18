@@ -45,7 +45,7 @@ Uses `caches.default` (Cloudflare Cache API), not `Cache-Control` from the brows
 
 ## CORS
 
-The `handleCORS` function sets `Access-Control-Allow-Origin: *` on every response. Every route is public, read-only data, and responses are edge-cached without `Vary: Origin`, so reflecting the request's `Origin` would serve one site's header to another (#72).
+The `handleCORS` function sets `Access-Control-Allow-Origin: *` on every response. Every route is public, read-only data, and responses are edge-cached without `Vary: Origin`, so reflecting the request's `Origin` would serve one site's header to another ([GL#72](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/72)).
 
 ## Environment Bindings
 
@@ -79,7 +79,7 @@ CSS custom properties on `body`:
 
 The "More Information" link is the website's primary button: a gold pill (300px radius) with black
 Poppins 16px text. Manrope (event titles) and Poppins (everything else) are self-hosted by this
-Worker at `/fonts/*.woff2` (`src/fonts.ts`, #123), since the iframe doesn't inherit the parent
+Worker at `/fonts/*.woff2` (`src/fonts.ts`, [GL#123](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/123)), since the iframe doesn't inherit the parent
 page's fonts and loading them from Google Fonts would send each visitor's IP address to Google;
 the system stack is the fallback. No external stylesheets or dependencies.
 

@@ -12,7 +12,7 @@ const active: FunraiseSubscription = {
   frequency: 'Monthly',
   sourceAmount: 25,
   currency: 'USD',
-  nextPaymentDate: 1791000000000, // 2026-10-03T03:20Z = 2026-10-02 20:20 Pacific (dates are Pacific, #25)
+  nextPaymentDate: 1791000000000, // 2026-10-03T03:20Z = 2026-10-02 20:20 Pacific (dates are Pacific, GL#25)
   lastPaymentDate: 1788400000000,
   cancelDate: null,
   updtime: 1789000000000,

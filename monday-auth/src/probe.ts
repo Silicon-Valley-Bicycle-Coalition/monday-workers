@@ -3,7 +3,7 @@ import type { AppKey } from './apps';
 import type { FetchFn } from './mondayOAuth';
 
 const API_URL = 'https://api.monday.com/v2';
-// Same pin as MONDAY_API_VERSION in monday-backup/src/monday/graphql.ts (#39).
+// Same pin as MONDAY_API_VERSION in monday-backup/src/monday/graphql.ts (GL#39).
 const API_VERSION = '2026-07';
 
 export type Check = { ok: true } | { ok: false; error: string };

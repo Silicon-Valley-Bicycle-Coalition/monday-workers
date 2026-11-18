@@ -43,7 +43,7 @@ export function retryInMs(errors: GqlError[]): number {
 }
 
 /**
- * Where a run's requests went (#50). `retries` is keyed by why the request was re-sent;
+ * Where a run's requests went (GL#50). `retries` is keyed by why the request was re-sent;
  * `backoffMs` is the total wait the client asked for between attempts, summed across callers, so
  * it can exceed wall-clock time when several workers wait at once. Counted in send() only — the
  * legacy `--sequential` client is deliberately left untouched.

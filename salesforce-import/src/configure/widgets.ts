@@ -114,7 +114,7 @@ export function widgetFilter(w: WidgetSpec, columns: Columns, now: Date = new Da
     if (!c) return { error: `filter column "${r.columnTitle}" missing` };
     let compare_value: unknown = r.compareValue ?? [];
     if (isFiscalYearValue(compare_value)) compare_value = fiscalYearRange(now, compare_value.fiscalYear === 'previous' ? -1 : 0);
-    // Widgets silently ignore a bare numeric compare value (#51): always send an array.
+    // Widgets silently ignore a bare numeric compare value (GL#51): always send an array.
     else if (typeof compare_value === 'number') compare_value = [compare_value];
     if (r.labelValues) {
       const labels = r.labelValues.map((l) => fiscalLabel(l, now));

@@ -285,10 +285,10 @@ Repeat Task 7's recipe and test for each, in this order (runbook deploy order): 
 
 **Files (monday-workers):** `README.md` ("Least-privilege Monday tokens" section rewritten: one SVBC Integration user, broker, three apps, Sandbox Integration for sandbox via the sandbox broker, the accepted portal read exposure, board privacy still required), `CLAUDE.md` ("Monday API tokens are least-privilege by design" paragraph; add `monday-auth` to the sandbox Worker list).
 
-**Files (monday-migration, its own worktree per its CLAUDE.md):** `docs/23-cutover-runbook.md` row 0.4 (create SVBC Integration; deploy `monday-auth`; H2–H3 for production; `/health` shows three `ok`), rows 3.8 (subscribe SVBC Integration, not three users) and 4.x deploy rows (each Worker deploys with its binding, no `MONDAY_API_TOKEN`); `docs/25-remaining-tasks.md` #78 line; `migration-plan.md` seats table (integration users 4 → 2: SVBC Integration, Sandbox Integration; CRM 7/10); `README.md` index if it lists specs.
+**Files (monday-migration, its own worktree per its CLAUDE.md):** `docs/23-cutover-runbook.md` row 0.4 (create SVBC Integration; deploy `monday-auth`; H2–H3 for production; `/health` shows three `ok`), rows 3.8 (subscribe SVBC Integration, not three users) and 4.x deploy rows (each Worker deploys with its binding, no `MONDAY_API_TOKEN`); `docs/25-remaining-tasks.md` [GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78) line; `migration-plan.md` seats table (integration users 4 → 2: SVBC Integration, Sandbox Integration; CRM 7/10); `README.md` index if it lists specs.
 
 - [ ] **Step 1:** Edit the files. **Step 2:** `grep -rn "three integration users\|member-portal.*own user\|MONDAY_API_TOKEN" README.md CLAUDE.md */README.md` in monday-workers — Expected: remaining hits are only admin/CLI tooling. **Step 3:** Commit in each repo (`docs: one integration user via the monday-auth broker`).
-- [ ] **Step 4 (needs David's OK before posting):** update #78's description checklist and #19 to the one-user plan via `glab`.
+- [ ] **Step 4 (needs David's OK before posting):** update [GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78)'s description checklist and [GL#19](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/19) to the one-user plan via `glab`.
 
 ---
 

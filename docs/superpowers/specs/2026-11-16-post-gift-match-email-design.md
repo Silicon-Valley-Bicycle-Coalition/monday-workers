@@ -48,7 +48,7 @@ Option 2 and option 1 aren't exclusive later: if the API is bought, `prompt` is 
 1. Every gift that `dtd-sync`'s push rules would send to DTD instead gets **one** email from SVBC,
    2–30 days after the gift, saying whether the donor's employer matches and how to request it.
 2. A donor whose employer is a known matcher gets that employer's steps. A donor with no employer
-   on file is asked "Where do you work?" (#127). A donor whose employer is on file but not a known
+   on file is asked "Where do you work?" ([GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127)). A donor whose employer is on file but not a known
    matcher gets a short "many employers match; here's how to check" version, or nothing (open
    question 1).
 3. Staff can see on the Donations item that a prompt went out, and when.
@@ -168,7 +168,7 @@ Known employer:
 >
 > [Request your match →]
 
-No employer on file (decided by #127: ask instead of skipping): the middle becomes "Many Bay Area
+No employer on file (decided by [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127): ask instead of skipping): the middle becomes "Many Bay Area
 employers match their employees' gifts. Where do you work? Tell us, and we'll let you know if
 yours matches," with a link to `outreach.employerFormUrl`. The page needs a signed-in donor, so the donor
 signs in first; after sign-in they land on the portal home, not the Employer field (accepted for
@@ -236,7 +236,7 @@ from SVBC does about as well as DTD's sequence.
 ## Open questions
 
 1. **An employer on file that isn't a known matcher: send or skip?** *(Narrowed 2026-11-16.)* A
-   blank employer is no longer open: #127 decided those donors get the "Where do you work?"
+   blank employer is no longer open: [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127) decided those donors get the "Where do you work?"
    version. For an employer SVBC hasn't seen match, sending reaches donors whose employer may
    match anyway, and skipping keeps the email rare and always specific. Recommendation: skip in
    v1, measure, revisit.

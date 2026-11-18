@@ -1,8 +1,8 @@
 # Employer from email domains: the first slice of `impact-attribution`
 
-**Status:** Approved 2026-11-16; built 2026-11-17 as a second job in #125's `impact-attribution`
-Worker (see "Folded into #125's Worker" below, which overrides the rest where they differ).
-**Issue:** #124.
+**Status:** Approved 2026-11-16; built 2026-11-17 as a second job in [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s `impact-attribution`
+Worker (see "Folded into [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s Worker" below, which overrides the rest where they differ).
+**Issue:** [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124).
 **Affects:** the `impact-attribution` Worker (a second nightly job); `benevity-import` (counts
 `Current` affiliations only). Reads People, People
 (Historical), Organizations and Affiliations.
@@ -10,30 +10,30 @@ Worker (see "Folded into #125's Worker" below, which overrides the rest where th
 status, the `email_index` and the resolver this Worker will grow into), and `donation-rollups`'
 Employer Name sync (`src/affiliations/employer.ts`).
 
-## Folded into #125's Worker (2026-11-17)
+## Folded into [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s Worker (2026-11-17)
 
-While this was being built, #125 merged its own `impact-attribution` Worker: Draft affiliations from
+While this was being built, [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125) merged its own `impact-attribution` Worker: Draft affiliations from
 repeated matching gifts, with a D1 `proposals` ledger, a 🔒 **Proposed status** column and an
 evidence comment on each Draft. David chose to fold this design into it as a second job rather than
 ship two Workers making the same kind of Draft. What changed from the design below:
 
 - **One cron, two jobs** (`src/nightly.ts`, `0 11 * * *`): matching gifts first, then email
   domains. A job that throws is logged and the other still runs; the run then fails.
-- **The same Draft as #125's.** Status `Draft`, Proposed status `Current`, and the evidence as a
+- **The same Draft as [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s.** Status `Draft`, Proposed status `Current`, and the evidence as a
   comment ("Proposed from email domain acme.com (Personal Email; Website match). Salesforce
   employer: …") instead of a 🔒 **Proposed from** text column. No new Affiliations column.
-- **One ledger.** Migration `0002` adds `evidence` (`matches`/`email_domain`) and `domain` to #125's
+- **One ledger.** Migration `0002` adds `evidence` (`matches`/`email_domain`) and `domain` to [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s
   `proposals`; an email-domain row stores match count 0. A pair either job proposed is never
   proposed again by the other. `employer_proposals` doesn't exist.
 - **`email_index`** arrives in the same migration, unchanged.
-- **Config** is an `emailDomains` section beside #125's keys; boards come from its
+- **Config** is an `emailDomains` section beside [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s keys; boards come from its
   `peopleBoardIds`, `organizationsBoardId` and `affiliations`.
-- **Write switch, D1 database and CI** are #125's (`impact-attribution:writes`, its D1 databases,
+- **Write switch, D1 database and CI** are [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s (`impact-attribution:writes`, its D1 databases,
   created 2026-11-16; migration `0002` still to apply). The production gate in the README covers both jobs.
 
-The `benevity-import` change below is unchanged, and now protects #125's Drafts too.
+The `benevity-import` change below is unchanged, and now protects [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s Drafts too.
 
-## Review guards (2026-11-17, after !502)
+## Review guards (2026-11-17, after [GL!502](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/502))
 
 Four guards against an address naming an old or someone else's job, added after the MR review:
 
@@ -70,7 +70,7 @@ A donor's company email already names their employer. SVBC holds such addresses 
 - The webhook-driven resolver (Acting for, Suggested person, the worklists). This slice is the
   daily cron only; the resolver is later work in the same Worker.
 - Maintaining the derived People → Organization connect column. Same: later, same Worker.
-- Employer from Funraise form answers or `companyMatch` (#126), or from DTD.
+- Employer from Funraise form answers or `companyMatch` ([GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126)), or from DTD.
 - Any outside enrichment service. Nothing leaves SVBC.
 
 ## Anti-goals (a failure even if it runs)
@@ -177,7 +177,7 @@ Organization:
 - **Skip** if the person has any affiliation with Status `Current` or `Draft`, from any source
   (affiliations are jobs, so a Current one is their employer).
   This covers "never overwrite an employer staff set" and "one open proposal per person"; it is
-  also how this interacts with #126: whichever source proposes first holds the slot until staff
+  also how this interacts with [GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126): whichever source proposes first holds the slot until staff
   decide.
 - **Skip** if the person has a `Former` affiliation at that organization (they left).
 - **Skip** if the D1 ledger already holds this person + organization pair (rejected, confirmed
@@ -286,5 +286,5 @@ Vitest, Monday mocked at the boundary, D1 via the repo's test setup:
 
 ## Open questions
 
-- None blocking. Revisit #126's precedence (form answer vs email domain) when that issue is
+- None blocking. Revisit [GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126)'s precedence (form answer vs email domain) when that issue is
   designed; this design's "first Draft holds the slot" rule is the default until then.

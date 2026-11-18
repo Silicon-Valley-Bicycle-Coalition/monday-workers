@@ -60,7 +60,7 @@ The inputs and failure modes the spec implies that most need a pinned test, most
 
 ---
 
-# Merge request A — lookup boards (issue #51)
+# Merge request A — lookup boards (issue [GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51))
 
 Branch `feat/configure-lookup-overviews`, worktree `$WS/monday-workers-overview-lookup` (already created, with `data/load/boards.json` and `extra-boards.json` copied in). The first commit on the branch is this spec and plan.
 
@@ -95,7 +95,7 @@ python3 -c "import json;print(json.load(open('data/load/boards.json'))['organiza
 
 Expected: `17141226` and `18431577213`.
 
-### Task A2: Find table views (#51 §1)
+### Task A2: Find table views ([GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51) §1)
 
 **Files:**
 - Modify: `src/configure/spec.ts` (people-live line ~152, people-historical line ~211, organizations line ~237)
@@ -601,7 +601,7 @@ git commit -m "feat(configure): all-or-nothing Overview planner"
 
 ### Task A7: Overview specs for People and Organizations (as built) and spec consistency tests
 
-The widget sets are exactly #51 §2, the ones built by hand on the sandbox on 2026-10-09.
+The widget sets are exactly [GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51) §2, the ones built by hand on the sandbox on 2026-10-09.
 
 **Files:**
 - Create: `src/configure/overviewSpecs.ts`, `src/configure/overviewSpecs.test.ts`
@@ -1203,7 +1203,7 @@ Expected: `data/load/dashboards.json` gains `overview:people-live` and `overview
 git push -u origin feat/configure-lookup-overviews
 ```
 
-Open the MR titled `feat(configure): Overview dashboard views and Find table views for the lookup boards (#51)`, body linking the spec and `docs/31`.
+Open the MR titled `feat(configure): Overview dashboard views and Find table views for the lookup boards (GL#51)`, body linking the spec and `docs/31`.
 
 ---
 

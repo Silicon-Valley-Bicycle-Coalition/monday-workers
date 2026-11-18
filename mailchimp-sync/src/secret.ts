@@ -1,4 +1,4 @@
-// Shared-secret check for both webhook routes (issue #69). Same shape as funraise-sync's
+// Shared-secret check for both webhook routes (issue GL#69). Same shape as funraise-sync's
 // secretsMatch — copied, not shared, since every Worker in this repo is self-contained.
 //
 // Fails closed: an unset or empty configured secret authorizes nobody, and an absent or empty

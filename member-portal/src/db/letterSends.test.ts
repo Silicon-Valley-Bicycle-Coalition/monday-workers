@@ -30,7 +30,7 @@ describe('D1LetterSendStore', () => {
     expect(await store.findByDonorYear('other-donor', 2024)).toBeNull();
   });
 
-  // Issue #31: the send path claims the row (queued → sending) before emailing, so a crash or a
+  // Issue GL#31: the send path claims the row (queued → sending) before emailing, so a crash or a
   // failed markSent after a successful send can never lead a redelivery to send again.
   it('claims a queued row exactly once', async () => {
     const store = new D1LetterSendStore(env.DB);

@@ -4,7 +4,7 @@ import sandbox from '../../config/sandbox.json';
 import { validateConfig } from '../config';
 import { mapToMondayColumns } from './fieldMap';
 
-// #25: only `Complete` was mapped, so a refunded or failed gift was written with Funraise's raw
+// GL#25: only `Complete` was mapped, so a refunded or failed gift was written with Funraise's raw
 // status, which the Donations board rejects — the item stayed "Received" and kept counting in
 // donation-rollups. Refunded and Failed now map to real Donations Status labels. `Refunded` is a
 // label staff must add to the board (sandbox and production) — see README "Field mapping".

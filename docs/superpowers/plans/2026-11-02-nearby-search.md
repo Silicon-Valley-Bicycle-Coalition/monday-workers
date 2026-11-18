@@ -164,7 +164,7 @@ with OSM tiles on the page, vitest with `@cloudflare/vitest-plugin`.
   - the Access application setup (team domain, AUD tag into config);
   - `wrangler d1 migrations apply`;
   - `flags.mjs nearby-search writes on`;
-  - the #83 Historical caveat.
+  - the [GL#83](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/83) Historical caveat.
 - [ ] **Step 7: Commit.** `feat(nearby-search): scaffold Worker, config, CI registration`
 
 ---
@@ -545,7 +545,7 @@ Per message:
     `getMemberTagNames` before `updateMember` and pass it to `managedTags`.
   - `mailchimp-sync/config/svbc.json`, `config/sandbox.json`: `"nearby": null` (production) or
     the sandbox column id, and `"nearbyTagPrefix": "Near: "`.
-  - `mailchimp-sync/README.md`: describe the Nearby tags and the People-only limit (#83).
+  - `mailchimp-sync/README.md`: describe the Nearby tags and the People-only limit ([GL#83](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/83)).
   - Matching test files.
 
 - [ ] **Step 1: Write failing tests:**

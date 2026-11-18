@@ -41,7 +41,7 @@
 
 ### Task 0: Base this branch on current `main`
 
-`origin/main` has moved past this branch: !332 merged at `2b30212`.
+`origin/main` has moved past this branch: [GL!332](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/332) merged at `2b30212`.
 
 - [ ] **Step 1:** Run `sync_with_base_branch`.
 - [ ] **Step 2:** Confirm `origin/main` is an ancestor of `HEAD`, and that `eventbrite-sync/config/svbc.json` now has `"firstNameColumn": "text_mm8rrr6v"`.

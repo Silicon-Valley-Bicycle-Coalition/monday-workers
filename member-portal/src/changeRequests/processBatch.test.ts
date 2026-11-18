@@ -148,7 +148,7 @@ describe('processChangeQueueBatch', () => {
     expect(monday.createChangeRequestItem).toHaveBeenCalledTimes(1);
   });
 
-  // #35 follow-up: a create that failed ambiguously (5xx/timeout after Monday committed it) left
+  // GL#35 follow-up: a create that failed ambiguously (5xx/timeout after Monday committed it) left
   // the row unwritten, and the queue retry created a second item. The retry must adopt the first.
   it('adopts an item an earlier ambiguous create already committed, without creating a duplicate', async () => {
     const store = fakeStore(row);
@@ -218,7 +218,7 @@ describe('processChangeQueueBatch', () => {
     expect(message.ack).not.toHaveBeenCalled();
   });
 
-  // Issue #31: an immediate retry during a Monday rate-limit window (60s) burns every attempt
+  // Issue GL#31: an immediate retry during a Monday rate-limit window (60s) burns every attempt
   // inside the same window and lands a January backlog in the DLQ. Back off exponentially.
   // The shared write-switch backoff (src/flags.ts): 1, 2, 4 … minutes, capped at an hour, so 100
   // retries cover a multi-day outage.

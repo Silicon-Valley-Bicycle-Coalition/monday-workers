@@ -10,7 +10,7 @@
   // member-portal — no new domain onboarding needed for this Worker.
   // No allowed_destination_addresses here: recipients are Monday user ids resolved at send time, so
   // listing them would put staff addresses in this public repo. Instead src/run.ts drops any address
-  // outside config `recipientDomains` (#70).
+  // outside config `recipientDomains` (GL#70).
   "send_email": [{ "name": "EMAIL" }],
   // Write-switch flags (scripts/flags.mjs): every digest send is gated on `report-digests:writes`.
   // The namespace is `FLAGS` (`sandbox-FLAGS` under env.sandbox); every in-scope Worker carries the

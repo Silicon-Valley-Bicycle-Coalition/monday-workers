@@ -72,7 +72,7 @@ describe('fetchContacts name column', () => {
   });
 });
 
-// #35: requests go through the canonical transport (monday/graphql.ts).
+// GL#35: requests go through the canonical transport (monday/graphql.ts).
 describe('fetchContacts transport', () => {
   afterEach(() => vi.unstubAllGlobals());
 

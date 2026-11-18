@@ -97,7 +97,7 @@ async function pageAll(deps: CustodianDeps, boardId: number, columnIds: string[]
 }
 
 // The donor boards' columns readDonors pages: People and People (Historical), then Organizations.
-// Exported for the custodian's shared board read (boardReads.ts, issue #90).
+// Exported for the custodian's shared board read (boardReads.ts, issue GL#90).
 export function donorReadColumns(cfg: RollCallConfig): { boardId: number; columnIds: string[] }[] {
   // Addresses stay out of memory and the Review Note until the board has a column for them (spec §11).
   const mailingOn = cfg.columns.mailingAddress !== undefined;
@@ -150,7 +150,7 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
   // the guard's 10% limit.
   const items: BoardItem[] = distinctItems((await pageAll(deps, cfg.boardId, Object.values(cfg.columns)))
     .map((item) => boardItemFrom(item, cfg.columns)));
-  // Read once and handed to applySync (issue #90): planning writes nothing in between.
+  // Read once and handed to applySync (issue GL#90): planning writes nothing in between.
   const groups = await deps.mondayClient.listGroups(cfg.boardId);
   const groupYearById = new Map<string, number>();
   for (const g of groups) {

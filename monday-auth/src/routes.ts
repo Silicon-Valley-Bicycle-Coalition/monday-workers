@@ -50,7 +50,7 @@ function isAppKey(name: string): name is AppKey {
   return Object.prototype.hasOwnProperty.call(APPS, name);
 }
 
-// A START_KEY shorter than this is refused outright: a short key could be guessed online (#104).
+// A START_KEY shorter than this is refused outright: a short key could be guessed online (GL#104).
 export const MIN_START_KEY_LENGTH = 32;
 
 // Compares SHA-256 digests with a branch-free byte loop, so neither content nor length leaks.
@@ -178,7 +178,7 @@ export function createApp(deps: RouteDeps): Hono {
     return c.json(await runProbe(name, token, workspace, fetchFn, board === '' ? undefined : board));
   });
 
-  // Webhook subscriptions owned by the app (#110), so Monday signs their deliveries with that
+  // Webhook subscriptions owned by the app (GL#110), so Monday signs their deliveries with that
   // app's Signing Secret. POST only, JSON in and out for scripts/lib/broker-webhooks.mjs: `op` is
   // list (board), create (board, url, event, optional JSON config) or delete (id). Same key gate
   // and limiter as the probe; 404 unless WEBHOOKS_ENABLED is exactly "true", and a create's url

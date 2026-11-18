@@ -90,7 +90,7 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
   if (moved && config.pledge?.events[eventId] === undefined) {
     // Before the ledger records the new values: if a send fails, the retry still sees the
     // change and fans out again (at-least-once; the attendee consumer is idempotent). In batches
-    // of up to 100 (#75), not one send per registration: a big class stays a few calls.
+    // of up to 100 (GL#75), not one send per registration: a big class stays a few calls.
     const fanOut = (await attendeeStore.listByEvent(eventId)).map(
       (attendee): AttendeeQueueMessage => ({ kind: 'attendee', eventId, attendeeId: attendee.attendeeId, action: 'event.updated', ...stampOf(message) })
     );

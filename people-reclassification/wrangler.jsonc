@@ -24,7 +24,7 @@
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2081", "simple": { "limit": 60, "period": 60 } }],
   // Above the repo's usual 100 ms: a quarterly pass pages ~25k items (both People boards, Event
   // Registrations, Volunteers) through JSON.parse in one invocation, and a CPU-limit kill is
-  // uncatchable (the monday-backup finding, issue #29). Still 30x under Workers Paid's 30 s default.
+  // uncatchable (the monday-backup finding, issue GL#29). Still 30x under Workers Paid's 30 s default.
   "limits": { "cpu_ms": 1000 },
   // Daily at 10:00 UTC (02:00/03:00 Pacific); src/duties.ts decides whether today owes a pass —
   // the first of a quarter month, the live board over its trigger percentage, or unfinished work.

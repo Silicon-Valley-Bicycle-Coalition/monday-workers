@@ -150,7 +150,7 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     const queuedRow = await qbEventStore.getEvent(qbEventId);
     expect(queuedRow?.status).toBe('queued');
     expect(queuedRow?.qbId).toBe('60');
-    // The webhook no longer calls QuickBooks (#33); the consumer fetches.
+    // The webhook no longer calls QuickBooks (GL#33); the consumer fetches.
     expect(quickBooksClient.getEntity).not.toHaveBeenCalled();
     expect(queuedRow?.fetchedPayload).toBeNull();
 
@@ -296,7 +296,7 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
   });
 });
 
-// #33: the create loop, end to end against real D1. A QuickBooks-originated Customer is created
+// GL#33: the create loop, end to end against real D1. A QuickBooks-originated Customer is created
 // on Monday before its mapping exists; Monday's create_pulse webhook for that new item arrives in
 // between. It must never become a second QuickBooks Customer, and must not hold up unrelated
 // staff-created Customers. The Monday fake is stateful, so the QuickBooks Id column that
@@ -445,7 +445,7 @@ describe('integration: create loop (QuickBooks-created item echoed back by Monda
     vi.restoreAllMocks();
   });
 
-  // #33 second review: Monday -> QuickBooks create commits at Intuit but its response is lost;
+  // GL#33 second review: Monday -> QuickBooks create commits at Intuit but its response is lost;
   // Intuit's webhook for the new Customer runs before the retry and (with nothing linking it to
   // item A yet) creates item B. A's retry gets the Customer back via requestid. That must not
   // silently re-point the Customer to A: it's a terminal conflict naming both items, resolved by

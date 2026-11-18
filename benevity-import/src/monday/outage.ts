@@ -1,4 +1,4 @@
-// A per-batch circuit breaker for queue consumers (#101). Canonical copy:
+// A per-batch circuit breaker for queue consumers (GL#101). Canonical copy:
 // funraise-sync/src/monday/outage.ts. Every queue Worker in the `monday-outage-copies` CI job
 // carries a byte-identical copy at src/monday/outage.ts; edit this one, then copy it over. It is
 // bundled by Wrangler only (its imports are extensionless), never loaded by a Worker's .mjs script.

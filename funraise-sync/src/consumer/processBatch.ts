@@ -71,7 +71,7 @@ export async function consumeFunraiseBatch(
   deps: ProcessBatchDeps,
   gate: BatchSkipContext
 ): Promise<void> {
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
   for (const message of messages) {
     const { entityType, entityId } = message.body;
@@ -93,7 +93,7 @@ export async function processFunraiseQueueBatch(
 ): Promise<void> {
   for (const message of messages) {
     const { entityType, entityId } = message.body;
-    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // Monday is down or rate-limiting (GL#101): retry with backoff without calling it, rather than
     // spend the transport's in-process attempts again on every remaining message.
     if (breaker.open) {
       breaker.defer(message);
@@ -124,7 +124,7 @@ export async function processFunraiseQueueBatch(
           `funraise-sync consumer: could not record failure for ${entityType} "${entityId}": ${errorMessage(recordErr)}`
         );
       }
-      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // A terminal failure (GL#75) is acked once it's on the row: retrying the same request can only
       // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
       // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
       // max_retries of 100 (about four days), raised to Monday's hint on an outage.

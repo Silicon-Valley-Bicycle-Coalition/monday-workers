@@ -153,7 +153,7 @@ describe('outbound consumer', () => {
     expect(out).not.toContain('@');
   });
 
-  // The live consumer passes Nearby managed tags as a reader (#97); the skip line must still name
+  // The live consumer passes Nearby managed tags as a reader (GL#97); the skip line must still name
   // the tags the write would have deactivated, not a function.
   it('off: the updateMember skip line carries the managed tags read from the member', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

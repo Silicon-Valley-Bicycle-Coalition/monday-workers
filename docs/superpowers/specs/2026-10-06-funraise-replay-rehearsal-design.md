@@ -3,8 +3,8 @@
 **Status:** run, 2026-10-06, 2026-10-21 and 2026-10-26 (see "Results"). The runbook (`monday-migration` `docs/23`,
 step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
 deliveries into another has never been run." This is how to do that with what exists, what it
-proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
-reject-and-flag (!185). Every scenario has run and passes: S0–S5, S7 and the wrong-secret case of
+proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` ([GL!186](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/186)), with
+reject-and-flag ([GL!185](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/185)). Every scenario has run and passes: S0–S5, S7 and the wrong-secret case of
 S6 (S4's `Refunded` half confirms a known gap; S6's target-down case is covered by the 429
 recoveries, see "Results").
 
@@ -25,7 +25,7 @@ those need synthetic envelopes (below) or are covered by unit tests only.
 
 ## Target: a local Worker, not a new deployment
 
-Run the merged code (the !185 and !186 branches merged in a scratch worktree, never pushed) as
+Run the merged code (the [GL!185](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/185) and [GL!186](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/186) branches merged in a scratch worktree, never pushed) as
 `wrangler dev --env sandbox`. The target is then a real Worker with a **fresh local D1** and a
 local queue, and the replay posts to `http://localhost:8787`. The source is the real sandbox D1.
 The consumer writes to the real **sandbox v3 boards** with the sandbox token, so adopt, create and
@@ -97,7 +97,7 @@ ledger. Copy the sandbox `subscriptions` and `poll_cursors` tables into the loca
 
 ## Results (2026-10-06)
 
-Run as designed: the merged `main` code (replay script, without !185) as `wrangler dev --env sandbox`
+Run as designed: the merged `main` code (replay script, without [GL!185](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/185)) as `wrangler dev --env sandbox`
 on a fresh local D1, the real sandbox D1 as the source, the real sandbox v3 boards as the write
 target, with the Sandbox Integration token. Replays used `--pause-ms 1000` or more except where
 noted.
@@ -112,7 +112,7 @@ noted.
 | **S3** create path | **Pass (2026-10-26,** `main` at `eeefd2f`). On 2026-10-06 Claude Code's auto-mode permission check refused the `delete_item` calls, so this run had the deletions done by hand. Three gifts from the window, each the only item carrying its Funraise ID: a one-time `Complete` (transaction 14407088, $28), an installment `Complete` (14406895, $50, subscription 208297, linked to Recurring Gift 13075825682) and a one-time `Failed` (14390079, $5); their Donations items were deleted by hand. Same setup as S7 (fresh local D1 with the sandbox `subscriptions` and `poll_cursors` copied in, dummy `FUNRAISE_API_KEY`). The window had grown to **136** transactions (97 installments, every subscription in the ledger). Replay: 136 `enqueued`, 0 failed, exit 0; the consumer drained to 136 `written` with no errors, 429s or Funraise lookups in the log. **Created:** the three gifts, once each, under new item ids, and the board went from 3,961 to 3,964 items. Each new item has its Funraise link, Donor link (the same donor the sandbox Worker's ledger had matched), amount, date, status mapped (`Complete` → Received, `Failed` → Failed), Gift Type `Donation`, Fiscal Year Ending 2027 and Thank You Sent; the installment's Recurring Gift link is 13075825682, the item the deleted one linked to. **Adopted:** the other 133, each with the sandbox ledger's item id, and a before/after read of every column on them showed **no change**. A column-by-column comparison of the recreated items with the deleted ones was planned but not possible: the before-snapshot was lost with the session scratchpad. **Cleanup done:** the sandbox Worker's three `events` rows had `monday_item_id` set to NULL, so a later Funraise edit adopts the new item by its Funraise ID. |
 | **S4** stale guard | **Pass.** An envelope for a replayed transaction with `sentAt` 1,000 ms older than the stored one answered `{"ok":true,"duplicate":true}`; the item's amount and status were unchanged. |
 | **S4** `Refunded` | **Confirms the gap, and shows how it fails.** A newer envelope with `transaction.status: Refunded` was accepted (`{"ok":true}`) and the consumer's write was rejected by Monday: *"This status label doesn't exist, possible statuses are: Received, Received (Historical), Failed, Pending"*. The `events` row went to `failed` with that error, and the item stayed `Received`. The sandbox Donations Status column has **no `Refunded` label**, so runbook step 4.2 is a real prerequisite: on the deployed Worker every buffered refund would retry 1, 4 and 16 minutes and then dead-letter. Nothing needed reverting. No label was added. |
-| **S5** archived-year flag | **Pass** (run after !185 merged, on `main`'s code). A synthetic envelope, transaction `99000001` dated 2025-01-15 (FY 2025), $1, built from an existing donor's payload shape so matching found the donor, item name "REHEARSAL S5 (synthetic, archived-year)". The route answered `{"ok":true}`; the local `events` row went to `needs_review` with no Monday item and the error *"needs review: transaction is in fiscal year 2025, before the oldest active year 2026, and no active Donations item carries its Funraise ID … Nothing was created."* The Donations board stayed at 3,899 items and none carries Funraise id `99000001`; the log has one error line naming only the id (no `@`), so the message was acked and not retried; the donor was matched, not created. |
+| **S5** archived-year flag | **Pass** (run after [GL!185](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/185) merged, on `main`'s code). A synthetic envelope, transaction `99000001` dated 2025-01-15 (FY 2025), $1, built from an existing donor's payload shape so matching found the donor, item name "REHEARSAL S5 (synthetic, archived-year)". The route answered `{"ok":true}`; the local `events` row went to `needs_review` with no Monday item and the error *"needs review: transaction is in fiscal year 2025, before the oldest active year 2026, and no active Donations item carries its Funraise ID … Nothing was created."* The Donations board stayed at 3,899 items and none carries Funraise id `99000001`; the log has one error line naming only the id (no `@`), so the message was acked and not retried; the donor was matched, not created. |
 | **S7** installments, ledger filled | **Pass (2026-10-21,** `main` at `174c4bc`). Same setup as S1 (`wrangler dev --env sandbox`, fresh local D1, sandbox v3 boards, Sandbox Integration token), with the sandbox D1's `subscriptions` (1,176 rows) and `poll_cursors` (2) exported with `wrangler d1 export --table … --no-schema` and loaded into the local D1 first. `FUNRAISE_API_KEY` was a dummy value: without one the consumer has no Funraise client and skips the ledger lookup too (`not wired`), so S7 would prove nothing; with a dummy, a ledger hit never calls Funraise and a miss would fail with a 401 and log `could not resolve Recurring Gift`. The window has grown since S1: `--since 2026-09-01T00:00:00.000Z` now holds **114** transactions, **78** of them installments across 73 subscriptions, all in the ledger. Replay at the default `--pause-ms 2000`: 114 `enqueued`, 0 failed, exit 0. The consumer drained to 114 `written`, every local `monday_item_id` equal to the sandbox ledger's; the log has **0** `could not resolve`, `not found in Funraise` or `not wired` lines and no errors or 429s, so there were no Funraise lookups; the local `subscriptions` table stayed at 1,176 rows with nothing newly written. Donations board 3,942 items before and after, and a full before/after read of every column on the 114 items showed **no change**. All 78 installments' Recurring Gift links (read as `linked_item_ids`; a connect column's `text` and `value` come back empty) point at the Recurring Gifts item the ledger names: 78 match, 0 empty, 0 different. |
 
 The marker edit was reverted (Gift Type back to `Donation`) and the local Worker stopped. Nothing
@@ -152,7 +152,7 @@ scopes, or something changed on the account.
 * **How S5 went around it:** it needed only one stored payload, which the local scratch D1 from S4
   already held, so the envelope was built from that. The replay scenarios themselves (S0–S4) all
   ran before the error appeared.
-* **Not yet diagnosed:** whether a fresh `wrangler login` clears it. The script's stderr fix (!187)
+* **Not yet diagnosed:** whether a fresh `wrangler login` clears it. The script's stderr fix ([GL!187](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/187))
   does surface the message, so the failure is at least readable.
 
 ## Exit criteria
@@ -160,7 +160,7 @@ scopes, or something changed on the account.
 S0–S7 pass, and the output is kept. **Met 2026-10-26:** every scenario has passed (S6's
 target-down case through the 429 recoveries rather than on its own). The results are kept in this
 document; the raw run logs were scratch files and are not. Then update the
-runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
+runbook's `BUILD: TBD (svbc-monday-migration#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
 ## What this does not prove

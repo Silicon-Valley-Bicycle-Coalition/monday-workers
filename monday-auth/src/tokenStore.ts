@@ -53,7 +53,7 @@ export class D1AppTokenStore {
   private cipher: Promise<TokenCipher> | null = null;
 
   // `encryptionKey` is the TOKEN_ENC_KEY secret. Every read and write of a token column loads the
-  // cipher, so a missing or malformed key fails closed instead of storing plaintext (#104).
+  // cipher, so a missing or malformed key fails closed instead of storing plaintext (GL#104).
   constructor(db: D1Database, encryptionKey: string | undefined) {
     this.db = db;
     this.encryptionKey = encryptionKey;

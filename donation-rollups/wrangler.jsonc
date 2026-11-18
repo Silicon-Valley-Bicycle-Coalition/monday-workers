@@ -66,7 +66,7 @@
   "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP
   // covers /custodian/* and every Monday webhook call that fails the secret check, blunting a
-  // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
+  // flood before it reaches D1. Verified webhook deliveries are exempt (issue GL#27): a bulk edit
   // makes Monday itself send well over 60/min from a few IPs (src/rateLimit.ts).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2021", "simple": { "limit": 60, "period": 60 } }],
   // The fleet-wide 100ms cost cap (root README "Reliability: traffic and cost limits") does NOT

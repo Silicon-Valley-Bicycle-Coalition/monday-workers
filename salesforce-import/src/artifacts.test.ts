@@ -54,7 +54,7 @@ describe('artifacts', () => {
   });
 });
 
-// data/ holds full donor PII: owner-only regardless of umask (#111).
+// data/ holds full donor PII: owner-only regardless of umask (GL#111).
 describe('artifacts file permissions', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'sfimp-')); });

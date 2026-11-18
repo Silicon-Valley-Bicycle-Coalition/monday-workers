@@ -17,7 +17,7 @@ export interface RecurringDetail {
 export const isChecked = (text: string | null): boolean => text !== null && text !== '';
 
 // The owner boards carrying a Has Active Recurring Gift column. Exported for the custodian's
-// shared board read (boardReads.ts, issue #90).
+// shared board read (boardReads.ts, issue GL#90).
 export function recurringFlagColumns(config: DonationRollupsConfig): { boardId: string; columnId: string }[] {
   if (config.donationRollups.recurringGifts === null) return [];
   return Object.entries(config.donationRollups.ownerColumnsByBoard)

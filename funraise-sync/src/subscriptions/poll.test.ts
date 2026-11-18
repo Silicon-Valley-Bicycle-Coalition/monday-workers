@@ -119,7 +119,7 @@ describe('pollSubscriptions (keyset on updtime, id — #25)', () => {
     expect(result.cursor).toBe(5000);
   });
 
-  // The #25 bug: offset paging over `updtime >= cursor` let a row updated mid-walk move to the end
+  // The GL#25 bug: offset paging over `updtime >= cursor` let a row updated mid-walk move to the end
   // and shift every later row up one page slot, so the row that slid onto an already-read page was
   // never read — and once the cursor passed its updtime, never would be.
   it('misses no row when rows are updated between one-page runs', async () => {

@@ -65,7 +65,7 @@ DWK chose **B** (2026-11-17).
   limit is 50 automations and 16 production scripts are deployed (17 with `sync-watchdog`;
   `svbc-member-portal-writer` counts separately).
 - Destination: a **Chat** destination for the private staff Slack channel (the one
-  `monday-backup` alerts into, #52), created once and shared by every automation.
+  `monday-backup` alerts into, [GL#52](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/52)), created once and shared by every automation.
 - **Who does what** (DWK, 2026-11-17): Claude sets up the destination and automations in the
   dashboard (Chrome); DWK triages the existing production issues, deciding which to resolve,
   before the automations are turned on, so the first day isn't a flood. Automations are created

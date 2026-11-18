@@ -106,7 +106,7 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   without those, Drive answers 404 for Shared Drive items. Snapshots count against the Shared
   Drive's (i.e. the Workspace's pooled) storage.
 
-  **Contributor, not Content manager (issue #67).** The token carries the full `drive` scope
+  **Contributor, not Content manager (issue [GL#67](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/67)).** The token carries the full `drive` scope
   (`ensureFolder` lists folders it didn't create), so the Shared Drive role is the real limit on
   a leaked key. A Contributor can list, create folders and upload, which is all the Worker does,
   but Drive refuses it any trash, move or delete; Content manager would let a leaked key trash
@@ -139,7 +139,7 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   section for why hand-deploys are distrusted here).
 * **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50
   subrequests; no real snapshot fits. On Paid, `wrangler.jsonc` sets `cpu_ms: 300000` (the
-  configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
+  configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue [GL#29](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/29)) and
   `subrequests: 50000`; a complete run makes roughly 3,000.
 * **Why a Workflow.** A cron invocation is killed at 15 minutes, and a complete run takes about an
   hour (43 minutes on 2026-11-04): roughly 2–4 s per 100 items, and about 4 s per board even when
@@ -164,7 +164,7 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   nightly gets both alerts, on purpose. A clean run posts nothing, so silence is the healthy state.
   Production Slack alerts verified 2026-11-03/04: real API usage and partial-backup alerts arrived.
   The watchdog uses the same webhook but hasn't fired yet. Production alerts go to a private staff
-  channel (#52).
+  channel ([GL#52](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/52)).
 * **Boards the token can't see.** The token never lists a private board its user isn't subscribed
   to, so a run can't report what it can't see. This hid Activities and Campaigns from the first run.
   `requiredBoardIds` in `config/backup.json` names the CRM boards a complete run must hold: when a
@@ -179,7 +179,7 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   API calls per *account*, across every token: integration users, staff personal tokens, the
   hosted MCP. Pro allows 10,000 a day, resetting at midnight UTC, and from 2027 calls over the
   cap may fail with `DAILY_LIMIT_EXCEEDED`. A complete snapshot costs an estimated 500–700
-  calls (read from the code, not yet measured live; issue #95 cut it from 1,500–2,000): one request
+  calls (read from the code, not yet measured live; issue [GL#95](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/95) cut it from 1,500–2,000): one request
   per board for its schema, first items page and first updates page together, then items 500 to a
   page (`src/monday/client.ts`, which halves a page that hits the per-query complexity cap or times
   out). Once the cap is enforced, hitting it fails each remaining board at once rather than
@@ -215,13 +215,13 @@ is replaced with the id `wrangler d1 create` prints. Design:
 root directory `/monday-backup`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:monday-backup` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 `workspaceIds: ["18210301"]` in `config/backup.sandbox.json` is the guard against a sandbox run
 copying production boards or docs: `runSnapshot` skips any board or doc whose `workspaceId` isn't in
 the list. The token doesn't provide this. Sandbox Integration can read Main boards in every open
-workspace (#18), so don't remove the filter. `workspaceIds` is optional — absent or empty (as in
+workspace ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)), so don't remove the filter. `workspaceIds` is optional — absent or empty (as in
 `config/backup.json`) means no filter, "snapshot everything the token can see".
 
 ## Service account key
@@ -253,7 +253,7 @@ Contributor under **Manage members**.
 
 ## Snapshot encryption
 
-Every board and doc file is encrypted before it leaves the Worker (issue #112), so the Shared
+Every board and doc file is encrypted before it leaves the Worker (issue [GL#112](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/112)), so the Shared
 Drive holds ciphertext: an over-broad Drive membership, a compromised staff Google account or a
 leaked service-account key no longer yields a bulk copy of the CRM. `src/drive/encrypted.ts`
 wraps the Drive client; the format is documented at the top of `src/crypto/snapshotCipher.ts`

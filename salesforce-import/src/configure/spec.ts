@@ -8,7 +8,7 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 //
 // Deliberately out of scope here (left as manual steps — see README "configure" section):
 // * Automations — built by hand or through Monday's MCP create_automation tool (verified
-//   2026-11-03, #54), not this CLI; docs/22 §2.9 treats the automation description field as UI-only.
+//   2026-11-03, GL#54), not this CLI; docs/22 §2.9 treats the automation description field as UI-only.
 // * The "Documentation" doc view — no API creates a doc-kind view or writes doc content.
 // * Stripping Monday's stock status labels — docs/22 §2.5 recommends the UI for this itself
 //   ("safer" on a column that may carry data); not scripted here.
@@ -228,7 +228,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'Donor Level' } },
       // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/35 §3.1): gave in the
       // last five years, single gift of $25 or more, not already giving monthly or quarterly.
-      // Board Report figure (#22): the old "Opps over $200 from new Donors". First Gift inside the
+      // Board Report figure (svbc-monday-migration#22): the old "Opps over $200 from new Donors". First Gift inside the
       // current fiscal year, resolved from the clock each time configure runs (rerun every July).
       { name: 'New donors this FY, $200+', tag: 'Report',
         columns: ['Personal Email', 'Phone', 'First Gift', 'This Year Amount', 'Largest Gift'],
@@ -591,7 +591,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
-      // Quarterly active-volunteer count (#22). Class Date is written by eventbrite-sync only, so
+      // Quarterly active-volunteer count (svbc-monday-migration#22). Class Date is written by eventbrite-sync only, so
       // migrated history and Funraise tickets are missing from this view.
       { name: 'Volunteers, last 12 months', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Class Date', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] },
@@ -685,7 +685,7 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
     { name: 'Memberships ending, by month', kind: 'CHART', chart: { board: 'people-live', graphType: 'column', x: 'Member Until', xGroupBy: 'date', dateGroupBy: 'month', y: 'count' },
       filter: { board: 'people-live', rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
     { name: 'Members by tier', kind: 'CHART', chart: { board: 'people-live', graphType: 'pie', x: 'Membership Tier', xGroupBy: 'color', y: 'count' } },
-    // Renewal rate (#22): this fiscal year's membership payments by Membership Type. The column is
+    // Renewal rate (svbc-monday-migration#22): this fiscal year's membership payments by Membership Type. The column is
     // text, so three counts (contains_text) stand in for a pie; renewal rate = (Continuing + Lapsed
     // renewal) / all three.
     ...['New', 'Continuing', 'Lapsed renewal'].map((type): WidgetSpec => ({

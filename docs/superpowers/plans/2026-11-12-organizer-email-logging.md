@@ -104,11 +104,11 @@ Zachary's mail logs too (2026-11-17), so his CRM access works (Task 1).
   (Work Email) and Organizations (shared Email), with Task 3's result for an address on two
   boards; and that an Organization's people's mail is one click away through Affiliations.
 - [ ] **Step 2:** In `docs/22`, replace "Organizations can follow if staff ask for it" with
-  what was added, the date, and #121.
+  what was added, the date, and [GL#121](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/121).
 - [ ] **Step 3:** Write `docs/43`: connect Gmail once, pick the BCC-only setting, BCC the
   Emails & Activities address on significant organizer email, put a work address on the
   Affiliation (not People), a shared address on the Organization, and where to look afterwards.
-- [ ] **Step 4: Commit** `docs: log organizer email on Affiliations and Organizations (#121)`.
+- [ ] **Step 4: Commit** `docs: log organizer email on Affiliations and Organizations (GL#121)`.
 
 ### Task 5: Supersede `email-log` and close out (`monday-workers`)
 
@@ -119,7 +119,7 @@ Zachary's mail logs too (2026-11-17), so his CRM access works (Task 1).
 - [ ] **Step 1:** Set the spec's status to "superseded 2026-11-04 by Emails & Activities; see
   `2026-11-12-organizer-email-logging-design.md`", and add the same one-line note under the
   plan's title.
-- [ ] **Step 2: Commit** `docs(email-log): mark superseded by Emails & Activities (#121)`
+- [ ] **Step 2: Commit** `docs(email-log): mark superseded by Emails & Activities (GL#121)`
   with this plan and the design.
-- [ ] **Step 3:** With David's OK, post a comment on #121 summarizing what was set up and
-  linking `docs/43`; MR descriptions use "Refs #121", not "Closes".
+- [ ] **Step 3:** With David's OK, post a comment on [GL#121](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/121) summarizing what was set up and
+  linking `docs/43`; MR descriptions use "Refs [GL#121](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/121)", not "Closes".

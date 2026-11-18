@@ -1,10 +1,10 @@
 // Snapshot layout, recorded in every manifest so the restore tool can tell what it is reading.
-// v2: one JSON Lines file per board and per doc, streamed page by page (issue #29) — each line is
+// v2: one JSON Lines file per board and per doc, streamed page by page (issue GL#29) — each line is
 // a self-describing record `{ type, <type>: payload }` (payloads are nested, never spread, since
 // Monday objects carry their own `type` fields); the first line is always the board/doc header.
 // Board files: `board` header, then `item` records, then `update` records. Doc files: `doc`
 // header, then `block` records in document order.
-// v3 (issue #112): the same records, but each file is encrypted before upload and named
+// v3 (issue GL#112): the same records, but each file is encrypted before upload and named
 // `board-<id>.jsonl.enc` / `doc-<id>.jsonl.enc` (format: src/crypto/snapshotCipher.ts). The
 // manifest stays plaintext and records `encryption: { scheme, keyId }`, authenticated by a last
 // field, `manifestMac` (HMAC over the JSON before it; src/crypto/snapshotCipher.ts), plus

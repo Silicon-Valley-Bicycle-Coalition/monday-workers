@@ -6,7 +6,7 @@
 `2026-10-26-eventbrite-attendees-class-emails-design.md`, and replaces that design's follow-up job).
 **Page:** a new Apps Script web app, kept beside `scripts/apps-script/mail-merge.gs` in the private
 planning repo.
-**Issue:** private planning repo #62 (Bike Education class emails).
+**Issue:** private planning repo [GL#62](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/62) (Bike Education class emails).
 
 ## Why
 
@@ -52,7 +52,7 @@ or anything below that isn't in this table.
 * Texts. The coordinator keeps sending those by hand from Zoom.
 * Writing the wording on the page. Each email is still a Gmail draft, because each class needs its
   details typed in (start time, venue, event link).
-* Program emails outside Bike Education (#87). They can adopt this later. The mail merge Sheet stays
+* Program emails outside Bike Education ([GL#87](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/87)). They can adopt this later. The mail merge Sheet stays
   for them, and as the manual fallback.
 
 ## Anti-goals (failure even if it technically works)

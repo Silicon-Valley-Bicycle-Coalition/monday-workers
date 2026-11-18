@@ -1,6 +1,6 @@
 // SVBC wordmark (gold bicycle/speech-bubble mark, white text), embedded as a constant (no Workers
 // Assets binding) and served from a content-hashed, immutable route — see ./static.ts. Pages
-// reference it with an <img> rather than inlining ~20KB into every no-store response (#99).
+// reference it with an <img> rather than inlining ~20KB into every no-store response (GL#99).
 //
 // The source file's declared viewBox (0 0 288 288) is a stale square left over from a PDF/EPS
 // export — it doesn't match the actual artwork, a horizontal wordmark sitting in the canvas's

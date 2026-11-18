@@ -1,5 +1,5 @@
 // Wraps a D1 binding and counts prepare() calls, so a test can pin how many statements a store
-// method issues (#101: the webhook path's upserts are one statement each).
+// method issues (GL#101: the webhook path's upserts are one statement each).
 export function countingDb(db: D1Database): { db: D1Database; prepared: () => number } {
   let count = 0;
   const wrapped = new Proxy(db, {

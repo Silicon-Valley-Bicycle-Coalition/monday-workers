@@ -235,7 +235,7 @@ describe('CloudflareEmailSender', () => {
       expect(message.html).toContain('<p>Hola Juana</p>');
     });
 
-    // Issue #127: January is when donors request matches for last year's gifts.
+    // Issue GL#127: January is when donors request matches for last year's gifts.
     describe('employer ask', () => {
       const EMPLOYER_URL = 'https://portal.example.org/es/portal/change-request?field=employer';
 

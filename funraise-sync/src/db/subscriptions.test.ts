@@ -42,7 +42,7 @@ describe('D1SubscriptionStore', () => {
     expect((await store.getByFunraiseId('adopted'))?.updtime).toBeNull();
   });
 
-  // #25: the poll and the queue consumer could both create the same Recurring Gift.
+  // GL#25: the poll and the queue consumer could both create the same Recurring Gift.
   describe('create claims', () => {
     it('lets exactly one token claim a subscription', async () => {
       const store = new D1SubscriptionStore(env.DB);

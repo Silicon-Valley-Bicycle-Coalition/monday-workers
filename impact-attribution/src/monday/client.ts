@@ -20,7 +20,7 @@ export interface ImpactMondayClient {
   postUpdate(itemId: string, body: string): Promise<void>;
   // Exact-name lookup on the Organizations board; the caller compares normalised names.
   findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]>;
-  // Email-domain proposals (#124): whole-board reads of People, Organizations and Affiliations.
+  // Email-domain proposals (GL#124): whole-board reads of People, Organizations and Affiliations.
   listPeople(boardId: string, cols: ImpactAttributionConfig['emailDomains']['people']): Promise<PersonRecord[]>;
   listOrganizations(boardId: string, websiteTitle: string): Promise<OrganizationRecord[]>;
   listAffiliations(cfg: ImpactAttributionConfig['affiliations'], workEmailTitle: string): Promise<AffiliationRecord[]>;

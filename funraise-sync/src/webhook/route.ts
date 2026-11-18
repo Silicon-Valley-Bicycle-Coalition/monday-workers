@@ -15,7 +15,7 @@ const ENTITY_TYPE: EntityType = 'transaction';
 export const SECRET_HEADER = 'X-Webhook-Secret';
 
 /**
- * Constant-time comparison of a presented secret against the configured one (#25). Both sides
+ * Constant-time comparison of a presented secret against the configured one (GL#25). Both sides
  * are hashed to fixed-length SHA-256 digests first, so neither the content nor the length of the
  * real secret leaks through timing, then every digest byte is compared with no early exit.
  * (Hand-rolled rather than workerd's crypto.subtle.timingSafeEqual only because this project's

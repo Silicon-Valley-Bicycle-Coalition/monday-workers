@@ -1,4 +1,4 @@
-// Daily PII retention pass (#68). The consumer re-reads every record from its source on each
+// Daily PII retention pass (GL#68). The consumer re-reads every record from its source on each
 // attempt, so qb_events.fetched_payload and monday_events.raw_payload are only ever a record for
 // someone inspecting a row: nothing replays them, and emptying one never blocks a redrive.
 //

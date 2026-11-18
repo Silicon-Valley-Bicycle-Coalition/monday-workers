@@ -31,7 +31,7 @@ real board and column ids in `config/sandbox.json`, the write switch, and the ch
    * The three source boards are read concurrently, asking only for each item's name and the
      Lat/Lng (and name) columns. Each board's list is then kept for 5 minutes, in the isolate and
      in the data center's Cache API, so a radius change, a second preview and the confirm re-run
-     skip the walk even when they reach a different isolate (#98). A coordinate the geocode cron
+     skip the walk even when they reach a different isolate ([GL#98](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/98)). A coordinate the geocode cron
      adds shows up within those 5 minutes. No binding is needed; the Cache API works on the
      custom domain only, which is the only way this Worker is served.
 2. **Confirm** (`POST /api/confirm`), with a results board and a label (1-60 characters, no
@@ -131,7 +131,7 @@ Nothing clears a Nearby label automatically. When a campaign is over, remove the
 `mailchimp-sync` sees the change and sends the matching `Near: …` tag `inactive` in Mailchimp. The
 results board is the organizer's to keep or archive.
 
-## Known caveat: People (Historical) and Mailchimp (#83)
+## Known caveat: People (Historical) and Mailchimp ([GL#83](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/83))
 
 The Nearby column goes on People (Historical) as well as People. `mailchimp-sync` can now sync
 that board

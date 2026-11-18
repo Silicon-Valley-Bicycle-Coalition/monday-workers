@@ -1,6 +1,6 @@
 import { MAX_BATCH_SIZE } from './batch.js';
 
-/** Load-throughput settings (#22). Config supplies defaults; CLI flags override per run. */
+/** Load-throughput settings (GL#22). Config supplies defaults; CLI flags override per run. */
 export interface LoadOptions {
   /** create_item mutations per request (1–25). */
   batchSize: number;

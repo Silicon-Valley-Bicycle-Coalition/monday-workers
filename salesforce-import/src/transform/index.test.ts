@@ -266,7 +266,7 @@ describe('runTransform', () => {
       { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'ada@gmail.com', AccountId: 'a-ind', ...prov },
       // Affiliated at the comma/quote-named org, but its secondary address is an unknown
       // domain (neither the org's site nor a consumer domain) → review row.
-      // A formula-like name (public-form input) must reach the sheet as literal text (#111).
+      // A formula-like name (public-form input) must reach the sheet as literal text (GL#111).
       { Id: 'c9', FirstName: '=Rae', LastName: 'P', Email: 'rae@gmail.com', Secondary_Email__c: 'rae@mystery.biz', ...prov },
     ]);
     await writeNdjson(dataPath('extract', 'accounts.ndjson'), [

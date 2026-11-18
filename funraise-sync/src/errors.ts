@@ -1,6 +1,6 @@
 import { AmbiguousWriteError, MondayApiError } from './monday/graphql';
 
-// A failure that no retry can fix (#75, borrowed from quickbooks-sync/src/errors.ts): the upstream
+// A failure that no retry can fix (GL#75, borrowed from quickbooks-sync/src/errors.ts): the upstream
 // rejected the request itself, so the same request fails the same way on every one of the ~4 days
 // of outage retries. The consumer records it on the row and acks the message instead of burning
 // those retries into the DLQ. Fix the cause (usually the Monday item, column or config), then

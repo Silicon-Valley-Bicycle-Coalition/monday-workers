@@ -291,13 +291,13 @@ function gateFor(mode: WriteMode): () => Promise<BatchSkipContext> {
   return async () => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
 }
 
-// Issue #61: the emailed link carries the token in its fragment.
+// Issue GL#61: the emailed link carries the token in its fragment.
 function extractToken(loginUrl: string): string {
   return new URLSearchParams(new URL(loginUrl).hash.slice(1)).get('token') as string;
 }
 
 // The second half of the magic-link flow: what the "Continue to your portal" button on GET
-// /auth/callback's confirmation page submits (issue #31 — the GET itself never consumes).
+// /auth/callback's confirmation page submits (issue GL#31 — the GET itself never consumes).
 function completeLogin(
   app: ReturnType<typeof createApp>,
   fields: Record<string, string>,
@@ -462,7 +462,7 @@ describe('POST /auth/callback locale handling', () => {
   });
 });
 
-// Issue #31: corporate mail scanners (Outlook Safe Links, Mimecast, Proofpoint) prefetch — and
+// Issue GL#31: corporate mail scanners (Outlook Safe Links, Mimecast, Proofpoint) prefetch — and
 // often execute the JS of — every link in an inbound email. A GET that consumed the single-use
 // token burned it before the donor ever clicked. The GET is now inert: it renders a button that
 // POSTs the token, and only the POST consumes it.
@@ -537,7 +537,7 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain(t('es', 'confirmLogin.submit'));
   });
 
-  // Review of #31: the footer picker submitted only location.pathname, so switching language here
+  // Review of GL#31: the footer picker submitted only location.pathname, so switching language here
   // went to /auth/callback without the token and showed "invalid link". It now submits the query
   // too, which would copy a legacy ?token= into the /lang URL, so the picker stays off here.
   it('omits the footer language picker, which would drop the token', async () => {
@@ -568,7 +568,7 @@ describe('GET /auth/callback confirmation page', () => {
   });
 });
 
-// Issue #61: the token in a ?token= query string reached Workers Logs (full request URLs). New
+// Issue GL#61: the token in a ?token= query string reached Workers Logs (full request URLs). New
 // links put it in the fragment, which the browser never sends; the page's script copies it into
 // the form. The legacy ?token= tests above cover links already sitting in inboxes.
 describe('GET /auth/callback with the token in the fragment', () => {
@@ -720,7 +720,7 @@ describe('GET /:locale/portal locale handling', () => {
     expect(await res.text()).toContain('<html lang="es">');
   });
 
-  // Issue #32 review: a silent fallback let any first segment — including "webhooks" — reach
+  // Issue GL#32 review: a silent fallback let any first segment — including "webhooks" — reach
   // the authenticated routes, which is how /webhooks/portal/... slipped past the CSRF exemption.
   it('404s an unrecognized :locale instead of falling back to en', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
@@ -772,7 +772,7 @@ describe('GET /', () => {
 });
 
 // Return-to after sign-in: a donor who opens a portal page without a session (the letter email's
-// "Add your employer" link, #127) signs in and lands back on that page, not the dashboard.
+// "Add your employer" link, GL#127) signs in and lands back on that page, not the dashboard.
 describe('return to the requested page after sign-in', () => {
   const EMPLOYER_PATH = '/en/portal/change-request?field=employer';
   const NEXT = encodeURIComponent(EMPLOYER_PATH);
@@ -875,7 +875,7 @@ describe('return to the requested page after sign-in', () => {
   );
 });
 
-// #99: the stylesheet and logo are linked from every page at content-hashed paths and cached as
+// GL#99: the stylesheet and logo are linked from every page at content-hashed paths and cached as
 // immutable, instead of being inlined into each no-store page.
 describe('GET /assets/:file', () => {
   it('serves the stylesheet and logo every page links to, as immutable', async () => {
@@ -903,7 +903,7 @@ describe('GET /assets/:file', () => {
     expect(logo.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
     expect(await logo.text()).toMatch(/^<svg/);
 
-    // The stylesheet's @font-face rules point at self-hosted woff2 files (#123).
+    // The stylesheet's @font-face rules point at self-hosted woff2 files (GL#123).
     const cssText = await (await app.request(cssPath!)).text();
     expect(cssText).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
     const fontPath = /url\((\/assets\/poppins-latin-400\.[0-9a-f]{16}\.woff2)\)/.exec(cssText)?.[1];
@@ -969,7 +969,7 @@ describe('POST / rate limiting', () => {
     expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
   });
 
-  // Issue #62: the per-address limiter (cooldown, window, daily cap) denies without sending or
+  // Issue GL#62: the per-address limiter (cooldown, window, daily cap) denies without sending or
   // looking the donor up, and the page is the same generic one.
   it('returns the generic response, sends nothing and skips Monday when the address has no room left', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
@@ -1301,7 +1301,7 @@ describe('GET /:locale/portal/change-request', () => {
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
-  // Issue #31: this route had no error handling at all — one donor's failed contact read
+  // Issue GL#31: this route had no error handling at all — one donor's failed contact read
   // (Promise.all) took the page down through the generic onError.
   it('renders the form for the donors that loaded when one household record fails', async () => {
     const monday = fakeMonday({ 'family@example.org': [{ id: 'donor-1', name: 'Jane' }, { id: 'donor-2', name: 'Jim' }] });
@@ -1521,7 +1521,7 @@ describe('POST /webhooks/monday/letters', () => {
     expect((await post(app, { challenge: 'abc' }, '?secret=shhh')).status).toBe(401);
   });
 
-  // Issue #32: a header keeps the secret out of the request URL (and so out of Workers
+  // Issue GL#32: a header keeps the secret out of the request URL (and so out of Workers
   // observability's logged URL) for any caller that can set one. Monday's automation webhook
   // can't, so ?secret= stays supported.
   it('accepts the secret in the X-Webhook-Secret header instead of the query string', async () => {
@@ -2030,7 +2030,7 @@ describe('GET /lang', () => {
   });
 });
 
-// Issue #32: a prefix blocklist ("starts with / but not // or /\") let "/<TAB>/evil.example"
+// Issue GL#32: a prefix blocklist ("starts with / but not // or /\") let "/<TAB>/evil.example"
 // through — the tab went into Location verbatim, browsers strip ASCII tab/newline while parsing
 // a URL, and "//evil.example" is protocol-relative. Every shape below must end up same-origin
 // no matter how a browser normalizes it.
@@ -2327,7 +2327,7 @@ describe('GET /:locale/portal/matching-gifts', () => {
     expect(html).toContain('src="/en/portal/matching-gifts/search"');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
-    // Issue #102: the portal page itself runs no third-party JS, so it keeps the baseline CSP.
+    // Issue GL#102: the portal page itself runs no third-party JS, so it keeps the baseline CSP.
     expect(html).not.toContain('ddplugin.js');
     expect(res.headers.get('content-security-policy')).toBe(DEFAULT_CSP);
     expect(res.headers.get('x-frame-options')).toBe('DENY');
@@ -2805,7 +2805,7 @@ describe('POST /:locale/portal/change-request/preferences', () => {
   });
 });
 
-// Issue #32: the session cookie is SameSite=Lax, which rides along on form POSTs from any
+// Issue GL#32: the session cookie is SameSite=Lax, which rides along on form POSTs from any
 // *.bikesiliconvalley.org sibling (same-site, cross-origin). Every state-changing form route must
 // accept only the portal's own origin; the Monday webhook (server-to-server, no Origin) must not.
 describe('CSRF', () => {
@@ -2914,7 +2914,7 @@ describe('CSRF', () => {
     }
   });
 
-  // Issue #32 review: the exemption used to be a "/webhooks/" path prefix, and the authenticated
+  // Issue GL#32 review: the exemption used to be a "/webhooks/" path prefix, and the authenticated
   // routes take a wildcard :locale — so locale "webhooks" (or its percent-encoded form, which
   // Hono decodes before both the check and routing) skipped CSRF on real state-changing routes.
   describe.each([
@@ -2977,7 +2977,7 @@ describe('CSRF', () => {
   });
 });
 
-// Issue #32: frame-ancestors used to be set only on the matching-gifts page, leaving the
+// Issue GL#32: frame-ancestors used to be set only on the matching-gifts page, leaving the
 // dashboard and its state-changing forms frameable, and there was no HSTS.
 describe('unsupported :locale segments', () => {
   const GETS = [

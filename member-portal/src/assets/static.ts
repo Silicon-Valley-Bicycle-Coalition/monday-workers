@@ -2,7 +2,7 @@ import { EMBEDDED_FONTS } from './fontData';
 import { SVBC_LOGO_SVG } from './logo';
 import { PORTAL_CSS } from './portalStyles';
 
-// Content-addressed static assets (#99). The stylesheet (~12 KB) and the logo SVG (~19 KB, twice
+// Content-addressed static assets (GL#99). The stylesheet (~12 KB) and the logo SVG (~19 KB, twice
 // on the dashboard) used to be inlined into every page, and every page is `no-store`, so each
 // view re-downloaded them. They're now separate files at /assets/<name>.<hash>.<ext>: the hash
 // changes whenever the bytes do, so the response can be cached for a year as immutable, and a
@@ -45,7 +45,7 @@ function decodeBase64(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-// Manrope and Poppins, self-hosted (#123) so no page sends a donor's IP address to Google. One
+// Manrope and Poppins, self-hosted (GL#123) so no page sends a donor's IP address to Google. One
 // file per family, weight and subset; the browser fetches a subset only when the page uses a
 // character in its unicode-range, as it did from Google Fonts. Hashed on the base64 text, which
 // changes exactly when the bytes do.

@@ -8,7 +8,7 @@ import { withRetry } from '../retry';
 // consumers), so a transient Mailchimp hiccup here would otherwise abort the whole day's
 // reconciliation with nothing to retry it until tomorrow. Small, fixed values — this isn't
 // latency-sensitive, it's a once-a-day batch job. Monday calls are not wrapped: the Monday
-// transport retries them itself (#35), and wrapping its create would retry a create that may
+// transport retries them itself (GL#35), and wrapping its create would retry a create that may
 // already have committed (AmbiguousWriteError) into a duplicate campaign item.
 const RECONCILE_RETRY_OPTIONS = { attempts: 3, delayMs: 500 };
 
@@ -49,7 +49,7 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
     if (existing === undefined) {
       // Untracked (or archived and back again). The cron and every inbound consumer that
       // meets an unknown interest run this concurrently, so claim it in D1 first — only
-      // the winner creates the Monday item; losers leave it to them (issue #28).
+      // the winner creates the Monday item; losers leave it to them (issue GL#28).
       const now = new Date();
       const staleBefore = new Date(now.getTime() - CLAIM_STALE_MS).toISOString();
       if (!(await campaignItemsStore.claim(interest.interestId, interest.name, now.toISOString(), staleBefore))) continue;

@@ -1,5 +1,5 @@
 // Monday webhook subscriptions for the setup scripts, made either through the monday-auth broker's
-// /oauth/webhooks/:app route (#110: the app owns the webhook, so Monday signs its deliveries with
+// /oauth/webhooks/:app route (GL#110: the app owns the webhook, so Monday signs its deliveries with
 // the app's Signing Secret) or, as before, with a personal MONDAY_API_TOKEN (unsigned deliveries).
 // Both return the same three calls: list(board), create({ board, url, event, config }), remove(id).
 

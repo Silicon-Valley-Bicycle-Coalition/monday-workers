@@ -215,7 +215,7 @@ describe('ingestUpload', () => {
     expect(deps.mondayClient.fetchAsset).not.toHaveBeenCalled();
   });
 
-  // #40: the cutoff gates on the disbursement's Period Ending, never on a row's Donation Date.
+  // GL#40: the cutoff gates on the disbursement's Period Ending, never on a row's Donation Date.
   // Benevity pays out weeks after the gift, so the first report after the data freeze is full of
   // earlier-dated rows that were never keyed into Salesforce and are in no migrated history.
   describe('disbursement cutoff (#40)', () => {

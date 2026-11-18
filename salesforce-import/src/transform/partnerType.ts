@@ -1,4 +1,4 @@
-// The Organizations Partner Type vocabulary, approved 2026-10-28 (#55), in display order.
+// The Organizations Partner Type vocabulary, approved 2026-10-28 (GL#55), in display order.
 export const PARTNER_TYPES = ['Municipal', 'Corporation', 'Bike Shop', 'Bike Club', 'Advocacy Group',
   'Foundation', 'Nonprofit', 'Press', 'Education', 'Other'] as const;
 export type PartnerType = (typeof PARTNER_TYPES)[number];

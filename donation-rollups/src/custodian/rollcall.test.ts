@@ -179,7 +179,7 @@ describe('runRollCall', () => {
     expect(h.created.every((c) => c.groupId === 'g-FY2027 (in progress)')).toBe(true);
   });
 
-  // Issue #90: the credits table and the board's groups were each read twice a run.
+  // Issue GL#90: the credits table and the board's groups were each read twice a run.
   it('reads the credits table and the board groups once a run', async () => {
     const h = harness({ ledger: [gift('g1', '11', 50_000)], donations: [donation('a1', { anonymous: true, donorItemIds: [] })],
       boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: [{ id: 'old', title: 'FY2026' }] });

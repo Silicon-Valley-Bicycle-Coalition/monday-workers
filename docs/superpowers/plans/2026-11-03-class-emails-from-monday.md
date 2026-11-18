@@ -300,4 +300,4 @@ Each production step needs the user's go-ahead.
 
 - [ ] **Step 6: One real class, watched.** Run a Reminder on a small class with the coordinator. Check the recipient list against Eventbrite before clicking Send.
 
-- [ ] **Step 7: Staff docs.** Update `docs/06`, `docs/36`, `docs/37`, `docs/25` and #62. Give the coordinator the new steps for the Box protocol, which staff own. Delete the throwaway test project and test copies if the user hasn't.
+- [ ] **Step 7: Staff docs.** Update `docs/06`, `docs/36`, `docs/37`, `docs/25` and [GL#62](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/62). Give the coordinator the new steps for the Box protocol, which staff own. Delete the throwaway test project and test copies if the user hasn't.

@@ -31,7 +31,7 @@ export interface WorklistColumns {
   date: string;
 }
 
-// The worklist's staff-facing Retry status column (#34). Staff set `retry` on a worklist item
+// The worklist's staff-facing Retry status column (GL#34). Staff set `retry` on a worklist item
 // once they've fixed what it reported; the Worker re-queues the row (or every row of a block)
 // and sets `queued`, then `done` once the row is written or `needsReview` if it fails again.
 // New worklist items start at `needsReview`. Every label must exist on the column.
@@ -51,7 +51,7 @@ export interface UploadsBoardConfig {
   worklistColumns: WorklistColumns;
   // Text column on the Uploads board holding each worklist item's key (Transaction ID, or
   // "disbursement <id>" for a block) — the pre-create lookup that keeps a retried write from
-  // posting a second worklist item (#34). Null/absent until the column is provisioned.
+  // posting a second worklist item (GL#34). Null/absent until the column is provisioned.
   worklistKeyColumn?: string | null;
   // Null/absent until the column exists: retry webhooks are then ignored and no labels written.
   retry?: RetryColumnConfig | null;
@@ -66,7 +66,7 @@ export interface BenevityImportConfig {
     // ISO date (YYYY-MM-DD). A disbursement whose Period Ending is before this is skipped whole:
     // it is assumed to be in the migrated Salesforce history, which has no Transaction IDs to
     // dedupe against. Set it to the day after the Period Ending of the last disbursement staff
-    // keyed into Salesforce. It gates on the disbursement, never on a row's Donation Date (#40):
+    // keyed into Salesforce. It gates on the disbursement, never on a row's Donation Date (GL#40):
     // Benevity pays out weeks after the gift, so a new disbursement is full of older-dated rows.
     minDisbursementDate: string;
     donationsColumns: DonationsColumns;
@@ -84,7 +84,7 @@ export interface BenevityImportConfig {
       status: string;
     };
     // Only affiliations with this Status count as employer evidence: a Draft is an unconfirmed
-    // proposal (impact-attribution, #124) and a Former is a past job.
+    // proposal (impact-attribution, GL#124) and a Former is a past job.
     affiliationsCurrentLabel: string;
     uploadsBoard: UploadsBoardConfig;
     // Raw Benevity "Company" string -> canonical Organizations item name, e.g.

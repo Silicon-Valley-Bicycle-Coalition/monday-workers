@@ -36,7 +36,7 @@ describe('D1EventStore', () => {
   });
 
   // The webhook path only branches on 'duplicate', so the upsert is one statement: no pre-SELECT
-  // to tell an insert from an update (#101).
+  // to tell an insert from an update (GL#101).
   it('stores a delivery with a single D1 statement, new entity or known', async () => {
     let prepared = 0;
     const db = new Proxy(env.DB, {

@@ -235,7 +235,7 @@ requires, none of which can see the sandbox workspace. So a production board id 
 config — or the reverse — fails at Monday with `USER_UNAUTHORIZED` rather than writing to the
 wrong workspace.
 
-> **Erratum, 2026-09-30 (#18): this guard does not exist as designed.** Monday shows every Main
+> **Erratum, 2026-09-30 ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)): this guard does not exist as designed.** Monday shows every Main
 > board in every open workspace to every team member, added to it or not, and closed workspaces
 > are Enterprise-only. Measured with `scripts/check-monday-token-scope.mjs`, the shared sandbox
 > user (a member of no workspace) reaches 212 active boards outside the CRM Sandbox, 199 of them
@@ -243,7 +243,7 @@ wrong workspace.
 > config therefore succeeds at Monday today. The guards that do hold are §5's config split test
 > and, for `monday-backup`, its `workspaceIds` check. Making this section true needs the
 > production boards to be private, a guest user on shareable boards, or a check inside the
-> Workers — a decision tracked in #18.
+> Workers — a decision tracked in [GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18).
 
 One shared sandbox user, not one per Worker, is deliberate: member seats are a Pro-plan
 constraint (15), and least privilege *between* Workers matters far less inside a disposable
@@ -313,7 +313,7 @@ connections on one repo + root directory. If it does not, the fallback is a GitL
 `"deploy:sandbox": "wrangler deploy --env sandbox"` for first-time provisioning and emergencies,
 mirroring the existing `deploy`.
 
-**Code side done, 2026-09-22 (issue #16):** every `env.sandbox` Worker (`member-portal`,
+**Code side done, 2026-09-22 (issue [GL#16](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/16)):** every `env.sandbox` Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`, `bp-feedback-notify`) has the `deploy:sandbox` script, a "Workers Builds" note
 in its README/DEPLOY.md naming its sandbox Worker and root directory, and a matching

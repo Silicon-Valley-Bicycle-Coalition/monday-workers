@@ -3,7 +3,7 @@ import type { InboundSyncMessage, OutboundSyncMessage, PendingRow, PendingStatus
 import type { QueueMessageLike } from './outbound';
 import { errorText, memberId } from '../logSafe';
 
-// Consumer for the four mailchimp-sync DLQs (#37): mailchimp-sync-{outbound,inbound}-dlq and
+// Consumer for the four mailchimp-sync DLQs (GL#37): mailchimp-sync-{outbound,inbound}-dlq and
 // their -sandbox- twins. Mirrors funraise-sync's and donation-rollups' processDeadLetters.ts.
 // Until this existed nothing consumed them: a sync that exhausted its retries expired there
 // unseen after the queue's retention, leaving a pending row whose 'failed' status looked the

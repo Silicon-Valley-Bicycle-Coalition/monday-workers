@@ -7,12 +7,12 @@ export interface PathCounts {
   createRequests: number;
   /** Separate change_multiple_column_values mutations, one per link with a migrated target. */
   linkMutations: number;
-  /** Requests those link mutations travel in (aliased batchSize to a request since #50). */
+  /** Requests those link mutations travel in (aliased batchSize to a request since GL#50). */
   linkRequests: number;
-  /** Links set inside create_item instead (#22). */
+  /** Links set inside create_item instead (GL#22). */
   inlineLinks: number;
   archives: number;
-  /** Requests the archives travel in (aliased batchSize to a request since #50). */
+  /** Requests the archives travel in (aliased batchSize to a request since GL#50). */
   archiveRequests: number;
   requests: number;
 }
@@ -80,7 +80,7 @@ export function estimateLoad(payloads: ItemPayload[], boardKeys: string[],
 }
 
 /**
- * Monday runs mutations one at a time account-wide (#50: ~55/min flat for links and archives at
+ * Monday runs mutations one at a time account-wide (GL#50: ~55/min flat for links and archives at
  * pool sizes 1-12 and across boards, latency growing with the number in flight), so wall-clock is
  * a sum, not a division by pool size: every request pays `requestMs` once and every mutation in it
  * pays its own type's cost. Defaults are measured on the full-size Donations (sandbox v3) board:

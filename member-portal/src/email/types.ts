@@ -18,7 +18,7 @@ export interface SendLetterReadyEmailParams {
   // src/letters/letterEmailBody.ts for the placeholder contract) — already resolved to the
   // donor's locale by the caller. Blank/absent → localized built-in copy.
   bodyTemplate?: string;
-  // Absolute URL of the portal's Employer field (issue #127), set only while
+  // Absolute URL of the portal's Employer field (issue GL#127), set only while
   // employerAnswerEnabled(config). Present → one line after the body asks where the donor
   // works; absent → no line.
   employerUrl?: string;

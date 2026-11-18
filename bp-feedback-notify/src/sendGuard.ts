@@ -1,4 +1,4 @@
-// Per-item resend guard (#105), in D1 (migrations/0001_create_sends.sql). Anyone holding
+// Per-item resend guard (GL#105), in D1 (migrations/0001_create_sends.sql). Anyone holding
 // WEBHOOK_SECRET could otherwise loop the webhook over every BP Request item and re-email every
 // organizer. Unlike the status-column check in feedbackItem.ts, this works with `sendStatus` null.
 //

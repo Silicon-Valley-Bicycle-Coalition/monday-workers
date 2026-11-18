@@ -47,7 +47,7 @@ function scalar(value: unknown): string | number | undefined {
 // Monday webhooks deliver each column value in its raw per-type shape — text `{ value }`, email
 // `{ email, text }`, phone `{ phone, countryShortName }`, long text `{ text }`, date
 // `{ date, time }`, status/dropdown `{ label: { text } }`, numbers `{ value }` — not as the plain
-// string QuickBooks expects (#33). Reduce a value to its scalar, or undefined for empty or
+// string QuickBooks expects (GL#33). Reduce a value to its scalar, or undefined for empty or
 // unrecognized shapes so they're left out of the create rather than sent as garbage. The more
 // specific keys come first: an email's `text` is its display label, not the address.
 export function normalizeMondayColumnValue(value: unknown): string | number | undefined {

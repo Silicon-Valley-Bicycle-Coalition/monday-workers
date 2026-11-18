@@ -73,7 +73,7 @@ describe('requestLogin', () => {
     expect(emailSender.sendLoginEmail).toHaveBeenCalledTimes(1);
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.to).toBe('shared@example.org');
-    // Issue #61: the token rides in the fragment, never the query string, so it can't reach request logs.
+    // Issue GL#61: the token rides in the fragment, never the query string, so it can't reach request logs.
     expect(emailCall.loginUrl).toMatch(/^https:\/\/portal\.example\.org\/auth\/callback\?lang=en#token=[0-9a-f]{64}$/);
   });
 

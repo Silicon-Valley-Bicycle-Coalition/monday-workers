@@ -14,7 +14,7 @@ describe('currentFiscalYear', () => {
     expect(currentFiscalYear(new Date('2026-06-30T12:00:00Z'), JULY_PACIFIC)).toBe(2026);
   });
 
-  // Issue #27: in UTC, "This Year" rolled over at 5pm Pacific on June 30.
+  // Issue GL#27: in UTC, "This Year" rolled over at 5pm Pacific on June 30.
   it('rolls over at midnight in the configured time zone, not at midnight UTC', () => {
     expect(currentFiscalYear(new Date('2026-07-01T00:00:00Z'), JULY_PACIFIC)).toBe(2026); // 5pm PDT June 30
     expect(currentFiscalYear(new Date('2026-07-01T06:59:59Z'), JULY_PACIFIC)).toBe(2026); // 11:59:59pm PDT

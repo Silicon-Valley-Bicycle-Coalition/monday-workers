@@ -240,7 +240,7 @@ describe('MondayClient', () => {
     });
   });
 
-  // #50: counters that say where a load's time goes (latency vs rejection backoff vs idle).
+  // GL#50: counters that say where a load's time goes (latency vs rejection backoff vs idle).
   describe('stats', () => {
     it('counts requests, latency and peak in-flight with no retries on success', async () => {
       const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,

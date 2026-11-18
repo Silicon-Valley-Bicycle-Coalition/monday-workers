@@ -7,7 +7,7 @@ import { cnpGiftDay, giftDonorSfId, isEventbriteTicketOrder } from './donations.
 // NPSP rollups filter on. Including Closed Won here would make Monday's Lifetime Giving
 // diverge from SVBC's own historical/audited totals by the 438 stale-stage records
 // (~$40,659.59) gotcha #4 found — the reconciliation gotcha #1 exists to protect.
-// The one exception is the Eventbrite ticket orders eb4sf files as Closed Won (#43): those
+// The one exception is the Eventbrite ticket orders eb4sf files as Closed Won (GL#43): those
 // migrate as Status Received, which donation-rollups counts, so they must count here too or
 // the seeded Lifetime Giving diverges from the first recompute.
 const RECEIVED = new Set(['Posted']);

@@ -1,10 +1,10 @@
 import { decryptBytes, ENCRYPTED_SUFFIX, fileBinding, verifyManifestMac, type SnapshotKey } from '../crypto/snapshotCipher';
 
 // Turns a downloaded snapshot folder into the filename → text map parseSnapshot reads, decrypting
-// `*.jsonl.enc` files (snapshot format v3, issue #112) and passing v2's plaintext `*.jsonl` through.
+// `*.jsonl.enc` files (snapshot format v3, issue GL#112) and passing v2's plaintext `*.jsonl` through.
 //
 // Anyone with write access to the Shared Drive can add, replace or copy files, so nothing here
-// trusts a file's say-so (#112 review). Encrypted mode (a key given, or any `.enc` file present):
+// trusts a file's say-so (GL#112 review). Encrypted mode (a key given, or any `.enc` file present):
 // - the manifest's MAC is verified before any of its fields is read;
 // - every plaintext `.jsonl` is refused, whatever the manifest says (no downgrade);
 // - the `.enc` files must be exactly the manifest's `files` list, none extra and none missing;

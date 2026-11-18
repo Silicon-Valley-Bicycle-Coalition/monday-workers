@@ -27,7 +27,7 @@ email with the feedback form link.
    { "itemId": 13089808285 }
    ```
    Whatever else the automation sends (`itemName`, `eventName`, `organizerEmail`) is ignored.
-   Before #66 the Worker trusted those fields, so anyone holding the URL secret could send
+   Before [GL#66](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/66) the Worker trusted those fields, so anyone holding the URL secret could send
    SVBC-branded mail to any address with any subject.
 3. Before monday sends real traffic, it verifies the URL by POSTing `{"challenge": "<token>"}`
    once and expecting that same body echoed back — the Worker handles this ahead of normal
@@ -44,14 +44,14 @@ email with the feedback form link.
 
 The sandbox config uses the production board's column ids, on the assumption that the sandbox
 mirror was duplicated from the live board (monday keeps column ids on duplicate). Not verified:
-the tokens available when #66 was fixed couldn't see the sandbox board. If a sandbox send logs
+the tokens available when [GL#66](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/66) was fixed couldn't see the sandbox board. If a sandbox send logs
 `bp-feedback-no-email` for an item that has an address, check the ids with `get_board_info`.
 
 No queue here (unlike `funraise-sync`/`quickbooks-sync`): a missed reminder email is low-stakes
 compared to a dropped donation write, so a synchronous send-on-receipt is enough. D1 holds only the
 per-item resend guard below.
 
-### Resend guard (#105)
+### Resend guard ([GL#105](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/105))
 
 Anyone holding `WEBHOOK_SECRET` could otherwise loop the endpoint over every BP Request item id
 and re-email every organizer. So before sending, the Worker claims the item in D1 (`DB`, table
@@ -146,7 +146,7 @@ doesn't re-fire the automation, which triggers only on `Ready to Send`; staff re
 failed send by setting it back to `Ready to Send`. A write-back failure is logged and never
 fails the webhook (the email already went out).
 
-**Status-column resend check (#105):** with `sendStatus` set, the item read also fetches that
+**Status-column resend check ([GL#105](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/105)):** with `sendStatus` set, the item read also fetches that
 status column and the Worker skips the send (200, `{ "sent": false, "alreadySent": true }`,
 `bp-feedback-already-sent`) when it already reads `sentLabel`. Staff re-send by moving the column
 back to `Ready to Send`, though the D1 cooldown (see "Resend guard" above) still applies. A failed
@@ -223,8 +223,8 @@ email testing, which hadn't hit it yet.
 root directory `/bp-feedback-notify`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:bp-feedback-notify` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 ## Commands
 

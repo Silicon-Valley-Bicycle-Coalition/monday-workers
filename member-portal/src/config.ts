@@ -97,7 +97,7 @@ const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName', 'logoUrl'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'letterLinkTtlHours', 'sessionTtlHours', 'portalBaseUrl'] as const;
 // Upper bound on the letter email's login-link lifetime: long enough that a donor who opens the
-// January email days later still gets in (issue #31), short enough that a typo can't mint
+// January email days later still gets in (issue GL#31), short enough that a typo can't mint
 // month-long bearer credentials sitting in inboxes.
 const MAX_LETTER_LINK_TTL_HOURS = 168;
 const REQUIRED_RATE_LIMIT_KEYS = [
@@ -192,7 +192,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
-  // Optional (#115): absent or the placeholder shows the Job alone.
+  // Optional (GL#115): absent or the placeholder shows the Job alone.
   if ('volunteerTicketType' in columns && typeof columns.volunteerTicketType !== 'string') {
     throw new Error('config: "monday.columns.volunteerTicketType" must be a string when present');
   }

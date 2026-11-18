@@ -19,7 +19,7 @@ export interface EventStatusPatch {
 }
 
 // 'stored' covers a first delivery and a newer one for a known entity alike: the webhook only
-// branches on 'duplicate', so the upsert stays one statement with no pre-SELECT (#101).
+// branches on 'duplicate', so the upsert stays one statement with no pre-SELECT (GL#101).
 export type UpsertResult = 'stored' | 'duplicate';
 
 export interface EventStore {

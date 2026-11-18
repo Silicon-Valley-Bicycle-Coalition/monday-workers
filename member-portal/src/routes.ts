@@ -90,7 +90,7 @@ export interface AppDeps {
 }
 
 // __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
-// subdomain can't plant a session cookie scoped to a longer path (#103).
+// subdomain can't plant a session cookie scoped to a longer path (GL#103).
 const SESSION_COOKIE = '__Host-session';
 export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
@@ -129,7 +129,7 @@ function resolvePathLocale(c: Context): Locale {
 
 // Server-to-server endpoints exempt from the CSRF check, by exact method + path. Deliberately not
 // a prefix: every authenticated route starts with a wildcard `:locale` segment, so a "/webhooks/"
-// prefix exemption also matched /webhooks/portal/change-request (issue #32 review).
+// prefix exemption also matched /webhooks/portal/change-request (issue GL#32 review).
 const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
 
 // A POST that writes, under any mode but `on`: a friendly page, 503 so nothing caches it.
@@ -155,7 +155,7 @@ export function createApp(deps: AppDeps) {
   // First, so it wraps every response — including onError's and the 404 fallback.
   app.use('*', ...securityHeaders());
 
-  // CSRF (issue #32): the session cookie is SameSite=Lax, which still rides along on a form POST
+  // CSRF (issue GL#32): the session cookie is SameSite=Lax, which still rides along on a form POST
   // from any *.bikesiliconvalley.org sibling — same-site, just not same-origin. Hono's csrf()
   // rejects a form-encodable POST (urlencoded, multipart, text/plain, or no Content-Type) unless
   // Sec-Fetch-Site is same-origin or Origin is exactly the portal origin. Every form here posts
@@ -191,7 +191,7 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
-  // The stylesheet and logo every page links to, at content-hashed paths (#99; see
+  // The stylesheet and logo every page links to, at content-hashed paths (GL#99; see
   // assets/static.ts). Immutable for a year: a changed file gets a new path, so a cached copy is
   // never stale. Any other /assets/ path is a 404.
   app.get('/assets/:file', (c) => {
@@ -236,7 +236,7 @@ export function createApp(deps: AppDeps) {
   // appears on every route, submitting the browser's current location.pathname + location.search as `to` — rather
   // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
   // accepts any same-origin target. It does so by parsing, not by prefix-matching: a blocklist
-  // of string prefixes ("//", "/\") missed "/<TAB>/evil.example" (issue #32), because browsers
+  // of string prefixes ("//", "/\") missed "/<TAB>/evil.example" (issue GL#32), because browsers
   // strip ASCII tab/newline and leading C0 controls while parsing a Location value. Resolving
   // with the same WHATWG URL parser the browser uses, requiring the portal's own origin, and
   // re-emitting only the parser's normalized pathname + search means what we send is exactly
@@ -283,7 +283,7 @@ export function createApp(deps: AppDeps) {
   // Return-to after sign-in: the `next` a signed-out donor carries from a portal page, through the
   // sign-in form and the emailed link, to the callback's redirect. Only a page in the signed-in
   // tree (/<locale>/portal...) is accepted, parsed the same way as the language switcher's `to`
-  // (sameOriginRedirectPath, issue #32) — so it can't point off-origin, nor at /auth/callback,
+  // (sameOriginRedirectPath, issue GL#32) — so it can't point off-origin, nor at /auth/callback,
   // /lang or anything else that acts on arrival. Anything else is dropped (null), and sign-in
   // lands on the dashboard as before.
   function portalReturnPath(raw: unknown): string | null {
@@ -390,14 +390,14 @@ export function createApp(deps: AppDeps) {
   // The emailed magic link (login and letter-ready alike) lands here — and so do the corporate
   // mail scanners (Outlook Safe Links, Mimecast, Proofpoint) that prefetch every link in an
   // inbound email, often executing its JS. Consuming the single-use token on this GET burned it
-  // before the donor ever clicked (issue #31), so the GET is inert: it renders a button that
+  // before the donor ever clicked (issue GL#31), so the GET is inert: it renders a button that
   // POSTs the token back to the route below, and only that POST consumes it.
   //
-  // The token arrives in the URL fragment (issue #61: in the query string it reached Workers
+  // The token arrives in the URL fragment (issue GL#61: in the query string it reached Workers
   // Logs, and a letter link lives up to 168 hours), so the server never sees it here; the page's
   // script copies it into the form. A ?token= link is one sent before that change and still
   // renders as before. Drop that branch once every such link has expired: letterLinkTtlHours
-  // after the #61 deploy.
+  // after the GL#61 deploy.
   app.get('/auth/callback', async (c) => {
     const langParam = c.req.query('lang');
     const lang = langParam !== undefined && isLocale(langParam) ? langParam : null;
@@ -486,7 +486,7 @@ export function createApp(deps: AppDeps) {
     // Same degrade-instead-of-fail treatment as volunteer history in loadPortalData: a Monday
     // read failure here should cost the donor the Events tab, not the whole dashboard. Disabled
     // and failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
-    // Started before loadPortalData and awaited after it (#99): the two are independent, and the
+    // Started before loadPortalData and awaited after it (GL#99): the two are independent, and the
     // catch is attached up front so a rejection is never unhandled when loadPortalData throws.
     const eventsLeg: Promise<Record<string, EventRegistrationListing> | null> = eventsEnabled(deps.config)
       ? loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now()).then(
@@ -514,7 +514,7 @@ export function createApp(deps: AppDeps) {
     // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
     // renders without a card widget; it must never take down the whole dashboard, since donation
     // history, discounts, and everything else on the page is still useful without it.
-    // The per-donor token reads are independent, so they run concurrently (#99).
+    // The per-donor token reads are independent, so they run concurrently (GL#99).
     const cards: Record<string, PortalCard> = {};
     if (cardEnabled(deps.config)) {
       await Promise.all(
@@ -659,7 +659,7 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
-    // Per donor (issue #31): one household record's failed read drops that donor from the form
+    // Per donor (issue GL#31): one household record's failed read drops that donor from the form
     // instead of failing the page; only when none load is it an error — and then this route's
     // own copy, not the global onError's login-flavored one.
     const results = await Promise.allSettled(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
@@ -827,7 +827,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     // This page keeps the app-wide baseline CSP: it runs no third-party JS itself. The DTD widget
-    // runs only inside the sandboxed /search document framed below (issue #102).
+    // runs only inside the sandboxed /search document framed below (issue GL#102).
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
     const employerFormUrl = employerAnswerEnabled(deps.config) ? `/${locale}/portal/change-request?field=employer` : null;

@@ -20,7 +20,7 @@ export interface InboundConsumerDeps {
   config: Config;
 }
 
-// The batch runs in three phases so its catalog work is done once, not per message (#97):
+// The batch runs in three phases so its catalog work is done once, not per message (GL#97):
 //  1. per message: read the member from Mailchimp, then find its Donor item — a member with no
 //     item (or none in Mailchimp) is closed out here, before any catalog work;
 //  2. once: resolve every remaining interest with one D1 query and, if any is unknown, refresh the
@@ -28,7 +28,7 @@ export interface InboundConsumerDeps {
 //     it lists every interest they hold, as the per-message reconcile it replaces did;
 //  3. per message: write the connect column.
 // A failure in phase 1 or 3 retries (or acks) that message alone; a failed reconcile retries only
-// the messages that were waiting on it. Once any failure is a Monday outage (#101), every message
+// the messages that were waiting on it. Once any failure is a Monday outage (GL#101), every message
 // not yet finished is retried with backoff without calling Monday or Mailchimp again.
 export async function processInboundBatch(
   messages: readonly QueueMessageLike<InboundSyncMessage>[],
@@ -103,7 +103,7 @@ export async function consumeInboundBatch(
   gate: BatchSkipContext,
 ): Promise<void> {
   const live: QueueMessageLike<InboundSyncMessage>[] = [];
-  // One breaker for the whole batch, dry runs included (#101).
+  // One breaker for the whole batch, dry runs included (GL#101).
   const breaker = new OutageBreaker();
   for (const message of messages) {
     const disposition = messageDisposition(gate.mode, message.body);
@@ -112,7 +112,7 @@ export async function consumeInboundBatch(
     } else if (disposition === 'write') {
       live.push(message);
     } else if (breaker.open) {
-      // Monday is down or rate-limiting (#101): rehearse this dry run on a later delivery.
+      // Monday is down or rate-limiting (GL#101): rehearse this dry run on a later delivery.
       breaker.defer(message);
     } else {
       // The message body carries an address; the skip lines name the member by hash instead.
@@ -156,7 +156,7 @@ async function fail(message: QueueMessageLike<InboundSyncMessage>, err: unknown,
   if (err instanceof MailchimpPermanentError) {
     message.ack();
   } else {
-    // A Monday outage also defers the rest of the batch (#101); this message's delay is the same.
+    // A Monday outage also defers the rest of the batch (GL#101); this message's delay is the same.
     if (breaker.trip(err)) console.error('mailchimp-sync inbound consumer: Monday unavailable, deferring the rest of the batch');
     message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
   }
@@ -179,7 +179,7 @@ async function prepare(message: QueueMessageLike<InboundSyncMessage>, deps: Inbo
   }
 
   // Before any catalog work: a member with no Donor item has nothing to write, so it must not
-  // cost a reconcile (#97).
+  // cost a reconcile (GL#97).
   const donorItemId = await mondayClient.findItemIdByEmail(donorsBoardId, config.monday.columns.email, email);
   if (donorItemId === null) {
     // A genuine miss (even after the client's case-insensitive fallback) must stay

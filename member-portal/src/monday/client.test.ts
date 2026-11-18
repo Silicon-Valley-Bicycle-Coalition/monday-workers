@@ -75,7 +75,7 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
   return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
 }
 
-// Issue #31: with no timeout, a hung Monday request held a dashboard render or a queue consumer
+// Issue GL#31: with no timeout, a hung Monday request held a dashboard render or a queue consumer
 // indefinitely. Every request carries an AbortSignal.timeout, and a timeout surfaces as a
 // monday-prefixed error the callers already log/retry on.
 // An email column's column_value as findDonorsByEmail requests it.
@@ -110,7 +110,7 @@ describe('HttpMondayClient request timeout', () => {
   });
 });
 
-// #35: the client runs on the canonical transport (src/monday/graphql.ts).
+// GL#35: the client runs on the canonical transport (src/monday/graphql.ts).
 describe('HttpMondayClient transport', () => {
   it('makes exactly one request per call — no in-process retry on a page render', async () => {
     const fetchFn = vi.fn(async () => new Response('down', { status: 503 }));
@@ -228,7 +228,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
   });
 
-  // Issue #62: whatever Monday's filter returns, only an exact (case-insensitive) address match
+  // Issue GL#62: whatever Monday's filter returns, only an exact (case-insensitive) address match
   // may get a login link.
   it('drops items whose address is not exactly the submitted one', async () => {
     const fetchMock = fetchReturning({
@@ -431,7 +431,7 @@ describe('HttpMondayClient.getMemberPortalData', () => {
     expect(data.membershipExpiry).toBe('');
   });
 
-  // #99: the donations query needs only the donor item id, so both reads go out before either
+  // GL#99: the donations query needs only the donor item id, so both reads go out before either
   // answers — one Monday round trip per page instead of two.
   it('issues the donor and donations reads concurrently', async () => {
     const pending: { query: string; resolve: (body: unknown) => void }[] = [];
@@ -659,7 +659,7 @@ describe('HttpMondayClient donation status filtering', () => {
 });
 
 describe('HttpMondayClient.getDiscountOrganizations pagination', () => {
-  // Issue #31: the query asked for `cursor` but never used it, silently dropping every active
+  // Issue GL#31: the query asked for `cursor` but never used it, silently dropping every active
   // discount past the first 500.
   it('follows the cursor past the first page', async () => {
     const bodies: { query: string; variables: Record<string, unknown> }[] = [];
@@ -758,7 +758,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
     expect(shifts).toEqual([{ hours: '3.5', date: '2026-05-02', job: 'Bike Valet', status: 'Completed' }]);
   });
 
-  // #115: one person's Shift 1 and Shift 2 rows for one event read the same without the ticket type.
+  // GL#115: one person's Shift 1 and Shift 2 rows for one event read the same without the ticket type.
   describe('with monday.columns.volunteerTicketType configured', () => {
     const shiftsResponse = (rows: { job: string; ticket: string }[]) => ({
       data: {

@@ -83,7 +83,7 @@ export default {
 
     // The dead-letter queue is "<write queue>-dlq" in both environments
     // (benevity-import-writes-dlq, benevity-import-writes-sandbox-dlq) — see
-    // src/consumer/deadLetters.ts (#60). Anything else is refused rather than guessed at.
+    // src/consumer/deadLetters.ts (GL#60). Anything else is refused rather than guessed at.
     const isDeadLetterQueue = batch.queue.endsWith(DLQ_SUFFIX);
     const queueName = queueBaseName(isDeadLetterQueue ? batch.queue.slice(0, -DLQ_SUFFIX.length) : batch.queue);
     if (queueName !== WRITE_QUEUE) {
@@ -117,7 +117,7 @@ export default {
   // Daily PII retention pass (D1 only, no Monday write, so the write switch does not gate it): raw Benevity rows are kept only for replay/debugging, so they're
   // emptied once the write has been in Monday long enough (or, for rows that never resolved,
   // after the longer unresolved-row window). Same shape as funraise-sync's scheduled handler.
-  // Then, while writes are `on`, the dead-letter sweep (#60) — which is a Monday write.
+  // Then, while writes are `on`, the dead-letter sweep (GL#60) — which is a Monday write.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const config = configFor(env);
     const dayMs = 24 * 60 * 60 * 1000;

@@ -127,7 +127,7 @@ dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
 (`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
 callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
 dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
-tree, with the language switcher's parser (issue #32); anything else is dropped. The footer
+tree, with the language switcher's parser (issue [GL#32](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/32)); anything else is dropped. The footer
 language picker sends `location.pathname + location.search` as `to`, so switching language on the
 sign-in page keeps `next`.
 
@@ -140,7 +140,7 @@ as gating the sandbox hostnames; that doesn't change the donor-auth decision.)
 
 **Rate-limit login requests** (per email and per IP) to blunt abuse of the email-sending step —
 this is the one place this Worker can be used to spam an inbox if left unguarded. Per IP: the
-`LOGIN_RATE_LIMITER` binding. Per address (`rateLimit` in config, issue #62): at most one login
+`LOGIN_RATE_LIMITER` binding. Per address (`rateLimit` in config, issue [GL#62](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/62)): at most one login
 email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSeconds` (900), and
 `emailDailyMax` (10) per rolling 24 hours. One atomic D1 statement checks and records
 (`src/db/loginAttempts.ts`), and only a request it lets through is recorded — so someone rotating
@@ -232,13 +232,13 @@ Routing destination). A live login-link request for a real sandbox People record
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
 * The emailed login link carries its token in the URL fragment
-  (`/auth/callback?lang=en#token=…`, issue #61): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
+  (`/auth/callback?lang=en#token=…`, issue [GL#61](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/61)): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
   anyone with log access could otherwise redeem an unclicked link (a letter link lives a week).
   `GET /auth/callback` stays inert — an inline script copies the token into the confirm form and
   strips it from the address bar, without submitting, under a CSP that allows only that script by
   hash; the `POST` consumes it. Without JavaScript the form posts no token and the donor sees the
-  invalid-link page. Links sent before #61 (`?token=…`) still work until they expire; drop that
-  branch in `routes.ts` once `auth.letterLinkTtlHours` has passed since the #61 deploy. Workers
+  invalid-link page. Links sent before [GL#61](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/61) (`?token=…`) still work until they expire; drop that
+  branch in `routes.ts` once `auth.letterLinkTtlHours` has passed since the [GL#61](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/61) deploy. Workers
   Logs still hold other URL secrets (`/webhooks/monday/letters?secret=`, `/verify/<card token>`),
   so keep log access (Workers observability, Logpush destinations) to the people who need it.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
@@ -274,7 +274,7 @@ Routing destination). A live login-link request for a real sandbox People record
   this is one host under a domain whose apex and siblings are run elsewhere, and preload is
   only possible for the apex. `/email/logo.png` alone is `Cross-Origin-Resource-Policy:
   cross-origin`, since webmail clients load it from their own origins.
-* Third-party JavaScript never runs on the portal's origin (issue #102). The one third-party
+* Third-party JavaScript never runs on the portal's origin (issue [GL#102](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/102)). The one third-party
   script, Double the Donation's `ddplugin.js`, is served only in
   `GET /:locale/portal/matching-gifts/search`. That document's CSP starts with
   `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox`, with no
@@ -340,7 +340,7 @@ the Donors board lets staff email a donor a "your letter is ready" notification 
 the portal home, not the letter content itself. That link's single-use token lives
 `auth.letterLinkTtlHours` (168 — a week; validated to at most 168), not the interactive login
 link's 15-minute `auth.magicLinkTtlMinutes`: donors open this email whenever they get to it, and a
-15-minute link was dead by then (issue #31). Always sends the most recently completed year with
+15-minute link was dead by then (issue [GL#31](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/31)). Always sends the most recently completed year with
 gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
 `taxLetter` is signed off, same as the portal-facing letters.
 
@@ -435,7 +435,7 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   template → the built-in copy *in their language* (`letterReady.*` keys exist across all ten
   locales). The subject line always follows the donor's language, and the magic link carries
   `&lang=<locale>` so the portal opens localized — same resolution as the login email.
-* **Employer ask (#127)** — while the portal's Employer field is on (`employerAnswerEnabled`),
+* **Employer ask ([GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127))** — while the portal's Employer field is on (`employerAnswerEnabled`),
   every letter-ready email ends with one localized line, "Does your employer match gifts? Tell
   us where you work.", linking to `/<locale>/portal/change-request?field=employer`. It's
   appended after the body, built-in or template, so a template doesn't need (and can't drop) it.
@@ -457,7 +457,7 @@ makes completed donors free. One deliberate limit: a donor the queue consumer ma
 the dedupe treats any existing row as handled. Once the underlying data is fixed, the staff
 button is the retry path (it requeues skipped rows).
 
-Sends are **at most once** per donor+year (issue #31): the consumer claims the row
+Sends are **at most once** per donor+year (issue [GL#31](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/31)): the consumer claims the row
 (`queued` → `sending`) before emailing and marks it `sent` after. If the send itself fails, the
 claim is released and the queue retries; if the email went out but the `sent` write failed, the
 row stays `sending` and nothing resends it — neither the retry, the cron, nor the staff button.
@@ -514,7 +514,7 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 `0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
 
 **Card tokens are stored in plaintext in D1 — deliberately, unlike session and magic-link
-tokens** (issue #32). The difference is that a card token is re-displayed: every dashboard load
+tokens** (issue [GL#32](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/32)). The difference is that a card token is re-displayed: every dashboard load
 redraws the card's QR code from the active token, so the Worker needs the token itself back, not
 just a way to recognize it. Session and login tokens are only ever *checked*, so a hash suffices.
 Storing card tokens hashed would therefore mean deriving or decrypting them from a new Worker
@@ -632,7 +632,7 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
    key — this value is served to every logged-in browser). Done for SVBC; a fork sets its own.
 ## v4.1 — Donor-supplied employer
 
-Design: `../docs/superpowers/specs/2026-11-16-donor-employer-answer-design.md` (issue #127). A
+Design: `../docs/superpowers/specs/2026-11-16-donor-employer-answer-design.md` (issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127)). A
 donor can tell SVBC where they work, and an answer that names a known Organization becomes their
 employer affiliation without a staff step.
 
@@ -758,7 +758,7 @@ what `../salesforce-import` loads from GW Volunteers: a connect-boards link to t
 board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
 (`volunteerJob`), and Status (`volunteerStatus`).
 
-An optional sixth id, `volunteerTicketType` (#115), names eventbrite-sync's Ticket Type column.
+An optional sixth id, `volunteerTicketType` ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)), names eventbrite-sync's Ticket Type column.
 When set, a shift's Job reads "Bike to Work Day — Shift 1", so one person's two shifts at one
 event show as two rather than as a duplicate row. Absent or `REPLACE_WITH_COLUMN_ID` shows the
 Job alone and doesn't gate the feature. Canceled sign-ups never show: they aren't in
@@ -974,7 +974,7 @@ Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types 
 `.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
 `tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
 and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
-say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+say nothing about the code. CI (`.github/workflows/workers.yml`) already runs `npm test` and
 `npm run typecheck`. The local preview's driver is `.claude/skills/run-member-portal/`.
 
 ## Future candidates

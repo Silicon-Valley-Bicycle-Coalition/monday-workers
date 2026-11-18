@@ -55,7 +55,7 @@ const boardName = argValue('--name') ?? 'Change Requests';
 const config = JSON.parse(readFileSync(join(HERE, '..', 'config', 'svbc.json'), 'utf8'));
 const { apiUrl } = config.monday;
 
-// The Worker's own copy of the canonical Monday transport (#35): retries rate limits and Monday
+// The Worker's own copy of the canonical Monday transport (GL#35): retries rate limits and Monday
 // blips, times out hung requests, and never blindly re-runs a create. Imported as TypeScript —
 // needs a Node with built-in type stripping (22.18+ / 23.6+).
 const monday = new MondayGraphQL(apiUrl, token);

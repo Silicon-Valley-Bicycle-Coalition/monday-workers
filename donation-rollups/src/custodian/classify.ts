@@ -45,7 +45,7 @@ function diff(want: GiftClassification, tier: string | null, company: string | n
 }
 
 // The columns classify reads from a Donations board, or null when the board isn't classified.
-// Exported for the custodian's shared board read (boardReads.ts, issue #90).
+// Exported for the custodian's shared board read (boardReads.ts, issue GL#90).
 export function classifyReadColumns(board: DonationBoardConfig): string[] | null {
   const cl = board.columns.classification;
   if (!cl) return null;

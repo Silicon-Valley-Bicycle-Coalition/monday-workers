@@ -33,7 +33,7 @@ export interface DonationRecord {
   sponsorshipCycle?: string | null; // trimmed text, null when blank
   inKindValueCents?: number | null; // parseAmountCents of the cell, null when blank
   pipelineItemId?: string | null; // first linked id across sponsorshipPipelineLinks, null when none
-  // The item is archived: its board_relation columns read back empty (issue #26), so link-derived facts are unreliable.
+  // The item is archived: its board_relation columns read back empty (issue GL#26), so link-derived facts are unreliable.
   archived?: boolean;
 }
 
@@ -114,11 +114,11 @@ export interface DonationRollupsMondayClient {
   // The owner (Donor or Organization) a Donation item's connect column currently points
   // at — null if the Donation is unlinked (nothing to recompute).
   getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null>;
-  // The same link plus the owner's board in ONE query (issue #89), replacing the
+  // The same link plus the owner's board in ONE query (issue GL#89), replacing the
   // getDonorLinkForDonation + getItemBoardId pair on the hot path. ownerBoardId is null when the
   // owner is deleted or no longer returned — what getItemBoardId reads as gone.
   getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null>;
-  // Why a Donation's Donor link read back empty (issue #26): 'archived' (board_relation reads
+  // Why a Donation's Donor link read back empty (issue GL#26): 'archived' (board_relation reads
   // empty on archived items — the gift still counts), 'deleted' (gone, or no longer returned),
   // or 'active' (staff genuinely cleared the link — it no longer counts for anyone).
   getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'>;
@@ -172,8 +172,8 @@ export interface DonationRollupsMondayClient {
   createUpdate(itemId: number, body: string): Promise<void>;
 }
 
-// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
-// Queue-consumer tuning (#35), same as the other queue Workers: a few quick in-process retries
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
+// Queue-consumer tuning (GL#35), same as the other queue Workers: a few quick in-process retries
 // ride out a Monday blip or the per-minute complexity budget. Anything longer surfaces as a
 // MondayRateLimitError carrying Monday's hint, and the consumer defers the batch by it
 // (consumer/quota.ts) — including the daily limit, which the transport never retries in-process.
@@ -182,7 +182,7 @@ export interface DonationRollupsMondayClient {
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
 // Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
-// (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds
+// (issue GL#27). The consumer retries these after a delay instead of immediately; retryInSeconds
 // is Monday's own hint (extensions.retry_in_seconds, a Retry-After header, or the legacy
 // "reset in N seconds" message) when it gave one. `daily` marks DAILY_LIMIT_EXCEEDED, which
 // resets at midnight UTC (developer.monday.com/api-reference/docs/rate-limits) rather than
@@ -243,7 +243,7 @@ function checkboxChecked(value: string | null | undefined): boolean {
 }
 
 // The Donations columns the rollcall duty's credits read needs. Exported so the custodian's shared
-// board read (custodian/boardReads.ts, issue #90) requests them alongside classify's.
+// board read (custodian/boardReads.ts, issue GL#90) requests them alongside classify's.
 export function donationCreditColumnIds(cfg: RollCallConfig['donations']): string[] {
   const c = cfg.columns;
   return [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
@@ -415,7 +415,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         // A blank Amount must be treated as malformed like a blank Date — never as $0, which
         // would refresh the ledger's real (bootstrap-loaded) amount down to $0 on the next
         // recompute (refreshFacts would see a changed amount and write it). Parsed straight
-        // to integer cents (issue #27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
+        // to integer cents (issue GL#27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
         const amountCents = parseAmountCents(byId.get(columns.amount));
         const dateISO = byId.get(columns.date) ?? '';
         const status = statusLabel(statusCell?.text, statusCell?.value) ?? '';

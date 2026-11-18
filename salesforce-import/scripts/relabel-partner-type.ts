@@ -1,4 +1,4 @@
-// One-off (#55): replaces the Organizations text Partner Type with a single-select dropdown of the
+// One-off (GL#55): replaces the Organizations text Partner Type with a single-select dropdown of the
 // approved ten values, filled from the text column. Monday can't convert a column's type, so the
 // dropdown is a new column placed beside the old one; the swap renames them once every write landed.
 //

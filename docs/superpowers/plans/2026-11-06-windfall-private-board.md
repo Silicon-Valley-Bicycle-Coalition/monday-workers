@@ -424,4 +424,4 @@ Expected: exit 0. A person on People shows no Windfall column to any staff membe
 
 - [ ] **Step 7: Resume, and finish up**
 
-Run `node scripts/flags.mjs people-reclassification writes on --env production`. Re-run `mark-read-only-columns.mjs --workspace 18201685 --apply`. Confirm the next reclassification pass moves people without a blocked-move error. Report the activity-log and restore findings to David, and leave #81 open for the policy update.
+Run `node scripts/flags.mjs people-reclassification writes on --env production`. Re-run `mark-read-only-columns.mjs --workspace 18201685 --apply`. Confirm the next reclassification pass moves people without a blocked-move error. Report the activity-log and restore findings to David, and leave [GL#81](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/81) open for the policy update.

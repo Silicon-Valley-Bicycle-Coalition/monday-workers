@@ -1,4 +1,4 @@
-// #50: measures what limits the load's link and archive passes, on a SANDBOX workspace only.
+// GL#50: measures what limits the load's link and archive passes, on a SANDBOX workspace only.
 //
 // Creates two scratch boards (people + donations with a connect column), then times
 // change_multiple_column_values (the load's link write) and archive_item (its archive) at several

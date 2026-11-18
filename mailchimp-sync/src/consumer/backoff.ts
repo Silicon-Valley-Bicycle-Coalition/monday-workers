@@ -2,7 +2,7 @@ import { MailchimpRateLimitError } from '../mailchimp/client';
 import { MondayApiError } from '../monday/client';
 import { retryDelaySeconds as sharedRetryDelaySeconds } from '../flags';
 
-// Retry backoff (#35, then the write switch): a bare message.retry() redelivers almost
+// Retry backoff (GL#35, then the write switch): a bare message.retry() redelivers almost
 // immediately, so a rate-limit burst would burn the retries within seconds. The base delay is the
 // fleet-wide curve in flags.ts (60 s doubling to an hour, across wrangler.jsonc's max_retries of
 // 100 — about four days of cover); this file only supplies the upstream hint.

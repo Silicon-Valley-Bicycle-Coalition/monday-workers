@@ -14,7 +14,7 @@ export interface LoggedContactReport { planned: number; moved: number; failed: n
 
 const MAX_CONSECUTIVE_FAILURES = 5;
 
-// How far before the last clean run a daily run starts reading Activities (Logged) (#101). Covers
+// How far before the last clean run a daily run starts reading Activities (Logged) (GL#101). Covers
 // an activity logged a little after the date it's dated (a call written up the next week) and the
 // time-zone edge of Monday's date rule. Anything dated earlier than this but logged since waits for
 // the next quarterly or threshold pass, which reads the whole window.
@@ -86,7 +86,7 @@ async function moveAll(
   }, { logged: 0 }, sinceISO);
 
   // Ask Monday which board each candidate is on, rather than paging all of People (Historical) to
-  // find them (#101). Someone on People, deleted or archived isn't due.
+  // find them (GL#101). Someone on People, deleted or archived isn't due.
   const due: { itemId: string; latestActivity: string }[] = [];
   const candidates = [...latest.keys()];
   for (let i = 0; i < candidates.length; i += ITEMS_BY_ID_LIMIT) {

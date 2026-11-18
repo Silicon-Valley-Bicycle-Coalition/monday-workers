@@ -98,7 +98,7 @@ describe('loadEventRegistrations', () => {
     expect(listings[0]!.donorName).toBe('donor-1');
   });
 
-  // #99: the name lookup and the per-donor reads are independent, so all go out at once.
+  // GL#99: the name lookup and the per-donor reads are independent, so all go out at once.
   it('issues the name lookup and every donor read before any of them answers', async () => {
     const monday = fakeMonday({});
     const release: (() => void)[] = [];

@@ -89,7 +89,7 @@
 
 - [ ] **Step 4: Run them and see them pass.** Same command. Expected: PASS.
 
-- [ ] **Step 5: Commit.** `git commit -m "feat(member-portal): employer name matching and affiliation plan (#127)"`
+- [ ] **Step 5: Commit.** `git commit -m "feat(member-portal): employer name matching and affiliation plan (GL#127)"`
 
 ### Task 2: Config, types and the Monday client
 
@@ -146,7 +146,7 @@
 
 - [ ] **Step 5: Verify.** Run `npm test` and `npm run typecheck`. Expected: all pass.
 
-- [ ] **Step 6: Commit.** `git commit -m "feat(member-portal): employer answer config and Monday affiliation calls (#127)"`
+- [ ] **Step 6: Commit.** `git commit -m "feat(member-portal): employer answer config and Monday affiliation calls (GL#127)"`
 
 ### Task 3: Portal form, submit and matching-gifts link
 
@@ -176,7 +176,7 @@
 
 - [ ] **Step 4: Verify.** Run `npm test` and `npm run typecheck`. Expected: pass.
 
-- [ ] **Step 5: Commit.** `git commit -m "feat(member-portal): donors can submit their employer (#127)"`
+- [ ] **Step 5: Commit.** `git commit -m "feat(member-portal): donors can submit their employer (GL#127)"`
 
 ### Task 4: Writer applies the answer
 
@@ -221,7 +221,7 @@
 - [ ] **Step 5: Verify.**
   - `npm test`, `npm run typecheck`, `node ../scripts/check-log-safety.mjs`, `node ../scripts/check-worker-flags.mjs --strict`. Expected: all pass, and `flags.ts` is unchanged.
 
-- [ ] **Step 6: Commit.** `git commit -m "feat(member-portal): writer applies a donor's employer answer (#127)"`
+- [ ] **Step 6: Commit.** `git commit -m "feat(member-portal): writer applies a donor's employer answer (GL#127)"`
 
 ### Task 5: Docs
 
@@ -229,4 +229,4 @@
 - Modify: `member-portal/README.md` (new "v4.1 — Donor-supplied employer" section after v4: behaviour, labels, config keys, the writer's Affiliations writes, sandbox check from the spec's Testing section), `docs/uat/member-portal.md` (a UAT case: matched, unmatched, previous Primary), root `README.md` status table row for member-portal if it lists features.
 
 - [ ] **Step 1: Write the docs.** Copy facts from the spec and plan only. Do not describe the token as scoped.
-- [ ] **Step 2: Commit.** `git commit -m "docs(member-portal): document donor-supplied employer (#127)"`
+- [ ] **Step 2: Commit.** `git commit -m "docs(member-portal): document donor-supplied employer (GL#127)"`

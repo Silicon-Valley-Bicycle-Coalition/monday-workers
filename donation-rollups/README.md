@@ -3,7 +3,7 @@
 **Staff UAT script:** [`docs/uat/donation-rollups.md`](../docs/uat/donation-rollups.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
 **Status (2026-11-02):** the sandbox config targets the **CRM Sandbox v4** workspace (18210301)
-since 2026-10-28 (4fe2c97, !251). The production config was filled 2026-11-01 from
+since 2026-10-28 (4fe2c97, [GL!251](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/251)). The production config was filled 2026-11-01 from
 `salesforce-import`'s production load (1526652; Donor Roll Call board added 2026-11-02, fdba786);
 this repo doesn't record a production deploy yet. The sandbox is one workspace (CRM Sandbox v4) since 2026-11-11; every Worker's `config/sandbox.json` names the v4 boards. Older history follows.
 **Running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
@@ -43,7 +43,7 @@ readable by id — which is exactly what the recompute path does (`items(ids: [.
 historical gifts still count. Corollary: `donation_links` rows for archived donations can never
 be re-derived from Monday — the importer's artifacts are their only source (docs/20).
 
-**When a gift leaves an owner (issue #26).** An empty Donor link means one of three things, and
+**When a gift leaves an owner (issue [GL#26](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/26)).** An empty Donor link means one of three things, and
 the consumer asks Monday for the item's `state` to tell them apart:
 
 - **Archived:** the gift still counts. The D1 owner is used as before.
@@ -60,12 +60,12 @@ Deletes only arrive if the board is subscribed to `item_deleted`, so `scripts/se
 now also subscribes `item_deleted`, `item_archived` and `item_restored`. Re-run it once on
 existing boards; it only adds the missing subscriptions.
 
-**Deploy order for #26:** apply `0008_gifts_removed_at.sql` to the remote D1 database
+**Deploy order for [GL#26](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/26):** apply `0008_gifts_removed_at.sql` to the remote D1 database
 (`wrangler d1 migrations apply svbc-donation-rollups --remote`) **before** merging. `refreshFacts`
 and every ledger total name `removed_at`, so an unmigrated database breaks every consumer message
 the moment the build goes live, the same hazard as 0007 below. Then re-run `setup-webhooks.mjs`.
 
-**Migration 0015 (issue #90)** only adds indexes (for the requeue duty's `listStuck` and the
+**Migration 0015 (issue [GL#90](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/90))** only adds indexes (for the requeue duty's `listStuck` and the
 sponsorships backfill's scan); no code depends on it, so it can go before or after the deploy.
 Apply it with the same `migrations apply` command.
 
@@ -187,7 +187,7 @@ backfill) would silently lose recomputes the same way.
    further out comes back once mid-way, fails without touching Monday, and defers again), and
    once one message in a batch hits it the rest of that batch is deferred to the same moment
    without any Monday calls. Monday rate-limit and complexity-budget errors get the same
-   batch-wide deferral (issue #27): `delaySeconds` of 60 s doubling per delivery attempt, never
+   batch-wide deferral (issue [GL#27](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/27)): `delaySeconds` of 60 s doubling per delivery attempt, never
    less than Monday's `retry_in_seconds` / `Retry-After` hint, capped at 12 h; a
    `DAILY_LIMIT_EXCEEDED` with no hint defers to midnight UTC (Monday's daily reset) exactly like
    the D1 quota. A message deferred behind a failing batch sibling still spends one of its own
@@ -451,13 +451,13 @@ Tier (never downgrades), so a staff-granted comp or Lifetime is never shortened;
 if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are derived facts
 **written outright** — a staff edit to them is overwritten on the next recompute. All eight
 writes, and the gift stamps, are compare-before-write. The gift's Term Start, Term End and
-Membership Type columns are in the webhook's ignored set (issue #89), so a stamp's own webhook
+Membership Type columns are in the webhook's ignored set (issue [GL#89](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/89)), so a stamp's own webhook
 triggers no recompute at all; a staff edit to one is corrected on the gift's next recompute rather
 than immediately. The owner write is also hash-skipped: the rollup values and the
 description are each hashed (`owner_recomputes.values_hash` / `description_hash`, migration 0014)
-and a write identical to the last one that landed is skipped (issue #88).
+and a write identical to the last one that landed is skipped (issue [GL#88](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/88)).
 
-Per-gift Monday cost (issue #89): the Donor link and its owner's board come back in one query; a
+Per-gift Monday cost (issue [GL#89](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/89)): the Donor link and its owner's board come back in one query; a
 webhook for a non-link column carries its `columnId`, so when D1 already links the gift and the
 owner was fetched since, it is coalesced with no Monday call; and each webhook is enqueued with a
 20 s delay so a burst of edits lands before the first read and the rest coalesce on it.
@@ -510,7 +510,7 @@ owner was fetched since, it is coalesced with no Monday call; and each webhook i
   Volunteers board gets **no** subscription — it is record-keeping. An Attendee re-point
   recomputes both the old and the new person. A registration with no Event link or no Event Start
   is stored as non-qualifying, not a fault; an archived registration keeps its last read (archived
-  items read empty board relations — the same trap as archived gifts, issue #26), and one read
+  items read empty board relations — the same trap as archived gifts, issue [GL#26](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/26)), and one read
   back with state `deleted` is treated as deleted. The all=true load stores archived and deleted
   registrations as non-qualifying, so a row loaded earlier stops counting.
 * **The `membership` duty.** Every run (nightly at 09:00 UTC, and first thing in every all=true
@@ -569,7 +569,7 @@ owner was fetched since, it is coalesced with no Monday call; and each webhook i
 * **Funraise gifts** qualify only because `funraise-sync` stamps Gift Type = Donation on the
   items it creates (see that README) and only once its Date column transform lands — a gift
   with an empty Date never starts a term.
-* **Donor Advised Fund gifts** qualify like a Donation (#56). Staff entered DAF checks as Donation
+* **Donor Advised Fund gifts** qualify like a Donation ([GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/56)). Staff entered DAF checks as Donation
   before that Gift Type existed, and those renewed; leaving the new type out would lapse the same
   donors. Matching is an exact string, so the label has to be typed as written.
 * Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
@@ -613,7 +613,7 @@ loaded 2026-08-31; 32,739 Received, 33,541 archived).
 The **custodian** runs its duties (listed below) from one daily cron (09:00 UTC; `dutiesForDate` gates them)
 and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify|membership|recurring|rollcall|sponsorships}`
 and `GET /custodian/status` (last run per duty, from `custodian_runs`), each with
-`Authorization: Bearer <CUSTODIAN_SECRET>` (issue #63 — its own secret, never the webhook's,
+`Authorization: Bearer <CUSTODIAN_SECRET>` (issue [GL#63](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/63) — its own secret, never the webhook's,
 which sits in Monday's webhook URL; a `?secret=` query parameter is ignored; unset = every
 custodian route 401s):
 
@@ -628,7 +628,7 @@ Sandbox: [Worker Alerts (sandbox)](https://bikesiliconvalley.monday.com/boards/1
 Updates notify only that item's subscribers, so subscribe to be told. Don't reuse a request or
 ticket as the sink, and don't close the production item.
 
-The cron run shares two things across its duties (issue #90). **Reads:** each board several
+The cron run shares two things across its duties (issue [GL#90](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/90)). **Reads:** each board several
 duties page (People and People (Historical) for membership, recurring and rollcall; Donations for
 classify and rollcall's credits) is read once, with the union of their columns
 (`src/custodian/boardReads.ts`). **Writes:** one Monday write budget for the whole run,
@@ -644,7 +644,7 @@ hand over HTTP reads for itself and keeps only its own cap.
 * **sweep** (July 1) — recomputes owners so This/Last Year splits roll over at the fiscal boundary
   (closes the staleness gap in Not-yet-done). Its messages carry `sweep: true`, so the consumer
   never coalesces them away, even when the owner's representative gift has an old open pending row.
-  Scoped and paced for Monday's 10,000 calls/day account cap (issue #88): the fiscal-start sweep
+  Scoped and paced for Monday's 10,000 calls/day account cap (issue [GL#88](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/88)): the fiscal-start sweep
   covers only owners with a live gift in the two fiscal years before the new one, the ones whose
   This/Last Year move (plus sponsorship owners when `sponsorships.yearBasis` is `fiscal`); a sweep
   on any other day, or `?all=true`, covers everyone. Each run enqueues at most
@@ -654,13 +654,13 @@ hand over HTTP reads for itself and keeps only its own cap.
   about 1,590 rollover owners each (measured 2026-11-12 for the 2027-07-01 sweep), production
   done in 2 days and sandbox in 4, with day 1 at most ~8,500 calls across both.
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
-  comparison — values written before issue #27 carry float noise; since then every money column
+  comparison — values written before issue [GL#27](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/27) carry float noise; since then every money column
   is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
   pass 2026-08-31: 6,886 owners, zero mismatches. It reads every configured board's columns, since
   `owner_board_id` stays stale after an owner moves boards until their next recompute.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
-  verification" above). It also prunes (issue #90) `written`/`dropped` pending rows older than 30
+  verification" above). It also prunes (issue [GL#90](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/90)) `written`/`dropped` pending rows older than 30
   days and `custodian_runs` rows older than 180 days, always keeping each duty's latest run.
 * **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
   plus Acknowledgment Tier where configured (see "Chartable gift labels" below), and a blank Fiscal
@@ -795,7 +795,7 @@ configured, so every deployment, forks included, must apply 0012 before the new 
 **Duties.** The custodian duty `sponsorships` backfills the facts nightly while there is work
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
 `yearBasis: "calendar"` a January 1 sweep rolls the Organizations' window over. It recomputes only
-Organizations owners with a `giftTypes`/`inKindGiftTypes` gift (issue #88: the full sweep costs tens
+Organizations owners with a `giftTypes`/`inKindGiftTypes` gift (issue [GL#88](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/88): the full sweep costs tens
 of thousands of Monday calls against the account's daily cap). With `yearBasis: "fiscal"` the
 fiscal-start sweep includes them; a manual sweep on any other day, or with `?all=true`, covers
 every owner.
@@ -827,7 +827,7 @@ only); only the Organizations-owned in-kind rows matter for the section.
 **Rollout, in order** (after merge; none of it is automated):
 
 1. **Before merging or deploying**, apply migration 0012 to the remote D1s (sandbox
-   `svbc-donation-rollups-sandbox` and production `svbc-donation-rollups`): `.gitlab-ci.yml`
+   `svbc-donation-rollups-sandbox` and production `svbc-donation-rollups`): `workers.yml`
    deploys the sandbox on merge to `main`, and an unmigrated D1 breaks every consumer message.
 2. Confirm the Item description widget on the production Organizations item view.
 3. Set `donation-rollups:writes` per `docs/runbooks/migration-hold.md` (`scripts/flags.mjs`).
@@ -1173,7 +1173,7 @@ sandbox gets rebuilt before cutover:
 * `fiscalYear` — required, `{ "startMonth": 7, "timeZone": "America/Los_Angeles" }` for SVBC
   (July–June, named for the year it ends in, matching the Fiscal Year Ending column). "Today" for
   This/Last Year and for the custodian's sweep (day 1 of `startMonth`) and archive (day 15) is
-  read in `timeZone` — before issue #27 it was UTC, so This Year rolled over at 5pm Pacific on
+  read in `timeZone` — before issue [GL#27](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/27) it was UTC, so This Year rolled over at 5pm Pacific on
   June 30. `startMonth` also derives a gift's fiscal year from its Date when the column is blank.
 * `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
@@ -1247,11 +1247,11 @@ sandbox gets rebuilt before cutover:
   (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
   the production-named Worker once production boards exist) with the
   shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
-  Second factor (issue #110): with `MONDAY_SIGNING_SECRET` set, the `Authorization` JWT Monday
+  Second factor (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)): with `MONDAY_SIGNING_SECRET` set, the `Authorization` JWT Monday
   signs app-created webhooks with is verified too, and `MONDAY_WEBHOOK_JWT_REQUIRED = "true"`
   rejects unsigned deliveries; rollout table and operator steps in the root README, "Monday's
   signed webhook JWT". The URL secret is compared in
-  constant time and **fails closed** since issue #27: with the secret unset or empty every
+  constant time and **fails closed** since issue [GL#27](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/27): with the secret unset or empty every
   delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
   era boards' 18 old ones). Pass `--config config/sandbox.json` to subscribe the sandbox
@@ -1262,7 +1262,7 @@ sandbox gets rebuilt before cutover:
   secret means rotate (`wrangler secret put MONDAY_WEBHOOK_SECRET`, redeploy, re-run
   `setup-webhooks.mjs`), not recover.
 * **Custodian routes** — `CUSTODIAN_SECRET`, a separate random value sent as
-  `Authorization: Bearer <secret>` (issue #63). It never appears in a URL, so it stays out of
+  `Authorization: Bearer <secret>` (issue [GL#63](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/63)). It never appears in a URL, so it stays out of
   Monday's config and request logs, and rotating it (`wrangler secret put CUSTODIAN_SECRET`)
   touches no webhook subscription. Same constant-time, fail-closed check as the webhook.
 * **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both
@@ -1273,10 +1273,10 @@ sandbox gets rebuilt before cutover:
 
   | Setting | Production (`svbc-donation-rollups`) | Sandbox (`--env sandbox`) | Operator scripts (`scripts/*.mjs`) |
   | --- | --- | --- | --- |
-  | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell; `setup-webhooks.mjs` prefers `MONDAY_AUTH_URL` + `START_KEY` (the broker's `/oauth/webhooks`, so deliveries are signed, #110) |
+  | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell; `setup-webhooks.mjs` prefers `MONDAY_AUTH_URL` + `START_KEY` (the broker's `/oauth/webhooks`, so deliveries are signed, [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)) |
   | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
   | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
-  | `MONDAY_SIGNING_SECRET` (optional, #110) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
+  | `MONDAY_SIGNING_SECRET` (optional, [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
 
   With neither the binding nor the secret, building the Monday client throws a config error
   naming both, rather than sending an empty `Authorization` header. Local `wrangler dev` has no
@@ -1371,8 +1371,8 @@ Task 9.
 root directory `/donation-rollups`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:donation-rollups` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 ## Deploying: the write switch
 

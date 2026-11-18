@@ -104,7 +104,7 @@ describe('runClassify', () => {
     expect(report.summary).toMatch(/run classify again/);
   });
 
-  // Issue #90: the cron run's writes share one budget across duties.
+  // Issue GL#90: the cron run's writes share one budget across duties.
   it('stops at the run\'s shared write budget and reports the rest as remaining', async () => {
     const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
     const { client, writes } = fakeClient(rows, 500);

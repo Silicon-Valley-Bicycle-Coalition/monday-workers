@@ -8,7 +8,7 @@ export interface CustodianAppDeps {
   // custodianDepsFor) — never called when the mode says skip.
   runDuty(duty: Duty, opts: DutyOptions, disposition: 'run' | 'dry-run'): Promise<DutyReport>;
   lastRuns(): Promise<unknown>;
-  // CUSTODIAN_SECRET, presented as `Authorization: Bearer <secret>` (issue #63) — its own
+  // CUSTODIAN_SECRET, presented as `Authorization: Bearer <secret>` (issue GL#63) — its own
   // secret, not the webhook's: that one rides in Monday's webhook URL, so in Monday's config and
   // request logs. Checked the same constant-time, fail-closed way: an unset/empty secret
   // disables these routes entirely.

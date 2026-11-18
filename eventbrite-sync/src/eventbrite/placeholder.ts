@@ -6,7 +6,7 @@ const PLACEHOLDER = /^(info requested\s*)+$/i;
 // One @, a dot in the domain, and none of the characters an unquoted address can't hold. Eventbrite
 // also gives some attendees (canceled ones, and at least one still attending) a generated stand-in,
 // "[xxxx-xxxxxxx-<digits>]-<digits>@…", that Monday's email column rejects as "email is not valid",
-// failing the whole row write, Status and Ticket Type included (#115). Treated like a missing email.
+// failing the whole row write, Status and Ticket Type included (GL#115). Treated like a missing email.
 const PLAIN_ADDRESS = /^[^\s@[\]()<>,;:"\\]+@[^\s@[\]()<>,;:"\\]+\.[^\s@[\]()<>,;:"\\]+$/;
 
 export function realEmail(value: unknown): string | null {

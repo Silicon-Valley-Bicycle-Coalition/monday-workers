@@ -6,12 +6,12 @@
 **Prior art:** `funraise-sync` (webhook → D1 ledger → queue → Monday write, adopt-before-create,
 first-write stamps, the sandbox environment); `benevity-import` (donor matching by email);
 `2026-09-18-funraise-subscriptions-poller-design.md` (why Funraise can't feed event revenue);
-`2026-09-18-sandbox-environment-design.md`; private planning repo issue #56 (the decision this
+`2026-09-18-sandbox-environment-design.md`; private planning repo issue [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56) (the decision this
 implements) and `migration-plan.md` "Eventbrite".
 
 ## Context
 
-**Decision, 2026-09-30 (migration repo #56): Eventbrite ticket revenue counts as giving.** After
+**Decision, 2026-09-30 (migration repo [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56)): Eventbrite ticket revenue counts as giving.** After
 the Oct 9–11 cutover every paid Eventbrite order becomes a Donations item with Status
 `Received` and Gift Type `Event Ticket` — the same labels `funraise-sync` writes for a paid
 Funraise ticket — linked to the buyer on People by email like every other Worker here.
@@ -131,7 +131,7 @@ paid order.
    order already on the board is always updated, even if its amount is now 0, so a refund can
    never be masked by the skip.
 7. **Gift date = the order's `created`**, normalized to the Pacific calendar day with the same
-   `toISODate` rule as `funraise-sync` (#25); Fiscal Year Ending is derived from that same date on
+   `toISODate` rule as `funraise-sync` ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)); Fiscal Year Ending is derived from that same date on
    first write.
 8. **Item name = `{buyer} - {event}`** (config `itemNameTemplate`; placeholders `{buyer}`,
    `{event}`, `{orderId}`), e.g. `Jane Rider - Bike Summit 2026`, mirroring Funraise's
@@ -371,5 +371,5 @@ then arrive as `refunded` and are written `Refunded`.
   payload `api_url` + `config`).
 * `funraise-sync/` — route, ledger, consumer, matching, README "Adopt before create" and "The
   Funraise delivery, as actually sent".
-* Private planning repo: issue #56 (the decision), `migration-plan.md` "Eventbrite" and the
+* Private planning repo: issue [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56) (the decision), `migration-plan.md` "Eventbrite" and the
   Event Registrations Worker assignment.

@@ -7,7 +7,7 @@ Sandbox *under their production names* — gain a `sandbox` Wrangler environment
 name, D1, queues, secrets, and `config/sandbox.json`, so `config/svbc.json` returns to a
 production-only file and the two production names are freed for the October cutover.
 
-**Architecture:** Same shape as step 1 (`donor-portal`, MR !74): `src/environment.ts`
+**Architecture:** Same shape as step 1 (`donor-portal`, MR [GL!74](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/74)): `src/environment.ts`
 (copied verbatim) selects `config/sandbox.json` or `config/svbc.json` at request time from the
 `ENVIRONMENT` var, memoized per environment; `wrangler.jsonc` gains an `env.sandbox` block whose
 queues carry a `-sandbox` suffix; `config/split.test.ts` asserts the two configs share no id and

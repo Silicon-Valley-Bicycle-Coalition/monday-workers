@@ -12,7 +12,7 @@ describe('toISODate', () => {
     expect(toISODate('1599067880174')).toBe('2020-09-02');
   });
 
-  // #25: dates were the UTC day, so a gift after ~5 pm Pacific on June 30 or Dec 31 landed in
+  // GL#25: dates were the UTC day, so a gift after ~5 pm Pacific on June 30 or Dec 31 landed in
   // the next fiscal/calendar year, disagreeing with migrated Salesforce CloseDates (a local date).
   it('dates an evening-Pacific gift on June 30 as June 30, not July 1 (fiscal-year boundary, PDT)', () => {
     // 2026-06-30 18:30 PDT = 2026-07-01T01:30:00Z

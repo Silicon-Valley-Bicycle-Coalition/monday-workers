@@ -341,7 +341,7 @@ describe('HttpMondayClient — affiliation model reads', () => {
   });
 });
 
-// Issue #27: Monday rate-limit and complexity-budget errors surface as MondayRateLimitError,
+// Issue GL#27: Monday rate-limit and complexity-budget errors surface as MondayRateLimitError,
 // carrying Monday's own retry hint when it gave one, so the consumer can delay the retry.
 describe('Monday rate-limit errors', () => {
   function clientResponding(body: unknown, init: ResponseInit = { status: 200 }): HttpMondayClient {
@@ -406,7 +406,7 @@ describe('Monday rate-limit errors', () => {
   });
 });
 
-// #35: the client runs on the canonical transport (src/monday/graphql.ts).
+// GL#35: the client runs on the canonical transport (src/monday/graphql.ts).
 describe('HttpMondayClient transport', () => {
   function recordingFetch(response: () => Response) {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response()));

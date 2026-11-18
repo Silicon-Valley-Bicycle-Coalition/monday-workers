@@ -51,7 +51,7 @@ export interface ProcessBatchDeps {
   affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
-  // For the owner a moved gift left (issue #26). Optional so tests and forks without it still
+  // For the owner a moved gift left (issue GL#26). Optional so tests and forks without it still
   // run; production wires RECOMPUTE_QUEUE in index.ts.
   queue?: { send(message: RecomputeQueueMessage): Promise<void> };
   now?: Date; // injectable for tests; defaults to the real current time
@@ -110,7 +110,7 @@ async function runBatch(
   depsFor: (message: QueueMessageLike<RecomputeQueueMessage>) => { deps: ProcessBatchDeps; dryRun: boolean } | null,
 ): Promise<void> {
   // Once D1 has refused a query for the day, or Monday has said the token's budget is spent (or
-  // is down: a 5xx or timeout, #101), every later message in this batch would fail the same way after spending Monday calls of
+  // is down: a 5xx or timeout, GL#101), every later message in this batch would fail the same way after spending Monday calls of
   // its own — defer them all to the same moment instead. A deferred sibling's retry() still
   // counts against its own max_retries, same as the D1-quota deferral; one that runs out lands
   // in the DLQ, where processDeadLetters marks it failed and it can be re-driven.
@@ -165,7 +165,7 @@ async function runBatch(
         console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${batchDelaySeconds}s (to midnight UTC)`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else if (err instanceof MondayRateLimitError) {
-        // Issue #27: retrying straight back into an exhausted complexity budget just burns the
+        // Issue GL#27: retrying straight back into an exhausted complexity budget just burns the
         // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt. The
         // daily call limit with no hint resets at midnight UTC — defer to it exactly as the D1
         // quota does. A hinted delay (midnight, or Monday's own) is capped at Queues' 12 h — a
@@ -178,7 +178,7 @@ async function runBatch(
         console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else if (isMondayOutage(err)) {
-        // #101: Monday down (a 5xx, timeout or network error after the transport's own attempts),
+        // GL#101: Monday down (a 5xx, timeout or network error after the transport's own attempts),
         // not just rate-limiting. Every later message would spend those attempts again — defer the
         // rest of the batch at this message's backoff, exactly as for a rate limit.
         batchDelaySeconds = retryDelaySeconds(message.attempts);
@@ -206,7 +206,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
-  // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
+  // An owner-keyed message: a gift moved away from this owner (issue GL#26). Recompute it
   // unconditionally — its totals still include the gift until it does.
   if (message.ownerItemId !== undefined && message.ownerBoardId !== undefined) {
     if (await ownerIsGone(deps, message.ownerItemId)) return;
@@ -222,7 +222,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     throw new NonRetryableError(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
-  // Non-link column change on a donation D1 already links (issue #89): coalesce from the D1 link
+  // Non-link column change on a donation D1 already links (issue GL#89): coalesce from the D1 link
   // alone, with no Monday call. A miss falls through to the full path below.
   if (message.columnId !== undefined && message.columnId !== sourceBoard.columns.donorLink && message.sweep !== true) {
     const known = await deps.linksStore.getLinkForDonation(donationItemId);
@@ -233,7 +233,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   let ownerItemId = donorLink?.ownerItemId ?? null;
   let ownerBoardId = donorLink?.ownerBoardId ?? null;
   if (ownerItemId === null) {
-    // An empty link means one of three things (issue #26), and only one of them keeps the gift
+    // An empty link means one of three things (issue GL#26), and only one of them keeps the gift
     // on its owner. An archived item's board_relation reads back empty (see
     // projections/giftHistory.ts), and the July sweep's representative gift per owner is often
     // archived — fall back to the owner D1 already knows so lapsed donors still get their
@@ -284,7 +284,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   if (message.sweep !== true && await coalesceIfCovered(deps, donationItemId,
     { ownerItemId, ownerBoardId }, link.changed, link.updatedAt)) return;
 
-  // The gift moved here from another owner (issue #26): that owner's totals still include it.
+  // The gift moved here from another owner (issue GL#26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
   // blow the per-invocation subrequest budget max_batch_size is sized for. Queued *before* the
   // inline recompute: the link row already says the new owner, so if that recompute throws and
@@ -300,7 +300,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   });
 }
 
-// The coalescing rule above, shared by the D1-only shortcut (issue #89) and the full path. True
+// The coalescing rule above, shared by the D1-only shortcut (issue GL#89) and the full path. True
 // when the donation was acked as covered by an earlier recompute of its owner.
 async function coalesceIfCovered(
   deps: ProcessBatchDeps, donationItemId: string, owner: { ownerItemId: string; ownerBoardId: string },
@@ -319,7 +319,7 @@ async function coalesceIfCovered(
   return true;
 }
 
-// Issue #26: a deleted donation, or an active one whose Donor link was cleared, must stop counting
+// Issue GL#26: a deleted donation, or an active one whose Donor link was cleared, must stop counting
 // toward the owner D1 last linked it to. Drop the link, take the gift out of the ledger's totals
 // (soft — a restore or re-link brings it back on its next recompute), then recompute that owner
 // here: this message has no other recompute to do, so it costs no more than a normal one.
@@ -354,7 +354,7 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
 
   const reg = await mondayClient.getRegistration(registrationItemId, board);
   if (reg !== null && reg.state === 'archived') {
-    // An archived item reads its board relations back empty (the archived-gift trap, issue #26),
+    // An archived item reads its board relations back empty (the archived-gift trap, issue GL#26),
     // so a re-read would wrongly unlink the attendee: keep the stored row as it was, recompute nobody.
     console.log(`donation-rollups consumer: registration "${registrationItemId}" is archived — keeping its last read`);
     await deps.pendingStore.updateStatus(registrationItemId, 'written', { writtenAt: new Date().toISOString() });
@@ -545,7 +545,7 @@ async function recomputeOwnerLeased(
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
       termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
       ...(sponsorshipsCfg !== null ? {
-        // archived: link columns read back empty (issue #26), so leave the stored event alone
+        // archived: link columns read back empty (issue GL#26), so leave the stored event alone
         sponsorshipEvent: d.archived ? undefined : (eventByGift.get(d.id) ?? ''),
         // undefined (leave stored) when the board has no In-kind Value column
         ...(d.inKindValueCents !== undefined ? { inKindValueCents: d.inKindValueCents ?? 0 } : {}),
@@ -595,7 +595,7 @@ async function recomputeOwnerLeased(
     ...membershipValues,
   };
 
-  // Issue #88: skip the two mutations when what we'd write hashes the same as the last write.
+  // Issue GL#88: skip the two mutations when what we'd write hashes the same as the last write.
   // The columns are read-only for staff (🔒), so a hand edit drifting past this is the accepted
   // cost; the hash is cleared whenever a write doesn't land.
   const lastRecompute = await deps.recomputesStore.get(ownerItemId);

@@ -1,5 +1,5 @@
 // Verifies the JWT Monday puts in the Authorization header of a webhook delivery when the webhook
-// was created by an app (issue #110): HS256, signed with that app's Signing Secret (Developer
+// was created by an app (issue GL#110): HS256, signed with that app's Signing Secret (Developer
 // Center → the app → Basic Information). Webhooks created with a personal API token arrive
 // unsigned, so this is a second factor next to the URL secret, not a replacement for it.
 //

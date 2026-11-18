@@ -157,7 +157,7 @@ describe('GoogleDriveClient auth and folders', () => {
     expect(await newClient().ensureFolder('parent-1', '2026-08-25')).toBe('new-folder');
   });
 
-  // Issue #29: service accounts have no storage quota, so the destination must be a Shared Drive,
+  // Issue GL#29: service accounts have no storage quota, so the destination must be a Shared Drive,
   // and every call touching a Shared Drive item must opt in or Drive answers 404.
   it('opts every call into Shared Drive support', async () => {
     const { state } = fakeDrive();
@@ -221,7 +221,7 @@ describe('GoogleDriveClient auth and folders', () => {
   });
 });
 
-// Issue #29: multipart uploads cap at 5 MB and needed the whole board in memory. Uploads are now
+// Issue GL#29: multipart uploads cap at 5 MB and needed the whole board in memory. Uploads are now
 // resumable sessions fed in 256-KiB-aligned chunks as data is produced.
 describe('GoogleDriveClient resumable uploads', () => {
   it('rejects a chunk size that is not a multiple of 256 KiB', () => {
@@ -302,7 +302,7 @@ describe('GoogleDriveClient resumable uploads', () => {
     expect(state.deletes).toBe(1);
   });
 
-  // Issue #29 review: retries must not carry a run past the cron's wall-time kill.
+  // Issue GL#29 review: retries must not carry a run past the cron's wall-time kill.
   it('stops retrying an upload chunk at the run deadline', async () => {
     const { state } = fakeDrive();
     let t = 0;

@@ -1,5 +1,5 @@
 // The Worker's two Monday calls (the item read in feedbackItem.ts, the status write-back in
-// sendStatus.ts) are small enough that it carries no transport copy (CLAUDE.md, #35) — just this
+// sendStatus.ts) are small enough that it carries no transport copy (CLAUDE.md, GL#35) — just this
 // one POST helper.
 //
 // The token comes from the monday-auth broker (the MONDAY_AUTH service binding) when bound, else the
@@ -25,7 +25,7 @@ export function tokenProviderFor(env: { MONDAY_AUTH?: MondayTokenSource; MONDAY_
 }
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
-// Explicit pin (#39): Monday serves a deprecated version as the maintenance one, so a stale pin
+// Explicit pin (GL#39): Monday serves a deprecated version as the maintenance one, so a stale pin
 // drifts silently. Keep this in step with MONDAY_API_VERSION in the other Workers'
 // src/monday/graphql.ts by hand.
 const MONDAY_API_VERSION = '2026-07';

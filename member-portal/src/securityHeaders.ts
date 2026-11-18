@@ -6,12 +6,12 @@ import { secureHeaders } from 'hono/secure-headers';
 // event handlers (the footer's language <select>, the letter page's Print button) and inline
 // SVG style attributes, so a script-src/style-src policy would need a nonce + handler refactor
 // first. What this does cover:
-//   frame-ancestors 'none' — clickjacking (issue #32). Nothing embeds the portal: not
+//   frame-ancestors 'none' — clickjacking (issue GL#32). Nothing embeds the portal: not
 //                            bikesiliconvalley.org, not an email client, not a Wallet flow.
 //   base-uri 'none'        — an injected <base> can't re-point relative form actions/links.
 //   object-src 'none'      — no plugins.
 //   form-action 'self'     — every form posts (and redirects) same-origin.
-//   font-src 'self'        — Manrope and Poppins are served from /assets/ (#123); no page loads
+//   font-src 'self'        — Manrope and Poppins are served from /assets/ (GL#123); no page loads
 //                            a font from anywhere else, Google Fonts included.
 export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; font-src 'self'";
 

@@ -33,7 +33,7 @@
         "dead_letter_queue": "funraise-sync-writes-dlq"
       },
       {
-        // #25: dead messages stamp their events row "dead-lettered after retries: …" and log one
+        // GL#25: dead messages stamp their events row "dead-lettered after retries: …" and log one
         // error per batch (src/consumer/processDeadLetters.ts) instead of expiring unseen. Two D1
         // ops per message; no further dead-letter queue. Re-drive: scripts/redrive-failed.mjs.
         "queue": "funraise-sync-writes-dlq",

@@ -4,7 +4,7 @@ import type { CustodianMondayClient } from './custodian';
 import type { ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns, RollCallConfig } from '../types';
 
-// Issue #90: the nightly cron paged People and People (Historical) three times (membership,
+// Issue GL#90: the nightly cron paged People and People (Historical) three times (membership,
 // recurring, rollcall) and Donations twice (classify, rollcall credits). One read per board per run.
 
 const item = (id: string, text: Record<string, string | null>, over: Partial<ItemColumns> = {}): ItemColumns =>

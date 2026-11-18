@@ -219,7 +219,7 @@ describe('runSnapshot', () => {
     expect(fetchMock).not.toHaveBeenCalled(); // no partial-run alert sent
   });
 
-  // Issue #29: a same-day rerun used to write a second set of same-named files into the same
+  // Issue GL#29: a same-day rerun used to write a second set of same-named files into the same
   // dated folder. Each run now gets its own folder, named for the date and the D1 run id.
   it('writes each run into its own dated, run-numbered folder under the configured parent', async () => {
     const folders: [string, string][] = [];
@@ -242,7 +242,7 @@ describe('runSnapshot', () => {
     expect(JSON.parse(manifests[0]!.writes.join(''))).toMatchObject({ runId: 17, snapshotFolder: '2026-08-25 run-17' });
   });
 
-  // Issue #30: archived boards are captured (listBoards asks for every state); boards already in
+  // Issue GL#30: archived boards are captured (listBoards asks for every state); boards already in
   // Monday's trash are not — their items can't be paged and trash is Monday's own 30-day undo.
   it('backs up archived boards, skips deleted ones, and lists the skipped ids in the manifest', async () => {
     const fake = fakeDrive();
@@ -263,7 +263,7 @@ describe('runSnapshot', () => {
     expect(fake.manifest().errors).toEqual([]);
   });
 
-  // Issue #30: subitems live on their own sub_items_board. Normally `boards` lists it, but the
+  // Issue GL#30: subitems live on their own sub_items_board. Normally `boards` lists it, but the
   // parent's subtasks column names it too — back it up either way, exactly once.
   it("backs up a board's subitems board even when listBoards omits it, and only once", async () => {
     const subtasksColumn = { id: 'subitems', title: 'Subitems', type: 'subtasks', settingsStr: '{"boardIds":[99]}' };
@@ -508,7 +508,7 @@ describe('runSnapshot', () => {
     const run = () => runBackup(deps({ drive, runStore, slackWebhookUrl: 'https://hooks.example/webhook' }));
 
     await expect(run()).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1); // no three-night grace period (issue #29)
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no three-night grace period (issue GL#29)
     const first = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
     expect(first.text).toContain('run failed');
     expect(first.text).toContain('outage');
@@ -838,7 +838,7 @@ describe('runSnapshot', () => {
       });
     });
 
-    // Issue #112: what the Worker actually deploys, EncryptedDriveClient over the real Drive client,
+    // Issue GL#112: what the Worker actually deploys, EncryptedDriveClient over the real Drive client,
     // here over the plaintext fake, so the fake holds exactly what Drive would.
     it('through EncryptedDriveClient: files are ciphertext, a repeated step re-tallies them, the manifest names the key', async () => {
       const keyB64 = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));

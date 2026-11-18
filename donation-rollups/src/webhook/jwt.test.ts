@@ -4,7 +4,7 @@ import type { PendingStore } from '../db/pending';
 import type { WriteMode } from '../flags';
 import type { MondayJwtPolicy } from '../mondayJwt';
 
-// Issue #110: the Authorization JWT Monday signs app-created webhooks with, checked after the URL
+// Issue GL#110: the Authorization JWT Monday signs app-created webhooks with, checked after the URL
 // secret. Kept out of route.test.ts so it doesn't collide with other work on that file.
 const SIGNING_SECRET = 'app-signing-secret';
 const ACCOUNT = '26331880';

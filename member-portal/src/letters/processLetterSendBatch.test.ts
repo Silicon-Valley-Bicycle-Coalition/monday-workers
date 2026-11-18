@@ -145,7 +145,7 @@ describe('processLetterSendBatch', () => {
     expect(message.retry).not.toHaveBeenCalled();
   });
 
-  // Issue #127: the letter email invites the donor to add their employer, but only when the
+  // Issue GL#127: the letter email invites the donor to add their employer, but only when the
   // portal's Employer field is actually live.
   it('passes the locale-prefixed Employer field URL when employer answers are enabled', async () => {
     const emailSender = fakeEmailSender();
@@ -177,7 +177,7 @@ describe('processLetterSendBatch', () => {
     expect((emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!.employerUrl).toBeUndefined();
   });
 
-  // Issue #31: the letter email sits in an inbox until the donor gets to it — the login link
+  // Issue GL#31: the letter email sits in an inbox until the donor gets to it — the login link
   // must outlive the 15-minute interactive magic-link TTL, using its own letterLinkTtlHours.
   it('mints the letter link token with auth.letterLinkTtlHours, not the magic-link minutes', async () => {
     const tokenStore = fakeTokenStore();
@@ -193,7 +193,7 @@ describe('processLetterSendBatch', () => {
     expect(tokenStore.createToken).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: '2026-08-27T10:00:00.000Z' }));
   });
 
-  // Issue #31: same backoff as the change-request consumer — see queueRetry.ts.
+  // Issue GL#31: same backoff as the change-request consumer — see queueRetry.ts.
   it('retries a failed send with exponential backoff', async () => {
     const emailSender = fakeEmailSender();
     (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('send failed'));
@@ -212,7 +212,7 @@ describe('processLetterSendBatch', () => {
     expect(message.ack).not.toHaveBeenCalled();
   });
 
-  // Issue #31: the send and the markSent are two systems; if markSent failed after a successful
+  // Issue GL#31: the send and the markSent are two systems; if markSent failed after a successful
   // send, the retry used to see 'queued' and email the donor again.
   it('claims the row before sending the email', async () => {
     const store = fakeStore(row);
@@ -290,7 +290,7 @@ describe('processLetterSendBatch', () => {
     errorSpy.mockRestore();
   });
 
-  // Review of #31: a D1 failure minting the token after the claim left the row 'sending' with no
+  // Review of GL#31: a D1 failure minting the token after the claim left the row 'sending' with no
   // email sent — and 'sending' is never resent, so it was stranded for good. The token is now
   // minted before the claim, so its failure retries a still-'queued' row.
   it('mints the token before claiming, so a token-store failure leaves the row unclaimed', async () => {

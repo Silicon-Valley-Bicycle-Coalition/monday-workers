@@ -80,7 +80,7 @@ export const LEASE_MS = 30 * 60_000;
 export async function runPass(deps: PassDeps, opts: PassOptions): Promise<PassReport | { skipped: string }> {
   const now = deps.now ?? (() => new Date());
   const startedAt = now().toISOString();
-  // One pass at a time, cron or HTTP, dry run or live (#64): even a dry run settles 'planned' rows,
+  // One pass at a time, cron or HTTP, dry run or live (GL#64): even a dry run settles 'planned' rows,
   // and settling another pass's in-flight move would mark it failed.
   const leaseExpires = new Date(now().getTime() + LEASE_MS).toISOString();
   if (!(await deps.ledger.acquireLease(opts.runId, startedAt, leaseExpires))) {
@@ -371,7 +371,7 @@ export async function readActivity(
 
 // Pages Activities (Logged), reporting each linked person's counted dates. An item with no Date or
 // no Person counts for nobody; a Bulk Email isn't in countedTypeLabels. With sinceISO, Monday
-// returns only items dated on or after it, rather than the whole board (#101).
+// returns only items dated on or after it, rather than the whole board (GL#101).
 export async function readLoggedActivities(
   monday: ReclassificationMondayClient, config: ReclassificationConfig,
   report: (personId: string, dateISO: string) => void,

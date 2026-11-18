@@ -59,7 +59,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 2. **Put the production column ids in `eventbrite-sync/config/svbc.json`**, under
    `attendeeSync.volunteers`: `eventColumn`, `listingColumn`, `attendeeIdColumn`,
    `attendeeNameColumn`, `attendeeEmailColumn` are `REPLACE_WITH_COLUMN_ID` until then
-   (`monday.boards.volunteers` is already 18437909797). Also set `ticketTypeColumn` (#115) from
+   (`monday.boards.volunteers` is already 18437909797). Also set `ticketTypeColumn` ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)) from
    the same output. Commit and merge it.
 
    **Filling all five is what switches the Worker to the Volunteers board**, at the next deploy
@@ -296,7 +296,7 @@ step. Never delete the Volunteers items the backfill created.
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
   Attendee Email, Ticket Type). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
-- **Rows that look like duplicates usually aren't (#115).** One row is one Eventbrite ticket.
+- **Rows that look like duplicates usually aren't ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)).** One row is one Eventbrite ticket.
   One order can hold several: two shifts (different **Ticket Type**), or several people bought
   under one buyer's email (same Ticket Type, different Attendee Name). A cancel or refund keeps
   its row with Status **Canceled**; the sync never deletes one. To count people at an event,

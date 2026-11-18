@@ -19,7 +19,7 @@ export async function loadEventRegistrations(
 ): Promise<EventRegistrationListing[]> {
   const today = now.toISOString().slice(0, 10);
   // The name lookup and the per-donor registration reads are independent, so they run
-  // concurrently (#99), as in loadPledgeData.
+  // concurrently (GL#99), as in loadPledgeData.
   const [donorNames, recordsPerDonor] = await Promise.all([
     monday.getDonorNames(donorItemIds),
     Promise.all(

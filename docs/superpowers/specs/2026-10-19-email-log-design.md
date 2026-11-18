@@ -214,7 +214,7 @@ A full match stays silent.
   activity.
 * A dedicated Monday integration user for this Worker that can read People, People (Historical),
   Affiliations, and the users list, and write only Activities (Logged). Run
-  `scripts/check-monday-token-scope.mjs` against it before calling it scoped (#18).
+  `scripts/check-monday-token-scope.mjs` against it before calling it scoped ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)).
 
 ## Config
 

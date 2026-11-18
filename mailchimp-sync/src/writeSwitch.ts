@@ -28,7 +28,7 @@ function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpCl
     renameMember: (): RenameMemberResult => 'renamed',
     unsubscribeMember: (): UnsubscribeResult => 'unsubscribed',
   }, ctx);
-  // updateMember's managed tags can be a reader the live client calls after its PATCH (#97). The
+  // updateMember's managed tags can be a reader the live client calls after its PATCH (GL#97). The
   // placeholder never PATCHes, so resolve it here: the skip line then names the tags the write
   // would have deactivated, as it did when the consumer read them up front.
   return new Proxy(recording, {

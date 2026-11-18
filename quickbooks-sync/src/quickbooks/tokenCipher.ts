@@ -1,4 +1,4 @@
-// AES-256-GCM for the OAuth pair in qb_oauth_tokens (#68), so that reading D1 alone doesn't yield a
+// AES-256-GCM for the OAuth pair in qb_oauth_tokens (GL#68), so that reading D1 alone doesn't yield a
 // live QuickBooks credential. The key is the QB_TOKEN_ENCRYPTION_KEY Worker secret.
 //
 // A stored value is `enc:v1:<base64 iv>:<base64 ciphertext>`. Each column's name is authenticated

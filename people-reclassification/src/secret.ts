@@ -1,4 +1,4 @@
-// Shared-secret check for the Monday webhook route and the /custodian/* routes (issue #27).
+// Shared-secret check for the Monday webhook route and the /custodian/* routes (issue GL#27).
 // Same shape as funraise-sync's secretsMatch — copied, not shared, since every Worker in this
 // repo is self-contained.
 //

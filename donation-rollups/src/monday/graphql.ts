@@ -2,7 +2,7 @@
 // complexity budget and rate/concurrency limits, 5xx and network errors, per-attempt timeouts,
 // and write-safety (a create that may have committed is never blindly retried).
 //
-// CANONICAL COPY (#35). This file is byte-identical in every Worker that uses it, so each Worker
+// CANONICAL COPY (GL#35). This file is byte-identical in every Worker that uses it, so each Worker
 // stays self-contained and forkable on its own — no shared package. The CI job
 // `monday-graphql-copies` in .github/workflows/checks.yml fails if any copy differs from
 // monday-backup/src/monday/graphql.ts. To change it, edit that file and copy it over every
@@ -11,7 +11,7 @@
 // Modelled on salesforce-import/src/load/monday.ts; keep the two in step when either learns a
 // new failure mode.
 
-// The one API-Version pin for every Worker that carries this transport (#39). Workers take it from
+// The one API-Version pin for every Worker that carries this transport (GL#39). Workers take it from
 // here and never override it for their ordinary calls; a one-off call that needs a newer field
 // passes `apiVersion` (e.g. salesforce-import's configure step). Monday serves a request for a
 // deprecated version as the *maintenance* version, so an unpinned or stale pin drifts silently.

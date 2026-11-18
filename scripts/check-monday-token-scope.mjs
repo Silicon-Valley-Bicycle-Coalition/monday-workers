@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reports what a Monday API token can actually reach, and fails if that is more than the
-// workspaces it is meant for (see the root README, "Least-privilege Monday tokens", and #18).
+// workspaces it is meant for (see the root README, "Least-privilege Monday tokens", and GL#18).
 //
 // Why this exists: a Monday token carries its user's whole view of the account, and on a
 // non-Enterprise plan a *member* sees — and by default can edit — every Main board in every
@@ -15,12 +15,12 @@
 // Exit 0: every board the token reaches is in an allowed workspace. Exit 1: it reaches boards
 // outside them (listed by workspace). Archived and deleted (in trash, restorable) boards count:
 // they keep their items and stay readable, so they are reported, separately, rather than skipped
-// (#71). Exit 2: usage or API error. Read-only — two queries
+// (GL#71). Exit 2: usage or API error. Read-only — two queries
 // (`me`, `workspaces`) and a paged `boards` listing; nothing is written and no item is read.
 
 import { fileURLToPath } from 'node:url';
 import { listBoards, summarizeScope } from './lib/token-scope.mjs';
-// The repo's single API-Version pin (#39), from the canonical transport.
+// The repo's single API-Version pin (GL#39), from the canonical transport.
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
 
 const API_URL = 'https://api.monday.com/v2';

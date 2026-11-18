@@ -28,7 +28,7 @@ export function validateMondayEvent(body: unknown): MondayItemCreatedEvent {
   const values = { ...(typeof columnValues === 'object' && columnValues !== null ? columnValues : {}) } as Record<string, unknown>;
   // create_pulse carries the item's name as pulseName, outside columnValues. Keep it under
   // "name" — Monday's own column id for the Name column — so customerCreateFieldMap can map it
-  // like any other column (#33).
+  // like any other column (GL#33).
   if (typeof pulseName === 'string') values.name = pulseName;
 
   return {

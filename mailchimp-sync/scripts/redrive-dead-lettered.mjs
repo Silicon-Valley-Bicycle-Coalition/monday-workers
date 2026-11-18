@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Re-drives mailchimp-sync syncs that dead-lettered (#37) — pending rows the DLQ consumer
+// Re-drives mailchimp-sync syncs that dead-lettered (GL#37) — pending rows the DLQ consumer
 // (src/consumer/deadLetters.ts) stamped "dead-lettered after retries: …". Modelled on
 // funraise-sync's scripts/redrive-failed.mjs: nothing here writes to D1, Monday, or Mailchimp
 // directly. Each row is POSTed back to the deployed Worker as a minimal webhook delivery on its

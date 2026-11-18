@@ -57,7 +57,7 @@ describe('estimateLoad', () => {
 
 describe('estimateHours', () => {
   // Monday runs mutations one at a time account-wide, so wall-clock is the sum of per-request
-  // overhead and per-mutation cost: pool sizes do not appear in it (#50).
+  // overhead and per-mutation cost: pool sizes do not appear in it (GL#50).
   const t = { requestMs: 1000, createMs: 400, linkMs: 700, archiveMs: 800 };
 
   it('sums request overhead and per-mutation cost, with no concurrency term', () => {

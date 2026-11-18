@@ -149,7 +149,7 @@ npx wrangler queues create svbc-member-map-refresh-sandbox
 npm run deploy:sandbox
 ```
 
-The sandbox resources exist (2026-11-03) and `deploy-sandbox:member-map` in `.gitlab-ci.yml`
+The sandbox resources exist (2026-11-03) and the `deploy-sandbox` job in `workers.yml`
 redeploys the sandbox on each merge to `main` that touches `member-map/`. Production has no CI
 deploy job.
 

@@ -62,7 +62,7 @@ describe('runDigest', () => {
     await expect(runDigest({ monday, email: fakeEmail(), config }, 'renewals', at('2026-11-01T16:00:00Z'))).rejects.toThrow('no active recipients');
   });
 
-  // #70: the digests carry donor data (names, gift amounts, giving), and production's EMAIL binding has no
+  // GL#70: the digests carry donor data (names, gift amounts, giving), and production's EMAIL binding has no
   // allowed_destination_addresses (that would put staff addresses in this public repo).
   it('never emails an address outside recipientDomains, and raises it as an error by id', async () => {
     const email = fakeEmail();

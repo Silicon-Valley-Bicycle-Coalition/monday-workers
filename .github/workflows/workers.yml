@@ -74,7 +74,7 @@ jobs:
   # Worker's wrangler.jsonc, so no other secret is needed.
   #
   # The token is an environment secret scoped to the `sandbox` environment (restrict that
-  # environment to `main`), and in Cloudflare to Workers deploys on this account only (#58).
+  # environment to `main`), and in Cloudflare to Workers deploys on this account only (GL#58).
   # Matrix entries run one at a time in roster order. The concurrency group stops two main runs
   # deploying the same Worker at once. member-portal appears twice, portal first, then the writer:
   # Cloudflare Queues allows one consumer Worker per queue, and the sandbox portal consumed

@@ -78,7 +78,7 @@ describe('D1MapStore', () => {
     expect((await store.getByQbId('product', 'qb-2'))?.mondayItemId).toBe('item-2');
   });
 
-  // #33 review: this was an upsert, so a second item claiming a QuickBooks record silently
+  // GL#33 review: this was an upsert, so a second item claiming a QuickBooks record silently
   // re-pointed its mapping. It now refuses, naming both items; only repointMapping moves it.
   it('refuses to re-point a record already mapped to another item, as a terminal conflict', async () => {
     const store = new D1MapStore(env.DB);

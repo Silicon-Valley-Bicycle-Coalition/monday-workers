@@ -1,4 +1,4 @@
-// Retention deletes for the three auth tables (issue #31) — used only by the daily scheduled()
+// Retention deletes for the three auth tables (issue GL#31) — used only by the daily scheduled()
 // purge, so it's its own store rather than widening the request-path stores' interfaces.
 export interface AuthRetentionStore {
   // login_attempts holds a hashed address per login email allowed (valid donor or not) — only

@@ -20,7 +20,7 @@ describe('validateMondayEvent', () => {
     expect(result).toEqual({ mondayItemId: '123456', boardId: 789, columnValues: { text_col: 'Acme Co' } });
   });
 
-  // #33: create_pulse carries the item's name as pulseName, not in columnValues. Dropping it
+  // GL#33: create_pulse carries the item's name as pulseName, not in columnValues. Dropping it
   // meant a staff-typed Customer reached QuickBooks without a DisplayName and 400'd.
   it("keeps the item name (pulseName) as column \"name\", Monday's own id for the Name column", () => {
     const result = validateMondayEvent({

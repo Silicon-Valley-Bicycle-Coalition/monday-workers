@@ -34,7 +34,7 @@ describe('custodian route auth', () => {
     expect(res.status).toBe(401);
   });
 
-  // Issue #63: the secret moved out of the URL, where it rode in request logs alongside the
+  // Issue GL#63: the secret moved out of the URL, where it rode in request logs alongside the
   // webhook's. A matching value in the old ?secret= query parameter authorizes nothing now.
   it('ignores a matching secret in the query string', async () => {
     const runDuty = vi.fn().mockResolvedValue({ ok: true, summary: 'x' });

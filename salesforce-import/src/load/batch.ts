@@ -2,7 +2,7 @@ import { AmbiguousWriteError, isRejectedBeforeRunning, retryInMs, type MondayCli
 import { findItemIdsBySfIds } from './lookup.js';
 
 /**
- * Batched, duplicate-safe item creation (#22 on top of #19's guarantees).
+ * Batched, duplicate-safe item creation (GL#22 on top of GL#19's guarantees).
  *
  * One request carries up to 25 aliased `create_item`s (or just one). Each entry ends in exactly
  * one outcome, and the rules are the same for every request size:
@@ -233,7 +233,7 @@ export async function createBatch(opts: {
         // Monday rejected this entry outright (the request completed, so nothing is still in
         // flight) and it carried inline relations — a deleted, archived or wrong-board target
         // would otherwise fail its create on every run. Retry once without them; the link pass
-        // then owns those links and the #21 gate handles their failures.
+        // then owns those links and the GL#21 gate handles their failures.
         const { readBack: _dropped, ...rest } = p.entry;
         resend.push({ entry: { ...rest, colValues: p.entry.plainColValues }, relationsDropped: true });
       } else if (definite.has(p)) {

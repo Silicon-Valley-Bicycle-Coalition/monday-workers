@@ -9,7 +9,7 @@ Today every Worker that talks to Monday holds a **personal API token** (`MONDAY_
 dedicated integration user, one user per exposure class (root README, "Least-privilege Monday
 tokens"). On monday CRM each such user takes a paid **CRM member seat**, and when this was written
 SVBC had decided to stay within CRM's free 10 seats (private repo `migration-plan.md`, Seats per
-product, #70; #78). Since 2026-11-03 every staff member has a CRM seat (14 of 15), so seats are
+product, [GL#70](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/70); [GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78)). Since 2026-11-03 every staff member has a CRM seat (14 of 15), so seats are
 less tight than below, but the one-user design stands.
 Three integration users would spend three of those ten, and every seat an integration user holds
 is one a staff member or volunteer can't have without a purchase decision.
@@ -50,7 +50,7 @@ Why this works and what it trades away:
   production load, with dwk doing QA. Production Workers still deploy straight onto the broker;
   there is no interim personal token.
 - **Live at cutover**: production Workers go live on OAuth tokens, not on a personal token with a
-  later switch-over. Step 0.4 of the cutover runbook (#78) becomes "create SVBC Integration,
+  later switch-over. Step 0.4 of the cutover runbook ([GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78)) becomes "create SVBC Integration,
   install and authorize the three apps" instead of "create three users, mint three tokens".
 - A token broker Worker and the three-app grouping below (proposed by the author, approved).
 
@@ -246,7 +246,7 @@ Receivers keep their existing shared-secret checks; nothing about inbound webhoo
 - **Production, as cutover step 0.4**: create SVBC Integration (CRM member + WM), deploy
   `monday-auth`, enter the apps' client ids/secrets, install the apps in the account, authorize
   each as SVBC Integration. Production Workers deploy already bound to the broker. Runbook,
-  deploy checklist, #78, and the root README's token policy are updated to match (private repo
+  deploy checklist, [GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78), and the root README's token policy are updated to match (private repo
   docs `23`, `25`, `migration-plan.md`).
 - **Manual by design** (a human, in the Monday and Cloudflare UIs): creating the user, creating the
   three apps in the Developer Center (with the **New OAuth Flow** toggle), copying client
@@ -274,7 +274,7 @@ Receivers keep their existing shared-secret checks; nothing about inbound webhoo
   state the accepted `member-portal` read exposure plainly.
 - Each in-scope Worker's README: secrets table (`MONDAY_API_TOKEN` → service binding).
 - Private repo: `docs/23` step 0.4, `docs/25`, `migration-plan.md` seats table (CRM 9/10 → 7/10),
-  issue #78, and #19 (folds into the Staff sync app).
+  issue [GL#78](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/78), and [GL#19](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/19) (folds into the Staff sync app).
 
 ## Verification results, 2026-10-31
 

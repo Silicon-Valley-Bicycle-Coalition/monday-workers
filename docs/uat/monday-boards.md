@@ -364,7 +364,7 @@ item.
 **Don't report these:** no Type (Renewal, New, One-off, Bike Parking) or Probability field yet;
 Awarded doesn't spin up a delivery project automatically.
 
-### Bike Parking: book an event and get the invoice reminder (#120)
+### Bike Parking: book an event and get the invoice reminder ([GL#120](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/120))
 
 Built on [Grants & Contracts (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18439568066)
 only; production waits on the Opportunities merge and the stage vocabulary sign-off.

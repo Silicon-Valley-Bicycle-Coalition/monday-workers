@@ -49,7 +49,7 @@ class FakeClient implements ImpactMondayClient {
     if (this.failUpdate) throw new Error('monday API: update failed');
     this.updates.push({ itemId, body });
   }
-  // The email-domain job's reads (#124); never called by this job.
+  // The email-domain job's reads (GL#124); never called by this job.
   async listPeople(): Promise<never> { throw new Error('not this job'); }
   async listOrganizations(): Promise<never> { throw new Error('not this job'); }
   async listAffiliations(): Promise<never> { throw new Error('not this job'); }

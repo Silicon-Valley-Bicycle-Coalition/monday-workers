@@ -21,7 +21,7 @@ export interface MondayEventStore {
   updateStatus(eventId: string, status: SyncStatus, patch?: MondayEventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<MondayEventRow | null>;
   // The row whose Monday -> QuickBooks create produced Customer `qbId` (recorded right after
-  // the create, before the mapping) — create-loop guard for the other direction (#33).
+  // the create, before the mapping) — create-loop guard for the other direction (GL#33).
   findByQbId(qbId: string): Promise<MondayEventRow | null>;
   // Records that a Customer create is about to be sent under the current requestid (0006).
   markCreateSent(eventId: string): Promise<void>;

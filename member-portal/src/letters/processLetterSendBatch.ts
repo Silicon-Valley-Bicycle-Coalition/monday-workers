@@ -118,7 +118,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   if (row.status === 'sending') {
     // An earlier delivery claimed this row and then either sent the email but failed to record
     // it, or died between claim and send. We can't tell which, and a duplicate tax-letter email
-    // is the failure issue #31 set out to remove — so never resend automatically. The letter
+    // is the failure issue GL#31 set out to remove — so never resend automatically. The letter
     // itself is always in the portal; the email is only a notification.
     console.warn(`member-portal consumer: letter send ${row.id} was already claimed by an earlier attempt — not re-sending`);
     return;
@@ -163,7 +163,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
   // letterLinkTtlHours, not magicLinkTtlMinutes: this email is read whenever the donor gets to
-  // it, not while they wait on a login form (issue #31). Still single-use — consumeToken claims it.
+  // it, not while they wait on a login form (issue GL#31). Still single-use — consumeToken claims it.
   const expiresAt = new Date(deps.now().getTime() + deps.config.auth.letterLinkTtlHours * 3_600_000).toISOString();
   await deps.tokenStore.createToken({ tokenHash, donorItemIds: [row.donorItemId], expiresAt });
 
@@ -173,7 +173,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
   const loginUrl = magicLinkUrl(deps.config.auth.portalBaseUrl, rawToken, locale);
-  // Issue #127: the portal's Employer field, preselected. Session-gated like every /portal page,
+  // Issue GL#127: the portal's Employer field, preselected. Session-gated like every /portal page,
   // so a donor who clicks it before the login link lands on sign-in first.
   const employerUrl = employerAnswerEnabled(deps.config)
     ? `${deps.config.auth.portalBaseUrl}/${locale}/portal/change-request?field=employer`

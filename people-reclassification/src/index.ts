@@ -31,7 +31,7 @@ export default {
     // configFor validates synchronously and must keep throwing synchronously on a misconfigured
     // ENVIRONMENT, before any routing or rate-limit check.
     configFor(env);
-    // Monday's own promote deliveries (passing the URL secret) skip the per-IP limit (issue #110).
+    // Monday's own promote deliveries (passing the URL secret) skip the per-IP limit (issue GL#110).
     return isVerifiedMondayWebhook(request, env.PROMOTE_WEBHOOK_SECRET).then((verified) => verified
       ? null
       : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),

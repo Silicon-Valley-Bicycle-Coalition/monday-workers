@@ -540,7 +540,7 @@ describe('processRecomputeBatch', () => {
     expect(getDonationsByIds).toHaveBeenCalledTimes(1);
   });
 
-  // Issue #27: "This Year" is the configured fiscal year in the configured zone — at 5pm Pacific
+  // Issue GL#27: "This Year" is the configured fiscal year in the configured zone — at 5pm Pacific
   // on June 30 (00:00 UTC July 1) FY2026 is still this year.
   it('splits This/Last Year by the fiscal year in config.fiscalYear.timeZone, not UTC', async () => {
     const donations: DonationRecord[] = [
@@ -1017,7 +1017,7 @@ describe('D1 quota outage handling (fix 4)', () => {
   });
 });
 
-// Issue #27: a Monday rate-limit or complexity-budget error used to retry immediately — into
+// Issue GL#27: a Monday rate-limit or complexity-budget error used to retry immediately — into
 // the same exhausted budget — and three fast retries later the message was in the DLQ.
 describe('Monday rate-limit handling (issue #27)', () => {
   function base(mondayClient: DonationRollupsMondayClient) {
@@ -1090,7 +1090,7 @@ describe('Monday rate-limit handling (issue #27)', () => {
     }
   });
 
-  // #101: a 5xx or timeout (Monday down, not just rate-limiting) defers the rest of the batch too,
+  // GL#101: a 5xx or timeout (Monday down, not just rate-limiting) defers the rest of the batch too,
   // instead of each message spending the transport's in-process attempts again.
   it.each([
     ['a 503', new MondayApiError('monday API: exhausted 3 attempts — last error: HTTP 503', { httpStatus: 503 })],

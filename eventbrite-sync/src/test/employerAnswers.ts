@@ -3,7 +3,7 @@ import type { EmployerAnswerSink } from '../consumer/employerAnswer';
 import type { AttendeeStore } from '../db/attendees';
 import type { ProcessBatchDeps } from '../consumer/processBatch';
 
-// The consumer suites' shared pieces for employer answers (Task 6, #127).
+// The consumer suites' shared pieces for employer answers (Task 6, GL#127).
 
 export const EMPLOYER_ANSWER = 'Acme Secret Widgets';
 export const EMPLOYER_ANSWERS = [{ question_id: '30', question: 'Who is your employer?', type: 'text', answer: EMPLOYER_ANSWER }];

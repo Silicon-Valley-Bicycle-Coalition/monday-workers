@@ -1,6 +1,6 @@
 // Payload contract for the monday.com "Send a webhook" automation action configured on BP
 // Request Form's "Post-Event Feedback" status column (see README "Monday automation setup").
-// Only the item id is trusted (#66): the recipient and the event name are read off the item
+// Only the item id is trusted (GL#66): the recipient and the event name are read off the item
 // itself (src/feedbackItem.ts), so any other fields monday sends along are ignored.
 export interface FeedbackWebhookPayload {
   itemId: number;

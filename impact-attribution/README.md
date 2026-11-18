@@ -3,8 +3,8 @@
 **Status (2026-11-17): sandbox writes `on`; production deployed (`efb17a82`, migrations through `0003`)
 with writes `off`, waiting on the `excludedPayers` gate. No production Monday write has been run.** It has two jobs, both
 proposing Draft employer affiliations for staff to confirm: from repeated matching gifts (issue
-#125) and from a donor's company email domain (issue #124). The matching-gift job also takes employer
-answers collected by `eventbrite-sync` (issue #127), whose hand-over is on in both environments: answers
+[GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)) and from a donor's company email domain (issue [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124)). The matching-gift job also takes employer
+answers collected by `eventbrite-sync` (issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127)), whose hand-over is on in both environments: answers
 are stored in D1 now and become Drafts once production writes are `on`.
 Design: [`docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md`](../docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md);
 plan: [`docs/superpowers/plans/2026-11-16-employer-affiliation-proposals.md`](../docs/superpowers/plans/2026-11-16-employer-affiliation-proposals.md).
@@ -77,7 +77,7 @@ matches, newest first, at most 10. Drafts are inert: `contact-roles` and the rol
 status says (or the other), or delete the item. A deleted Draft never comes back: the pair is in
 `proposals` for good.
 
-## Second job: employers from email domains (#124)
+## Second job: employers from email domains ([GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124))
 
 Many donors give from a work address (`jo@acme.com` in Personal Email). Each night the Worker maps
 email domains to Organizations from what the CRM already holds, in this order:
@@ -121,7 +121,7 @@ cites the gifts.
 `benevity-import` counts only **Current** affiliations when it resolves a Benevity donor by Work
 Email or by organization, so Drafts from either job never steer a donation to a person.
 
-## Employer answers in the matching-gift job (#127)
+## Employer answers in the matching-gift job ([GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127))
 
 `eventbrite-sync` hands over what an attendee typed for "Where do you work?" (it collects; this Worker
 proposes, so one place creates Drafts, with one ledger, one cap and one exclusion list). Answers are
@@ -223,7 +223,7 @@ answer-only pairs as well; `qualifying` counts match pairs only.
 an environment, confirm in that same environment:
 
 - [ ] migration `0003_employer_answers.sql` is applied to this Worker's D1;
-- [ ] this Worker is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] this Worker is deployed with the `EmployerAnswers` entrypoint (a build from [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127) or later);
 - [ ] this Worker's `config/*.json` has an `employerAnswers` block (and loads: a config that
   fails validation makes every call throw).
 
@@ -262,7 +262,7 @@ board id. Validated at startup (`src/config.ts`). Column titles are bare titles,
 * `excludedPayers`: `{ id, note }` per Organizations item that pays matches but isn't an employer
   (foundations, donor-advised-fund sponsors). Empty until the production gate below.
 * `maxProposalsPerRun`: 25.
-* `emailDomains` (#124): column titles `people` (`personalEmail`, `householdEmail`,
+* `emailDomains` ([GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124)): column titles `people` (`personalEmail`, `householdEmail`,
   `employerName`, `lastGiftDate`), `organizationWebsite`, `affiliationWorkEmail`; domain lists
   `consumerDomains`, `excludedDomains`, `platformDomains` (lower-cased at startup);
   `domainOverrides` (domain → Organizations item id); `blockedTlds` (`edu`, bare TLDs only);
@@ -293,7 +293,7 @@ Run from this directory unless noted. Sandbox first, then production.
 2. ~~Apply the D1 migrations~~ done 2026-11-16 on both (`0001_create_tables.sql`). For a later
    migration: `npx wrangler d1 migrations apply svbc-impact-attribution-sandbox --remote --env
    sandbox` (and `svbc-impact-attribution --remote`).
-   `0002_email_domain_proposals.sql` (#124: `proposals.evidence`/`domain`, `email_index`): applied
+   `0002_email_domain_proposals.sql` ([GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124): `proposals.evidence`/`domain`, `email_index`): applied
    to the sandbox and production 2026-11-17. CI deploys the sandbox on every merge to `main` without applying
    migrations, so a later migration goes to the sandbox before its MR merges.
 3. ~~Proposed status column~~ done 2026-11-16 on both Affiliations boards with

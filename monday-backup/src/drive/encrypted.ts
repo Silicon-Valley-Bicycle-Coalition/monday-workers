@@ -11,7 +11,7 @@ import { linesOf, type DriveClient, type DriveFileWriter } from './client';
 
 const ENCRYPTED_MIME_TYPE = 'application/octet-stream';
 
-// Snapshot files encrypted before they reach Drive (issue #112). Wraps the real client: every file
+// Snapshot files encrypted before they reach Drive (issue GL#112). Wraps the real client: every file
 // created or looked up by name is `<name>.enc`, written as ciphertext (src/crypto/snapshotCipher.ts)
 // and decrypted again when read back. The one exception is uploadJson, which writes the manifest
 // in the clear but MACed: it holds ids, counts, timestamps and error lines, so a stale or partial

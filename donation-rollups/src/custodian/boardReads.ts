@@ -1,4 +1,4 @@
-// One read of each shared board per cron run (issue #90). Membership, recurring and rollcall
+// One read of each shared board per cron run (issue GL#90). Membership, recurring and rollcall
 // each paged the People boards in full every night, and classify and rollcall each paged
 // Donations: 65-90 of a night's ~200 Monday calls were repeats, growing with the boards.
 //

@@ -322,7 +322,7 @@ describe('handleBatch', () => {
   });
 });
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday or claiming, instead of each repeating the transport's in-process attempts.
 describe('handleBatch — outage breaker', () => {
   it('stops calling Monday after an outage and retries the rest of the batch with backoff', async () => {

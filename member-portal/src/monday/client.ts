@@ -25,14 +25,14 @@ import { giftTypeIn } from '../letters/giftTypes';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
-// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
 
 // Per-request ceiling on a Monday call (headers and body). Workers impose no wall-clock limit on a
 // subrequest, so without this a hung Monday request held a dashboard render — or a queue consumer
-// batch — open indefinitely (issue #31). Generous next to Monday's normal sub-second responses.
+// batch — open indefinitely (issue GL#31). Generous next to Monday's normal sub-second responses.
 export const MONDAY_FETCH_TIMEOUT_MS = 15_000;
 
-// One attempt per call, no in-process retry (#35). Most calls render a donor's page, where a
+// One attempt per call, no in-process retry (GL#35). Most calls render a donor's page, where a
 // retry's backoff (seconds) is worse than a fast error the donor can reload past. The queue
 // consumers (change requests, letters) retry with their own backoff (queueRetry.ts).
 const MAX_ATTEMPTS = 1;
@@ -58,7 +58,7 @@ function columnText(item: MondayItem, columnId: string): string {
 }
 
 // "Bike to Work Day — Shift 1": the Eventbrite ticket type after the Job (the event name, for
-// eventbrite-sync rows), so two shifts at one event read as two (#115). Either alone when the
+// eventbrite-sync rows), so two shifts at one event read as two (GL#115). Either alone when the
 // other is blank; the Job alone when the ticket type only repeats it.
 function jobWithTicketType(job: string, ticketType: string): string {
   const j = job.trim();
@@ -230,7 +230,7 @@ export class HttpMondayClient implements MondayClient {
       email,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    // Monday's filter is not an exact-address match we can rely on (issue #62): keep only items
+    // Monday's filter is not an exact-address match we can rely on (issue GL#62): keep only items
     // whose address equals the submitted one, ignoring case and surrounding whitespace, so a login
     // link never goes out for a donor record holding some other address.
     const wanted = email.trim().toLowerCase();
@@ -273,7 +273,7 @@ export class HttpMondayClient implements MondayClient {
       }
     `;
     // The donor item and its donations are independent reads (the donations query needs only
-    // donorItemId), so they run concurrently (#99): one Monday round trip per page, not two.
+    // donorItemId), so they run concurrently (GL#99): one Monday round trip per page, not two.
     // allSettled, then the donor result first, so a failure surfaces the same error the serial
     // version did (donor read or not-found before any donations error) and no rejection is left
     // unhandled.
@@ -574,7 +574,7 @@ export class HttpMondayClient implements MondayClient {
       { boardId: this.organizationsBoardId }
     );
     const firstPage = data.boards[0]?.items_page;
-    // Follow the cursor (issue #31): the first page alone silently dropped every active discount
+    // Follow the cursor (issue GL#31): the first page alone silently dropped every active discount
     // past the 500th.
     const items = [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, itemsSelection))];
     return items.map((item) => ({

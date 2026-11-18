@@ -23,7 +23,7 @@ export interface ImpactAttributionConfig {
   maxProposalsPerRun: number;
   // Employer answers handed over by other Workers (Eventbrite). Absent: the feature is off.
   employerAnswers?: { maxAgeDays: number; ignore: string[] };
-  // Employer proposals from a donor's company email domain (#124). People and Organizations boards
+  // Employer proposals from a donor's company email domain (GL#124). People and Organizations boards
   // are peopleBoardIds and organizationsBoardId; Drafts go to `affiliations`.
   emailDomains: {
     people: { personalEmail: string; householdEmail: string; employerName: string; lastGiftDate: string };

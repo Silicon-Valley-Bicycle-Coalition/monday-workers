@@ -115,7 +115,7 @@ app.post('/webhook/bp-feedback', async (c) => {
     return c.json({ sent: false, itemId }, 500);
   }
 
-  // The recipient and event name come from the board, never the request body (#66).
+  // The recipient and event name come from the board, never the request body (GL#66).
   let item;
   try {
     item = await readFeedbackItem(
@@ -136,7 +136,7 @@ app.post('/webhook/bp-feedback', async (c) => {
     return c.json({ sent: false, itemId }, 404);
   }
   if (item.kind === 'already-sent') {
-    // A replayed or looped webhook must not email the organizer again (#105). 200, not an error,
+    // A replayed or looped webhook must not email the organizer again (GL#105). 200, not an error,
     // so monday doesn't retry; staff re-send by moving the status back to Ready to Send.
     console.log(JSON.stringify({ event: 'bp-feedback-already-sent', environment, itemId }));
     return c.json({ sent: false, alreadySent: true, itemId });
@@ -147,7 +147,7 @@ app.post('/webhook/bp-feedback', async (c) => {
     return c.json({ sent: false, itemId }, 422);
   }
 
-  // Per-item resend guard (#105): works whether or not sendStatus is configured. Fails closed — a
+  // Per-item resend guard (GL#105): works whether or not sendStatus is configured. Fails closed — a
   // guard we can't check sends nothing, and the 503 lets monday retry.
   const claimedAt = Date.now();
   let claimed: boolean;

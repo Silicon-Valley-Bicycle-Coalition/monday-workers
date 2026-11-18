@@ -1,12 +1,12 @@
-// Proposes one of the ten approved Partner Type values for an Organizations item (#55), from its
+// Proposes one of the ten approved Partner Type values for an Organizations item (GL#55), from its
 // migrated free-text value, its website, and its name. Pure, and only ever a proposal: a person
 // reviews the CSV that scripts/propose-partner-types.mjs builds from these before anything changes
 // on Monday. When there is no real signal it proposes nothing, so "Other" keeps meaning a person
 // decided that, not that a script gave up.
 //
 // Confidence:
-//   high    the value is approved or #55 spells out its mapping, or the website is .gov / .edu
-//   medium  a mapping #55 leaves to judgment, a combined value, or a government name
+//   high    the value is approved or GL#55 spells out its mapping, or the website is .gov / .edu
+//   medium  a mapping GL#55 leaves to judgment, a combined value, or a government name
 //   low     a pattern in the name
 //   none    nothing proposed
 

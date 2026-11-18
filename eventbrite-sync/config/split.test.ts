@@ -84,7 +84,7 @@ describe('config split: board and column ids', () => {
   });
 
   // The idempotency key. salesforce-import creates the column on production Donations at the load
-  // (#44, README "Prerequisite column"), so the cutover fills production's id while the sandbox
+  // (GL#44, README "Prerequisite column"), so the cutover fills production's id while the sandbox
   // config may still hold the placeholder: either side may be the placeholder, but a real sandbox
   // id must never reach production.
   it('orderIdColumn: a real sandbox id never appears in production', () => {

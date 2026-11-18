@@ -9,15 +9,15 @@ import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage, QueueMessageLike } from './processBatch';
 import { errorClass } from '../logSafe';
 
-// Consumer for benevity-import-writes-dlq and its -sandbox- twin (#60), modelled on
-// mailchimp-sync's (#37). Until this existed nothing consumed them: a gift that exhausted its
+// Consumer for benevity-import-writes-dlq and its -sandbox- twin (GL#60), modelled on
+// mailchimp-sync's (GL#37). Until this existed nothing consumed them: a gift that exhausted its
 // retries expired there unseen, its row left 'ingested' forever, and re-uploading the report was
 // a no-op because the row was already recorded.
 //
 // A dead message now marks its row 'needs-review' with DEAD_LETTER_PREFIX ahead of the last
 // error the consumer recorded — D1 first, so the failure is on record even while Monday is the
 // thing that's down — and then raises a Benevity Uploads worklist item for it. 'needs-review' is
-// the status a staff Retry already knows how to re-queue (#34), so the worklist item is the
+// the status a staff Retry already knows how to re-queue (GL#34), so the worklist item is the
 // retry path, with nothing new to learn. Posting the item is a Monday write: it's attempted only
 // while writes are `on`, and a failure is only logged, never retried here (the message is
 // already acked) — sweepDeadLetteredRows, on the daily cron, posts any the consumer couldn't.
@@ -45,7 +45,7 @@ export interface DeadLetterDeps {
 export interface DeadLetterSummary {
   // Transaction IDs marked dead-lettered in this batch.
   marked: string[];
-  // Monday asset ids of uploaded reports that never finished ingesting (#74), marked 'error'.
+  // Monday asset ids of uploaded reports that never finished ingesting (GL#74), marked 'error'.
   uploads: string[];
   // Of those, the ones whose worklist item is still to be posted (by the daily sweep).
   awaitingWorklist: string[];
@@ -117,7 +117,7 @@ export async function processDeadLetters(
   return summary;
 }
 
-// An upload message (#74) that exhausted its retries: the report never finished ingesting — its
+// An upload message (GL#74) that exhausted its retries: the report never finished ingesting — its
 // asset kept failing to fetch, or a block kept failing in D1. There is no row to mark and nothing
 // for a staff Retry to act on, so the upload is marked 'error' (where an earlier attempt may have
 // left it 'parsing') and the asset is reported. Rows from any blocks it did finish are already
@@ -146,7 +146,7 @@ async function processDeadUpload(
 }
 
 /**
- * The daily cron's pass (#60): posts the worklist item for every dead-lettered row that doesn't
+ * The daily cron's pass (GL#60): posts the worklist item for every dead-lettered row that doesn't
  * have one yet, up to SWEEP_LIMIT. The caller runs it only while writes are `on`. One row's
  * failure doesn't stop the rest; it is tried again tomorrow.
  */

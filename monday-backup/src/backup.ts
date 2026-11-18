@@ -206,7 +206,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
   if (run === null) return;
   const { runId, startedAtUtc } = run;
   // One folder per run, e.g. "2026-08-25 run-17": sorts by date in Drive, and a same-day rerun
-  // gets its own folder instead of a second set of same-named files beside the first (#29).
+  // gets its own folder instead of a second set of same-named files beside the first (GL#29).
   const snapshotFolder = `${startedAtUtc.slice(0, 10)} run-${runId}`;
 
   // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4): when set and
@@ -260,7 +260,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
     }
 
     // A queue, not a plain loop: backing up a board can discover its subitems board, which is
-    // appended if `boards` didn't already list it (issue #30).
+    // appended if `boards` didn't already list it (issue GL#30).
     for (let i = 0; i < boards.length && !stopped && !gaveUp(); i++) {
       const board = boards[i]!;
       try {
@@ -347,7 +347,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
       if ((await deps.drive.findFile(folderId, 'manifest.json')) === null) {
         await deps.drive.uploadJson(folderId, 'manifest.json', {
           format: SNAPSHOT_FORMAT,
-          // The scheme and key id the board and doc files need (issue #112); null if unencrypted.
+          // The scheme and key id the board and doc files need (issue GL#112); null if unencrypted.
           encryption: deps.drive.encryption === undefined ? null : await deps.drive.encryption(),
           runId,
           snapshotFolder,
@@ -393,7 +393,7 @@ export async function runSnapshot(step: SnapshotStep, deps: BackupDeps): Promise
     console.error(`monday-backup: run failed: ${message}`);
     await inStep('record failure', async () => {
       const consecutiveFailures = await deps.runStore.recordRunFailure(runId, deps.now().toISOString(), message);
-      // Alert on the first total failure (issue #29): a backup that silently skips up to three
+      // Alert on the first total failure (issue GL#29): a backup that silently skips up to three
       // nights before anyone hears about it is three nights of unrecoverable edits.
       const streak = consecutiveFailures > 1 ? ` (${consecutiveFailures} nights in a row)` : '';
       await sendFailureAlert(deps.slackWebhookUrl, `run failed — no snapshot was written${streak}`, message);

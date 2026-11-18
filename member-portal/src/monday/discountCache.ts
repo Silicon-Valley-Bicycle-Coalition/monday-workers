@@ -26,7 +26,7 @@ export class TtlCache<T> {
 
 // The discount list (Organizations board, Discount Active checked) is the same for every donor
 // and changes a few times a year, but was refetched — every page, 500+ rows — on each dashboard
-// load (issue #31). Cached per isolate for 10 minutes:
+// load (issue GL#31). Cached per isolate for 10 minutes:
 // - in-isolate, not KV or the Cache API: no new binding to provision per environment (and keep
 //   apart in config/split.test.ts), no extra subrequest on a hit, and the data is non-PII, so a
 //   module-level cache shared across requests is safe. The cost is a cold isolate or another colo

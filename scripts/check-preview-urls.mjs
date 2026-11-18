@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Preview URLs default to on. A `wrangler versions upload`, or a non-main branch build, would put
 // code that isn't on `main` on a public URL running with the production D1, queues, MONDAY_AUTH
-// binding and secrets (#108). So every `*/wrangler*.jsonc` that defines `env.sandbox` must set
+// binding and secrets (GL#108). So every `*/wrangler*.jsonc` that defines `env.sandbox` must set
 // `"preview_urls": false` at the top level and inside env.sandbox (Wrangler environments don't
 // inherit it).
 //

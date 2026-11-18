@@ -79,7 +79,7 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: true, ignored: true }, 200);
     }
 
-    // The payload is only as trustworthy as the URL secret (#106): don't ingest any asset id it
+    // The payload is only as trustworthy as the URL secret (GL#106): don't ingest any asset id it
     // names. The event must come from the Uploads board, and every asset must really be in that
     // item's file column there. Monday is asked, so a forged payload can't vouch for itself.
     const uploadsBoardId = deps.config.monday.boards.benevityUploads;
@@ -104,7 +104,7 @@ export function createApp(deps: AppDeps) {
       console.error(`benevity webhook: item "${event.itemId}": ignored ${event.assetIds.length - assetIds.length} asset id(s) not in its file column`);
     }
 
-    // Record and enqueue; the consumer fetches, parses and ingests the file (#74), so a large
+    // Record and enqueue; the consumer fetches, parses and ingests the file (GL#74), so a large
     // report costs this request a few D1 calls and one queue send, never a parse or a row loop.
     // Recording the upload here is what lets a redelivery of a fully ingested asset stop at once.
     const stamp = stampFor(gate.mode);
@@ -128,7 +128,7 @@ export function createApp(deps: AppDeps) {
     return c.json({ ok: true }, 200);
   });
 
-  // Replay (#34): staff set a worklist item's Retry status column to the configured `retry`
+  // Replay (GL#34): staff set a worklist item's Retry status column to the configured `retry`
   // label once they've fixed what it reported (created the Organization, attached the Person,
   // checked the block's totals, ...). A Monday webhook on that column lands here. The Worker
   // moves the row — or, for a block-level item, every row of that disbursement — from
@@ -256,7 +256,7 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
       return { outcome: 'unknown item', enqueued: 0 };
     }
     // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk), or
-    // confirmed that a disbursement the cutoff skipped was never keyed into Salesforce (#40):
+    // confirmed that a disbursement the cutoff skipped was never keyed into Salesforce (GL#40):
     // release every row the block held back. A header-error block parsed no rows, so this is
     // empty for it — the fix there is a corrected upload, not a Retry.
     const { requeued, purged } = await deps.rowStore.requeueDisbursementRows(disbursement.id);

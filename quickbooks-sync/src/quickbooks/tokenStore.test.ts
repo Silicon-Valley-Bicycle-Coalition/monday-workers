@@ -55,7 +55,7 @@ describe('D1TokenStore', () => {
   });
 });
 
-// #33: Intuit rotates refresh tokens, so two writers refreshing at once can leave D1 holding a
+// GL#33: Intuit rotates refresh tokens, so two writers refreshing at once can leave D1 holding a
 // token Intuit has already invalidated. Refreshes now take a D1 lease and save by
 // compare-and-swap on a version column.
 describe('D1TokenStore refresh lease and compare-and-swap', () => {
@@ -134,7 +134,7 @@ describe('D1TokenStore refresh lease and compare-and-swap', () => {
   });
 });
 
-// #68: anyone who can read D1 (a dashboard session, a D1 export, an API token scoped to D1) could
+// GL#68: anyone who can read D1 (a dashboard session, a D1 export, an API token scoped to D1) could
 // otherwise lift a live refresh token. The key lives apart from the data, in a Worker secret.
 describe('D1TokenStore encryption at rest', () => {
   const pair = {

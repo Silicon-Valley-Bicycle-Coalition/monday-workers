@@ -46,7 +46,7 @@ Cloudflare Queue → consumer Worker
 Monday.com
 ```
 
-The fetch lives in the consumer, not the webhook (#33): a fetch failure inside the webhook used
+The fetch lives in the consumer, not the webhook ([GL#33](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/33)): a fetch failure inside the webhook used
 to mark the row failed and still answer 200, so Intuit never redelivered and the change was lost;
 and a snapshot taken at webhook time could later overwrite Monday with stale data. The webhook
 now never calls QuickBooks — which also means only the consumer ever refreshes the OAuth token.
@@ -55,7 +55,7 @@ See `../README.md`'s Reliability section — this Queue step is standard across 
 Worker in this plan, not QuickBooks-specific. Without it, a transient Monday API failure on the
 final write just silently disappears.
 
-**Create loop guard (#33).** A Customer created in QuickBooks becomes a Monday item before its
+**Create loop guard ([GL#33](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/33)).** A Customer created in QuickBooks becomes a Monday item before its
 `qb_monday_map` row exists, and Monday's `create_pulse` webhook for that item can arrive in
 between. The guard lives on the item itself: the Customers board has a **QuickBooks Id** text
 column (`config` `quickbooksSync.customerQbIdColumn`), which QuickBooks → Monday writes in the
@@ -103,7 +103,7 @@ Found`), or a Monday item no longer exists / has no name / carries a QuickBooks 
 elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
 acks the message — no retries, no DLQ.
 
-**Foreign-currency records (#76)** are terminal too. Monday's amount columns hold the home
+**Foreign-currency records ([GL#76](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/76))** are terminal too. Monday's amount columns hold the home
 currency (`config` `quickbooksSync.currency`, `"USD"`), so with multicurrency on, a QuickBooks
 → Monday record whose `CurrencyRef` names any other currency (an invoice's `TotalAmt`/`Balance`, a
 customer's `Balance`) fails `not retried: QuickBooks invoice … is in CAD, not USD` before anything
@@ -170,7 +170,7 @@ are outside this purge, and follow Workers Logs' own retention.
 
 The token pair lives in D1 (`qb_oauth_tokens`, one row), encrypted (below). Only the queue consumer calls
 QuickBooks, and it refreshes the access token a minute before expiry. Intuit rotates the refresh
-token and expires the previous one, so refreshes have a single writer (#33): the refresher takes a
+token and expires the previous one, so refreshes have a single writer ([GL#33](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/33)): the refresher takes a
 D1 lease at the row's `version` and saves by compare-and-swap on it; other callers wait and
 re-read. On `invalid_grant` the consumer re-reads D1 and uses a newer pair if one landed;
 otherwise the message fails with "re-seed the token pair" and retries/dead-letters.
@@ -191,7 +191,7 @@ npx wrangler d1 execute <db> --remote [--env sandbox] --command "
 Bumping `version` makes any refresh in flight against the old pair lose its compare-and-swap
 instead of overwriting the new one.
 
-**Encryption at rest (#68).** Both tokens are stored AES-256-GCM encrypted (`enc:v1:…`,
+**Encryption at rest ([GL#68](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/68)).** Both tokens are stored AES-256-GCM encrypted (`enc:v1:…`,
 `src/quickbooks/tokenCipher.ts`) under the `QB_TOKEN_ENCRYPTION_KEY` secret, so reading D1 alone
 (the dashboard, an export, a D1-scoped API token) doesn't yield a live credential. It does not
 protect against someone who can also deploy to this Worker, which can read the secret.
@@ -289,8 +289,8 @@ seeded via the OAuth Playground) plus the Intuit app-review question below, now 
 root directory `/quickbooks-sync`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:quickbooks-sync` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 ## Open question before starting — resolved 2026-09-21
 
@@ -365,7 +365,7 @@ Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types 
 `.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
 `tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
 and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
-say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+say nothing about the code. CI (`.github/workflows/workers.yml`) already runs `npm test` and
 `npm run typecheck`.
 
 ## Sources

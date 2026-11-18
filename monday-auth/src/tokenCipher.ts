@@ -1,9 +1,9 @@
-// AES-256-GCM for the OAuth pair in oauth_tokens (#104), so that reading D1 alone doesn't yield a
+// AES-256-GCM for the OAuth pair in oauth_tokens (GL#104), so that reading D1 alone doesn't yield a
 // live Monday credential. The key is the TOKEN_ENC_KEY Worker secret.
 //
 // A stored value is `enc:v1:<base64 iv>:<base64 ciphertext>`. Each column's name is authenticated
 // with it, so a ciphertext copied into the other column fails to decrypt. A value without the
-// prefix is plaintext: that's a row written before #104, and the first refresh
+// prefix is plaintext: that's a row written before GL#104, and the first refresh
 // replaces it with an encrypted one.
 const PREFIX = 'enc:v1:';
 const KEY_BYTES = 32;

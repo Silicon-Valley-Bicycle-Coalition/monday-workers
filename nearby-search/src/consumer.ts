@@ -81,7 +81,7 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
     return taken.meta.changes === 1 ? 'stale' : 'wait';
   };
 
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker(now);
   for (const msg of batch.messages) {
     const body = msg.body;
@@ -109,7 +109,7 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
       continue;
     }
 
-    // Monday is down or rate-limiting (#101): retry with backoff without claiming or calling it,
+    // Monday is down or rate-limiting (GL#101): retry with backoff without claiming or calling it,
     // rather than spend the transport's in-process attempts again on every remaining message.
     if (breaker.open) {
       breaker.defer(msg);

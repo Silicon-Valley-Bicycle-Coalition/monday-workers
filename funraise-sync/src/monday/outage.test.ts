@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { AmbiguousWriteError, MondayApiError } from './graphql';
 import { isMondayOutage, outageHintSeconds, OutageBreaker } from './outage';
 
-// The canonical outage breaker's tests (#101). The copies in other Workers are checked
+// The canonical outage breaker's tests (GL#101). The copies in other Workers are checked
 // byte-identical by CI rather than re-tested.
 describe('isMondayOutage', () => {
   it.each([

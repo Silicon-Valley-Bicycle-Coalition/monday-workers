@@ -1,5 +1,5 @@
 // The portal stylesheet. Served from a content-hashed, immutable route (see ./static.ts and
-// GET /assets/:file in routes.ts) rather than inlined into every no-store page (#99).
+// GET /assets/:file in routes.ts) rather than inlined into every no-store page (GL#99).
 //
 // Brand tokens from the SVBC design system (bikesiliconvalley.org's palette and type) plus the page chrome shared by every route. Scoped mostly
 // by element selector rather than per-view classes, so styling the whole portal costs this one

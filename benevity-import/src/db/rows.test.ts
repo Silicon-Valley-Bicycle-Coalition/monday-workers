@@ -153,7 +153,7 @@ describe('D1RowStore', () => {
 
     await add('RQ-REVIEW-2', 'needs-review');
     // A row-level requeue left the skipped row alone (above). A block-level one is the staff
-    // override of the disbursement cutoff (#40), so it releases skipped rows too.
+    // override of the disbursement cutoff (GL#40), so it releases skipped rows too.
     expect((await store.getRow('RQ-SKIPPED'))?.status).toBe('skipped');
     expect(await store.requeueDisbursementRows(disbursementId)).toEqual({ requeued: ['RQ-REVIEW', 'RQ-REVIEW-2', 'RQ-SKIPPED'], purged: 0 });
     expect((await store.getRow('RQ-SKIPPED'))?.status).toBe('ingested');

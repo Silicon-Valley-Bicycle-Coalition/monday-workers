@@ -6,7 +6,7 @@ describe('realEmail', () => {
   it('trims an address', () => expect(realEmail('  pat@example.org ')).toBe('pat@example.org'));
   it('rejects blank', () => expect(realEmail('')).toBeNull());
   it('rejects a non-string', () => expect(realEmail(null)).toBeNull());
-  // #115: Eventbrite hands some attendees a generated, bracketed address that Monday's email column
+  // GL#115: Eventbrite hands some attendees a generated, bracketed address that Monday's email column
   // rejects ("email is not valid"), failing the whole row write. Shape only; the real ones are longer.
   it('rejects the bracketed stand-in address', () =>
     expect(realEmail('[abcd-efghijk-12345678901234567890]-1234567890@example.com')).toBeNull());

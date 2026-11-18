@@ -20,7 +20,7 @@
 
 ## Out of scope (explicitly deferred)
 
-Issue #1's "Item 3" minor notes are pre-existing, already-documented-as-low-risk observations (read-then-write idempotency guard, a harmless spurious-duplicate status reuse, an error-labeling edge case for a future migration, unconditional error-clearing, and a test-isolation note) — the issue itself says "no urgency." Fixing them isn't needed to close #1's substantive gaps and isn't part of this plan.
+Issue [GL#1](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/1)'s "Item 3" minor notes are pre-existing, already-documented-as-low-risk observations (read-then-write idempotency guard, a harmless spurious-duplicate status reuse, an error-labeling edge case for a future migration, unconditional error-clearing, and a test-isolation note) — the issue itself says "no urgency." Fixing them isn't needed to close [GL#1](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/1)'s substantive gaps and isn't part of this plan.
 
 ---
 

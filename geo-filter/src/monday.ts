@@ -1,6 +1,6 @@
 // Pulls contact coordinates off a board — just enough for this one-off tool, not a general SDK.
 // Requests go through the canonical Monday transport (monday/graphql.ts, a byte-identical copy — see
-// the repo CLAUDE.md, #35), so a long page-through survives rate limits and Monday blips.
+// the repo CLAUDE.md, GL#35), so a long page-through survives rate limits and Monday blips.
 
 import type { Contact } from './geometry.js';
 import { MondayGraphQL, type MondayGraphQLOptions } from './monday/graphql.js';

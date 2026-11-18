@@ -218,7 +218,7 @@ describe('POST /webhooks/monday/promote', () => {
   });
 });
 
-// Issue #110: the Authorization JWT Monday signs app-created webhooks with (src/mondayJwt.ts).
+// Issue GL#110: the Authorization JWT Monday signs app-created webhooks with (src/mondayJwt.ts).
 // Token times are relative to the injected clock (deps.now), which the route checks exp against.
 describe('POST /webhooks/monday/promote — webhook JWT', () => {
   const SIGNING = 'app-signing-secret';

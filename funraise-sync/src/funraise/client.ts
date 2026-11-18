@@ -25,7 +25,7 @@ export interface FunraiseSubscription {
   [key: string]: unknown;
 }
 
-// The two keyset queries the poller pages with (#25; see src/subscriptions/poll.ts). Always
+// The two keyset queries the poller pages with (GL#25; see src/subscriptions/poll.ts). Always
 // page 0 — the position comes from the filter, never an offset.
 export interface FunraiseClient {
   // `updtime > afterMs order by updtime asc`

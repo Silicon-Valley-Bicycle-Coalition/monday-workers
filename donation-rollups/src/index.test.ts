@@ -88,7 +88,7 @@ describe('webhook secret (issue #27)', () => {
   });
 });
 
-// Issue #27: the 60/min per-IP limiter also throttled Monday's own deliveries, so a bulk edit of
+// Issue GL#27: the 60/min per-IP limiter also throttled Monday's own deliveries, so a bulk edit of
 // more than 60 gifts got 429s. Only a delivery that passes webhook verification skips it.
 describe('rate limiter exemption for verified Monday webhooks (issue #27)', () => {
   function exhaustedLimiter() {

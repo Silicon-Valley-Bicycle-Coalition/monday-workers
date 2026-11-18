@@ -3,7 +3,7 @@ import { processDeadLetters, DEAD_LETTER_PREFIX } from './processDeadLetters';
 import type { EventStore } from '../db/events';
 import type { EventRow } from '../types';
 
-// #25: nothing consumed funraise-sync-writes-dlq, so a gift that exhausted its retries expired
+// GL#25: nothing consumed funraise-sync-writes-dlq, so a gift that exhausted its retries expired
 // there unseen. Dead messages must leave a distinct mark on the events row and one log line.
 function row(overrides: Partial<EventRow> = {}): EventRow {
   return {

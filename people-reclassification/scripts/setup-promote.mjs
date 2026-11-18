@@ -14,7 +14,7 @@
 //
 // WEBHOOK_SECRET must match the Worker's PROMOTE_WEBHOOK_SECRET. MONDAY_API_TOKEN reads the boards
 // and creates the columns. With MONDAY_AUTH_URL and START_KEY the webhook goes through the
-// monday-auth broker, so the Staff sync app owns it and Monday signs its deliveries (#110; needs
+// monday-auth broker, so the Staff sync app owns it and Monday signs its deliveries (GL#110; needs
 // WEBHOOKS_ENABLED on the broker for that deploy). Without them it is made with MONDAY_API_TOKEN
 // and arrives unsigned. --replace-webhooks first deletes the existing webhook on the Promote
 // column, to move a personal-token subscription over to the app.

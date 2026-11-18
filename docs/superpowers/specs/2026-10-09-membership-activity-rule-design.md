@@ -297,7 +297,7 @@ the private repo).
 * An Attendee re-point recomputes both the old and new owner, as a Donor re-point does.
 * A deleted registration (Monday returns nothing) marks the row `qualifies = 0`; an archived
   registration keeps its last read (archived items read empty board_relations, the same trap as
-  archived gifts, issue #26).
+  archived gifts, issue [GL#26](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/26)).
 * Config mismatch (a missing column id) surfaces on the write → retry → DLQ → alert, as today.
 * The nightly duty's page read failing leaves the cursor in place; the next night resumes.
 

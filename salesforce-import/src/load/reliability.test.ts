@@ -30,7 +30,7 @@ class FakeMonday {
   columnTitles = new Map<string, string>(); // column id → title
   links: { itemId: string; targetIds: number[] }[] = [];
   archived: string[] = [];
-  // #50: how many mutations each archive_item / change_multiple_column_values request carried.
+  // GL#50: how many mutations each archive_item / change_multiple_column_values request carried.
   archiveRequests: number[] = [];
   linkRequests: number[] = [];
   // Item name → how many more archive_item calls for it answer with a GraphQL error.
@@ -539,7 +539,7 @@ describe('runLoad inline relations (#22)', () => {
     const gift = monday.byName('Gift')[0]!;
     expect(gift.rel).toEqual({ [colId('Donor')]: [id('Ada')], [colId('Campaign')]: [id('Gala')],
       [colId('Recurring Gift')]: [id('Monthly')], [colId('Matched By')]: [id('Acme')] });
-    expect(monday.archived).toEqual([gift.id]); // links complete, so #21's gate lets it archive
+    expect(monday.archived).toEqual([gift.id]); // links complete, so GL#21's gate lets it archive
     const l = new Ledger(); await l.load();
     for (const c of ['Donor', 'Campaign', 'Recurring Gift', 'Matched By']) expect(l.linkDone('o1', c)).toBe(true);
     expect(l.linkCovers('o1', 'Donor', ['c1'])).toBe(true);
@@ -583,7 +583,7 @@ describe('runLoad inline relations (#22)', () => {
     expect(gift).toHaveLength(1);
     expect(gift[0]!.rel).toEqual({});
     expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
-    expect(monday.archived).toEqual([gift[0]!.id]); // links landed, so the #21 gate lets it archive
+    expect(monday.archived).toEqual([gift[0]!.id]); // links landed, so the GL#21 gate lets it archive
     const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
     expect(report.links).toMatchObject({ inlineRejected: 4, written: 4 });
   });
@@ -595,7 +595,7 @@ describe('runLoad inline relations (#22)', () => {
     expect(monday.creates.filter((c) => c.includes('Gift'))).toEqual([['Gift']]); // no stripped re-send
     const l = new Ledger(); await l.load();
     expect(l.failures().find((f) => f.sfId === 'o1')?.error).toMatch(/committed but its response was incomplete/);
-    expect(monday.archived).toEqual([]); // #21: nothing archives without its links
+    expect(monday.archived).toEqual([]); // GL#21: nothing archives without its links
 
     for (const i of monday.items) i.hiddenFromSearch = false; // search catches up
     expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);

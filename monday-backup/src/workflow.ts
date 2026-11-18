@@ -74,7 +74,7 @@ export class SnapshotWorkflow extends WorkflowEntrypoint<Env, unknown> {
     const requestStats = new RequestStats();
     await runSnapshot(asSnapshotStep(step), {
       monday: new HttpMondayClient(MONDAY_API_URL, tokenProviderFor(env), { deadline, fetchFn: requestStats.fetchFn }),
-      // Every board and doc file is encrypted before upload (issue #112); without the key the run
+      // Every board and doc file is encrypted before upload (issue GL#112); without the key the run
       // fails at its folder step and alerts, and nothing is uploaded.
       drive: new EncryptedDriveClient(
         new GoogleDriveClient(

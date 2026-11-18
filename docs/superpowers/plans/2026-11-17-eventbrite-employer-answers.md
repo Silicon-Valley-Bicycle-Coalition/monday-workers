@@ -23,7 +23,7 @@
 - Production `eventbrite-sync/wrangler.jsonc` gets **no** `EMPLOYER_ANSWERS` binding in this work. Sandbox does. A missing binding = feature off.
 - Copied modules stay byte-identical and strip-only TypeScript (no enums, namespaces, parameter properties).
 - Type-check with `npm run typecheck`, never bare `tsc`. Run Worker tests with the sandbox disabled.
-- Commits: conventional, ending `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, referencing `(#127)`.
+- Commits: conventional, ending `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, referencing `(GL#127)`.
 
 ## Review Focus
 
@@ -68,7 +68,7 @@
 - [ ] **Step 3: Copy** to `impact-attribution/src/employerName.ts` (`cp`). Add `employerName.test.ts` there: `normalizeEmployerName('AT & T, Inc.') === 'att'`, `organizationNameVariants('Google')` contains `'Google, LLC'`, `pickOrganization('google', [{id:'1',name:'Google, LLC'},{id:'2',name:'Googleplex'}])` is `{ kind: 'one', organization: {id:'1',…} }`.
 - [ ] **Step 4: Add the CI job** `employer-name-copies` on the `monday-graphql-copies` model: rules on `"*/src/**/employerName.ts"` and `.gitlab-ci.yml`; `cmp member-portal/src/changeRequests/employerName.ts impact-attribution/src/employerName.ts`; `node --input-type=module -e "await import('./member-portal/src/changeRequests/employerName.ts')"`. Add a one-line comment above it like the other copy jobs.
 - [ ] **Step 5: Verify** `cmp` passes locally and `cd impact-attribution && npm test && npm run typecheck` passes.
-- [ ] **Step 6: Commit** `refactor(member-portal,impact-attribution): share employer-name matching (#127)`.
+- [ ] **Step 6: Commit** `refactor(member-portal,impact-attribution): share employer-name matching (GL#127)`.
 
 ### Task 2: Answer storage and the `EmployerAnswers` RPC
 
@@ -98,7 +98,7 @@
 - [ ] **Step 4: Run** `npm test -- src/answers`. Expected: FAIL (module not found).
 - [ ] **Step 5: Implement** config validation (`maxAgeDays` positive int, `ignore` list of strings), the store, `handleRecord`, and `EmployerAnswers` (reads `configFor(this.env)`, calls `handleRecord` with `new Date().toISOString()`). Logs: one line per call with `source`, `sourceId`, `personItemId`, result — never the answer. Add `employerAnswers` to both config files (`maxAgeDays: 365`, `ignore`: `n/a`, `na`, `none`, `no`, `retired`, `self`, `self employed`, `selfemployed`, `unemployed`, `student`, `homemaker`, `not employed`, `-`).
 - [ ] **Step 6: Run** `npm test && npm run typecheck`. Expected: PASS.
-- [ ] **Step 7: Commit** `feat(impact-attribution): store employer answers through an EmployerAnswers RPC (#127)`.
+- [ ] **Step 7: Commit** `feat(impact-attribution): store employer answers through an EmployerAnswers RPC (GL#127)`.
 
 ### Task 3: Answer rule (pure)
 
@@ -123,7 +123,7 @@
 - [ ] **Step 2: Run** `npm test -- src/answers/rule.test.ts src/rule.test.ts src/evidence.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Answer lines in the comment use the stored (truncated) text in double quotes; at most 10 answer lines, like matches.
 - [ ] **Step 4: Run** `npm test && npm run typecheck`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): expire, supersede and merge employer answers (#127)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): expire, supersede and merge employer answers (GL#127)`.
 
 ### Task 4: Nightly run proposes from answers
 
@@ -147,7 +147,7 @@
 - [ ] **Step 2: Run** `npm test -- src/run.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement** in `runProposals`, after the match refresh and before `selectCandidates`: load pending → `expireAndSupersede` → write expired/superseded states → `findOrganizationsByNames` over the union of `organizationNameVariants` of each distinct live answer → `pickOrganization` per answer (`one` → resolved; else `touchPending`) → `answerCandidates` → `mergeCandidates` with `qualifyingPairs` output → existing `selectCandidates` and liveness walk. Answers on a candidate dropped by `selectCandidates`' skips or the liveness check are marked `skipped`; on a created Draft `proposed`; deferred stay `pending`. `sources` from which evidence lists are non-empty.
 - [ ] **Step 4: Run** `npm test && npm run typecheck`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): propose Draft affiliations from employer answers (#127)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): propose Draft affiliations from employer answers (GL#127)`.
 
 ### Task 5: Detect the employer answer in `eventbrite-sync`
 
@@ -162,7 +162,7 @@
 - [ ] **Step 2: Run** `npm test -- src/mapping`. Expected: FAIL.
 - [ ] **Step 3: Implement.** In `mapPledge`, `employer` is the one field that falls through to `other.push`. Add `[/where do you work|employer/i, 'employer']` to the lib's pattern list.
 - [ ] **Step 4: Run** `npm test && npm run typecheck`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(eventbrite-sync): recognise the employer question (#127)`.
+- [ ] **Step 5: Commit** `feat(eventbrite-sync): recognise the employer question (GL#127)`.
 
 ### Task 6: Record answers from the consumers
 
@@ -186,11 +186,11 @@
 - [ ] **Step 4: Implement.** `index.ts` builds `employerAnswers: env.EMPLOYER_ANSWERS ?? null`. Context: the event's name from the events ledger row or the cached Eventbrite event read (builder's choice; pledge may use `Pledge to Ride <year>`). `wrangler.jsonc` `env.sandbox.services` adds `{ "binding": "EMPLOYER_ANSWERS", "service": "svbc-impact-attribution-sandbox", "entrypoint": "EmployerAnswers" }`; production unchanged, with a comment saying why (spec "The binding is optional").
 - [ ] **Step 5: Extend `eventbrite-sync/config/split.test.ts`:** sandbox's `EMPLOYER_ANSWERS` service ends in `-sandbox`, and production declares no `EMPLOYER_ANSWERS` binding.
 - [ ] **Step 6: Run** `npm test && npm run typecheck`, then from the repo root `node scripts/check-log-safety.mjs` and `node scripts/check-monday-auth-bindings.mjs`. Expected: all pass.
-- [ ] **Step 7: Commit** `feat(eventbrite-sync): hand employer answers to impact-attribution (#127)`.
+- [ ] **Step 7: Commit** `feat(eventbrite-sync): hand employer answers to impact-attribution (GL#127)`.
 
 ### Task 7: Docs
 
 **Files:** `eventbrite-sync/README.md` (new "Employer answers" section; Pledge to Ride "A new year's pledge" step on the employer question), `impact-attribution/README.md` (second evidence source, `employer_answers`, RPC, states, `off` behaviour, rollout order), root `README.md` status rows for both Workers, `CLAUDE.md` (one line: `employerName.ts` copy roster, `employer-name-copies` job).
 
 - [ ] **Step 1: Write** from the spec and this plan only. Include the operator steps: `wrangler d1 migrations apply` for `impact-attribution` (sandbox, then production at its rollout), and deploy `impact-attribution` sandbox **before** `eventbrite-sync` sandbox so the binding resolves. State that production `eventbrite-sync` has no binding until `impact-attribution` is in production, and the three rollout steps verbatim from the spec.
-- [ ] **Step 2: Commit** `docs(eventbrite-sync,impact-attribution): document employer answers (#127)`.
+- [ ] **Step 2: Commit** `docs(eventbrite-sync,impact-attribution): document employer answers (GL#127)`.

@@ -156,7 +156,7 @@ So:
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values. **Any column added to one People board must be
   added to the other with the same title and type.** Production, 2026-11-03: a `Location`
-  (location) column added to People alone for the Map view (migration issue #96) failed the dry
+  (location) column added to People alone for the Map view (migration issue [GL#96](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/96)) failed the dry
   run within hours, and a matching empty one was added to People (Historical)
   (`location_mm8r8m6y`). The same day, the two-way Person connection on Activities (Logged) added
   a connect column titled `Activities (Logged)` to both boards; keep those two titles identical.
@@ -218,7 +218,7 @@ run. Neither run counts as a pass when the cron decides whether one is due.
 **A logged contact** (`src/loggedContact.ts`): on a morning no pass is owed, anyone on Historical
 with a counted Activities (Logged) item inside the window moves to People, most recent first, under
 the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged contact does this; a
-new gift still waits for the pass. It doesn't page all of Activities (Logged) every day (#101): a
+new gift still waits for the pass. It doesn't page all of Activities (Logged) every day ([GL#101](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/101)): a
 server-side date rule reads only items dated from 14 days (`LOOKBACK_MARGIN_DAYS`) before the last
 clean live logged-contact run, one that finished ok with no failed, ambiguous or deferred move.
 After any other run, or with none, it reads the whole window, as before. It never pages People
@@ -229,7 +229,7 @@ but logged since waits for the next pass.
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
 (`PROMOTE_WEBHOOK_SECRET`); with `MONDAY_SIGNING_SECRET` set it also verifies the `Authorization`
-JWT Monday signs app-created webhooks with (issue #110; rollout and operator steps in the root
+JWT Monday signs app-created webhooks with (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110); rollout and operator steps in the root
 README, "Monday's signed webhook JWT"). The Worker writes `Promoted On` = today, moves the item if it's on
 Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
 for the window. On People it restarts the window with no move.
@@ -247,7 +247,7 @@ covers a dropped webhook, a lease held by a running pass, and a label carried ac
 | Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
 | Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
 
-Monday's promote deliveries that pass the URL secret skip the 60/min/IP limiter (issue #110,
+Monday's promote deliveries that pass the URL secret skip the 60/min/IP limiter (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110),
 `isVerifiedMondayWebhook` in `src/rateLimit.ts`), so a bulk promote isn't 429'd into the next
 morning's sweep. Promoting several people at once works: their webhooks share one lease and wait about 12 s for it,
 so a small batch finishes within seconds and anything left finishes the next morning. So does someone
@@ -392,7 +392,7 @@ both new columns exist, and Monday won't register a webhook until the URL answer
 3. Deploy.
 4. Re-run the script with `--worker-url <url>` and `WEBHOOK_SECRET` to subscribe the webhooks.
    Set `MONDAY_AUTH_URL` and `START_KEY` too so the Staff sync app owns them and Monday signs
-   their deliveries (#110; `monday-auth/README.md` "Re-registering webhooks"); add
+   their deliveries ([GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110); `monday-auth/README.md` "Re-registering webhooks"); add
    `--replace-webhooks` to move an existing personal-token subscription over.
 
 Before step 1 in any environment, check that the two People boards' columns match (same title

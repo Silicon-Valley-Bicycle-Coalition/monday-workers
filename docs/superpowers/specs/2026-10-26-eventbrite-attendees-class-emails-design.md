@@ -3,7 +3,7 @@
 **Date:** 2026-10-26
 **Status:** Proposed, on `feat/eventbrite-attendees`. Not built.
 **Worker:** `eventbrite-sync` (extends the orders path from `2026-10-06-eventbrite-orders-design.md`).
-**Issue:** private planning repo #62 (Bike Education class emails); this is also the attendee half of
+**Issue:** private planning repo [GL#62](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/62) (Bike Education class emails); this is also the attendee half of
 `migration-plan.md`'s "Eventbrite-going-forward Worker".
 **Prior art:** the orders path in this Worker (webhook → D1 ledger → queue → Monday write,
 pointer-only deliveries, adopt-before-create); `salesforce-import`'s Eventbrite transform (Events
@@ -63,7 +63,7 @@ Decided with David on 2026-10-26:
 ## Non-goals
 
 * Sending email from the Worker. Monday sends it; the Worker only sets columns.
-* Registrations from Funraise (yearly CSV, migration repo #51) or Eventbrite events from before
+* Registrations from Funraise (yearly CSV, migration repo [GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/51)) or Eventbrite events from before
   cutover (`salesforce-import` migrates those).
 * The occasional one-off email from `learn@`, like the LCI Seminar announcements and application
   updates. Kendra sends those with Mass email from a filtered view, and nothing here automates

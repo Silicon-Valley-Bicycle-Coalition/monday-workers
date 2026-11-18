@@ -31,7 +31,7 @@ describe('D1DonationLinksStore', () => {
 
     const result = await store.upsertLink({ donationItemId: 'd-move', donationBoardId: '1', ownerItemId: 'o-new', ownerBoardId: '3' }, '2026-01-05T00:00:00Z');
 
-    // The owner it left comes back too — it must be recomputed (issue #26).
+    // The owner it left comes back too — it must be recomputed (issue GL#26).
     expect(result).toEqual({ changed: true, updatedAt: '2026-01-05T00:00:00Z',
       previousOwner: { ownerItemId: 'o-old', ownerBoardId: '2' } });
     expect(await store.getLinkForDonation('d-move')).toEqual({ ownerItemId: 'o-new', ownerBoardId: '3', updatedAt: expect.any(String) });

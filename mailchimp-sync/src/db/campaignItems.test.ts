@@ -21,7 +21,7 @@ describe('D1CampaignItemsStore', () => {
     expect(await one(store, 'nope')).toBeNull();
   });
 
-  // #97: the inbound consumer resolves a whole batch's interests with one query.
+  // GL#97: the inbound consumer resolves a whole batch's interests with one query.
   it('getByInterestIds resolves many interests in one call, leaving out the untracked', async () => {
     const store = new D1CampaignItemsStore(env.DB);
     await store.upsert({ interestId: 'm1', mondayItemId: 'item-m1', name: 'A', archivedAt: null });

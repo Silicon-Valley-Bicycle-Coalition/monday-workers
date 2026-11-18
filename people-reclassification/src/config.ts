@@ -124,7 +124,7 @@ export function validateConfig(raw: unknown): ReclassificationConfig {
   const config: ReclassificationConfig = {
     monday: {
       apiUrl: str(monday, 'apiUrl', 'monday'), accountUrl: str(monday, 'accountUrl', 'monday'),
-      // The Monday account a webhook JWT must name (issue #110, src/mondayJwt.ts). Optional.
+      // The Monday account a webhook JWT must name (issue GL#110, src/mondayJwt.ts). Optional.
       ...(monday.accountId !== undefined ? { accountId: num(monday, 'accountId', 'monday', { min: 1 }) } : {}),
     },
     window: { years: num(window, 'years', 'window', { min: 1 }), timeZone: str(window, 'timeZone', 'window') },
