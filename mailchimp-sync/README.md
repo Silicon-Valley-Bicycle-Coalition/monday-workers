@@ -434,8 +434,10 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   **Has Active Recurring Gift** checkbox (`monday.columns.hasActiveRecurringGift`, kept nightly by
   `donation-rollups`), so someone whose recurring gift lapses starts getting reminders again. The column
   is optional in config; `null` or absent leaves the tag unsynced. It is a managed tag, so unchecking
-  removes it. The tag appears on a contact's next sync after the change, so run the outbound backfill
-  (or touch the checkbox) once to tag existing recurring donors.
+  removes it. The tag appears on a contact's next sync after the change, so existing recurring
+  donors were tagged once with `scripts/recurring-donor-backfill.mjs`, which applies the same rule
+  to the whole People board (dry run by default; production run 2026-11-17: 391 tagged, 5 already
+  were, none removed).
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
   independently, and put its id in `mailchimp.interestCategoryIds`. **Production (decided
