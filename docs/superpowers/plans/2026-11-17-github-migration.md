@@ -181,21 +181,52 @@ re-cloned from GitHub (Task 8), not re-pointed.
 
 ### Task 6: monday-workers cutover (operator)
 
-- [ ] **Step 1:** Announce freeze: no merges on GitLab monday-workers until Step 6 is done. Merge Task 1–3's MR. Merge or close the 2 open MRs. Prune merged remote branches on GitLab so only live branches move.
-- [ ] **Step 2:** `gh repo create Silicon-Valley-Bicycle-Coalition/monday-workers --public --disable-wiki --description "SVBC's Cloudflare Workers for the Salesforce → Monday.com migration (MIT)"`. Before pushing: `gh api -X PATCH repos/Silicon-Valley-Bicycle-Coalition/monday-workers -F security_and_analysis[secret_scanning][status]=enabled -F security_and_analysis[secret_scanning_push_protection][status]=enabled`; enable Dependabot alerts (`gh api -X PUT …/vulnerability-alerts`).
-- [ ] **Step 3:** Re-mirror (picks up Step 1 merges), delete every ref outside `refs/heads`/`refs/tags`, run the Task 5 filter-repo command, then re-run the Task 5 scans (gitleaks and the `replacements.txt` strings) on the whole result: Expected only the accepted form token. Push heads+tags from that rewritten mirror as in Task 4 Step 3. Verify `ls-remote` lists the same branch and tag names as GitLab (the SHAs now differ).
-- [ ] **Step 4:** Cutover commit on a branch: `node scripts/rewrite-gitlab-refs.mjs --project silicon-valley-bicycle-coalition/svbc-monday-workers --max-issue 127 --max-mr 509 --write` (re-check 127 / 509 against the current highest iids), review the full diff, `git rm .gitlab-ci.yml`, add the README legend (as Task 4 Step 4) and switch README/CLAUDE.md/DEPLOY.md links from GitLab to GitHub. README sandbox setup: replace the GitLab Protected/Masked-variable instructions with the GitHub `sandbox` environment secret, restricted to `main`. Re-wrap `CLAUDE.md` lines that the rewrite pushed past ~100 columns. Revert the `#4` and `#10` rewrites on `donation-rollups/README.md:1461` (gotcha numbers, not GitLab refs), and skim the dry run's single-digit refs for other numbering. Open the first GitHub PR. Expected: `checks` green, `workers` runs every changed Worker and `ci-ok` green.
-- [ ] **Step 5:** Ruleset on `main`: `gh api -X POST repos/Silicon-Valley-Bicycle-Coalition/monday-workers/rulesets` with target `branch`, include `~DEFAULT_BRANCH`, rules `pull_request` (0 approvals — David is the only reviewer), `required_status_checks` [`ci-ok`, `checks`], `non_fast_forward`, `deletion`. Actions settings: fork PR workflows require approval for first-time contributors; default `GITHUB_TOKEN` read-only. Create environment `sandbox` (no secret yet — the deploy job stays inert, as today). Merge the PR.
-- [ ] **Step 6:** Issues: run Task 2's copier for monday-workers from the primary `monday-workers` checkout (`--max-issue <N> --max-mr <N>` as in Task 4); **read the review file for donor/staff personal data before `--confirm`** — redact in the GitHub issue body (keep the detail on GitLab) where needed. Verify 9 issues, idempotent rerun.
-- [ ] **Step 7:** History was rewritten (Task 5 audit result), so the existing checkout can't just be re-pointed: its `main` and every branch carry the old SHAs. Re-clone the primary checkout from GitHub now and move live worktrees per Task 8; a branch that must survive is replayed with `git rebase --onto origin/<b> <old-gitlab-sha-of-b> <b>` on a fresh clone. The commands below then apply to that fresh clone: `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
+- [x] **Step 1:** Announce freeze: no merges on GitLab monday-workers until Step 6 is done. Merge Task 1–3's MR. Merge or close the 2 open MRs. Prune merged remote branches on GitLab so only live branches move.
+- [x] **Step 2:** `gh repo create Silicon-Valley-Bicycle-Coalition/monday-workers --public --disable-wiki --description "SVBC's Cloudflare Workers for the Salesforce → Monday.com migration (MIT)"`. Before pushing: `gh api -X PATCH repos/Silicon-Valley-Bicycle-Coalition/monday-workers -F security_and_analysis[secret_scanning][status]=enabled -F security_and_analysis[secret_scanning_push_protection][status]=enabled`; enable Dependabot alerts (`gh api -X PUT …/vulnerability-alerts`).
+- [x] **Step 3:** Re-mirror (picks up Step 1 merges), delete every ref outside `refs/heads`/`refs/tags`, run the Task 5 filter-repo command, then re-run the Task 5 scans (gitleaks and the `replacements.txt` strings) on the whole result: Expected only the accepted form token. Push heads+tags from that rewritten mirror as in Task 4 Step 3. Verify `ls-remote` lists the same branch and tag names as GitLab (the SHAs now differ).
+- [x] **Step 4:** Cutover commit on a branch: `node scripts/rewrite-gitlab-refs.mjs --project silicon-valley-bicycle-coalition/svbc-monday-workers --max-issue 127 --max-mr 509 --write` (re-check 127 / 509 against the current highest iids), review the full diff, `git rm .gitlab-ci.yml`, add the README legend (as Task 4 Step 4) and switch README/CLAUDE.md/DEPLOY.md links from GitLab to GitHub. README sandbox setup: replace the GitLab Protected/Masked-variable instructions with the GitHub `sandbox` environment secret, restricted to `main`. Re-wrap `CLAUDE.md` lines that the rewrite pushed past ~100 columns. Revert the `#4` and `#10` rewrites on `donation-rollups/README.md:1461` (gotcha numbers, not GitLab refs), and skim the dry run's single-digit refs for other numbering. Open the first GitHub PR. Expected: `checks` green, `workers` runs every changed Worker and `ci-ok` green.
+- [x] **Step 5:** Ruleset on `main`: `gh api -X POST repos/Silicon-Valley-Bicycle-Coalition/monday-workers/rulesets` with target `branch`, include `~DEFAULT_BRANCH`, rules `pull_request` (0 approvals — David is the only reviewer), `required_status_checks` [`ci-ok`, `checks`], `non_fast_forward`, `deletion`. Actions settings: fork PR workflows require approval for first-time contributors; default `GITHUB_TOKEN` read-only. Create environment `sandbox` (no secret yet — the deploy job stays inert, as today). Merge the PR.
+- [x] **Step 6:** Issues: run Task 2's copier for monday-workers from the primary `monday-workers` checkout (`--max-issue <N> --max-mr <N>` as in Task 4); **read the review file for donor/staff personal data before `--confirm`** — redact in the GitHub issue body (keep the detail on GitLab) where needed. Verify 9 issues, idempotent rerun.
+- [ ] **Step 7 (folded into Task 8, 2026-11-17):** History was rewritten (Task 5 audit result), so the existing checkout can't just be re-pointed: its `main` and every branch carry the old SHAs. Re-clone the primary checkout from GitHub now and move live worktrees per Task 8; a branch that must survive is replayed with `git rebase --onto origin/<b> <old-gitlab-sha-of-b> <b>` on a fresh clone. The commands below then apply to that fresh clone: `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
+
+#### Cutover notes (2026-11-17)
+
+- Repo public, history rewritten from a fresh mirror at cutover (2,465 → 2,463 commits: the
+  fixture commit and one merge became empty); rescan clean but for the accepted form token. The
+  main tree matched GitLab's exactly.
+- Rewriter: 996 changes, 54 wrong (41 cross-project to monday-migration, the rest local numbering,
+  a string literal and an item name), found by two parallel reviews against both projects' titles;
+  this plan file was excluded because it quotes bare refs. CLAUDE.md uses plain `GL#NN` (no URLs)
+  to keep it short.
+- PR #1 merged with 24 checks green (deploy-sandbox skipped, no secret). Ruleset, read-only
+  `GITHUB_TOKEN`, first-time-contributor approval and the `sandbox` environment (branch `main`) set.
+- Issues: 6 copied (3 of the planned 9 had closed); 1 confidential issue stays on GitLab. One bare
+  range ref fixed by hand in the cache.
+- No carried-over branch has a closing keyword. A fresh clone is at
+  `../monday-workers-github`; every older checkout and worktree still has GitLab's SHAs (Task 8).
 
 ### Task 7: Workers Builds and Claude app (operator, Cloudflare + GitHub dashboards)
 
 - [ ] **Step 1:** Install the Cloudflare Workers & Pages GitHub app on the org, repo access `monday-workers` only.
-- [ ] **Step 2:** For `svbc-calendars`: Workers & Pages → Settings → Build → disconnect GitLab, connect GitHub `monday-workers`, root `/svbc-calendars`, branch `main`, non-production branch builds **off**, same build/deploy commands as before (record them first). Merge a no-op change under `svbc-calendars/` — Expected: a build from the GitHub commit SHA deploys, and `curl -sI https://events.bikesiliconvalley.org/` returns 200.
+- [x] **Step 2:** For `svbc-calendars`: Workers & Pages → Settings → Build → disconnect GitLab, connect GitHub `monday-workers`, root `/svbc-calendars`, branch `main`, non-production branch builds **off**, same build/deploy commands as before (record them first). Merge a no-op change under `svbc-calendars/` — Expected: a build from the GitHub commit SHA deploys, and `curl -sI https://events.bikesiliconvalley.org/` returns 200.
 - [ ] **Step 3:** Same for `monday-backup` (root `/monday-backup`, watch path `monday-backup/*`, `main` only, previews off); verify with a no-op change and the next cron run's log.
-- [ ] **Step 4:** List every Worker on the SVBC account and its build settings (`mcp` workers list or dashboard); any other GitLab-connected Worker gets the same treatment. Record the final list in the root README's "Deploys" section.
+- [x] **Step 4:** List every Worker on the SVBC account and its build settings (`mcp` workers list or dashboard); any other GitLab-connected Worker gets the same treatment. Record the final list in the root README's "Deploys" section.
 - [ ] **Step 5:** Install the Claude GitHub app on the org for both repos (`claude` → `/install-github-app`, or github.com/apps/claude). Open a test issue in monday-migration mentioning `@claude` — Expected: a reply. Close it.
+
+#### Task 7 notes (2026-11-17)
+
+- Only `svbc-calendars` and `svbc-monday-backup` (of 34 Workers) had Workers Builds connections, both
+  to GitLab `main`. Both reconnected to GitHub; the Deploys section records them (PR #9).
+- PR #9's merge (`f6fec418`) built and deployed both from GitHub: the `Workers Builds` check runs
+  succeeded and `wrangler deployments list` shows a new deployment for each.
+- `curl -sI https://events.bikesiliconvalley.org/` returns 403 `cf-mitigated: challenge` (the zone
+  challenges non-browser clients); a browser gets 200. Use a browser for Step 2's check.
+- Step 1: the Cloudflare app was installed with access to **all** org repos; narrow it to
+  `monday-workers`.
+- Step 3: the reconnect reset `svbc-monday-backup`'s watch path to `*`; set it back to
+  `monday-backup/*`. Next cron run's log still to check.
+- Step 5: the Claude app is installed, but neither repo has a Claude workflow or token secret, so
+  `@claude` gets no reply until `/install-github-app` runs in each repo.
 
 ### Task 8: Local move and cleanup (operator, this Mac)
 
