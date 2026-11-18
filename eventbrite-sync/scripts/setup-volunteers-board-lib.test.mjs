@@ -56,10 +56,10 @@ describe('planView', () => {
 });
 
 describe('recentEventsViewVariables', () => {
-  const vars = recentEventsViewVariables('7', { eventColumn: 'board_relation_e', dateColumn: 'date_d' });
+  const vars = recentEventsViewVariables('7', { dateColumn: 'date_d' });
 
-  it('groups by the Event relation and hides empty groups', () => {
-    expect(vars.settings).toEqual({ group_by: { conditions: [{ columnId: 'board_relation_e' }], hideEmptyGroups: true } });
+  it('is not grouped (Monday ignores the sort when ordering relation groups)', () => {
+    expect(vars.settings).toBeUndefined();
   });
 
   it('filters Date to the last 90 days', () => {

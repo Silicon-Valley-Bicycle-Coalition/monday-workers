@@ -40,15 +40,19 @@ export function planView(existingViews) {
 
 /**
  * Variables for the create_view_table mutation. `direction` is the lowercase GraphQL enum name
- * (`desc`); the Monday MCP tool wanted uppercase, which is that tool's quirk, not the API's.
+ * (`desc`); the Monday MCP tool wants uppercase and silently drops lowercase (production's view
+ * sat at ASC until 2026-11-17), which is that tool's quirk, not the API's.
+ *
+ * Deliberately not grouped by Event: Monday orders relation groups its own way, ignoring the item
+ * sort, and offers no group sort for them, so the newest event was not first (2026-11-17). The
+ * per-event list is the Events board's "Volunteer events" view instead (README).
  */
-export function recentEventsViewVariables(boardId, { eventColumn, dateColumn }) {
+export function recentEventsViewVariables(boardId, { dateColumn }) {
   return {
     board: boardId,
     name: VIEW_NAME,
     filter: { operator: 'and', rules: [{ column_id: dateColumn, operator: 'within_the_last', compare_value: ['DAYS', RECENT_DAYS] }] },
     sort: [{ column_id: dateColumn, direction: 'desc' }],
-    settings: { group_by: { conditions: [{ columnId: eventColumn }], hideEmptyGroups: true } },
   };
 }
 

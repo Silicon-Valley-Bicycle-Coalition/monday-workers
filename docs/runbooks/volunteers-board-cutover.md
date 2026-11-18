@@ -45,8 +45,8 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name, Attendee Email and Ticket Type (each only if missing) and the view (grouped by Event, Date within the
-   last 90 days, newest first), and prints the column ids. Then, from the repo root, add the 🔒
+   Attendee Name, Attendee Email and Ticket Type (each only if missing) and the view (Date within the
+   last 90 days, newest first, ungrouped), and prints the column ids. Then, from the repo root, add the 🔒
    markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
    `18201685` is the production Donors & Contacts workspace, per
    `docs/production-deploy-checklist.md`):
@@ -281,11 +281,14 @@ step. Never delete the Volunteers items the backfill created.
 
 ## For staff
 
-- **Recent events view.** On the Volunteers board, open the **Recent events** view: items grouped
-  by **Event**, covering the last 90 days, newest first. Each group is one real event; expand it
-  to see who volunteered.
+- **Recent events view.** On the Volunteers board, open the **Recent events** view: every shift in
+  the last 90 days, newest first, with its **Event**.
+- **Who signed up for an event.** On the Events board, open the **Volunteer events** view (events
+  with volunteers, newest first) and open an event: its **Volunteers** column lists everyone linked
+  to it through the Volunteers board's **Event** column (a two-way connection, so re-pointing
+  **Event** moves the volunteer between events).
 - **`Event` defaults to the volunteer listing itself.** A stand-alone volunteer event (a listing
-  with no attendee event) therefore groups by itself and needs nothing.
+  with no attendee event) therefore lists its own volunteers on Events and needs nothing.
 - **Re-pointing `Event`.** When a volunteer listing belongs to an attendee event (volunteers for
   a ride or class), open the volunteer's item and pick the attendee event in **Event**. Volunteers
   for the same real event should all point at the one Events item. The sync never writes `Event`
@@ -322,5 +325,6 @@ step. Never delete the Volunteers items the backfill created.
   so its next deploy writes to the Volunteers board.
 - The first nightly catch-up after cutover is capped at `ENQUEUE_PER_RUN` owners per night; step 10
   avoids that.
-- How the grouped view renders in the Monday UI (group order, empty-relation group) is not
-  verified.
+- Recent events is not grouped by Event: Monday orders relation groups its own way, ignoring the
+  item sort, and has no group sort for them (seen 2026-11-17). The sandbox board still lacks the
+  two-way **Event** connection and the Events **Volunteer events** view.
