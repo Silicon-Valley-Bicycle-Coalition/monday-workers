@@ -141,21 +141,33 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
     if (!/^\d+$/.test(organizationId)) {
       throw new Error(`eventbrite api: refusing to list orders for non-numeric organization id "${organizationId}"`);
     }
+    // This endpoint's status filter takes "active" (placed) or "inactive" (refunded) only;
+    // "all_not_deleted" and "both", valid on the per-event endpoint, are a 400 ARGUMENTS_ERROR
+    // here (verified live 2026-11-18). Placed and refunded orders were both placed through the
+    // webhook, so the missed-order check wants both: list each and merge.
+    const orders: EventbriteOrder[] = [];
+    for (const status of ['active', 'inactive'] as const) {
+      orders.push(...(await this.listOrganizationOrdersWithStatus(organizationId, changedSince, status)));
+    }
+    return orders;
+  }
+
+  private async listOrganizationOrdersWithStatus(organizationId: string, changedSince: string, status: 'active' | 'inactive'): Promise<EventbriteOrder[]> {
     const orders: EventbriteOrder[] = [];
     let continuation: string | null = null;
     for (let page = 1; ; page++) {
       const url = new URL(`${this.baseUrl}/organizations/${organizationId}/orders/`);
-      url.searchParams.set('status', 'all_not_deleted');
+      url.searchParams.set('status', status);
       url.searchParams.set('changed_since', changedSince);
       if (continuation !== null) url.searchParams.set('continuation', continuation);
-      const body = await this.getJson(`list orders for organization ${organizationId}`, url.toString());
+      const body = await this.getJson(`list ${status} orders for organization ${organizationId}`, url.toString());
       const list = (body as { orders?: unknown }).orders;
-      if (!Array.isArray(list)) throw new Error(`eventbrite api: list orders for organization ${organizationId} returned no "orders" array`);
+      if (!Array.isArray(list)) throw new Error(`eventbrite api: list ${status} orders for organization ${organizationId} returned no "orders" array`);
       orders.push(...(list as EventbriteOrder[]));
       const pagination = ((body as { pagination?: { has_more_items?: unknown; continuation?: unknown } }).pagination ?? {});
       const more = pagination.has_more_items === true && typeof pagination.continuation === 'string' && pagination.continuation !== '';
       if (!more) return orders;
-      if (page >= MAX_ORDER_PAGES) throw new Error(`eventbrite api: list orders for organization ${organizationId} has more than ${MAX_ORDER_PAGES} pages`);
+      if (page >= MAX_ORDER_PAGES) throw new Error(`eventbrite api: list ${status} orders for organization ${organizationId} has more than ${MAX_ORDER_PAGES} pages`);
       continuation = pagination.continuation as string;
     }
   }
