@@ -67,6 +67,10 @@
       "renewalReminders": "986d6c84bf",
       "renewalOptOutTag": "renewal-opt-out"
     },
+    "renewalDue": {
+      "tag": "renewal-due",
+      "daysBefore": 28
+    },
     "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",

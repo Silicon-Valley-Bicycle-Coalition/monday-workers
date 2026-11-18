@@ -1,4 +1,4 @@
-import type { Config, ConsentConfig, JourneyInterestsConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, JourneyInterestsConfig, RenewalDueConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
@@ -91,6 +91,18 @@ function journeyInterestsConfig(value: unknown): JourneyInterestsConfig | null {
     throw new Error('config: missing required key "mailchimp.journeyInterests.renewalOptOutTag"');
   }
   return { welcomeDrip: id('welcomeDrip'), renewalReminders: id('renewalReminders'), renewalOptOutTag: obj.renewalOptOutTag };
+}
+
+// Optional: absent or null turns the daily renewal-due tag off.
+function renewalDueConfig(value: unknown): RenewalDueConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'mailchimp.renewalDue');
+  if (typeof obj.tag !== 'string' || obj.tag === '') throw new Error('config: missing required key "mailchimp.renewalDue.tag"');
+  const days = obj.daysBefore;
+  if (typeof days !== 'number' || !Number.isInteger(days) || days < 0 || days > 90) {
+    throw new Error('config: "mailchimp.renewalDue.daysBefore" must be a whole number of days from 0 to 90');
+  }
+  return { tag: obj.tag, daysBefore: days };
 }
 
 function consentConfig(value: unknown): ConsentConfig {
@@ -190,6 +202,7 @@ export function validateConfig(raw: unknown): Config {
       nearbyTagPrefix: mailchimp.nearbyTagPrefix,
       interestCategoryIds: categoryIds as string[],
       journeyInterests: journeyInterestsConfig(mailchimp.journeyInterests),
+      renewalDue: renewalDueConfig(mailchimp.renewalDue),
     },
     lifetimeTierValue: cfg.lifetimeTierValue,
     activeStatusValue: cfg.activeStatusValue,

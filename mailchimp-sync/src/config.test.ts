@@ -60,6 +60,17 @@ describe('validateConfig', () => {
     expect(() => validateConfig(raw)).toThrow('mailchimp.journeyInterests.welcomeDrip');
   });
 
+  it('reads renewalDue, and rejects a missing tag or an out-of-range window', () => {
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    expect(validateConfig(raw).mailchimp.renewalDue).toBeNull();
+    raw.mailchimp.renewalDue = { tag: 'renewal-due', daysBefore: 28 };
+    expect(validateConfig(raw).mailchimp.renewalDue).toEqual({ tag: 'renewal-due', daysBefore: 28 });
+    raw.mailchimp.renewalDue = { daysBefore: 28 };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.renewalDue.tag');
+    raw.mailchimp.renewalDue = { tag: 't', daysBefore: 120 };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.renewalDue.daysBefore');
+  });
+
   it('rejects a non-object', () => {
     expect(() => validateConfig(null)).toThrow('config: expected an object');
   });

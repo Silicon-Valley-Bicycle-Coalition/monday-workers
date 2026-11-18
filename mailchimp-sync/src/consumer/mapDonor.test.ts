@@ -14,7 +14,7 @@ const CONFIG: Config = {
       activeMember: 'active-member', lapsedMember: 'lapsed-member',
       lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor',
     },
-    journeyInterests: null,
+    journeyInterests: null, renewalDue: null,
   },
   lifetimeTierValue: 'Lifetime',
   activeStatusValue: 'Active',

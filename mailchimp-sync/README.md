@@ -464,6 +464,16 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   --joined-before 2026-11-18` turned Welcome Drip back off for the 800 existing members seeded with
   it the same day. Both are dry runs by default. Trigger the welcome Journey on `MEMBSINCE` and the
   renewal Journey on `MEMBUNTIL`, never on "joins a group".
+* **The `renewal-due` tag** (`mailchimp.renewalDue`, `src/renewalDue/`): the daily cron
+  (`0 15 * * *`) tags every member tagged `active-member` whose Member Until is today or within
+  `daysBefore` (28) days, in Pacific time, and untags everyone else who has it: renewed (the date
+  moved out), lapsed or past. Mailchimp's own date trigger can't do this: it repeats every year on
+  the field's month and day, and segments can't test a future date, so a Recurring-date Journey
+  would remind members whose term runs past a year (148 of 801 on 2026-11-17) a year early, and
+  lapsed members on every old anniversary. Start the renewal Journey on **Tag added:
+  renewal-due**, and check the tag is still there before the 2-week and day-of emails, so a member
+  who renews mid-way stops getting them. A member first seen inside the window (a late import) is
+  tagged that day and gets the 4-week email late. Follows the write switch; counts-only logs.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`
