@@ -45,6 +45,21 @@ describe('validateConfig', () => {
     expect(config.monday.columns.email).toBe('c9');
   });
 
+  it('leaves journey interests off when absent or null, and reads them when set', () => {
+    expect(validateConfig(validRaw()).mailchimp.journeyInterests).toBeNull();
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    raw.mailchimp.journeyInterests = { welcomeDrip: 'w1', renewalReminders: null, renewalOptOutTag: 'renewal-opt-out' };
+    expect(validateConfig(raw).mailchimp.journeyInterests).toEqual({ welcomeDrip: 'w1', renewalReminders: null, renewalOptOutTag: 'renewal-opt-out' });
+  });
+
+  it('rejects journey interests without an opt-out tag, or with a blank id', () => {
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    raw.mailchimp.journeyInterests = { welcomeDrip: 'w1', renewalReminders: 'r1' };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.journeyInterests.renewalOptOutTag');
+    raw.mailchimp.journeyInterests = { welcomeDrip: '', renewalReminders: 'r1', renewalOptOutTag: 't' };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.journeyInterests.welcomeDrip');
+  });
+
   it('rejects a non-object', () => {
     expect(() => validateConfig(null)).toThrow('config: expected an object');
   });

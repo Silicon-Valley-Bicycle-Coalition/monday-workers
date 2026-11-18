@@ -1,4 +1,4 @@
-import type { Config, ConsentConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, JourneyInterestsConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
@@ -76,6 +76,22 @@ function historicalBoard(value: unknown, donorsBoardId: number | null): Historic
 }
 
 const nonEmptyString = (v: unknown): v is string => typeof v === 'string' && v !== '';
+
+// Optional: absent or null turns the feature off. Each interest id may be null on its own.
+function journeyInterestsConfig(value: unknown): JourneyInterestsConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'mailchimp.journeyInterests');
+  const id = (key: string): string | null => {
+    const v = obj[key];
+    if (v === null || v === undefined) return null;
+    if (typeof v !== 'string' || v === '') throw new Error(`config: "mailchimp.journeyInterests.${key}" must be an interest id or null`);
+    return v;
+  };
+  if (typeof obj.renewalOptOutTag !== 'string' || obj.renewalOptOutTag === '') {
+    throw new Error('config: missing required key "mailchimp.journeyInterests.renewalOptOutTag"');
+  }
+  return { welcomeDrip: id('welcomeDrip'), renewalReminders: id('renewalReminders'), renewalOptOutTag: obj.renewalOptOutTag };
+}
 
 function consentConfig(value: unknown): ConsentConfig {
   const consent = requireObject(value, 'consent');
@@ -173,6 +189,7 @@ export function validateConfig(raw: unknown): Config {
       tags: tags as unknown as MailchimpTagsConfig,
       nearbyTagPrefix: mailchimp.nearbyTagPrefix,
       interestCategoryIds: categoryIds as string[],
+      journeyInterests: journeyInterestsConfig(mailchimp.journeyInterests),
     },
     lifetimeTierValue: cfg.lifetimeTierValue,
     activeStatusValue: cfg.activeStatusValue,

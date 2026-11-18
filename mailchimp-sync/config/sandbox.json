@@ -62,6 +62,7 @@
       "doNotSolicit": "do-not-solicit",
       "recurringDonor": "recurring-donor"
     },
+    "journeyInterests": null,
     "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",

@@ -1,30 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { planMember, summarize } from './seed-journey-interests-lib.mjs';
+import { countChanges, planRenewal, planWelcomeUndo } from './seed-journey-interests-lib.mjs';
 
-const opts = { activeTag: 'active-member', optOutTag: 'renewal-opt-out', welcomeId: 'w', renewalId: 'r' };
-const m = (status, tags, interests = {}) => ({ status, tags: tags.map((name) => ({ name })), interests });
+const m = (status, tags, interests = {}, merge_fields = {}) => ({ status, tags: tags.map((name) => ({ name })), interests, merge_fields });
 
-describe('planMember', () => {
-  it('turns both interests on for an active subscriber', () => {
-    expect(planMember(m('subscribed', ['active-member']), opts)).toEqual({ w: true, r: true });
+describe('planRenewal', () => {
+  const opts = { activeTag: 'active-member', optOutTag: 'renewal-opt-out', renewalId: 'r' };
+  it('turns Renewal Reminders on for an active subscriber', () => {
+    expect(planRenewal(m('subscribed', ['active-member']), opts)).toEqual({ r: true });
   });
-  it('leaves Renewal Reminders off for a Renewal Opt Out', () => {
-    expect(planMember(m('subscribed', ['active-member', 'renewal-opt-out']), opts)).toEqual({ w: true });
-  });
-  it('skips anyone not subscribed, not active, or already opted in', () => {
-    expect(planMember(m('unsubscribed', ['active-member']), opts)).toBeNull();
-    expect(planMember(m('subscribed', ['lapsed-member']), opts)).toBeNull();
-    expect(planMember(m('subscribed', ['active-member'], { w: true, r: true }), opts)).toBeNull();
-  });
-  it('never sends false: an interest already on is simply left out', () => {
-    expect(planMember(m('subscribed', ['active-member'], { w: true, r: false }), opts)).toEqual({ r: true });
+  it('skips Renewal Opt Outs, non-subscribers, non-members and anyone already on', () => {
+    expect(planRenewal(m('subscribed', ['active-member', 'renewal-opt-out']), opts)).toBeNull();
+    expect(planRenewal(m('cleaned', ['active-member']), opts)).toBeNull();
+    expect(planRenewal(m('subscribed', ['lapsed-member']), opts)).toBeNull();
+    expect(planRenewal(m('subscribed', ['active-member'], { r: true }), opts)).toBeNull();
   });
 });
 
-describe('summarize', () => {
-  it('counts without addresses', () => {
-    const members = [m('subscribed', ['active-member']), m('subscribed', ['active-member', 'renewal-opt-out']), m('cleaned', ['active-member'])];
-    const plans = members.map((x) => ({ turnOn: planMember(x, opts) })).filter((p) => p.turnOn);
-    expect(summarize(members, plans, opts)).toEqual({ activeSubscribed: 2, optedOutOfRenewals: 1, welcomeOn: 2, renewalOn: 1 });
+describe('planWelcomeUndo', () => {
+  const opts = { welcomeId: 'w', joinedBefore: '2026-11-18', sinceField: 'MEMBSINCE' };
+  it('turns Welcome Drip off for a member who joined before the date, or has no join date', () => {
+    expect(planWelcomeUndo(m('subscribed', [], { w: true }, { MEMBSINCE: '2015-02-08' }), opts)).toEqual({ w: false });
+    expect(planWelcomeUndo(m('subscribed', [], { w: true }, { MEMBSINCE: '' }), opts)).toEqual({ w: false });
+  });
+  it('keeps it for members who joined on or after the date, and ignores anyone with it off', () => {
+    expect(planWelcomeUndo(m('subscribed', [], { w: true }, { MEMBSINCE: '2026-11-18' }), opts)).toBeNull();
+    expect(planWelcomeUndo(m('subscribed', [], { w: false }, { MEMBSINCE: '2015-02-08' }), opts)).toBeNull();
+  });
+});
+
+describe('countChanges', () => {
+  it('counts per interest and direction', () => {
+    expect(countChanges([{ change: { w: false } }, { change: { w: false } }, { change: { r: true } }])).toEqual({ 'w off': 2, 'r on': 1 });
   });
 });

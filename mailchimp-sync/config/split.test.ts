@@ -51,6 +51,15 @@ describe('config split: the Mailchimp sink', () => {
     }
   });
 
+  it('the two configs never share a Journey interest id', () => {
+    const ids = (cfg: { mailchimp: { journeyInterests?: unknown } }) => {
+      const j = cfg.mailchimp.journeyInterests as { welcomeDrip: string | null; renewalReminders: string | null } | null | undefined;
+      return j ? [j.welcomeDrip, j.renewalReminders].filter((id): id is string => id !== null) : [];
+    };
+    for (const id of ids(sandbox)) expect(ids(production)).not.toContain(id);
+    expect(validateConfig(production).mailchimp.journeyInterests).not.toBeNull();
+  });
+
   it('merge fields and tags are the same in both — they name Mailchimp fields, not ids', () => {
     expect(sandbox.mailchimp.mergeFields).toEqual(production.mailchimp.mergeFields);
     expect(sandbox.mailchimp.tags).toEqual(production.mailchimp.tags);

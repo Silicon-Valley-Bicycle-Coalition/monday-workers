@@ -452,12 +452,18 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
   People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
   webhook.
-* `scripts/seed-journey-interests.mjs` turns Welcome Drip and Renewal Reminders on for every
-  subscribed member tagged `active-member`, leaving Renewal Reminders off for `renewal-opt-out`.
-  Add-only, dry run by default. Production run 2026-11-17: 800 members, so Welcome Drip 800 and
-  Renewal Reminders 663 (137 opt-outs). Because current members are opted in, trigger the Journeys
-  on the `MEMBSINCE`/`MEMBUNTIL` dates, never on "joins a group", or every seeded member would get
-  the welcome series at once.
+* **Journey interests are set by the outbound sync** (`mailchimp.journeyInterests`; `null` in the
+  sandbox turns it off). Comparing a contact's tags before and after each sync
+  (`journeyInterests()` in `src/consumer/mapDonor.ts`): Welcome Drip goes on when a contact first
+  becomes a member (it held none of active/lapsed/lifetime-member and now gets active or lifetime),
+  so only new members get the welcome series; Renewal Reminders goes on whenever it gains
+  active-member, new or returning, unless tagged `renewal-opt-out`. On only, never off. It costs
+  one tag read, and only for contacts the sync tags active or lifetime.
+* `scripts/seed-journey-interests.mjs` covered members who existed before that: `--renewal`
+  turned Renewal Reminders on for the 663 active members (2026-11-17), and `--undo-welcome
+  --joined-before 2026-11-18` turned Welcome Drip back off for the 800 existing members seeded with
+  it the same day. Both are dry runs by default. Trigger the welcome Journey on `MEMBSINCE` and the
+  renewal Journey on `MEMBUNTIL`, never on "joins a group".
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`

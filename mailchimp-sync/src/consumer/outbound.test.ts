@@ -15,7 +15,7 @@ const CONFIG: Config = {
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], journeyInterests: null, nearbyTagPrefix: 'Near: ',
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
     tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor' },
   },
@@ -149,6 +149,46 @@ describe('processOutboundBatch', () => {
     );
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('1', 'written', undefined, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('opts a newly active member into the Journey interests, reading the member tags once', async () => {
+    const config: Config = { ...CONFIG, mailchimp: { ...CONFIG.mailchimp, journeyInterests: { welcomeDrip: 'w', renewalReminders: 'r', renewalOptOutTag: 'renewal-opt-out' } } };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor()),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    let interestsSet: Record<string, boolean> | undefined;
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn(async (_e, _f, _t, _m, interests) => {
+        interestsSet = interests ? await interests() : undefined;
+        return 'updated' as const;
+      }),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn().mockResolvedValue(['has-donated']), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+    };
+
+    await processOutboundBatch([fakeMessage('1')], { mondayClient, mailchimpClient, pendingStore: fakePending(), config, dnsLog: fakeDnsLog() });
+
+    expect(interestsSet).toEqual({ w: true, r: true });
+    expect(mailchimpClient.getMemberTagNames).toHaveBeenCalledOnce();
+  });
+
+  it('passes no interests reader (and reads no tags) for a donor who is not becoming a member', async () => {
+    const config: Config = { ...CONFIG, mailchimp: { ...CONFIG.mailchimp, journeyInterests: { welcomeDrip: 'w', renewalReminders: 'r', renewalOptOutTag: 'renewal-opt-out' } } };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor({ membershipStatus: 'Lapsed' })),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn().mockResolvedValue('updated'),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+    };
+
+    await processOutboundBatch([fakeMessage('1')], { mondayClient, mailchimpClient, pendingStore: fakePending(), config, dnsLog: fakeDnsLog() });
+
+    expect((mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]).toHaveLength(4);
+    expect(mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
   });
 
   it('records skipped (not written) and acks when the donor is not in the Mailchimp audience', async () => {

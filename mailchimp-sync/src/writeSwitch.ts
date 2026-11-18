@@ -4,7 +4,7 @@
 // only the last step — the Mailchimp or Monday write, or the D1 bookkeeping that records it — is
 // swapped out here. The dead-letter consumers and their Slack alert are not gated (DLQs stay live).
 import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
-import type { MailchimpClient, ManagedTags, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
+import type { InterestsReader, MailchimpClient, ManagedTags, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
 import type { MondayClient } from './monday/client';
 import type { CampaignItemRow, CampaignItemsStore } from './db/campaignItems';
 import type { DnsUnsubscribeLog } from './db/dnsUnsubscribes';
@@ -34,8 +34,12 @@ function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpCl
   return new Proxy(recording, {
     get: (target, prop, receiver) =>
       prop === 'updateMember'
-        ? async (email: string, mergeFields: Record<string, unknown>, tags: string[], managed: ManagedTags) =>
-            recording.updateMember(email, mergeFields, tags, typeof managed === 'function' ? await managed() : managed)
+        ? async (email: string, mergeFields: Record<string, unknown>, tags: string[], managed: ManagedTags, interests?: InterestsReader) => {
+            // Resolved like the managed tags, so a debug skip line shows the interests it would
+            // set (the recording placeholder never calls it, so the object passes as is).
+            const setInterests = interests === undefined ? undefined : await interests();
+            return recording.updateMember(email, mergeFields, tags, typeof managed === 'function' ? await managed() : managed, setInterests as unknown as InterestsReader | undefined);
+          }
         : Reflect.get(target, prop, receiver),
   });
 }

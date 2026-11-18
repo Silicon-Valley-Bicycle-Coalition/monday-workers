@@ -116,6 +116,37 @@ describe('HttpMailchimpClient.updateMember', () => {
     expect(readManaged).not.toHaveBeenCalled();
   });
 
+  it('sets the interests the reader returns after the PATCH, before the tags change', async () => {
+    const fetchFn = fakeFetch({ ok: true });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+    const interests = vi.fn(async () => {
+      expect(fetchFn).toHaveBeenCalledTimes(1); // the merge-field PATCH only
+      return { w: true, r: true };
+    });
+
+    await client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS, interests);
+
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    const [url, init] = fetchFn.mock.calls[1]! as [string, RequestInit];
+    expect(url).toContain('/members/');
+    expect(url).toContain('skip_merge_validation=true');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ interests: { w: true, r: true } });
+    expect(fetchFn.mock.calls[2]![0]).toContain('/tags');
+  });
+
+  it('makes no interests call when the reader returns none, or for a member not in the audience', async () => {
+    const fetchFn = fakeFetch({ ok: true });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+    await client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS, async () => ({}));
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    const missing = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fakeFetch({ ok: false, status: 404 }));
+    const reader = vi.fn(async () => ({ w: true }));
+    expect(await missing.updateMember('nobody@example.com', {}, ['active-member'], MANAGED_TAGS, reader)).toBe('not-in-audience');
+    expect(reader).not.toHaveBeenCalled();
+  });
+
   it('does not POST tags when the PATCH fails', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 400, text: async () => 'invalid email' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
