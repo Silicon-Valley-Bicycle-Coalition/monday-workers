@@ -205,6 +205,26 @@ export function cleanMarkup(html) {
 }
 
 /**
+ * Removes the utm_* parameters from every link Salesforce tagged as its own
+ * (utm_source=salesforce), so clicks aren't credited to Salesforce once Mailchimp sends them.
+ * Mailchimp's Journey-level Google Analytics link tracking tags the links instead. Other query
+ * parameters, and UTMs with any other source, stay. Hrefs are HTML-escaped (&amp;).
+ */
+export function stripSalesforceUtm(html) {
+  return html.replace(/(\shref=")([^"]*)"/g, (whole, attr, href) => {
+    const q = href.indexOf('?');
+    if (q < 0) return whole;
+    const hashAt = href.indexOf('#', q);
+    const query = href.slice(q + 1, hashAt < 0 ? undefined : hashAt);
+    const params = query.split(/&amp;|&/);
+    if (!params.some((p) => /^utm_source=salesforce$/i.test(p))) return whole;
+    const kept = params.filter((p) => p !== '' && !/^utm_[a-z]+=/i.test(p));
+    const hash = hashAt < 0 ? '' : href.slice(hashAt);
+    return `${attr}${href.slice(0, q)}${kept.length ? `?${kept.join('&amp;')}` : ''}${hash}"`;
+  });
+}
+
+/**
  * Salesforce HtmlValue → { html, notes }. Throws on any merge field it can't map, so no
  * template reaches Mailchimp with a literal `{!…}` in it.
  */
@@ -220,5 +240,5 @@ export function convertTemplate(sfHtml, title, logoUrl = LOGO_URL) {
   body = body.replace(/\{!([^}]+)\}/g, (whole, field) => MERGE_MAP[field] ?? whole);
   const left = [...new Set(body.match(/\{![^}]+\}/g) ?? [])];
   if (left.length) throw new Error(`${title}: no Mailchimp merge tag for ${left.join(', ')}`);
-  return { html: emailLayout(title, cleanMarkup(body), logoUrl), notes };
+  return { html: emailLayout(title, stripSalesforceUtm(cleanMarkup(body)), logoUrl), notes };
 }

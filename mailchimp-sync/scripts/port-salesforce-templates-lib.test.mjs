@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanMarkup, convertTemplate, extractContent, isInkColor, LOGO_URL, repairMergeFields, TEMPLATES } from './port-salesforce-templates-lib.mjs';
+import { cleanMarkup, convertTemplate, extractContent, isInkColor, LOGO_URL, repairMergeFields, stripSalesforceUtm, TEMPLATES } from './port-salesforce-templates-lib.mjs';
 
 const letterhead = (...cells) =>
   `<table><tr><td>${cells.map((c) => `<![CDATA[${c}]]>`).join('</td></tr><tr><td>')}</td></tr></table>`;
@@ -65,6 +65,21 @@ describe('isInkColor', () => {
   it('treats black and dark neutral greys as ink, not link blue or accents', () => {
     for (const c of ['black', '#000', '#333333', 'rgb(14, 16, 26)', 'rgb(51, 51, 51)']) expect(isInkColor(c)).toBe(true);
     for (const c of ['rgb(17, 85, 204)', '#1155cc', '#666666', 'rgb(200, 0, 0)', 'inherit']) expect(isInkColor(c)).toBe(false);
+  });
+});
+
+describe('stripSalesforceUtm', () => {
+  it('drops every utm_ parameter from a link Salesforce tagged', () => {
+    const a = '<a href="https://x.org/resources?utm_source=salesforce&amp;utm_medium=email&amp;utm_campaign=welcome_member">r</a>';
+    expect(stripSalesforceUtm(a)).toBe('<a href="https://x.org/resources">r</a>');
+  });
+  it('keeps other query parameters and the fragment', () => {
+    const a = '<a style="x" href="https://x.org/p?id=7&amp;utm_source=salesforce&amp;utm_medium=email#top">r</a>';
+    expect(stripSalesforceUtm(a)).toBe('<a style="x" href="https://x.org/p?id=7#top">r</a>');
+  });
+  it('leaves UTMs from any other source, and untagged links, alone', () => {
+    const a = '<a href="https://x.org/?utm_source=newsletter&amp;utm_medium=email">r</a><a href="https://x.org/donate">d</a>';
+    expect(stripSalesforceUtm(a)).toBe(a);
   });
 });
 

@@ -468,7 +468,9 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   named "Membership renewal reminder: …" and "New member welcome #…". It maps the merge fields
   (`*|FNAME|*` with a "friend" fallback, `*|MEMBUNTIL|*`), repairs the merge field the 2-week
   template's pasted HTML had split (it sent "Dear :" from July 2026), drops welcome #1's gift
-  amount and date (Mailchimp has no last-gift fields), and wraps each in the design system's
+  amount and date (Mailchimp has no last-gift fields), strips the utm_* tags from links Salesforce
+  tagged as its own (utm_source=salesforce; turn on the Journeys' Google Analytics link tracking
+  instead), and wraps each in the design system's
   EmailLayout (a slim letterhead-style black band with the hosted wordmark at 125px, 560px card) with the unsubscribe and
   address footer. It drops the near-black text colours, fonts and spacer paragraphs the Salesforce
   copy pinned, so the body takes the layout's ink and stays legible in dark mode.
