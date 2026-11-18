@@ -41,6 +41,13 @@ describe('cleanMarkup', () => {
     const pasted = '<p>a</p><p dir="ltr"><span style="font-variant-numeric: normal;">&nbsp; </span></p><p><b><br></b></p><p style="background: white;"><o:p></o:p></p><br><br><p>b</p>';
     expect(cleanMarkup(pasted)).toBe('<p>a</p><p>b</p>');
   });
+  it('drops an empty spacer div and rejoins the list it split', () => {
+    const pasted = '<ul><li>a</li></ul><div><span style="white-space-collapse: preserve"><br></span></div><ul style="x: y"><li>b</li></ul>';
+    expect(cleanMarkup(pasted)).toBe('<ul><li>a</li><li>b</li></ul>');
+  });
+  it('rejoins a list split by a spacer div followed by stray breaks', () => {
+    expect(cleanMarkup('<ul><li>a</li></ul><div><br></div><br><ul><li>b</li></ul>')).toBe('<ul><li>a</li><li>b</li></ul>');
+  });
   it('drops Google Docs near-black, keeps white-space line breaks', () => {
     const pasted = '<span style="color: rgb(14, 16, 26); white-space: pre-wrap;">Felicia Ward\nDirector</span>';
     expect(cleanMarkup(pasted)).toBe('<span style="white-space: pre-wrap">Felicia Ward\nDirector</span>');
@@ -68,6 +75,13 @@ describe('convertTemplate', () => {
     expect(html).toContain(`src="${LOGO_URL}"`);
     expect(html).toContain('max-width:560px');
     expect(convertTemplate('<p>x</p>', 't', 'https://example.org/l.png').html).toContain('src="https://example.org/l.png"');
+  });
+  it('gives links a legible colour in dark mode and narrows padding on phones', () => {
+    const { html } = convertTemplate('<p>x</p>', 't');
+    expect(html).toContain('.em-text a { color: #FFC700 !important; }');
+    expect(html).toMatch(/@media \(max-width: 480px\)[\s\S]*\.em-pad/);
+    expect(html).toContain('lang="en"');
+    expect(html).toContain('role="presentation"');
   });
   it('carries the unsubscribe link and postal address Mailchimp requires', () => {
     const { html } = convertTemplate('<p>x</p>', 't');

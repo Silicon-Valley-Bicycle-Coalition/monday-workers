@@ -51,7 +51,9 @@ export const FOOTER = `*|LIST:ADDRESSLINE|*<br>
 /**
  * The design system's EmailLayout, as member-portal's renderEmailLayout() renders it (tokens:
  * email-wrap svbc-sand, email-card white, email-text svbc-ink, email-max 560px, radius-lg 8px),
- * with Mailchimp's footer. Dark mode is the same best-effort media query.
+ * with Mailchimp's footer. Dark mode is the same best-effort media query, plus gold links: the
+ * pasted link blues are about 2:1 on the dark card (svbc-gold is 9.5:1, the design system's link
+ * colour on dark). Under 480px the card's side padding drops to 16px.
  */
 export function emailLayout(title, bodyHtml, logoUrl = LOGO_URL) {
   return `<!doctype html>
@@ -61,6 +63,7 @@ export function emailLayout(title, bodyHtml, logoUrl = LOGO_URL) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="supported-color-schemes" content="light dark">
+<meta name="x-apple-disable-message-reformatting">
 <title>${title}</title>
 <style>
   @media (prefers-color-scheme: dark) {
@@ -69,20 +72,24 @@ export function emailLayout(title, bodyHtml, logoUrl = LOGO_URL) {
     .em-text { color: #F5F5F5 !important; }
     .em-muted { color: #B8B8B8 !important; }
     .em-muted a { color: #B8B8B8 !important; }
+    .em-text a { color: #FFC700 !important; }
+  }
+  @media (max-width: 480px) {
+    .em-pad { padding-left: 16px !important; padding-right: 16px !important; }
   }
 </style>
 </head>
-<body style="margin:0; padding:0;">
+<body style="margin:0; padding:0; -webkit-text-size-adjust:100%;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F4F4F3;">
 <tr><td align="center" style="padding:24px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
 <tr><td style="background:#000000; padding:24px; text-align:center; border-radius:8px 8px 0 0;">
 <a href="https://bikesiliconvalley.org"><img src="${logoUrl}" width="235" height="90" alt="Silicon Valley Bicycle Coalition" style="display:block; margin:0 auto; max-width:235px; width:100%; height:auto; border:0;"></a>
 </td></tr>
-<tr><td class="em-card em-text" style="background:#FFFFFF; color:#303030; padding:32px 24px; font-family:${FONT}; font-size:16px; line-height:1.5;">
+<tr><td class="em-card em-text em-pad" style="background:#FFFFFF; color:#303030; padding:32px 24px; font-family:${FONT}; font-size:16px; line-height:1.5;">
 ${bodyHtml}
 </td></tr>
-<tr><td class="em-card em-muted" style="background:#FFFFFF; color:#666666; padding:16px 24px 32px; text-align:center; font-family:${FONT}; font-size:12px; line-height:1.5; border-radius:0 0 8px 8px;">
+<tr><td class="em-card em-muted em-pad" style="background:#FFFFFF; color:#666666; padding:16px 24px 32px; text-align:center; font-family:${FONT}; font-size:12px; line-height:1.5; border-radius:0 0 8px 8px;">
 ${FOOTER}
 </td></tr>
 </table>
@@ -179,8 +186,11 @@ export function cleanMarkup(html) {
     out = out.replace(/<(span|font)>((?:(?!<\/?\1\b)[\s\S])*?)<\/\1>/g, '$2');
   }
   return out
-    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/g, (m, inner) => (hasVisibleContent(inner) ? m : ''))
-    .replace(/<\/(?:p|div|ol|ul)>\s*(?:<br\s*\/?>\s*)+/g, (m) => m.replace(/(?:<br\s*\/?>\s*)+/g, ''));
+    .replace(/<(p|div)\b[^>]*>((?:(?!<\/?\1\b)[\s\S])*?)<\/\1>/g, (m, _tag, inner) => (hasVisibleContent(inner) ? m : ''))
+    .replace(/<\/(?:p|div|ol|ul)>\s*(?:<br\s*\/?>\s*)+/g, (m) => m.replace(/(?:<br\s*\/?>\s*)+/g, ''))
+    // Last, once spacers and stray breaks are gone: a spacer between items split one list in
+    // two, and screen readers then announce two lists.
+    .replace(/<\/(ul|ol)>\s*<\1\b[^>]*>/g, '');
 }
 
 /**
