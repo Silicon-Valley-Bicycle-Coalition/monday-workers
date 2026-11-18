@@ -708,12 +708,11 @@ are never logged.
 
 **Switches.**
 
-* `employerAnswers.enabled` in `config/*.json` is **`false` in `svbc.json`** and `true` in
-  `sandbox.json` (since 2026-11-17). A binding alone doesn't turn it on.
-* The binding is optional. **Production's `wrangler.jsonc` has no `EMPLOYER_ANSWERS` binding** until
-  `impact-attribution` is deployed to production (a comment there gives the line to add); a missing
-  binding behaves exactly like `enabled: false`, so the 2027 pledge config never waits on this.
-  Sandbox binds `svbc-impact-attribution-sandbox`; `config/split.test.ts` checks the service names differ.
+* `employerAnswers.enabled` in `config/*.json` is **`true` in both** `svbc.json` and `sandbox.json`
+  (2026-11-17, after the pre-enable checklist passed in each). Set it to `false` to switch the hand-over off.
+* The binding is optional: a missing binding behaves exactly like `enabled: false`. Production binds
+  `svbc-impact-attribution` and sandbox binds `svbc-impact-attribution-sandbox`; `config/split.test.ts`
+  checks each. `vitest.config.ts` stands in for the binding, as it does for `MONDAY_AUTH`.
 * Under the write switch, `off` and `hold` follow the consumer's existing disposition: only `on`
   records. Under `off` the dry-run sink (`dryRunEmployerAnswers` in `src/writeSwitch.ts`) logs ids
   only (source, attendee id, People item id), sends nothing, and the People lookup, being a read, still happens.
