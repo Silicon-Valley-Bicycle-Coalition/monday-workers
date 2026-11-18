@@ -1,6 +1,6 @@
 # Logging organizer email to Person and Organization (#121)
 
-Date: 2026-11-12. Status: approved 2026-11-12; board setup done, live test pending. Supersedes the `email-log` Worker
+Date: 2026-11-12. Status: done 2026-11-17; board setup done 2026-11-12, matching checked against production staff mail 2026-11-17 in place of a scripted BCC test. Supersedes the `email-log` Worker
 (`2026-10-19-email-log-design.md`) for this request.
 
 ## Why

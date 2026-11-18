@@ -86,6 +86,13 @@ by Task 4.
   Former and Draft affiliations do (Review Focus 2).
 - [ ] **Step 4:** Remove the test targets and logged entries created for the test.
 
+**Result (2026-11-17), in place of Steps 1–4:** David accepted staff mail synced to
+production since 2026-11-12 as the test. Affiliations matched on Work Email (Alta, Kittelson,
+Waymo, KLA threads); a message logs on every item holding one of its addresses (KLA reply on
+both People and the affiliation), which answers Review Focus 1. Not observed: a match on an
+Organization's `Email`, or on a Former/Draft affiliation (Review Focus 2); staff docs flag both.
+Zachary's mail logs too (2026-11-17), so his CRM access works (Task 1).
+
 ### Task 4: Staff docs (`monday-migration`)
 
 **Files:**
