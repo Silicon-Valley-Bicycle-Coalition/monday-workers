@@ -187,7 +187,7 @@ re-cloned from GitHub (Task 8), not re-pointed.
 - [x] **Step 4:** Cutover commit on a branch: `node scripts/rewrite-gitlab-refs.mjs --project silicon-valley-bicycle-coalition/svbc-monday-workers --max-issue 127 --max-mr 509 --write` (re-check 127 / 509 against the current highest iids), review the full diff, `git rm .gitlab-ci.yml`, add the README legend (as Task 4 Step 4) and switch README/CLAUDE.md/DEPLOY.md links from GitLab to GitHub. README sandbox setup: replace the GitLab Protected/Masked-variable instructions with the GitHub `sandbox` environment secret, restricted to `main`. Re-wrap `CLAUDE.md` lines that the rewrite pushed past ~100 columns. Revert the `#4` and `#10` rewrites on `donation-rollups/README.md:1461` (gotcha numbers, not GitLab refs), and skim the dry run's single-digit refs for other numbering. Open the first GitHub PR. Expected: `checks` green, `workers` runs every changed Worker and `ci-ok` green.
 - [x] **Step 5:** Ruleset on `main`: `gh api -X POST repos/Silicon-Valley-Bicycle-Coalition/monday-workers/rulesets` with target `branch`, include `~DEFAULT_BRANCH`, rules `pull_request` (0 approvals — David is the only reviewer), `required_status_checks` [`ci-ok`, `checks`], `non_fast_forward`, `deletion`. Actions settings: fork PR workflows require approval for first-time contributors; default `GITHUB_TOKEN` read-only. Create environment `sandbox` (no secret yet — the deploy job stays inert, as today). Merge the PR.
 - [x] **Step 6:** Issues: run Task 2's copier for monday-workers from the primary `monday-workers` checkout (`--max-issue <N> --max-mr <N>` as in Task 4); **read the review file for donor/staff personal data before `--confirm`** — redact in the GitHub issue body (keep the detail on GitLab) where needed. Verify 9 issues, idempotent rerun.
-- [ ] **Step 7 (folded into Task 8, 2026-11-17):** History was rewritten (Task 5 audit result), so the existing checkout can't just be re-pointed: its `main` and every branch carry the old SHAs. Re-clone the primary checkout from GitHub now and move live worktrees per Task 8; a branch that must survive is replayed with `git rebase --onto origin/<b> <old-gitlab-sha-of-b> <b>` on a fresh clone. The commands below then apply to that fresh clone: `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
+- [x] **Step 7 (folded into Task 8, 2026-11-17):** History was rewritten (Task 5 audit result), so the existing checkout can't just be re-pointed: its `main` and every branch carry the old SHAs. Re-clone the primary checkout from GitHub now and move live worktrees per Task 8; a branch that must survive is replayed with `git rebase --onto origin/<b> <old-gitlab-sha-of-b> <b>` on a fresh clone. The commands below then apply to that fresh clone: `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
 
 #### Cutover notes (2026-11-17)
 
@@ -207,11 +207,11 @@ re-cloned from GitHub (Task 8), not re-pointed.
 
 ### Task 7: Workers Builds and Claude app (operator, Cloudflare + GitHub dashboards)
 
-- [ ] **Step 1:** Install the Cloudflare Workers & Pages GitHub app on the org, repo access `monday-workers` only.
+- [x] **Step 1:** Install the Cloudflare Workers & Pages GitHub app on the org, repo access `monday-workers` only.
 - [x] **Step 2:** For `svbc-calendars`: Workers & Pages → Settings → Build → disconnect GitLab, connect GitHub `monday-workers`, root `/svbc-calendars`, branch `main`, non-production branch builds **off**, same build/deploy commands as before (record them first). Merge a no-op change under `svbc-calendars/` — Expected: a build from the GitHub commit SHA deploys, and `curl -sI https://events.bikesiliconvalley.org/` returns 200.
-- [ ] **Step 3:** Same for `monday-backup` (root `/monday-backup`, watch path `monday-backup/*`, `main` only, previews off); verify with a no-op change and the next cron run's log.
+- [x] **Step 3:** Same for `monday-backup` (root `/monday-backup`, watch path `monday-backup/*`, `main` only, previews off); verify with a no-op change and the next cron run's log.
 - [x] **Step 4:** List every Worker on the SVBC account and its build settings (`mcp` workers list or dashboard); any other GitLab-connected Worker gets the same treatment. Record the final list in the root README's "Deploys" section.
-- [ ] **Step 5:** Install the Claude GitHub app on the org for both repos (`claude` → `/install-github-app`, or github.com/apps/claude). Open a test issue in monday-migration mentioning `@claude` — Expected: a reply. Close it.
+- [x] **Step 5:** Install the Claude GitHub app on the org for both repos (`claude` → `/install-github-app`, or github.com/apps/claude). Open a test issue in monday-migration mentioning `@claude` — Expected: a reply. Close it.
 
 #### Task 7 notes (2026-11-17)
 
@@ -228,13 +228,43 @@ re-cloned from GitHub (Task 8), not re-pointed.
 - Step 5: the Claude app is installed, but neither repo has a Claude workflow or token secret, so
   `@claude` gets no reply until `/install-github-app` runs in each repo.
 
+- Done 2026-11-18: the Cloudflare app is limited to selected repos; the Claude workflows are on
+  `main` in both repos (pinned to commit SHAs, PRs #12 and monday-migration #39); `@claude`
+  answered on monday-migration #37 in 5 s. monday-backup's 04:30 UTC cron ran clean on the
+  GitHub-built version `8312506d`.
+- The reconnect turned **preview builds on** for both Workers (a separate per-Worker setting,
+  `previews_enabled`, not a branch trigger): PR #12's branch ran `npx wrangler preview` with the
+  production build token before they were switched off. Check that setting after any future
+  reconnect.
+- monday-backup's watch path reads `/monday-backup/*` (leading slash). The next merge that touches
+  `monday-backup/` shows whether it matches.
+
 ### Task 8: Local move and cleanup (operator, this Mac)
 
-- [ ] **Step 1:** For each repo, `git worktree list`; for every worktree whose branch is in `git branch --merged main` (re-checked, not assumed), run the ignored-files check, copy out anything irreplaceable, then `git worktree remove` + `git branch -d`. Unmerged worktrees stay. For every branch carried over, run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword any hit before opening a GitHub PR (a closing keyword plus a GitLab number would close a different GitHub issue). (If Task 5 rewrote history, re-clone instead and recreate only the unmerged worktrees.)
-- [ ] **Step 2:** Quit every Claude Code session in the workspace. `mkdir -p ~/Developer/github.com && mv ~/Developer/gitlab.com/silicon-valley-bicycle-coalition ~/Developer/github.com/`.
-- [ ] **Step 3:** `git -C ~/Developer/github.com/silicon-valley-bicycle-coalition/monday-workers worktree repair $(…every remaining worktree path…)`, same for monday-migration. Expected: `git worktree list` shows new paths, `git status` works in each.
-- [ ] **Step 4:** For each `~/.claude/projects/-Users-dwk-Developer-gitlab-com-silicon-valley-bicycle-coalition*` folder that contains `memory/`, copy it to the matching `-github-com-` name. Update memory files that name GitLab: `gitlab-close-pattern-negation` (rewrite for GitHub: `Refs #N` still safe, `Fixes/Closes #N` closes), `sandbox-blocks-worker-tests-and-glab` (now `gh`), and the parent workspace `CLAUDE.md` (paths, "MR lands on GitLab").
-- [ ] **Step 5:** Open a new Claude Code session in the new monday-workers path — Expected: CLAUDE.md and memory load.
+- [x] **Step 1:** For each repo, `git worktree list`; for every worktree whose branch is in `git branch --merged main` (re-checked, not assumed), run the ignored-files check, copy out anything irreplaceable, then `git worktree remove` + `git branch -d`. Unmerged worktrees stay. For every branch carried over, run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword any hit before opening a GitHub PR (a closing keyword plus a GitLab number would close a different GitHub issue). (If Task 5 rewrote history, re-clone instead and recreate only the unmerged worktrees.)
+- [x] **Step 2:** Quit every Claude Code session in the workspace. `mkdir -p ~/Developer/github.com && mv ~/Developer/gitlab.com/silicon-valley-bicycle-coalition ~/Developer/github.com/`.
+- [x] **Step 3:** `git -C ~/Developer/github.com/silicon-valley-bicycle-coalition/monday-workers worktree repair $(…every remaining worktree path…)`, same for monday-migration. Expected: `git worktree list` shows new paths, `git status` works in each.
+- [x] **Step 4:** For each `~/.claude/projects/-Users-dwk-Developer-gitlab-com-silicon-valley-bicycle-coalition*` folder that contains `memory/`, copy it to the matching `-github-com-` name. Update memory files that name GitLab: `gitlab-close-pattern-negation` (rewrite for GitHub: `Refs #N` still safe, `Fixes/Closes #N` closes), `sandbox-blocks-worker-tests-and-glab` (now `gh`), and the parent workspace `CLAUDE.md` (paths, "MR lands on GitLab").
+- [x] **Step 5:** Open a new Claude Code session in the new monday-workers path — Expected: CLAUDE.md and memory load.
+
+#### Task 8 notes (2026-11-18)
+
+- Re-cloned instead of pruning: the GitHub clone became `monday-workers`; the GitLab checkout is
+  `monday-workers-gitlab-archive` (all 31 of its worktrees still attached), and
+  `task8-carryover/monday-workers-gitlab-all.bundle` holds every GitLab-era ref.
+- Seven old branches had commits not on `main` (`docs/donation-form-new-donors`,
+  `claude/box-protocols-bike-parking-0ae4ee`, `config/class-email-sandbox`,
+  `chore/production-import-config`, `cutover/salesforce-import-production-config`,
+  `claude/salesforce-gmail-integration-58b8d5`, `feat/roster-people-inclusion`); all conflict with
+  today's `main` and were left in the bundle, not replayed. One worktree's uncommitted geometry
+  edits are in `task8-carryover/patches/`.
+- Gitignored files (`.env*`, `.dev.vars`, `salesforce-import/data/`, `github-migration-review/`,
+  `mailchimp-sync/salesforce-templates/`) copied into the new clone; a copy is in
+  `task8-carryover/ignored/`. `core.hooksPath .githooks` set.
+- The folder move ran from `task8-carryover/move.sh` (tested on a mock layout first), which repairs
+  every repo's worktrees, nested `.claude/worktrees/*` included.
+- monday-migration: 10 merged worktrees removed after the ignored-files check; 3 unmerged or dirty
+  ones and 3 Claude session worktrees stay.
 
 ### Task 9: Archive GitLab and close the ticket (operator)
 
