@@ -468,7 +468,10 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   named "Membership renewal reminder: …" and "New member welcome #…". It maps the merge fields
   (`*|FNAME|*` with a "friend" fallback, `*|MEMBUNTIL|*`), repairs the merge field the 2-week
   template's pasted HTML had split (it sent "Dear :" from July 2026), drops welcome #1's gift
-  amount and date (Mailchimp has no last-gift fields), and adds the unsubscribe and address footer.
+  amount and date (Mailchimp has no last-gift fields), and wraps each in the design system's
+  EmailLayout (black header band with the hosted wordmark PNG, 560px card) with the unsubscribe and
+  address footer. It drops the near-black text colours, fonts and spacer paragraphs the Salesforce
+  copy pinned, so the body takes the layout's ink and stays legible in dark mode.
   It prints each Salesforce subject line to set on the Journey email. A dry run writes the HTML to
   `salesforce-templates/` (gitignored); `--apply` creates the templates, or overwrites ones with
   the same name, so edit copy in Mailchimp only after the last `--apply`.

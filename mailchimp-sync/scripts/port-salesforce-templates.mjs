@@ -3,8 +3,9 @@
 // Scheduled_Membership_Emails flow sent (scripts/port-salesforce-templates-lib.mjs TEMPLATES) into
 // Mailchimp as custom-coded templates for the Customer Journeys to use. Reads Salesforce's
 // EmailTemplate through the `sf` CLI. Salesforce merge fields become Mailchimp merge tags
-// (*|FNAME|* with a "friend" fallback, *|MEMBUNTIL|*), and every template gets the unsubscribe
-// link and postal address Mailchimp needs before it sends.
+// (*|FNAME|* with a "friend" fallback, *|MEMBUNTIL|*), and every template is wrapped in the design
+// system's EmailLayout (black header band with the wordmark) with the unsubscribe link and postal
+// address Mailchimp needs before it sends.
 //
 // DRY RUN BY DEFAULT: writes each converted template to --out for review, prints the subject line
 // to set on each Journey email and any copy changes, and writes nothing to Mailchimp. --apply
@@ -15,6 +16,7 @@
 //   [MAILCHIMP_API_KEY=...] node scripts/port-salesforce-templates.mjs --env production|sandbox
 //     [--org svbc]        Salesforce CLI alias (default svbc; the templates exist only there)
 //     [--out dir]         where to write the converted HTML (default ./salesforce-templates)
+//     [--logo-url url]    header wordmark PNG (default: member-portal's /email/logo.png)
 //     [--apply]           needs MAILCHIMP_API_KEY
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -27,7 +29,7 @@ const argIdx = (name) => process.argv.indexOf(name);
 const argValue = (name, dflt) => (argIdx(name) >= 0 ? process.argv[argIdx(name) + 1] : dflt);
 
 function usage(message) {
-  console.error(`${message}\nusage: node scripts/port-salesforce-templates.mjs --env production|sandbox [--org alias] [--out dir] [--apply]`);
+  console.error(`${message}\nusage: node scripts/port-salesforce-templates.mjs --env production|sandbox [--org alias] [--out dir] [--logo-url url] [--apply]`);
   process.exit(2);
 }
 
@@ -68,13 +70,14 @@ async function main() {
   if (apply && !process.env.MAILCHIMP_API_KEY) usage('--apply needs MAILCHIMP_API_KEY');
   const org = argValue('--org', 'svbc');
   const outDir = argValue('--out', 'salesforce-templates');
+  const logoUrl = argValue('--logo-url', undefined);
   const config = JSON.parse(readFileSync(fileURLToPath(new URL(`../config/${CONFIG_FILES[envName]}`, import.meta.url)), 'utf8'));
 
   const source = readTemplates(org);
   mkdirSync(outDir, { recursive: true });
   const converted = TEMPLATES.map((t) => {
     const { Subject, HtmlValue } = source.get(t.developerName);
-    const { html, notes } = convertTemplate(HtmlValue ?? '', t.name);
+    const { html, notes } = convertTemplate(HtmlValue ?? '', t.name, logoUrl);
     const file = join(outDir, `${t.developerName}.html`);
     writeFileSync(file, html);
     console.log(`${t.name}\n  from Salesforce ${t.developerName} → ${file}\n  subject: ${Subject}`);
