@@ -452,6 +452,12 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
   People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
   webhook.
+* `scripts/seed-journey-interests.mjs` turns Welcome Drip and Renewal Reminders on for every
+  subscribed member tagged `active-member`, leaving Renewal Reminders off for `renewal-opt-out`.
+  Add-only, dry run by default. Production run 2026-11-17: 800 members, so Welcome Drip 800 and
+  Renewal Reminders 663 (137 opt-outs). Because current members are opted in, trigger the Journeys
+  on the `MEMBSINCE`/`MEMBUNTIL` dates, never on "joins a group", or every seeded member would get
+  the welcome series at once.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`
