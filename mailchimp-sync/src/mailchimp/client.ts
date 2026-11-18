@@ -52,6 +52,8 @@ export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-i
 // the member, so a caller that needs the member's current tags to build it pays for that read
 // only on a member that exists (GL#97).
 export type ManagedTags = string[] | (() => Promise<string[]>);
+// The interests updateMember should set (interest id → on/off), read only once the member exists.
+export type InterestsReader = () => Promise<Record<string, boolean>>;
 
 export interface MailchimpClient {
   /**
@@ -61,8 +63,10 @@ export interface MailchimpClient {
    * `managedTags` is every tag this worker owns — managed tags not in `tags` are
    * deactivated, and tags outside `managedTags` (staff-applied, other tools') are
    * never touched. Given as a reader, it is called after the merge-field PATCH succeeds.
+   * `interests`, when given, is read after that PATCH too but before the tags change (it may
+   * compare the member's current tags): any interests it returns are set in one more PATCH.
    */
-  updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags): Promise<UpdateMemberResult>;
+  updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags, interests?: InterestsReader): Promise<UpdateMemberResult>;
   /**
    * Move an existing member from `oldEmail` to `newEmail` after staff change a Donor's address
    * on Monday. Only `email_address` is sent, so the member's status (its consent), tags and
@@ -128,7 +132,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     return `Basic ${btoa(`anystring:${this.apiKey}`)}`;
   }
 
-  async updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags): Promise<UpdateMemberResult> {
+  async updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: ManagedTags, interests?: InterestsReader): Promise<UpdateMemberResult> {
     if (!sinkLogged) {
       sinkLogged = true;
       // Design doc §6: one line per isolate naming the sink this deployment writes to.
@@ -149,6 +153,18 @@ export class HttpMailchimpClient implements MailchimpClient {
     );
     if (response.status === 404) return 'not-in-audience';
     if (!response.ok) throw await httpError('updateMember', response);
+    const setInterests = interests === undefined ? {} : await interests();
+    if (Object.keys(setInterests).length > 0) {
+      const interestsResponse = await this.request(
+        `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}${SKIP_MERGE_VALIDATION}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+          body: JSON.stringify({ interests: setInterests }),
+        },
+      );
+      if (!interestsResponse.ok) throw await httpError('updateMember interests', interestsResponse);
+    }
     await this.syncTags(hash, tags, typeof managedTags === 'function' ? await managedTags() : managedTags);
     return 'updated';
   }

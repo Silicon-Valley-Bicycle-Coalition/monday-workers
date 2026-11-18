@@ -45,6 +45,32 @@ describe('validateConfig', () => {
     expect(config.monday.columns.email).toBe('c9');
   });
 
+  it('leaves journey interests off when absent or null, and reads them when set', () => {
+    expect(validateConfig(validRaw()).mailchimp.journeyInterests).toBeNull();
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    raw.mailchimp.journeyInterests = { welcomeDrip: 'w1', renewalReminders: null, renewalOptOutTag: 'renewal-opt-out' };
+    expect(validateConfig(raw).mailchimp.journeyInterests).toEqual({ welcomeDrip: 'w1', renewalReminders: null, renewalOptOutTag: 'renewal-opt-out' });
+  });
+
+  it('rejects journey interests without an opt-out tag, or with a blank id', () => {
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    raw.mailchimp.journeyInterests = { welcomeDrip: 'w1', renewalReminders: 'r1' };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.journeyInterests.renewalOptOutTag');
+    raw.mailchimp.journeyInterests = { welcomeDrip: '', renewalReminders: 'r1', renewalOptOutTag: 't' };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.journeyInterests.welcomeDrip');
+  });
+
+  it('reads renewalDue, and rejects a missing tag or an out-of-range window', () => {
+    const raw = validRaw() as { mailchimp: Record<string, unknown> };
+    expect(validateConfig(raw).mailchimp.renewalDue).toBeNull();
+    raw.mailchimp.renewalDue = { tag: 'renewal-due', daysBefore: 28 };
+    expect(validateConfig(raw).mailchimp.renewalDue).toEqual({ tag: 'renewal-due', daysBefore: 28 });
+    raw.mailchimp.renewalDue = { daysBefore: 28 };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.renewalDue.tag');
+    raw.mailchimp.renewalDue = { tag: 't', daysBefore: 120 };
+    expect(() => validateConfig(raw)).toThrow('mailchimp.renewalDue.daysBefore');
+  });
+
   it('rejects a non-object', () => {
     expect(() => validateConfig(null)).toThrow('config: expected an object');
   });

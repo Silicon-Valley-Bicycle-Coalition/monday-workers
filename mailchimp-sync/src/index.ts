@@ -18,6 +18,7 @@ import { processInboundDeadLetters, processOutboundDeadLetters } from './consume
 import { reconcileCampaigns } from './campaigns/reconcile';
 import { runScheduledReconcile } from './campaigns/scheduled';
 import { CONSENT_CRON, runConsentSync } from './consent/run';
+import { runRenewalDue } from './renewalDue/run';
 import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
 import { isMondayOutage } from './monday/outage';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
@@ -136,8 +137,9 @@ export default {
   // A failed run is logged, not thrown, so Workers Issues shows the error line.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const config = configFor(env);
-    // Two crons (wrangler.jsonc): the hourly consent sync and the daily Campaigns reconcile. Any
-    // other cron string, or none, runs the reconcile, as the one cron did before.
+    // Two crons (wrangler.jsonc): the hourly consent sync, and the daily one that keeps the
+    // renewal-due tag and runs the Campaigns reconcile. Any other cron string, or none, runs the
+    // daily work, as the one cron did before.
     if (event.cron === CONSENT_CRON) {
       try {
         const gate = await skipContext(env);
@@ -158,6 +160,13 @@ export default {
         console.error(`mailchimp-sync consent: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
       }
       return;
+    }
+    // The daily cron also keeps the renewal-due tag, first and on its own: a reconcile failure
+    // must not cost a day of renewal reminders, or the other way round.
+    try {
+      await runRenewalDue(await skipContext(env), { config, fetchFn: fetch.bind(globalThis), apiKey: env.MAILCHIMP_API_KEY });
+    } catch (err) {
+      console.error(`mailchimp-sync renewal-due: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
     }
     try {
       const gate = await skipContext(env);

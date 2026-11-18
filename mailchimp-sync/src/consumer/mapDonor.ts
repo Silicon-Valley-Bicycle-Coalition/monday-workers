@@ -68,6 +68,31 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
   return out;
 }
 
+/**
+ * The Customer Journey interests to turn on for a contact, from its tags before this sync
+ * (`priorTags`) and the tags it is about to get (`desiredTags`). Only ever turns interests on;
+ * a contact who unticks one keeps it off until the next transition below.
+ *
+ * - Welcome Drip: when the contact first becomes a member, i.e. it held none of the three
+ *   membership tags and now gets active or lifetime. New members only: existing and returning
+ *   members never get the welcome series.
+ * - Renewal Reminders: whenever the contact gains active-member (new or returning), unless it
+ *   carries the Renewal Opt Out tag. Lifetime members never expire, so they don't get it.
+ */
+export function journeyInterests(priorTags: readonly string[], desiredTags: readonly string[], config: Config): Record<string, boolean> {
+  const journeys = config.mailchimp.journeyInterests;
+  if (journeys === null) return {};
+  const { activeMember, lapsedMember, lifetimeMember } = config.mailchimp.tags;
+  const prior = new Set(priorTags);
+  const wasMember = prior.has(activeMember) || prior.has(lapsedMember) || prior.has(lifetimeMember);
+  const becomesActive = desiredTags.includes(activeMember) && !prior.has(activeMember);
+  const becomesMember = !wasMember && (desiredTags.includes(activeMember) || desiredTags.includes(lifetimeMember));
+  const out: Record<string, boolean> = {};
+  if (journeys.welcomeDrip !== null && becomesMember) out[journeys.welcomeDrip] = true;
+  if (journeys.renewalReminders !== null && becomesActive && !prior.has(journeys.renewalOptOutTag)) out[journeys.renewalReminders] = true;
+  return out;
+}
+
 // Every Mailchimp tag this worker owns — the only tags updateMember is allowed to
 // deactivate when buildTags no longer produces them. Must stay a superset of every
 // possible buildTags output; anything outside this set is left alone in Mailchimp.

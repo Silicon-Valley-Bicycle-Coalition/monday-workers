@@ -66,6 +66,21 @@ export interface ConsentConfig {
   boards: ConsentBoard[];
 }
 
+export interface RenewalDueConfig {
+  // The tag kept on active members whose Member Until is today or within daysBefore days.
+  tag: string;
+  daysBefore: number;
+}
+
+export interface JourneyInterestsConfig {
+  // Turned on once, when a contact first becomes a member (active or lifetime) — new members only.
+  welcomeDrip: string | null;
+  // Turned on each time a contact gains the active-member tag, unless it carries renewalOptOutTag.
+  renewalReminders: string | null;
+  // The tag scripts/renewal-opt-out.mjs gave Salesforce's Renewal Opt Out contacts.
+  renewalOptOutTag: string;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -87,6 +102,11 @@ export interface Config {
     // The Interest Categories this Worker syncs to the Campaigns board. Every other category in
     // the audience is ignored: production's holds decades of old lists (docs/39 §3).
     interestCategoryIds: string[];
+    // The Customer Journey interests the outbound sync turns on as people become members (null:
+    // it manages none, as in the sandbox). See journeyInterests() in consumer/mapDonor.ts.
+    journeyInterests: JourneyInterestsConfig | null;
+    // The daily renewal-due tag (src/renewalDue): null turns it off.
+    renewalDue: RenewalDueConfig | null;
   };
   lifetimeTierValue: string;
   activeStatusValue: string;

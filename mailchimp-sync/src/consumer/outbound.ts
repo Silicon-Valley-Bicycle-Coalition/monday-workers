@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client';
 import type { Config, OutboundSyncMessage } from '../types';
-import { buildMergeFields, buildTags, managedTags } from './mapDonor';
+import { buildMergeFields, buildTags, journeyInterests, managedTags } from './mapDonor';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
 import { OutageBreaker } from '../monday/outage';
 import { errorText, memberId, redactEmails } from '../logSafe';
@@ -214,10 +214,21 @@ async function processOne(donorItemId: string, previousEmail: string | undefined
   // so updateMember reads them only after its PATCH has found the member: most Donors never
   // opted in, and a read first spent a call on each of them (GL#97).
   const nearbyColumn = donor.onHistorical && historical !== null ? historical.columns.nearby : columns.nearby;
+  // The member's tags, read at most once and only after the PATCH has found the member: both
+  // readers below need them, and neither runs for a Donor outside the audience.
+  let tagRead: Promise<string[]> | undefined;
+  const currentTags = () => (tagRead ??= mailchimpClient.getMemberTagNames(donor.email));
   const managed = nearbyColumn === null
     ? managedTags(config)
-    : async () => managedTags(config, await mailchimpClient.getMemberTagNames(donor.email));
-  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managed);
+    : async () => managedTags(config, await currentTags());
+  const desiredTags = buildTags(donor, config);
+  // Journey interests can only turn on as someone becomes a member, so the tag read is skipped
+  // for everyone this sync doesn't tag active or lifetime.
+  const { activeMember, lifetimeMember } = config.mailchimp.tags;
+  const interests = config.mailchimp.journeyInterests !== null && (desiredTags.includes(activeMember) || desiredTags.includes(lifetimeMember))
+    ? async () => journeyInterests(await currentTags(), desiredTags, config)
+    : undefined;
+  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), desiredTags, managed, ...(interests === undefined ? [] : [interests]));
   if (result === 'not-in-audience') {
     // Expected for every Donor who never opted in — Mailchimp owns consent, so this
     // Worker only enriches existing members. 'skipped', not 'written', so it's countable.

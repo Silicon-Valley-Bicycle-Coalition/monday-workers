@@ -452,6 +452,28 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
   People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
   webhook.
+* **Journey interests are set by the outbound sync** (`mailchimp.journeyInterests`; `null` in the
+  sandbox turns it off). Comparing a contact's tags before and after each sync
+  (`journeyInterests()` in `src/consumer/mapDonor.ts`): Welcome Drip goes on when a contact first
+  becomes a member (it held none of active/lapsed/lifetime-member and now gets active or lifetime),
+  so only new members get the welcome series; Renewal Reminders goes on whenever it gains
+  active-member, new or returning, unless tagged `renewal-opt-out`. On only, never off. It costs
+  one tag read, and only for contacts the sync tags active or lifetime.
+* `scripts/seed-journey-interests.mjs` covered members who existed before that: `--renewal`
+  turned Renewal Reminders on for the 663 active members (2026-11-17), and `--undo-welcome
+  --joined-before 2026-11-18` turned Welcome Drip back off for the 800 existing members seeded with
+  it the same day. Both are dry runs by default. Trigger the welcome Journey on `MEMBSINCE` and the
+  renewal Journey on `MEMBUNTIL`, never on "joins a group".
+* **The `renewal-due` tag** (`mailchimp.renewalDue`, `src/renewalDue/`): the daily cron
+  (`0 15 * * *`) tags every member tagged `active-member` whose Member Until is today or within
+  `daysBefore` (28) days, in Pacific time, and untags everyone else who has it: renewed (the date
+  moved out), lapsed or past. Mailchimp's own date trigger can't do this: it repeats every year on
+  the field's month and day, and segments can't test a future date, so a Recurring-date Journey
+  would remind members whose term runs past a year (148 of 801 on 2026-11-17) a year early, and
+  lapsed members on every old anniversary. Start the renewal Journey on **Tag added:
+  renewal-due**, and check the tag is still there before the 2-week and day-of emails, so a member
+  who renews mid-way stops getting them. A member first seen inside the window (a late import) is
+  tagged that day and gets the 4-week email late. Follows the write switch; counts-only logs.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`

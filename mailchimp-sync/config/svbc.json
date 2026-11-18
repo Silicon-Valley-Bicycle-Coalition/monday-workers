@@ -62,6 +62,15 @@
       "doNotSolicit": "do-not-solicit",
       "recurringDonor": "recurring-donor"
     },
+    "journeyInterests": {
+      "welcomeDrip": "be943454d9",
+      "renewalReminders": "986d6c84bf",
+      "renewalOptOutTag": "renewal-opt-out"
+    },
+    "renewalDue": {
+      "tag": "renewal-due",
+      "daysBefore": 28
+    },
     "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",

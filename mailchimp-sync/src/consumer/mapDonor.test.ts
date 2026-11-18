@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMergeFields, buildTags, managedTags } from './mapDonor';
+import { buildMergeFields, buildTags, journeyInterests, managedTags } from './mapDonor';
 import type { Config, DonorRecord } from '../types';
 
 const CONFIG: Config = {
@@ -14,6 +14,7 @@ const CONFIG: Config = {
       activeMember: 'active-member', lapsedMember: 'lapsed-member',
       lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit', recurringDonor: 'recurring-donor',
     },
+    journeyInterests: null, renewalDue: null,
   },
   lifetimeTierValue: 'Lifetime',
   activeStatusValue: 'Active',
@@ -150,5 +151,35 @@ describe('managedTags', () => {
         expect(managed).toContain(tag);
       }
     }
+  });
+});
+
+describe('journeyInterests', () => {
+  const JOURNEYS: Config = {
+    ...CONFIG,
+    mailchimp: { ...CONFIG.mailchimp, journeyInterests: { welcomeDrip: 'w', renewalReminders: 'r', renewalOptOutTag: 'renewal-opt-out' } },
+  };
+
+  it('opts a brand-new active member into both', () => {
+    expect(journeyInterests(['has-donated'], ['active-member', 'has-donated'], JOURNEYS)).toEqual({ w: true, r: true });
+  });
+  it('gives a brand-new lifetime member the welcome series only', () => {
+    expect(journeyInterests([], ['lifetime-member'], JOURNEYS)).toEqual({ w: true });
+  });
+  it('gives a returning (lapsed) member renewals again but never the welcome series', () => {
+    expect(journeyInterests(['lapsed-member'], ['active-member'], JOURNEYS)).toEqual({ r: true });
+  });
+  it('leaves Renewal Reminders off for a Renewal Opt Out', () => {
+    expect(journeyInterests(['renewal-opt-out'], ['active-member'], JOURNEYS)).toEqual({ w: true });
+  });
+  it('does nothing for a member who stays active, lapses, or never joins', () => {
+    expect(journeyInterests(['active-member'], ['active-member'], JOURNEYS)).toEqual({});
+    expect(journeyInterests(['active-member'], ['lapsed-member'], JOURNEYS)).toEqual({});
+    expect(journeyInterests([], ['has-donated'], JOURNEYS)).toEqual({});
+  });
+  it('does nothing without the config, and skips an interest whose id is null', () => {
+    expect(journeyInterests([], ['active-member'], CONFIG)).toEqual({});
+    const welcomeOff: Config = { ...JOURNEYS, mailchimp: { ...JOURNEYS.mailchimp, journeyInterests: { welcomeDrip: null, renewalReminders: 'r', renewalOptOutTag: 'renewal-opt-out' } } };
+    expect(journeyInterests([], ['active-member'], welcomeOff)).toEqual({ r: true });
   });
 });
