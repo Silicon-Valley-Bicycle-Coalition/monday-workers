@@ -58,12 +58,35 @@ follows the precedent of `eventbrite-sync`'s class emails (`classEmails.timeline
 - **Title:** the subject as sent, e.g. "Welcome to SVBC!". **Summary:** "New member welcome series
   · email 1 of 2". **Content:** the journey, the step, and the campaign archive link (`long_archive_url`),
   so staff can see what was sent. No body copy, and no merge-field values.
-- **Bounces:** a `hard`/`soft` row gets an entry titled "Not delivered: <subject>".
-  `mailchimp-sync`'s hourly consent sync already handles the cleaned address.
+- **Bounces get an entry** (decided 2026-11-18): a `hard`/`soft` row is titled "Not delivered:
+  <subject>", so staff see the stewardship email didn't arrive. The hourly consent sync still
+  handles the cleaned address as it does today.
 - **Matching:** the row's `email_address` against any of People's email columns (the consent sync
   covers the same Personal/Household/Work columns, in config). One match gets the entry. None or
   several: D1 status `unmatched`/`ambiguous`, no entry, and counts only in the log. **Never creates
   a person.**
+
+### Two People columns, both 🔒
+
+- **Last Journey Email** (Date, decided 2026-11-18): set in the same step as the timeline entry, to
+  the entry's date, for a delivered send only (a bounce leaves it alone). It only moves forward. A
+  later date already in the cell wins, so an out-of-order or retried row can't move it back. Staff
+  can sort and filter on it ("not stewarded in 90 days"). The subject and the Journey are on the
+  timeline entry, not in the column.
+- **Mailchimp Profile** (Link): opens the person's contact page in Mailchimp. That's where every
+  newsletter send, open and click lives. Newsletter (`regular`) sends are **not** logged in Monday
+  (decided 2026-11-18): they go to ~23,000 contacts and would bury the stewardship history.
+  The hourly consent sync already pages every audience member (`readMailchimpStatuses` in
+  `src/consent/sources.ts`). Add `members.web_id` to its `fields`, and write the link as
+  `https://<dc>.admin.mailchimp.com/lists/members/view?id=<web_id>` (`web_id` confirmed in the
+  member resource on 2026-11-18). Confirm in a browser that this URL opens the contact profile.
+  The link is for the address in People's primary **Email** column, falling back to the first other
+  email column in the audience. It's written only when blank or different, so most hours write
+  nothing. The first run fills about 800+ members. It's cleared when the address leaves the
+  audience (deleted, not archived).
+
+Both go in `scripts/mark-read-only-columns.mjs`'s `MARKED_COLUMNS`. Config names them as
+`monday.columns.lastJourneyEmail` and `monday.columns.mailchimpProfile`; `null` turns either off.
 
 ### Alternatives considered
 
@@ -71,10 +94,10 @@ follows the precedent of `eventbrite-sync`'s class emails (`classEmails.timeline
   significant touches there ("Routine email stays in email"), and automated drips would make it
   mostly machine noise, around 2,500 items a year (below). The imported Activities board already hit
   its item limit (GL#92), and staff read Activities (Logged) as the record of real human touches.
-- **A per-person column** ("Last Journey Email": date + subject). It shows only the latest send,
-  not each send, so it doesn't meet the ask alone. It's worth adding **as well** only if Felicia wants
-  a sortable or filterable "last stewarded" view. It's a cheap 🔒 column written in the same step. Open
-  question 1.
+- **A per-person column only.** It shows the latest send, not each send, so it doesn't meet the ask
+  alone. It's added alongside the timeline instead (above).
+- **Logging newsletter sends.** Mailchimp already records them. The Mailchimp Profile link takes
+  staff there.
 - **The Campaigns board connect column** (the inbound side, off in production). It shows which
   Journeys a person is *enrolled in*, not what they were *sent*, and it needs the audience webhook
   and Campaigns board built. It doesn't serve this ask and stays off.
@@ -125,18 +148,20 @@ to" mark.
 - **Renewal reminders:** 663 active members (the 2026-11-17 seed), about 650 after
   `renewal-opt-out`/`recurring-donor` exclusions. Up to 3 emails each per term: **≤ ~2,000 a year**.
 - **Welcome series:** 2 emails per new member. At a few hundred new members a year: **~500 a year**.
-- **Total ≈ 2,500 timeline entries a year, ~7 a day.** Monday: one People lookup and one create per
-  send, about 15 calls a day. Mailchimp: about 3 catalog calls an hour, plus a `sent-to` page when a count
+- **Total ≈ 2,500 timeline entries a year, ~7 a day.** Monday: one People lookup, one create and one
+  Last Journey Email write per send, about 20 calls a day. Mailchimp Profile links: a one-time fill,
+  then only changed addresses. Mailchimp: about 3 catalog calls an hour, plus a `sent-to` page when a count
   moves. Further stewardship Journeys add linearly.
 
 ## What staff see
 
 On a donor's People item → **Emails & Activities**: a "Mailchimp email" entry for each Journey email,
 dated the day it went out, with the subject, the Journey and the step, and a link to view the email
-as sent. It sits beside Gmail-logged mail and class emails. Nothing appears on Activities (Logged), and
-nothing is editable. Not covered: who opened or clicked. Mailchimp's own contact profile stays the
-place for that (`email-activity` could add it later). Neither is regular newsletter campaign
-sends: those go to ~23,000 contacts and would bury the stewardship history.
+as sent. It sits beside Gmail-logged mail and class emails. A bounced send shows as "Not delivered".
+On the item itself: **Last Journey Email** (the date of the latest delivered Journey email) and
+**Mailchimp Profile** (a link to the contact in Mailchimp). Nothing appears on Activities (Logged), and
+nothing is editable. Opens, clicks and newsletter sends stay in Mailchimp, one click away through
+Mailchimp Profile.
 
 ## Config
 
@@ -168,8 +193,9 @@ apart.
    step after each email (`journey-<id>-email-<n>`), and the poll reads tag membership through
    `GET /lists/{list}/segments`. Either way, the timeline landing above stands.
 
-## Open questions
+## Decisions (2026-11-18, dwk)
 
-1. A "Last Journey Email" 🔒 column on People as well, for a view, or the timeline only?
-2. Should bounces get an entry, or only the consent column change they already cause?
-3. Should newsletter (`regular`) sends ever be logged? Recommendation: no, as above.
+1. **Add Last Journey Email** as a 🔒 Date column on People, alongside the timeline entries.
+2. **Bounces get a timeline entry** ("Not delivered: <subject>").
+3. **Newsletter sends aren't logged in Monday.** They stay in Mailchimp, reached through a
+   Mailchimp Profile link on the People item.
