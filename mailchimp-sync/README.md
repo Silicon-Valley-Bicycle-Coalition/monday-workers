@@ -456,9 +456,22 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   flow sends today (read 2026-10-26; the original `membership-reminders` design's 42/28/14 came
   from workflow rules inactive since 2022). Like that flow, the renewal Journey must skip active
   recurring donors and the members marked Renewal Opt Out in Salesforce (611 at the 2026-10-26
-  check), and neither is migrated. Leave those 611 out of the Renewal Reminders interest when you
-  seed it. Salesforce never sent welcome email #2 (a flow bug), so decide whether the welcome
+  check), and neither is migrated. `scripts/renewal-opt-out.mjs` reads them from Salesforce (every
+  email field on the Contact: 811 addresses, 758 in the production audience at the 2026-11-17 dry
+  run), tags each member `renewal-opt-out` and, with `--interest 986d6c84bf`, turns Renewal
+  Reminders off. Exclude that tag in the renewal Journey's audience as well as gating on the
+  interest, so a later bulk re-seed of the interest can't put them back. Dry run by default.
+  Salesforce never sent welcome email #2 (a flow bug), so decide whether the welcome
   Journey should.
+* `scripts/port-salesforce-templates.mjs` copies the six templates the Salesforce flow sent
+  (renewal 4 weeks / 2 weeks / day of, welcome #1–#3) into Mailchimp as custom-coded templates
+  named "Membership renewal reminder: …" and "New member welcome #…". It maps the merge fields
+  (`*|FNAME|*` with a "friend" fallback, `*|MEMBUNTIL|*`), repairs the merge field the 2-week
+  template's pasted HTML had split (it sent "Dear :" from July 2026), drops welcome #1's gift
+  amount and date (Mailchimp has no last-gift fields), and adds the unsubscribe and address footer.
+  It prints each Salesforce subject line to set on the Journey email. A dry run writes the HTML to
+  `salesforce-templates/` (gitignored); `--apply` creates the templates, or overwrites ones with
+  the same name, so edit copy in Mailchimp only after the last `--apply`.
 * Set up an audience webhook (Subscribes/Unsubscribes/Profile updates/Cleaned) pointed at this
   Worker's `/webhooks/mailchimp/audience`, with a secret in the URL, and leave Mailchimp's
   webhook "API" event source **unchecked** — otherwise this Worker's own writes back to Mailchimp
