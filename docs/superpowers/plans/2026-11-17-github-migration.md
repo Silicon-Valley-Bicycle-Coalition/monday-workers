@@ -108,13 +108,44 @@ Rewrites: `#NN` → issue, `!NN` → merge request, where NN is 1–4 digits, pr
 
 **`--max-issue` / `--max-mr`:** the rewriter and copier take the highest real GitLab issue and MR numbers, so a colour like `#888` is never read as a reference. Use each project's highest `iid`; today that is 127 / 509 for monday-workers. Look up monday-migration's at run time: `glab api "projects/<url-encoded path>/issues?per_page=1&order_by=created_at&sort=desc&scope=all"` and the same with `merge_requests`, reading `iid` from each.
 
-- [ ] **Step 1:** Merge or close monday-migration's 2 open MRs on GitLab; prune merged remote branches (`glab api` / web UI).
-- [ ] **Step 2:** `gh repo create Silicon-Valley-Bicycle-Coalition/monday-migration --private --disable-wiki`.
-- [ ] **Step 3:** `git clone --mirror git@gitlab.com:silicon-valley-bicycle-coalition/svbc-monday-migration.git /tmp/mm.git && cd /tmp/mm.git && git push git@github.com:Silicon-Valley-Bicycle-Coalition/monday-migration.git 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'`. Verify: `git ls-remote` on both hosts lists the same heads/tags SHAs.
-- [ ] **Step 4:** In a monday-migration worktree: run Task 1's script with `--project silicon-valley-bicycle-coalition/svbc-monday-migration --max-issue <N> --max-mr <N> --write`, review the diff, port its `.gitlab-ci.yml` (`syntax-check`: `for f in scripts/*.mjs; do node --check "$f"; done`, path filter `scripts/**`) to `.github/workflows/check.yml`, delete `.gitlab-ci.yml`, update its `CLAUDE.md`/`README.md` remotes and MR→PR wording, add the legend line (`GL#NN`/`GL!NN` = GitLab; commit messages before CUTOVER_DATE use GitLab numbers). Commit, push to GitHub `main`. Expected: the Actions run is green.
-- [ ] **Step 5:** Run both phases from the primary `monday-workers` checkout (the script lives there; its gitignored `github-migration-review/` cache holds redactions and confirm progress and would be deleted with a removed worktree). `node scripts/copy-gitlab-issues.mjs --from silicon-valley-bicycle-coalition/svbc-monday-migration --to Silicon-Valley-Bicycle-Coalition/monday-migration --max-issue <N> --max-mr <N>`; read the review file; rerun with `--confirm` (the same `--from`/`--to`, no `--max-*`). A fetch refuses to overwrite an existing review cache, which holds your redactions and the confirm progress; pass `--refetch` only to deliberately discard it. Verify: 35 GitHub issues, 0 open GitLab issues, each GitLab issue has a "Moved to" note. Run `--confirm` again — Expected: 0 created.
-- [ ] **Step 6:** `git -C monday-migration remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-migration.git` and in every monday-migration worktree (shared config — once is enough); `git fetch && git status` — Expected: tracking `origin/main`, up to date.
-- [ ] **Step 7:** Write down anything that surprised you in the plan file under "Rehearsal notes" before Task 5.
+- [x] **Step 1:** Merge or close monday-migration's 2 open MRs on GitLab; prune merged remote branches (`glab api` / web UI).
+- [x] **Step 2:** `gh repo create Silicon-Valley-Bicycle-Coalition/monday-migration --private --disable-wiki`.
+- [x] **Step 3:** `git clone --mirror git@gitlab.com:silicon-valley-bicycle-coalition/svbc-monday-migration.git /tmp/mm.git && cd /tmp/mm.git && git push git@github.com:Silicon-Valley-Bicycle-Coalition/monday-migration.git 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*'`. Verify: `git ls-remote` on both hosts lists the same heads/tags SHAs.
+- [x] **Step 4:** In a monday-migration worktree: run Task 1's script with `--project silicon-valley-bicycle-coalition/svbc-monday-migration --max-issue <N> --max-mr <N> --write`, review the diff, port its `.gitlab-ci.yml` (`syntax-check`: `for f in scripts/*.mjs; do node --check "$f"; done`, path filter `scripts/**`) to `.github/workflows/check.yml`, delete `.gitlab-ci.yml`, update its `CLAUDE.md`/`README.md` remotes and MR→PR wording, add the legend line (`GL#NN`/`GL!NN` = GitLab; commit messages before CUTOVER_DATE use GitLab numbers). Commit, push to GitHub `main`. Expected: the Actions run is green.
+- [x] **Step 5:** Run both phases from the primary `monday-workers` checkout (the script lives there; its gitignored `github-migration-review/` cache holds redactions and confirm progress and would be deleted with a removed worktree). `node scripts/copy-gitlab-issues.mjs --from silicon-valley-bicycle-coalition/svbc-monday-migration --to Silicon-Valley-Bicycle-Coalition/monday-migration --max-issue <N> --max-mr <N>`; read the review file; rerun with `--confirm` (the same `--from`/`--to`, no `--max-*`). A fetch refuses to overwrite an existing review cache, which holds your redactions and the confirm progress; pass `--refetch` only to deliberately discard it. Verify: 35 GitHub issues, 0 open GitLab issues, each GitLab issue has a "Moved to" note. Run `--confirm` again — Expected: 0 created.
+- [x] **Step 6:** `git -C monday-migration remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-migration.git` and in every monday-migration worktree (shared config — once is enough); `git fetch && git status` — Expected: tracking `origin/main`, up to date.
+- [x] **Step 7:** Write down anything that surprised you in the plan file under "Rehearsal notes" before Task 5.
+
+#### Rehearsal notes (Task 4, done 2026-11-17)
+
+monday-migration is on GitHub (private): 8 heads pushed, GitLab parity checked, 35 issues
+copied (GitLab 0 open), `check.yml` green, `origin` switched, primary checkout fast-forwarded.
+What surprised us, and what Task 6 must do about it:
+
+- **The rewriter's dry run is not reviewable by eye, and 65 of 412 changes (16%) were wrong.**
+  29 were local numbering (punch-list rows, "welcome email #3", "Gate B #2", "deliverable #10");
+  34 were refs to the *other* project, only 8 of them with the repo named ("`monday-workers` MR
+  !11"); the other 26 were found only by comparing each ref with both projects' issue and MR
+  titles; 2 were other (an item name, "donor #14,203"). For Task 6, before `--write`: dispatch a
+  read-only review that checks every dry-run line against the source and both projects' titles
+  (`glab api projects/<enc>/issues?scope=all&per_page=100`, and merge_requests) and writes a TSV
+  `path:line  token  local|cross-project|other  reason`. After `--write`, revert local/other to
+  the bare token and point cross-project links at `svbc-monday-migration`. Expect the same mix in
+  reverse there: monday-workers docs cite migration issues by bare number.
+- **Ranges rewrite only the first number** (`#56–#61` → `[GL#56](…)–#61`). Harmless in files
+  (GitHub doesn't autolink in rendered files) but not in issue bodies, where the bare second
+  number autolinks to a GitHub issue. Two were hand-fixed in the review JSON before `--confirm`.
+- **The rewriter's summary over-counts files** ("412 change(s) in 216 file(s)"; 41 files changed).
+- **`--max-issue` from `order_by=created_at` was 117, but GL#118 exists** (the copier moved it).
+  Take the highest `iid` from the full list instead.
+- **Issue bodies only got a partial check for unnamed cross-project refs.** Only low numbers and
+  refs that named the repo were checked. For monday-workers, run the title comparison on the
+  review JSON too.
+- **A re-run of `--confirm` prints every existing mapping, not "0 created"**: check the GitHub
+  issue count is unchanged (it was: 35).
+- **monday-migration's README and `workers/README.md` link to monday-workers on GitLab**; update
+  them in Task 6 Step 4 once monday-workers moves.
+- GitLab CI quota was exhausted all day; GitHub Actions ran the ported job fine.
 
 ### Task 5: monday-workers history audit (gate)
 
