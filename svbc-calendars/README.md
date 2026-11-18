@@ -94,7 +94,7 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 **Deployed and live** on both custom domains (checked 2026-09-30: both secrets set, both domains
 attached to `svbc-calendars`, and the two predecessor Workers deleted). It has a Workers Builds
-connection, so every merge to `main` redeploys it — see the root `README.md`'s Deploys section.
+connection to GitHub `main` (moved from GitLab 2026-11-17), so every merge to `main` redeploys it — see the root `README.md`'s Deploys section.
 Step 2 (`CF_WEB_ANALYTICS_TOKEN` is empty) is probably already covered by the zone's automatic Web
 Analytics, and step 8 (embedding the widget on the live site) is only partly done. The feeds also
 depend on a WAF rule that lives outside this repo — see step 7. The checklist below is the cutover as it

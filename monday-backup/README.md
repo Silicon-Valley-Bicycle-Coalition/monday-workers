@@ -133,8 +133,7 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   nothing about a backup Worker should be reachable from the Internet at all; it only makes
   outbound calls.
 * **Workers Builds connected 2026-11-03** (root directory `/monday-backup`, branch `main`, watch
-  path `monday-backup/*`, preview builds off); no build has run yet, so the first merge touching
-  `monday-backup/src/` is what proves the watch path. Routine changes deploy by merging to `main`, and manual
+  path `monday-backup/*`, preview builds off), moved from GitLab to GitHub on 2026-11-17. Routine changes deploy by merging to `main`, and manual
   `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
   section for why hand-deploys are distrusted here).
 * **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50

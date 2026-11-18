@@ -522,17 +522,22 @@ and fork settings don't apply to it. Cloudflare's docs don't say whether fork PR
 builds, so answer that before turning them on in a public repo. `svbc-calendars` builds `main` only;
 its "Deploy non-production branches" trigger was removed on 2026-11-03.
 
-**Current state (verified 2026-09-28) — merging deploys only `svbc-calendars`.** All eight
-provisioned sandbox Workers were last hand-deployed from `main` on 2026-10-09 (none had pending D1
-migrations); `eventbrite-sync` and `people-reclassification` still carry placeholder sandbox D1
-ids and were skipped. `svbc-calendars` is the only
-Worker with a Workers Builds connection (production, live). No sandbox connection exists and the
-`CLOUDFLARE_API_TOKEN` secret is not set, so the `deploy-sandbox` job never runs: a
-merge to `main` does **not** redeploy any sandbox Worker. After merging, deploy the sandbox by
-hand from an up-to-date `main` checkout — `cd <worker> && npm ci && npm run deploy:sandbox` —
-applying any new D1 migrations first. None of the migration Workers exists in production yet
-(their first production deploy is the cutover checklist). Update this paragraph when a connection
-or the secret is added.
+**Current state (verified 2026-11-17) — merging deploys `svbc-calendars` and `svbc-monday-backup`.**
+These two production Workers are the only Workers Builds connections on SVBC's account (34 Workers
+checked). Both track GitHub `Silicon-Valley-Bicycle-Coalition/monday-workers` (moved from GitLab
+on 2026-11-17), branch `main` only, non-production branch builds off, deploy command
+`npx wrangler deploy`, build token "svbc-events-widgets build token":
+
+| Worker | Root directory | Watch paths |
+|---|---|---|
+| `svbc-calendars` | `/svbc-calendars` | `*` |
+| `svbc-monday-backup` | `/monday-backup` | `monday-backup/*` |
+
+Every other Worker, production and sandbox, is deployed by hand. No sandbox connection exists and
+the `CLOUDFLARE_API_TOKEN` secret is not set, so the `deploy-sandbox` job never runs: a merge to
+`main` does **not** redeploy any sandbox Worker. After merging, deploy the sandbox by hand from an
+up-to-date `main` checkout — `cd <worker> && npm ci && npm run deploy:sandbox` — applying any new
+D1 migrations first. Update this paragraph when a connection or the secret is added.
 Design: [`docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md)
 §8.
 
