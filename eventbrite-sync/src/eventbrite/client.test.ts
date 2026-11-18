@@ -133,18 +133,24 @@ describe('HttpEventbriteClient', () => {
   });
 
   describe('listOrganizationOrders', () => {
-    it('follows the continuation token across pages with the status and changed_since filters', async () => {
+    // The organization endpoint takes status "active" (placed) or "inactive" (refunded) only:
+    // "all_not_deleted" and "both" are 400 ARGUMENTS_ERROR there (verified against the live API
+    // 2026-11-18), unlike the per-event orders endpoint. So it lists each, paging both.
+    it('lists active then inactive orders, following each continuation token, and merges them', async () => {
       const fetchImpl = vi
         .fn()
         .mockResolvedValueOnce(response(200, { orders: [{ id: '1' }], pagination: { has_more_items: true, continuation: 'abc' } }))
-        .mockResolvedValueOnce(response(200, { orders: [{ id: '2' }], pagination: { has_more_items: false } }));
+        .mockResolvedValueOnce(response(200, { orders: [{ id: '2' }], pagination: { has_more_items: false } }))
+        .mockResolvedValueOnce(response(200, { orders: [{ id: '3' }], pagination: { has_more_items: false } }));
       const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
 
       const orders = await client.listOrganizationOrders('999', '2026-11-01T13:00:00Z');
 
-      expect(orders.map((o) => o.id)).toEqual(['1', '2']);
-      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/organizations/999/orders/?status=all_not_deleted&changed_since=2026-11-01T13%3A00%3A00Z');
-      expect(fetchImpl.mock.calls[1]![0]).toContain('continuation=abc');
+      expect(orders.map((o) => o.id)).toEqual(['1', '2', '3']);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/organizations/999/orders/?status=active&changed_since=2026-11-01T13%3A00%3A00Z');
+      expect(fetchImpl.mock.calls[1]![0]).toBe('https://www.eventbriteapi.com/v3/organizations/999/orders/?status=active&changed_since=2026-11-01T13%3A00%3A00Z&continuation=abc');
+      expect(fetchImpl.mock.calls[2]![0]).toBe('https://www.eventbriteapi.com/v3/organizations/999/orders/?status=inactive&changed_since=2026-11-01T13%3A00%3A00Z');
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
       expect(fetchImpl.mock.calls[0]![1].headers.Authorization).toBe('Bearer tok');
     });
 

@@ -256,7 +256,9 @@ fixed; adopt-before-create makes it safe for the orders that did land.
 Failed writes are loud, but a webhook that was deleted, disabled or repointed fails nothing: orders
 just stop arriving. So at 15:00 UTC (07:00 or 08:00 Pacific), on one of the hourly cron runs,
 `src/missedOrders/check.ts` lists the organization's orders changed in the last 26 hours
-(`GET /organizations/{id}/orders/?status=all_not_deleted&changed_since=…`) and looks each id up in
+(`GET /organizations/{id}/orders/?status=active&changed_since=…`, then the same with
+`status=inactive` for refunded orders; this endpoint rejects `all_not_deleted` and `both` with a
+400, unlike the per-event one) and looks each id up in
 the `orders` ledger. Orders changed in the last 30 minutes are skipped as possibly still in
 flight. Any order Eventbrite has that the ledger doesn't gets one `console.error` naming the ids,
 which Workers Issues raises; a clean check logs one info line. A day with no sales is not an alarm.
