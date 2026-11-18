@@ -1,8 +1,9 @@
 import type { EventbriteAttendee } from '../eventbrite/client';
 import type { PledgeEventConfig } from '../types';
 
-// "Company name for invoice" is deliberately not matched: it is about billing, not who employs the attendee.
-export const EMPLOYER_QUESTION = /employer|where do you work|company you work|empleador|d[oó]nde trabajas/i;
+// A question worded just "Company" (SVBC's Bike to the Future forms ask that) counts too; "Company
+// name for invoice" is deliberately not matched: it is about billing, not who employs the attendee.
+export const EMPLOYER_QUESTION = /employer|where do you work|company you work|empleador|d[oó]nde trabajas|^\s*company\s*[:*?]?\s*$/i;
 
 /**
  * The attendee's employer answer, trimmed, or null. A pledge event's question mapped to `employer`

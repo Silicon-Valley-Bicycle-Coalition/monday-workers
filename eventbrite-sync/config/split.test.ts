@@ -262,9 +262,10 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(binding(wrangler)).toBeUndefined();
   });
 
-  it('ships employerAnswers off in both configs', () => {
+  // Sandbox was turned on 2026-11-17 for the first replay; production stays off until
+  // impact-attribution is deployed there and the pre-enable checklist passes.
+  it('ships employerAnswers off in production', () => {
     expect(production.employerAnswers).toEqual({ enabled: false });
-    expect(sandbox.employerAnswers).toEqual({ enabled: false });
   });
 
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {

@@ -686,7 +686,7 @@ confirm**. This Worker only collects: it never writes to Affiliations. Design:
 **Which answers.** A pledge event with a question mapped to `employer` in `pledge.events` uses that
 question (the config script maps wording like "Where do you work?" or "employer"). Otherwise, for any
 event, the first answered `text` question worded like `EMPLOYER_QUESTION` in `src/mapping/employer.ts`
-(employer, where do you work, company you work, and Spanish equivalents), skipping a pledge event's
+(employer, where do you work, company you work, a question worded just "Company" as on the Bike to the Future forms, and Spanish equivalents), skipping a pledge event's
 `ignoreQuestions` (staff list a question there to mean "don't read it"); no per-event config. "Company
 name for invoice" does not match. A pledge's employer answer still goes to **Other Answers** as before; no new column.
 
@@ -708,8 +708,8 @@ are never logged.
 
 **Switches.**
 
-* `employerAnswers.enabled` in `config/*.json` is **`false` in both** `svbc.json` and `sandbox.json`.
-  The sandbox binding alone doesn't turn it on; set it to `true` to use it.
+* `employerAnswers.enabled` in `config/*.json` is **`false` in `svbc.json`** and `true` in
+  `sandbox.json` (since 2026-11-17). A binding alone doesn't turn it on.
 * The binding is optional. **Production's `wrangler.jsonc` has no `EMPLOYER_ANSWERS` binding** until
   `impact-attribution` is deployed to production (a comment there gives the line to add); a missing
   binding behaves exactly like `enabled: false`, so the 2027 pledge config never waits on this.

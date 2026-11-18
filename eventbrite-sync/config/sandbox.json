@@ -114,7 +114,7 @@
     },
     "peopleEmailColumn": "email_mm8h4kkb"
   },
-  "employerAnswers": { "enabled": false },
+  "employerAnswers": { "enabled": true },
   "pledge": {
     "nameMatch": "Pledge to Ride",
     "columns": {
