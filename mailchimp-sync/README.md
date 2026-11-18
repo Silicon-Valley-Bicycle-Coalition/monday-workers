@@ -429,6 +429,16 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   from every sync. Discovered provisioning the sandbox audience 2026-09-22; use the 9-char
   tags above instead. **Production: created 2026-10-30** through the API, with the sandbox
   audience's types (dates `MM/DD/YYYY`, `TOTALGIVE` a number, all non-public).
+* **`LASTGIFT`** (type: Text, non-public) holds the donor's most recent gift as email copy, e.g.
+  `$1,250` (whole dollars drop the cents), for the welcome email's "Thank you for your generous
+  gift of `*|LASTGIFT|*`". It comes from People's **Last Gift Amount** column
+  (`monday.columns.lastGiftAmount`, kept live by `donation-rollups` on every Donations change)
+  through `mailchimp.mergeFields.lastGiftAmount`. Both are optional; either one `null` or absent
+  leaves the merge field alone, and a blank column clears it. **Create the merge field in the
+  audience before deploying a config that names it.** A contact gets it on their next sync, which a
+  new gift triggers, so new members have it before the welcome Journey's first email; existing
+  contacts fill in as they give again. It is not a receipt: receipts stay in Funraise or a personal
+  email.
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Exclude the `recurring-donor` tag from the renewal-reminder Customer Journey: it comes from People's
   **Has Active Recurring Gift** checkbox (`monday.columns.hasActiveRecurringGift`, kept nightly by
@@ -492,7 +502,7 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   named "Membership renewal reminder: …" and "New member welcome #…". It maps the merge fields
   (`*|FNAME|*` with a "friend" fallback, `*|MEMBUNTIL|*`), repairs the merge field the 2-week
   template's pasted HTML had split (it sent "Dear :" from July 2026), drops welcome #1's gift
-  amount and date (Mailchimp has no last-gift fields), strips the utm_* tags from links Salesforce
+  amount and date (it predates `LASTGIFT`, above; new copy can use `*|LASTGIFT|*`), strips the utm_* tags from links Salesforce
   tagged as its own (utm_source=salesforce; turn on the Journeys' Google Analytics link tracking
   instead), and wraps each in the design system's
   EmailLayout (a slim letterhead-style black band with the hosted wordmark at 125px, 560px card) with the unsubscribe and

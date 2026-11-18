@@ -56,7 +56,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
+    doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, lastGiftAmount: null, onHistorical: false,
     ...overrides,
   };
 }

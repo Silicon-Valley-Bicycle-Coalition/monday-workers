@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMergeFields, buildTags, journeyInterests, managedTags } from './mapDonor';
+import { buildMergeFields, buildTags, formatGiftAmount, journeyInterests, managedTags } from './mapDonor';
 import type { Config, DonorRecord } from '../types';
 
 const CONFIG: Config = {
@@ -26,7 +26,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '2027-01-01', addr1: '1 Main St', city: 'San Jose',
-    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false, ...overrides,
+    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, lastGiftAmount: null, onHistorical: false, ...overrides,
   };
 }
 
@@ -40,6 +40,17 @@ describe('buildMergeFields', () => {
       ADDRESS: { addr1: '1 Main St', city: 'San Jose', state: 'CA', zip: '95110', country: 'US' },
       TOTALGIVE: '0',
     });
+  });
+
+  it('sends LASTGIFT, formatted as dollars, only when both the merge field and the column are configured', () => {
+    const withTag: Config = { ...CONFIG, mailchimp: { ...CONFIG.mailchimp, mergeFields: { ...CONFIG.mailchimp.mergeFields, lastGiftAmount: 'LASTGIFT' } } };
+    expect(buildMergeFields(donor({ lastGiftAmount: '1250' }), withTag).LASTGIFT).toBe('$1,250');
+    expect(buildMergeFields(donor({ lastGiftAmount: '' }), withTag).LASTGIFT).toBe('');
+    // Column not configured: leave the merge field alone rather than clear it.
+    expect(buildMergeFields(donor({ lastGiftAmount: null }), withTag)).not.toHaveProperty('LASTGIFT');
+    // Merge field not configured: nothing sent, whatever the column holds.
+    expect(Object.keys(buildMergeFields(donor({ lastGiftAmount: '50' }), CONFIG))).not.toContain('undefined');
+    expect(Object.values(buildMergeFields(donor({ lastGiftAmount: '50' }), CONFIG))).not.toContain('$50');
   });
 
   it('derives the state from the ZIP when the donor has none (no State column configured)', () => {
@@ -181,5 +192,19 @@ describe('journeyInterests', () => {
     expect(journeyInterests([], ['active-member'], CONFIG)).toEqual({});
     const welcomeOff: Config = { ...JOURNEYS, mailchimp: { ...JOURNEYS.mailchimp, journeyInterests: { welcomeDrip: null, renewalReminders: 'r', renewalOptOutTag: 'renewal-opt-out' } } };
     expect(journeyInterests([], ['active-member'], welcomeOff)).toEqual({ r: true });
+  });
+});
+
+describe('formatGiftAmount', () => {
+  it('formats whole dollars without cents and keeps real cents', () => {
+    expect(formatGiftAmount('50')).toBe('$50');
+    expect(formatGiftAmount('1250')).toBe('$1,250');
+    expect(formatGiftAmount('1250.5')).toBe('$1,250.50');
+    expect(formatGiftAmount(' 35.00 ')).toBe('$35');
+    expect(formatGiftAmount('$1,000')).toBe('$1,000');
+  });
+
+  it('gives an empty string for blank, unreadable, zero or negative amounts', () => {
+    for (const text of ['', '  ', 'abc', '0', '-20']) expect(formatGiftAmount(text)).toBe('');
   });
 });

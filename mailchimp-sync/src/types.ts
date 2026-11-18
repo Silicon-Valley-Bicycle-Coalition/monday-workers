@@ -8,6 +8,9 @@ export interface MailchimpMergeFieldsConfig {
   membershipStatus: string;
   address: string;
   totalGiven: string;
+  // A text merge field holding the donor's most recent gift as "$1,250" (for "Thank you for your
+  // gift of *|LASTGIFT|*"). null or absent = not synced. Create the field in the audience first.
+  lastGiftAmount?: string | null;
 }
 
 export interface MailchimpTagsConfig {
@@ -41,6 +44,9 @@ export interface MondayColumnsConfig {
   // The People "Has Active Recurring Gift" checkbox (kept nightly by donation-rollups) -> the
   // recurring-donor tag. null or absent = not synced (the column isn't configured on this board).
   hasActiveRecurringGift?: string | null;
+  // The People "Last Gift Amount" number column (kept live by donation-rollups) -> the
+  // lastGiftAmount merge field. null or absent = not synced.
+  lastGiftAmount?: string | null;
 }
 
 // The columns the outbound sync reads. Everything but the Campaigns connect column, which only the
@@ -185,6 +191,9 @@ export interface DonorRecord {
   nearby: string[];
   // The Has Active Recurring Gift checkbox; false when unchecked or the column isn't configured.
   hasActiveRecurringGift: boolean;
+  // The Last Gift Amount column's text ('' when blank); null when the column isn't configured, so
+  // the merge field is left alone rather than cleared.
+  lastGiftAmount: string | null;
   // Which board the item is on now, read with its columns. A move between the People boards keeps
   // the item id, so this can differ from the board its webhook named.
   onHistorical: boolean;

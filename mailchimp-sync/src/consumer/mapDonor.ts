@@ -1,6 +1,19 @@
 import type { Config, DonorRecord } from '../types';
 import { stateFromZip } from './zipState';
 
+const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+// A Monday number column's text ("1250", "1250.5") as email copy: "$1,250", "$1,250.50". Whole
+// dollars drop the cents. Blank or unreadable gives '', which clears the merge field.
+export function formatGiftAmount(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === '') return '';
+  const amount = Number(trimmed.replace(/[$,]/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return '';
+  const formatted = USD.format(amount);
+  return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
+}
+
 export function buildMergeFields(donor: DonorRecord, config: Config): Record<string, unknown> {
   const fields = config.mailchimp.mergeFields;
   const mergeFields: Record<string, unknown> = {
@@ -10,6 +23,11 @@ export function buildMergeFields(donor: DonorRecord, config: Config): Record<str
     [fields.membershipStatus]: donor.membershipStatus,
     [fields.totalGiven]: donor.totalGiven,
   };
+
+  // Only when both ends are configured: an unconfigured column must not blank the merge field.
+  if (fields.lastGiftAmount && donor.lastGiftAmount !== null) {
+    mergeFields[fields.lastGiftAmount] = formatGiftAmount(donor.lastGiftAmount);
+  }
 
   // Mailchimp rejects an incomplete ADDRESS merge field with an HTTP 400 (a permanent
   // error — see mailchimp/client.ts), which would otherwise ack-and-never-retry the whole
