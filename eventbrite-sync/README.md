@@ -564,12 +564,17 @@ never deleted, so a count of people must leave out Canceled and count attendee i
 one order can hold two shifts, or several people under the buyer's email (#115).
 `donation-rollups` counts only Completed. Class emails
 for these events read the Volunteers board and write No-Show and the People link back there.
-The board's "Recent events" view (grouped by Event, last 90 days) is made by
+The board's "Recent events" view (last 90 days, newest first, ungrouped: Monday orders
+relation groups its own way, ignoring the sort) is made by
 `scripts/setup-volunteers-board.mjs --board <id> --events-board <id> [--apply]`, which also
 creates the missing columns and prints their ids for the config; `scripts/backfill-volunteers.mjs`
 moves earlier Role = Volunteer registrations over (`--apply`, `--remap-out`, `--archive`,
 `--env sandbox`, `--limit`, `--pause-ms`; dry run by default). `donation-rollups` counts the
-board as history. Cutover order, rollback and open gaps:
+board as history. The Event column is a two-way connection (turned on in the column settings
+UI; the API can't): the Events board's **Volunteers** column is its other side, kept by Monday, and
+that board's **Volunteer events** view (Volunteers not empty, Date newest first) is where staff
+click an event to see who signed up. Production has both since 2026-11-17; the sandbox has neither.
+Cutover order, rollback and open gaps:
 [`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
 
 **Config is the switch** (`volunteerBoardMode`, `src/config.ts`). The five new column ids

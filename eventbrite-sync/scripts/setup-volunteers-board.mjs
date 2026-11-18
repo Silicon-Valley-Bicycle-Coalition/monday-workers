@@ -55,7 +55,7 @@ async function main() {
     await graphql(
       `mutation ($board: ID!, $name: String, $filter: ItemsQueryGroup, $sort: [ItemsQueryOrderBy!], $settings: TableViewSettingsInput) {
          create_view_table (board_id: $board, name: $name, filter: $filter, sort: $sort, settings: $settings) { id } }`,
-      recentEventsViewVariables(args.board, { eventColumn: config.eventColumn, dateColumn })
+      recentEventsViewVariables(args.board, { dateColumn })
     );
     log(`created view "${VIEW_NAME}"`);
   }
