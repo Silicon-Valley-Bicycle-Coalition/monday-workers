@@ -14,9 +14,9 @@
 //
 // The header wordmark is hosted in Mailchimp's own file manager (mcusercontent.com): --apply
 // uploads docs/design-system/assets/Logos/svbc-wordmark-email.png once, reuses it by name after,
-// and points the templates at it. Not member-portal's /email/logo.png: bikesiliconvalley.org's
-// Super Bot Fight Mode challenges data-centre clients, which Mailchimp's preview renderer and
-// inbox image proxies are, so the header showed as a broken image (2026-11-17).
+// and points the templates at it, rather than member-portal's /email/logo.png: bikesiliconvalley.org's
+// Super Bot Fight Mode challenges data-centre clients, which Mailchimp's renderers and inbox image
+// proxies can be, so a logo on our own zone risks showing as a broken image.
 //
 // Usage (from mailchimp-sync/):
 //   [MAILCHIMP_API_KEY=...] node scripts/port-salesforce-templates.mjs --env production|sandbox
