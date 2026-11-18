@@ -208,10 +208,25 @@ re-cloned from GitHub (Task 8), not re-pointed.
 ### Task 7: Workers Builds and Claude app (operator, Cloudflare + GitHub dashboards)
 
 - [ ] **Step 1:** Install the Cloudflare Workers & Pages GitHub app on the org, repo access `monday-workers` only.
-- [ ] **Step 2:** For `svbc-calendars`: Workers & Pages → Settings → Build → disconnect GitLab, connect GitHub `monday-workers`, root `/svbc-calendars`, branch `main`, non-production branch builds **off**, same build/deploy commands as before (record them first). Merge a no-op change under `svbc-calendars/` — Expected: a build from the GitHub commit SHA deploys, and `curl -sI https://events.bikesiliconvalley.org/` returns 200.
+- [x] **Step 2:** For `svbc-calendars`: Workers & Pages → Settings → Build → disconnect GitLab, connect GitHub `monday-workers`, root `/svbc-calendars`, branch `main`, non-production branch builds **off**, same build/deploy commands as before (record them first). Merge a no-op change under `svbc-calendars/` — Expected: a build from the GitHub commit SHA deploys, and `curl -sI https://events.bikesiliconvalley.org/` returns 200.
 - [ ] **Step 3:** Same for `monday-backup` (root `/monday-backup`, watch path `monday-backup/*`, `main` only, previews off); verify with a no-op change and the next cron run's log.
-- [ ] **Step 4:** List every Worker on the SVBC account and its build settings (`mcp` workers list or dashboard); any other GitLab-connected Worker gets the same treatment. Record the final list in the root README's "Deploys" section.
+- [x] **Step 4:** List every Worker on the SVBC account and its build settings (`mcp` workers list or dashboard); any other GitLab-connected Worker gets the same treatment. Record the final list in the root README's "Deploys" section.
 - [ ] **Step 5:** Install the Claude GitHub app on the org for both repos (`claude` → `/install-github-app`, or github.com/apps/claude). Open a test issue in monday-migration mentioning `@claude` — Expected: a reply. Close it.
+
+#### Task 7 notes (2026-11-17)
+
+- Only `svbc-calendars` and `svbc-monday-backup` (of 34 Workers) had Workers Builds connections, both
+  to GitLab `main`. Both reconnected to GitHub; the Deploys section records them (PR #9).
+- PR #9's merge (`f6fec418`) built and deployed both from GitHub: the `Workers Builds` check runs
+  succeeded and `wrangler deployments list` shows a new deployment for each.
+- `curl -sI https://events.bikesiliconvalley.org/` returns 403 `cf-mitigated: challenge` (the zone
+  challenges non-browser clients); a browser gets 200. Use a browser for Step 2's check.
+- Step 1: the Cloudflare app was installed with access to **all** org repos; narrow it to
+  `monday-workers`.
+- Step 3: the reconnect reset `svbc-monday-backup`'s watch path to `*`; set it back to
+  `monday-backup/*`. Next cron run's log still to check.
+- Step 5: the Claude app is installed, but neither repo has a Claude workflow or token secret, so
+  `@claude` gets no reply until `/install-github-app` runs in each repo.
 
 ### Task 8: Local move and cleanup (operator, this Mac)
 
