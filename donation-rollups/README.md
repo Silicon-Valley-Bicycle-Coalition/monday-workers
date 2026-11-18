@@ -434,8 +434,8 @@ exactly 13 months to the day is still one run.
 | Last Lapsed | the last earlier run's end, blank when Lapse Count is 0 — written outright |
 | Member Type | `anniversary` = Current Term Start + 13 months. **Continuing** if today ≥ anniversary **and** the run's end is past the anniversary (the run holds more than one activity — otherwise a single-activity run would read Continuing for the one day it is both past its anniversary and still Active). Else **New** if Lapse Count = 0, else **Lapsed renewal**. On lapse the last value stays; Status already says Lapsed |
 
-Member Type is the only column that depends on today without an event, which is why the nightly
-`membership` duty exists (below).
+Member Type and Status are the columns that depend on today without an event, which is why the
+nightly `membership` duty exists (below).
 
 **Per-gift stamps** apply to post-`fromISO` qualifying gifts only: Term Start = gift date, Term
 End = gift date + 13 months (blank for a Lifetime gift), Membership Type = **New** if the gift
@@ -517,7 +517,14 @@ owner was fetched since, it is coalesced with no Monday call; and each webhook i
   run) recomputes everyone whose 13-month anniversary of Current Term Start fell since the last
   run's `anniversariesThroughISO` — normally just today; after missed nights it catches up, at
   most 31 days back — so Member Type moves from New to Continuing without an event, tens of
-  people a night. On demand, it is the **post-cutover
+  people a night. The same run then sets **Membership Status to Lapsed** on everyone still Active,
+  not Lifetime, whose Member Until is before today (UTC), re-reading each by id first so a gift
+  recomputed since the board read isn't lapsed back. Status only, at most
+  `LAPSE_WRITES_PER_RUN` (500) a night within the run's write budget. No native Monday automation
+  does this: the one the 2026-09-15 spec assumed was never set up on the production People board,
+  and nothing else recomputes a member the day after their term ends (the anniversary recompute
+  lands on Member Until itself, and owners with only migrated terms are never recomputed). On
+  demand, it is the **post-cutover
   recompute**, run once after the cutover load and the webhook subscriptions, before Gate C and
   before the November Board Elections export:
 

@@ -690,8 +690,8 @@ async function planMembershipWrites(
   }));
   const volunteers = await volunteerStore.forOwner(ownerItemId);
   const derived = deriveMembership(gifts, volunteers, membership, config.donationRollups.receivedStatusLabel, todayISO);
-  // No qualifying activity anywhere: never rewrite a hand-set membership or flip Status —
-  // Status on the calendar is the native automation's job, not ours.
+  // No qualifying activity anywhere: never rewrite a hand-set membership or flip Status here —
+  // Status on the calendar is the custodian membership duty's nightly lapse.
   if (derived.state === null) return { ownerValues: {}, giftWrites: [] };
 
   const board = await mondayClient.getOwnerMembership(ownerItemId, columns);

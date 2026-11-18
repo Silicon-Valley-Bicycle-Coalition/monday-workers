@@ -74,6 +74,8 @@ Monday applies the rule consistently and to `Donation` only (decided 2026-09-15,
   `salesforce-import`; this Worker never recomputes them.
 * **A custodian consistency check** that flags Active owners whose Member Until has passed (a
   guard if the native automation is ever switched off). Cheap follow-up, not in this build.
+  *(2026-11-17: the native automation was never set up on the production People board, so the
+  custodian's nightly `membership` duty now sets Lapsed itself — see `donation-rollups/README.md`.)*
 
 ## Architecture
 

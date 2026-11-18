@@ -107,7 +107,7 @@ describe('sharedReadPlan', () => {
           giftType: 'gt', actingForLink: null,
           classification: { fundingStream: 'fs', giftSize: 'gs', fiscalQuarter: 'fq', giftFiscalYear: 'gfy' } } }],
         ownerColumnsByBoard: {
-          '10': { ...OWNER, hasActiveRecurringGift: 'rg', membership: { currentTermStart: 'ts' } },
+          '10': { ...OWNER, hasActiveRecurringGift: 'rg', membership: { currentTermStart: 'ts', status: 'ms', tier: 'mt', until: 'mu' } },
           '20': OWNER,
         },
         membership: { termMonths: 13 },
@@ -121,7 +121,7 @@ describe('sharedReadPlan', () => {
 
     const plan = sharedReadPlan(config);
     expect([...plan.keys()].sort((a, b) => a - b)).toEqual([10, 20, 100]);
-    expect([...plan.get(10)!].sort()).toEqual(['dns', 'he', 'hg', 'hid', 'pdl', 'rg', 'ts']);
+    expect([...plan.get(10)!].sort()).toEqual(['dns', 'he', 'hg', 'hid', 'ms', 'mt', 'mu', 'pdl', 'rg', 'ts']);
     expect([...plan.get(20)!].sort()).toEqual(['odl', 'rec']);
     expect([...plan.get(100)!].sort()).toEqual(['am', 'an', 'dl', 'dt', 'fq', 'fs', 'fy', 'gfy', 'gs', 'gt', 'mb', 'st']);
   });

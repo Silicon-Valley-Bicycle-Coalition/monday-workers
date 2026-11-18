@@ -1,13 +1,16 @@
 // The membership duty (spec 2026-10-09 "Nightly duty and the one-time recompute"). Every run
 // recomputes the people whose Member Type is due to flip on the 13-month anniversary of their
-// Current Term Start, catching up on any nights missed since the last run. With all=true it is
+// Current Term Start, catching up on any nights missed since the last run, and sets Membership
+// Status to Lapsed on anyone still Active the day after their Member Until. With all=true it is
 // also the post-cutover recompute: load volunteer activity, backfill migrated Term Starts, then
 // enqueue every owner with a gift on a membership board plus everyone with a qualifying check-in
 // — sliced and cursored across runs like the sweep, continued by the next nightly trigger until
 // remaining is 0.
 import { addMonths } from '../membership/derive';
 import { registrationQualifies, historicalShiftQualifies } from '../membership/volunteer';
+import { MondayRateLimitError } from '../monday/client';
 import type { CustodianDeps, DutyReport } from './custodian';
+import type { OwnerMembershipColumns } from '../types';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import type { VolunteerActivityRow } from '../db/volunteerActivity';
 import type { HistoricalShiftRecord } from '../monday/client';
@@ -27,6 +30,9 @@ export interface MembershipDetail {
 
 export const ENQUEUE_PER_RUN = 3_500;   // 35 sendBatch calls of 100, same budget as the sweep
 export const BACKFILL_PER_RUN = 5_000;  // 50 items(ids:) reads of 100
+// Lapses written per night. A normal night has a handful; the cap only bounds the first run
+// after a gap, and the rest are still past due tomorrow.
+export const LAPSE_WRITES_PER_RUN = 500;
 // Missed nights older than this are not worth re-paging the People boards for.
 export const ANNIVERSARY_CATCH_UP_DAYS = 31;
 const DAY_MS = 86_400_000;
@@ -41,15 +47,19 @@ async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[], o
 }
 
 // Exported (config-keyed) for the custodian's shared board read (boardReads.ts, issue #90).
-export function membershipTermStartColumns(config: DonationRollupsConfig): { boardId: string; currentTermStart: string }[] {
+export function membershipReadColumns(config: DonationRollupsConfig): { boardId: string; columnIds: string[] }[] {
   if (config.donationRollups.membership === null) return [];
-  return membershipBoards({ config });
+  return membershipBoards({ config }).map((b) => ({ boardId: b.boardId, columnIds: lapseColumns(b.columns) }));
 }
 
-function membershipBoards(deps: Pick<CustodianDeps, 'config'>): { boardId: string; currentTermStart: string }[] {
+// Everything the nightly duty reads from a People board: the anniversary's Current Term Start
+// and the lapse check's Status, Tier and Member Until.
+const lapseColumns = (c: OwnerMembershipColumns): string[] => [c.currentTermStart, c.status, c.tier, c.until];
+
+function membershipBoards(deps: Pick<CustodianDeps, 'config'>): { boardId: string; currentTermStart: string; columns: OwnerMembershipColumns }[] {
   return Object.entries(deps.config.donationRollups.ownerColumnsByBoard)
     .filter(([, cols]) => cols.membership !== undefined)
-    .map(([boardId, cols]) => ({ boardId, currentTermStart: cols.membership!.currentTermStart }));
+    .map(([boardId, cols]) => ({ boardId, currentTermStart: cols.membership!.currentTermStart, columns: cols.membership! }));
 }
 
 // Every item on a People board, with one column's text — paged in full each run (reads are
@@ -74,7 +84,7 @@ export async function runMembership(
   // Anniversaries always run first, so an all=true pass that takes several nights doesn't
   // starve them. No earlier run on record: the last two days, as the duty always covered.
   const lastThrough = lastDetail?.anniversariesThroughISO ?? isoDay(now.getTime() - 2 * DAY_MS);
-  const anniversaries = await runAnniversaries(deps, now, membership.termMonths, lastThrough);
+  const anniversaries = withLapses(await runAnniversaries(deps, now, membership.termMonths, lastThrough), await runLapses(deps, now));
 
   // An unfinished all=true pass is continued by whoever runs next (the nightly cron, or the
   // route again); a fresh all=true starts over at the first phase.
@@ -164,6 +174,60 @@ async function loadNightlyVolunteers(deps: CustodianDeps, now: Date, anniversari
   } catch (err) {
     return failed(err);
   }
+}
+
+// Status on the calendar. A recompute sets Status from Member Until when it runs, but nothing
+// runs on the day a term ends: the anniversary recompute lands on Member Until itself (still
+// Active), and people with no qualifying activity on Monday (migrated terms only) are never
+// recomputed at all. So every night, anyone Active, not Lifetime, whose Member Until is before
+// today is set to Lapsed — Status only; Lapse Count and Last Lapsed are derived when the next run
+// starts (spec 2026-10-09). The board snapshot can be hours old by the time this runs, so each
+// candidate is re-read by id first: a gift recomputed in between must not be lapsed back.
+async function runLapses(deps: CustodianDeps, now: Date): Promise<DutyReport> {
+  const { statusLabels, tierLabels } = deps.config.donationRollups.membership!;
+  const todayISO = isoDay(now.getTime());
+  const isDue = (cols: OwnerMembershipColumns, text: (id: string) => string | null): boolean => {
+    const until = text(cols.until);
+    return text(cols.status) === statusLabels.active && text(cols.tier) !== tierLabels.lifetime
+      && until !== null && until.slice(0, 10) < todayISO;
+  };
+
+  let due = 0, written = 0;
+  const failed: string[] = [];
+  for (const board of membershipBoards(deps)) {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await deps.mondayClient.pageItemsColumnsText(Number(board.boardId), lapseColumns(board.columns), cursor);
+      for (const item of page.items) if (isDue(board.columns, (c) => item.text.get(c) ?? null)) ids.push(item.id);
+      cursor = page.cursor;
+    } while (cursor !== null);
+
+    for (let i = 0; i < ids.length; i += 100) {
+      const fresh = await deps.mondayClient.getItemsColumnsText(ids.slice(i, i + 100), lapseColumns(board.columns));
+      for (const id of ids.slice(i, i + 100)) {
+        const cols = fresh.get(id);
+        if (cols === undefined || !isDue(board.columns, (c) => cols.get(c) ?? null)) continue;
+        due++;
+        if (written + failed.length >= LAPSE_WRITES_PER_RUN || deps.writeBudget?.take() === false) continue;
+        try {
+          await deps.mondayClient.changeColumnValues(Number(board.boardId), id, { [board.columns.status]: { label: statusLabels.lapsed } });
+          written++;
+        } catch (err) {
+          if (err instanceof MondayRateLimitError) throw err;
+          failed.push(id);
+        }
+      }
+    }
+  }
+  const left = due - written - failed.length;
+  return { ok: failed.length === 0,
+    summary: `lapsed ${written} of ${due} past Member Until` +
+      (failed.length > 0 ? ` (failed: ${failed.join(', ')})` : '') + (left > 0 ? ` — ${left} left for the next run` : '') };
+}
+
+function withLapses(anniversaries: DutyReport, lapses: DutyReport): DutyReport {
+  return { ok: anniversaries.ok && lapses.ok, summary: `${anniversaries.summary}; ${lapses.summary}`, detail: anniversaries.detail };
 }
 
 // Everyone whose anniversary — Current Term Start + termMonths — falls after lastThroughISO and

@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
-import { runMembership, ENQUEUE_PER_RUN, type MembershipDetail } from './membership';
+import { runMembership, ENQUEUE_PER_RUN, LAPSE_WRITES_PER_RUN, type MembershipDetail } from './membership';
+import { WriteBudget } from './writeBudget';
+import { MondayRateLimitError } from '../monday/client';
 import type { CustodianDeps, CustodianMondayClient } from './custodian';
 import { D1GiftsStore } from '../db/gifts';
 import { D1PendingStore } from '../db/pending';
@@ -44,10 +46,17 @@ interface Fake {
   shifts?: { id: string; volunteerItemId: string | null; dateISO: string | null; hours: number | null; statusLabel: string | null; historical?: boolean }[];
   boardOf?: Record<string, string>;
   columnText?: Record<string, Record<string, string | null>>;
+  writes?: { boardId: number; itemId: string; values: Record<string, unknown> }[];
+  failWrite?: (itemId: string) => Error | null;
 }
 function fakeClient(f: Fake): CustodianMondayClient {
   return {
-    async archiveItem() {}, async listWorkspaceBoards() { return []; }, async createUpdate() {}, async createItem() { return 'x'; }, async changeColumnValues() {},
+    async archiveItem() {}, async listWorkspaceBoards() { return []; }, async createUpdate() {}, async createItem() { return 'x'; },
+    async changeColumnValues(boardId, itemId, values) {
+      const err = f.failWrite?.(itemId);
+      if (err) throw err;
+      f.writes?.push({ boardId, itemId, values });
+    },
     async pageItemsColumnsText(boardId, columnIds) {
       const items = (f.pages?.[String(boardId)] ?? []).map((i) => ({ id: i.id, text: new Map(columnIds.map((c) => [c, i.text[c] ?? null])),
         values: new Map(columnIds.map((c) => [c, null])) }));
@@ -429,5 +438,78 @@ describe('membership duty — nightly load of the Volunteers board', () => {
     const report = await runMembership(d, d.now!, { all: true, since: null }, null);
     expect(owners(sent)).toEqual([['nv', '20']]);
     expect(report.summary).not.toContain('volunteer row(s) changed');
+  });
+});
+
+describe('membership duty — nightly lapse', () => {
+  // now = 2027-12-03. Each person is both on the paged board and in the fresh by-id read.
+  type P = { id: string; ms: string | null; mt: string | null; muntil: string | null };
+  const people = (ps: P[], fresh: Partial<Record<string, Partial<P>>> = {}): Fake => ({
+    pages: { '20': ps.map((p) => ({ id: p.id, text: { ms: p.ms, mt: p.mt, muntil: p.muntil } })) },
+    columnText: Object.fromEntries(ps.map((p) => [p.id, { ms: p.ms, mt: p.mt, muntil: p.muntil, ...fresh[p.id] }])),
+    writes: [],
+  });
+  const run = (d: CustodianDeps) => runMembership(d, d.now!, { all: false, since: null }, null);
+
+  it('sets Lapsed on Active non-Lifetime people whose Member Until is before today, and no one else', async () => {
+    const f = people([
+      { id: 'yesterday', ms: 'Active', mt: 'Member', muntil: '2027-12-02' },
+      { id: 'long-ago', ms: 'Active', mt: 'Member', muntil: '2026-10-30' },
+      { id: 'no-tier', ms: 'Active', mt: null, muntil: '2027-11-14' },
+      { id: 'today', ms: 'Active', mt: 'Member', muntil: '2027-12-03' },
+      { id: 'future', ms: 'Active', mt: 'Member', muntil: '2028-01-01' },
+      { id: 'blank-until', ms: 'Active', mt: 'Member', muntil: null },
+      { id: 'lifetime', ms: 'Active', mt: 'Lifetime', muntil: '2020-01-01' },
+      { id: 'already', ms: 'Lapsed', mt: 'Member', muntil: '2027-01-01' },
+      { id: 'no-status', ms: null, mt: 'Member', muntil: '2027-01-01' },
+    ]);
+    const report = await run(deps(f, []));
+    expect(report.ok).toBe(true);
+    expect(f.writes).toEqual(['yesterday', 'long-ago', 'no-tier'].map((itemId) => ({ boardId: 20, itemId, values: { ms: { label: 'Lapsed' } } })));
+    expect(report.summary).toContain('lapsed 3 of 3');
+  });
+
+  it('re-reads each candidate first and skips anyone a recompute has since renewed or removed', async () => {
+    const f = people([
+      { id: 'renewed', ms: 'Active', mt: 'Member', muntil: '2027-11-01' },
+      { id: 'gone', ms: 'Active', mt: 'Member', muntil: '2027-11-01' },
+      { id: 'still', ms: 'Active', mt: 'Member', muntil: '2027-11-01' },
+    ], { renewed: { muntil: '2028-12-03' } });
+    delete f.columnText!['gone'];
+    await run(deps(f, []));
+    expect(f.writes!.map((w) => w.itemId)).toEqual(['still']);
+  });
+
+  it('stops at the run’s write budget and reports the rest as left for the next run', async () => {
+    const f = people(['a', 'b', 'c'].map((id) => ({ id, ms: 'Active', mt: 'Member', muntil: '2027-01-01' })));
+    const d = deps(f, []);
+    d.writeBudget = new WriteBudget(2);
+    const report = await run(d);
+    expect(f.writes!.map((w) => w.itemId)).toEqual(['a', 'b']);
+    expect(report.summary).toContain('lapsed 2 of 3');
+    expect(LAPSE_WRITES_PER_RUN).toBeGreaterThan(0);
+  });
+
+  it('one failed write does not stop the rest, and reports not ok; a rate limit ends the run', async () => {
+    const f = people(['a', 'b', 'c'].map((id) => ({ id, ms: 'Active', mt: 'Member', muntil: '2027-01-01' })));
+    f.failWrite = (id) => (id === 'a' ? new Error('locked') : null);
+    const report = await run(deps(f, []));
+    expect(report.ok).toBe(false);
+    expect(f.writes!.map((w) => w.itemId)).toEqual(['b', 'c']);
+
+    const g = people(['a', 'b'].map((id) => ({ id, ms: 'Active', mt: 'Member', muntil: '2027-01-01' })));
+    g.failWrite = () => new MondayRateLimitError('429', 60);
+    await expect(run(deps(g, []))).rejects.toBeInstanceOf(MondayRateLimitError);
+  });
+
+  it('under the write switch off it reports who would lapse but writes nothing', async () => {
+    const f = people([{ id: 'a', ms: 'Active', mt: 'Member', muntil: '2027-01-01' }]);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const d = custodianDepsFor('dry-run', deps(f, []),
+      { worker: 'donation-rollups', environment: 'production', mode: 'off', logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS, deliveryId: 'custodian:test' });
+    const report = await run(d);
+    log.mockRestore();
+    expect(f.writes).toEqual([]);
+    expect(report.summary).toContain('lapsed 1 of 1');
   });
 });
