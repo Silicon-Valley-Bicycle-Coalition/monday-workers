@@ -32,6 +32,24 @@ describe('lastScheduledRun', () => {
     expect(body.variables).toMatchObject({ accountTag: ACCOUNT, scriptName: 'svbc-funraise-sync', cron: '0 * * * *' });
   });
 
+  it('splits a window longer than 48 h into ≤48 h slices, newest first, stopping at the first run', async () => {
+    // Live 2026-11-17: a 192 h range came back as GraphQL error code "quota"; 48 h ranges work.
+    const empty = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [] }] } }, errors: null };
+    const hit = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [{ datetime: '2026-11-12T13:00:02Z' }] }] } }, errors: null };
+    const ranges: { since: string; until: string }[] = [];
+    const { fetcher } = stub((_u, init) => {
+      const v = (JSON.parse(String(init!.body)) as { variables: { since: string; until: string } }).variables;
+      ranges.push({ since: v.since, until: v.until });
+      return json(ranges.length === 3 ? hit : empty);
+    });
+    const api = cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW);
+    const since = new Date(NOW.getTime() - 192 * 3_600_000);
+    expect(await api.lastScheduledRun('svbc-member-map', '0 13 * * 1', since)).toEqual(new Date('2026-11-12T13:00:02Z'));
+    expect(ranges).toHaveLength(3);
+    expect(ranges[0]).toEqual({ since: new Date(NOW.getTime() - 48 * 3_600_000).toISOString(), until: NOW.toISOString() });
+    for (const r of ranges) expect(Date.parse(r.until) - Date.parse(r.since)).toBeLessThanOrEqual(48 * 3_600_000);
+  });
+
   it('returns null when there are no runs', async () => {
     const empty = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [] }] } }, errors: null };
     const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(empty)).fetcher, () => NOW);

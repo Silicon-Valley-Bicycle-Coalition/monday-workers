@@ -34,26 +34,26 @@ redeploy `sync-watchdog`.
 Two per production script, both to the `staff-slack-private` Chat destination (a Slack incoming
 webhook into the private staff channel): **When an issue occurs once** (occurrence threshold 1)
 and **When an issue recurs after 24 hours** (recurrence after inactivity). Each automation holds
-one trigger, which is why there are two. All 34 were created **disabled** on 2026-11-17, and
-are turned on once the backlog of known production issues has been triaged. To recreate one:
+one trigger, which is why there are two. All 34 were created disabled on 2026-11-17 and **enabled the same day**
+after the backlog of known production issues was triaged. To recreate one:
 the Worker's **Issues → Automations → Add automation**.
 
 | Script | Occurs once | Recurs after 24 h | Enabled |
 |---|---|---|---|
-| `svbc-benevity-import` | ✓ | ✓ | no |
-| `svbc-bp-feedback-notify` | ✓ | ✓ | no |
-| `svbc-calendars` | ✓ | ✓ | no |
-| `svbc-contact-roles` | ✓ | ✓ | no |
-| `svbc-donation-rollups` | ✓ | ✓ | no |
-| `svbc-eventbrite-sync` | ✓ | ✓ | no |
-| `svbc-funraise-sync` | ✓ | ✓ | no |
-| `svbc-impact-attribution` | ✓ | ✓ | no |
-| `svbc-mailchimp-sync` | ✓ | ✓ | no |
-| `svbc-member-map` | ✓ | ✓ | no |
-| `svbc-member-portal` | ✓ | ✓ | no |
-| `svbc-member-portal-writer` | ✓ | ✓ | no |
-| `svbc-monday-auth` | ✓ | ✓ | no |
-| `svbc-monday-backup` | ✓ | ✓ | no |
-| `svbc-people-reclassification` | ✓ | ✓ | no |
-| `svbc-report-digests` | ✓ | ✓ | no |
-| `svbc-sync-watchdog` | ✓ | ✓ | no |
+| `svbc-benevity-import` | ✓ | ✓ | yes |
+| `svbc-bp-feedback-notify` | ✓ | ✓ | yes |
+| `svbc-calendars` | ✓ | ✓ | yes |
+| `svbc-contact-roles` | ✓ | ✓ | yes |
+| `svbc-donation-rollups` | ✓ | ✓ | yes |
+| `svbc-eventbrite-sync` | ✓ | ✓ | yes |
+| `svbc-funraise-sync` | ✓ | ✓ | yes |
+| `svbc-impact-attribution` | ✓ | ✓ | yes |
+| `svbc-mailchimp-sync` | ✓ | ✓ | yes |
+| `svbc-member-map` | ✓ | ✓ | yes |
+| `svbc-member-portal` | ✓ | ✓ | yes |
+| `svbc-member-portal-writer` | ✓ | ✓ | yes |
+| `svbc-monday-auth` | ✓ | ✓ | yes |
+| `svbc-monday-backup` | ✓ | ✓ | yes |
+| `svbc-people-reclassification` | ✓ | ✓ | yes |
+| `svbc-report-digests` | ✓ | ✓ | yes |
+| `svbc-sync-watchdog` | ✓ | ✓ | yes |
