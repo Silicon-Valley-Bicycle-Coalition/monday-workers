@@ -33,8 +33,10 @@ export const REWRITES = [
   },
 ];
 
-// The EmailLayout wordmark (docs/design-system/components/EmailLayout): a 470px PNG served by
-// member-portal, shown at 235px on the black header band. White/gold, so it only reads on dark.
+// The EmailLayout wordmark (docs/design-system/components/EmailLayout): a 470px PNG shown at 235px
+// on the black header band. White/gold, so it only reads on dark. This member-portal copy is only
+// the fallback for local previews: --apply hosts the same file in Mailchimp's file manager (see
+// scripts/port-salesforce-templates.mjs for why).
 export const LOGO_URL = 'https://member.bikesiliconvalley.org/email/logo.png';
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";

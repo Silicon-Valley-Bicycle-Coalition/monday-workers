@@ -12,17 +12,25 @@
 // creates each template in Mailchimp, or replaces the HTML of one already there by the same name.
 // A template edited in Mailchimp is overwritten by a later --apply.
 //
+// The header wordmark is hosted in Mailchimp's own file manager (mcusercontent.com): --apply
+// uploads docs/design-system/assets/Logos/svbc-wordmark-email.png once, reuses it by name after,
+// and points the templates at it. Not member-portal's /email/logo.png: bikesiliconvalley.org's
+// Super Bot Fight Mode challenges data-centre clients, which Mailchimp's preview renderer and
+// inbox image proxies are, so the header showed as a broken image (2026-11-17).
+//
 // Usage (from mailchimp-sync/):
 //   [MAILCHIMP_API_KEY=...] node scripts/port-salesforce-templates.mjs --env production|sandbox
 //     [--org svbc]        Salesforce CLI alias (default svbc; the templates exist only there)
 //     [--out dir]         where to write the converted HTML (default ./salesforce-templates)
-//     [--logo-url url]    header wordmark PNG (default: member-portal's /email/logo.png)
+//     [--logo-url url]    header wordmark PNG to use instead of uploading one to Mailchimp
 //     [--apply]           needs MAILCHIMP_API_KEY
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TEMPLATES, convertTemplate } from './port-salesforce-templates-lib.mjs';
+import { LOGO_URL, TEMPLATES, convertTemplate } from './port-salesforce-templates-lib.mjs';
+
+const LOGO_FILE = fileURLToPath(new URL('../../docs/design-system/assets/Logos/svbc-wordmark-email.png', import.meta.url));
 
 const CONFIG_FILES = { sandbox: 'sandbox.json', production: 'svbc.json' };
 const argIdx = (name) => process.argv.indexOf(name);
@@ -59,6 +67,15 @@ function mailchimpTemplates(apiBaseUrl, apiKey) {
       return new Map(templates.map((t) => [t.name, t.id]));
     },
     create: (name, html) => call('POST', '/templates', { name, html }),
+    // The file manager's URL for an image by name, uploading it first if it isn't there.
+    async hostedImage(path) {
+      const name = basename(path);
+      const { files } = await call('GET', '/file-manager/files?type=image&count=1000&fields=files.name,files.full_size_url');
+      const found = files.find((f) => f.name === name);
+      if (found) return { url: found.full_size_url, uploaded: false };
+      const saved = await call('POST', '/file-manager/files', { name, file_data: readFileSync(path).toString('base64') });
+      return { url: saved.full_size_url, uploaded: true };
+    },
     update: (id, name, html) => call('PATCH', `/templates/${id}`, { name, html }),
   };
 }
@@ -70,8 +87,17 @@ async function main() {
   if (apply && !process.env.MAILCHIMP_API_KEY) usage('--apply needs MAILCHIMP_API_KEY');
   const org = argValue('--org', 'svbc');
   const outDir = argValue('--out', 'salesforce-templates');
-  const logoUrl = argValue('--logo-url', undefined);
   const config = JSON.parse(readFileSync(fileURLToPath(new URL(`../config/${CONFIG_FILES[envName]}`, import.meta.url)), 'utf8'));
+  const mc = apply ? mailchimpTemplates(config.mailchimp.apiBaseUrl, process.env.MAILCHIMP_API_KEY) : null;
+
+  let logoUrl = argValue('--logo-url', undefined);
+  if (!logoUrl && mc) {
+    const logo = await mc.hostedImage(LOGO_FILE);
+    logoUrl = logo.url;
+    console.log(`Header logo ${logo.uploaded ? 'uploaded to' : 'already in'} the Mailchimp file manager: ${logoUrl}\n`);
+  } else if (!logoUrl) {
+    console.log(`Dry run previews use ${LOGO_URL}; --apply hosts the logo in Mailchimp instead.\n`);
+  }
 
   const source = readTemplates(org);
   mkdirSync(outDir, { recursive: true });
@@ -89,7 +115,6 @@ async function main() {
     console.log(`\nDry run: nothing written to Mailchimp. Review ${outDir}/, then re-run with --apply.`);
     return;
   }
-  const mc = mailchimpTemplates(config.mailchimp.apiBaseUrl, process.env.MAILCHIMP_API_KEY);
   const existing = await mc.byName();
   console.log(`\nMailchimp (${envName}):`);
   for (const t of converted) {
