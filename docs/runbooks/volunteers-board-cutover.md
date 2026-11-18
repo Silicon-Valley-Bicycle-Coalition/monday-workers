@@ -326,5 +326,6 @@ step. Never delete the Volunteers items the backfill created.
 - The first nightly catch-up after cutover is capped at `ENQUEUE_PER_RUN` owners per night; step 10
   avoids that.
 - Recent events is not grouped by Event: Monday orders relation groups its own way, ignoring the
-  item sort, and has no group sort for them (seen 2026-11-17). The sandbox board still lacks the
-  two-way **Event** connection and the Events **Volunteer events** view.
+  item sort, and has no group sort for them (seen 2026-11-17). The two-way **Event** connection and
+  the Events **Volunteer events** view exist on production and sandbox v4; a new board needs the
+  two-way toggle in the column settings UI (the API can't set it).
