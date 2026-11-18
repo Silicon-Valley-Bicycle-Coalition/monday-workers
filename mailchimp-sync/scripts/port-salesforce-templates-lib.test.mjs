@@ -41,6 +41,13 @@ describe('cleanMarkup', () => {
     const pasted = '<p>a</p><p dir="ltr"><span style="font-variant-numeric: normal;">&nbsp; </span></p><p><b><br></b></p><p style="background: white;"><o:p></o:p></p><br><br><p>b</p>';
     expect(cleanMarkup(pasted)).toBe('<p>a</p><p>b</p>');
   });
+  it('drops trailing line breaks at the end of a paragraph', () => {
+    expect(cleanMarkup('<p><b>Dear X,</b><br><br></p><p>a<br>b</p>')).toBe('<p><b>Dear X,</b></p><p>a<br>b</p>');
+    expect(cleanMarkup('Dear X,<br><br>Welcome.<br><br><p>Next</p>')).toBe('Dear X,<br><br>Welcome.<p>Next</p>');
+  });
+  it('removes empty paragraphs inside a wrapping div', () => {
+    expect(cleanMarkup('<div><p>a</p><p><b style="font-weight:normal"><br></b></p><p>b</p></div>')).toBe('<div><p>a</p><p>b</p></div>');
+  });
   it('drops an empty spacer div and rejoins the list it split', () => {
     const pasted = '<ul><li>a</li></ul><div><span style="white-space-collapse: preserve"><br></span></div><ul style="x: y"><li>b</li></ul>';
     expect(cleanMarkup(pasted)).toBe('<ul><li>a</li><li>b</li></ul>');
@@ -74,6 +81,7 @@ describe('convertTemplate', () => {
     expect(html).toContain('background:#000000');
     expect(html).toContain(`src="${LOGO_URL}"`);
     expect(html).toContain('max-width:560px');
+    expect(html).toContain('width="125" height="48"');
     expect(convertTemplate('<p>x</p>', 't', 'https://example.org/l.png').html).toContain('src="https://example.org/l.png"');
   });
   it('gives links a legible colour in dark mode and narrows padding on phones', () => {

@@ -33,10 +33,13 @@ export const REWRITES = [
   },
 ];
 
-// The EmailLayout wordmark (docs/design-system/components/EmailLayout): a 470px PNG shown at 235px
-// on the black header band. White/gold, so it only reads on dark. This member-portal copy is only
+// The EmailLayout wordmark (docs/design-system/components/EmailLayout): a 470×180 PNG on the black
+// header band. White/gold, so it only reads on dark. These templates show it at 125px in a slim,
+// left-aligned band, like printed letterhead, rather than the Worker emails' centred 235px. This member-portal copy is only
 // the fallback for local previews: --apply hosts the same file in Mailchimp's file manager (see
 // scripts/port-salesforce-templates.mjs for why).
+export const LOGO_WIDTH = 125;
+export const LOGO_HEIGHT = Math.round((LOGO_WIDTH * 180) / 470);
 export const LOGO_URL = 'https://member.bikesiliconvalley.org/email/logo.png';
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
@@ -49,7 +52,8 @@ export const FOOTER = `*|LIST:ADDRESSLINE|*<br>
 <a href="*|UNSUB|*" style="color:#666666;">Unsubscribe</a>`;
 
 /**
- * The design system's EmailLayout, as member-portal's renderEmailLayout() renders it (tokens:
+ * The design system's EmailLayout, as member-portal's renderEmailLayout() renders it but with a
+ * letterhead-style header (small wordmark left, website right, gold on black) (tokens:
  * email-wrap svbc-sand, email-card white, email-text svbc-ink, email-max 560px, radius-lg 8px),
  * with Mailchimp's footer. Dark mode is the same best-effort media query, plus gold links: the
  * pasted link blues are about 2:1 on the dark card (svbc-gold is 9.5:1, the design system's link
@@ -83,8 +87,11 @@ export function emailLayout(title, bodyHtml, logoUrl = LOGO_URL) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F4F4F3;">
 <tr><td align="center" style="padding:24px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
-<tr><td style="background:#000000; padding:24px; text-align:center; border-radius:8px 8px 0 0;">
-<a href="https://bikesiliconvalley.org"><img src="${logoUrl}" width="235" height="90" alt="Silicon Valley Bicycle Coalition" style="display:block; margin:0 auto; max-width:235px; width:100%; height:auto; border:0;"></a>
+<tr><td class="em-pad" style="background:#000000; padding:12px 24px; border-radius:8px 8px 0 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td style="vertical-align:middle;"><a href="https://bikesiliconvalley.org"><img src="${logoUrl}" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" alt="Silicon Valley Bicycle Coalition" style="display:block; width:${LOGO_WIDTH}px; height:auto; border:0;"></a></td>
+<td style="vertical-align:middle; text-align:right; font-family:${FONT}; font-size:12px; line-height:1.4;"><a href="https://bikesiliconvalley.org" style="color:#FFC700; text-decoration:none;">bikesiliconvalley.org</a></td>
+</tr></table>
 </td></tr>
 <tr><td class="em-card em-text em-pad" style="background:#FFFFFF; color:#303030; padding:32px 24px; font-family:${FONT}; font-size:16px; line-height:1.5;">
 ${bodyHtml}
@@ -186,7 +193,14 @@ export function cleanMarkup(html) {
     out = out.replace(/<(span|font)>((?:(?!<\/?\1\b)[\s\S])*?)<\/\1>/g, '$2');
   }
   return out
-    .replace(/<(p|div)\b[^>]*>((?:(?!<\/?\1\b)[\s\S])*?)<\/\1>/g, (m, _tag, inner) => (hasVisibleContent(inner) ? m : ''))
+    // Line breaks right before a block (or at the very end of a paragraph) only add a blank line
+    // on top of the block's own margin.
+    .replace(/(?:<br\s*\/?>\s*)+(?=<(?:p|ol|ul|div|table)\b)/g, '')
+    .replace(/(?:<br\s*\/?>\s*)+((?:<\/(?:span|font|b|strong|i|em)>\s*)*<\/p>)/g, '$1')
+    // Paragraphs, then divs, as separate passes: one pattern for both matched a wrapping <div>
+    // first, kept it for its text, and skipped every empty paragraph inside it.
+    .replace(/<p\b[^>]*>((?:(?!<\/?p\b)[\s\S])*?)<\/p>/g, (m, inner) => (hasVisibleContent(inner) ? m : ''))
+    .replace(/<div\b[^>]*>((?:(?!<\/?div\b)[\s\S])*?)<\/div>/g, (m, inner) => (hasVisibleContent(inner) ? m : ''))
     .replace(/<\/(?:p|div|ol|ul)>\s*(?:<br\s*\/?>\s*)+/g, (m) => m.replace(/(?:<br\s*\/?>\s*)+/g, ''))
     // Last, once spacers and stray breaks are gone: a spacer between items split one list in
     // two, and screen readers then announce two lists.
