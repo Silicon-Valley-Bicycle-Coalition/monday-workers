@@ -26,9 +26,9 @@ Checked against the live account on 2026-11-18, read-only GETs only. No member e
 | `email-activity` row | `open`/`click`/`bounce` actions with timestamps. **No `sent` action.** |
 | Audience webhooks | No per-recipient send event (subscribe, unsubscribe, profile, cleaned, upemail, campaign only). Polling is the only route. |
 
-**Not yet proven:** that `sent-to` fills in for an `automation-email` as a Journey sends. The
-endpoints answer for these ids, but nothing has sent, so there are no rows to see. That's the first
-build task (see Verification), and a fallback is below if it doesn't.
+**Proven end to end in the sandbox, 2026-11-18** (see [Verification](#verification-done-2026-11-18)):
+a Journey send shows up in `sent-to` within a minute, and the member's `/activity` gives its exact
+send time.
 
 ## Data source
 
@@ -43,10 +43,13 @@ An hourly step in `mailchimp-sync`'s existing `5 * * * *` cron:
    it, page `GET /reports/{id}/sent-to?count=1000` and diff against D1. Skip the email entirely
    when the counts match (most hours). `sent-to` has no `since` filter and no documented order, so
    each changed email is read in full. That's cheap at this volume: a few pages a year.
-3. **Send time.** `sent-to` has none, so an entry's time is **when the poll first saw it**, at most
-   an hour late. Journey sends are day-granular (`schedule_type: all_day`), so this is accurate
-   enough for a donor history. Don't add the per-member `activity-feed` call for an exact time
-   unless staff need it.
+3. **Send time.** `sent-to` has none, so for each new row read
+   `GET /lists/{list}/members/{email_id}/activity` and take the `sent` action's `timestamp` for this
+   `campaign_id`. That's one call per new send, about 7 a day. It's keyed by the `email_id` that
+   `sent-to` returns, so the address is never needed for it. Use the classic `/activity`, not
+   `/activity-feed`: in the test, the feed showed only the signup, not the send. If no `sent`
+   action is found, fall back to the time the poll first saw the row (at most an hour late).
+   The report's own `send_time` is the email's *first* send only, so it's no use per recipient.
 
 ## Where the records land: the People item's timeline
 
@@ -79,7 +82,7 @@ follows the precedent of `eventbrite-sync`'s class emails (`classEmails.timeline
   The hourly consent sync already pages every audience member (`readMailchimpStatuses` in
   `src/consent/sources.ts`). Add `members.web_id` to its `fields`, and write the link as
   `https://<dc>.admin.mailchimp.com/lists/members/view?id=<web_id>` (`web_id` confirmed in the
-  member resource on 2026-11-18). Confirm in a browser that this URL opens the contact profile.
+  member resource, and the URL checked in a browser to open the contact profile, both on 2026-11-18).
   The link is for the address in People's primary **Email** column, falling back to the first other
   email column in the audience. It's written only when blank or different, so most hours write
   nothing. The first run fills about 800+ members. It's cleared when the address leaves the
@@ -116,7 +119,7 @@ step_id       INTEGER
 delivery      TEXT    -- sent | hard | soft
 status        TEXT    -- pending | logged | unmatched | ambiguous | dropped
 people_item_id TEXT
-first_seen_at TEXT    -- the entry's timestamp
+sent_at       TEXT    -- the entry's timestamp: member /activity, else first seen
 logged_at     TEXT
 PRIMARY KEY (campaign_id, email_id)
 ```
@@ -151,7 +154,7 @@ to" mark.
 - **Total ≈ 2,500 timeline entries a year, ~7 a day.** Monday: one People lookup, one create and one
   Last Journey Email write per send, about 20 calls a day. Mailchimp Profile links: a one-time fill,
   then only changed addresses. Mailchimp: about 3 catalog calls an hour, plus a `sent-to` page when a count
-  moves. Further stewardship Journeys add linearly.
+  moves and one member `/activity` read per new send. Further stewardship Journeys add linearly.
 
 ## What staff see
 
@@ -176,22 +179,39 @@ Mailchimp Profile.
 
 The "Mailchimp email" custom activity is created once in Monday (Emails & Activities → custom
 activity), as `eventbrite-sync`'s "Logged email" was. The sandbox config points at the sandbox People
-board, and the sandbox audience needs its own Journey (below). The split test keeps the two configs
+board, and the sandbox audience already has a paused test Journey, 112 (see Verification). The split test keeps the two configs
 apart.
 
-## Verification before building the rest
+## Verification (done 2026-11-18)
 
-1. In the **sandbox** audience `dfe12eec72` (0 members today), add a staff test address and build a
-   one-email Journey triggered on a tag. Tag the contact. This is a sandbox Mailchimp write, so it
-   needs a go-ahead.
-2. Confirm `GET /reports/{journey email id}/sent-to` returns that recipient with `status: sent`, and
-   note how long it takes to appear.
-3. If it **doesn't** appear: the fallback is `GET /lists/{list}/members/{hash}/activity-feed?activity_filters=sent`,
-   per member, scoped to members who could be in a Journey: those tagged `active-member`/`renewal-due`
-   or with a Journey interest. That's ~700 calls a poll, so daily rather than hourly, with the D1
-   key unchanged. This is the expensive path. The cheaper one: Felicia adds a Journey "tag contact"
-   step after each email (`journey-<id>-email-<n>`), and the poll reads tag membership through
-   `GET /lists/{list}/segments`. Either way, the timeline landing above stands.
+In the **sandbox** audience `dfe12eec72`: a test contact (a staff plus-address, `web_id` 616612920)
+and a one-email Journey, **112 "TEST journey send log (sandbox)"**, triggered on **Tag added:
+journey-test**. Its email is campaign `6197876e9b`. The contact was tagged by API at 22:22:37 UTC,
+and the reports were polled every 30 s:
+
+| Time (UTC) | What the API showed |
+|---|---|
+| 22:22:37 | Tag added. Campaign `status: sending`, `emails_sent: 0`, Journey stats 0. |
+| 22:27:28 | Journey `started: 1, in_progress: 1`. `sent-to` still empty. |
+| 22:27:33 | The send (member `/activity`: `action: sent`, `campaign_id: 6197876e9b`, this timestamp; report `send_time` the same). |
+| 22:28:00 | `emails_sent: 1`, Journey `completed: 1`. **`sent-to` has 1 row: `email_id` = the contact's hash, `status: sent`, `campaign_id`, `list_id`.** `email-activity` has the row with no actions. |
+| 22:28:12 | `/activity-feed` still shows only `generic_signup`, no send. |
+
+- **`sent-to` works for Journey emails.** The row appeared within 30 s of the send, about 5 minutes
+  after the tag, Mailchimp's own trigger lag. `emails_sent` moved with it, so the poll can skip
+  unchanged emails as designed.
+- **The exact send time is available** from the member's classic `/activity` (Data source step 3).
+  `/activity-feed` doesn't show it.
+- **Mailchimp Profile link:** `https://us9.admin.mailchimp.com/lists/members/view?id=616612920`,
+  opened signed in, redirected to `/audience/contact-profile?contact_id=…` and showed the test
+  contact's profile. Signed out, it goes to Mailchimp's login and then back to the profile.
+- **Building the Journey:** Customer Journeys can be read through the API but not created, so the
+  test Journey was built in the web app. Its email needed real content before the flow would turn on
+  (the template's placeholder text blocks activation). That was set with `PUT /campaigns/{id}/content`.
+- **Cleanup:** Journey 112 is **paused** (kept for re-testing the Worker in the sandbox, re-tag a
+  contact to send again) and the test contact is **archived**.
+
+So the fallbacks considered earlier (a per-member feed poll, or Journey tag steps) aren't needed.
 
 ## Decisions (2026-11-18, dwk)
 
