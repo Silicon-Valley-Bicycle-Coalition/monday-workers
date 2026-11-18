@@ -131,6 +131,27 @@ describe('validateConfig', () => {
     }
   });
 
+  it('treats lastGiftAmount (column and merge field) as optional, but a present value must be an id or null', () => {
+    const withColumn = (value: unknown) => {
+      const raw = validRaw();
+      (raw.monday.columns as Record<string, unknown>).lastGiftAmount = value;
+      return raw;
+    };
+    const withTag = (value: unknown) => {
+      const raw = validRaw();
+      (raw.mailchimp.mergeFields as Record<string, unknown>).lastGiftAmount = value;
+      return raw;
+    };
+    expect(validateConfig(withColumn(null)).monday.columns.lastGiftAmount).toBeNull();
+    expect(validateConfig(withColumn('numeric_x')).monday.columns.lastGiftAmount).toBe('numeric_x');
+    expect(validateConfig(withTag('LASTGIFT')).mailchimp.mergeFields.lastGiftAmount).toBe('LASTGIFT');
+    expect(validateConfig(withTag(null)).mailchimp.mergeFields.lastGiftAmount).toBeNull();
+    for (const bad of ['', 5]) {
+      expect(() => validateConfig(withColumn(bad))).toThrow('config: "monday.columns.lastGiftAmount" must be a column id or null');
+      expect(() => validateConfig(withTag(bad))).toThrow('config: "mailchimp.mergeFields.lastGiftAmount" must be a merge tag or null');
+    }
+  });
+
   it('accepts a null or string monday.columns.state and rejects anything else', () => {
     const withState = (value: unknown) => {
       const raw = validRaw();

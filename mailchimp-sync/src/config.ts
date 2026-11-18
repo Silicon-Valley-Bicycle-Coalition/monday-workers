@@ -57,6 +57,10 @@ function requireNullableColumns(columns: Record<string, unknown>, prefix: string
   if (recurring !== undefined && recurring !== null && (typeof recurring !== 'string' || recurring === '')) {
     throw new Error(`config: "${prefix}.hasActiveRecurringGift" must be a column id or null`);
   }
+  const lastGift = columns.lastGiftAmount;
+  if (lastGift !== undefined && lastGift !== null && (typeof lastGift !== 'string' || lastGift === '')) {
+    throw new Error(`config: "${prefix}.lastGiftAmount" must be a column id or null`);
+  }
 }
 
 function historicalBoard(value: unknown, donorsBoardId: number | null): HistoricalBoardConfig | null {
@@ -165,6 +169,10 @@ export function validateConfig(raw: unknown): Config {
   }
   const mergeFields = requireObject(mailchimp.mergeFields, 'mailchimp.mergeFields');
   requireStringKeys(mergeFields, REQUIRED_MERGE_FIELDS, 'mailchimp.mergeFields');
+  const lastGiftTag = mergeFields.lastGiftAmount;
+  if (lastGiftTag !== undefined && lastGiftTag !== null && (typeof lastGiftTag !== 'string' || lastGiftTag === '')) {
+    throw new Error('config: "mailchimp.mergeFields.lastGiftAmount" must be a merge tag or null');
+  }
   const tags = requireObject(mailchimp.tags, 'mailchimp.tags');
   requireStringKeys(tags, REQUIRED_TAGS, 'mailchimp.tags');
   if (typeof mailchimp.nearbyTagPrefix !== 'string' || mailchimp.nearbyTagPrefix === '') {

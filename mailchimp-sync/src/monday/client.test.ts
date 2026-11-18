@@ -59,7 +59,7 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor).toEqual({
       id: '42', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
       memberSince: '2026-01-01', memberUntil: '', addr1: '1 Main St', city: 'San Jose',
-      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
+      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [], hasActiveRecurringGift: false, lastGiftAmount: null, onHistorical: false,
     });
   });
 
@@ -114,6 +114,19 @@ describe('HttpMondayClient.getDonorById', () => {
     const blankClient = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn: blank, sleepFn: noSleep });
     expect((await blankClient.getDonorById('42', { ...COLUMNS, hasActiveRecurringGift: 'rg' }))?.hasActiveRecurringGift).toBe(false);
     expect((await blankClient.getDonorById('42', COLUMNS))?.hasActiveRecurringGift).toBe(false);
+  });
+
+  it('reads Last Gift Amount when configured, and null when the column is not configured', async () => {
+    const fetchFn = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'lga', text: '250' }] }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    expect((await client.getDonorById('42', { ...COLUMNS, lastGiftAmount: 'lga' }))?.lastGiftAmount).toBe('250');
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).toContain('lga');
+
+    const blank = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'lga', text: null }] }] });
+    const blankClient = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn: blank, sleepFn: noSleep });
+    expect((await blankClient.getDonorById('42', { ...COLUMNS, lastGiftAmount: 'lga' }))?.lastGiftAmount).toBe('');
+    expect((await blankClient.getDonorById('42', COLUMNS))?.lastGiftAmount).toBeNull();
   });
 
   it('gives an empty Nearby list for a blank column, and never requests the column when nearby is null', async () => {

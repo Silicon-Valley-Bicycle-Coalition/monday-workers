@@ -18,7 +18,8 @@
       "doNotSolicit": "boolean_mm8h1x0b",
       "dnsReasonStatus": "color_mm8j203g",
       "nearby": null,
-      "hasActiveRecurringGift": "boolean_mm8hzx4e"
+      "hasActiveRecurringGift": "boolean_mm8hzx4e",
+      "lastGiftAmount": "numeric_mm8j2c4e"
     },
     "historical": {
       "boardId": 18437342607,
@@ -36,7 +37,8 @@
         "doNotSolicit": "boolean_mm8h56b4",
         "dnsReasonStatus": "color_mm8j9ez7",
         "nearby": null,
-        "hasActiveRecurringGift": "boolean_mm8hry6e"
+        "hasActiveRecurringGift": "boolean_mm8hry6e",
+        "lastGiftAmount": "numeric_mm8jyxtc"
       }
     }
   },
@@ -52,7 +54,8 @@
       "membershipTier": "MTIER",
       "membershipStatus": "MSTATUS",
       "address": "ADDRESS",
-      "totalGiven": "TOTALGIVE"
+      "totalGiven": "TOTALGIVE",
+      "lastGiftAmount": "LASTGIFT"
     },
     "tags": {
       "activeMember": "active-member",

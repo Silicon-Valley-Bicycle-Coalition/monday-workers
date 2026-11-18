@@ -40,7 +40,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: EMAIL, membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: true, dnsReasonStatus: 'Confirmed', nearby: [], hasActiveRecurringGift: false, onHistorical: false,
+    doNotSolicit: true, dnsReasonStatus: 'Confirmed', nearby: [], hasActiveRecurringGift: false, lastGiftAmount: null, onHistorical: false,
     ...overrides,
   };
 }
