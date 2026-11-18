@@ -149,21 +149,45 @@ What surprised us, and what Task 6 must do about it:
 
 ### Task 5: monday-workers history audit (gate)
 
-- [ ] **Step 1:** `brew install gitleaks git-filter-repo`.
-- [ ] **Step 2:** Fresh mirror: `git clone --mirror git@gitlab.com:silicon-valley-bicycle-coalition/svbc-monday-workers.git /tmp/mw.git`.
-- [ ] **Step 3:** `gitleaks git /tmp/mw.git --report-path /tmp/mw-gitleaks.json --redact` — Expected: zero findings, or each finding classified (test fixture / revoked / real).
-- [ ] **Step 4:** Targeted scans over all commits (`git -C /tmp/mw.git log --all -p` piped through `grep -nE`): email addresses not matching `@(example\.(com|org)|bikesiliconvalley\.org)`; `@bikesiliconvalley\.org` addresses other than role accounts (`sandbox@`, `info@`, etc.); US phone numbers; `\b\d{3}-\d{2}-\d{4}\b`; and `git log --all --name-only` for any path under `*/data/`, `*.csv`, `.env*`, `.dev.vars*` ever committed.
-- [ ] **Step 5:** Decide per finding. Real secret → rotate it first, then `git filter-repo --replace-text`. PII file → `git filter-repo --invert-paths --path <p>`. Record the outcome (no PII details) in this plan under "Audit result". If filter-repo was used, all later steps push from the rewritten mirror, and every existing local clone/worktree must be re-cloned (Task 8 handles it). If findings can't be cleanly removed: stop and agree the squashed fresh start with David.
+- [x] **Step 1:** `brew install gitleaks git-filter-repo`.
+- [x] **Step 2:** Fresh mirror: `git clone --mirror git@gitlab.com:silicon-valley-bicycle-coalition/svbc-monday-workers.git /tmp/mw.git`.
+- [x] **Step 3:** `gitleaks git /tmp/mw.git --report-path /tmp/mw-gitleaks.json --redact` — Expected: zero findings, or each finding classified (test fixture / revoked / real).
+- [x] **Step 4:** Targeted scans over all commits (`git -C /tmp/mw.git log --all -p` piped through `grep -nE`): email addresses not matching `@(example\.(com|org)|bikesiliconvalley\.org)`; `@bikesiliconvalley\.org` addresses other than role accounts (`sandbox@`, `info@`, etc.); US phone numbers; `\b\d{3}-\d{2}-\d{4}\b`; and `git log --all --name-only` for any path under `*/data/`, `*.csv`, `.env*`, `.dev.vars*` ever committed.
+- [x] **Step 5:** Decide per finding. Real secret → rotate it first, then `git filter-repo --replace-text`. PII file → `git filter-repo --invert-paths --path <p>`. Record the outcome (no PII details) in this plan under "Audit result". If filter-repo was used, all later steps push from the rewritten mirror, and every existing local clone/worktree must be re-cloned (Task 8 handles it). If findings can't be cleanly removed: stop and agree the squashed fresh start with David.
+
+#### Audit result (2026-11-17)
+
+Scanned the 2,458 commits on branches and tags (not `refs/merge-requests/*`, which are never
+pushed). gitleaks: one hit, the production gift-entry form share token in
+`scripts/check-donation-form.test.mjs`, already published in `CLAUDE.md`; accepted, not a secret
+(confirm the form has "Require login" on). No SSNs, no committed `data/`, CSV or real `.env`.
+
+Found and scrubbed (David, 2026-11-17: scrub, keep staff work addresses): personal email
+addresses in test fixtures, a sponsor contact's name and addresses, rows copied from a Monday user
+export (a former staff member's status, a guest's personal address), and five phone numbers that
+look copied from Salesforce records (in history only, one also in a commit message). Staff
+`@bikesiliconvalley.org` addresses stay.
+
+- Current tree: fictional fixtures committed on `fix/scrub-real-test-fixtures`; merge before cutover.
+- History: `git filter-repo --replace-text R --replace-message R`, where R is
+  `github-migration-audit/replacements.txt` beside the repos (never committed; it holds the real
+  strings, delete it once the cutover is done). Rehearsed on a copy of the mirror: 2,458 commits
+  kept, 0 matches left, gitleaks down to the accepted token, and the rewritten `main` tree is
+  identical to `main` plus the fixture commit.
+
+**Consequence for Task 6:** history is rewritten, so every commit SHA on GitHub differs from
+GitLab's. Merge or park every live branch before cutover; local checkouts and worktrees are
+re-cloned from GitHub (Task 8), not re-pointed.
 
 ### Task 6: monday-workers cutover (operator)
 
 - [ ] **Step 1:** Announce freeze: no merges on GitLab monday-workers until Step 6 is done. Merge Task 1–3's MR. Merge or close the 2 open MRs. Prune merged remote branches on GitLab so only live branches move.
 - [ ] **Step 2:** `gh repo create Silicon-Valley-Bicycle-Coalition/monday-workers --public --disable-wiki --description "SVBC's Cloudflare Workers for the Salesforce → Monday.com migration (MIT)"`. Before pushing: `gh api -X PATCH repos/Silicon-Valley-Bicycle-Coalition/monday-workers -F security_and_analysis[secret_scanning][status]=enabled -F security_and_analysis[secret_scanning_push_protection][status]=enabled`; enable Dependabot alerts (`gh api -X PUT …/vulnerability-alerts`).
-- [ ] **Step 3:** Re-mirror (picks up Step 1 merges), re-run Task 5 Step 3 on the new commits only, push heads+tags as in Task 4 Step 3. Verify `ls-remote` parity.
+- [ ] **Step 3:** Re-mirror (picks up Step 1 merges), delete every ref outside `refs/heads`/`refs/tags`, run the Task 5 filter-repo command, then re-run the Task 5 scans (gitleaks and the `replacements.txt` strings) on the whole result: Expected only the accepted form token. Push heads+tags from that rewritten mirror as in Task 4 Step 3. Verify `ls-remote` lists the same branch and tag names as GitLab (the SHAs now differ).
 - [ ] **Step 4:** Cutover commit on a branch: `node scripts/rewrite-gitlab-refs.mjs --project silicon-valley-bicycle-coalition/svbc-monday-workers --max-issue 127 --max-mr 509 --write` (re-check 127 / 509 against the current highest iids), review the full diff, `git rm .gitlab-ci.yml`, add the README legend (as Task 4 Step 4) and switch README/CLAUDE.md/DEPLOY.md links from GitLab to GitHub. README sandbox setup: replace the GitLab Protected/Masked-variable instructions with the GitHub `sandbox` environment secret, restricted to `main`. Re-wrap `CLAUDE.md` lines that the rewrite pushed past ~100 columns. Revert the `#4` and `#10` rewrites on `donation-rollups/README.md:1461` (gotcha numbers, not GitLab refs), and skim the dry run's single-digit refs for other numbering. Open the first GitHub PR. Expected: `checks` green, `workers` runs every changed Worker and `ci-ok` green.
 - [ ] **Step 5:** Ruleset on `main`: `gh api -X POST repos/Silicon-Valley-Bicycle-Coalition/monday-workers/rulesets` with target `branch`, include `~DEFAULT_BRANCH`, rules `pull_request` (0 approvals — David is the only reviewer), `required_status_checks` [`ci-ok`, `checks`], `non_fast_forward`, `deletion`. Actions settings: fork PR workflows require approval for first-time contributors; default `GITHUB_TOKEN` read-only. Create environment `sandbox` (no secret yet — the deploy job stays inert, as today). Merge the PR.
 - [ ] **Step 6:** Issues: run Task 2's copier for monday-workers from the primary `monday-workers` checkout (`--max-issue <N> --max-mr <N>` as in Task 4); **read the review file for donor/staff personal data before `--confirm`** — redact in the GitHub issue body (keep the detail on GitLab) where needed. Verify 9 issues, idempotent rerun.
-- [ ] **Step 7:** `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
+- [ ] **Step 7:** History was rewritten (Task 5 audit result), so the existing checkout can't just be re-pointed: its `main` and every branch carry the old SHAs. Re-clone the primary checkout from GitHub now and move live worktrees per Task 8; a branch that must survive is replayed with `git rebase --onto origin/<b> <old-gitlab-sha-of-b> <b>` on a fresh clone. The commands below then apply to that fresh clone: `git remote set-url origin git@github.com:Silicon-Valley-Bicycle-Coalition/monday-workers.git`; `git fetch --prune`; set each live worktree branch's upstream (`git branch -u origin/<b> <b>`) where the branch was pushed. Lift the freeze. **Before any carried-over branch gets a GitHub PR**, for every branch run `git log main..<branch> --format=%B | grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? +#[0-9]'` and reword each hit: a closing keyword followed by a GitLab number would close a different GitHub issue on merge.
 
 ### Task 7: Workers Builds and Claude app (operator, Cloudflare + GitHub dashboards)
 
