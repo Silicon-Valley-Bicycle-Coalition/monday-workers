@@ -1,4 +1,4 @@
-// Every amount here is integer cents (issue #27) — summing dollar floats wrote values like
+// Every amount here is integer cents (issue GL#27) — summing dollar floats wrote values like
 // 714.9300000000001 to Monday. Cents become a decimal string only at the column write
 // (money.ts formatCents).
 export interface DonationRow {
@@ -34,7 +34,7 @@ function fiscalYearOf(year: number, month: number, startMonth: number): number {
 }
 
 // The calendar date `now` falls on in `timeZone`. Intl, not getUTC*: in UTC the fiscal year
-// (issue #27) rolled over at 5pm Pacific on June 30.
+// (issue GL#27) rolled over at 5pm Pacific on June 30.
 export function localDateParts(now: Date, timeZone: string): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
     .formatToParts(now);

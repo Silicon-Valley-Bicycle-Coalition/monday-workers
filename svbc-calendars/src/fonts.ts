@@ -1,6 +1,6 @@
 import { EMBEDDED_FONTS } from './fontData';
 
-// Manrope and Poppins for the widget, served by this Worker (#123) rather than Google Fonts, so a
+// Manrope and Poppins for the widget, served by this Worker (GL#123) rather than Google Fonts, so a
 // website visitor's IP address isn't sent to Google from the widget. The widget is an iframe and
 // doesn't inherit bikesiliconvalley.org's fonts, so it declares its own @font-face rules
 // (FONT_FACE_CSS, inlined into its <style>) pointing at /fonts/<family>-<subset>-<weight>.woff2.

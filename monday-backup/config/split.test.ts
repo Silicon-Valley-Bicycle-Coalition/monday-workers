@@ -36,7 +36,7 @@ describe('config split: the Drive sink', () => {
   });
 
   it('the sandbox config scopes to the CRM Sandbox v4 workspace only; production names none', () => {
-    // The real guard: the integration user can read Main boards in every open workspace (#18), so
+    // The real guard: the integration user can read Main boards in every open workspace (GL#18), so
     // without this filter a sandbox run would copy production boards into the sandbox folder.
     expect((sandbox as Json).workspaceIds).toEqual(['18210301']);
     expect((production as Json).workspaceIds).toBeUndefined();

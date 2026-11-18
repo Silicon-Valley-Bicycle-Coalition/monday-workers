@@ -54,7 +54,7 @@ Four independent flows — see the design doc for full sequence diagrams:
    change moves the contact:** when staff change a Donor's Email column, the old address's
    contact is renamed to the new one, so its consent and history follow the person — see
    [Address changes made on Monday](#address-changes-made-on-monday).
-   **Coalesced per Donor (#97):** every outbound message is a full current-state sync, so the
+   **Coalesced per Donor ([GL#97](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/97)):** every outbound message is a full current-state sync, so the
    consumer acks one without work when the Donor's last completed sync began after the message
    was enqueued (`pending_outbound_syncs.last_sync_started_at`, migration `0006`); a message
    carrying an Email change is never skipped.
@@ -69,7 +69,7 @@ Four independent flows — see the design doc for full sequence diagrams:
 3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
    the full current set to the Donor's connect column. Catalog work is per queue batch, not per
-   message (#97): a member with no Donor item is skipped before any of it, one D1 query resolves
+   message ([GL#97](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/97)): a member with no Donor item is skipped before any of it, one D1 query resolves
    the batch's interests, and an interest the catalog doesn't know triggers one reconcile for the
    whole batch, run after every member in it was read.
 
@@ -92,7 +92,7 @@ REJECTED`), so the backlog can be replayed once the key is fixed — see
 
 Each main queue dead-letters into its own `-dlq` (four in all: `mailchimp-sync-outbound-dlq`,
 `mailchimp-sync-inbound-dlq`, and the `-sandbox-dlq` twins), and this Worker consumes all four
-(#37, `src/consumer/deadLetters.ts`). A dead message calls neither Monday nor Mailchimp — it:
+([GL#37](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/37), `src/consumer/deadLetters.ts`). A dead message calls neither Monday nor Mailchimp — it:
 
 * stamps its pending row's `error` with `dead-lettered after retries: ` in front of the last
   error the consumer recorded (never doubled, so a replay that dead-letters again stays
@@ -234,7 +234,7 @@ Deliberate limits:
 
 ## People (Historical)
 
-The outbound flow also runs for People (Historical) (#83), configured as `monday.historical`: its
+The outbound flow also runs for People (Historical) ([GL#83](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/83)), configured as `monday.historical`: its
 board id and its own column ids, since Monday gives each board different ones. Both boards post to
 the same `/webhooks/monday/donors` route. The inbound flow stays on People: an audience event for
 an address only Historical holds records as `skipped`, and Historical has no Campaigns connect
@@ -497,7 +497,7 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   and treats every one starting with the prefix as managed: a label removed on Monday is sent
   `inactive`, and the prefix is reserved for this Worker (a staff-made `Near: ...` tag would be
   cleared too). The read happens only when the column is configured, the Donor has an email and
-  the `PATCH` found the member (#97), so a Donor who isn't in the audience costs no extra call. `nearby` is `null` in both configs until the column exists (set its id in
+  the `PATCH` found the member ([GL#97](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/97)), so a Donor who isn't in the audience costs no extra call. `nearby` is `null` in both configs until the column exists (set its id in
   `config/svbc.json` / `config/sandbox.json` to turn this on). Any People column change fires
   the Donors webhook, so editing Nearby flows through the normal outbound path.
   Set `monday.historical.columns.nearby` at the same time (`config/split.test.ts` fails on one
@@ -579,8 +579,8 @@ is replaced with the id `wrangler d1 create` prints. Design:
 root directory `/mailchimp-sync`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:mailchimp-sync` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 ## Deploying: the write switch
 

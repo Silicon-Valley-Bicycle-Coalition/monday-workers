@@ -25,7 +25,7 @@ describe('parseQbNotifications', () => {
     ]);
   });
 
-  // #33 review: Delete and Merge were enqueued like updates; a Delete's fetch can only fail.
+  // GL#33 review: Delete and Merge were enqueued like updates; a Delete's fetch can only fail.
   it('carries the operation, and a Merge’s deletedId', () => {
     const body = {
       eventNotifications: [

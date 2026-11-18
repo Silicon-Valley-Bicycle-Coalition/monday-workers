@@ -28,7 +28,7 @@ export async function runDigest(deps: RunDeps, key: DigestKey, now: LocalTime, {
   if (digest.count === 0 && cfg.skipWhenEmpty && !force) return { key, sent: false, reason: 'empty' };
 
   const users = (await deps.monday.getUsers(cfg.recipients)).filter((u) => u.enabled && u.email);
-  // Fail closed on the domain (#70): a Monday user whose address is outside recipientDomains (a
+  // Fail closed on the domain (GL#70): a Monday user whose address is outside recipientDomains (a
   // guest, a personal address) never gets the digest. Unlike a departure, that's a misconfiguration,
   // so it's an error for Workers Issues. Both are logged by id, never by address, and the rest still
   // get the email; nobody left at all is an error.

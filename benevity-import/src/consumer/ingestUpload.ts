@@ -66,7 +66,7 @@ export interface IngestDeps {
 }
 
 /**
- * Ingests one uploaded report, from a queue message the upload webhook sent (#74): fetch, parse,
+ * Ingests one uploaded report, from a queue message the upload webhook sent (GL#74): fetch, parse,
  * record each block and its rows in D1, enqueue the rows to write. A throw leaves the message to
  * the queue's backoff; a file that can't be parsed (or is far too large to be a report) is marked
  * 'error' and returns, since a retry would only fail the same way.
@@ -110,7 +110,7 @@ export async function ingestUpload(assetId: string, deps: IngestDeps): Promise<v
   // Resume, don't restart. A retry re-fetches and re-parses the SAME asset (a pure function of
   // its bytes), so block order and content are stable across attempts, and each block finds
   // its own disbursements row from a prior attempt by (upload, position) — or, for the same
-  // report re-uploaded as a new asset, by its Benevity Disbursement ID (#34). Either way the
+  // report re-uploaded as a new asset, by its Benevity Disbursement ID (GL#34). Either way the
   // row and its worklist item are reused, never created twice, while the row upsert always
   // re-runs (it is safe to repeat — `ON CONFLICT (transaction_id) DO NOTHING`), so a block
   // that failed mid-processing resumes exactly where it left off.
@@ -135,7 +135,7 @@ async function ingestBlock(
   assetId: string,
   deps: IngestDeps
 ): Promise<void> {
-  // The cutoff gates whole disbursements, on their Period Ending (#40) — never on a row's Donation
+  // The cutoff gates whole disbursements, on their Period Ending (GL#40) — never on a row's Donation
   // Date. Benevity pays out weeks after the gift, so the first disbursement after the data freeze
   // is mostly rows dated before it, and none of them were ever keyed into Salesforce (staff key
   // from the disbursement report). The per-row Transaction ID lookup stays the duplicate guard.
@@ -211,7 +211,7 @@ function upsertBlockRows(block: ParsedBlock, disbursementId: number, status: Row
 
 // One worklist item per block, ever: nothing is posted once its id is recorded (a resumed attempt,
 // or the same disbursement re-uploaded), and an item an earlier attempt created but died before
-// recording is adopted rather than re-posted (#34).
+// recording is adopted rather than re-posted (GL#34).
 async function ensureBlockWorklistItem(
   block: ParsedBlock,
   blockIndex: number,
@@ -251,7 +251,7 @@ async function ensureBlockWorklistItem(
   }
 }
 
-// What a skipped disbursement's worklist notice says (#40): what was left out, by how much and
+// What a skipped disbursement's worklist notice says (GL#40): what was left out, by how much and
 // over which donation dates, why, and what to do if the assumption behind the cutoff is wrong.
 function skippedReason(block: ParsedBlock, cutoff: string, retryConfigured: boolean): string {
   const dates = block.rows.map((row) => row.donationDate).sort();

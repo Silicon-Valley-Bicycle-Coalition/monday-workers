@@ -38,7 +38,7 @@ describe('checkRequestRateLimit', () => {
   });
 });
 
-// #101: a verified webhook delivery skips the per-IP limiter; nothing else does.
+// GL#101: a verified webhook delivery skips the per-IP limiter; nothing else does.
 describe('isVerifiedWebhook', () => {
   const url = (path: string, secret?: string) => `https://x.example${path}${secret === undefined ? '' : `?secret=${secret}`}`;
   const PATH = '/webhooks/funraise/transaction';

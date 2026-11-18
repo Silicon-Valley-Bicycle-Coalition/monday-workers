@@ -23,17 +23,17 @@ both the tests and the check below).
 CI is GitHub Actions: `.github/workflows/checks.yml` (one `checks` job: the copy rosters and the
 checks below) and `.github/workflows/workers.yml` (per-Worker test matrix and sandbox deploys, from
 the roster in `.github/workers.json`; `scripts/ci-changed-workers.mjs` picks what changed and fails
-when a Worker directory isn't listed). `.gitlab-ci.yml` mirrors them until the GitHub cutover.
+when a Worker directory isn't listed). `ci-ok` and `checks` are the required checks on `main`.
 
 - CI checks: `check-log-safety.mjs` fails on `console.*()` calls that could log an email address
   (the pre-commit hook also runs it with `--staged`; by hand, `node scripts/check-log-safety.mjs`),
   `check-worker-flags.mjs`, `check-monday-auth-bindings.mjs` and `check-rate-limit-namespaces.mjs`
-  (every `ratelimits[].namespace_id` unique across `wrangler*.jsonc`; #113).
+  (every `ratelimits[].namespace_id` unique across `wrangler*.jsonc`; GL#113).
 - Operator tools, not CI checks: `flags.mjs`, `mark-read-only-columns.mjs`,
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
-  really reach, #18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
+  really reach, GL#18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
   `docs/runbooks/windfall-private-board.md`), `funding-leads-board.mjs` (sandbox-only Funding
-  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `propose-partner-types.mjs` and `build-font-modules.mjs` (regenerates the self-hosted Manrope/Poppins `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, #123).
+  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `propose-partner-types.mjs` and `build-font-modules.mjs` (regenerates the self-hosted Manrope/Poppins `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, GL#123).
 
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has
@@ -224,7 +224,7 @@ and `sandbox-FLAGS`. Runbook, including each Worker's behavior under `hold`:
   `report-digests` dry-runs its sends under `off` and skips the hour under `hold`/`unknown` (no
   catch-up; resend by hand).
 
-**One Monday GraphQL transport, copied, not shared (#35):** `monday-backup/src/monday/graphql.ts`
+**One Monday GraphQL transport, copied, not shared (GL#35):** `monday-backup/src/monday/graphql.ts`
 is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, non-idempotent
 writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.ts` and tune it
 through constructor options in their own `client.ts`, never by editing the copy. The
@@ -252,7 +252,7 @@ copy it over.
 - Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
   `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 - Queue consumers stop calling Monday for the rest of a batch once one message fails on an
-  outage (429, 5xx, timeout, spent budget or daily limit) and retry the rest with backoff (#101).
+  outage (429, 5xx, timeout, spent budget or daily limit) and retry the rest with backoff (GL#101).
   The breaker is `funraise-sync/src/monday/outage.ts`, copied byte-identical like `graphql.ts`;
   the `monday-outage-copies` step of `checks.yml` holds the roster. A new queue Worker copies it in.
 
@@ -266,7 +266,7 @@ adding a `MONDAY_API_TOKEN` secret; never use a staff member's personal token. L
 OAuth cutover: `benevity-import`, `mailchimp-sync`, `monday-backup`, `quickbooks-sync` and
 `report-digests` still declare an optional `MONDAY_API_TOKEN` fallback (don't add new uses), and
 operator scripts such as `monday-backup`'s restore CLI and `check-donation-form.mjs` read one from
-the operator's shell. One user is not a scoped one (#18): any Monday team member can read and
+the operator's shell. One user is not a scoped one (GL#18): any Monday team member can read and
 edit every Main board in every open workspace, so "only the boards it reads" holds only for
 private boards, and the internet-facing `member-portal`'s read-only token can read everything the
 user can see (accepted; see the root README). Never describe a token as scoped without running
@@ -274,3 +274,12 @@ user can see (accepted; see the root README). Never describe a token as scoped w
 
 **`data/` directories** (e.g. in `salesforce-import`) hold real extracted donor PII pulled from
 Salesforce and are gitignored per-Worker. Never remove that ignore rule or commit real data.
+
+## Hosting — GitHub since 2026-11-17
+
+`github.com/Silicon-Valley-Bicycle-Coalition/monday-workers` (public). It moved from GitLab
+(`silicon-valley-bicycle-coalition/svbc-monday-workers`, kept read-only as the record of closed
+issues and merge requests) with history rewritten to drop personal data, so commit SHAs differ
+from GitLab's. Work goes through pull requests: a ruleset on `main` requires a PR and the `ci-ok`
+and `checks` status checks. `GL#NN` / `GL!NN` in tracked files are GitLab issue and MR numbers;
+bare `#NN` / `!NN` in commit messages before 2026-11-17 are GitLab numbers too, not GitHub's.

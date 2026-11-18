@@ -29,13 +29,13 @@
     // processing settles, well before SVBC staff start their day. Adjust if a different
     // time is preferred once this is actually scheduled.
     // This only starts the Workflow. Second entry: the hourly staleness watchdog (src/watchdog.ts,
-    // issue #29) — alerts when a run died mid-flight (row stuck 'running' > 12h) or no complete
+    // issue GL#29) — alerts when a run died mid-flight (row stuck 'running' > 12h) or no complete
     // snapshot landed in 36h.
     // Keep in sync with BACKUP_CRON / WATCHDOG_CRON in src/index.ts (index.test.ts checks).
     "crons": ["0 9 * * *", "30 * * * *"]
   },
   // The fleet-wide 100ms cost cap (root README "Reliability: traffic and cost limits") does NOT
-  // fit this Worker — issue #29. A full-account snapshot parses and re-serializes megabytes of
+  // fit this Worker — issue GL#29. A full-account snapshot parses and re-serializes megabytes of
   // Monday JSON and RS256-signs a Google JWT; at 100ms the runtime kills the invocation, which is
   // not a catchable exception (no D1 finish row, no alert). 300,000ms (5 min) is the maximum
   // `cpu_ms` accepts, and these limits also apply to the Workflow's steps, which have no wall-time

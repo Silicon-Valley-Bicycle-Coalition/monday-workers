@@ -1,4 +1,4 @@
-// Reads the organizer's address and the event name off the BP Request Form item itself (#66).
+// Reads the organizer's address and the event name off the BP Request Form item itself (GL#66).
 // The webhook body only names the item: anyone holding the URL secret could otherwise pick the
 // recipient and the subject line of an SVBC-branded email.
 import { mondayRequest, type TokenProvider } from './mondayApi';
@@ -18,7 +18,7 @@ export type FeedbackItem =
   | { kind: 'not-found' }
   // The item exists but isn't on the configured board — never email, never write status back.
   | { kind: 'wrong-board' }
-  // The send-status column already reads as sent (#105): don't email the organizer again.
+  // The send-status column already reads as sent (GL#105): don't email the organizer again.
   | { kind: 'already-sent' }
   // On the right board, but the email column is empty or isn't one address.
   | { kind: 'no-email' };
@@ -37,7 +37,7 @@ export interface SentGuard {
 
 /**
  * Throws on a Monday API failure, so the caller can answer with a retryable status. With a
- * `sentGuard`, an item whose status column already reads `sentLabel` is `already-sent` (#105);
+ * `sentGuard`, an item whose status column already reads `sentLabel` is `already-sent` (GL#105);
  * staff re-trigger a send by changing the column back, and a failed send never writes `sent`.
  */
 export async function readFeedbackItem(

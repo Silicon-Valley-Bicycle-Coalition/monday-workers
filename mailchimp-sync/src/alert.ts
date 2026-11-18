@@ -1,4 +1,4 @@
-// Slack alert for dead-lettered syncs (#37) — copied from monday-backup's src/alert.ts (same
+// Slack alert for dead-lettered syncs (GL#37) — copied from monday-backup's src/alert.ts (same
 // SLACK_WEBHOOK_URL secret name and { text } incoming-webhook payload) rather than shared, per the
 // repo's no-shared-package convention. Optional: with the secret unset the caller's console.error
 // is the only signal (log only). Never throws — callers have already acked by the time it runs.

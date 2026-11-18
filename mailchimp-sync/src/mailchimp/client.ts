@@ -50,7 +50,7 @@ export type RenameMemberResult = 'renamed' | 'target-exists' | 'not-in-audience'
 export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
 // The managed tag set, or a reader for it that updateMember calls only once the PATCH has found
 // the member, so a caller that needs the member's current tags to build it pays for that read
-// only on a member that exists (#97).
+// only on a member that exists (GL#97).
 export type ManagedTags = string[] | (() => Promise<string[]>);
 
 export interface MailchimpClient {
@@ -95,7 +95,7 @@ export interface MailchimpClient {
 
 let sinkLogged = false;
 
-// Per-request bound on every Mailchimp call (#73): the queues run at max_concurrency 1, so one hung
+// Per-request bound on every Mailchimp call (GL#73): the queues run at max_concurrency 1, so one hung
 // request would otherwise stall every message behind it. Matches the Monday client's
 // requestTimeoutMs. A timeout throws a plain TimeoutError, which the consumers retry.
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -137,7 +137,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     const hash = memberId(email);
     // PATCH, not PUT: a PUT creates the member when missing (with `status_if_new`), which
     // subscribed every Donor with an email on their first column change — including ones
-    // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
+    // who never opted in (issue GL#28). PATCH 404s instead, and the status of an existing
     // member (subscribed, unsubscribed, cleaned…) is never sent, so never changed.
     const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}${SKIP_MERGE_VALIDATION}`,

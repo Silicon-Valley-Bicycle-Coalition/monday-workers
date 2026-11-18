@@ -20,9 +20,9 @@ export interface InlineContext {
 }
 
 /**
- * Which of a payload's links can be set in its own `create_item` (#22): exactly the ones the
+ * Which of a payload's links can be set in its own `create_item` (GL#22): exactly the ones the
  * link pass would write in full right now. A link is left to the link pass — which owns the
- * pending/partial/skipped accounting and the archive gate (#21) — whenever any target this run
+ * pending/partial/skipped accounting and the archive gate (GL#21) — whenever any target this run
  * still has to create is missing, no target resolves, a target is archived, or the column is
  * unknown. Targets that were never migrated are dropped, as the link pass drops them.
  */

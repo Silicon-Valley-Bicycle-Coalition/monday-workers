@@ -17,7 +17,7 @@ class emails went out 2026-11-11. What's still open is under "Open".
 **Priority:** Post-cutover (2026-10-23). Bike Summit 2026 (Oct 22) now sells out *before*
 cutover, so `eb4sf` puts its orders in Salesforce and `salesforce-import` carries them over as
 Event Ticket gifts with their order ids; this Worker takes every order after that, and the
-backfill (below) covers the gap between the final extract and the webhook registration. Decision that it counts as giving: migration repo issue #56 (2026-09-30).
+backfill (below) covers the gap between the final extract and the webhook registration. Decision that it counts as giving: migration repo issue [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56) (2026-09-30).
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queues (the shared stack, see `../README.md`).
 
@@ -98,7 +98,7 @@ standard across every webhook-driven Worker here.
 
   The route **fails closed**: any POST whose secret doesn't match — including every POST while
   the secret is unset — is 401. Comparison is constant-time (SHA-256 both sides, then an
-  early-exit-free byte compare, copied from funraise-sync #25). Callers that can set headers
+  early-exit-free byte compare, copied from funraise-sync [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)). Callers that can set headers
   (`scripts/backfill-orders.mjs`, a hand replay) send `X-Webhook-Secret` instead, which is
   checked first. Eventbrite itself can't: its webhook form takes a URL and the actions. The
   tradeoff and mitigations are the ones in funraise-sync's README (the secret lands wherever the
@@ -160,7 +160,7 @@ as funraise-sync treats migrated gifts. Same known gap: archived items aren't vi
 lookup.
 
 `salesforce-import` **does** migrate Eventbrite orders as Donations items: `eb4sf` files each paid
-order as a Closed Won Opportunity, which the importer maps to Received / Event Ticket (#43), and
+order as a Closed Won Opportunity, which the importer maps to Received / Event Ticket ([GL#43](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/43)), and
 it stamps `Eventbrite Order ID` from the `eb4sf__Eventbrite_Order__c` record linked to that
 Opportunity (the order record's `Name` is Eventbrite's order id). So a webhook or backfill for an
 order placed before the final extract adopts the migrated item instead of creating a second one.
@@ -198,7 +198,7 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 | `id` | Eventbrite Order ID | bare string |
 | `status` | Status | `statusLabelMap`; `placed` and `refunded` only. `started`, `pending`, `abandoned` and anything else are **not giving**: the row is marked `skipped` with the status named and nothing is written. A later delivery re-evaluates from scratch. |
 | `costs.gross.major_value` | Amount | see "Amount" |
-| `created` | Date, Fiscal Year Ending | `toISODate` → `America/Los_Angeles` calendar day (#25 rule); FY = July–June year it ends in, first write only |
+| `created` | Date, Fiscal Year Ending | `toISODate` → `America/Los_Angeles` calendar day ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25) rule); FY = July–June year it ends in, first write only |
 | `name` (fallback `first_name` + `last_name`) + `event.name.text` | item name | `itemNameTemplate`, default `{buyer} - {event}` → `Jane Rider - Bike Summit 2026`; the board has no notes column, so the event lives in the name |
 | `email`, `name` | Donor → People | match by email, create if new — see "Donor matching" |
 | — | Thank You Sent, Gift Type | stamps, first write only |
@@ -212,7 +212,7 @@ fork that wants organizer revenue net of Eventbrite's fees sets `amountSource: "
 **Free orders** (`gross` 0, or no `costs`) with no Donations item yet are skipped — a free
 registration is not a gift. An order that already has an item is always updated even at 0, so a
 refund can never be masked by the skip. A **refunded** order with no item yet is skipped too: nothing was ever recorded as received, so there is nothing to reverse. If staff delete or archive an order's item, a later update is recorded `failed` ("deleted or archived") and acked, not retried or recreated.
-**Currency (#76).** The Amount column is in `currency` (`"USD"`). An order whose cost is in any
+**Currency ([GL#76](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/76)).** The Amount column is in `currency` (`"USD"`). An order whose cost is in any
 other currency is never written as if it were dollars: once past the skips above, it is recorded
 `failed` ("order currency … is not USD") and acked, not retried, with nothing written to Monday —
 enter it on the Donations board by hand at the converted amount.
@@ -237,7 +237,7 @@ backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/f
 sandbox), which this Worker also consumes (`src/consumer/processDeadLetters.ts`): the row's
 error is prefixed `dead-lettered after retries: ` and the batch logs one `console.error` naming
 the order ids. A 404 from Eventbrite is **not** retried: the row is marked `failed` ("not found in
-Eventbrite") and acked. Nor is any other failure no retry can fix (#75, `src/errors.ts`): an
+Eventbrite") and acked. Nor is any other failure no retry can fix ([GL#75](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/75), `src/errors.ts`): an
 Eventbrite or Monday 4xx about the request itself, or a Monday 200 whose error code rejects the
 request (a column value it won't take, a column, board or item id that doesn't exist). The row
 (order, event or attendee) is marked `failed` with the error prefixed `not retried: ` and the
@@ -263,7 +263,7 @@ the `orders` ledger. Orders changed in the last 30 minutes are skipped as possib
 flight. Any order Eventbrite has that the ledger doesn't gets one `console.error` naming the ids,
 which Workers Issues raises; a clean check logs one info line. A day with no sales is not an alarm.
 It replaces Salesforce's *Today's Eventbrite Orders Report* subscription, which emailed on every
-day with no `eb4sf` orders (svbc-monday-migration #90, `docs/35` §3.6).
+day with no `eb4sf` orders (svbc-monday-migration [GL#90](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/90), `docs/35` §3.6).
 
 It reads with `EVENTBRITE_PRIVATE_TOKEN`; unset, it logs an error and skips. With
 `eventbrite.organizationId` null it uses the token's only organization (`GET /users/me/organizations/`)
@@ -298,7 +298,7 @@ the same for any other event that sold tickets between the final Salesforce extr
 webhook registration. Orders the cutover load already carried over are adopted, not duplicated
 (see "Adopt before create"), so the dry-run's order count includes them; the real run only
 creates what landed after the extract.
-**Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
+**Owner and deadline (issue [GL#44](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/44)).** Run it on or after **2026-10-23**, once Summit sales have
 closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
 has no `REPLACE_WITH_COLUMN_ID` left, apart from `homeZipColumn` (see "Grant report"); the Worker is deployed and the webhook registered; then
@@ -314,7 +314,7 @@ message at a time, so a few hundred orders take a few minutes; then check the bo
 ## Attendee feed and class emails
 
 Replaces the Salesforce `eb4sf` Campaigns Bike Education sent class emails from (migration repo
-issue #62). Eventbrite is the source of who registered and who checked in; Monday holds Attendance;
+issue [GL#62](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/62)). Eventbrite is the source of who registered and who checked in; Monday holds Attendance;
 a coordinator sends the mail from Gmail through the send page. Design:
 [`docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md`](../docs/superpowers/specs/2026-11-03-class-emails-from-monday-design.md).
 
@@ -502,7 +502,7 @@ Monday client included. Responses carry names and addresses and are `Cache-Contr
 |---|---|
 | `GET /class-emails/:eventId` | `{ event, fields, writesOn, kinds }`: `fields` holds the values the page can fill into a draft (`Class Day`, `Class Date`, `Start Time`, `End Time`, `Arrival Time` (5 minutes before the start), `Spanish Day`, `Spanish Date`, `Spanish Time`, `Spanish Arrival Time`, `Class Location`, and `Event Day`, `Event Date`, `Event Location` with the same values as their Class names), each null if unknown; for `reminder`, `thank-you` and `missed-you`, the refusal (if any), the recipients, how many were sent, how many are checked in (`checkedIn`), and the earlier recipients not yet resolved (`unresolved`, each with `status` `claimed` or `failed`). 404 when the event has no ledger row or Monday item, or the Events item is archived or deleted. Works under any write mode. |
 | `POST .../claim` `{ kind }` | Re-plans from live Monday data, records the recipients in the ledger, and returns only those this call newly claimed. A second call returns none. 404 as for GET, including an archived or deleted Events item. 503 unless the write switch is `on`. |
-| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then one `class-email` message per sent person goes to the write queue (#96), so the work is retried and is not cut off after the response: a timeline entry (when `timelineActivityId` is set), then for a missed-you Attendance to No Show if the row is still Registered (read fresh), and for a thank-you the People link when the Attendee link is blank. A step that exhausts its retries is only logged by the dead-letter consumer (it has no ledger row); if the messages cannot be queued at all, the Events item gets an update saying so. |
+| `POST .../result` `{ kind, sender, subject, results: [{ registrationId, status, error? }] }` | Marks claimed rows `sent` or `failed`; ids not claimed for this event and kind are ignored. This works under any write mode, because the emails have already gone. Only under `on`, one update on the Events item follows: kind, subject, sender, count, a `Failed:` line per failure and an `Unconfirmed:` line per recipient still claimed (an update is posted for those even when this call recorded nothing new). Then one `class-email` message per sent person goes to the write queue ([GL#96](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/96)), so the work is retried and is not cut off after the response: a timeline entry (when `timelineActivityId` is set), then for a missed-you Attendance to No Show if the row is still Registered (read fresh), and for a thank-you the People link when the Attendee link is blank. A step that exhausts its retries is only logged by the dead-letter consumer (it has no ledger row); if the messages cannot be queued at all, the Events item gets an update saying so. |
 | `POST .../release` `{ kind, sender, registrationIds }` | Frees `failed` rows at any time, and `claimed` rows once they are at least 10 minutes old (never `sent`), so they can be claimed again. Returns `{ ok: true, released, tooRecent }`. Posts an update naming the sender and counting what was released, or nothing if nothing was. 503 unless `on`. |
 
 * **Who gets each email:** the event's audience with an Attendee Email. For an event whose Events
@@ -563,7 +563,7 @@ writes nothing), plus the existing Job, Date, Status, Historical and Volunteer (
 Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
 Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
 never deleted, so a count of people must leave out Canceled and count attendee ids, not emails:
-one order can hold two shifts, or several people under the buyer's email (#115).
+one order can hold two shifts, or several people under the buyer's email ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)).
 `donation-rollups` counts only Completed. Class emails
 for these events read the Volunteers board and write No-Show and the People link back there.
 The board's "Recent events" view (last 90 days, newest first, ungrouped: Monday orders
@@ -681,7 +681,7 @@ An attendee who answers an employer question ("Where do you work?") has the answ
 `impact-attribution`, which proposes a **Draft** Affiliation for staff to confirm in **Drafts to
 confirm**. This Worker only collects: it never writes to Affiliations. Design:
 [`docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md`](../docs/superpowers/specs/2026-11-17-eventbrite-employer-answers-design.md)
-(issue #127); the proposing side is in `../impact-attribution/README.md`.
+(issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127)); the proposing side is in `../impact-attribution/README.md`.
 
 **Which answers.** A pledge event with a question mapped to `employer` in `pledge.events` uses that
 question (the config script maps wording like "Where do you work?" or "employer"). Otherwise, for any
@@ -721,7 +721,7 @@ are never logged.
 an environment, confirm in that same environment:
 
 - [ ] migration `0003_employer_answers.sql` is applied to `impact-attribution`'s D1;
-- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127) or later);
 - [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
   fails validation makes every call throw).
 
@@ -819,7 +819,7 @@ D1 `svbc-eventbrite-sync` was created 2026-11-02 and its id wired into `wrangler
 
 **Workers Builds:** connect `svbc-eventbrite-sync-sandbox` to this repo with root directory
 `/eventbrite-sync` and deploy command `npx wrangler deploy --env sandbox`, as for the other
-Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fallback.
+Workers; `.github/workflows/workers.yml`'s `deploy-sandbox` job is the gated fallback.
 
 ## Deploy
 
@@ -942,4 +942,4 @@ must stay clean: log order ids and item ids, never a buyer's email.
 * Eventbrite Webhooks guide: <https://www.eventbrite.com/platform/docs/webhooks>
 * `../funraise-sync/README.md` — the shape this Worker copies (adopt before create, first-write
   stamps, the Pacific date rule, the dead-letter consumer, the URL-secret tradeoff)
-* Private planning repo: issue #56 (2026-09-30 decision), `migration-plan.md` "Eventbrite"
+* Private planning repo: issue [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56) (2026-09-30 decision), `migration-plan.md` "Eventbrite"

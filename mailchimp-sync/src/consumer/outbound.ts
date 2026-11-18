@@ -33,7 +33,7 @@ export async function processOutboundBatch(
   messages: readonly QueueMessageLike<OutboundSyncMessage>[],
   deps: OutboundConsumerDeps,
 ): Promise<void> {
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
   for (const message of messages) {
     if (breaker.open) breaker.defer(message);
@@ -55,7 +55,7 @@ export async function consumeOutboundBatch(
     if (disposition === 'retry') {
       message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
     } else if (breaker.open) {
-      // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+      // Monday is down or rate-limiting (GL#101): retry with backoff without calling it, rather than
       // spend the transport's in-process attempts again on every remaining message.
       breaker.defer(message);
     } else if (disposition === 'write') {
@@ -105,7 +105,7 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
     if (err instanceof MailchimpPermanentError) {
       message.ack(); // retrying a malformed address fails identically every time
     } else {
-      // A Monday outage also defers the rest of the batch (#101); this message's delay is the same.
+      // A Monday outage also defers the rest of the batch (GL#101); this message's delay is the same.
       if (breaker.trip(err)) console.error(`mailchimp-sync outbound consumer: Monday unavailable, deferring the rest of the batch`);
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
@@ -113,7 +113,7 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
 }
 
 // Every message is a full current-state sync, so one that is queued behind a sync which began
-// after it was enqueued has nothing left to add (#97). A message carrying previousEmail is
+// after it was enqueued has nothing left to add (GL#97). A message carrying previousEmail is
 // exempt: the rename must run even if a later sync already happened, and a retry of it (its
 // first attempt failed before the start was recorded) is covered the same way. A failed lookup
 // just means the sync runs.
@@ -212,7 +212,7 @@ async function processOne(donorItemId: string, previousEmail: string | undefined
   // holds. Only read when this item's own board has a Nearby column: without one its labels read
   // as none, which must not clear tags the person earned on the other board. Passed as a reader,
   // so updateMember reads them only after its PATCH has found the member: most Donors never
-  // opted in, and a read first spent a call on each of them (#97).
+  // opted in, and a read first spent a call on each of them (GL#97).
   const nearbyColumn = donor.onHistorical && historical !== null ? historical.columns.nearby : columns.nearby;
   const managed = nearbyColumn === null
     ? managedTags(config)

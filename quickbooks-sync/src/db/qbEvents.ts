@@ -20,14 +20,14 @@ export type RecordResult = { inserted: true } | { inserted: false; status: SyncS
 
 export interface QbEventStore {
   // Inserts every row, skipping an event id already recorded, and reports each row's outcome in
-  // input order. One D1 round trip per 100 rows (#101); the event ids must be distinct.
+  // input order. One D1 round trip per 100 rows (GL#101); the event ids must be distinct.
   recordEvents(rows: readonly NewQbEvent[]): Promise<RecordResult[]>;
   // Sets status (and error, cleared when omitted) on every listed row; one round trip per 100.
   markEvents(eventIds: readonly string[], status: SyncStatus, error?: string): Promise<void>;
   updateStatus(eventId: string, status: SyncStatus, patch?: QbEventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<QbEventRow | null>;
   // The row whose Monday create produced `mondayItemId`, if its id was recorded (create-loop
-  // guard, #33).
+  // guard, GL#33).
   findByPendingMondayItemId(entityType: EntityType, mondayItemId: string): Promise<QbEventRow | null>;
 }
 

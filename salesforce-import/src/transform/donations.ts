@@ -8,7 +8,7 @@ import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 // filters on Status === 'Received' exactly, so a shared label would silently pull these
 // back into ongoing Lifetime Giving totals every time it recomputes, undoing the fix in
 // transform/rollups.ts. See docs/17 for the full picklist audit.
-// Closed Won is NOT a retired stage, though (#43, migration issue #56, decided 2026-09-30):
+// Closed Won is NOT a retired stage, though (GL#43, migration issue svbc-monday-migration#56, decided 2026-09-30):
 // the eb4sf Eventbrite package still writes every paid ticket order as Closed Won, under the
 // integration user — see isEventbriteTicketOrder, which takes those out of this table.
 // Withdrawn is Failed, not Pending: the donor backed out, so the gift isn't coming.
@@ -94,7 +94,7 @@ export function unknownStages(opportunities: readonly Record<string, unknown>[])
   return counts;
 }
 
-// Soft credits (issue #23, decided 2026-09-23): every OpportunityContactRole naming someone other
+// Soft credits (issue GL#23, decided 2026-09-23): every OpportunityContactRole naming someone other
 // than the gift's Primary Contact — Fundraiser, Influencer, Recruiter, Team Captain, a second
 // Donor… NPSP also gives the Primary Contact a role of its own (Donor, or Soft Credit on ~5k
 // gifts), which Donor/Acting for already carry, and auto-creates a Household Member role for each

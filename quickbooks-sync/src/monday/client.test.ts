@@ -91,7 +91,7 @@ describe('HttpMondayClient', () => {
     expect(body.variables).toEqual({ boardId: 999, columnId: 'qb_id_col', value: '60' });
   });
 
-  // #33 review: items(ids:) returns archived and deleted items too; state says which.
+  // GL#33 review: items(ids:) returns archived and deleted items too; state says which.
   it("reports an archived or deleted item's state rather than hiding it", async () => {
     const fetchMock = mockFetchOnce({ data: { items: [{ id: '456', name: 'Old Co', state: 'archived', column_values: [] }] } });
     const client = newClient();

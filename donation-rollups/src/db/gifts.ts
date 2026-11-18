@@ -1,4 +1,4 @@
-// Narrows the sweep's owners (issue #88). sponsorships: owners on one board with a live gift of the
+// Narrows the sweep's owners (issue GL#88). sponsorships: owners on one board with a live gift of the
 // given types. rollover: owners with a live gift from fromFY on, plus (optionally) the
 // sponsorships set.
 export interface SponsorshipOwners { ownerBoardId: string; giftTypes: string[] }
@@ -51,7 +51,7 @@ export interface GiftsStore {
   refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }>;
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
-  // Takes a gift out of every total (issue #26): the item was deleted on Monday, or staff cleared
+  // Takes a gift out of every total (issue GL#26): the item was deleted on Monday, or staff cleared
   // its Donor link. Returns the owner and acting-for it had, so the caller can recompute them;
   // null when the ledger never knew the gift. A later recompute that sees it again (restore,
   // re-link) clears the mark via refreshFacts.
@@ -102,7 +102,7 @@ export interface GiftsStore {
   getAnnualSummaries(): Promise<AnnualSummaryRow[]>;
   recordRun(run: CustodianRun): Promise<void>;
   lastRuns(): Promise<{ duty: string; ranAt: string; ok: boolean; report: unknown }[]>;
-  // Issue #90: deletes runs before the cutoff except each duty's latest, which carries its
+  // Issue GL#90: deletes runs before the cutoff except each duty's latest, which carries its
   // cursor and continuation state (lastRuns). Returns how many rows went.
   pruneRuns(ranBeforeISO: string): Promise<number>;
 }
@@ -424,7 +424,7 @@ export class D1GiftsStore implements GiftsStore {
     // doesn't. MIN() picks an arbitrary-but-stable representative gift per owner. Ordered +
     // cursored so the July sweep can slice itself under the Worker subrequest budget.
     // `only` narrows to owners on one board with at least one live gift of the given types (the
-    // January sweep, which only rolls the Sponsorships window: issue #88).
+    // January sweep, which only rolls the Sponsorships window: issue GL#88).
     // `rollover` (the fiscal-start sweep) narrows to owners with a live gift from fromFY on, plus
     // the sponsorships set when given. Bound parameters from ?3.
     const params: unknown[] = [];

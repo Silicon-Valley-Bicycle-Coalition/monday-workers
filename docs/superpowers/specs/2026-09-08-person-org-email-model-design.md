@@ -4,7 +4,7 @@
 **Affects:** `salesforce-import` (new Affiliations board, email classification), `donation-rollups`
 (per-affiliation totals), `mailchimp-sync` (per-address contacts), and a new `impact-attribution`
 Worker. Also the People and Organizations boards' column set.
-**Builds on:** the 2026-09-08 change making Mailchimp consent per email address (MR !43), and the
+**Builds on:** the 2026-09-08 change making Mailchimp consent per email address (MR [GL!43](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/43)), and the
 migration plan's "Personal/professional email handling" decision, which this design supersedes
 in part (see Decision history).
 
@@ -139,9 +139,9 @@ driven, here and elsewhere." The two are allowed to overlap; that is the point.
 
 ## The resolver: `impact-attribution` Worker
 
-*Started 2026-11-17: the Worker exists (#125, Draft affiliations from repeated matching gifts) and
+*Started 2026-11-17: the Worker exists ([GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125), Draft affiliations from repeated matching gifts) and
 its second job rebuilds `email_index` nightly and proposes employers from email domains
-(`2026-11-16-employer-from-email-domain-design.md`, #124). The webhook resolver below is still to
+(`2026-11-16-employer-from-email-domain-design.md`, [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124)). The webhook resolver below is still to
 come.*
 
 *(2026-11-16: the Worker exists, but its only job so far is employer affiliations from repeated

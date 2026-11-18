@@ -3,7 +3,7 @@ import type { PendingRow, PendingStatus } from '../types';
 export interface PendingOutboundStore {
   upsertPending(donorItemId: string, receivedAt: string): Promise<void>;
   updateStatus(donorItemId: string, status: PendingStatus, error?: string, writtenAt?: string): Promise<void>;
-  // Coalescing (#97): when the last completed sync began, null if none has.
+  // Coalescing (GL#97): when the last completed sync began, null if none has.
   lastSyncStartedAt(donorItemId: string): Promise<string | null>;
   recordSyncStart(donorItemId: string, startedAt: string): Promise<void>;
 }

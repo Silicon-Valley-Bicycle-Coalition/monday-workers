@@ -6,7 +6,7 @@ Design: `docs/superpowers/specs/2026-11-11-funding-leads-board-design.md`. Tool:
 Sandbox only (CRM Sandbox v4, workspace 18210301). Every command refuses another workspace, **and**
 refuses any board id that is not in that workspace. That guard is the protection: the shared token in
 `monday-migration/.env` is *not* sandbox-scoped. `check-monday-token-scope.mjs --workspace 10001654`
-fails for it (it reaches many other workspaces; the known #18 limitation).
+fails for it (it reaches many other workspaces; the known [GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18) limitation).
 
 Sandbox boards: Funding Leads `18439612347`, Opportunities (Deals) `18439612351`; Organizations
 `18437342579`, People `18437342592`.

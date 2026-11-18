@@ -1,7 +1,7 @@
 // SVBC's books run on Pacific time: Salesforce CloseDates (what salesforce-import migrated) are
 // local business dates, and the fiscal year turns over at midnight Pacific on July 1. Dating a
 // Funraise gift by its UTC day put anything given after ~5 pm Pacific on June 30 / Dec 31 into
-// the next fiscal / calendar year (#25).
+// the next fiscal / calendar year (GL#25).
 const TIME_ZONE = 'America/Los_Angeles';
 
 // en-CA formats as YYYY-MM-DD. Built once per isolate; workerd ships full ICU time-zone data.

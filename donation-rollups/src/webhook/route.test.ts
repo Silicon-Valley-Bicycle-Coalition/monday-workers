@@ -49,7 +49,7 @@ describe('webhook secret', () => {
     expect(await res.json()).toEqual({ challenge: 'abc' });
   });
 
-  // Issue #27: an unset secret used to open the route to anyone. It now fails closed, like
+  // Issue GL#27: an unset secret used to open the route to anyone. It now fails closed, like
   // funraise-sync and the custodian routes — no request is accepted, not even the handshake.
   it.each([[undefined], ['']])('fails closed when the configured secret is %j', async (webhookSecret) => {
     const send = vi.fn();

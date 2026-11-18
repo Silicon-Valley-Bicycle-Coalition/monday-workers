@@ -79,7 +79,7 @@ export class D1CampaignItemsStore implements CampaignItemsStore {
   }
 
   // One statement per IDS_PER_QUERY ids, sent as one batch: the inbound consumer resolves a whole
-  // queue batch's interests with this, instead of a query per interest (#97).
+  // queue batch's interests with this, instead of a query per interest (GL#97).
   async getByInterestIds(interestIds: readonly string[]): Promise<Map<string, CampaignItemRow>> {
     const ids = [...new Set(interestIds)];
     const rows = new Map<string, CampaignItemRow>();

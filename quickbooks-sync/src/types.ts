@@ -70,18 +70,18 @@ export interface QuickbooksSyncConfig {
       invoice: string;
     };
     customerCreateFieldMap: Record<string, string>;
-    // Id of the Customers board's text column holding the QuickBooks Customer Id (#33 review).
+    // Id of the Customers board's text column holding the QuickBooks Customer Id (GL#33 review).
     // Written on every QuickBooks -> Monday customer create/update and after every Monday ->
     // QuickBooks create, so an item that already stands for a QuickBooks Customer says so on
     // the item itself — the create-loop guard reads it. null until staff add the column; while
     // null, Monday -> QuickBooks Customer creates are refused (they can't be made loop-safe).
     customerQbIdColumn: string | null;
     // The QuickBooks home currency (ISO 4217, "USD"), which the Monday amount columns are in. A
-    // record whose CurrencyRef names any other currency is not written (#76): its amounts are in
+    // record whose CurrencyRef names any other currency is not written (GL#76): its amounts are in
     // that currency, so it fails terminally for a human instead of landing on Monday as dollars.
     currency: string;
     // Days after the Monday or QuickBooks write that a row keeps its stored payload, and days after
-    // receipt that a row which never reached 'written' keeps its payload and error text (#68).
+    // receipt that a row which never reached 'written' keeps its payload and error text (GL#68).
     payloadRetentionDays: number;
     unresolvedRetentionDays: number;
   };

@@ -8,7 +8,7 @@ import {
 } from './deadLetters';
 import type { PendingRow } from '../types';
 
-// #37: nothing consumed the four mailchimp-sync DLQs, so a sync that exhausted its retries
+// GL#37: nothing consumed the four mailchimp-sync DLQs, so a sync that exhausted its retries
 // expired there unseen. Dead messages must leave a distinct mark on the pending row and one log
 // line per batch — naming Monday item ids / Mailchimp member ids, never an email address.
 

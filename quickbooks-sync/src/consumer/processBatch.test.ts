@@ -156,7 +156,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
-  // #33: the webhook used to capture the entity at notification time and the consumer wrote that
+  // GL#33: the webhook used to capture the entity at notification time and the consumer wrote that
   // snapshot, so a retried or delayed message could overwrite Monday with stale data. The
   // consumer now reads the entity from QuickBooks when it processes the message.
   it('fetches the entity from QuickBooks at processing time rather than using a stored snapshot', async () => {
@@ -547,9 +547,9 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
-  // #33: a staff-typed Customer arrives as a create_pulse whose name is the item name and whose
+  // GL#33: a staff-typed Customer arrives as a create_pulse whose name is the item name and whose
   // columns are raw Monday shapes; both used to reach QuickBooks unmapped and 400.
-  // #33 review: fields come from the item as it stands now (re-read from Monday), not the
+  // GL#33 review: fields come from the item as it stands now (re-read from Monday), not the
   // create_pulse payload stored at webhook time — so fixing the item in Monday and redriving works.
   it('creates the customer from the re-read item, not the stored webhook payload', async () => {
     const withName: QuickbooksSyncConfig = {
@@ -599,7 +599,7 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     expect(createCustomer).toHaveBeenCalledWith({ DisplayName: 'New Co' }, 'monday-item-42-r2');
   });
 
-  // #33 second review: attempt 1's create committed but its response was lost; a later attempt
+  // GL#33 second review: attempt 1's create committed but its response was lost; a later attempt
   // is rejected (e.g. 6240 Duplicate Name — possibly against that very Customer). Advancing the
   // requestid then would let a rename-and-redrive create a second Customer.
   it('counts each send, and after an unanswered earlier send keeps the requestid and says what to check', async () => {
@@ -687,7 +687,7 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
   });
 });
 
-// #33: the create loop. A QuickBooks-originated Customer is created on Monday before its mapping
+// GL#33: the create loop. A QuickBooks-originated Customer is created on Monday before its mapping
 // exists; Monday's create_pulse webhook can arrive in between, miss the mapping check, and turn
 // the item back into a duplicate QuickBooks Customer (or a 400 on the duplicate DisplayName).
 describe('create-loop guard', () => {
@@ -833,7 +833,7 @@ describe('create-loop guard', () => {
     vi.restoreAllMocks();
   });
 
-  // #33 focused check: staff follow the "may have succeeded" advice — put the Customer's Id on
+  // GL#33 focused check: staff follow the "may have succeeded" advice — put the Customer's Id on
   // this item and archive the item QuickBooks' webhook made for it. The guard must honor the
   // archive (as linkMapping does) and adopt, re-pointing the link, without creating a Customer.
   it('adopts a carried Id whose currently linked item is archived, re-pointing the link', async () => {
@@ -970,7 +970,7 @@ describe('create-loop guard', () => {
   });
 });
 
-// #33 review: a failure QuickBooks will always repeat (duplicate name, validation) used to burn
+// GL#33 review: a failure QuickBooks will always repeat (duplicate name, validation) used to burn
 // three retries into the DLQ. It is now recorded and acked.
 describe('terminal failures', () => {
   it('acks a terminal failure without retrying and records the readable reason', async () => {
@@ -1015,7 +1015,7 @@ describe('terminal failures', () => {
   });
 });
 
-// #33: retries were immediate, so a Monday or QuickBooks outage of a few seconds burned all the
+// GL#33: retries were immediate, so a Monday or QuickBooks outage of a few seconds burned all the
 // attempts at once and dead-lettered the change. They now back off by attempt number (the shared
 // schedule in src/flags.ts).
 describe('retry backoff', () => {
@@ -1235,7 +1235,7 @@ describe('consumeSyncBatch — write switch', () => {
   });
 });
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday or QuickBooks, instead of each repeating the transport's in-process attempts.
 describe('consumeSyncBatch — outage breaker', () => {
   const gateFor = (mode: 'on' | 'hold') => ({

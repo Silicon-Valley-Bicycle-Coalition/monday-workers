@@ -5,7 +5,7 @@ import type { WriteQueueMessage, QueueMessageLike } from './processBatch';
 import { describeMessage } from './messages';
 import { errorMessage } from '../util/errorMessage';
 
-// Consumer for eventbrite-sync-writes-dlq, mirroring funraise-sync's processDeadLetters (#25):
+// Consumer for eventbrite-sync-writes-dlq, mirroring funraise-sync's processDeadLetters (GL#25):
 // a dead message stamps its orders row's error with DEAD_LETTER_PREFIX (keeping the last error
 // the consumer recorded) and the batch logs ONE console.error naming every order — visible in
 // Workers Logs — instead of expiring from the DLQ unseen. Nothing is re-driven from here: fix the

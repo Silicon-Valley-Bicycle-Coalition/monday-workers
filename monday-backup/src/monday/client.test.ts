@@ -34,7 +34,7 @@ describe('HttpMondayClient', () => {
     expect(secondBody.variables.page).toBe(2);
   });
 
-  // Issue #30: archived boards and the board metadata needed to recreate a board.
+  // Issue GL#30: archived boards and the board metadata needed to recreate a board.
   it('lists boards in every state, with the metadata a restore needs', async () => {
     const fetchMock = mockFetchSequence([
       {
@@ -186,7 +186,7 @@ describe('HttpMondayClient', () => {
     expect(second.variables.cursor).toBe('next-cursor');
   });
 
-  // Issue #30: connect-boards/mirror columns return text: null on current API versions.
+  // Issue GL#30: connect-boards/mirror columns return text: null on current API versions.
   it('captures linked item ids and display values for connect, dependency and mirror columns, plus asset metadata', async () => {
     const fetchMock = mockFetchSequence([
       {
@@ -254,7 +254,7 @@ describe('HttpMondayClient', () => {
     expect(query).toContain('parent_item { id }');
   });
 
-  // Issue #30: updates (comments) and their replies were not captured at all.
+  // Issue GL#30: updates (comments) and their replies were not captured at all.
   it('pages a board’s updates, with replies and asset metadata, until a short page', async () => {
     const rawUpdate = (id: string) => ({
       id,
@@ -314,7 +314,7 @@ describe('HttpMondayClient', () => {
     ]);
   });
 
-  // Issue #30: `blocks` defaults to 25 per page, so a single unpaginated query silently truncated
+  // Issue GL#30: `blocks` defaults to 25 per page, so a single unpaginated query silently truncated
   // every long Doc. The maximum page size isn't documented, so a short page is not trusted as the
   // last one — paging stops only on an empty page (or a repeated one, if `page` were ignored).
   it('pages doc blocks until an empty page, keeping hierarchy and position', async () => {
@@ -473,7 +473,7 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('token-123');
   });
 
-  // #30/#39: a deprecated version is silently served as the maintenance one, so pin an explicit,
+  // GL#30/#39: a deprecated version is silently served as the maintenance one, so pin an explicit,
   // supported version — the transport's single MONDAY_API_VERSION.
   it('pins API-Version 2026-07', async () => {
     const fetchMock = mockFetchSequence([{ data: { boards: [] } }]);
@@ -508,7 +508,7 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  // Issue #95: 500 is items_page's maximum. A page that turns out too big for one request (over the
+  // Issue GL#95: 500 is items_page's maximum. A page that turns out too big for one request (over the
   // per-query complexity cap, or too slow to answer) is fetched again at half the size.
   describe('items page size', () => {
     const rawItem = (id: string) => ({ id, name: id, state: 'active', group: null, parent_item: null, column_values: [], assets: [] });

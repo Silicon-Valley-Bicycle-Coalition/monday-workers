@@ -6,7 +6,7 @@ import { signServiceAccountJwt, type ServiceAccountCredentials } from './jwt';
 // (the service account is a member of the destination Shared Drive — see README's "APIs & auth").
 // Narrow this to `drive.file` if SVBC's Drive setup moves to domain-wide delegation instead.
 // The scope is broad, but the account's Shared Drive role is what bounds it: as a Contributor it
-// can list, create folders and upload, and Drive refuses it any trash, move or delete (issue #67).
+// can list, create folders and upload, and Drive refuses it any trash, move or delete (issue GL#67).
 // Nothing here needs more — abort() cancels an upload *session*, never a file.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -17,7 +17,7 @@ const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 // with one fails 403 storageQuotaExceeded. The destination must be a Shared Drive (the files are
 // then owned by the drive, not the account), and every call that touches a Shared Drive item has
 // to opt in with supportsAllDrives — without it Drive answers 404 for the parent folder
-// (issue #29). corpora=allDrives + includeItemsFromAllDrives lets the folder lookup see Shared
+// (issue GL#29). corpora=allDrives + includeItemsFromAllDrives lets the folder lookup see Shared
 // Drive children without having to configure the drive id separately; the `'<id>' in parents`
 // clause keeps that query narrow.
 const ALL_DRIVES = 'supportsAllDrives=true';
@@ -50,7 +50,7 @@ export interface DriveClient {
   uploadJson(folderId: string, filename: string, data: unknown): Promise<void>;
   // A file of this name in the folder, or null. Files only appear once their upload closes, so a
   // match is complete. This is how a retried Workflow step avoids writing a second copy: Drive
-  // allows duplicate names, and a Contributor can't delete one (issue #67).
+  // allows duplicate names, and a Contributor can't delete one (issue GL#67).
   findFile(folderId: string, filename: string): Promise<{ id: string; createdTime: string } | null>;
   // A file's text, one line at a time, without holding the whole file in memory.
   // `binding` as for createFile.

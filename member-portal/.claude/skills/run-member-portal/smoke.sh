@@ -102,7 +102,7 @@ login() {
   echo "magic link: $link"
 
   # GET on the link only renders a "Continue to your portal" button (mail scanners
-  # prefetch links — issue #31); the button POSTs token + lang back, and that POST is
+  # prefetch links — issue GL#31); the button POSTs token + lang back, and that POST is
   # what consumes the token. Do the POST directly, with the Origin the CSRF check wants.
   # -L: the POST 303-redirects to /:locale/portal, which is the page we actually want to
   # assert against. -c saves the session cookie for later requests.

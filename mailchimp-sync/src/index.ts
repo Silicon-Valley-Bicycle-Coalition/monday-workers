@@ -84,7 +84,7 @@ export default {
 
     // Dead-letter queues are "<main queue>-dlq" in both environments
     // (mailchimp-sync-outbound-dlq, mailchimp-sync-outbound-sandbox-dlq). Their consumer only
-    // marks D1 rows (#37) — it never calls Monday or Mailchimp.
+    // marks D1 rows (GL#37) — it never calls Monday or Mailchimp.
     const isDeadLetterQueue = batch.queue.endsWith(DLQ_SUFFIX);
     const queueName = queueBaseName(isDeadLetterQueue ? batch.queue.slice(0, -DLQ_SUFFIX.length) : batch.queue);
 

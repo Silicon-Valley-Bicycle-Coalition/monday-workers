@@ -39,7 +39,7 @@ const isStale = (stored: SubscriptionRow, updtime: number | null): boolean =>
  *    it. Not found → create. This is what lets the first poll reconcile the items
  *    salesforce-import already made instead of duplicating them.
  *
- * The claim (#25): the poll and the queue consumer can both miss the ledger for one subscription
+ * The claim (GL#25): the poll and the queue consumer can both miss the ledger for one subscription
  * at once, and without coordination both found nothing on the board and both created an item
  * (seen 2026-09-19, subscription 197170). A ledger miss now first takes a D1 claim
  * (subscription_claims, an atomic INSERT … ON CONFLICT), before any Monday call — donor matching
@@ -93,7 +93,7 @@ export async function upsertSubscription(
   }
 
   // A ledger row that already resolved a donor reuses it: matchDonor costs 1-3 Monday lookups
-  // and the donor link doesn't move between a subscription's updates (#94).
+  // and the donor link doesn't move between a subscription's updates (GL#94).
   let donorItemId: string | null = existing?.donorItemId ?? null;
   if (donorItemId === null && row.supporter && typeof row.supporter === 'object') {
     const match = await matchDonor(mondayClient, config, { supporter: row.supporter });

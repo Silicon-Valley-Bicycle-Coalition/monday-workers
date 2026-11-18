@@ -1,7 +1,7 @@
 import { pairKey } from '../rule';
 import { emailDomain, lookupDomain, type AffiliationRecord, type DomainLookup, type DomainMap, type OrganizationRecord } from './domains';
 
-// Who gets an employer proposed from an email domain this run (#124). Pure: the run reads the boards and the ledger,
+// Who gets an employer proposed from an email domain this run (GL#124). Pure: the run reads the boards and the ledger,
 // this decides, and the run writes.
 
 export interface PersonRecord {

@@ -220,7 +220,7 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
   }
 
   // 401/403 name the token; any other non-2xx, or a body that isn't a JSON object, throws. A 4xx
-  // about the request itself is a TerminalError (#75): the consumer acks it instead of retrying.
+  // about the request itself is a TerminalError (GL#75): the consumer acks it instead of retrying.
   private async readJson(what: string, res: Response): Promise<object> {
     if (res.status === 401 || res.status === 403) {
       throw new Error(`eventbrite api: ${what} failed with HTTP ${res.status} — check EVENTBRITE_PRIVATE_TOKEN and that it belongs to the organization that owns the event`);

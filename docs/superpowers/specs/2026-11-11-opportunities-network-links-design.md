@@ -62,7 +62,7 @@ Two workstreams, in this order:
 - Changing what the Workers write, their sinks, or write switches (their column and board ids may
   need updating; their behavior does not).
 - Automating item-view default tabs (the API cannot; staff set it by hand).
-- Rollup columns beyond what exists; the planned #16 columns (Received mirror, Balance Owed,
+- Rollup columns beyond what exists; the planned [GL#16](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/16) columns (Received mirror, Balance Owed,
   Invoices sent mirror, Restriction, Type, 14-day reminder) are owned by that work, not this.
 
 ## Anti-goals
@@ -143,7 +143,7 @@ needs, at minimum:
 - every inbound link preserved: Invoicing Tasks, Bike Education Tracker, Comms/Marketing Requests,
   Donations connects, and the donation-rollups and benevity/eventbrite config that name boards
   by id;
-- protocols, the Box Notes, MR !103/!104 docs, `board-links.json` keys and docs updated to the new
+- protocols, the Box Notes, MR [GL!103](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/merge_requests/103)/!104 docs, `board-links.json` keys and docs updated to the new
   name.
 
 Which of the two boards survives (items can be moved with their ids; Sponsorships holds 915 items,
@@ -187,7 +187,7 @@ testing item moves in the sandbox.
    production cutover), not links first. Consequence: the merged board's stage vocabulary
    (svbc-monday-migration#109, Clarrissa's Leads / Deals stage bar) and the board name need
    Clarrissa's sign-off before the production cutover; the builder takes the stage model as an
-   input from #109 and does not invent one. If #109 is undecided when the sandbox rehearsal
+   input from [GL#109](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/109) and does not invent one. If [GL#109](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/109) is undecided when the sandbox rehearsal
    finishes, production waits.
 3. **Decided by the user: backfill where matched.** New relationships (Donations -> Event,
    Opportunities -> People, Events -> sponsors) are filled from existing data where a match

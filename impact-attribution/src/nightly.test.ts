@@ -39,7 +39,7 @@ class FakeClient implements ImpactMondayClient {
     const names = new Map([...this.people.map((p) => [p.itemId, p.name] as const), ...this.organizations.map((o) => [o.itemId, o.name] as const)]);
     return new Map(ids.filter((id) => names.has(id)).map((id) => [id, names.get(id)!]));
   }
-  async findOrganizationsByNames() { return []; } // the employer-answer step (#127); no answers here
+  async findOrganizationsByNames() { return []; } // the employer-answer step (GL#127); no answers here
   async createDraft(_cfg: unknown, d: { name: string; personItemId: string; orgItemId: string }) {
     this.drafts.push({ personItemId: d.personItemId, orgItemId: d.orgItemId });
     const itemId = String(this.nextId++);

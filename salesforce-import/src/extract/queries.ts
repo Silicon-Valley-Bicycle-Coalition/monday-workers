@@ -24,7 +24,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         Retail_Value__c, In_Kind_Category__c, Funraise_Fee_Match_Opportunity__c, Funraise_Fee_Match_Amount__c,
         Sponsorship_Cycle__c,
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Opportunity` },
-    // Descoped 2026-09-23 (issue #23): Opportunity Amount/CloseDate is the gift of record — it's
+    // Descoped 2026-09-23 (issue GL#23): Opportunity Amount/CloseDate is the gift of record — it's
     // what NPSP's rollups summed and what Donations carries. 41,870 of 48,022 gifts have payments,
     // almost all one payment mirroring the gift; 123 split into installments and 422 disagree on
     // amount (mostly 2013–2017 entry noise). Kept in the backup archive, not transformed.
@@ -100,7 +100,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         CreatedDate FROM Task` },
     { name: 'emails_all', backupOnly: true, soql: `SELECT Id, Subject, MessageDate, FromAddress,
         ToAddress FROM EmailMessage` },
-    // Backup-only by decision 2026-09-30 (monday-migration #53): the sponsor benefit-fulfillment
+    // Backup-only by decision 2026-09-30 (monday-migration svbc-monday-migration#53): the sponsor benefit-fulfillment
     // engine (Sponsorship_Level__c → Sponsorship_Package__c → Sponsor_Benefit__c ← Benefit__c,
     // ~2,046 rows) and the Bike to Work Day logistics objects (BTWD_Order__c, Energizer_Station__c)
     // never land on a board. Field lists are the full custom set from docs/schema/svbc-custom.md

@@ -105,7 +105,7 @@ describe('Monday token from the monday-auth broker', () => {
   });
 });
 
-// #101: a verified delivery skips the per-IP limiter; anything else is still limited.
+// GL#101: a verified delivery skips the per-IP limiter; anything else is still limited.
 describe('rate limit exemption for verified webhooks', () => {
   const denyingEnv = () => ({
     ...env,

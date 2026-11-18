@@ -48,7 +48,7 @@ export interface ReclassificationMondayClient {
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
 }
 
-// API-Version comes from the transport's single pin (#39). A quarterly pass has no queue behind
+// API-Version comes from the transport's single pin (GL#39). A quarterly pass has no queue behind
 // it, so the transport's own retries are the retry policy: a few in-process attempts ride out a
 // Monday blip or the per-minute complexity budget; anything longer fails the pass, which the
 // next day's cron continues (src/duties.ts).

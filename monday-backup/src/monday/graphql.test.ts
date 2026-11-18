@@ -49,7 +49,7 @@ describe('MondayGraphQL non-idempotent requests', () => {
   });
 });
 
-// Issue #29 review: one call's retries (5 × 60s timeouts + advised waits) could outlast the
+// Issue GL#29 review: one call's retries (5 × 60s timeouts + advised waits) could outlast the
 // cron's 15-minute wall-time kill. With a deadline, every wait is capped and retrying stops.
 describe('MondayGraphQL with a run deadline', () => {
   function clocked(deadlineInMs: number, responses: () => Response) {

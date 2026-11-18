@@ -110,7 +110,7 @@ export const MARKED_COLUMNS = {
     locked: ['Eventbrite Attendee ID', 'Attendee Phone', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Registrants link', 'Home Zip'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
-  // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).
+  // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (GL#82).
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Active'] },
   'Volunteers': { locked: ['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type'], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
   'Activities': { locked: [], history: [...SALESFORCE, 'Owner'] },

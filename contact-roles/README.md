@@ -145,7 +145,7 @@ For the order of namespaces, keys and first deploy, see the runbook's "Merging /
 
 1. **Sandbox**
    1. `MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 18210301`
-      before the first sandbox write, to see what the integration token can really reach (#18).
+      before the first sandbox write, to see what the integration token can really reach ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)).
    2. `node contact-roles/scripts/provision-contact-roles.mjs --env sandbox` (dry run), then `--execute`
       (it verifies the role labels landed).
    3. Inspect People and People (Historical) for an unwanted reflection column (the legacy

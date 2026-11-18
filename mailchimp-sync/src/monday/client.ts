@@ -13,8 +13,8 @@ export interface MondayClient {
   setConnectColumn(boardId: number, itemId: string, columnId: string, linkedItemIds: string[]): Promise<void>;
 }
 
-// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
-// Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
+// Queue-consumer tuning (GL#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget. Anything longer surfaces as a MondayApiError carrying Monday's
 // code and retry hint, and the consumer picks the queue delay from it (consumer/backoff.ts) —
 // including a daily-limit error, which the transport never retries in-process.

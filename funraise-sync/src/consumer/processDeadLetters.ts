@@ -2,7 +2,7 @@ import type { EventStore } from '../db/events';
 import type { FunraiseQueueMessage, QueueMessageLike } from './processBatch';
 import { errorMessage } from '../util/errorMessage';
 
-// Consumer for funraise-sync-writes-dlq (#25), mirroring donation-rollups'
+// Consumer for funraise-sync-writes-dlq (GL#25), mirroring donation-rollups'
 // src/consumer/processDeadLetters.ts. Until this existed nothing consumed the DLQ: a gift that
 // exhausted its retries expired there unseen after ~4 days, and the only trace was an events row
 // whose 'failed' status looked the same as a failure still being retried. A dead message now

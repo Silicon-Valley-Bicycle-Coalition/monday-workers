@@ -1,7 +1,7 @@
 import { sendFailureAlert } from './alert';
 import { recordingProxy, type SkipContext } from './flags';
 
-// Independent staleness check (issue #29), on its own hourly cron so it runs apart from the backup:
+// Independent staleness check (issue GL#29), on its own hourly cron so it runs apart from the backup:
 // a run that dies without reaching its own catch can't report itself, so only something outside it
 // can notice. It still shares this Worker's
 // deploy, D1 and Slack secret — an external heartbeat monitor is the next step if that matters.

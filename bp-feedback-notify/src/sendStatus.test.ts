@@ -50,7 +50,7 @@ describe('writeSendStatus', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.monday.com/v2');
     expect((init.headers as Record<string, string>).Authorization).toBe('token');
-    // #39: one explicit, supported pin; this Worker has no transport copy, so the literal lives in sendStatus.ts.
+    // GL#39: one explicit, supported pin; this Worker has no transport copy, so the literal lives in sendStatus.ts.
     expect((init.headers as Record<string, string>)['API-Version']).toBe('2026-07');
     const body = JSON.parse(init.body as string);
     expect(body.query).toContain('change_simple_column_value');

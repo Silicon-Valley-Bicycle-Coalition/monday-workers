@@ -284,7 +284,7 @@ describe('sweepDeadLetteredRows', () => {
   });
 });
 
-// #74: the write queue also carries uploaded reports to ingest, and one can die too.
+// GL#74: the write queue also carries uploaded reports to ingest, and one can die too.
 describe('processDeadLetters — upload messages', () => {
   const upload = (assetId: unknown): QueueMessageLike<BenevityQueueMessage> =>
     ({ body: { assetId } as BenevityQueueMessage, ack: vi.fn(), retry: vi.fn() });

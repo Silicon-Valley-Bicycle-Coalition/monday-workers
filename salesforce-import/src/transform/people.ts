@@ -76,11 +76,11 @@ export function contactToPayload(
   // Deceased (24 contacts, monday-migration docs/35 §3.1) has no column of its own: it suppresses
   // every solicitation, so it lands as Do Not Solicit with the reason saying why.
   const deceased = !!(c['Deceased__c'] || c['npsp__Deceased__c']);
-  // NPSP Do Not Contact (75 contacts, #53) has no column of its own either: it suppresses both
+  // NPSP Do Not Contact (75 contacts, GL#53) has no column of its own either: it suppresses both
   // solicitation and postal mail, so it sets both flags and names itself in both reasons.
   const dnc = !!c['npsp__Do_Not_Contact__c'];
   const DNC_REASON = 'Do Not Contact (Salesforce)';
-  // Fundraise Opt Out (1,351 contacts, #86) is the solicitation opt-out staff actually used —
+  // Fundraise Opt Out (1,351 contacts, GL#86) is the solicitation opt-out staff actually used —
   // Account Do_Not_Solicit__c is set on 7. It is about fundraising only, so it sets Do Not
   // Solicit and leaves Do Not Mail as Salesforce had it.
   const fundraiseOptOut = !!c['Fundraise_Opt_Out__c'];
@@ -119,7 +119,7 @@ export function contactToPayload(
   // A shared household address is one Mailchimp contact; this flag says whose merge fields it
   // carries (spec: "Consent and mailchimp-sync"). Only ever written as true.
   if (deps.householdPrimary) columns['Household Primary'] = { checked: 'true' };
-  // Stakeholder Type's only Salesforce-sourced value (docs/22 §3.1; #46): Contact.Elected__c →
+  // Stakeholder Type's only Salesforce-sourced value (docs/22 §3.1; GL#46): Contact.Elected__c →
   // Elected Official, 366 contacts. Written only when set, so load creates the column — seeded
   // with the full label set from load/boards.ts STATUS_LABELS — before configure runs, and every
   // other person starts blank: City or Agency Staff and Partner Org Contact have no Salesforce

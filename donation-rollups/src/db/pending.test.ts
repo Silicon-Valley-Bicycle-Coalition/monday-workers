@@ -13,7 +13,7 @@ describe('D1PendingStore', () => {
     expect(row?.status).toBe('received'); // reset on redelivery
   });
 
-  // Issue #90: the webhook route discarded the inserted/updated answer, so the SELECT that
+  // Issue GL#90: the webhook route discarded the inserted/updated answer, so the SELECT that
   // computed it was a wasted D1 read on every delivery.
   it('upserts in one statement', async () => {
     let prepared = 0;
@@ -82,7 +82,7 @@ describe('D1PendingStore.listStuck', () => {
   });
 });
 
-// Issue #90: the nightly requeue prunes finished rows, and listStuck has an index to use.
+// Issue GL#90: the nightly requeue prunes finished rows, and listStuck has an index to use.
 describe('D1PendingStore.pruneFinished', () => {
   beforeEach(async () => { await env.DB.prepare('DELETE FROM pending_recomputes').run(); });
 

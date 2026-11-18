@@ -17,7 +17,7 @@ function jsString(value: string): string {
 //
 // No Subresource Integrity hash on ddplugin.js, deliberately: DTD serves a mutable, unversioned
 // URL they update at will, so any pinned hash silently breaks the widget on their next release.
-// The compensating control is isolation (issue #102): the widget never runs on the portal's
+// The compensating control is isolation (issue GL#102): the widget never runs on the portal's
 // origin. It lives in its own document (matchingGiftsSearchDocument, served by
 // GET /:locale/portal/matching-gifts/search) whose CSP carries `sandbox` without
 // allow-same-origin, so the browser gives it an opaque origin. A compromised ddplugin.js there

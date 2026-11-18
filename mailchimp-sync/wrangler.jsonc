@@ -17,7 +17,7 @@
   //                              fail-closed behavior. Register as
   //                              https://<worker>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>
   //   SLACK_WEBHOOK_URL        — OPTIONAL Slack incoming-webhook URL: one alert per dead-letter
-  //                              batch (#37, src/alert.ts). Unset = log only (Workers Logs).
+  //                              batch (GL#37, src/alert.ts). Unset = log only (Workers Logs).
   // Write-switch flags (see ../scripts/flags.mjs): the shared KV namespace holding
   // `mailchimp-sync:writes` (on | hold | off; missing = off) and `mailchimp-sync:log`. The
   // namespace is `FLAGS` (`sandbox-FLAGS` under env.sandbox); every in-scope Worker carries the
@@ -54,7 +54,7 @@
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
       },
-      // #37: dead messages stamp their pending row "dead-lettered after retries: …" and log one
+      // GL#37: dead messages stamp their pending row "dead-lettered after retries: …" and log one
       // error — and one Slack alert when SLACK_WEBHOOK_URL is set — per batch
       // (src/consumer/deadLetters.ts) instead of expiring
       // unseen. Two D1 ops per message; retried only when D1 fails, and no further dead-letter
@@ -142,7 +142,7 @@
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
           },
-          // Restated from the top level (named envs don't inherit queues) — see #37 above.
+          // Restated from the top level (named envs don't inherit queues) — see GL#37 above.
           {
             "queue": "mailchimp-sync-outbound-sandbox-dlq",
             "max_batch_size": 10,

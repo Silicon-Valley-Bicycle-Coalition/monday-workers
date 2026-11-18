@@ -51,7 +51,7 @@
         "dead_letter_queue": "quickbooks-sync-writes-dlq"
       },
       {
-        // #33: dead messages stamp their qb_events / monday_events row "dead-lettered after
+        // GL#33: dead messages stamp their qb_events / monday_events row "dead-lettered after
         // retries: …" and log one error per batch (src/consumer/processDeadLetters.ts) instead of
         // expiring unseen. Two D1 ops per message; no further dead-letter queue.
         "queue": "quickbooks-sync-writes-dlq",

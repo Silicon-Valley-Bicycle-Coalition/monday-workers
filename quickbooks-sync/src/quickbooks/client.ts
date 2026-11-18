@@ -40,7 +40,7 @@ const REFRESH_LEASE_TTL_MS = 30_000;
 // apart, before giving up with a (queue-retryable) error.
 const LEASE_WAIT_ATTEMPTS = 5;
 const LEASE_WAIT_MS = 500;
-// Per-request bound on every Intuit call (#73). Half the lease TTL, so a hung token refresh is cut
+// Per-request bound on every Intuit call (GL#73). Half the lease TTL, so a hung token refresh is cut
 // off with room left for the compare-and-swap save before the lease can expire under it — a
 // refresh that outlived its lease could let a second refresher rotate the token again.
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -51,7 +51,7 @@ interface IntuitFault {
   Fault?: { type?: string; Error?: { Message?: string; Detail?: string; code?: string }[] };
 }
 
-// Turns a non-OK Accounting API response into an error that says what Intuit said (#33 review):
+// Turns a non-OK Accounting API response into an error that says what Intuit said (GL#33 review):
 // `Fault.type code Message: Detail` for each error. A 400 ValidationFault — Intuit rejecting the
 // data itself (6240 Duplicate Name Exists, a missing required field, 610 Object Not Found for a
 // deleted record) — is a TerminalError: retrying the same request can only fail the same way.
@@ -73,7 +73,7 @@ function isFresh(tokens: QbTokens): boolean {
   return new Date(tokens.accessTokenExpiresAt).getTime() > Date.now() + EXPIRY_SKEW_MS;
 }
 
-// Token refresh has exactly one writer at a time (#33). Intuit rotates the refresh token and
+// Token refresh has exactly one writer at a time (GL#33). Intuit rotates the refresh token and
 // expires the previous one, so two callers refreshing from the same stored token and saving
 // last-writer-wins could leave D1 holding a token Intuit has already invalidated — and every call
 // after that fails until the pair is re-seeded by hand. So:

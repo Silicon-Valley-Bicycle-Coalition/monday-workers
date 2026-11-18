@@ -55,7 +55,7 @@ export class CloudflareEmailSender implements EmailSender {
     });
   }
 
-  // Issue #127: donors request employer matches for last year's gifts in January–February, when
+  // Issue GL#127: donors request employer matches for last year's gifts in January–February, when
   // this email goes out. Appended after the body — staff template or built-in — so the letter
   // stays the first ask, and outside the template so staff can't drop it by accident.
   private employerAsk(locale: SendLetterReadyEmailParams['locale'], employerUrl: string): { html: string; text: string } {

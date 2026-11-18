@@ -37,7 +37,7 @@ export interface QbWebhookDeps {
   writeMode: () => Promise<WriteMode>;
 }
 
-// The webhook only records and enqueues (#33). It used to fetch the changed entity from
+// The webhook only records and enqueues (GL#33). It used to fetch the changed entity from
 // QuickBooks inline and answer 200 even when that fetch failed, so Intuit never redelivered and
 // nothing else resumed the row — the change was silently lost. The fetch now happens in the
 // queue consumer, which has retries with backoff and a DLQ behind it, reads the entity as of
@@ -45,7 +45,7 @@ export interface QbWebhookDeps {
 // This route never touches QuickBooks, which also keeps it inside Intuit's 3-second response
 // window.
 //
-// A delivery costs a fixed number of round trips, not three per notification (#101): one D1 batch
+// A delivery costs a fixed number of round trips, not three per notification (GL#101): one D1 batch
 // records every row, one sendBatch enqueues, one UPDATE marks them queued (each per 100).
 //
 // A failed enqueue answers 500: Intuit retries non-200 deliveries, and the row left 'failed'
@@ -54,7 +54,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
   const app = new Hono();
 
   app.post('/webhooks/quickbooks', async (c) => {
-    // Refuse outright rather than let verifyQbSignature throw on an empty HMAC key (#68). Same answer
+    // Refuse outright rather than let verifyQbSignature throw on an empty HMAC key (GL#68). Same answer
     // as the Monday route's unset secret; the log line is what tells this apart from a bad signature.
     if (!deps.verifierToken) {
       console.error('quickbooks-sync qb webhook: QB_WEBHOOK_VERIFIER_TOKEN is not set — refusing every delivery');
@@ -80,7 +80,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
     // A valid signature proves the payload came from Intuit for this app, not that it's about
     // this company: an app connected to several companies gets notifications for all of them.
     // The consumer fetches every entity from the connected company by id, so a foreign
-    // notification would sync an unrelated record that happens to share the id (#33).
+    // notification would sync an unrelated record that happens to share the id (GL#33).
     const realmId = await deps.connectedRealmId();
     if (realmId === null) {
       console.error('quickbooks-sync qb webhook: no QuickBooks company connected yet (qb_oauth_tokens is empty) — asking Intuit to redeliver');
@@ -96,7 +96,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
         console.warn(`quickbooks-sync qb webhook: ignoring notification for realm "${notification.realmId}" (connected company is another realm)`);
         continue;
       }
-      // Delete (#33 review): the record is gone, so the consumer's fetch could only fail and
+      // Delete (GL#33 review): the record is gone, so the consumer's fetch could only fail and
       // dead-letter. Acknowledge and log it; the Monday item is deliberately left in place for
       // staff to archive (README "Deletes and merges") rather than deleted by a webhook.
       if (notification.operation === 'Delete') {

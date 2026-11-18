@@ -152,7 +152,7 @@ describe('processOutboundBatch', () => {
   });
 
   it('records skipped (not written) and acks when the donor is not in the Mailchimp audience', async () => {
-    // No consent recorded in Mailchimp → the donor is never added (issue #28). A column
+    // No consent recorded in Mailchimp → the donor is never added (issue GL#28). A column
     // change on such a donor (e.g. donation-rollups bumping Total Given) is a no-op.
     const message = fakeMessage('4');
     const mondayClient: MondayClient = {
@@ -300,7 +300,7 @@ describe('processOutboundBatch', () => {
       expect(d.pendingStore.recordSyncStart).not.toHaveBeenCalled();
     });
 
-    // #97: PATCH first. Reading tags first spent a call on every donor who isn't a member.
+    // GL#97: PATCH first. Reading tags first spent a call on every donor who isn't a member.
     it('does not read tags for a donor the PATCH finds is not in the audience', async () => {
       const d = nearbyDeps(donor(), ['Near: Old'], NEARBY_CONFIG, 'not-in-audience');
       await processOutboundBatch([fakeMessage('1')], d);
@@ -707,7 +707,7 @@ describe('processOutboundBatch: People (Historical) items', () => {
   });
 });
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday or Mailchimp, instead of each repeating the transport's in-process attempts.
 describe('outage breaker (#101)', () => {
   function outageDeps(err: Error) {

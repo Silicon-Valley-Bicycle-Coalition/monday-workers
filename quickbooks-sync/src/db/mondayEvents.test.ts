@@ -99,7 +99,7 @@ describe('D1MondayEventStore', () => {
     expect(row?.createAttempt).toBe(1);
   });
 
-  // #33 review: the QuickBooks -> Monday path uses this to recognize a Customer that a Monday item
+  // GL#33 review: the QuickBooks -> Monday path uses this to recognize a Customer that a Monday item
   // created, before that item's mapping is written, instead of creating a second Monday item.
   it('finds the row that created a given QuickBooks Customer', async () => {
     const store = new D1MondayEventStore(env.DB);

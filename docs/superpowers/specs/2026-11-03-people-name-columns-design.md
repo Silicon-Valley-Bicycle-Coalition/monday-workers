@@ -253,4 +253,4 @@ land:
   `scripts/mark-read-only-columns.mjs`, `eventbrite-sync/src/matching/people.test.ts`,
   `eventbrite-sync/src/test/testConfig.ts` and `eventbrite-sync/src/types.ts`
 
-!332 (the production feed config and `Class roster`) merged while this was being written.
+[GL!332](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/332) (the production feed config and `Class roster`) merged while this was being written.

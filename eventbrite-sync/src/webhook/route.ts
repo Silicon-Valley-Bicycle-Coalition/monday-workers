@@ -20,7 +20,7 @@ export const SECRET_HEADER = 'X-Webhook-Secret';
 
 /**
  * Constant-time comparison of a presented secret against the configured one (funraise-sync
- * #25, copied). Both sides are hashed to fixed-length SHA-256 digests first, so neither the
+ * GL#25, copied). Both sides are hashed to fixed-length SHA-256 digests first, so neither the
  * content nor the length of the real secret leaks through timing, then every digest byte is
  * compared with no early exit. A missing value on either side never matches.
  */

@@ -209,7 +209,7 @@ export default {
       );
     }
 
-    // Auth-table retention (issue #31): login_attempts past rateLimit.attemptRetentionHours,
+    // Auth-table retention (issue GL#31): login_attempts past rateLimit.attemptRetentionHours,
     // sessions and magic-link tokens past their own expiry. Bounded per run and per-table
     // failure-isolated inside purgeExpiredAuthRows, so it can't block the letter cron below.
     const purgedAuth = await purgeExpiredAuthRows({

@@ -7,8 +7,8 @@ export interface RequestRateLimiter {
 // The webhook routes' own paths (webhook/route.ts registers the same strings).
 export const WEBHOOK_PATHS: ReadonlySet<string> = new Set(['/webhooks/funraise/transaction']);
 
-// A burst of genuine deliveries (a giving-day rush, sent from Funraise's small pool of IPs) must not draw 429s from the per-IP limiter (#101; mailchimp-sync and
-// donation-rollups learned this first, issue #27). A delivery that passes the route's own check
+// A burst of genuine deliveries (a giving-day rush, sent from Funraise's small pool of IPs) must not draw 429s from the per-IP limiter (GL#101; mailchimp-sync and
+// donation-rollups learned this first, issue GL#27). A delivery that passes the route's own check
 // (POST, exact webhook path, matching secret in X-Webhook-Secret or ?secret=) skips the limiter;
 // anything else, a guessed secret or the right secret on another route, is limited as before, so
 // the exemption can't be reached without the secret. Costs one SHA-256 pair per request, no I/O.

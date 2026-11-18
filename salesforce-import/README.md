@@ -104,7 +104,7 @@ them. Targets that were never migrated at all are still skipped by design. `data
 records per-run counts: created, adopted, failed, written/partial/pending/skipped links, and
 archived/deferred items.
 
-**Batched load (#22) — what production runs, but not the default.** Plain `load` runs the pre-#22
+**Batched load ([GL#22](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/22)) — what production runs, but not the default.** Plain `load` runs the pre-#22
 sequential path (one `create_item` per request, one at a time, the pre-#22 Monday client) and prints
 `load: mode = sequential (default)`. **The production cutover load uses `--batched`** (decided
 2026-10-09 after the rehearsal below; sequential is ≈ 67 h and doesn't fit a weekend). The CLI
@@ -112,12 +112,12 @@ default stays sequential, so **pass `--batched` on the first production run and 
 Nothing in the code enforces that; check that the mode line says `batched`. `load --batched`
 prints `load: mode = batched (size 10, concurrency 3, inline links on)`. It sends 10 aliased
 `create_item`s per request (`--batch-size N`, max 25) with 3 requests in flight
-(`--concurrency N`, max 8; separate links and archives are aliased `--batch-size` to a request too, #50), and puts a payload's board-relation values straight into its `create_item` when every
+(`--concurrency N`, max 8; separate links and archives are aliased `--batch-size` to a request too, [GL#50](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/50)), and puts a payload's board-relation values straight into its `create_item` when every
 target is already on Monday — which covers nearly all Donation relations (Donor, Campaign,
 Recurring Gift, Matched By, Soft Credit) and most other boards' links. A relation only counts as
 written when `create_item`'s response echoes it back; anything else (a target still to be created,
 an archived target, an unconfirmed echo, an adopted item) goes through the separate link pass with
-all of #21's pending/archive rules, and `validate` checks the same ledger entries either way. A
+all of [GL#21](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/21)'s pending/archive rules, and `validate` checks the same ledger entries either way. A
 shared gate reads each response's `complexity` budget and pauses new batches before it runs out;
 the client waits Monday's `retry_in_seconds` on complexity and rate-limit errors.
 
@@ -157,7 +157,7 @@ npm run cli -- load --batched --no-inline-links   # batch creates, but write eve
 **Cutover-weekend fallback:** if a `--batched` run misbehaves (unexpected Monday errors, relations
 not sticking, complexity trouble), stop and re-run plain `load` (the default; `--sequential` is the
 same). It uses the same ledger, so it resumes where
-the batched run stopped. It's the code path every rehearsal before #22 ran: the same create loop
+the batched run stopped. It's the code path every rehearsal before [GL#22](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/22) ran: the same create loop
 and the same Monday client (`MondayClient` `legacy`/`gqlLegacy`, a verbatim copy). It keeps the old
 lookup-then-retry rule for an ambiguous create, up to 3 attempts, and no duplicate read-back.
 
@@ -172,7 +172,7 @@ runs batched, and the mode line says so. `config/svbc.json`'s `load` block holds
 default. `load --dry-run`'s "new" figures always describe `--batched` (or the batched settings you
 pass), even though the default run is sequential.
 
-The dry-run estimate treats Monday as serialised (#50): it runs mutations one at a time across the
+The dry-run estimate treats Monday as serialised ([GL#50](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/50)): it runs mutations one at a time across the
 whole account, so a bigger `--concurrency` or link pool only queues requests and adds nothing.
 Time is `requests·R + creates·c + links·l + archives·a`, where every request pays the overhead R once
 however many mutations are aliased into it, and each mutation pays its own type's cost. Defaults, from
@@ -202,7 +202,7 @@ boards in the sandbox workspace, from the 2026-09-08 extract, at the defaults (s
 concurrency 3, inline links on). The final state matched the dry-run plan exactly: 96,007 items,
 110,013 links, 44,783 archives. Steps 1, 2 and 5 were left open. **Production adopted `--batched`
 anyway (2026-10-09)**, because every correctness check passed and sequential doesn't fit a weekend.
-Links and archives were then aliased (#50), and an awake re-rehearsal (2026-10-09 → 12) measured
+Links and archives were then aliased ([GL#50](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/50)), and an awake re-rehearsal (2026-10-09 → 12) measured
 the full load at **27 h 51 min**, against a ≈ 26.7 h estimate. Its 22 ambiguous creates resolved
 in a 70 s second run with 0 duplicates, and `validate --live` was clean apart from the two
 pre-existing `recon-funraise-*` checks. Steps 1, 4 and 6 passed there; step 1 passed after the
@@ -216,7 +216,7 @@ ledger with plain `load` (the cutover-weekend fallback below) is untested.
 | 3. Kill mid-board, re-run `--batched` | Passed | Run 1 killed mid-FY2019; run 2's start-of-run scan adopted 120 items and duplicated none. |
 | 4. "Not re-sent" items adopted or created next run | Passed | Run 2 exited 1 with 110 not re-sent; run 3 created all 110, 0 duplicates, exit 0 in 5 min. 180 ambiguous creates across the three runs (0.19%), all resolved. |
 | 5. Resume a batched ledger with plain `load` | Not run | |
-| 6. Re-estimate with measured timings | Run | `load --dry-run --latency-ms 1500 --alias-ms 1650` → batched ≈ 21.1 h, sequential ≈ 66.3 h. The batched figure was low because that formula assumed parallel link and archive passes; Monday serialises mutations (#50), and the current model gives ≈ 26.7 h batched with aliased links and archives. |
+| 6. Re-estimate with measured timings | Run | `load --dry-run --latency-ms 1500 --alias-ms 1650` → batched ≈ 21.1 h, sequential ≈ 66.3 h. The batched figure was low because that formula assumed parallel link and archive passes; Monday serialises mutations ([GL#50](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/50)), and the current model gives ≈ 26.7 h batched with aliased links and archives. |
 
 Run 1's 629 archive and 6 link failures were all "fetch failed" network errors on the operator
 machine (its proxy dropped connections, and it slept for part of the run); every one retried clean
@@ -256,7 +256,7 @@ deletion and hide-plumbing view settings (both UI-only in the plan), the Donatio
 column removal (a guarded one-off, not repeatable structure), and the Acknowledgment Tier
 backfill (a data operation, not board configuration).
 
-**Possible Duplicate (#54).** `configure` creates the status column and the **Possible duplicates**
+**Possible Duplicate ([GL#54](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/54)).** `configure` creates the status column and the **Possible duplicates**
 worklist on both People boards. Two steps sit outside it, once per board, after `configure` has
 created the column:
 
@@ -325,8 +325,8 @@ alongside the backup archive.
 `data/backup/*.ndjson` by `extract` and never read by `transform` — they exist so the archive is
 complete, not so anything lands on a board. Today: `ContactHistory`, `CampaignMember`, `Lead`,
 every `Task` and `EmailMessage` (the Activities board gets only the recent slice), NPSP payments
-(#23) and `npe4__Relationship__c`, plus — decided 2026-09-30 in the private planning repo's
-issue #53 — the sponsor benefit-fulfillment cluster (`Sponsorship_Level__c`,
+([GL#23](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/23)) and `npe4__Relationship__c`, plus — decided 2026-09-30 in the private planning repo's
+issue [GL#53](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/53) — the sponsor benefit-fulfillment cluster (`Sponsorship_Level__c`,
 `Sponsorship_Package__c`, `Sponsor_Benefit__c`, `Benefit__c`; ~2,046 rows) and the Bike to Work
 Day logistics objects (`BTWD_Order__c`, `Energizer_Station__c`). Each of those six selects every
 custom field the schema reference lists plus Id, Name, record type and system dates; none is
@@ -413,13 +413,13 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   Blank-type Accounts with no Contact, or a differently-named one ("Smith Family"), still land on
   Organizations — a human review list is the follow-up if that residue matters.
 * **Partner-type reconciliation** — cascade `Type` → `Type_2__c` → `Industry`, then mapped to the
-  ten approved dropdown values (`src/transform/partnerType.ts`, #55; a multipicklist keeps its most
+  ten approved dropdown values (`src/transform/partnerType.ts`, [GL#55](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/55); a multipicklist keeps its most
   specific value). Organizations with none of the three stay blank, for the Untyped worklist. Boards
   loaded as text move over with `scripts/relabel-partner-type.ts`, then `configure
   --rebuild-overviews organizations` so views and the Overview follow the new column.
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
-  Unique Advocacy-Specific Needs. **Seeded at import (#46):** `extract` selects
+  Unique Advocacy-Specific Needs. **Seeded at import ([GL#46](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/46)):** `extract` selects
   `Contact.Elected__c` and `transform` writes `Stakeholder Type = Elected Official` on the 366
   contacts that have it set (on whichever People board they land — the classification is a fact
   about the person, not the board), and nothing on anyone else. Because `load` creates every
@@ -507,7 +507,7 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   `Redacted` subscription) are all in
   `docs/03-monday-migration-mapping.md` (private planning repo) — treat
   that document as the authoritative field mapping for this script, not a summary of it.
-* **`Closed Won` is not a retired stage — decided 2026-09-30 (#43, migration issue #56).** The
+* **`Closed Won` is not a retired stage — decided 2026-09-30 ([GL#43](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/43), migration issue [GL#56](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/56)).** The
   `eb4sf` Eventbrite package still writes every paid ticket order as a `Closed Won` Opportunity
   under the `SVBC Integration` user (211 records / $14,751.94 with `CloseDate` ≥ 2025-07-01 in the
   2026-09-08 extract; none has a Funraise ID). Ticket revenue counts as giving, so `transform`

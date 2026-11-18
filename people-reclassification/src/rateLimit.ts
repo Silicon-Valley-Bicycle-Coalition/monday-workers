@@ -6,7 +6,7 @@ export interface RequestRateLimiter {
 
 export const PROMOTE_WEBHOOK_PATH = '/webhooks/monday/promote';
 
-// Issue #110, mirroring donation-rollups' #27 fix: Monday delivers from a small pool of IPs, so
+// Issue GL#110, mirroring donation-rollups' GL#27 fix: Monday delivers from a small pool of IPs, so
 // bulk-setting Promote on more than 60 people got its own deliveries 429'd (and promoted a day late,
 // by the morning sweep). A delivery that passes the webhook's URL check (POST, exact path, matching
 // ?secret=) skips the limiter; anything else, a guessed secret or the right secret on another

@@ -220,7 +220,7 @@ export interface EventbriteSyncConfig {
       eventColumn: string;
       listingColumn: string;
       // Eventbrite's ticket class name (e.g. "Shift 1"), so one person's two shifts don't read as a
-      // duplicate (#115). The placeholder writes nothing, and doesn't count toward volunteerBoardMode.
+      // duplicate (GL#115). The placeholder writes nothing, and doesn't count toward volunteerBoardMode.
       ticketTypeColumn: string;
     };
     // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
@@ -237,7 +237,7 @@ export interface EventbriteSyncConfig {
     peopleEmailColumn: string;
   };
   pledge?: PledgeConfig;
-  // Employer answers handed to impact-attribution's EmployerAnswers RPC (#127). Off unless
+  // Employer answers handed to impact-attribution's EmployerAnswers RPC (GL#127). Off unless
   // `enabled` and the EMPLOYER_ANSWERS binding is present.
   employerAnswers: { enabled: boolean };
 }

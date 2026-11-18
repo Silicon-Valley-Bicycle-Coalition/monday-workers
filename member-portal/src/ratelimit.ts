@@ -31,7 +31,7 @@ export async function checkLoginRateLimit(
     return false;
   }
 
-  // Only a request every per-address limit lets through is recorded (issue #62). Recording denied
+  // Only a request every per-address limit lets through is recorded (issue GL#62). Recording denied
   // ones too let anyone rotating IPs keep a donor locked out indefinitely while still sending them
   // a login email every few minutes; now the address gets at most emailDailyMax a day, and each
   // of those carries a working link.

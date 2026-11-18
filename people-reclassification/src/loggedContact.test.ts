@@ -112,7 +112,7 @@ describe('moveLoggedContacts', () => {
 });
 
 // A daily run reads Activities (Logged) only from shortly before the last clean live run, so a quiet
-// day doesn't page the whole board, nor People (Historical) after it (#101).
+// day doesn't page the whole board, nor People (Historical) after it (GL#101).
 describe('moveLoggedContacts — read window', () => {
   beforeEach(async () => {
     await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs'), env.DB.prepare('DELETE FROM pass_lease')]);

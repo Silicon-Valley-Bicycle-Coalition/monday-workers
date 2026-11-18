@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
 import { upsertSubscription, type UpsertAction } from './upsert';
 
-// Keyset pagination on (updtime, id) (#25). Two named cursors describe where the poll is:
+// Keyset pagination on (updtime, id) (GL#25). Two named cursors describe where the poll is:
 //   subscriptions     — T, the updtime every row at or before which has been read (except, while
 //                       a tie walk is in progress, the rows tied at T with an id above I)
 //   subscriptions:id  — I, the last id read in the tie group at T, or NO_TIE when that group is

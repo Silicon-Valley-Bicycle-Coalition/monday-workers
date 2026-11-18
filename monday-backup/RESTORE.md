@@ -5,7 +5,7 @@ How to rebuild Monday boards and Docs from a nightly snapshot. The tool is
 machine, never in the Worker.
 
 > **Status: not yet rehearsed.** The procedure and tool are unit-tested against mocked APIs only.
-> The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue #30.
+> The end-to-end rehearsal into the sandbox (below) is the remaining acceptance item for issue [GL#30](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/30).
 > The sandbox backup works (first complete snapshot 2026-11-10, run 46; first encrypted one
 > 2026-11-16, run 54), and the sandbox is seeded (run 55 has the seed); the restore itself
 > (step 5 of the rehearsal) is what's left. Until it has been done once, treat
@@ -46,7 +46,7 @@ machine, never in the Worker.
 In the backup Shared Drive, each run is a folder named `YYYY-MM-DD run-N`. Open its
 `manifest.json` and check:
 
-* `format` is `monday-backup/3` (encrypted files, from issue #112 on) or `monday-backup/2` (older,
+* `format` is `monday-backup/3` (encrypted files, from issue [GL#112](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/112) on) or `monday-backup/2` (older,
   plaintext files); this tool reads both;
 * for `monday-backup/3`, `encryption.keyId` names the key the files need (see "The encryption key"
   below);
@@ -175,7 +175,7 @@ ambiguous: fix the cause and rerun.
 
 ## Restore rehearsal (outstanding)
 
-Do this once end to end in the sandbox, then record the result below and close issue #30.
+Do this once end to end in the sandbox, then record the result below and close issue [GL#30](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/30).
 
 1. Provision the sandbox. Done 2026-11-10: `svbc-monday-backup-sandbox` backs up CRM Sandbox v4
    (`18210301`) into the *Monday Backups (sandbox)* Shared Drive. Run 46 was complete: 18 boards,
@@ -209,7 +209,7 @@ Do this once end to end in the sandbox, then record the result below and close i
    first). Narrow it with `--boards` (the seeded boards plus a mid-sized one such as Campaigns,
    2,817 items): a full v4 restore is about one API call per item, roughly 54,000. Monday has
    no token that can write only to one workspace (any member can edit Main boards in every open
-   workspace, #18), so make the rehearsal workspace **closed** and use a token of a user who is a
+   workspace, [GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)), so make the rehearsal workspace **closed** and use a token of a user who is a
    member of it, and check the `--workspace` id twice before `--execute`.
 6. Run the verification checklist; time the restore.
 7. Record here: date, snapshot run, counts restored, duration, every warning and whether it was

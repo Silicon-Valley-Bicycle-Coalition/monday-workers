@@ -26,7 +26,7 @@ export interface MondayColumns {
   volunteerDate: string;
   volunteerJob: string;
   volunteerStatus: string;
-  // Optional (#115): eventbrite-sync's Ticket Type column ("Shift 1", "Bike valet"), shown after
+  // Optional (GL#115): eventbrite-sync's Ticket Type column ("Shift 1", "Bike valet"), shown after
   // the Job so one person's two shifts at one event don't read as a duplicate. Absent or the
   // placeholder = Job alone.
   volunteerTicketType?: string;
@@ -268,7 +268,7 @@ export interface Config {
     sessionTtlHours: number;
     portalBaseUrl: string;
   };
-  // Per-address login-email limits (issue #62), on top of the per-IP limiter. Only requests these
+  // Per-address login-email limits (issue GL#62), on top of the per-IP limiter. Only requests these
   // let through are recorded in login_attempts, so a denied request never extends a lockout.
   rateLimit: {
     // Minimum gap between two login emails to one address.

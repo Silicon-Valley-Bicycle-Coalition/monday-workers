@@ -10,7 +10,7 @@ export interface ValidatedUploadEvent {
   // small staff-facing 'Benevity Uploads' board"), and the route (Task 16) uses it to ignore a
   // change on any other column instead of misreading its `value` shape as a file list.
   columnId: string;
-  // The board the event fired on, checked by the route against the Uploads board (#106).
+  // The board the event fired on, checked by the route against the Uploads board (GL#106).
   boardId: string;
   assetIds: string[];
 }

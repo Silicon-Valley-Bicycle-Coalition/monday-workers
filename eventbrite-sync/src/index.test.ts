@@ -221,7 +221,7 @@ describe('scheduled (daily missed-order check)', () => {
   });
 });
 
-// #101: a verified delivery skips the per-IP limiter; anything else is still limited.
+// GL#101: a verified delivery skips the per-IP limiter; anything else is still limited.
 describe('rate limit exemption for verified webhooks', () => {
   const denyingEnv = () => ({
     ...env,

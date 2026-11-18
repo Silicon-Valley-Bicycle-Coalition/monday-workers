@@ -9,7 +9,7 @@
   // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
   // member-portal — no new domain onboarding needed for this Worker.
   "send_email": [{ "name": "EMAIL" }],
-  // Per-item resend guard (#105, src/sendGuard.ts). SVBC's database was created 2026-11-14; a fork
+  // Per-item resend guard (GL#105, src/sendGuard.ts). SVBC's database was created 2026-11-14; a fork
   // creates its own with `wrangler d1 create svbc-bp-feedback-notify` and pastes the id here. Apply
   // migrations/ with `wrangler d1 migrations apply svbc-bp-feedback-notify --remote` before the
   // first deploy: until the table exists every send fails closed with a 503.

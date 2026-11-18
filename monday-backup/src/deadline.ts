@@ -1,4 +1,4 @@
-// A wall-clock deadline shared by the backup and its API clients (issue #29).
+// A wall-clock deadline shared by the backup and its API clients (issue GL#29).
 //
 // Checking a budget only between pages isn't enough: one Monday or Drive call retrying through
 // timeouts and advised waits could otherwise run for minutes past it. Clients cap every attempt's

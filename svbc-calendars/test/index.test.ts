@@ -145,7 +145,7 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     expect(res.headers.get("Access-Control-Allow-Methods")).toBe("GET, OPTIONS");
   });
 
-  // Never reflect the Origin: responses land in caches.default with no Vary: Origin (#72).
+  // Never reflect the Origin: responses land in caches.default with no Vary: Origin (GL#72).
   it.each(["https://www.bikesiliconvalley.org", "https://evil.com"])("sends a wildcard ACAO for origin %s", async (origin) => {
     mockEventbrite();
     const res = await call(req("/events", { origin }));

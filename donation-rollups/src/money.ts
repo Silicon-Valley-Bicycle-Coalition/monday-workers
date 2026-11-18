@@ -1,4 +1,4 @@
-// Money is integer cents everywhere in this Worker (issue #27). Summing dollar floats wrote
+// Money is integer cents everywhere in this Worker (issue GL#27). Summing dollar floats wrote
 // values like 714.9300000000001 to Monday; integer cents are exact, and a sum only becomes a
 // decimal string at the very last step, when it's written to a Monday numbers column.
 

@@ -3,7 +3,7 @@ import { formatCents } from '../money';
 
 // Per-affiliation money rollups (spec "Rollups"): what a person drove for one organization
 // during one tenure. Lifetime, not fiscal-year split — there is no This/Last Year here.
-// Integer cents throughout (issue #27); formatted only at the column write.
+// Integer cents throughout (issue GL#27); formatted only at the column write.
 export interface AttributedRollup { attributedGivingCents: number; attributedGiftCount: number; lastAttributedGiftISO: string | null }
 
 export function attributedRollupFromTotals(t: { cents: number; count: number; lastGiftDateISO: string | null }): AttributedRollup {

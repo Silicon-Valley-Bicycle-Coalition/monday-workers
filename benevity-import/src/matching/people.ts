@@ -15,7 +15,7 @@ export interface PersonResolutionRow {
 }
 
 // Keeps the affiliations whose Status is the configured Current label. A Draft is a proposal
-// nobody has checked yet (#124) and a Former is a past job; neither is evidence of who an
+// nobody has checked yet (GL#124) and a Former is a past job; neither is evidence of who an
 // employee is.
 async function currentOnly(mondayClient: MondayClient, config: BenevityImportConfig, ids: string[]): Promise<string[]> {
   if (ids.length === 0) return [];
@@ -34,7 +34,7 @@ export async function resolvePerson(
   config: BenevityImportConfig,
   row: PersonResolutionRow,
   organizationItemId: string,
-  // Per-batch cache (#101): the Affiliations at an Organization and the Employer matches for a
+  // Per-batch cache (GL#101): the Affiliations at an Organization and the Employer matches for a
   // company are the same for every row of a disbursement. Defaults to a fresh one per call.
   lookups: BatchLookups = new BatchLookups()
 ): Promise<PersonResolution> {

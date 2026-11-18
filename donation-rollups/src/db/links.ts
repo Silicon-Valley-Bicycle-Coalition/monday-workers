@@ -10,7 +10,7 @@ export interface DonationLinksStore {
   // returned updatedAt is when this link LAST CHANGED — the consumer's coalescing rule compares
   // it against the owner's last recompute fetch (a link that changed after that fetch wasn't
   // covered by it). `changed` is true for a new or re-owned link. `previousOwner` is set only
-  // when the donation moved from a different owner, which must be recomputed too (issue #26).
+  // when the donation moved from a different owner, which must be recomputed too (issue GL#26).
   upsertLink(link: DonationLink, updatedAt: string):
     Promise<{ changed: boolean; updatedAt: string; previousOwner?: { ownerItemId: string; ownerBoardId: string } }>;
   // Grouped by donation_board_id, since fetching each donation's column values needs

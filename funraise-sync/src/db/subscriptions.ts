@@ -19,7 +19,7 @@ export interface SubscriptionStore {
   getCursor(name: string): Promise<number>;
   setCursor(name: string, value: number): Promise<void>;
   // Atomically claim the right to adopt-or-create the Monday item for a subscription the ledger
-  // doesn't know (#25). True when this token now holds the claim: no claim existed, or the
+  // doesn't know (GL#25). True when this token now holds the claim: no claim existed, or the
   // existing one is older than ttlMs (its writer died). False when another writer holds it.
   claimCreate(funraiseId: string, token: string, ttlMs: number): Promise<boolean>;
   // Drop the claim, only if this token still holds it.

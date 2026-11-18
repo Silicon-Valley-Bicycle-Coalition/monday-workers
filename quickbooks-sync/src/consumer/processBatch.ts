@@ -57,7 +57,7 @@ export async function consumeSyncBatch(
   deps: ConsumerDeps,
   gate: BatchSkipContext
 ): Promise<void> {
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: `${message.body.direction}:${message.body.eventId}` };
@@ -77,7 +77,7 @@ export async function processSyncQueueBatch(
   breaker: OutageBreaker = new OutageBreaker()
 ): Promise<void> {
   for (const message of messages) {
-    // Monday is down or rate-limiting (#101): retry with backoff without calling it (or
+    // Monday is down or rate-limiting (GL#101): retry with backoff without calling it (or
     // QuickBooks), rather than spend the transport's in-process attempts again on every message.
     if (breaker.open) {
       breaker.defer(message);
@@ -115,7 +115,7 @@ export async function processSyncQueueBatch(
       } catch (recordErr) {
         console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorClass(recordErr)}`);
       }
-      // A terminal failure (#33 review) is acked once it's on the row: retrying the same request
+      // A terminal failure (GL#33 review) is acked once it's on the row: retrying the same request
       // can only fail the same way. If it couldn't be recorded, retry so it isn't lost silently.
       // Anything else retries with the shared delay, raised to Monday's hint on an outage.
       if (terminal && recorded) message.ack();
@@ -137,13 +137,13 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     throw new Error(`config: monday.boards.${boardKey} is not configured`);
   }
 
-  // Read the entity now, not at webhook time (#33): a retried or delayed message must write the
+  // Read the entity now, not at webhook time (GL#33): a retried or delayed message must write the
   // record as it currently stands, never an older snapshot over a newer one. A fetch failure
   // throws into the queue's retry/backoff/DLQ path like any other failure.
   const record = await deps.quickBooksClient.getEntity(event.entityType, event.qbId);
   // A record's amounts (an invoice's TotalAmt and Balance, a customer's Balance) are in its
   // CurrencyRef — with multicurrency on, possibly not the home currency the Monday columns hold
-  // (#76). Refuse it before anything is written. No CurrencyRef (Items have none) means home.
+  // (GL#76). Refuse it before anything is written. No CurrencyRef (Items have none) means home.
   const currency = getPath(record, 'CurrencyRef.value');
   if (typeof currency === 'string' && currency !== deps.config.quickbooksSync.currency) {
     throw new TerminalError(
@@ -165,7 +165,7 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     }
   }
 
-  // Stamp the QuickBooks Id on the customer's Monday item (#33 review) — in the same create_item
+  // Stamp the QuickBooks Id on the customer's Monday item (GL#33 review) — in the same create_item
   // mutation, so the item carries it from the instant it exists. Monday's create_pulse echo of an
   // item we create is recognized by it in processMondayToQb.
   const qbIdColumn = event.entityType === 'customer' ? deps.config.quickbooksSync.customerQbIdColumn : null;
@@ -220,7 +220,7 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   await deps.qbEventStore.updateStatus(eventId, 'written', { writtenAt: new Date().toISOString(), fetchedPayload });
 }
 
-// Every mapping write goes through here (#33 review). createMapping refuses to re-point a record
+// Every mapping write goes through here (GL#33 review). createMapping refuses to re-point a record
 // already linked to a different item (it used to upsert silently). The one safe re-point: the
 // item it's linked to is gone — archived or deleted in Monday, which is exactly what staff do to
 // resolve the conflict ("archive the duplicate, then redrive"). While that item is live, the
@@ -240,7 +240,7 @@ async function linkMapping(deps: ConsumerDeps, entry: MapEntry): Promise<void> {
 }
 
 // Before creating a Monday item for a QuickBooks record, look for one that already stands for it
-// but isn't mapped yet (#33 review):
+// but isn't mapped yet (GL#33 review):
 //   - a Customer created *from* Monday: its monday_events row recorded the new QuickBooks id right
 //     after createCustomer, before the mapping — so QuickBooks' own webhook for that Customer
 //     must not make a second Monday item;
@@ -280,7 +280,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
   const qbIdColumn = deps.config.quickbooksSync.customerQbIdColumn;
 
   if (qbId === null) {
-    // Create-loop guards (#33) — is this item one the QuickBooks -> Monday path created? The
+    // Create-loop guards (GL#33) — is this item one the QuickBooks -> Monday path created? The
     // webhook checked the mapping too, but it can run before that path has written it.
     const linked = await deps.mapStore.getByMondayItemId('customer', event.mondayItemId);
     if (linked !== null) {
@@ -333,7 +333,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
 
   if (qbId === null) {
     // Build the Customer from the item as it stands now, not the create_pulse payload stored at
-    // webhook time (#33 review): a create that failed terminally (say, a duplicate name) is fixed
+    // webhook time (GL#33 review): a create that failed terminally (say, a duplicate name) is fixed
     // by editing the item in Monday and redriving the row. raw_payload is kept only as a record.
     // (item is set here: every path that leaves qbId null above read it or threw.)
     const current = item!;

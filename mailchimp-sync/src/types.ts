@@ -108,7 +108,7 @@ export interface Env {
   MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;
-  // Optional Slack incoming-webhook URL for dead-letter alerts (#37, src/alert.ts). Unset = the
+  // Optional Slack incoming-webhook URL for dead-letter alerts (GL#37, src/alert.ts). Unset = the
   // DLQ consumer's console.error is the only signal.
   SLACK_WEBHOOK_URL?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".

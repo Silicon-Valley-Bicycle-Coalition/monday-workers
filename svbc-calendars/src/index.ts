@@ -44,7 +44,7 @@ function parsePageSize(raw: string | null): number {
  * Every route is public, unauthenticated, read-only data, so CORS is a plain `*`. An origin
  * allowlist bought nothing here: it fell back to `*` for any other origin anyway, and reflecting
  * the request's Origin into responses stored in caches.default without `Vary: Origin` would serve
- * one site's reflected header to the next. (#72)
+ * one site's reflected header to the next. (GL#72)
  */
 function handleCORS(_request: Request, response: Response): Response {
   const headers = new Headers(response.headers);
@@ -128,7 +128,7 @@ async function handleCalendarListing(env: Env): Promise<Response> {
 // reflecting current per-source health, and caching it for the same ~24h TTL as the calendar
 // routes would hide a fresh failure from anyone checking it for up to a day.
 // lastError is left out: it's raw upstream error text (URLs, response bodies), which stays in KV,
-// the Worker logs and the Slack alert rather than on a public endpoint (#72).
+// the Worker logs and the Slack alert rather than on a public endpoint (GL#72).
 async function handleStatus(env: Env): Promise<Response> {
   const statuses = await getAllSourceStatuses(env.CALENDAR_KV, config.sources.map((s) => s.id));
   const publicStatuses = Object.fromEntries(
@@ -146,7 +146,7 @@ export default {
 
       const url = new URL(request.url);
 
-      // The widget's self-hosted fonts (#123): constant bytes with an immutable cache header, so
+      // The widget's self-hosted fonts (GL#123): constant bytes with an immutable cache header, so
       // like a cache HIT they're served ahead of the rate limiter and cost no upstream work.
       if (request.method === 'GET' && url.pathname.startsWith('/fonts/')) {
         const font = fontResponse(url.pathname);

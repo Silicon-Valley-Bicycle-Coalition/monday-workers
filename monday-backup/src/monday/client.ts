@@ -13,7 +13,7 @@ import { MondayApiError, MondayGraphQL, type MondayGraphQLOptions, type TokenPro
 import type { DailyUsage } from '../usage';
 
 const BOARDS_PAGE_SIZE = 50;
-// items_page's maximum (issue #95): 5x fewer page requests than 100 on the large boards. A page
+// items_page's maximum (issue GL#95): 5x fewer page requests than 100 on the large boards. A page
 // costs complexity in proportion to its items, so the per-minute budget drains at the same rate
 // per item whatever the page size; what a bigger page risks is one request's own limits. Donations
 // is about 4 KB per item, so a full page is about 2 MB, well inside the 60 s request timeout at the
@@ -86,7 +86,7 @@ function toUpdate(u: RawUpdate): UpdateRecord {
   };
 }
 
-// Everything a restore needs from an item (issue #30). Connect-boards, mirror and dependency
+// Everything a restore needs from an item (issue GL#30). Connect-boards, mirror and dependency
 // columns return `text: null` (and connect-boards `value: null`) on current API versions, so the
 // linked item ids and display values are captured through their typed fragments explicitly.
 // Subitems are items of their own `sub_items_board`, backed up like any board; `parent_item`
@@ -231,7 +231,7 @@ export interface MondayClient {
   listBoards(): Promise<BoardSummary[]>;
   getBoardSchema(boardId: string): Promise<BoardSchema>;
   // One page of items at a time, so a caller can stream a board to Drive without ever holding
-  // the whole board in memory (issue #29).
+  // the whole board in memory (issue GL#29).
   boardItemPages(boardId: string): AsyncIterable<ItemRecord[]>;
   // Every update (comment) on the board and its items, with replies, a page at a time.
   boardUpdatePages(boardId: string): AsyncIterable<UpdateRecord[]>;
@@ -246,7 +246,7 @@ export type HttpMondayClientOptions = MondayGraphQLOptions;
 // (see MondayGraphQL for the retry/backoff policy).
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
-  // First items page and first updates page, fetched in the same request as the schema (issue #95)
+  // First items page and first updates page, fetched in the same request as the schema (issue GL#95)
   // and handed to the next boardItemPages / boardUpdatePages call for that board.
   private readonly heads = new Map<string, { items: ItemsPage | undefined; updates: RawUpdate[] | undefined }>();
 
@@ -464,7 +464,7 @@ export class HttpMondayClient implements MondayClient {
     return out;
   }
 
-  // `blocks` defaults to 25 per page (issue #30: the old single query truncated every long Doc).
+  // `blocks` defaults to 25 per page (issue GL#30: the old single query truncated every long Doc).
   // The maximum page size isn't documented, so a short page isn't trusted to be the last: paging
   // stops on an empty page, or if a page repeats one already seen (a `page` argument ignored).
   // Not yet exercised against a live account — confirm in Monday's API Explorer before the first

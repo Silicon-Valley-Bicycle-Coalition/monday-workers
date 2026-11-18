@@ -224,7 +224,7 @@ This table holds no answers, but it does make the rows **pseudonymous, not anony
   to a person, and a small class's age, gender and city can identify someone without it. Free-text answers can
   name people. Rows created in order can line up with registration times.
 * **A private board isn't a wall against the Workers.** One integration user backs all three OAuth apps, so the
-  internet-facing `member-portal`'s read-only token can read this board too (#18, accepted; see the root README).
+  internet-facing `member-portal`'s read-only token can read this board too ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18), accepted; see the root README).
   Having no names on the board is what limits the damage, so that rule is the real control.
 * **Backups.** `monday-backup` snapshots every board the integration user can see, so this board goes in its
   `excludeBoardIds`. The answers can be rebuilt from Eventbrite, so nothing is lost for good.

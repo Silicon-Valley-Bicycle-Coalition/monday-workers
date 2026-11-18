@@ -135,7 +135,7 @@ describe('selectProposals', () => {
     expect(r.deferred).toBe(1);
   });
 
-  // Review of !502: evidence that is probably out of date, or that names someone else's employer.
+  // Review of GL!502: evidence that is probably out of date, or that names someone else's employer.
   describe('stale or borrowed evidence', () => {
     it('never proposes from a People (Historical) item, though its addresses still feed the index', () => {
       const r = select([person({ boardId: '18437909784' })]);

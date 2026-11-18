@@ -33,7 +33,7 @@ export const en = {
   'checkEmail.body': 'Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.',
 
   // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
-  // scanners that prefetch links can't burn the single-use token (issue #31).
+  // scanners that prefetch links can't burn the single-use token (issue GL#31).
   'confirmLogin.heading': 'Continue to your portal',
   'confirmLogin.body': 'Use the button below to finish logging in.',
   'confirmLogin.submit': 'Continue to your portal',

@@ -70,8 +70,8 @@ export function isActive(item: MondayItemColumns | undefined): item is MondayIte
 // items(ids:) accepts at most 100 ids per call.
 const ITEMS_BATCH_SIZE = 100;
 
-// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
-// Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
+// Queue-consumer tuning (GL#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
 // backoff (1 minute doubling to an hour — retryDelaySeconds in flags.ts) takes over rather than holding a batch.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };

@@ -46,7 +46,7 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
   };
 }
 
-// What monday's automation sends today. Only itemId is trusted; the rest must be ignored (#66).
+// What monday's automation sends today. Only itemId is trusted; the rest must be ignored (GL#66).
 const VALID_BODY = {
   itemId: 13089808285,
   itemName: 'Test Event',

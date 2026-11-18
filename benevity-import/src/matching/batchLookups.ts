@@ -1,4 +1,4 @@
-// Read-only lookups shared by the rows of one queue batch (#101). A disbursement's rows share one
+// Read-only lookups shared by the rows of one queue batch (GL#101). A disbursement's rows share one
 // company and one disbursement, so the Organization, its Affiliations and Employer matches, and the
 // disbursement record are each read once per batch instead of once per row.
 //

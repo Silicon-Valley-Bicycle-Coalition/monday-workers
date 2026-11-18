@@ -33,7 +33,7 @@ Worker's exposure as well as staff access.
 
 ## Non-goals
 
-- Updating the privacy policy. #81 stays open for that.
+- Updating the privacy policy. [GL#81](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/81) stays open for that.
 - Deciding the other life-event and property flags, or the political fields retained in Salesforce.
   Those belong to the policy owner.
 - Purging Windfall data from existing backup snapshots or the Salesforce org.

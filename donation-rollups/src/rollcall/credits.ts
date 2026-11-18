@@ -74,7 +74,7 @@ export async function refreshCredits(deps: CustodianDeps, cfg: RollCallConfig, n
 }
 
 // refreshCredits, plus the table as this refresh leaves it — what all() would read back after it
-// (issue #90: the rollcall duty read the whole table a second time to get it). Under a dry run,
+// (issue GL#90: the rollcall duty read the whole table a second time to get it). Under a dry run,
 // whose writes are dropped, that is the table the live run would have left.
 export async function refreshCreditsWithRows(
   deps: CustodianDeps, cfg: RollCallConfig, now: string, currentFY: number,

@@ -377,7 +377,7 @@ describe('retry delay', () => {
   });
 });
 
-// #75: a rejection of the request itself fails the same way on every retry, so it is recorded and
+// GL#75: a rejection of the request itself fails the same way on every retry, so it is recorded and
 // acked instead of retried for four days into the DLQ.
 describe('terminal failures', () => {
   const run = async (mondayClient: MondayClient, orderStore = fakeStore(orderRow())) => {
@@ -597,7 +597,7 @@ describe('message kinds', () => {
   });
 });
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday, instead of each repeating the transport's in-process attempts.
 describe('outage breaker', () => {
   const gateFor = (mode: WriteMode): BatchSkipContext => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });

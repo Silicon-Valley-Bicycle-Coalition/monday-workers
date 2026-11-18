@@ -1,4 +1,4 @@
-// Which Organization an email domain belongs to (#124). Built fresh each run from what the CRM
+// Which Organization an email domain belongs to (GL#124). Built fresh each run from what the CRM
 // already holds: config overrides, Work Emails on Current affiliations, and Organization
 // websites. A domain the sources disagree on is ambiguous and proposes nothing until staff add an
 // override.

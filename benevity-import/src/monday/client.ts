@@ -32,12 +32,12 @@ export interface MondayClient {
   fetchAsset(assetId: string): Promise<MondayAsset>;
   // The board an item lives on and the ids of the assets in one of its file columns; null when
   // the item doesn't exist. Lets the upload webhook refuse an asset id that isn't in the Uploads
-  // board's file column (#106).
+  // board's file column (GL#106).
   fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
 }
 
-// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
-// Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
+// Queue-consumer tuning (GL#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
 // backoff (1 minute doubling to an hour — retryDelaySeconds in flags.ts) takes over rather than holding a batch.
 // items(ids:) accepts at most 100 ids per call.

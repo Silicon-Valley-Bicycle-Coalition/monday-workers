@@ -3,8 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **Superseded in part (2026-11-17):** Task 1 (`benevity-import`) shipped as written. Tasks 2–8
-> were built as a standalone Worker, then folded into #125's `impact-attribution` Worker as a second
-> job; see the design doc's "Folded into #125's Worker" section for what changed. The standalone
+> were built as a standalone Worker, then folded into [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s `impact-attribution` Worker as a second
+> job; see the design doc's "Folded into [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)'s Worker" section for what changed. The standalone
 > build is on the local branch `backup/124-standalone`.
 
 **Goal:** A daily cron in a new `impact-attribution` Worker proposes `Draft` employer affiliations
@@ -90,7 +90,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
   `getStatusLabels` to the client, the config validation and both JSON files. Update the
   README's person-resolution section (around line 199) to say Current only.
 - [ ] **Step 4: Run** `npm test && npm run typecheck` in `benevity-import` — expect PASS.
-- [ ] **Step 5: Commit** `fix(benevity-import): count Current affiliations only (#124)`.
+- [ ] **Step 5: Commit** `fix(benevity-import): count Current affiliations only (GL#124)`.
 
 ### Task 2: Scaffold the `impact-attribution` Worker
 
@@ -165,7 +165,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 4: Run** `npm test && npm run typecheck`, then from the repo root
   `node scripts/check-worker-flags.mjs --strict && node scripts/check-monday-auth-bindings.mjs && node scripts/check-rate-limit-namespaces.mjs`,
   and `diff monday-backup/src/monday/graphql.ts impact-attribution/src/monday/graphql.ts` — all clean.
-- [ ] **Step 5: Commit** `feat(impact-attribution): scaffold cron Worker with config and D1 schema (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): scaffold cron Worker with config and D1 schema (GL#124)`.
 
 ### Task 3: Domain map
 
@@ -214,7 +214,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 2: Run** `npm test -- src/employers/domains.test.ts` — expect FAIL.
 - [ ] **Step 3: Implement** per the interfaces above.
 - [ ] **Step 4: Run** the same command — expect PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): build the domain → organization map (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): build the domain → organization map (GL#124)`.
 
 ### Task 4: Proposal selection
 
@@ -265,7 +265,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 2: Run** `npm test -- src/employers/proposals.test.ts` — expect FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — expect PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): select employer proposals (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): select employer proposals (GL#124)`.
 
 ### Task 5: Monday client
 
@@ -302,7 +302,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 2: Run** `npm test -- src/monday/client.test.ts` — expect FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — expect PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): Monday client for People, Organizations, Affiliations (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): Monday client for People, Organizations, Affiliations (GL#124)`.
 
 ### Task 6: D1 store
 
@@ -337,7 +337,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 2: Run** `npm test -- src/store.test.ts` — expect FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — expect PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): D1 email index and proposal ledger (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): D1 email index and proposal ledger (GL#124)`.
 
 ### Task 7: The daily run
 
@@ -376,7 +376,7 @@ Monday GraphQL via the copied `graphql.ts` transport.
 - [ ] **Step 2: Run** `npm test -- src/employers/run.test.ts` — expect FAIL.
 - [ ] **Step 3: Implement** `run.ts` and wire `index.ts`.
 - [ ] **Step 4: Run** `npm test && npm run typecheck` and from the root `node scripts/check-log-safety.mjs` — expect PASS.
-- [ ] **Step 5: Commit** `feat(impact-attribution): daily employer proposal run (#124)`.
+- [ ] **Step 5: Commit** `feat(impact-attribution): daily employer proposal run (GL#124)`.
 
 ### Task 8: Docs, read-only marker and operator runbook
 
@@ -394,5 +394,5 @@ Monday GraphQL via the copied `graphql.ts` transport.
   4. `node scripts/flags.mjs impact-attribution writes off --env sandbox`, deploy sandbox, read one run's summary; then `on` and check a Draft appears and confirming it sets Employer Name.
   5. Production: `writes off` first, deploy, read the summary (eligible count, `deferred`, ambiguous domains → overrides/exclusions), then `writes on`.
 - [ ] **Step 3:** Run every Worker test touched (`benevity-import`, `impact-attribution`) and the root `node scripts/check-*.mjs` checks — all PASS.
-- [ ] **Step 4: Commit** `docs(impact-attribution): README, runbook, read-only marker (#124)`.
+- [ ] **Step 4: Commit** `docs(impact-attribution): README, runbook, read-only marker (GL#124)`.
 - [ ] **Step 5: Ask the user** before steps 2–5 of the runbook (they create Cloudflare and Monday resources); do not run them unasked.

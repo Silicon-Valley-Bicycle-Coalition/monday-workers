@@ -71,7 +71,7 @@ describe('contactToPayload', () => {
     expect(p.name).toBe('Lovelace');
   });
   // 1,492 People in the 2026-09-08 extract had a Mailing City but no geocode result, so City and
-  // Zip loaded blank even though Address showed them (#13 sample review, 2026-10-23).
+  // Zip loaded blank even though Address showed them (svbc-monday-migration#13 sample review, 2026-10-23).
   it('falls back to Mailing City/Zip when there is no geocode result', () => {
     const p = contactToPayload({ Id: 'c9', FirstName: 'No', LastName: 'Street',
       MailingCity: 'San Jose', MailingState: 'CA', MailingPostalCode: '95110-1442' },
@@ -299,7 +299,7 @@ describe('accountToPayload', () => {
     expect(p.columns['City']).toBe('');
   });
   // No street (or a street the geocoder couldn't match) means no geocode result, but Salesforce
-  // still has the city and zip: 94 Organizations in the 2026-09-08 extract (#13 sample review).
+  // still has the city and zip: 94 Organizations in the 2026-09-08 extract (svbc-monday-migration#13 sample review).
   it('falls back to Billing City/Zip when there is no geocode result', () => {
     const p = accountToPayload({ Id: 'a5', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
       BillingCity: ' Milpitas ', BillingState: 'CA', BillingPostalCode: '95035-1234' })!;

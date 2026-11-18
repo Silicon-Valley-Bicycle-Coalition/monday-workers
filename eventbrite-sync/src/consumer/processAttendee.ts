@@ -44,7 +44,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   const eventRow = await eventStore.getEvent(eventId);
   const eventError = eventRow?.status === 'failed' && eventRow.mondayItemId === null ? (eventRow.error ?? '') : '';
   if (eventError.includes(EVENT_NOT_FOUND_ERROR) || eventError.startsWith(TERMINAL_PREFIX)) {
-    // The event failed for good — Eventbrite 404d it, or a deterministic 4xx (#75). Asking again
+    // The event failed for good — Eventbrite 404d it, or a deterministic 4xx (GL#75). Asking again
     // would fail the same way, and this attendee would retry its way to the dead-letter queue,
     // re-sending the event each time. Stop here, for a human.
     const reason = eventError.includes(EVENT_NOT_FOUND_ERROR)
@@ -55,7 +55,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     return;
   }
   if (eventRow === null || eventRow.mondayItemId === null) {
-    // One event message per event, not one per waiting attendee (#96): a row still `received` or
+    // One event message per event, not one per waiting attendee (GL#96): a row still `received` or
     // `queued` and recent means the event is already on its way, either from its own webhook or from
     // an earlier attendee. The window keeps a row stranded in either state (an event message dropped
     // under `off`, say) from blocking the request for good; every retry after it asks again.

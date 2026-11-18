@@ -157,7 +157,7 @@ describe('queue dispatch', () => {
     await expect(worker.queue(typoDlq, env)).rejects.toThrow('unknown queue: mailchimp-sync-typo-dlq');
   });
 
-  // #37: the DLQs had no consumer; a dead message now marks its real D1 row.
+  // GL#37: the DLQs had no consumer; a dead message now marks its real D1 row.
   it('routes the outbound DLQ to the dead-letter consumer, which marks the pending row and acks', async () => {
     const env = fakeEnv();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

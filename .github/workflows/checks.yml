@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Pinned to a minor (not `22`) so a new release can't change the build unannounced (#58);
+      # Pinned to a minor (not `22`) so a new release can't change the build unannounced (GL#58);
       # patch releases still flow in. 22.18+ is the floor: Workers' .mjs scripts and the copy
       # checks below rely on Node's built-in type stripping.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -24,7 +24,7 @@ jobs:
           node-version: '22.23'
 
       # The Monday GraphQL transport is copied into each Worker rather than shared as a package, so
-      # every Worker stays self-contained (#35). This keeps the copies byte-identical to the
+      # every Worker stays self-contained (GL#35). This keeps the copies byte-identical to the
       # canonical one: change monday-backup/src/monday/graphql.ts, then copy it over every path
       # below. A Worker joins by copying the file in and adding its path here.
       - name: monday-graphql-copies
@@ -40,7 +40,7 @@ jobs:
           exit $status
 
       # funraise-sync/src/monday/outage.ts is the canonical per-batch Monday outage breaker for
-      # queue consumers (#101); every queue Worker in the list carries a byte-identical copy. Edit
+      # queue consumers (GL#101); every queue Worker in the list carries a byte-identical copy. Edit
       # funraise-sync's, then copy it to every path listed.
       - name: monday-outage-copies
         if: ${{ !cancelled() }}
@@ -67,7 +67,7 @@ jobs:
         run: cmp geo-filter/src/geometry.ts nearby-search/src/geometry.ts
 
       # member-portal/src/changeRequests/employerName.ts is the canonical employer-name matching
-      # (#127); impact-attribution carries a byte-identical copy. Edit member-portal's, then copy it
+      # (GL#127); impact-attribution carries a byte-identical copy. Edit member-portal's, then copy it
       # over. Strip-only TypeScript, like graphql.ts.
       - name: employer-name-copies
         if: ${{ !cancelled() }}
@@ -96,7 +96,7 @@ jobs:
         run: node scripts/check-monday-auth-bindings.mjs
 
       # Preview URLs default to on, which would expose non-main code with production bindings
-      # (#108). Every wrangler*.jsonc with env.sandbox must set "preview_urls": false at the top
+      # (GL#108). Every wrangler*.jsonc with env.sandbox must set "preview_urls": false at the top
       # level and in env.sandbox.
       - name: preview-urls
         if: ${{ !cancelled() }}
@@ -105,7 +105,7 @@ jobs:
           node scripts/check-preview-urls.mjs
 
       # Rate-limit bindings that share a namespace_id share per-IP counters even with different
-      # limits, so one Worker's traffic can 429 another's (#113). Every ratelimits[].namespace_id
+      # limits, so one Worker's traffic can 429 another's (GL#113). Every ratelimits[].namespace_id
       # must be unique.
       - name: rate-limit-namespaces
         if: ${{ !cancelled() }}

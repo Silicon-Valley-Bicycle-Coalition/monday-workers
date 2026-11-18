@@ -71,7 +71,7 @@ describe('D1QbEventStore', () => {
     expect(row?.fetchedPayload).toBe('{"Id":"qb-3"}');
   });
 
-  // #101: a whole webhook delivery is recorded in one round trip.
+  // GL#101: a whole webhook delivery is recorded in one round trip.
   it('records a mix of new and redelivered rows, reporting each in input order', async () => {
     const store = new D1QbEventStore(env.DB);
     const row = (eventId: string) => ({ eventId, entityType: 'customer' as const, qbId: eventId, receivedAt: '2026-08-22T00:00:00.000Z' });
@@ -137,7 +137,7 @@ describe('D1QbEventStore', () => {
   });
 });
 
-// #33: the create-loop guard. The Monday side must be able to tell that an item it's about to
+// GL#33: the create-loop guard. The Monday side must be able to tell that an item it's about to
 // turn into a QuickBooks Customer was itself created from QuickBooks.
 describe('D1QbEventStore create-loop lookup', () => {
   const since = '2026-09-25T00:00:00.000Z';

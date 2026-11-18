@@ -59,7 +59,7 @@ export async function proposedPairs(db: D1Database): Promise<Set<string>> {
   return new Set(results.map((r) => pairKey(r.person_item_id, r.org_item_id)));
 }
 
-// One ledger for both jobs (#124): a pair proposed from matching gifts or from an email domain is
+// One ledger for both jobs (GL#124): a pair proposed from matching gifts or from an email domain is
 // never proposed again by either. `evidence` says which job made the Draft; an email-domain
 // proposal carries its domain and match count 0.
 // `sources` (migration 0003) says which evidence a matching-gift-job Draft rests on: gifts,

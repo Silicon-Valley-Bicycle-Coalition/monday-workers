@@ -21,7 +21,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "PROBE_ENABLED": "false",
-    // /oauth/webhooks (#110): off like the probe; turn on for one deploy with --var while
+    // /oauth/webhooks (GL#110): off like the probe; turn on for one deploy with --var while
     // re-registering. A created webhook may only point under one of these prefixes.
     "WEBHOOKS_ENABLED": "false",
     "WEBHOOK_URL_PREFIXES": "https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/,https://svbc-people-reclassification.svbc-account.workers.dev/webhooks/monday/",
@@ -29,10 +29,10 @@
     "EXPECTED_USER_ID": "120827741",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
   },
-  // Attempt limiter for POST /oauth/* (keyed on CF-Connecting-IP), so START_KEY can't be guessed online (#104).
+  // Attempt limiter for POST /oauth/* (keyed on CF-Connecting-IP), so START_KEY can't be guessed online (GL#104).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2101", "simple": { "limit": 10, "period": 60 } }],
   // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
-  // guardrail against a runaway invocation or a surprise bill (#117). The broker's work is I/O
+  // guardrail against a runaway invocation or a surprise bill (GL#117). The broker's work is I/O
   // (D1, auth.monday.com) plus a SHA-256 or AES-GCM call, so 100 ms is ample.
   "limits": { "cpu_ms": 100 },
   "observability": { "enabled": true, "issues": { "enabled": true } },

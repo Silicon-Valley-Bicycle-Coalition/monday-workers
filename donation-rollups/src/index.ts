@@ -71,7 +71,7 @@ export default {
 
     // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
     // cost limits". Covers both branches below, except a Monday webhook delivery that already
-    // passed verification (issue #27 — Monday's own bulk-edit traffic must not be throttled).
+    // passed verification (issue GL#27 — Monday's own bulk-edit traffic must not be throttled).
     // REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
     return isVerifiedMondayWebhook(request, env.MONDAY_WEBHOOK_SECRET).then((verified) => verified
       ? null
@@ -100,7 +100,7 @@ export default {
           new Set([b.columns.attendee, b.columns.event, b.columns.attendance, b.columns.role, ...(b.columns.hours ? [b.columns.hours] : [])])])),
         affiliationBoards: new Map(config.affiliations?.employerSync ? [[String(config.affiliations.boardId), new Set([
           config.affiliations.columns.personLink, ...Object.values(config.affiliations.employerSync.columns)])]] : []),
-        // Columns this Worker writes itself: classification outputs and the gift term stamp (issue #89).
+        // Columns this Worker writes itself: classification outputs and the gift term stamp (issue GL#89).
         // Their webhook echoes would only trigger a recompute that rewrites nothing.
         ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) => [
           ...(b.columns.classification ? Object.values(b.columns.classification) : []),

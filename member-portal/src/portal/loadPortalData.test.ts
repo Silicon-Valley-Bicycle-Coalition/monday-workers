@@ -41,7 +41,7 @@ describe('loadPortalData', () => {
     expect(monday.getDiscountOrganizations).toHaveBeenCalledTimes(1);
   });
 
-  // Issue #31: a household login spans several donor items — one bad record (deleted item,
+  // Issue GL#31: a household login spans several donor items — one bad record (deleted item,
   // Monday error on that id) must cost only that donor's section, not the whole dashboard.
   it('drops a donor whose record fails to load, keeps the rest, and counts the gap', async () => {
     const monday = fakeMonday();

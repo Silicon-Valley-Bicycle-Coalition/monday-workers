@@ -11,7 +11,7 @@ export interface DisbursementRow {
   reportedNetTotal: number;
   needsReview: boolean;
   reviewReason: string | null;
-  // The block-level Benevity Uploads worklist item, once one was posted for it (#34).
+  // The block-level Benevity Uploads worklist item, once one was posted for it (GL#34).
   worklistItemId: string | null;
 }
 
@@ -27,7 +27,7 @@ export interface FindOrCreateResult {
 }
 
 export interface DisbursementStore {
-  // One row per Benevity Disbursement ID (#34), plus one per block with no id (a header that
+  // One row per Benevity Disbursement ID (GL#34), plus one per block with no id (a header that
   // didn't parse). Looks up, in order: this upload's block at the same position (a resumed
   // attempt of the same asset), then the Benevity id (the same report re-uploaded as a new
   // asset); inserts only when neither exists. Migration 0002's unique indexes turn a lost

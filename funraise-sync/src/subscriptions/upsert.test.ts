@@ -185,7 +185,7 @@ describe('upsertSubscription', () => {
   });
 });
 
-// #25: the hourly poll and the queue consumer could both miss the ledger for one subscription,
+// GL#25: the hourly poll and the queue consumer could both miss the ledger for one subscription,
 // both find nothing on the board, and both create a Recurring Gifts item.
 describe('upsertSubscription create claim', () => {
   it('claims before any Monday call on a ledger miss and releases after recording', async () => {

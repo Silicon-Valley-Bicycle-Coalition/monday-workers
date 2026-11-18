@@ -74,7 +74,7 @@ describe('mapVolunteer', () => {
     expect(m.columnValues).not.toHaveProperty('vol_date_col');
   });
 
-  // #115: a person's Shift 1 and Shift 2 rows (one order, two ticket classes) looked like duplicates.
+  // GL#115: a person's Shift 1 and Shift 2 rows (one order, two ticket classes) looked like duplicates.
   it('writes the ticket class, trimmed, to Ticket Type', () => {
     const m = mapVolunteer(attendee({ ticket_class_name: '  Shift 2 (10am-noon) ' }), facts, config, 'Registered');
     expect(m.columnValues.vol_ticket_col).toBe('Shift 2 (10am-noon)');

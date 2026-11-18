@@ -49,7 +49,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       migrations 0001–0005, creates the `member-portal-letter-emails` queue + DLQ, sets
       `LETTER_WEBHOOK_SECRET`, and covers the "Send Giving Letter" automation.
 - [x] **`salesforce-import/config/svbc.json` targets production.** `boardSuffix` is `""` and
-      `workspaceId` is 18201685, the Donors & Contacts workspace (set 2026-10-26, 3fcaa80; merged !235).
+      `workspaceId` is 18201685, the Donors & Contacts workspace (set 2026-10-26, 3fcaa80; merged [GL!235](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/235)).
       The sandbox workspace is now CRM Sandbox v4 (18210301, built 2026-10-28; 4fe2c97).
 - [ ] Decide the open `donation-rollups` item "retire the numeric Fiscal Year column?" (its
       README, "Not yet done") — it changes which column ids go into production config.
@@ -66,7 +66,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       an early warning, not noise.
 - [x] **Every Worker carries `limits.cpu_ms`** (re-audited 2026-10-21) — the guard that matters
       once Paid's 30 s default applies. Present at top level and in `env.sandbox` for every
-      Worker (re-checked 2026-11-11; `monday-auth` gained its `100` then, #117). Seven run above 100 ms on
+      Worker (re-checked 2026-11-11; `monday-auth` gained its `100` then, [GL#117](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/117)). Seven run above 100 ms on
       purpose, each with the reason in a comment beside the setting: `monday-backup`
       (`cpu_ms: 300000` and `subrequests: 50000`, a full-workspace snapshot), `member-map`
       (`300000`), `donation-rollups` and `dtd-sync` (`30000`), `nearby-search` (`2000`),
@@ -95,7 +95,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
         (`mailchimp-sync/README.md`, "Prerequisites before this can run against real data").
   - [ ] Google service account + destination Drive folder for `monday-backup` (account added to the
-    Shared Drive as **Contributor**, not Content manager — #67); Slack webhook.
+    Shared Drive as **Contributor**, not Content manager — [GL#67](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/67)); Slack webhook.
 
 ## Phase 2 — Cloudflare resources (no board ids needed)
 
@@ -156,7 +156,7 @@ Worker's first deploy) except `member-portal`, which is
 
 | Worker | Registered in | URL |
 |---|---|---|
-| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board, plus `create_item` and `change_column_value` on Affiliations when `affiliations.employerSync` is set. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, !214):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board, plus `create_item` and `change_column_value` on Affiliations when `affiliations.employerSync` is set. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, [GL!214](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/214)):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
 | `mailchimp-sync` | Monday webhook on the Donors board and on People (Historical) (`18437909784`), same URL | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
@@ -193,7 +193,7 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
       reads it, and it's gitignored, so `git worktree remove` silently destroys it.
 - [ ] Record every production board id, column id, and workspace id in one place
       (`data/load/boards.json` has the boards) for the next item and Phase 4.
-- [ ] **Make the donor boards private (#41), before any Worker deploy that holds a production
+- [ ] **Make the donor boards private ([GL#41](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/41)), before any Worker deploy that holds a production
       token** (including `donation-rollups` below): `salesforce-import` creates them public, so
       until this is done every member token, the Sandbox Integration user's included, reaches and
       can edit them. Rehearse on a sandbox board first. Then
@@ -237,7 +237,7 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
   - [ ] Verify: `GET /custodian/status` clean, recompute queue drained with an empty DLQ, a
         spot-checked donor shows Donor Level and Lifetime Giving.
         Then delete the test gift: its owner's Lifetime Giving and Gift Count must drop within a
-        minute (the `delete_pulse` path, which no build before `a27a0bc` ever handled — !214).
+        minute (the `delete_pulse` path, which no build before `a27a0bc` ever handled — [GL!214](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/214)).
 - [ ] `configure --dry-run`, then `configure` — only after the `donation-rollups` item is
       done; its dashboards chart the columns that item creates and fills. Then the manual
       board configuration (private plan, `docs/22` §5).
@@ -251,7 +251,7 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
 ## Phase 4 — Production config and deploy, in dependency order
 
 **Gate:** the donor boards are private and the integration users subscribed (Phase 3,
-"Make the donor boards private", #41) before the first production deploy below. The private
+"Make the donor boards private", [GL#41](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/41)) before the first production deploy below. The private
 runbook (`monday-migration` `docs/23-cutover-runbook.md`) does not have this step yet: **outstanding**,
 add it after the load and before the Worker production deploys.
 
@@ -282,7 +282,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [ ] **2. `funraise-sync`**
   - [ ] **Add the `Refunded` label to the production Donations board's Status column first.**
         The consumer maps a Funraise refund to it, so a refund replayed below (or arriving live)
-        is rejected (`failed`, error prefixed `not retried: `, since #75) and leaves the gift
+        is rejected (`failed`, error prefixed `not retried: `, since [GL#75](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/75)) and leaves the gift
         `Received` until it exists. It is not created by the
         import and is missing on sandbox v3 too. `eventbrite-sync` (step 9) needs the same label.
   - [ ] Config: Donations, Recurring Gifts, People boards + all `subscriptionsPoll.columns`,
@@ -296,7 +296,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
         the local walk reads production `FLAGS`; under `off` it dry-runs but still advances its
         cursor, so the walk is wasted, and under `hold` it doesn't run.
   - [ ] Bootstrap the subscriptions poller locally (`funraise-sync/README.md`, `wrangler dev
-        --remote --test-scheduled`), starting right after :00; since #25 an overlap with the
+        --remote --test-scheduled`), starting right after :00; since [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25) an overlap with the
         deployed cron is safe.
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
         `/webhooks/funraise/transaction?secret=` on production, and note the time. The sandbox
@@ -375,7 +375,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [x] **6. `monday-backup`** — Drive folder id in `config/backup.json`; confirm the first daily
       snapshot lands in Drive and `snapshot_runs` records it. A clean run posts nothing to Slack;
       only a partial or failed run alerts. **Deployed 2026-11-03 with `writes on`; Slack alerts
-      verified (#52). The first run (2026-11-04) captured 19 of about 262 boards, so the snapshot
+      verified ([GL#52](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/52)). The first run (2026-11-04) captured 19 of about 262 boards, so the snapshot
       moved to a Workflow. Every daily 09:00 UTC run from 2026-11-05 to 2026-11-09 recorded
       `success` with no errors (264 to 272 boards, 24 to 25 docs, 37 to 54 minutes).**
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the

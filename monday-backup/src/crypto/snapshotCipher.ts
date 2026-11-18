@@ -1,4 +1,4 @@
-// Encryption for snapshot files at rest on the Shared Drive (issue #112). Web Crypto only, so the
+// Encryption for snapshot files at rest on the Shared Drive (issue GL#112). Web Crypto only, so the
 // same code runs in the Worker (encrypting) and under Node in the restore CLI (decrypting).
 //
 // Format `monday-backup-aes256gcm-stream/1`, the bytes of one `*.jsonl.enc` file:

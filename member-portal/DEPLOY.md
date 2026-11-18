@@ -248,8 +248,8 @@ Use `dev:sandbox` to debug a code change against real sandbox data before runnin
 directory `/member-portal`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:member-portal` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set. Every other
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set. Every other
 `env.sandbox` Worker in this repo follows the same two-connection-or-CI-fallback pattern; see
 its own README's "Sandbox environment" section.
 

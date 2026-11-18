@@ -6,7 +6,7 @@ export interface MapStore {
   getByMondayItemId(entityType: EntityType, mondayItemId: string): Promise<MapEntry | null>;
   // Links a QuickBooks record to a Monday item. Idempotent for the same pair; if the record is
   // already linked to a *different* item it throws MappingConflictError and changes nothing
-  // (#33 review — it used to upsert, silently re-pointing the record).
+  // (GL#33 review — it used to upsert, silently re-pointing the record).
   createMapping(entry: MapEntry): Promise<void>;
   // Deliberately moves a record's link to another item (the caller has established the old item
   // is archived or deleted).

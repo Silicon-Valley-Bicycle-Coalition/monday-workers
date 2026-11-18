@@ -27,14 +27,14 @@ export interface Config {
   organizationAccountSfIds?: string[];
   // Salesforce user the Eventbrite package (eb4sf) writes paid ticket orders as (SVBC: "SVBC
   // Integration"). A Closed Won Opportunity created by this user is an event ticket order and
-  // migrates as Status Received / Gift Type "Event Ticket" (#43); Closed Won gifts anyone else
+  // migrates as Status Received / Gift Type "Event Ticket" (GL#43); Closed Won gifts anyone else
   // created stay Received (Historical). Omit to treat every Closed Won gift as historical.
   eventbriteIntegrationUserName?: string;
-  // Load throughput (#22): batchSize create_items per request, concurrency requests in flight,
+  // Load throughput (GL#22): batchSize create_items per request, concurrency requests in flight,
   // inlineLinks (relations to already-loaded targets written inside create_item), and the pause
   // before a recovery lookup. Optional — src/load/options.ts has the defaults; CLI flags override.
   load?: LoadConfig;
-  // Browser bases for the validate sample sheet's per-row links (#13): the Monday account
+  // Browser bases for the validate sample sheet's per-row links (svbc-monday-migration#13): the Monday account
   // (https://<account>.monday.com) and the Salesforce My Domain (https://<domain>.my.salesforce.com).
   // Optional — the link columns stay blank without them.
   salesforceInstanceUrl?: string;

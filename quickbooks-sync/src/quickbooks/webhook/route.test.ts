@@ -66,7 +66,7 @@ const notificationPayload = {
 };
 
 describe('createQbWebhookApp', () => {
-  // #68: an unset verifier token used to reach crypto.subtle.importKey, which throws on the empty
+  // GL#68: an unset verifier token used to reach crypto.subtle.importKey, which throws on the empty
   // key, so the refusal was an accident of an unhandled 500. It is now an explicit one.
   it.each([undefined, ''])('refuses every delivery, without throwing, when the verifier token is %j', async (missingToken) => {
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -128,7 +128,7 @@ describe('createQbWebhookApp', () => {
     expect(eventStore.recordEvents).not.toHaveBeenCalled();
   });
 
-  // #33: the webhook used to fetch the entity inline and answer 200 even when that failed, so
+  // GL#33: the webhook used to fetch the entity inline and answer 200 even when that failed, so
   // Intuit never redelivered and the change was lost. It now only records and enqueues; the
   // consumer fetches (with queue retries and a DLQ behind it).
   it('records and enqueues a new notification without calling QuickBooks', async () => {
@@ -145,7 +145,7 @@ describe('createQbWebhookApp', () => {
     expect(eventStore.markEvents).toHaveBeenCalledWith([EVENT_ID], 'queued');
   });
 
-  // #101: a delivery used to cost three sequential round trips per notification.
+  // GL#101: a delivery used to cost three sequential round trips per notification.
   it('records, enqueues and marks a whole delivery in one call each', async () => {
     const eventStore = fakeEventStore();
     const queue = fakeQueue();
@@ -250,7 +250,7 @@ describe('createQbWebhookApp', () => {
     vi.restoreAllMocks();
   });
 
-  // #33: the consumer fetches every entity from the connected company, so a notification for a
+  // GL#33: the consumer fetches every entity from the connected company, so a notification for a
   // different company (another realm connected to the same Intuit app) would sync whatever
   // record happens to share its id in ours.
   it('ignores notifications for a company other than the connected one', async () => {
@@ -290,7 +290,7 @@ describe('createQbWebhookApp', () => {
     vi.restoreAllMocks();
   });
 
-  // #33 review: a Delete used to be enqueued like an update; its fetch can only fail (Object Not
+  // GL#33 review: a Delete used to be enqueued like an update; its fetch can only fail (Object Not
   // Found), so it burned retries into the DLQ. It is acknowledged and logged instead.
   it('acknowledges a Delete without recording or enqueueing it', async () => {
     const eventStore = fakeEventStore();

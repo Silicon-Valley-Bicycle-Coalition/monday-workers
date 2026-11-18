@@ -336,7 +336,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
 
   // Each sent person's timeline entry and follow-up (No Show, People link) go to the write queue, one
   // message per person, so they are retried and are not cut off by the wall-clock a response leaves
-  // for background work (#96). The email has gone: a failure to enqueue is reported on the Events
+  // for background work (GL#96). The email has gone: a failure to enqueue is reported on the Events
   // item, since nothing would otherwise do the work. Never rejects.
   async function enqueueFollowUps(
     client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sentIds: string[], audienceOnce: () => Promise<AudienceRole | null>

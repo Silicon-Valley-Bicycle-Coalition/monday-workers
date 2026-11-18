@@ -72,7 +72,7 @@ export interface CustodianDeps {
   queue: { sendBatch(messages: RecomputeQueueMessage[], opts?: { delaySeconds: number }): Promise<void> };
   config: DonationRollupsConfig;
   now?: Date;
-  // The cron run's shared Monday write budget (issue #90); absent = only each duty's own cap.
+  // The cron run's shared Monday write budget (issue GL#90); absent = only each duty's own cap.
   writeBudget?: WriteBudget;
 }
 
@@ -94,7 +94,7 @@ export type Duty = (typeof DUTIES)[number];
 // Without this, a start-date run that couldn't finish in one slice would never get its
 // continuation from cron (and the year-end summaries, gated on remaining === 0, would never
 // materialize). Cursor resume inside each duty picks up where the last slice stopped.
-// The sweep's and archive's start dates follow config "fiscalYear" (issue #27): day 1 and day 15
+// The sweep's and archive's start dates follow config "fiscalYear" (issue GL#27): day 1 and day 15
 // of the fiscal start month (SVBC: July 1 and July 15), read in the org's time zone.
 export function dutiesForDate(
   now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
@@ -133,8 +133,8 @@ export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext):
   }
   const now = deps.now ?? new Date();
   const proxied = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
-  // One read of each board several duties page, shared across the run (issue #90).
-  // And one write budget for the whole run (issue #90): a duty refused a write reports the rest as
+  // One read of each board several duties page, shared across the run (issue GL#90).
+  // And one write budget for the whole run (issue GL#90): a duty refused a write reports the rest as
   // remaining and the next run picks it up.
   const d: CustodianDeps = { ...proxied, mondayClient: sharedBoardReads(proxied.mondayClient, sharedReadPlan(proxied.config)),
     writeBudget: new WriteBudget(proxied.config.custodian.writesPerRun ?? DEFAULT_WRITES_PER_RUN) };
@@ -285,11 +285,11 @@ async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
 }
 
 // July sweep: recompute owners so This/Last Year splits roll over at the fiscal boundary even for
-// donors with no new gifts. Messages are owner-keyed (issue #88: D1 already knows the owner, so
+// donors with no new gifts. Messages are owner-keyed (issue GL#88: D1 already knows the owner, so
 // the consumer skips resolving it from a representative gift, which rides along only for logs and
 // the affiliation fan-out).
 //
-// Issue #88 also scopes and paces it against Monday's account-wide 10,000 calls/day:
+// Issue GL#88 also scopes and paces it against Monday's account-wide 10,000 calls/day:
 // - the fiscal-start sweep ('rollover') covers only owners with a live gift in the two fiscal
 //   years before the new one (from currentFY - 2): theirs are the This/Last Year columns that
 //   move. Everyone else's columns compute the same as before (both $0) and the consumer's hash
@@ -356,7 +356,7 @@ async function runSweep(deps: CustodianDeps, now: Date, opts: DutyOptions = {}):
 // sends count against the subrequest budget, sendBatch caps at 100.
 const REQUEUE_BATCHES_PER_RUN = 35;
 const REQUEUE_STUCK_AFTER_MS = 24 * 60 * 60 * 1000;
-// Issue #90: neither table was ever pruned. A finished pending row older than this has no
+// Issue GL#90: neither table was ever pruned. A finished pending row older than this has no
 // coalescing left to do (its next webhook inserts a fresh one); a custodian run older than this is
 // history, except each duty's latest, which carries its cursor.
 const PENDING_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -445,7 +445,7 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
     const cols = monday.get(ownerId);
     const ledgerCents = ledger.get(ownerId)!.cents;
 
-    // Leg 1: the Lifetime Giving column. Rows written before issue #27 hold float noise
+    // Leg 1: the Lifetime Giving column. Rows written before issue GL#27 hold float noise
     // (714.9300000000001) — parseAmountCents rounds it to cents from the decimal string.
     const mondayCents = parseAmountCents(firstValue(cols, lifetimeColumns));
     if (mondayCents !== ledgerCents) mismatches.push({ ownerItemId: ownerId, ledgerCents, mondayCents });

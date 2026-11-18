@@ -4,7 +4,7 @@ import type { QueueMessage } from '../types';
 import type { QueueMessageLike } from './processBatch';
 import { errorClass } from '../logSafe';
 
-// Consumer for quickbooks-sync-writes-dlq (#33), same shape as donation-rollups' and
+// Consumer for quickbooks-sync-writes-dlq (GL#33), same shape as donation-rollups' and
 // funraise-sync's. Without it a message that exhausted its retries expired unseen in the DLQ
 // after ~4 days, leaving a 'failed' row indistinguishable from one still being retried. A dead
 // message now stamps its row's error with DEAD_LETTER_PREFIX (keeping the last error the consumer
@@ -42,7 +42,7 @@ export async function processDeadLetters(messages: QueueMessageLike<QueueMessage
       message.ack();
     } catch (err) {
       console.error(`quickbooks-sync dlq: could not mark ${direction} "${eventId}" failed: ${errorClass(err)}`);
-      // Delayed like funraise-sync's DLQ consumer (#35): a bare retry() comes straight back into
+      // Delayed like funraise-sync's DLQ consumer (GL#35): a bare retry() comes straight back into
       // the same D1 failure and burns the DLQ's own retries in seconds.
       message.retry({ delaySeconds: 60 });
     }

@@ -161,16 +161,16 @@ export function checkEmailView(locale: Locale): string {
   `;
 }
 
-// GET /auth/callback's body (issue #31): a plain button that POSTs the magic-link token back,
+// GET /auth/callback's body (issue GL#31): a plain button that POSTs the magic-link token back,
 // because mail scanners prefetch links and a GET that consumed the single-use token burned it
 // before the donor clicked. Deliberately no script, no autofocus, no auto-submit — scanners that
 // execute JS must not be able to complete the login. `lang` is only emitted when it's a
 // supported locale (the caller validates), so nothing attacker-shaped is reflected besides the
 // escaped token.
-// Issue #61: new links carry the token in the URL fragment, which the browser never sends, so
+// Issue GL#61: new links carry the token in the URL fragment, which the browser never sends, so
 // this copies it into the confirm form and drops it from the address bar and history. It only
 // fills the form, never submits it: mail scanners that run a page's JS would otherwise burn the
-// single-use token (issue #31). With no token in the fragment it swaps in the invalid-link copy.
+// single-use token (issue GL#31). With no token in the fragment it swaps in the invalid-link copy.
 // Served under a CSP pinning this exact text by hash (routes.ts), so edit it freely but only here.
 export const CONFIRM_LOGIN_SCRIPT = `(function () {
   var match = /(?:^#|&)token=([^&]+)/.exec(location.hash);
@@ -184,7 +184,7 @@ export const CONFIRM_LOGIN_SCRIPT = `(function () {
 })();`;
 
 // token is null for a fragment link (CONFIRM_LOGIN_SCRIPT fills it in), or the token from a
-// legacy ?token= link, sent before issue #61, which renders as before with no script.
+// legacy ?token= link, sent before issue GL#61, which renders as before with no script.
 export function confirmLoginView(token: string | null, lang: Locale | null, locale: Locale, next: string | null = null): string {
   const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
   const nextField = next === null ? '' : `\n      <input type="hidden" name="next" value="${escapeHtml(next)}" />`;
@@ -534,7 +534,7 @@ function getInvolvedSection(links: GetInvolvedLink[], locale: Locale): string {
   `;
 }
 
-// Shown when some of a household's donor items failed to load (issue #31) — the page renders the
+// Shown when some of a household's donor items failed to load (issue GL#31) — the page renders the
 // rest rather than failing, but must not silently look complete.
 export function someRecordsUnavailableNote(count: number, locale: Locale): string {
   return count > 0 ? `<p role="status">${escapeHtml(t(locale, 'portal.someRecordsUnavailable'))}</p>` : '';

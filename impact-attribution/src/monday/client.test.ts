@@ -174,7 +174,7 @@ describe('findOrganizationsByNames', () => {
   });
 });
 
-// Email-domain proposals (#124): People, Organizations and Affiliations reads.
+// Email-domain proposals (GL#124): People, Organizations and Affiliations reads.
 describe('email-domain reads', () => {
   const PEOPLE_COLUMNS = [
     { id: 'pe', title: 'Personal Email', type: 'email' },

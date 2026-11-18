@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Makes the production donor boards private after the cutover load, and prints who is subscribed
-// to each, so the operator can subscribe only the users that need them (#41, follow-up to #18).
+// to each, so the operator can subscribe only the users that need them (GL#41, follow-up to GL#18).
 //
 // Why: Monday shows every Main board in every open workspace to every team member, and by default
 // lets them edit it. `salesforce-import` creates its boards `board_kind: public`, so after the
@@ -34,14 +34,14 @@
 //
 // Boards are selected in every state, not just active: an archived board keeps its items and stays
 // readable, and a deleted one (in trash) comes back with its kind if restored, so either left public
-// is still exposed (#71). The report marks each non-active board's state.
+// is still exposed (GL#71). The report marks each non-active board's state.
 //
 // Exit 0: nothing wrong. Exit 1: the Sandbox Integration user is subscribed to a selected board,
 // or --apply left a board not private. Exit 2: usage or API error. Dry-run writes nothing; --apply
 // writes only `change_board_kind` for boards that are not already private.
 
 import { fileURLToPath } from 'node:url';
-// The repo's single API-Version pin (#39), from the canonical transport.
+// The repo's single API-Version pin (GL#39), from the canonical transport.
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
 // The one call that needs a newer version than the pin (see the header); the reads stay on the pin.
 export const BOARD_KIND_API_VERSION = '2026-10';

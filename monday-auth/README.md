@@ -2,9 +2,9 @@
 
 **Status:** **Production deployed 2026-10-31** at cutover step 0.4 and consented as SVBC Integration
 the same day (all three apps `ok`); redeployed 2026-11-04 after migration `0003`, latest
-production deploy 2026-11-14 (version `ee055b6a`). Sandbox built and verified 2026-10-31. The #104
+production deploy 2026-11-14 (version `ee055b6a`). Sandbox built and verified 2026-10-31. The [GL#104](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/104)
 hardening (`/oauth` rate limit, 32-character `START_KEY` minimum, encrypted token columns, trimmed
-`/health`) and the `cpu_ms` limit (#117) went live in both environments on 2026-11-14, after
+`/health`) and the `cpu_ms` limit ([GL#117](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/117)) went live in both environments on 2026-11-14, after
 `TOKEN_ENC_KEY` was set in each; `/health` decrypted all three apps' tokens (`ok`) afterward.
 Existing plaintext rows are encrypted on their next refresh.
 First-time setup (the integration user, the OAuth apps, secrets, consent) is in
@@ -86,11 +86,11 @@ the invocation, so it shows as an error in the Worker's cron events.
 
 | Route | Purpose |
 |---|---|
-| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok`, `needs_consent` or `missing`. No tokens, and no expiry or refresh-error times (unauthenticated; #104). Alerts and the cron's logs carry the failure detail. |
+| `GET /health` | `{ "alerts": "configured" \| "unconfigured", "apps": [...] }`: whether `SLACK_WEBHOOK_URL` is set (never its value), and per app `ok`, `needs_consent` or `missing`. No tokens, and no expiry or refresh-error times (unauthenticated; [GL#104](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/104)). Alerts and the cron's logs carry the failure detail. |
 | `GET`/`POST /oauth/start/:app` | Key form, then redirect to Monday's authorize URL (PKCE S256). The key is posted, never in the URL. |
 | `GET /oauth/callback` | Checks `state`, exchanges the code, verifies the authorizing user id, stores the tokens. |
 | `GET`/`POST /oauth/probe/:app` | Verification aid: runs `me`, scope, header-form, `platform_api` and complexity checks with the app's token and returns a report (never the token). An optional numeric `board` field also reads that board by id and reports only `{ "id", "empty" }`, whether the token got nothing back; an error comes back as `{ "ok": false, ... }` and isn't empty. Same key gate; **404 unless `PROBE_ENABLED` is exactly `true`** (off in both environments; turn it on for one deploy while verifying). |
-| `POST /oauth/webhooks/:app` | Webhook subscriptions owned by the app, so Monday signs their deliveries with its Signing Secret (#110). Form fields `key`, `op` and: `board` (`list`); `board`, `url`, `event`, optional JSON `config` (`create`); `id` (`delete`). Returns Monday's JSON; errors never carry the token or the URL (whose query is a Worker's secret). A `create`'s `url` must sit under a `WEBHOOK_URL_PREFIXES` entry. Same key gate and limiter; **404 unless `WEBHOOKS_ENABLED` is exactly `true`**. Called by `scripts/lib/broker-webhooks.mjs`, not by hand: see "Re-registering webhooks" below. |
+| `POST /oauth/webhooks/:app` | Webhook subscriptions owned by the app, so Monday signs their deliveries with its Signing Secret ([GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)). Form fields `key`, `op` and: `board` (`list`); `board`, `url`, `event`, optional JSON `config` (`create`); `id` (`delete`). Returns Monday's JSON; errors never carry the token or the URL (whose query is a Worker's secret). A `create`'s `url` must sit under a `WEBHOOK_URL_PREFIXES` entry. Same key gate and limiter; **404 unless `WEBHOOKS_ENABLED` is exactly `true`**. Called by `scripts/lib/broker-webhooks.mjs`, not by hand: see "Re-registering webhooks" below. |
 
 ## Secrets and vars
 
@@ -158,7 +158,7 @@ field. `"board": { "id": "...", "empty": true }` means that app's token got noth
 report never says more about the board than that.
 
 
-## Re-registering webhooks with the Staff sync app (#110)
+## Re-registering webhooks with the Staff sync app ([GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110))
 
 Monday signs a webhook's deliveries only if an app created it, with that app's token. The broker
 never hands its tokens out, so `donation-rollups/scripts/setup-webhooks.mjs` and
@@ -177,7 +177,7 @@ when `MONDAY_AUTH_URL` and `START_KEY` are set. Per environment, sandbox first:
    subscriptions with the personal token that created them:** Monday lets only a webhook's
    creator delete it, so through the broker `delete_webhook` returns `null` and leaves them, and
    `--prune` / `--replace-webhooks` do nothing. The scripts skip an event a board already has, so
-   while the old ones remain nothing new is created. (Sandbox, 2026-11-16: #110.)
+   while the old ones remain nothing new is created. (Sandbox, 2026-11-16: [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110).)
 3. `npm run deploy:sandbox` (or `npm run deploy`), which restores `"false"`, and confirm
    `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/webhooks/sync`
    prints `404`.

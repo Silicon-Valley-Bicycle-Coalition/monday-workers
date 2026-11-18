@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 
-// Issue #29: a 100ms cpu_ms cap killed every nightly run mid-snapshot. A CPU-limit kill is not an
+// Issue GL#29: a 100ms cpu_ms cap killed every nightly run mid-snapshot. A CPU-limit kill is not an
 // exception — the `catch` in runSnapshot never runs, the D1 row stays `running`, and nobody is
 // alerted. A full-account snapshot parses and stringifies megabytes of JSON and RS256-signs a JWT,
 // so the cap has to be in minutes, not milliseconds. 300,000ms (5 min) is the documented maximum

@@ -23,7 +23,7 @@ function emailColumnValue(columnId: string, email: string): Record<string, { ema
 
 /**
  * Returns the id of the one worklist item for `input.key`, creating it only if none exists
- * (#34). Monday's createItem has no dedup of its own, so a retry that re-ran it after the
+ * (GL#34). Monday's createItem has no dedup of its own, so a retry that re-ran it after the
  * item was posted but before D1 recorded its id would post a duplicate. Lookup order:
  *
  * 1. `recordedItemId` — the id D1 already holds for this row/block. Reused as-is.

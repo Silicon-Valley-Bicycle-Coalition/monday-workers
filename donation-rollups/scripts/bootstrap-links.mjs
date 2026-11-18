@@ -36,7 +36,7 @@ const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const { apiUrl } = config.monday;
 const { donationBoards } = config.donationRollups;
 
-// The Worker's own copy of the canonical Monday transport (#35): retries rate limits and Monday
+// The Worker's own copy of the canonical Monday transport (GL#35): retries rate limits and Monday
 // blips, times out hung requests, and never blindly re-runs a create. Imported as TypeScript —
 // needs a Node with built-in type stripping (22.18+ / 23.6+).
 const monday = new MondayGraphQL(apiUrl, token);

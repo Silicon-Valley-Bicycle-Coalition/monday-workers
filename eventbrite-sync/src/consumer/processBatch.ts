@@ -63,7 +63,7 @@ export type AttendeeQueueMessage = {
   action: string;
 } & WriteStamp;
 
-// What a class email still needs once it has gone out, one message per recipient and step (#96; see
+// What a class email still needs once it has gone out, one message per recipient and step (GL#96; see
 // processClassEmail.ts). The route enqueues the timeline step, or the follow-up step directly when no
 // timeline activity is configured; the timeline step chains to the follow-up on success.
 export type ClassEmailQueueMessage = {
@@ -91,7 +91,7 @@ export interface ProcessBatchDeps {
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
-  // impact-attribution's EmployerAnswers RPC (#127); null when the binding is absent (feature off).
+  // impact-attribution's EmployerAnswers RPC (GL#127); null when the binding is absent (feature off).
   employerAnswers: EmployerAnswerSink | null;
 }
 
@@ -102,9 +102,9 @@ export interface ProcessBatchDeps {
  * KV read failure) leaves the message on the queue untouched, backing off like any retry.
  */
 export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], realDeps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
-  // An event is fetched from Eventbrite once per batch, however many of its attendees are in it (#96).
+  // An event is fetched from Eventbrite once per batch, however many of its attendees are in it (GL#96).
   const deps = { ...realDeps, eventbriteClient: cacheEventReads(realDeps.eventbriteClient) };
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
@@ -145,7 +145,7 @@ export async function processOrderQueueBatch(
   for (const message of messages) {
     const body = message.body;
     const label = describeMessage(body);
-    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // Monday is down or rate-limiting (GL#101): retry with backoff without calling it, rather than
     // spend the transport's in-process attempts again on every remaining message.
     if (breaker.open) {
       breaker.defer(message);
@@ -179,7 +179,7 @@ export async function processOrderQueueBatch(
       } catch (recordErr) {
         console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
       }
-      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // A terminal failure (GL#75) is acked once it's on the row: retrying the same request can only
       // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
       // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
       // max_retries of 100 (about four days), raised to Monday's hint on an outage.

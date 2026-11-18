@@ -100,7 +100,7 @@ across every webhook-driven Worker in this plan.
 
   The route **fails closed**: any POST whose secret doesn't match — including every POST while
   the secret is unset — is rejected with 401. The comparison is constant-time (SHA-256 both
-  sides, then an early-exit-free byte compare; #25). Callers that can set headers — the
+  sides, then an early-exit-free byte compare; [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)). Callers that can set headers — the
   redrive and replay scripts, a hand replay — send the secret as the `X-Webhook-Secret` header
   instead, which is checked first. **Funraise itself can't:** its webhook configuration is only a target
   URL and a contact email, so its deliveries keep `?secret=`. The tradeoff: a URL secret lands
@@ -177,7 +177,7 @@ too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 | `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v3) | `18437342630` | subscriptions poller's target |
 | `monday.boards["people-live"]` | People (sandbox v3) | `18437342592` | People (Historical) is not a match target |
 | `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm8hn1b2` | Funraise nests amount and status under `transaction` |
-| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm8hshet` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm8hshet` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
 | `columnMap.donationDate` | Donations → Date (date) | `date_mm8hfsvm` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `entityIdColumn` | Donations → Funraise ID (link) | `link_mm8hqhsx` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | |
@@ -258,7 +258,7 @@ delivery, as actually sent" for the translation). One board-side constraint on t
 `config/sandbox.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
 gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
 `salesforce-import`) is exactly `Received` /
-`Received (Historical)` / `Failed` / `Pending` / `Closed Lost` (plus `Refunded`, which staff must add — #25;
+`Received (Historical)` / `Failed` / `Pending` / `Closed Lost` (plus `Refunded`, which staff must add — [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25);
 `Closed Lost` is migrated pipeline only, never a Funraise outcome),
 and `donation-rollups` counts only `Received` —
 mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
@@ -289,7 +289,7 @@ for a board without the column. `config/sandbox.json` points it at `text_mm8hpk7
 titled "Fiscal Year Ending" on the Donations (sandbox v3) board (`18437342657`, read live
 2026-09-30) — the same one `donation-rollups` reads. (The v2 board also had an older numbers
 column titled "Fiscal Year" that `salesforce-import` no longer stamps; v3 doesn't.) The date is the **Pacific**
-calendar day of `donationDate` (#25): it used to be the UTC day, which put a gift made between
+calendar day of `donationDate` ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)): it used to be the UTC day, which put a gift made between
 ~5 pm and midnight Pacific on June 30 (or Dec 31) into the next fiscal (or calendar) year on both
 columns, disagreeing with the local-date CloseDates `salesforce-import` migrated. Recurring
 Gifts' Next Payment goes through the same function.
@@ -359,7 +359,7 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
   "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
   documented success value — to `Received`, and `Refunded` / `Failed` to the Donations labels of
-  the same name (#25), so a refunded gift stops being `Received` and drops out of
+  the same name ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)), so a refunded gift stops being `Received` and drops out of
   `donation-rollups`' totals. **`Refunded` is not yet a label on the Donations Status column** —
   staff must add it (sandbox and production boards) or every refund write still fails. Anything
   else is written verbatim, so a value outside the Donations status vocabulary fails the write
@@ -371,7 +371,7 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   stripped before the row reaches D1. Not stripped, flagged for a decision: `dedication.*`
   (a third party's name and email, "⚠ PII screen" in docs/03) and `comment`.
 
-## Failures and the dead-letter queue (#25)
+## Failures and the dead-letter queue ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25))
 
 A failed consumer run marks the `events` row `failed` with the error and retries the message
 with backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/flags.ts`).
@@ -389,7 +389,7 @@ FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https:/
 FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox]
 ```
 
-A failure no retry can fix (#75, `src/errors.ts`) skips the four days: a Monday 4xx, or a 200
+A failure no retry can fix ([GL#75](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/75), `src/errors.ts`) skips the four days: a Monday 4xx, or a 200
 whose error code says Monday rejected the request itself (a column value it won't take, a
 column, board or item id that doesn't exist). The row is marked `failed` with the error prefixed
 `not retried: `, one `console.error` line names the transaction, and the message is acked. A
@@ -676,7 +676,7 @@ have to move:
    Test-button delivery (verification 3 above) has **not** been repeated on v3: it needs a
    Funraise login. It exercises the same route and consumer the real gift just did.
 7. Redeployed once more after rebasing onto `main` (the shared transport's API-Version pin,
-   #39), so the running sandbox Worker is `main` plus this remap.
+   [GL#39](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/39)), so the running sandbox Worker is `main` plus this remap.
 
 **Still true on v3:** `Refunded` is not a label on the Donations Status column (see "The Funraise
 delivery, as actually sent"), so a refund write still dead-letters until staff add it.
@@ -756,8 +756,8 @@ Task 9.
 directory `/funraise-sync`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:funraise-sync` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
 at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
@@ -789,7 +789,7 @@ tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.m
 migration `0004`, `src/scheduled.ts`). How it runs:
 
 * **Hourly cron** `0 * * * *` → `pollSubscriptions`: **keyset pagination on (`updtime`, `id`)**
-  (#25), always `page=0`. Two cursors in `poll_cursors`: `subscriptions` (T) and
+  ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)), always `page=0`. Two cursors in `poll_cursors`: `subscriptions` (T) and
   `subscriptions:id` (I, or `-1` for none). Each request is either the forward query
   `updtime > T order by updtime asc` or, while walking a tie group, `updtime = T and id > I
   order by id asc`. A short forward page means caught up (T moves to its max `updtime`); a full
@@ -812,14 +812,14 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   means the tie query needs rewriting. Two more Funraise quirks live in
   `src/funraise/client.ts`: the list answers HTTP 500 to any `updtime` filter below about 2001,
   so a fresh cursor is floored there, and the page size is fixed at 10.
-* **Twenty pages per run (#94).** `subscriptionsPoll.maxPagesPerRun` is `20` (about 5 minutes
+* **Twenty pages per run ([GL#94](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/94)).** `subscriptionsPoll.maxPagesPerRun` is `20` (about 5 minutes
   worst case, inside the hourly cron's 15 on Workers Paid: 10,000 subrequests; confirmed
   2026-09-29). It was `1`, sized for Workers Free (50 subrequests per invocation; a ten-row page
   costs up to ~45 calls), which drained a backlog at ~120 rows a day. On Free, set it back to `1`.
   A ledger row that already holds a `donorItemId` reuses it rather than re-running `matchDonor`.
 * **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
   bare id in the Funraise ID link column; found → updated and recorded, not found → created.
-  **Claim first (#25):** the poll and the queue consumer's never-seen-subscription path can miss
+  **Claim first ([GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)):** the poll and the queue consumer's never-seen-subscription path can miss
   the ledger for one subscription at the same moment, and both used to create an item. A ledger
   miss now takes a D1 claim (`subscription_claims`, one atomic `INSERT … ON CONFLICT`) before
   any Monday call; the loser throws having written nothing (the poll re-reads the page next run;
@@ -848,13 +848,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   from `env.sandbox`; before it, `--var ENVIRONMENT:sandbox` against the top-level binding), and hit
   `http://localhost:8788/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
   deployed-shaped run that advances the cursors. Read the `subscriptions poll read …` log line
-  each time. The walk is done when the log line ends `caught up` (since #25's keyset change an
+  each time. The walk is done when the log line ends `caught up` (since [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25)'s keyset change an
   idle run reads `0 rows`; before it, `>=` re-read the boundary rows every run). Then `select count(*) from subscriptions` on the remote D1 should equal
   the board's item count and Funraise's own subscription count.
   **Do it while the deployed hourly cron cannot fire** (deploy with `subscriptionsPoll.enabled:
   false`, or finish between two top-of-the-hour runs): on 2026-09-19 the 02:00 cron and the local
   loop reached the same page within a second and both created subscription 197170 before either
-  had recorded it; the copy the ledger didn't own was deleted by hand. (Since #25 a ledger miss
+  had recorded it; the copy the ledger didn't own was deleted by hand. (Since [GL#25](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/25) a ledger miss
   first takes an atomic D1 claim — `subscription_claims`, migration `0005` — so two writers can
   no longer both create; the loser skips that row until the next run. Still prefer a quiet
   window: a loser's page is simply re-read.) Funraise's webhook Test
@@ -921,7 +921,7 @@ Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types 
 `.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
 `tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
 and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
-say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+say nothing about the code. CI (`.github/workflows/workers.yml`) already runs `npm test` and
 `npm run typecheck`.
 
 ## Sources

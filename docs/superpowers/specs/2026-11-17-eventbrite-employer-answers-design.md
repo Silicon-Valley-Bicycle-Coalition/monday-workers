@@ -1,6 +1,6 @@
 # Employer answers from Eventbrite → proposed affiliations — Design
 
-**Status:** Draft design, pre-implementation (2026-11-17). Issue #127 (the comment's touchpoints
+**Status:** Draft design, pre-implementation (2026-11-17). Issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127) (the comment's touchpoints
 1, 2 and 4).
 **Workers:** `eventbrite-sync` collects; `impact-attribution` proposes. No new Worker.
 **Builds on:**
@@ -18,7 +18,7 @@ pledges a year, every volunteer sign-up, and paid events. Asking "Where do you w
 staff one question per event.
 
 Answers from Eventbrite are weaker than a donor's own portal answer: most pledgers aren't donors,
-and an answer can age. So, as with matching-gift evidence (#125), an answer becomes a **Draft**
+and an answer can age. So, as with matching-gift evidence ([GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)), an answer becomes a **Draft**
 affiliation that staff confirm, never an affiliation that counts on its own.
 
 ## Goals
@@ -36,15 +36,15 @@ affiliation that staff confirm, never an affiliation that counts on its own.
 - Creating People or Organizations from an answer.
 - Fuzzy matching. Same exact-after-normalising match as the portal.
 - Applying an answer directly (that is only for the donor's own portal answer).
-- The Mailchimp preference center (touchpoint 5) and the email-domain and Funraise sources (#124,
-  #126). This design leaves them a place to plug in; it doesn't build them.
+- The Mailchimp preference center (touchpoint 5) and the email-domain and Funraise sources ([GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124),
+  [GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126)). This design leaves them a place to plug in; it doesn't build them.
 - Changing which events ask. Staff add the question in Eventbrite; any event's employer answer is
   read.
 
 ## Anti-goals
 
 - A Draft created for an answer staff already turned down, or for a pair that already has any
-  affiliation (the #125 rules apply unchanged).
+  affiliation (the [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125) rules apply unchanged).
 - Answer text in logs. It is free text from the public and may hold anything (`check-log-safety`
   only catches email-shaped logging; this is a rule for the code, not just the check).
 - `eventbrite-sync` writing to Affiliations, or `impact-attribution` reading the private Pledge to
@@ -57,9 +57,9 @@ affiliation that staff confirm, never an affiliation that counts on its own.
 
 1. **`eventbrite-sync` does everything** (reads, matches, creates Drafts from its hourly cron).
    Rejected: a second Worker creating Drafts, with its own ledger, cap and exclusion list, and a
-   third and fourth when #124 and #126 land.
+   third and fourth when [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124) and [GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126) land.
 2. **`eventbrite-sync` collects, `impact-attribution` proposes.** *Chosen (2026-11-17).* One place
-   creates Drafts, with one ledger, one cap and one exclusion list; #124 and #126 become further
+   creates Drafts, with one ledger, one cap and one exclusion list; [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124) and [GL#126](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/126) become further
    sources. Cost: a service binding between the two Workers, and `impact-attribution`'s production
    rollout gates this too.
 3. **`impact-attribution` reads the Eventbrite boards.** Rejected: the Pledge to Ride board has no
@@ -216,7 +216,7 @@ match upsert does today. Under `hold`/`unknown` the run skips, as today.
 an environment, confirm in that same environment:
 
 - [ ] migration `0003_employer_answers.sql` is applied to `impact-attribution`'s D1;
-- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from #127 or later);
+- [ ] `impact-attribution` is deployed with the `EmployerAnswers` entrypoint (a build from [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127) or later);
 - [ ] `impact-attribution`'s `config/*.json` has an `employerAnswers` block (and loads: a config that
   fails validation makes every call throw).
 

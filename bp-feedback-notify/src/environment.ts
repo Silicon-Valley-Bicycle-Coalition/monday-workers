@@ -26,13 +26,13 @@ export interface WorkerConfig {
   // Worker has no copy of its own), so this must point at the matching member-portal environment
   // (production vs sandbox), not necessarily this Worker's own.
   logoUrl: string;
-  // Where the organizer's address and the event name are read from (#66) — never the webhook
+  // Where the organizer's address and the event name are read from (GL#66) — never the webhook
   // body. Needs Monday access (the MONDAY_AUTH binding, or MONDAY_API_TOKEN).
   board: FeedbackBoardConfig;
   // Where to write Sent/Failed back onto the item after each send (see src/sendStatus.ts), or
   // null to only log the outcome. Uses the same Monday access when set.
   sendStatus: SendStatusConfig | null;
-  // Per-item resend guard (#105, src/sendGuard.ts): an item emailed within this many hours is not
+  // Per-item resend guard (GL#105, src/sendGuard.ts): an item emailed within this many hours is not
   // emailed again, however many webhooks arrive for it.
   resendCooldownHours: number;
 }

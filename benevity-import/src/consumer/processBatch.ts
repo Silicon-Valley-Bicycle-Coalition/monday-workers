@@ -16,7 +16,7 @@ import { OutageBreaker } from '../monday/outage';
 import { ingestUpload, type IngestDeps } from './ingestUpload';
 import { errorClass } from '../logSafe';
 
-// Two kinds share the write queue: an uploaded report to fetch and parse (#74), sent by the upload
+// Two kinds share the write queue: an uploaded report to fetch and parse (GL#74), sent by the upload
 // webhook, and a row to write, sent once the report is ingested (or by a staff Retry). The
 // optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were `off`
 // stays a dry run even if the mode is `on` by the time it is consumed.
@@ -51,9 +51,9 @@ export async function consumeBenevityBatch(
   deps: ProcessBatchDeps,
   gate: BatchSkipContext
 ): Promise<void> {
-  // One breaker for the whole batch (#101): after a Monday outage the rest is deferred unrun.
+  // One breaker for the whole batch (GL#101): after a Monday outage the rest is deferred unrun.
   const breaker = new OutageBreaker();
-  // And one set of read-only lookups, so rows from the same disbursement share them (#101).
+  // And one set of read-only lookups, so rows from the same disbursement share them (GL#101).
   const lookups = new BatchLookups();
   for (const message of messages) {
     const ctx = { ...gate, deliveryId: isUploadMessage(message.body) ? `asset:${message.body.assetId}` : message.body.transactionId };
@@ -74,7 +74,7 @@ export async function processBenevityQueueBatch(
   lookups: BatchLookups = new BatchLookups()
 ): Promise<void> {
   for (const message of messages) {
-    // Monday is down or rate-limiting (#101): retry with backoff without calling it, rather than
+    // Monday is down or rate-limiting (GL#101): retry with backoff without calling it, rather than
     // spend the transport's in-process attempts again on every remaining message.
     if (breaker.open) {
       breaker.defer(message);
@@ -131,7 +131,7 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps, lookups
   // Only an 'ingested' row has work left. 'written' is done; 'needs-review' is waiting on staff
   // (a Retry on its worklist item moves it back to 'ingested' before re-enqueueing it); 'skipped'
   // belongs to a disbursement the cutoff excluded, and stays that way unless staff Retry that
-  // disbursement's notice (#40). A message for any of those is a redelivery or a stale duplicate.
+  // disbursement's notice (GL#40). A message for any of those is a redelivery or a stale duplicate.
   if (row.status !== 'ingested') return;
 
   const parsed = JSON.parse(row.rawRow) as ParsedRow;
@@ -216,7 +216,7 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps, lookups
     }
   }
 
-  // A row replayed from the worklist (#34): close the loop for staff. Before the D1 write, so a
+  // A row replayed from the worklist (GL#34): close the loop for staff. Before the D1 write, so a
   // failure here retries the (idempotent) row rather than leaving the item showing Queued.
   if (row.worklistItemId !== null) {
     await setWorklistLabel(deps.mondayClient, deps.config, row.worklistItemId, 'done');
@@ -236,7 +236,7 @@ async function worklistAndMarkReview(
   reason: string
 ): Promise<void> {
   // ensureWorklistItem reuses the item this row already has, or finds one an earlier attempt
-  // posted before its D1 write was lost, so a retry never posts a second one (#34). Its id is
+  // posted before its D1 write was lost, so a retry never posts a second one (GL#34). Its id is
   // recorded in the same write that marks the row needs-review.
   const worklistItemId = await ensureWorklistItem(
     deps.mondayClient,

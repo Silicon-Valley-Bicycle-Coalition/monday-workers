@@ -72,7 +72,7 @@ describe('mapMondayToQbCustomerFields', () => {
     expect(result).not.toHaveProperty('PrimaryEmailAddr');
   });
 
-  // #33: Monday webhooks deliver column values in their raw per-type shapes, which were sent to
+  // GL#33: Monday webhooks deliver column values in their raw per-type shapes, which were sent to
   // QuickBooks as-is (DisplayName: { value: 'New Co' }) and 400'd. They're normalized now.
   describe('normalizes raw Monday webhook column values', () => {
     const raw = (value: unknown) => mapMondayToQbCustomerFields({ text_col: value }, config).DisplayName;

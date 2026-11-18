@@ -1,6 +1,6 @@
 import type { EventbriteOrderLister } from '../eventbrite/client';
 
-// The daily missed-order check (issue #90 in svbc-monday-migration). It replaces Salesforce's "Today's
+// The daily missed-order check (issue svbc-monday-migration#90 in svbc-monday-migration). It replaces Salesforce's "Today's
 // Eventbrite Orders Report" subscription, which emailed when a day had no eb4sf orders. A
 // webhook that was deleted, disabled or repointed fails nothing: orders just stop arriving. So
 // once a day this asks Eventbrite which orders changed recently and flags any the ledger never

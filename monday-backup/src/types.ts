@@ -6,7 +6,7 @@ export interface BoardSummary {
   id: string;
   name: string;
   workspaceId: string | null;
-  // Board metadata a restore needs to recreate the board faithfully (issue #30). Optional so a
+  // Board metadata a restore needs to recreate the board faithfully (issue GL#30). Optional so a
   // test or an older snapshot can omit them.
   state?: string | null; // active | archived | deleted
   type?: string | null; // board | sub_items_board | document | custom_object
@@ -47,7 +47,7 @@ export interface ColumnValue {
   text: string | null;
   value: string | null;
   // Connect-boards and dependency columns: `text`/`value` are null on current API versions, so
-  // the linked item ids come from the typed fragment (issue #30).
+  // the linked item ids come from the typed fragment (issue GL#30).
   linkedItemIds?: string[];
   // Connect-boards, dependency and mirror columns' human-readable value.
   displayValue?: string;

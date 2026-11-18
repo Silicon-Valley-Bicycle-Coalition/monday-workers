@@ -493,7 +493,7 @@ describe('consumeBenevityBatch — write switch', () => {
   });
 });
 
-// Upload messages (#74): the webhook only records and enqueues a report; the consumer ingests it.
+// Upload messages (GL#74): the webhook only records and enqueues a report; the consumer ingests it.
 // ingestUpload itself is covered in ingestUpload.test.ts — these cover the dispatch around it.
 describe('consumeBenevityBatch — upload messages', () => {
   const gate = (mode: 'on' | 'off' | 'hold') =>
@@ -579,7 +579,7 @@ const REPORT = [
   '',
 ].join('\n');
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday, instead of each repeating the transport's in-process attempts.
 describe('consumeBenevityBatch — outage breaker', () => {
   const gate = (mode: 'on' | 'hold' | 'off') =>
@@ -647,7 +647,7 @@ describe('consumeBenevityBatch — outage breaker', () => {
   });
 });
 
-// A disbursement's rows share one company and one disbursement; read each once per batch (#101).
+// A disbursement's rows share one company and one disbursement; read each once per batch (GL#101).
 describe('consumeBenevityBatch — per-batch lookups', () => {
   const gate = (mode: 'on' | 'off') =>
     ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;

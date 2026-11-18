@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenerates the self-hosted Manrope and Poppins font modules (#123) so no Worker page loads
+// Regenerates the self-hosted Manrope and Poppins font modules (GL#123) so no Worker page loads
 // fonts from Google. Each target gets a TypeScript module holding its woff2 subsets as base64
 // (the repo's existing pattern for binary assets, see member-portal/src/assets/favicon.ts), plus
 // the fonts' SIL OFL licence files beside it.

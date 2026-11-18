@@ -24,7 +24,7 @@ export interface PendingStore {
   // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5), with
   // their kind — a registration re-sent as a donation message would read the wrong board.
   listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]>;
-  // Issue #90: deletes 'written' and 'dropped' rows received before the cutoff; returns how many.
+  // Issue GL#90: deletes 'written' and 'dropped' rows received before the cutoff; returns how many.
   // Open rows stay for listStuck and 'failed' rows stay as a human's signal. A pruned row costs
   // nothing: the next webhook for that donation inserts a fresh one.
   pruneFinished(receivedBeforeISO: string): Promise<number>;
@@ -66,7 +66,7 @@ export class D1PendingStore implements PendingStore {
   // Keyed on the Donation item — a redelivery for the same donation replaces the
   // pending row's event_id and resets to 'received' rather than being dropped, since
   // it's still the same recompute work either way (donation-level dedup, same
-  // reasoning as funraise-sync's entity-keyed events table). One statement (issue #90): nothing
+  // reasoning as funraise-sync's entity-keyed events table). One statement (issue GL#90): nothing
   // reads whether the row was new.
   async upsertPending(row: NewPending): Promise<void> {
     await this.db

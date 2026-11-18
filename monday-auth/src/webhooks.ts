@@ -1,12 +1,12 @@
 import type { FetchFn } from './mondayOAuth';
 
-// Webhook subscriptions made with an app's own token (#110). Monday signs a webhook's deliveries
+// Webhook subscriptions made with an app's own token (GL#110). Monday signs a webhook's deliveries
 // with the Signing Secret of the app that created it, and only then; one created with a personal
 // token arrives unsigned. The broker never hands a token out, so operators register through this
 // narrow surface instead: list, create and delete webhooks, nothing else.
 
 const API_URL = 'https://api.monday.com/v2';
-// Same pin as MONDAY_API_VERSION in monday-backup/src/monday/graphql.ts (#39).
+// Same pin as MONDAY_API_VERSION in monday-backup/src/monday/graphql.ts (GL#39).
 const API_VERSION = '2026-07';
 
 export type WebhookOp =

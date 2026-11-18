@@ -1,4 +1,4 @@
-// One Monday write budget per cron run (issue #90). The duties' own caps (classify 300, recurring
+// One Monday write budget per cron run (issue GL#90). The duties' own caps (classify 300, recurring
 // 500, rollcall's writesPerRun, archive 40) all ran inside one scheduled() call, so a night when
 // several backfills coincided could queue ~1,050 sequential mutations against the 15-minute cron
 // limit; a wall-time kill records no custodian_runs row and starves rollcall, which runs last.

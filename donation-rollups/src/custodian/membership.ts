@@ -46,7 +46,7 @@ async function sendAll(deps: CustodianDeps, messages: RecomputeQueueMessage[], o
   for (let i = 0; i < messages.length; i += 100) await deps.queue.sendBatch(messages.slice(i, i + 100), opts);
 }
 
-// Exported (config-keyed) for the custodian's shared board read (boardReads.ts, issue #90).
+// Exported (config-keyed) for the custodian's shared board read (boardReads.ts, issue GL#90).
 export function membershipReadColumns(config: DonationRollupsConfig): { boardId: string; columnIds: string[] }[] {
   if (config.donationRollups.membership === null) return [];
   return membershipBoards({ config }).map((b) => ({ boardId: b.boardId, columnIds: lapseColumns(b.columns) }));

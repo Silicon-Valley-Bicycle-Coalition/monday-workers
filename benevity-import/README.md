@@ -206,7 +206,7 @@ Only attempted when the row discloses a name or email.
    over either, so this fallback fires regularly.
    Both steps count only affiliations whose `Status` is `Current` (config
    `affiliationsCurrentLabel`, column `affiliationsColumns.status`): a `Draft` is an employer
-   `impact-attribution` proposed and staff haven't confirmed (#124), and a `Former` is a past job.
+   `impact-attribution` proposed and staff haven't confirmed ([GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124)), and a `Former` is a past job.
 3. **Never auto-create a Person from a name.** Same rule as the Eventbrite name-match proposal:
    propose, staff confirm. A worklist item carries the row's disclosed fields (name, email,
    company, amount, date) so staff can fix the Person (add the email Benevity disclosed, or create
@@ -263,7 +263,7 @@ the file are imported.
 
 A gift whose Monday write keeps failing is retried for about four days (`max_retries: 100`,
 backing off to an hour), then dead-lettered to `benevity-import-writes-dlq`
-(`benevity-import-writes-sandbox-dlq` in sandbox). This Worker consumes both (#60,
+(`benevity-import-writes-sandbox-dlq` in sandbox). This Worker consumes both ([GL#60](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/60),
 `src/consumer/deadLetters.ts`), so a dead gift is never silently lost — which matters here more
 than elsewhere, because re-uploading the report is a no-op for a row already recorded. Each dead
 message:
@@ -285,7 +285,7 @@ only under `on`) posts the item for every dead-lettered row still missing one, 2
 gift that dead-letters during a Monday outage or a `hold` reaches the worklist once both are
 over. Each batch that marked anything logs **one** `console.error` naming the Transaction IDs.
 
-The same queue carries uploaded reports waiting to be ingested (#74), so a report can dead-letter
+The same queue carries uploaded reports waiting to be ingested ([GL#74](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/74)), so a report can dead-letter
 too: its asset kept failing to fetch, or a block kept failing in D1. There is no row to mark or
 item to Retry, so the consumer marks the upload `error` (unless it has since finished) and logs a
 `console.error` naming the Monday asset. Rows from blocks it did finish are already queued on
@@ -323,7 +323,7 @@ several disbursements:
   / `skipped`), Monday item ids (employee gift and/or match), raw row.
 * Every Donations item this Worker creates carries `Benevity Transaction ID`; the consumer looks
   it up before creating, so a retry after a lost status update adopts the existing item.
-* Worklist items follow the same rule (#34): D1 records each one's Monday item id (`rows` and
+* Worklist items follow the same rule ([GL#34](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/34)): D1 records each one's Monday item id (`rows` and
   `disbursements` `worklist_item_id`, migration `0003`) in the same write that marks the row or
   block needs-review, and the item carries its key in the worklist `Key` column, looked up before
   creating — so a retry after that write is lost adopts the item it already posted.
@@ -339,7 +339,7 @@ several disbursements:
   one that was keyed, and that double-count is silent. Expect one or two skipped disbursements
   around the freeze; check each against the migrated Donations (Matched By, dates, amounts)
   before setting Retry.
-  The gate is deliberately *not* a row's Donation Date (#40): Benevity pays out weeks after the
+  The gate is deliberately *not* a row's Donation Date ([GL#40](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/40)): Benevity pays out weeks after the
   gift, so the first disbursement after the freeze is mostly rows dated before it, and none of
   those were ever keyed (staff key from the disbursement report, which didn't exist yet). Within
   an imported disbursement every row is written whatever its date; the per-row Transaction ID
@@ -498,7 +498,7 @@ Anonymous 2026-09-20`, each with Amount 25, Date 2026-09-20, Benevity Disburseme
 `Matching Donation`, Benevity Transaction ID `…A` / `…A-match`, and Matched By → Google, LLC on
 the match only. The two Donations items, the upload item and the three D1 rows were deleted
 afterwards, so the sandbox tables are empty again. The whole check was then repeated, with the
-same result, on a second deploy that also carries #40 (the gate on a disbursement's Period
+same result, on a second deploy that also carries [GL#40](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/40) (the gate on a disbursement's Period
 Ending), which merged to `main` the same evening. One thing the check showed that is not part of
 the remap: Fiscal Year Ending is written as `2027-06-30`, where `salesforce-import` and
 `funraise-sync` write the bare year `2027`. `donation-rollups` falls back to deriving the year
@@ -510,8 +510,8 @@ Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 root directory `/benevity-import`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
 dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox:benevity-import` job in `../.gitlab-ci.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
 
 ## Deploying: the write switch
 

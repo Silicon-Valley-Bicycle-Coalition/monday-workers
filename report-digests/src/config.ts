@@ -24,7 +24,7 @@ export interface DigestsConfig {
   fromAddress: string;
   fromName: string;
   logoUrl: string;
-  // The only domains a digest may be emailed to (#70): a recipient's Monday address outside them
+  // The only domains a digest may be emailed to (GL#70): a recipient's Monday address outside them
   // is dropped, since production's EMAIL binding has no allowed_destination_addresses.
   recipientDomains: string[];
   boards: { donations: number; people: number };

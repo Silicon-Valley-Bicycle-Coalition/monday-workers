@@ -557,7 +557,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
   });
 });
 
-// #25: retries were immediate, so a Monday outage of more than a few seconds burned all three
+// GL#25: retries were immediate, so a Monday outage of more than a few seconds burned all three
 // attempts at once and dead-lettered the gift. They now back off by attempt number, with the
 // shared write-switch delay (1 min doubling, capped at 1 h; flags.ts retryDelaySeconds) across
 // max_retries 100 — about four days of cover.
@@ -603,7 +603,7 @@ describe('retry backoff', () => {
   });
 });
 
-// #75: a Monday rejection of the write itself (a 4xx, a column value it won't take) fails the same
+// GL#75: a Monday rejection of the write itself (a 4xx, a column value it won't take) fails the same
 // way on every retry, so it is recorded and acked instead of retried for four days into the DLQ.
 describe('terminal failures', () => {
   const rejectingMonday = (err: Error): MondayClient => ({
@@ -951,7 +951,7 @@ describe('write switch', () => {
   });
 });
 
-// #101: once one message hits a Monday outage (5xx, 429, timeout, spent budget), the rest of the
+// GL#101: once one message hits a Monday outage (5xx, 429, timeout, spent budget), the rest of the
 // batch is retried with backoff without calling Monday, instead of each repeating the transport's
 // in-process attempts.
 describe('outage breaker', () => {

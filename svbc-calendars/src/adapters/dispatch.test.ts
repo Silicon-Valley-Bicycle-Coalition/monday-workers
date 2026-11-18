@@ -43,7 +43,7 @@ describe('createFetchSourceEvents', () => {
     vi.unstubAllGlobals();
   });
 
-  // #73: a hung source must fail like any other fetch error, so the .ics route can serve its KV
+  // GL#73: a hung source must fail like any other fetch error, so the .ics route can serve its KV
   // fallback and the daily cron can move on to the next source.
   const everyAdapter: SourceConfig[] = [
     { id: 'eb', name: 'EB', committeeName: 'SVBC Events', adapter: 'eventbrite', organizerId: 'org-1' },

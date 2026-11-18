@@ -45,7 +45,7 @@ async function skipContext(env: Env): Promise<BatchSkipContext> {
 
 // env.SYNC_QUEUE is a Cloudflare Queue<QueueMessage>, whose send() resolves to a
 // QueueSendResponse rather than void. Adapt it to the webhook routes' fire-and-forget
-// interfaces: the Monday route sends one message, the QuickBooks route a batch (#101).
+// interfaces: the Monday route sends one message, the QuickBooks route a batch (GL#101).
 function toQueueLike(queue: Queue<QueueMessage>): QueueLike & BatchQueueLike {
   return {
     async send(message: QueueMessage): Promise<void> {
@@ -77,7 +77,7 @@ export default {
       const queue = toQueueLike(env.SYNC_QUEUE);
 
       // Neither webhook route calls QuickBooks or Monday: they record and enqueue, and the queue
-      // consumer below does every outbound call (#33).
+      // consumer below does every outbound call (GL#33).
       const app = new Hono();
       app.route(
         '/',

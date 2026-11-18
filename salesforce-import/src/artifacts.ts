@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 // Everything under data/ is donor PII (extracts, the ledger, the geocode cache, review sheets),
-// so it's owner-only regardless of umask (#111). `mode` on mkdir/open only applies when the
+// so it's owner-only regardless of umask (GL#111). `mode` on mkdir/open only applies when the
 // path is created, so full rewrites and ensureDir also chmod, tightening a tree an older build
 // left 0755/0644.
 const PRIVATE_DIR = 0o700;

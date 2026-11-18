@@ -11,13 +11,13 @@ export interface LoginSendLimits {
 
 export interface LoginAttemptStore {
   // Claims one login-email slot for `email` at `now` if every limit still has room, and reports
-  // whether it did. A denied call writes nothing, so it can't extend a lockout (issue #62).
+  // whether it did. A denied call writes nothing, so it can't extend a lockout (issue GL#62).
   tryReserve(email: string, now: Date, limits: LoginSendLimits): Promise<boolean>;
 }
 
 const DAY_MS = 86_400_000;
 
-// Rows are keyed by a SHA-256 of the lowercased address, not the address itself (issue #62).
+// Rows are keyed by a SHA-256 of the lowercased address, not the address itself (issue GL#62).
 // Unkeyed, so it only keeps addresses out of plain sight in D1 dumps and query results: anyone
 // holding the table and a candidate address can still test for it. Rows live
 // rateLimit.attemptRetentionHours.

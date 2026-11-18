@@ -24,7 +24,7 @@ describe('worker entry point', () => {
     expect(typeof worker.queue).toBe('function');
   });
 
-  // #68: the purge is a D1 retention pass, not a Monday or QuickBooks write, so it runs with the
+  // GL#68: the purge is a D1 retention pass, not a Monday or QuickBooks write, so it runs with the
   // write switch off (FLAGS is empty in tests, which reads as `off`).
   it('scheduled purges an expired payload using the shipped retention config', async () => {
     const longAgo = '2020-01-01T00:00:00.000Z';

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Every `ratelimits[].namespace_id` must be unique across `*/wrangler*.jsonc` (top level and
 // every env). Bindings that share an id share per-IP counters even when their limits differ, so
-// one Worker's traffic can 429 another's (#113: member-map's asset loads starving nearby-search).
+// one Worker's traffic can 429 another's (GL#113: member-map's asset loads starving nearby-search).
 //
 //   node scripts/check-rate-limit-namespaces.mjs
 import { dirname, join } from 'node:path';

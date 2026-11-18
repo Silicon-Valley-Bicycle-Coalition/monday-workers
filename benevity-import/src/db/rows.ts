@@ -6,7 +6,7 @@ export interface DonationRowRecord {
   status: RowStatus;
   mondayEmployeeItemId: string | null;
   mondayMatchItemId: string | null;
-  // The Benevity Uploads worklist item this row was put on, once it needed review (#34).
+  // The Benevity Uploads worklist item this row was put on, once it needed review (GL#34).
   worklistItemId: string | null;
   rawRow: string;
   error: string | null;
@@ -45,7 +45,7 @@ export const PURGED_RAW_ROW = '{}';
 // D1 binds at most 100 parameters per statement: 5 per row in a multi-row INSERT, 1 per id in an IN list.
 const INSERT_ROWS_PER_STATEMENT = 20;
 const IDS_PER_SELECT = 100;
-// Stamped on a row's error when its queue message exhausted every retry (#60,
+// Stamped on a row's error when its queue message exhausted every retry (GL#60,
 // src/consumer/deadLetters.ts), ahead of the last error the consumer recorded.
 export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 
@@ -55,7 +55,7 @@ export interface RowStore {
   upsertRows(rows: NewRow[]): Promise<Map<string, RowStatus>>;
   getRow(transactionId: string): Promise<DonationRowRecord | null>;
   getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null>;
-  // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
+  // Replay (GL#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
   // error) and returns every one of them that is now 'ingested' — including rows a previous
   // replay already moved whose enqueue never went through — for the caller to (re-)enqueue.
   // 'written' rows are left alone and not returned. A pending row whose raw_row the retention
@@ -63,11 +63,11 @@ export interface RowStore {
   // and only counted in `purged`. Idempotent.
   // The two differ on 'skipped' rows. A row is only ever skipped as part of a whole disbursement
   // the cutoff excluded, so the block-level requeue releases them too — that is the staff
-  // override of the cutoff (#40) — while the row-level one leaves them alone.
+  // override of the cutoff (GL#40) — while the row-level one leaves them alone.
   requeueRow(transactionId: string): Promise<RequeueResult>;
   requeueDisbursementRows(disbursementId: number): Promise<RequeueResult>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
-  // Dead-lettered rows (#60) whose worklist item was never posted — Monday was down, or writes
+  // Dead-lettered rows (GL#60) whose worklist item was never posted — Monday was down, or writes
   // weren't `on`, when the dead letter arrived — oldest first, for the daily sweep to post.
   listDeadLetteredWithoutWorklistItem(limit: number): Promise<DonationRowRecord[]>;
   purgeWrittenRawRows(writtenBefore: string): Promise<number>;

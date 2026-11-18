@@ -26,7 +26,7 @@ const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliation
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
 
 // Link mutations in flight. Sequential linking measured ~40h for the real dataset's 94k links,
-// which is why links already ran in a small pool before #22.
+// which is why links already ran in a small pool before GL#22.
 const LINK_CONCURRENCY = 6;
 
 // --sequential only: how many times an ambiguous create_item failure (see AmbiguousWriteError)
@@ -83,7 +83,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       console.log(`load[dry-run]: ${key} → ${items.length} items, ${links} links` +
         (toArchive > 0 ? `, ${toArchive} to archive in place` : ''));
     }
-    // #22/#50 measurement: old vs new request counts and a wall-clock estimate. The per-request
+    // GL#22/#50 measurement: old vs new request counts and a wall-clock estimate. The per-request
     // and per-mutation costs are measured (see DEFAULT_TIMING); override them from a fresh sandbox run.
     const num = (flag: string, fallback: number): number => {
       const i = args.indexOf(flag);
@@ -151,7 +151,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     untaggedItems: {} as Record<string, number>,
     // Post-create duplicate read-backs that errored (batched mode) — each one fails the run.
     readBackFailed: [] as { where: string; error: string }[],
-    // inline: set inside create_item and confirmed by its response (#22); inlineUnconfirmed:
+    // inline: set inside create_item and confirmed by its response (GL#22); inlineUnconfirmed:
     // sent inline but not echoed back, so left to the link pass (counted again in `written`).
     // inlineRejected: Monday rejected the create while it carried them, so the item was created
     // without them and the link pass wrote them.
@@ -265,7 +265,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     if (o.kind !== 'created') return;
     if (o.relationsDropped) {
       // Monday rejected the create while it carried these relations; it was created without
-      // them, so every one goes to the link pass (and the #21 gate if that fails too).
+      // them, so every one goes to the link pass (and the GL#21 gate if that fails too).
       report.links.inlineRejected += inline.length;
       console.warn(`load: ${key}/${o.sfId} rejected with inline relations, created without them — ` +
         `the link pass will write ${inline.map((l) => `"${l.column}"`).join(', ')}`);
@@ -289,7 +289,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   // Shared by every create worker: pauses new batches when the complexity budget runs low.
   const gate = new ComplexityGate((ms) => client.sleep(ms), Date.now, opts.concurrency);
 
-  // #22: opts.batchSize aliased create_items per request, opts.concurrency requests in flight.
+  // GL#22: opts.batchSize aliased create_items per request, opts.concurrency requests in flight.
   const createItemsBatched = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
     const entries: CreateEntry[] = [];
@@ -411,7 +411,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         targetSfIds: t.targetSfIds });
     }
   };
-  // #50: Monday runs mutations one at a time account-wide (probe-pools.ts: flat ~55/min at pool
+  // GL#50: Monday runs mutations one at a time account-wide (probe-pools.ts: flat ~55/min at pool
   // sizes 1-12, and across boards), so a bigger pool only queues. What helps is aliasing N
   // writes into one request, which pays the ~0.5 s per-request overhead once. Setting a column
   // is idempotent, so anything the aliased request didn't confirm (a rejected alias, a 5xx, a
@@ -504,7 +504,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           .flatMap((f) => [f.sfId, ...(f.targetSfIds ?? [])]));
       const toArchive = group.filter((p) => p.archive);
       let archivedCount = 0, deferredCount = 0;
-      // Decide every item first (the #21 gate reads only state settled above), then archive the
+      // Decide every item first (the GL#21 gate reads only state settled above), then archive the
       // cleared ones opts.batchSize to a request, opts.concurrency requests at a time —
       // archive_item is idempotent. --sequential keeps it one mutation per request.
       const cleared: { p: ItemPayload; itemId: string }[] = [];
@@ -533,7 +533,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
       };
-      // #50: aliased like the links above — archive_item is idempotent, so whatever an aliased
+      // GL#50: aliased like the links above — archive_item is idempotent, so whatever an aliased
       // request didn't confirm is retried singly.
       const archiveGroup = async (group: typeof cleared): Promise<void> => {
         if (group.length === 1) return archiveOne(group[0]!);

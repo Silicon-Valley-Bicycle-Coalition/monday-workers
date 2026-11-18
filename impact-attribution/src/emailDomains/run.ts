@@ -4,7 +4,7 @@ import { buildDomainMap } from './domains';
 import { emailIndexRows, rebuildEmailIndex } from './emailIndex';
 import { selectProposals, type PersonRecord, type SkipReason } from './select';
 
-// The nightly run's second job (#124): propose an employer from a donor's company email domain.
+// The nightly run's second job (GL#124): propose an employer from a donor's company email domain.
 // Same shape as the matching-gift job (src/run.ts): a Draft Affiliation with Proposed status
 // Current, the evidence as a comment, and a row in the shared `proposals` ledger, so a pair either
 // job proposed is never proposed again by the other. `off` computes and logs what it would

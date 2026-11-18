@@ -64,7 +64,7 @@ interface EventsResponse {
   total: number;
 }
 
-/** Deliberately just a generic message: the upstream detail is logged, never returned publicly (#72). */
+/** Deliberately just a generic message: the upstream detail is logged, never returned publicly (GL#72). */
 interface ErrorResponse {
   error: string;
 }

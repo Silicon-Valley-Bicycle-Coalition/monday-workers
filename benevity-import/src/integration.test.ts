@@ -110,7 +110,7 @@ describe('benevity-import integration', () => {
     };
   }
 
-  // The consumer's half of an upload (#74): ingests every upload message the webhook enqueued,
+  // The consumer's half of an upload (GL#74): ingests every upload message the webhook enqueued,
   // leaving the row messages that produces (and any already queued) in sentMessages.
   async function ingestUploads(config: BenevityImportConfig, opts: { csv?: string; gate?: BatchSkipContext } = {}) {
     const uploads = sentMessages.filter((body) => 'assetId' in body);
@@ -166,7 +166,7 @@ describe('benevity-import integration', () => {
       body: JSON.stringify({ event: { pulseId: 1, boardId: 777, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
     });
     expect(res.status).toBe(200);
-    // The webhook only records the upload and hands it to the queue (#74); the consumer ingests it.
+    // The webhook only records the upload and hands it to the queue (GL#74); the consumer ingests it.
     expect(sentMessages).toEqual([{ assetId: 'a1' }]);
     await ingestUploads(config);
     expect(sentMessages).toEqual([{ transactionId: 'TXN001' }]);
@@ -468,7 +468,7 @@ describe('benevity-import integration', () => {
     log.mockRestore();
   });
 
-  // The operator path back (#74, runbook docs/runbooks/migration-hold.md): a report dropped under
+  // The operator path back (GL#74, runbook docs/runbooks/migration-hold.md): a report dropped under
   // `off` leaves its rows at 'ingested', so uploading the same file again once writes are `on`
   // (a new asset) re-enqueues them, unstamped, and they are written.
   it('re-uploading a report ingested under off, once writes are on, writes its rows', async () => {

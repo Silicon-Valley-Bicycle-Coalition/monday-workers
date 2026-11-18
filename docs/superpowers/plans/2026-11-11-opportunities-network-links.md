@@ -18,7 +18,7 @@
 - Use the existing `mondayClient` (`scripts/lib/monday.mjs`); never use a staff member's personal token; never commit `.env` or `data/`.
 - Never delete the old connect column or the old board until the replacement is verified; old boards become read-only, not deleted.
 - A backfill links only unambiguous matches; ambiguous matches go to a review CSV and are never auto-linked. Monday refuses to connect archived items: report them as not linkable, as `link-board-items.mjs` does.
-- Do not add or rename #16's planned columns (Received mirror, Balance Owed, Invoices sent mirror, Restriction, Type, 14-day reminder).
+- Do not add or rename [GL#16](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/16)'s planned columns (Received mirror, Balance Owed, Invoices sent mirror, Restriction, Type, 14-day reminder).
 - New connect column titles must not collide with existing titles; the Events link on Opportunities is titled "Linked event", not "Event". Reuse `Sponsor`, `Primary Contact (People)`, `Donations` where `board-links.json` already names them.
 - Production cutover waits for Clarrissa's sign-off on the board name and the stage vocabulary (svbc-monday-migration#109).
 
@@ -122,7 +122,7 @@ Only needed for links where Task 1 says in-place is impossible.
 
 - [ ] **Step 1: Write failing tests**: `planMove` maps a Sponsorships "Stage" value and a Grants "Status" value through `statusMap`; an unmapped status is reported, never dropped; Category is set from the source.
 - [ ] **Step 2: Run** `node --test scripts/test/merge-opportunities.test.mjs` — expect FAIL.
-- [ ] **Step 3: Implement the audit and `planMove`**; run the audit against the sandbox copies and write the first `columnMap`/`statusMap`. The stage vocabulary comes from #109; if undecided, map to the union and stop before production.
+- [ ] **Step 3: Implement the audit and `planMove`**; run the audit against the sandbox copies and write the first `columnMap`/`statusMap`. The stage vocabulary comes from [GL#109](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/109); if undecided, map to the union and stop before production.
 - [ ] **Step 4: Run tests** — expect PASS. Implement the `--execute` move with subitem/file/update preservation and the count check.
 - [ ] **Step 5: In the runbook, list the UI steps** the API cannot do (recreate the Grants automations: Awarded → Kickoff meeting / Invoice funder / Final report subitems, the 1-week due-date reminder, status-to-group moves; item-view default tabs; board rename; making the old boards read-only).
 - [ ] **Step 6: Rehearse on sandbox**: move, verify counts and inbound links from Invoicing Tasks, Bike Education Tracker and Comms/Marketing Requests; commit.

@@ -16,7 +16,7 @@ export interface RoutesDeps {
   // The write switch, read once per request.
   mode(): Promise<WriteMode>;
   // The operator secret, presented as `Authorization: Bearer <secret>` (as report-digests does) —
-  // never in the query string, where it would land in request logs (#64). Checked constant-time
+  // never in the query string, where it would land in request logs (GL#64). Checked constant-time
   // and fail-closed: an unset/empty secret disables the routes entirely.
   secret?: string;
   // Promotes one person on staff request (src/promote.ts).
@@ -24,7 +24,7 @@ export interface RoutesDeps {
   requestLabel: string;
   // Shared secret on the registered Monday webhook URL (`?secret=`); unset = route disabled.
   webhookSecret?: string;
-  // Second factor (issue #110): the `Authorization: <JWT>` Monday signs app-created webhooks with,
+  // Second factor (issue GL#110): the `Authorization: <JWT>` Monday signs app-created webhooks with,
   // using the app's Signing Secret. src/mondayJwt.ts holds the rollout policy; absent = no signing
   // secret, so the URL secret alone decides, as before.
   jwtPolicy?: MondayJwtPolicy;

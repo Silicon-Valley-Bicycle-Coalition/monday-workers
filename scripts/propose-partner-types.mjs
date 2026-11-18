@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the Partner Type review CSV (#55): one row per Organizations item, with the migrated
+// Builds the Partner Type review CSV (GL#55): one row per Organizations item, with the migrated
 // value, a proposed value from the approved ten, and an empty Reviewed Type column. Reads a saved
 // export and writes one local file. It never calls Monday, so nothing changes on a board.
 //

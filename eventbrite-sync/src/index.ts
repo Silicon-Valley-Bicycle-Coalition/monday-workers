@@ -59,7 +59,7 @@ export default {
 
     // Checked before any routing, D1, or Monday work — see the root README "Reliability: traffic
     // and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-    // A webhook delivery that already passed verification skips it (#101): a burst of genuine
+    // A webhook delivery that already passed verification skips it (GL#101): a burst of genuine
     // deliveries must not be throttled.
     return isVerifiedWebhook(request, env.EVENTBRITE_WEBHOOK_SECRET).then((verified) => verified
       ? null

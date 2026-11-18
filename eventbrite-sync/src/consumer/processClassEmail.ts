@@ -10,7 +10,7 @@ import type { ClassEmailQueueMessage, ProcessBatchDeps } from './processBatch';
 
 // One recipient's share of the work after a class email went out, run from the write queue so each
 // piece gets its own retries and the 30 seconds `waitUntil` allows after a response doesn't cap how
-// many people a send can reach (#96). Two steps, chained so the order is kept: the timeline entry
+// many people a send can reach (GL#96). Two steps, chained so the order is kept: the timeline entry
 // first (a thank-you's People link can create the person, and an entry shouldn't depend on that
 // having happened), then, for a thank-you or missed-you, the follow-up write. A step that throws is
 // retried by the queue on its own, so a retry never repeats an earlier step.

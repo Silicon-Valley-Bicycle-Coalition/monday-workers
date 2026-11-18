@@ -415,7 +415,7 @@ describe('sponsorship facts (sponsorship_event, in_kind_value_cents)', () => {
   });
 });
 
-// Issue #90: custodian_runs is pruned nightly, and the sponsorship backfill's scan has an index.
+// Issue GL#90: custodian_runs is pruned nightly, and the sponsorship backfill's scan has an index.
 describe('D1GiftsStore — run pruning and backfill index', () => {
   beforeEach(async () => { await env.DB.prepare('DELETE FROM custodian_runs').run(); });
 

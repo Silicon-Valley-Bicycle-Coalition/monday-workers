@@ -57,7 +57,7 @@ const calendar = (name: string, board: string, dateColumn: string, colorBy?: str
 const allStatuses = (w: WidgetSpec): WidgetSpec => ({ ...w, allStatuses: true });
 
 const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
-  // docs/31 §4.1 — widgets marked (built) exist on the sandbox Overview since 2026-10-09 (#51).
+  // docs/31 §4.1 — widgets marked (built) exist on the sandbox Overview since 2026-10-09 (GL#51).
   'people-live': { widgets: [
     count('Active members', 'people-live', [is('Membership Status', 'Active')]),                                    // built
     count('Memberships ending in 60 days', 'people-live',
@@ -106,7 +106,7 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     donut('Revenue by Funding Stream', 'donations', 'Funding Stream', [thisFY], 'Amount'),
     donut('Gifts by Gift Size', 'donations', 'Gift Size', [thisFY]),
     // A connect column (Matched By) can't be a chart axis, so classify copies the company name into
-    // this status column (#115). Only matching gifts (column set), so ordinary gifts add no blank bar.
+    // this status column (svbc-monday-migration#115). Only matching gifts (column set), so ordinary gifts add no blank bar.
     bars('Matching gifts by company', 'donations', 'Matched By Company', 'Amount', [thisFY, notEmpty('Matched By Company')]),
   ] },
 

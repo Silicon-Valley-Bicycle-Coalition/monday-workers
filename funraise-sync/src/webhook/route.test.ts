@@ -311,7 +311,7 @@ describe('redelivery of a stranded event', () => {
   });
 });
 
-// #25: the secret is compared in constant time, and callers that can set headers (the redrive
+// GL#25: the secret is compared in constant time, and callers that can set headers (the redrive
 // script, a hand replay) send it as X-Webhook-Secret so it stays out of URLs and logs. Funraise
 // itself can't set a header (its webhook config is a URL and a contact email), so ?secret= stays.
 describe('shared secret via header', () => {

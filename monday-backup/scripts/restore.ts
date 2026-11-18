@@ -17,7 +17,7 @@ const MONDAY_API_URL = 'https://api.monday.com/v2';
 async function main(): Promise<number> {
   const args = parseRestoreArgs(process.argv.slice(2), new Date());
 
-  // Snapshots since format v3 are encrypted (issue #112); older plaintext ones need no key.
+  // Snapshots since format v3 are encrypted (issue GL#112); older plaintext ones need no key.
   const keyText = args.keyFile !== undefined ? readFileSync(args.keyFile, 'utf8') : process.env.BACKUP_ENCRYPTION_KEY;
   const key = keyText === undefined || keyText.trim() === '' ? undefined : await importSnapshotKey(keyText);
   const entries = readdirSync(args.snapshotDir)

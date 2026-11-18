@@ -226,7 +226,7 @@ describe('processInboundBatch', () => {
     errorSpy.mockRestore();
   });
 
-  // #97: catalog work is batch-scoped. One D1 query resolves every message's interests, one
+  // GL#97: catalog work is batch-scoped. One D1 query resolves every message's interests, one
   // reconcile (run after every member in the batch was read) covers every unknown interest, and a
   // member with no Donor item never gets that far.
   describe('batch scope (#97)', () => {
@@ -433,7 +433,7 @@ describe('processInboundBatch', () => {
   });
 });
 
-// #101: once one message hits a Monday outage, the rest of the batch is retried with backoff
+// GL#101: once one message hits a Monday outage, the rest of the batch is retried with backoff
 // without calling Monday or Mailchimp, instead of each repeating the transport's in-process attempts.
 describe('outage breaker (#101)', () => {
   function outageDeps(err: Error) {

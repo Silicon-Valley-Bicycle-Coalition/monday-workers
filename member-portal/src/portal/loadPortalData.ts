@@ -47,7 +47,7 @@ export async function loadPortalData(
     return null;
   });
 
-  // Per donor, not all-or-nothing (issue #31): a household login spans several donor items, and
+  // Per donor, not all-or-nothing (issue GL#31): a household login spans several donor items, and
   // one bad record (a deleted item, a Monday error on that id) used to fail the whole dashboard.
   const [donorResults, discounts, shiftsPerDonor] = await Promise.all([
     Promise.allSettled(donorItemIds.map((id) => monday.getMemberPortalData(id, { includeDonations: donationHistoryEnabled }))),

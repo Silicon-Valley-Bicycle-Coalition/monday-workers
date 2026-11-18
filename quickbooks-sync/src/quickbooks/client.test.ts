@@ -43,7 +43,7 @@ function authorizationOf(call: unknown[] | undefined): unknown {
   return ((call?.[1] as Record<string, unknown>)?.headers as Record<string, unknown>)?.Authorization;
 }
 
-// #33: Intuit rotates refresh tokens and expires the previous one. The webhook and consumer both
+// GL#33: Intuit rotates refresh tokens and expires the previous one. The webhook and consumer both
 // used to refresh near expiry with a last-writer-wins save, so a racing pair could leave D1 holding
 // an invalidated refresh token (lockout until re-seeded by hand). Refreshes now take a D1 lease,
 // save by compare-and-swap, and re-read D1 on invalid_grant.
@@ -251,13 +251,13 @@ describe('HttpQuickBooksClient', () => {
     const call = fetchMock.mock.calls[0];
     expect(call).toBeDefined();
     const [url, init] = call!;
-    // requestid (#33): QuickBooks answers a repeat of the same requestid with the original
+    // requestid (GL#33): QuickBooks answers a repeat of the same requestid with the original
     // response instead of creating a second Customer.
     expect(url).toBe('https://quickbooks.api.intuit.com/v3/company/realm-1/customer?requestid=monday-item-42');
     expect(JSON.parse((init as Record<string, unknown>).body as string)).toEqual({ DisplayName: 'New Co' });
   });
 
-  // #33 review: a create failure used to read only "HTTP 400 creating customer" and retried into
+  // GL#33 review: a create failure used to read only "HTTP 400 creating customer" and retried into
   // the DLQ. Intuit's Fault is now in the message, and a validation fault is terminal.
   it('puts Intuit fault details in the error and marks a validation fault terminal', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
@@ -312,7 +312,7 @@ describe('HttpQuickBooksClient', () => {
   });
 });
 
-// #73: a hung Intuit call must fail well inside the 30 s refresh lease, so the lease holder releases
+// GL#73: a hung Intuit call must fail well inside the 30 s refresh lease, so the lease holder releases
 // it (or saves) before another refresher can take over and rotate the same refresh token again.
 describe('HttpQuickBooksClient request timeouts', () => {
   function hangingFetch() {

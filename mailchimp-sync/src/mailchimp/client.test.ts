@@ -35,7 +35,7 @@ describe('HttpMailchimpClient.updateMember', () => {
 
   it('PATCHes only the merge fields of the member keyed by the MD5 hash of the lowercased email', async () => {
     // PATCH, never PUT: a PUT creates missing members, and this Worker must never add
-    // anyone to the audience — Mailchimp is the consent system of record (issue #28).
+    // anyone to the audience — Mailchimp is the consent system of record (issue GL#28).
     const fetchFn = fakeFetch({ ok: true });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
 
@@ -90,7 +90,7 @@ describe('HttpMailchimpClient.updateMember', () => {
     );
   });
 
-  // #97: the member's current tags are only needed once the PATCH has found the member, so a
+  // GL#97: the member's current tags are only needed once the PATCH has found the member, so a
   // caller can pass a reader instead of a list and save a call on every not-in-audience donor.
   it('reads lazily supplied managed tags only after the PATCH finds the member', async () => {
     const fetchFn = fakeFetch({ ok: true });
@@ -428,7 +428,7 @@ describe('HttpMailchimpClient rate limiting', () => {
   });
 });
 
-// #73: the queues run one message at a time, so a hung Mailchimp call must fail (and be retried)
+// GL#73: the queues run one message at a time, so a hung Mailchimp call must fail (and be retried)
 // rather than stall every message behind it.
 describe('HttpMailchimpClient request timeouts', () => {
   it('passes every request a timeout signal, and a hung request rejects with TimeoutError', async () => {

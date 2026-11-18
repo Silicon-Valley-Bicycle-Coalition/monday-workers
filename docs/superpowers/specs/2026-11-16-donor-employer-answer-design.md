@@ -1,6 +1,6 @@
 # Donor-supplied employer — Design
 
-**Status:** Draft design, pre-implementation (2026-11-16). Issue #127.
+**Status:** Draft design, pre-implementation (2026-11-16). Issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127).
 **Worker:** `member-portal` (the portal and its writer, `svbc-member-portal-writer`). No new Worker.
 
 ## Why
@@ -161,7 +161,7 @@ other fields). `config/split.test.ts` covers the new board ids. Column ids are t
 ### Access
 
 The writer's Staff Sync identity needs write access to the Affiliations board, and read access
-to Organizations and Affiliations. The integration user already has it (one user, #18), so this is
+to Organizations and Affiliations. The integration user already has it (one user, [GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18)), so this is
 a statement of fact for the README, not a setup step.
 
 ### Post-gift email

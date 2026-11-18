@@ -34,10 +34,10 @@ export interface AppDeps {
   ignoredColumnIds: ReadonlySet<string>;
   // First factor: a shared secret embedded in the webhook URL, set when subscribing (e.g.
   // .../webhooks/monday/donations?secret=...) and checked here in constant time. Fails closed
-  // (issue #27): undefined/empty rejects every request, including the subscription handshake —
+  // (issue GL#27): undefined/empty rejects every request, including the subscription handshake —
   // set MONDAY_WEBHOOK_SECRET in .dev.vars for local dev.
   webhookSecret?: string;
-  // Second factor (issue #110): a webhook created by an app (here, through monday-auth's Staff
+  // Second factor (issue GL#110): a webhook created by an app (here, through monday-auth's Staff
   // sync app) carries `Authorization: <JWT>` signed with the app's Signing Secret; one created
   // with a personal token carries none. See src/mondayJwt.ts for the rollout policy. Absent =
   // no signing secret, so the URL secret alone decides, as before.
@@ -126,7 +126,7 @@ export function createApp(deps: AppDeps) {
 
     const stamp = stampFor(await deps.writeMode());
     try {
-      // The delay (issue #89) lets a burst of edits land — each one re-stamps received_at on the
+      // The delay (issue GL#89) lets a burst of edits land — each one re-stamps received_at on the
       // pending row — before the first message reads Monday, so the rest coalesce on that read.
       // columnId lets the consumer coalesce a non-link edit from the D1 link, with no Monday call.
       await deps.queue.send({

@@ -1,6 +1,6 @@
 # Privacy policy review: wealth screening and the donor portal
 
-Issue #81, following item 6 of the [2026-10-28 workers review](2026-10-28-workers-review.md).
+Issue [GL#81](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/81), following item 6 of the [2026-10-28 workers review](2026-10-28-workers-review.md).
 This compares the published policy with what the systems in this repo do. It isn't a legal
 opinion, and the draft wording below needs the policy owner's review, and counsel's if SVBC wants
 it.
@@ -107,7 +107,7 @@ sentence true. Otherwise the text needs softening to something like "staff who n
 **Update 2026-11-06:** the Windfall columns are being moved off both People boards to a private
 Wealth Screening board that three staff can open, and the draft wording below now says "a small
 number of staff". People's activity log may show the old values for up to a year (accepted by
-David). The move is in `docs/runbooks/windfall-private-board.md`; #81 stays open for the policy
+David). The move is in `docs/runbooks/windfall-private-board.md`; [GL#81](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/81) stays open for the policy
 update.
 
 ### 5. The donor portal isn't covered

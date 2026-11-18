@@ -6,7 +6,7 @@ export interface RequestRateLimiter {
 
 export const MONDAY_WEBHOOK_PATH = '/webhooks/monday/donations';
 
-// Issue #27: Monday delivers every webhook from a small pool of IPs, so a bulk edit of more than
+// Issue GL#27: Monday delivers every webhook from a small pool of IPs, so a bulk edit of more than
 // 60 gifts blew through the per-IP limit and Monday's own deliveries got 429s. A delivery that
 // passes the webhook's own check (right method, exact path, matching ?secret=) skips the
 // limiter; anything else — a guessed secret, the right secret on another route — is limited as

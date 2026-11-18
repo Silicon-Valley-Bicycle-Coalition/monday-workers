@@ -1,4 +1,4 @@
-// Moves the loaded Organizations boards from the free-text Partner Type to the dropdown (#55). Monday
+// Moves the loaded Organizations boards from the free-text Partner Type to the dropdown (GL#55). Monday
 // can't change a column's type (update_column's column_type "must match the existing column type"),
 // so this is a new column filled from the old one. Used once per board, by
 // scripts/relabel-partner-type.ts.

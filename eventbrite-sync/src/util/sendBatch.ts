@@ -1,4 +1,4 @@
-// Copied from benevity-import/src/util/sendBatch.ts (#75): the attendee fan-out sends in batches.
+// Copied from benevity-import/src/util/sendBatch.ts (GL#75): the attendee fan-out sends in batches.
 // Cloudflare Queues sendBatch limits: at most 100 messages and 256 KB total per call.
 export const MAX_BATCH_MESSAGES = 100;
 export const MAX_BATCH_BYTES = 256 * 1024;

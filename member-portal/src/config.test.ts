@@ -226,7 +226,7 @@ describe('validateConfig', () => {
   });
 
   // The letter email's login link is a bearer credential that sits in an inbox for days — long
-  // enough to be useful (issue #31: 15 minutes produced dead January links), capped at a week so
+  // enough to be useful (issue GL#31: 15 minutes produced dead January links), capped at a week so
   // a typo can't mint month-long credentials.
   it.each([0, -1, 169, '72', Number.NaN])('rejects auth.letterLinkTtlHours = %s', (value) => {
     const broken = { ...validConfig, auth: { ...validConfig.auth, letterLinkTtlHours: value } };

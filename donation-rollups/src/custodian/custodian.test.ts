@@ -385,12 +385,12 @@ describe('sweep duty', () => {
     expect(sent).toHaveLength(2);
     expect(new Set(sent.map((m) => m.donationItemId))).toEqual(new Set(['d1', 'd3']));
     expect(sent.every((m) => m.sweep === true)).toBe(true);
-    // Issue #88: owner-keyed, so the consumer needn't resolve the owner from the gift.
+    // Issue GL#88: owner-keyed, so the consumer needn't resolve the owner from the gift.
     expect(sent.map((m) => [m.ownerItemId, m.ownerBoardId])).toEqual([['oA', 'b1'], ['oB', 'b1']]);
   });
 });
 
-// Issue #88: the fiscal-start sweep only moves This/Last Year, so it recomputes the owners whose
+// Issue GL#88: the fiscal-start sweep only moves This/Last Year, so it recomputes the owners whose
 // totals the rollover changes, paced under the account's 10,000/day Monday call cap.
 describe('sweep duty on the fiscal start (rollover scope and pacing)', () => {
   const insertGift = (id: string, owner: string, board: string, fy: number, type = 'Individual', removed: string | null = null) =>
@@ -1069,7 +1069,7 @@ describe('requeue duty', () => {
     expect(byId.get('dn-stuck')).not.toHaveProperty('kind');
   });
 
-  // Issue #90: pending_recomputes and custodian_runs were never pruned.
+  // Issue GL#90: pending_recomputes and custodian_runs were never pruned.
   it('prunes finished rows past 30 days and custodian runs past 180, keeping each duty\'s latest run', async () => {
     await seed('done-old', '2026-06-01T00:00:00Z', 'written');   // 61 days before now
     await seed('done-recent', '2026-07-15T00:00:00Z', 'written');
@@ -1173,7 +1173,7 @@ describe('scheduled custodian run (write switch)', () => {
       ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue', 'rollcall']);
   });
 
-  // Issue #90: one write budget for the whole run (custodian.writesPerRun), not one per duty.
+  // Issue GL#90: one write budget for the whole run (custodian.writesPerRun), not one per duty.
   it('shares one write budget across the run\'s duties', async () => {
     for (const id of ['a1', 'a2', 'a3']) await seedGift(env.DB, id, { fy: 2015 });
     const config = testConfig({ alertItemId: null, writesPerRun: 2 });
@@ -1193,7 +1193,7 @@ describe('scheduled custodian run (write switch)', () => {
     expect(archive?.report).toMatchObject({ detail: { archived: 1, remaining: 2 } });
   });
 
-  // Issue #90: membership and recurring each paged People in full; one read now serves both.
+  // Issue GL#90: membership and recurring each paged People in full; one read now serves both.
   it('pages a board that several duties read once per run', async () => {
     const config = testConfig({ alertItemId: null });
     const membershipCols = { status: 'ms', tier: 'mt', since: 'msi', until: 'mu', currentTermStart: 'ts', memberType: 'mty',

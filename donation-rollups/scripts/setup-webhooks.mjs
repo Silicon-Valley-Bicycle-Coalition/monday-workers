@@ -6,7 +6,7 @@
 // board added later) needs this re-run. The shared secret rides in the URL query (?secret=...)
 // and must match the Worker's MONDAY_WEBHOOK_SECRET.
 //
-// Usage, preferred (#110): through the monday-auth broker, so the Staff sync app owns the webhooks
+// Usage, preferred (GL#110): through the monday-auth broker, so the Staff sync app owns the webhooks
 // and Monday signs every delivery with its Signing Secret. Needs WEBHOOKS_ENABLED on the broker
 // for that deploy (monday-auth/README.md "Re-registering webhooks"):
 //   MONDAY_AUTH_URL=https://svbc-monday-auth.svbc-account.workers.dev START_KEY=... WEBHOOK_SECRET=... \
@@ -45,7 +45,7 @@ const configPath = argIdx('--config') >= 0 ? process.argv[argIdx('--config') + 1
 const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const url = `${workerUrl.replace(/\/$/, '')}/webhooks/monday/donations?secret=${encodeURIComponent(secret)}`;
 
-// The Worker's own copy of the canonical Monday transport (#35), for the legacy token path:
+// The Worker's own copy of the canonical Monday transport (GL#35), for the legacy token path:
 // retries rate limits and Monday blips, times out hung requests, and never blindly re-runs a
 // create. Imported as TypeScript — needs a Node with built-in type stripping (22.18+ / 23.6+).
 let graphql = null;
@@ -82,7 +82,7 @@ async function ensure(label, boardId, events) {
   }
 }
 
-// item_deleted / item_archived / item_restored (issue #26): a deleted gift must leave its owner's
+// item_deleted / item_archived / item_restored (issue GL#26): a deleted gift must leave its owner's
 // totals, and a restored one come back.
 for (const board of config.donationRollups.donationBoards) {
   await ensure('board', String(board.boardId), ['create_item', 'change_column_value', 'item_deleted', 'item_archived', 'item_restored']);

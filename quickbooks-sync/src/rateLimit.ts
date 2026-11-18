@@ -8,7 +8,7 @@ export const MONDAY_WEBHOOK_PATH = '/webhooks/monday';
 
 // Monday delivers every webhook from a small pool of IPs, so a bulk edit of more than a minute's
 // limit of rows spent the per-IP budget and Monday's own deliveries got 429s (donation-rollups
-// hit this first, issue #27). A delivery that passes the webhook's own check (right method, exact
+// hit this first, issue GL#27). A delivery that passes the webhook's own check (right method, exact
 // path, matching ?secret=) skips the limiter; anything else — a guessed secret, the right secret
 // on another route — is limited as before, so the exemption can't be reached without the secret.
 // Costs one SHA-256 pair per request, no I/O.

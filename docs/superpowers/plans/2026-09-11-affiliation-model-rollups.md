@@ -24,7 +24,7 @@ Queues, Vitest with `@cloudflare/vitest-plugin` (real D1 in tests, `env.DB` from
 
 **Spec:** [`docs/superpowers/specs/2026-09-08-person-org-email-model-design.md`](../specs/2026-09-08-person-org-email-model-design.md) — sections "Data model" (Affiliations board rollup columns, People `Organizational Giving`), "Rollups", and the 2026-09-11 Donor-link decision in "Decision history".
 
-**Plan 1 (done, merged as !50 plus the Donor-link follow-up):** `salesforce-import` now emits the
+**Plan 1 (done, merged as [GL!50](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/merge_requests/50) plus the Donor-link follow-up):** `salesforce-import` now emits the
 Affiliations board, `Acting for` + `Attribution` on Donations and Event Registrations, seed values
 for the three attributed columns and `Organizational Giving`, and points an attributed org gift's
 **Donor at the organization**. This Worker reads Donor as written; it never re-points it.

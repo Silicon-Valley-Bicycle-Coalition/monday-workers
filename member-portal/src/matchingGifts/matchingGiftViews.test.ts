@@ -16,7 +16,7 @@ describe('matchingGiftsView', () => {
     expect(html).toContain(`sandbox="${SEARCH_SANDBOX_FLAGS}"`);
     expect(html).toContain('title="Employer matching-gift search"');
     expect(html).toContain('Search for your employer below');
-    // Issue #102: third-party JS must not run on the portal origin.
+    // Issue GL#102: third-party JS must not run on the portal origin.
     expect(html).not.toContain('ddplugin.js');
     expect(html).not.toContain('dtd-abc123');
   });

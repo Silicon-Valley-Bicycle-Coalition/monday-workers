@@ -1,5 +1,5 @@
 /**
- * Constant-time comparison of a presented shared secret against the configured one (issue #32).
+ * Constant-time comparison of a presented shared secret against the configured one (issue GL#32).
  * Both sides are hashed to fixed-length SHA-256 digests first, so neither the content nor the
  * length of the real secret leaks through timing, then every digest byte is compared with no
  * early exit. (Hand-rolled rather than workerd's crypto.subtle.timingSafeEqual because this

@@ -15,7 +15,7 @@ describe('loadConfig', () => {
     expect(cfg.localNews.defaultUrl).toContain('localnewsmatters');
     // The "Anonymous Person" Contact + its household Account (741 Opportunities point at them).
     expect(cfg.placeholderDonorSfIds).toEqual(['003i000001breKtAAI', '001i000001Esfc1AAB']);
-    // The user the eb4sf Eventbrite package writes paid ticket orders as (#43).
+    // The user the eb4sf Eventbrite package writes paid ticket orders as (GL#43).
     expect(cfg.eventbriteIntegrationUserName).toBe('SVBC Integration');
   });
 

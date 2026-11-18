@@ -17,7 +17,7 @@ running a command. The sandbox already has hand-built Overviews on People and Or
 must be neither duplicated nor silently broken.
 
 **Non-goals:** the three workspace dashboards (existing code, unchanged); pinning, tab order,
-widget size and position, item cards (UI-only, no API); the Find table views (#51 §1, unchanged).
+widget size and position, item cards (UI-only, no API); the Find table views ([GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51) §1, unchanged).
 
 ## 2. What exists today
 
@@ -26,7 +26,7 @@ Read from `monday-workers` main (8913fce) on 2026-10-14.
 | Piece | Today | Consequence |
 |---|---|---|
 | `dashboards.ts` `WidgetSpec` | `CHART` and `NUMBER` only; `NUMBER` is always column maths (`calculation_type: 'columns'`) | Count tiles, lists and calendars need new branches |
-| `widgetFilter()` | emits `r.compareValue ?? []` as given | A bare `0` leaves a widget silently unfiltered (#51); needs a guard |
+| `widgetFilter()` | emits `r.compareValue ?? []` as given | A bare `0` leaves a widget silently unfiltered ([GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51)); needs a guard |
 | Dashboard state | `data/load/dashboards.json`, `name → { id, widgets: { name → id } }`, saved after every create | Reuse the file; add per-board keys |
 | `configureDashboards` | parent `DASHBOARD`; creates missing widgets on a later run | Wrong model for a board view: widgets added after the first open don't render |
 | `DASHBOARD_SPECS` | a `.map()` ANDs the `Received` rule onto every Donations widget | Overview widgets on Donations need the same rule, so the mapper becomes shared |
@@ -40,13 +40,13 @@ Read from `monday-workers` main (8913fce) on 2026-10-14.
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | **An Overview is created whole or not at all.** Every widget resolves first; if any fails (missing column, missing label), nothing is created and the notes say why. | Widgets added after the view has been opened don't render (#51). A half-built Overview can't be finished by a later run. |
+| D1 | **An Overview is created whole or not at all.** Every widget resolves first; if any fails (missing column, missing label), nothing is created and the notes say why. | Widgets added after the view has been opened don't render ([GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51)). A half-built Overview can't be finished by a later run. |
 | D2 | **A same-named Overview already on the board is adopted and left alone.** Its id is recorded as `adopted`; no widget is added, changed or deleted. | The hand-built sandbox views carry staff-visible layout and pinning that no API can restore. |
 | D3 | **`--rebuild-overviews <board-keys>` replaces an Overview whole.** Keys are mandatory, never "all"; dry-run lists what would be deleted. **Decided at review: the sandbox People and Organizations Overviews are rebuilt** to carry the extended widget sets. | The step costs the view's pin and sizes, so it must be explicit, and the sandbox owner re-pins and re-sizes afterwards. |
-| D4 | **Overview specs live in a new `overviewSpecs.ts`, keyed by board key**, including `annual-giving-summary`. This departs from #51's `BoardSpec.overview` suggestion. | `spec.ts` is already 518 lines and Annual Giving Summary has no `BoardSpec`. One table keeps the 12 specs together. |
+| D4 | **Overview specs live in a new `overviewSpecs.ts`, keyed by board key**, including `annual-giving-summary`. This departs from [GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51)'s `BoardSpec.overview` suggestion. | `spec.ts` is already 518 lines and Annual Giving Summary has no `BoardSpec`. One table keeps the 12 specs together. |
 | D5 | **"This FY" is resolved at run time from the clock**: label values `@FY` and `@FY-1`, and a date value `{ fiscalYear: 'current' \| 'previous' }` that becomes a `between` on two ISO dates. | The API has no fiscal operator (`docs/31` §9). Hard-coded `FY2027` would go stale on July 1. |
 | D6 | **The ordinary client and token are used** for the whole step. | Verified 2026-10-14: no dashboard-rights token needed for board-view dashboards. |
-| D7 | **Two merge requests, decided at review**: A is #51 as written (Find views, People and Organizations Overviews at their as-built widget set, count and list widget kinds, array guard, adoption); B is the other ten boards, the extended People and Organizations sets, Calendar, relative and fiscal values, and `--rebuild-overviews`. B is stacked on A's branch. | A is small and unblocks the cutover checklist item; B depends on A's types. |
+| D7 | **Two merge requests, decided at review**: A is [GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51) as written (Find views, People and Organizations Overviews at their as-built widget set, count and list widget kinds, array guard, adoption); B is the other ten boards, the extended People and Organizations sets, Calendar, relative and fiscal values, and `--rebuild-overviews`. B is stacked on A's branch. | A is small and unblocks the cutover checklist item; B depends on A's types. |
 | D8 | **The Donations `Received` rule applies to NUMBER, CHART and LISTVIEW widgets on Donations, and a widget opts out with `allStatuses: true`.** | The existing mapper ANDs `Status = Received` onto every Donations widget. The Pending tile and the Needs-a-donor tile deliberately span every Status and would otherwise count nothing. |
 | D9 | **A refused Overview makes `configure` exit non-zero.** The existing workspace-dashboard step only notes a refusal. | A missing Overview at cutover is a missing deliverable. The operator must see it. |
 
@@ -122,7 +122,7 @@ a refusal (D1) never removes an existing view.
   column_ids_per_board: { <id>: [] }, should_count_items: true } }`, the shape the 2026-10-14
   probe rendered correctly (2,425 on a 2,425-item board).
 * **LISTVIEW:** `{ order_columns: ['name', ...ids], show_hide_columns: <every other column id>,
-  item_height: 'single', is_docked: true }` (#51). No sort exists, so a list is only as good as its filter.
+  item_height: 'single', is_docked: true }` ([GL#51](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/51)). No sort exists, so a list is only as good as its filter.
 * **CALENDAR:** `{ columns: { <id>: [<date column id>], all: false }, color_by_type, colorByIdPerBoardId,
   view_mode: 'month', show_time_slots: false }`. Colouring by board was verified; colouring by a
   status column (`color_by_type: 'color'`) follows the widget schema's examples and is untested.
