@@ -255,17 +255,15 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual([]); // sandbox crons are disabled to save cost
   });
 
-  it('binds EMPLOYER_ANSWERS to the sandbox impact-attribution only; production declares none until it is deployed there', () => {
+  it("binds EMPLOYER_ANSWERS to each environment's own impact-attribution", () => {
     const binding = (scope: Json) => (scope.services as { binding: string; service: string; entrypoint?: string }[] | undefined)?.find((s) => s.binding === 'EMPLOYER_ANSWERS');
     expect(binding(sandboxEnv)).toEqual({ binding: 'EMPLOYER_ANSWERS', service: 'svbc-impact-attribution-sandbox', entrypoint: 'EmployerAnswers' });
-    expect(binding(sandboxEnv)!.service).toMatch(/-sandbox$/);
-    expect(binding(wrangler)).toBeUndefined();
+    expect(binding(wrangler)).toEqual({ binding: 'EMPLOYER_ANSWERS', service: 'svbc-impact-attribution', entrypoint: 'EmployerAnswers' });
   });
 
-  // Sandbox was turned on 2026-11-17 for the first replay; production stays off until
-  // impact-attribution is deployed there and the pre-enable checklist passes.
-  it('ships employerAnswers off in production', () => {
-    expect(production.employerAnswers).toEqual({ enabled: false });
+  it('turns employerAnswers on in both configs (#127, after the pre-enable checklist passed in each)', () => {
+    expect(production.employerAnswers).toEqual({ enabled: true });
+    expect(sandbox.employerAnswers).toEqual({ enabled: true });
   });
 
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {

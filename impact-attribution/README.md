@@ -1,12 +1,11 @@
 # impact-attribution
 
-**Status: sandbox deployed 2026-11-16 with writes off; production not deployed. No live Monday write has been run.** It has two jobs, both
+**Status (2026-11-17): sandbox writes `on`; production deployed (`efb17a82`, migrations through `0003`)
+with writes `off`, waiting on the `excludedPayers` gate. No production Monday write has been run.** It has two jobs, both
 proposing Draft employer affiliations for staff to confirm: from repeated matching gifts (issue
-#125, deployed to the sandbox) and from a donor's company email domain (issue #124, built, not
-deployed; needs migration `0002`). The matching-gift job also takes employer answers collected by
-`eventbrite-sync` (issue #127, built, not deployed; needs migration `0003`; ships disabled in
-`eventbrite-sync`). Every Monday write ships **off**
-(`impact-attribution:writes` unset, which means `off`).
+#125) and from a donor's company email domain (issue #124). The matching-gift job also takes employer
+answers collected by `eventbrite-sync` (issue #127), whose hand-over is on in both environments: answers
+are stored in D1 now and become Drafts once production writes are `on`.
 Design: [`docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md`](../docs/superpowers/specs/2026-11-16-employer-affiliation-proposals-design.md);
 plan: [`docs/superpowers/plans/2026-11-16-employer-affiliation-proposals.md`](../docs/superpowers/plans/2026-11-16-employer-affiliation-proposals.md).
 Email domains: [`2026-11-16-employer-from-email-domain-design.md`](../docs/superpowers/specs/2026-11-16-employer-from-email-domain-design.md).
@@ -212,7 +211,9 @@ answer-only pairs as well; `qualifying` counts match pairs only.
    Production `eventbrite-sync` deploys without the binding, so the 2027 pledge config never waits
    on this. Order in the sandbox: apply migration `0003` and deploy `impact-attribution` sandbox
    **before** `eventbrite-sync` sandbox, so the service binding resolves.
-3. Production: apply `0003` to the production D1
+3. ~~Production~~ done 2026-11-17: `0003` applied, `impact-attribution` `efb17a82` deployed (writes
+   still `off`; the `excludedPayers` gate below governs Monday writes, not the hand-over), binding added and
+   `enabled` true. No 2027 pledge attendees existed yet, so there was nothing to backfill. Original steps: apply `0003` to the production D1
    (`npx wrangler d1 migrations apply svbc-impact-attribution --remote`), deploy `impact-attribution`
    (its own gate: the `excludedPayers` review), then add the binding to `eventbrite-sync` production
    and, once the checklist below passes, enable it. Then backfill the 2027 pledges, so answers given
