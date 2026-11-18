@@ -53,7 +53,7 @@ export const FOOTER = `*|LIST:ADDRESSLINE|*<br>
 
 /**
  * The design system's EmailLayout, as member-portal's renderEmailLayout() renders it but with a
- * letterhead-style header (small wordmark left, website right, gold on black) (tokens:
+ * letterhead-style header (small wordmark, left-aligned, on a slim black band) (tokens:
  * email-wrap svbc-sand, email-card white, email-text svbc-ink, email-max 560px, radius-lg 8px),
  * with Mailchimp's footer. Dark mode is the same best-effort media query, plus gold links: the
  * pasted link blues are about 2:1 on the dark card (svbc-gold is 9.5:1, the design system's link
@@ -88,10 +88,7 @@ export function emailLayout(title, bodyHtml, logoUrl = LOGO_URL) {
 <tr><td align="center" style="padding:24px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
 <tr><td class="em-pad" style="background:#000000; padding:12px 24px; border-radius:8px 8px 0 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-<td style="vertical-align:middle;"><a href="https://bikesiliconvalley.org"><img src="${logoUrl}" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" alt="Silicon Valley Bicycle Coalition" style="display:block; width:${LOGO_WIDTH}px; height:auto; border:0;"></a></td>
-<td style="vertical-align:middle; text-align:right; font-family:${FONT}; font-size:12px; line-height:1.4;"><a href="https://bikesiliconvalley.org" style="color:#FFC700; text-decoration:none;">bikesiliconvalley.org</a></td>
-</tr></table>
+<a href="https://bikesiliconvalley.org"><img src="${logoUrl}" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" alt="Silicon Valley Bicycle Coalition" style="display:block; width:${LOGO_WIDTH}px; height:auto; border:0;"></a>
 </td></tr>
 <tr><td class="em-card em-text em-pad" style="background:#FFFFFF; color:#303030; padding:32px 24px; font-family:${FONT}; font-size:16px; line-height:1.5;">
 ${bodyHtml}
