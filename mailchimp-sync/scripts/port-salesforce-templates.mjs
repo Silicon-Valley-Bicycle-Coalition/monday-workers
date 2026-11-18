@@ -70,9 +70,14 @@ function mailchimpTemplates(apiBaseUrl, apiKey) {
     // The file manager's URL for an image by name, uploading it first if it isn't there.
     async hostedImage(path) {
       const name = basename(path);
-      const { files } = await call('GET', '/file-manager/files?type=image&count=1000&fields=files.name,files.full_size_url');
-      const found = files.find((f) => f.name === name);
-      if (found) return { url: found.full_size_url, uploaded: false };
+      // Every page, oldest first: the audience's file manager holds thousands of images, and a
+      // re-upload under the same name is stored as "name.01.png" rather than replacing it.
+      for (let offset = 0; ; offset += 1000) {
+        const page = await call('GET', `/file-manager/files?type=image&count=1000&offset=${offset}&sort_field=added_date&sort_dir=ASC&fields=files.name,files.full_size_url,total_items`);
+        const found = page.files.find((f) => f.name === name);
+        if (found) return { url: found.full_size_url, uploaded: false };
+        if (offset + page.files.length >= page.total_items || page.files.length === 0) break;
+      }
       const saved = await call('POST', '/file-manager/files', { name, file_data: readFileSync(path).toString('base64') });
       return { url: saved.full_size_url, uploaded: true };
     },
