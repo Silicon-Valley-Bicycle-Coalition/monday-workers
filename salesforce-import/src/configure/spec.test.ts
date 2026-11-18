@@ -288,6 +288,18 @@ describe('Martha\'s reconciliation views', () => {
     for (const v of views.slice(0, 2)) expect(v.columns, v.name).toContain('Gift Size');
   });
 
+  it('the sponsorships view counts sponsorships but not in-kind gifts, whose Gift Type also says Sponsorship', () => {
+    // Gift Type is text; the view's text rules all have to hold (svbc-monday-migration#114).
+    const textRules = views[2]!.filter!.rules.filter((r) => r.columnTitle === 'Gift Type');
+    const shows = (giftType: string) => textRules.every((r) => {
+      const has = giftType.toLowerCase().includes(String(r.compareValue).toLowerCase());
+      return r.operator === 'contains_text' ? has : r.operator === 'not_contains_text' ? !has : true;
+    });
+    expect(shows('Sponsorship')).toBe(true);
+    expect(shows('In Kind Donation / Sponsorship')).toBe(false);
+    expect(shows('Donation')).toBe(false);
+  });
+
   it('the individual view leaves out every other revenue stream', () => {
     const excluded = views[0]!.filter!.rules.filter((r) => r.operator === 'not_contains_text').map((r) => r.compareValue);
     expect(excluded).toEqual(expect.arrayContaining(['Sponsorship', 'Matching Donation', 'In Kind']));

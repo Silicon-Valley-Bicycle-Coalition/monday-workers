@@ -468,6 +468,9 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Sponsorship' },
+          // In-kind gifts' Gift Type is "In Kind Donation / Sponsorship", which also contains
+          // Sponsorship; they're goods, not sponsorship cash, so keep them out of the sum.
+          { columnTitle: 'Gift Type', operator: 'not_contains_text', compareValue: 'In Kind' },
         ] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Needs a donor', tag: 'Worklist', columns: ['Amount', 'Date', 'Gift Type', 'Anonymous Donor'],
