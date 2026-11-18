@@ -14,7 +14,7 @@ import { donationCreditColumnIds, donationCreditFrom, type ItemColumns } from '.
 import type { DonationRollupsConfig } from '../types';
 import type { CustodianMondayClient } from './custodian';
 import { classifyReadColumns } from './classify';
-import { membershipTermStartColumns } from './membership';
+import { membershipReadColumns } from './membership';
 import { recurringFlagColumns } from './recurring';
 import { donorReadColumns } from './rollcall';
 
@@ -28,7 +28,7 @@ export function sharedReadPlan(config: DonationRollupsConfig): ReadPlan {
     for (const c of columnIds) cols.add(c);
     plan.set(id, cols);
   };
-  for (const b of membershipTermStartColumns(config)) add(b.boardId, [b.currentTermStart]);
+  for (const b of membershipReadColumns(config)) add(b.boardId, b.columnIds);
   for (const b of recurringFlagColumns(config)) add(b.boardId, [b.columnId]);
   for (const board of config.donationRollups.donationBoards) {
     const cols = classifyReadColumns(board);
