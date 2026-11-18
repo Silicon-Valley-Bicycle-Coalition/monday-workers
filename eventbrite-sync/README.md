@@ -573,7 +573,7 @@ moves earlier Role = Volunteer registrations over (`--apply`, `--remap-out`, `--
 board as history. The Event column is a two-way connection (turned on in the column settings
 UI; the API can't): the Events board's **Volunteers** column is its other side, kept by Monday, and
 that board's **Volunteer events** view (Volunteers not empty, Date newest first) is where staff
-click an event to see who signed up. Production has both since 2026-11-17; the sandbox has neither.
+click an event to see who signed up. Production and sandbox v4 have both since 2026-11-17.
 Cutover order, rollback and open gaps:
 [`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
 
