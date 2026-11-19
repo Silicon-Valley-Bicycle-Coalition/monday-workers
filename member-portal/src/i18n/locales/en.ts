@@ -232,6 +232,10 @@ export const en = {
   'orgs.yearTotal': '{{year}} total',
   'orgs.print': 'Print or save as PDF',
   'orgs.back': 'Back to {{name}}',
+  'orgs.emailSubject': "{{org}}'s {{year}} year-end statement is ready",
+  'orgs.emailBody': "{{org}}'s {{year}} year-end statement is ready in the SVBC member portal. It lists all of the organization's support for the year, including gifts, employee matches, sponsorships and grants.",
+  'orgs.emailLink': 'Sign in to view the statement',
+  'orgs.emailSignIn': 'This link signs you in to the portal. It can be used only once and expires soon.',
   'error.orgNotFound': 'That page does not exist.',
   'error.orgLoadFailed': 'We could not load this organization right now. Please try again in a few minutes.',
   // Door pages (src/doors/)

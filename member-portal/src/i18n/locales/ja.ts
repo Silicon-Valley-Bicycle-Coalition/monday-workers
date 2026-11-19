@@ -225,6 +225,10 @@ export const ja: Record<TranslationKey, string> = {
   'orgs.yearTotal': '{{year}}年の合計',
   'orgs.print': '印刷またはPDFで保存',
   'orgs.back': '{{name}}に戻る',
+  'orgs.emailSubject': '{{org}}の{{year}}年 年間明細書の準備ができました',
+  'orgs.emailBody': '{{org}}の{{year}}年 年間明細書をSVBCメンバーポータルでご覧いただけます。寄付、従業員マッチング、協賛、助成金など、その年の団体からのご支援をすべて記載しています。',
+  'orgs.emailLink': 'サインインして明細書を見る',
+  'orgs.emailSignIn': 'このリンクからポータルにサインインできます。ご利用は1回限りで、有効期限は短めです。',
   'error.orgNotFound': 'このページは存在しません。',
   'error.orgLoadFailed': '現在この組織を読み込めません。数分後にもう一度お試しください。',
   // Door pages (src/doors/)

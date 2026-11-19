@@ -225,6 +225,10 @@ export const zhHans: Record<TranslationKey, string> = {
   'orgs.yearTotal': '{{year}}年合计',
   'orgs.print': '打印或另存为 PDF',
   'orgs.back': '返回{{name}}',
+  'orgs.emailSubject': '{{org}} 的 {{year}} 年年终报表已就绪',
+  'orgs.emailBody': '{{org}} 的 {{year}} 年年终报表已可在 SVBC 会员门户中查看。报表列出了该组织全年给予的所有支持，包括捐款、员工配捐、赞助和资助。',
+  'orgs.emailLink': '登录查看报表',
+  'orgs.emailSignIn': '此链接可让您登录门户。它只能使用一次，并且很快会失效。',
   'error.orgNotFound': '该页面不存在。',
   'error.orgLoadFailed': '暂时无法加载此组织。请几分钟后再试。',
   // Door pages (src/doors/)

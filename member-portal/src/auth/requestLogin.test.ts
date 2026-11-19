@@ -44,7 +44,7 @@ function fakeTokenStore(): MagicLinkTokenStore {
 function fakeEmailSender(): EmailSender {
   return {
     sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined),
   };
 }
 

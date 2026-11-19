@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runLetterCron } from './runLetterCron';
 import type { LetterSendStore } from '../db/letterSends';
+import type { OrgStatementSendStore } from '../db/orgStatementSends';
 import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
 import type { WriteMode } from '../flags';
@@ -105,6 +106,21 @@ function fakeStore(existingForYear: Set<string> = new Set()): LetterSendStore {
   };
 }
 
+function fakeOrgStore(existingKeys: Set<string> = new Set()): OrgStatementSendStore {
+  let nextId = 101;
+  return {
+    listKeysForYear: vi.fn().mockResolvedValue(existingKeys),
+    createQueued: vi.fn().mockImplementation(async () => nextId++),
+    findByKey: vi.fn().mockResolvedValue(null),
+    getById: vi.fn(),
+    claimForSending: vi.fn(),
+    releaseClaim: vi.fn(),
+    markSent: vi.fn(),
+    markSkipped: vi.fn(),
+    requeue: vi.fn(),
+  };
+}
+
 function fakeQueue() {
   return { send: vi.fn().mockResolvedValue(undefined) };
 }
@@ -114,7 +130,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const unconfigured: Config = { ...config, letterCron: { ...config.letterCron, boardId: null } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unconfigured, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: unconfigured, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'unconfigured' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -124,7 +140,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const unsigned: Config = { ...config, taxLetter: { ...config.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unsigned, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: unsigned, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'letters-not-signed-off' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -132,7 +148,7 @@ describe('runLetterCron', () => {
 
   it('skips when the settings board has no settings item', async () => {
     const monday = fakeMonday({ getLetterSettings: vi.fn().mockResolvedValue(null) });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'no-settings' });
     expect(monday.listYearActivity).not.toHaveBeenCalled();
   });
@@ -141,7 +157,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: false, startDate: '2027-01-10', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'auto-send-off' });
     expect(monday.listYearActivity).not.toHaveBeenCalled();
   });
@@ -150,7 +166,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'before-start-date' });
   });
 
@@ -158,7 +174,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '2027-02-01', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'before-start-date' });
   });
 
@@ -169,7 +185,7 @@ describe('runLetterCron', () => {
     const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-01-01' } };
     const jan2026 = () => new Date('2026-01-15T10:00:00.000Z');
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now: jan2026, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: floored, now: jan2026, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'year-before-history-floor' });
     expect(monday.listYearActivity).not.toHaveBeenCalled();
@@ -179,7 +195,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-06-01' } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
 
     expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
     expect(result).toMatchObject({ kind: 'ran', year: 2026 });
@@ -192,7 +208,7 @@ describe('runLetterCron', () => {
     const store = fakeStore();
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: store, orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
 
     expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 });
@@ -204,7 +220,7 @@ describe('runLetterCron', () => {
     const store = fakeStore(new Set(['d1']));
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: store, orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 1, triggered: 1, failed: 0, deferred: 0 });
     expect(monday.getMemberPortalData).toHaveBeenCalledTimes(1);
@@ -216,7 +232,7 @@ describe('runLetterCron', () => {
       listYearActivity: vi.fn().mockResolvedValue({ personIds: ['d1', 'd2', 'd3'], organizationIds: [] }),
     });
     const capped: Config = { ...config, letterCron: { ...config.letterCron, maxTriggersPerRun: 2 } };
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: capped, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: capped, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 3, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 1 });
     expect(monday.getMemberPortalData).toHaveBeenCalledTimes(2);
@@ -238,7 +254,7 @@ describe('runLetterCron', () => {
     });
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 1, failed: 1, deferred: 0 });
     expect(queue.send).toHaveBeenCalledTimes(1);
@@ -248,7 +264,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const noBoard: Config = { ...config, monday: { ...config.monday, donationsBoardId: null } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: noBoard, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: noBoard, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'unconfigured' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -257,7 +273,7 @@ describe('runLetterCron', () => {
   it('returns an error result instead of throwing when the settings read fails', async () => {
     const monday = fakeMonday({ getLetterSettings: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')) });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 500' });
   });
@@ -271,7 +287,7 @@ describe('runLetterCron', () => {
         .mockRejectedValue(new Error('monday: Letter Settings board 456 has no item named "Letter emails"')),
     });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result.kind).toBe('error');
     expect(result).toMatchObject({ message: expect.stringContaining('no item named "Letter emails"') });
@@ -285,7 +301,7 @@ describe('runLetterCron', () => {
       listYearActivity: vi.fn().mockRejectedValue(new Error('monday: HTTP 429')),
     });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 429' });
   });
@@ -306,7 +322,7 @@ describe('runLetterCron', () => {
     });
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now, mode: 'on' });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 1, alreadyHandled: 0, triggered: 0, failed: 0, deferred: 0 });
     expect(queue.send).not.toHaveBeenCalled();
@@ -322,7 +338,7 @@ describe('runLetterCron (write switch)', () => {
     const letterStore = fakeStore();
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore, queue, config, now, mode });
+    const result = await runLetterCron({ monday, letterStore, orgStore: fakeOrgStore(), queue, config, now, mode });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'write-switch' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -333,8 +349,84 @@ describe('runLetterCron (write switch)', () => {
 
   it('under on runs and enqueues unstamped messages', async () => {
     const queue = fakeQueue();
-    const result = await runLetterCron({ monday: fakeMonday(), letterStore: fakeStore(), queue, config, now, mode: 'on' });
+    const result = await runLetterCron({ monday: fakeMonday(), letterStore: fakeStore(), orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
     expect(result).toMatchObject({ kind: 'ran', triggered: 2 });
     expect(queue.send).toHaveBeenCalledWith({ sendId: 1 });
+  });
+});
+
+describe('runLetterCron (organization pass)', () => {
+  // orgAccessEnabled: a real Portal access column, an employer config and an Organizations board.
+  const orgConfig: Config = {
+    ...config,
+    organizations: { ...config.organizations, portalAccessColumn: 'portal_col' },
+    changeRequests: {
+      ...config.changeRequests,
+      employer: {
+        affiliationsBoardId: 555,
+        affiliationColumns: { personLink: 'aff_person', organizationLink: 'aff_org', status: 'aff_status', primary: 'aff_primary' },
+        currentStatusLabel: 'Current',
+        personAffiliationsLink: 'people_aff',
+      },
+    } as Config['changeRequests'],
+  };
+  const reps = [
+    { id: 'a1', personItemId: 'p1', organizationId: 'o1', statusLabel: 'Current', portalAccess: true, workEmail: '' },
+    { id: 'a2', personItemId: 'p2', organizationId: 'o1', statusLabel: 'Current', portalAccess: true, workEmail: 'rep@acme.org' },
+  ];
+  const orgMonday = (overrides: Partial<Record<keyof MondayClient, unknown>> = {}) =>
+    fakeMonday({ getOrganizationAffiliations: vi.fn().mockResolvedValue(reps), ...overrides });
+
+  it('queues one org message per rep after the person pass', async () => {
+    const queue = fakeQueue();
+    const orgStore = fakeOrgStore();
+
+    const result = await runLetterCron({ monday: orgMonday(), letterStore: fakeStore(), orgStore, queue, config: orgConfig, now, mode: 'on' });
+
+    expect(result).toEqual({
+      kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0,
+      orgs: { eligibleReps: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 },
+    });
+    expect(orgStore.createQueued).toHaveBeenCalledWith(expect.objectContaining({ orgItemId: 'o1', affiliationItemId: 'a1', year: 2026 }));
+    expect(queue.send).toHaveBeenCalledWith({ sendId: 101, kind: 'org' });
+    expect(queue.send).toHaveBeenCalledWith({ sendId: 102, kind: 'org' });
+  });
+
+  it('runs the org pass while the tax letter is not signed off, skipping only the person pass', async () => {
+    const monday = orgMonday();
+    const letterStore = fakeStore();
+    const queue = fakeQueue();
+    const unsigned: Config = { ...orgConfig, taxLetter: { ...orgConfig.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
+
+    const result = await runLetterCron({ monday, letterStore, orgStore: fakeOrgStore(), queue, config: unsigned, now, mode: 'on' });
+
+    expect(result).toMatchObject({ kind: 'ran', triggered: 0, orgs: { triggered: 2 } });
+    expect(letterStore.createQueued).not.toHaveBeenCalled();
+    expect(monday.getMemberPortalData).not.toHaveBeenCalled();
+    expect(queue.send.mock.calls.map((c) => c[0])).toEqual([{ sendId: 101, kind: 'org' }, { sendId: 102, kind: 'org' }]);
+  });
+
+  it("still applies the shared gates to the org pass (Auto-send off → no org pass)", async () => {
+    const monday = orgMonday({ getLetterSettings: vi.fn().mockResolvedValue({ autoSend: false, startDate: '2027-01-10', bodyTemplate: '' }) });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: orgConfig, now, mode: 'on' });
+    expect(result).toEqual({ kind: 'skipped', reason: 'auto-send-off' });
+    expect(monday.getOrganizationAffiliations).not.toHaveBeenCalled();
+  });
+
+  it('shares maxTriggersPerRun: a person pass using 199 of 200 leaves the org pass 1', async () => {
+    const personIds = Array.from({ length: 199 }, (_, i) => `d${i}`);
+    const monday = orgMonday({ listYearActivity: vi.fn().mockResolvedValue({ personIds, organizationIds: ['o1'] }) });
+    const orgStore = fakeOrgStore();
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore, queue: fakeQueue(), config: orgConfig, now, mode: 'on' });
+
+    expect(result).toMatchObject({ kind: 'ran', triggered: 199, orgs: { eligibleReps: 2, triggered: 1, deferred: 1 } });
+    expect(orgStore.createQueued).toHaveBeenCalledOnce();
+  });
+
+  it("returns 'letters-not-signed-off' only when neither pass can run", async () => {
+    const unsigned: Config = { ...config, taxLetter: { ...config.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
+    const result = await runLetterCron({ monday: orgMonday(), letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: unsigned, now, mode: 'on' });
+    expect(result).toEqual({ kind: 'skipped', reason: 'letters-not-signed-off' });
   });
 });

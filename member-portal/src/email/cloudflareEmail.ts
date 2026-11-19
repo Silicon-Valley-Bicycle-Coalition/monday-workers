@@ -2,7 +2,7 @@ import { escapeHtml } from '../views';
 import { t } from '../i18n/t';
 import { renderLetterEmailBody } from '../letters/letterEmailBody';
 import { renderEmailLayout } from './layout';
-import type { EmailSender, SendLoginEmailParams, SendLetterReadyEmailParams } from './types';
+import type { EmailSender, SendLoginEmailParams, SendLetterReadyEmailParams, SendOrgStatementReadyEmailParams } from './types';
 
 export class CloudflareEmailSender implements EmailSender {
   constructor(
@@ -53,6 +53,29 @@ export class CloudflareEmailSender implements EmailSender {
       // Subject is always ours, so it always follows the donor's locale — even when the body
       // comes from a staff template.
       subject: `🚴 ${t(params.locale, 'letterReady.subject', { year: String(params.year) })}`,
+      html: body.html,
+      text: body.text,
+    });
+  }
+
+  async sendOrgStatementReadyEmail(params: SendOrgStatementReadyEmailParams): Promise<void> {
+    const year = String(params.year);
+    const vars = { org: params.orgName, year };
+    const htmlVars = { org: escapeHtml(params.orgName), year };
+    const link = t(params.locale, 'orgs.emailLink');
+    const signIn = t(params.locale, 'orgs.emailSignIn');
+    const body = renderEmailLayout({
+      bodyHtml:
+        `<p>${t(params.locale, 'orgs.emailBody', htmlVars)}</p>` +
+        `<p><a href="${escapeHtml(params.loginUrl)}">${link}</a></p><p>${signIn}</p>`,
+      bodyText: `${t(params.locale, 'orgs.emailBody', vars)}\n\n${link}: ${params.loginUrl}\n\n${signIn}`,
+      logoUrl: this.logoUrl,
+    });
+    await this.emailBinding.send({
+      to: params.to,
+      from: { email: this.fromAddress, name: this.fromName },
+      ...(this.replyTo ? { replyTo: this.replyTo } : {}),
+      subject: `🚴 ${t(params.locale, 'orgs.emailSubject', vars)}`,
       html: body.html,
       text: body.text,
     });

@@ -225,6 +225,10 @@ export const fil: Record<TranslationKey, string> = {
   'orgs.yearTotal': 'Kabuuan sa {{year}}',
   'orgs.print': 'I-print o i-save bilang PDF',
   'orgs.back': 'Bumalik sa {{name}}',
+  'orgs.emailSubject': 'Handa na ang {{year}} year-end statement ng {{org}}',
+  'orgs.emailBody': 'Handa na sa SVBC member portal ang {{year}} year-end statement ng {{org}}. Nakalista rito ang lahat ng suporta ng organisasyon sa taong iyon, kasama ang mga donasyon, employee match, sponsorship at grant.',
+  'orgs.emailLink': 'Mag-sign in para makita ang statement',
+  'orgs.emailSignIn': 'Ini-sign in ka ng link na ito sa portal. Isang beses lang ito magagamit at malapit na itong mag-expire.',
   'error.orgNotFound': 'Wala ang pahinang iyon.',
   'error.orgLoadFailed': 'Hindi namin ma-load ang organisasyong ito sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   // Door pages (src/doors/)

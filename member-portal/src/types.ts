@@ -445,9 +445,13 @@ export interface ChangeQueueMessage extends WriteStamp {
   requestId: number;
 }
 
-// See the comment on ChangeQueueMessage above — same import-cycle avoidance.
+// See the comment on ChangeQueueMessage above — same import-cycle avoidance. One queue carries
+// both January emails: `kind: 'org'` is an org_statement_sends id (an organization rep's
+// statement email), absent is a letter_sends id (a person's tax letter), which every message
+// enqueued before organization statements existed is.
 export interface LetterSendQueueMessage extends WriteStamp {
   sendId: number;
+  kind?: 'org';
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env

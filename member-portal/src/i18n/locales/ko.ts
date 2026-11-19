@@ -225,6 +225,10 @@ export const ko: Record<TranslationKey, string> = {
   'orgs.yearTotal': '{{year}}년 합계',
   'orgs.print': '인쇄 또는 PDF로 저장',
   'orgs.back': '{{name}}(으)로 돌아가기',
+  'orgs.emailSubject': '{{org}}의 {{year}}년 연말 명세서가 준비되었습니다',
+  'orgs.emailBody': '{{org}}의 {{year}}년 연말 명세서를 SVBC 회원 포털에서 확인하실 수 있습니다. 기부, 직원 매칭, 후원, 보조금 등 한 해 동안 단체가 보내 주신 모든 지원이 담겨 있습니다.',
+  'orgs.emailLink': '로그인하여 명세서 보기',
+  'orgs.emailSignIn': '이 링크로 포털에 로그인됩니다. 한 번만 사용할 수 있으며 곧 만료됩니다.',
   'error.orgNotFound': '해당 페이지가 존재하지 않습니다.',
   'error.orgLoadFailed': '지금은 이 단체를 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   // Door pages (src/doors/)

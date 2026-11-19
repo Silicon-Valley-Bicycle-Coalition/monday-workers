@@ -225,6 +225,10 @@ export const vi: Record<TranslationKey, string> = {
   'orgs.yearTotal': 'Tổng {{year}}',
   'orgs.print': 'In hoặc lưu thành PDF',
   'orgs.back': 'Quay lại {{name}}',
+  'orgs.emailSubject': 'Bảng kê cuối năm {{year}} của {{org}} đã sẵn sàng',
+  'orgs.emailBody': 'Bảng kê cuối năm {{year}} của {{org}} đã có trên cổng thành viên SVBC. Bảng kê liệt kê toàn bộ sự hỗ trợ của tổ chức trong năm, bao gồm quyên góp, đóng góp đối ứng của nhân viên, tài trợ và khoản trợ cấp.',
+  'orgs.emailLink': 'Đăng nhập để xem bảng kê',
+  'orgs.emailSignIn': 'Liên kết này giúp bạn đăng nhập vào cổng thông tin. Liên kết chỉ dùng được một lần và sẽ sớm hết hạn.',
   'error.orgNotFound': 'Trang đó không tồn tại.',
   'error.orgLoadFailed': 'Hiện chúng tôi không tải được tổ chức này. Vui lòng thử lại sau vài phút.',
   // Door pages (src/doors/)

@@ -1,4 +1,5 @@
 import type { LetterSendStore } from '../db/letterSends';
+import type { OrgStatementSendStore } from '../db/orgStatementSends';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
@@ -13,9 +14,12 @@ import { errorText } from '../logSafe';
 import { logDebug, messageDisposition } from '../flags';
 import { dryRunLetterDeps, type BatchSkipContext } from '../writeSwitch';
 import { magicLinkUrl } from '../auth/magicLinkUrl';
+import { processOrgStatementSend } from '../orgs/processOrgStatementSend';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
+  // The queue also carries organization statement emails (`kind: 'org'`), whose rows live here.
+  orgStore: OrgStatementSendStore;
   monday: MondayClient;
   tokenStore: MagicLinkTokenStore;
   emailSender: EmailSender;
@@ -32,23 +36,31 @@ export async function consumeLetterSendBatch(
   deps: ProcessLetterSendBatchDeps,
   gate: BatchSkipContext
 ): Promise<void> {
-  // Loaded on the first message that runs, so a held batch makes no Monday read.
-  let templates: LetterBodyTemplates | undefined;
+  const templates = lazyTemplates(deps);
   for (const message of messages) {
     const disposition = messageDisposition(gate.mode, message.body);
     if (disposition === 'retry') {
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    templates ??= await loadBodyTemplates(deps);
     if (disposition === 'write') {
       await handleMessage(message, deps, templates);
     } else {
-      const ctx = { ...gate, deliveryId: `letter-send:${message.body.sendId}` };
+      const ctx = { ...gate, deliveryId: deliveryId(message.body) };
       logDebug(ctx, 'message', message.body);
       await handleMessage(message, dryRunLetterDeps(deps, ctx), templates);
     }
   }
+}
+
+const deliveryId = (body: LetterSendQueueMessage): string =>
+  body.kind === 'org' ? `org-statement-send:${body.sendId}` : `letter-send:${body.sendId}`;
+
+// The Letter Settings templates, read on the first person-letter message that runs: a held batch,
+// or one of organization statements only, makes no Monday read for them.
+function lazyTemplates(deps: ProcessLetterSendBatchDeps): () => Promise<LetterBodyTemplates> {
+  let pending: Promise<LetterBodyTemplates> | undefined;
+  return () => (pending ??= loadBodyTemplates(deps));
 }
 
 // Every message live — the `write` path above, and the tests that predate the switch.
@@ -56,20 +68,25 @@ export async function processLetterSendBatch(
   messages: QueueMessageLike<LetterSendQueueMessage>[],
   deps: ProcessLetterSendBatchDeps
 ): Promise<void> {
-  const templates = await loadBodyTemplates(deps);
+  const templates = lazyTemplates(deps);
   for (const message of messages) await handleMessage(message, deps, templates);
 }
 
 async function handleMessage(
   message: QueueMessageLike<LetterSendQueueMessage>,
   deps: ProcessLetterSendBatchDeps,
-  templates: LetterBodyTemplates
+  templates: () => Promise<LetterBodyTemplates>
 ): Promise<void> {
+  const org = message.body.kind === 'org';
   try {
-    await processOne(message.body.sendId, deps, templates);
+    if (org) {
+      await processOrgStatementSend(message.body.sendId, { ...deps, store: deps.orgStore });
+    } else {
+      await processOne(message.body.sendId, deps, await templates());
+    }
     message.ack();
   } catch (err) {
-    console.error(`member-portal consumer: failed to process letter send ${message.body.sendId}: ${errorText(err)}`);
+    console.error(`member-portal consumer: failed to process ${org ? 'org statement' : 'letter'} send ${message.body.sendId}: ${errorText(err)}`);
     message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }

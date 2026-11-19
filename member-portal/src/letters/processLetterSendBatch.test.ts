@@ -3,6 +3,8 @@ import { consumeLetterSendBatch, processLetterSendBatch } from './processLetterS
 import type { WriteMode } from '../flags';
 import { MEMBER_PORTAL_PII_KEYS, type BatchSkipContext } from '../writeSwitch';
 import type { LetterSendStore, LetterSendRow } from '../db/letterSends';
+import type { OrgStatementSendRow, OrgStatementSendStore } from '../db/orgStatementSends';
+import { FakeMondayClient } from '../monday/fakeClient';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
@@ -105,6 +107,20 @@ function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
   };
 }
 
+function fakeOrgStore(getResult: OrgStatementSendRow | null = null): OrgStatementSendStore {
+  return {
+    listKeysForYear: vi.fn(),
+    createQueued: vi.fn(),
+    findByKey: vi.fn(),
+    getById: vi.fn().mockResolvedValue(getResult),
+    claimForSending: vi.fn().mockResolvedValue(true),
+    releaseClaim: vi.fn().mockResolvedValue(undefined),
+    markSent: vi.fn().mockResolvedValue(undefined),
+    markSkipped: vi.fn().mockResolvedValue(undefined),
+    requeue: vi.fn(),
+  };
+}
+
 function fakeMonday(): MondayClient {
   return {
     getMemberPortalData: vi.fn().mockResolvedValue({
@@ -127,7 +143,11 @@ function fakeTokenStore(): MagicLinkTokenStore {
 }
 
 function fakeEmailSender(): EmailSender {
-  return { sendLoginEmail: vi.fn(), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  return {
+    sendLoginEmail: vi.fn(),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('processLetterSendBatch', () => {
@@ -138,7 +158,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday, tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday, tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
 
     expect(tokenStore.createToken).toHaveBeenCalledWith(
       expect.objectContaining({ donorItemIds: ['donor-1'] })
@@ -171,7 +191,7 @@ describe('processLetterSendBatch', () => {
       monday: { ...config.monday, columns: { donorEmployer: 'text_employer' } as never },
     };
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: employerConfig, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: employerConfig, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
     const params = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/info?field=employer`);
@@ -180,7 +200,7 @@ describe('processLetterSendBatch', () => {
   it('passes no employer URL while employer answers are off', async () => {
     const emailSender = fakeEmailSender();
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
     expect((emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!.employerUrl).toBeUndefined();
   });
@@ -190,7 +210,7 @@ describe('processLetterSendBatch', () => {
   it('mints the letter link token with auth.letterLinkTtlHours, not the magic-link minutes', async () => {
     const tokenStore = fakeTokenStore();
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday: fakeMonday(),
       tokenStore,
       emailSender: fakeEmailSender(),
@@ -208,7 +228,7 @@ describe('processLetterSendBatch', () => {
     const message = makeMessage(42, 2);
 
     await processLetterSendBatch([message], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday: fakeMonday(),
       tokenStore: fakeTokenStore(),
       emailSender,
@@ -226,7 +246,7 @@ describe('processLetterSendBatch', () => {
     const store = fakeStore(row);
     const emailSender = fakeEmailSender();
     await processLetterSendBatch([makeMessage(42)], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(store.claimForSending).toHaveBeenCalledWith(42, '2026-08-24T10:00:00.000Z');
@@ -243,7 +263,7 @@ describe('processLetterSendBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(1);
@@ -259,7 +279,7 @@ describe('processLetterSendBatch', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
@@ -274,7 +294,7 @@ describe('processLetterSendBatch', () => {
     const message = makeMessage(42);
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
@@ -289,7 +309,7 @@ describe('processLetterSendBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(store.releaseClaim).toHaveBeenCalledWith(42);
@@ -310,7 +330,7 @@ describe('processLetterSendBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(store.claimForSending).not.toHaveBeenCalled();
@@ -328,7 +348,7 @@ describe('processLetterSendBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await processLetterSendBatch([message], {
-      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+      orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
 
     expect(message.retry).toHaveBeenCalled();
@@ -342,7 +362,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date() });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date() });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
@@ -354,7 +374,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: unsignedConfig, now: () => new Date('2026-08-24T10:00:00.000Z') });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: unsignedConfig, now: () => new Date('2026-08-24T10:00:00.000Z') });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(store.markSkipped).toHaveBeenCalledWith(42, expect.any(String));
@@ -369,7 +389,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday, tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday, tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(store.markSkipped).toHaveBeenCalledWith(42, expect.any(String));
@@ -384,7 +404,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday, tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday, tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(store.markSkipped).toHaveBeenCalledWith(42, expect.any(String));
@@ -394,7 +414,7 @@ describe('processLetterSendBatch', () => {
 
   it('retries when the row is missing (DLQ makes it visible)', async () => {
     const message = makeMessage(999);
-    await processLetterSendBatch([message], { store: fakeStore(null), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config, now: () => new Date() });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store: fakeStore(null), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config, now: () => new Date() });
     expect(message.retry).toHaveBeenCalled();
   });
 
@@ -404,7 +424,7 @@ describe('processLetterSendBatch', () => {
     (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('cloudflare email: send failed'));
     const message = makeMessage(42);
 
-    await processLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
+    await processLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
 
     expect(store.markSent).not.toHaveBeenCalled();
     expect(message.retry).toHaveBeenCalled();
@@ -424,6 +444,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
 
     await processLetterSendBatch([makeMessage(42), makeMessage(43)], {
+      orgStore: fakeOrgStore(),
       store,
       monday,
       tokenStore: fakeTokenStore(),
@@ -446,7 +467,7 @@ describe('processLetterSendBatch', () => {
     const message = makeMessage(42);
 
     await processLetterSendBatch([message], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday,
       tokenStore: fakeTokenStore(),
       emailSender,
@@ -467,7 +488,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
 
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday,
       tokenStore: fakeTokenStore(),
       emailSender,
@@ -488,7 +509,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
 
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday,
       tokenStore: fakeTokenStore(),
       emailSender,
@@ -523,6 +544,7 @@ describe('processLetterSendBatch', () => {
     const emailSender = fakeEmailSender();
 
     await processLetterSendBatch([makeMessage(42), makeMessage(43)], {
+      orgStore: fakeOrgStore(),
       store,
       monday,
       tokenStore: fakeTokenStore(),
@@ -541,7 +563,7 @@ describe('processLetterSendBatch', () => {
   it('never reads the Letter Settings board while letterCron is unconfigured', async () => {
     const monday = fakeMonday();
     await processLetterSendBatch([makeMessage(42)], {
-      store: fakeStore(row),
+      orgStore: fakeOrgStore(), store: fakeStore(row),
       monday,
       tokenStore: fakeTokenStore(),
       emailSender: fakeEmailSender(),
@@ -563,7 +585,7 @@ describe('consumeLetterSendBatch (write switch)', () => {
     const message = makeMessage(42);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('off'));
+    await consumeLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('off'));
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(tokenStore.createToken).not.toHaveBeenCalled();
@@ -581,7 +603,7 @@ describe('consumeLetterSendBatch (write switch)', () => {
   it('under off with debug logging masks the address, name and login link', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await consumeLetterSendBatch([makeMessage(42)], { store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config, now }, { ...gate('off'), logLevel: 'debug', piiKeys: MEMBER_PORTAL_PII_KEYS });
+    await consumeLetterSendBatch([makeMessage(42)], { orgStore: fakeOrgStore(), store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config, now }, { ...gate('off'), logLevel: 'debug', piiKeys: MEMBER_PORTAL_PII_KEYS });
 
     const text = log.mock.calls.map((c) => String(c[0])).join('\n');
     expect(text).toContain('sendLetterReadyEmail');
@@ -596,7 +618,7 @@ describe('consumeLetterSendBatch (write switch)', () => {
     const unsignedConfig: Config = { ...config, taxLetter: { ...config.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
     const message = makeMessage(42);
 
-    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: unsignedConfig, now }, gate('off'));
+    await consumeLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: unsignedConfig, now }, gate('off'));
 
     expect(store.markSkipped).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
@@ -607,7 +629,7 @@ describe('consumeLetterSendBatch (write switch)', () => {
     const monday = fakeMonday();
     const message = makeMessage(42);
 
-    await consumeLetterSendBatch([message], { store, monday, tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: configWithLetterCron, now }, gate(mode));
+    await consumeLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday, tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: configWithLetterCron, now }, gate(mode));
 
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(message.ack).not.toHaveBeenCalled();
@@ -621,7 +643,7 @@ describe('consumeLetterSendBatch (write switch)', () => {
     const emailSender = fakeEmailSender();
     const message = makeMessage(42);
 
-    await consumeLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('on'));
+    await consumeLetterSendBatch([message], { orgStore: fakeOrgStore(), store, monday: fakeMonday(), tokenStore, emailSender, config, now }, gate('on'));
 
     expect(tokenStore.createToken).toHaveBeenCalledOnce();
     expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledOnce();
@@ -634,10 +656,105 @@ describe('consumeLetterSendBatch (write switch)', () => {
     const message = { ...makeMessage(42), body: { sendId: 42, writeStamp: 'dropped' as const } };
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await consumeLetterSendBatch([message], { store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now }, gate('on'));
+    await consumeLetterSendBatch([message], { orgStore: fakeOrgStore(), store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now }, gate('on'));
 
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+describe('consumeLetterSendBatch (organization statement messages)', () => {
+  const gate = (mode: WriteMode): BatchSkipContext => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
+  const now = () => new Date('2027-01-15T10:00:00.000Z');
+  const orgRow: OrgStatementSendRow = {
+    id: 9, orgItemId: 'o1', affiliationItemId: 'a1', year: 2026, status: 'queued', createdAt: '2027-01-15T09:00:00.000Z', sentAt: null,
+  };
+  // orgAccessEnabled: a real Portal access column, an employer config and an Organizations board.
+  const orgConfig: Config = {
+    ...configWithLetterCron,
+    organizations: { ...config.organizations, portalAccessColumn: 'portal_col' },
+    changeRequests: { ...config.changeRequests, employer: { currentStatusLabel: 'Current' } } as Config['changeRequests'],
+  };
+  function orgMonday(): FakeMondayClient {
+    const monday = new FakeMondayClient();
+    monday.organizations.set('o1', { id: 'o1', name: 'Acme', address: '1 Main' });
+    monday.orgGifts.set('o1', [{ itemId: 'g1', date: '2026-03-01', amount: '$500.00', giftType: 'Sponsorship' }]);
+    monday.affiliations.set('a1', { id: 'a1', personItemId: '1001', organizationId: 'o1', statusLabel: 'Current', portalAccess: true, workEmail: '' });
+    return monday;
+  }
+
+  it("routes kind 'org' to the org consumer and an unmarked message to the person one", async () => {
+    // FakeMondayClient's donor 1001 has 2025 gifts, so the person letter goes out too.
+    const store = fakeStore({ ...row, donorItemId: '1001' });
+    const orgStore = fakeOrgStore(orgRow);
+    const emailSender = fakeEmailSender();
+    const monday = orgMonday();
+    vi.spyOn(monday, 'getLetterSettings').mockResolvedValue(null);
+    const person = makeMessage(42);
+    const org = { ...makeMessage(9), body: { sendId: 9, kind: 'org' as const } };
+
+    await consumeLetterSendBatch([org, person], { store, orgStore, monday, tokenStore: fakeTokenStore(), emailSender, config: orgConfig, now }, gate('on'));
+
+    expect(orgStore.getById).toHaveBeenCalledWith(9);
+    expect(orgStore.getById).not.toHaveBeenCalledWith(42);
+    expect(store.getById).toHaveBeenCalledWith(42);
+    expect(store.getById).not.toHaveBeenCalledWith(9);
+    expect(emailSender.sendOrgStatementReadyEmail).toHaveBeenCalledOnce();
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledOnce();
+    expect(orgStore.markSent).toHaveBeenCalledWith(9, expect.any(String));
+    expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
+    expect(org.ack).toHaveBeenCalled();
+    expect(person.ack).toHaveBeenCalled();
+  });
+
+  it('reads no Letter Settings board for a batch of org messages only', async () => {
+    const monday = orgMonday();
+    const settings = vi.spyOn(monday, 'getLetterSettings');
+    const message = { ...makeMessage(9), body: { sendId: 9, kind: 'org' as const } };
+
+    await consumeLetterSendBatch([message], { store: fakeStore(row), orgStore: fakeOrgStore(orgRow), monday, tokenStore: fakeTokenStore(), emailSender: fakeEmailSender(), config: orgConfig, now }, gate('on'));
+
+    expect(settings).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('retries an org message whose send fails, with the claim released', async () => {
+    const orgStore = fakeOrgStore(orgRow);
+    const emailSender = fakeEmailSender();
+    (emailSender.sendOrgStatementReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('send failed'));
+    const message = { ...makeMessage(9), body: { sendId: 9, kind: 'org' as const } };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await consumeLetterSendBatch([message], { store: fakeStore(row), orgStore, monday: orgMonday(), tokenStore: fakeTokenStore(), emailSender, config: orgConfig, now }, gate('on'));
+
+    expect(orgStore.releaseClaim).toHaveBeenCalledWith(9);
+    expect(message.retry).toHaveBeenCalled();
+    expect(message.ack).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it.each<[string, WriteMode, boolean]>([
+    ['under off', 'off', false],
+    ['stamped dropped, even under on', 'on', true],
+  ])('dry-runs an org message %s: no email, no token, no row change', async (_label, mode, stamped) => {
+    const orgStore = fakeOrgStore(orgRow);
+    const tokenStore = fakeTokenStore();
+    const emailSender = fakeEmailSender();
+    const body = stamped ? { sendId: 9, kind: 'org' as const, writeStamp: 'dropped' as const } : { sendId: 9, kind: 'org' as const };
+    const message = { ...makeMessage(9), body };
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await consumeLetterSendBatch([message], { store: fakeStore(row), orgStore, monday: orgMonday(), tokenStore, emailSender, config: orgConfig, now }, gate(mode));
+
+    expect(emailSender.sendOrgStatementReadyEmail).not.toHaveBeenCalled();
+    expect(tokenStore.createToken).not.toHaveBeenCalled();
+    expect(orgStore.claimForSending).not.toHaveBeenCalled();
+    expect(orgStore.markSent).not.toHaveBeenCalled();
+    expect(orgStore.markSkipped).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    const skips = log.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((line) => line.writeSwitch === 'skipped');
+    expect(skips).toEqual([expect.objectContaining({ sink: 'Email', operation: 'sendOrgStatementReadyEmail', deliveryId: 'org-statement-send:9' })]);
+    log.mockRestore();
   });
 });

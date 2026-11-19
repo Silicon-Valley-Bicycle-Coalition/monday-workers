@@ -225,6 +225,10 @@ export const es: Record<TranslationKey, string> = {
   'orgs.yearTotal': 'Total {{year}}',
   'orgs.print': 'Imprimir o guardar como PDF',
   'orgs.back': 'Volver a {{name}}',
+  'orgs.emailSubject': 'La declaración de fin de año {{year}} de {{org}} está lista',
+  'orgs.emailBody': 'La declaración de fin de año {{year}} de {{org}} ya está disponible en el portal de miembros de SVBC. Incluye todo el apoyo de la organización durante el año, como donaciones, aportes equivalentes de empleados, patrocinios y subvenciones.',
+  'orgs.emailLink': 'Inicie sesión para ver la declaración',
+  'orgs.emailSignIn': 'Este enlace le permite iniciar sesión en el portal. Solo se puede usar una vez y caduca pronto.',
   'error.orgNotFound': 'Esa página no existe.',
   'error.orgLoadFailed': 'No pudimos cargar esta organización en este momento. Por favor intenta de nuevo en unos minutos.',
   // Door pages (src/doors/)
