@@ -778,8 +778,9 @@ environment**: Sponsorships' reverse connect column doesn't exist until the boar
 event unless Sponsorship Cycle is typed.
 
 **Event, in order:** the Sponsorship Cycle text; else the linked pipeline item's
-`<event name> <group title>` (production configures Sponsorships with an empty event name, since
-its group titles such as `2027 BTWD` already name the event, so this is just the group title);
+`<event name> <group title>` (production configures Sponsorships and 2027 PROSPECTING - Sponsorships
+with an empty event name, since their group titles such as `2027 BTWD` already name the event, so this
+is just the group title);
 else blank (`—`). Archived gifts keep their stored event (their
 links read back empty). **In-kind value:** In-Kind Value, falling back to Amount when blank or 0.
 Known limitation: a gift with a blank Amount is skipped by the recompute read entirely
