@@ -124,6 +124,8 @@ export interface Config {
   journeyLog: JourneyLogConfig | null;
   // The hourly Mailchimp Profile link on People (src/profileLinks): null turns it off.
   profileLinks: ProfileLinksConfig | null;
+  // The daily stewardship labels (src/stewardship): null turns them off.
+  stewardship: StewardshipConfig | null;
 }
 
 // Every Customer Journey email sent becomes a timeline entry on the recipient's People item
@@ -152,6 +154,46 @@ export interface ProfileLinksConfig {
   // The 🔒 Mailchimp Profile link column.
   linkColumn: string;
   // Link writes per run at most; the first fill catches up over a few hours.
+  maxWritesPerRun: number;
+}
+
+// The donor stewardship emails sent by monday CRM Sequences (src/stewardship; spec
+// 2026-11-19-monday-stewardship-sequences-design.md): the daily run sets a People status label and
+// a Monday automation per label enrolls the person in the Sequence of the same name.
+export interface StewardshipConfig {
+  boardId: number;
+  columns: {
+    // The address the Sequences send to, and the one checked in Mailchimp.
+    email: string;
+    // The 🔒 Stewardship Email status column the automations watch.
+    label: string;
+    membershipStatus: string;
+    membershipTier: string;
+    memberType: string;
+    memberSince: string;
+    memberUntil: string;
+    hasActiveRecurringGift: string;
+    doNotSolicit: string;
+  };
+  plan: {
+    labels: {
+      welcomeDayAfter: string;
+      welcome3Weeks: string;
+      renewal3Weeks: string;
+      renewal1Week: string;
+      renewalDayOf: string;
+    };
+    activeStatusValue: string;
+    lifetimeTierValue: string;
+    newMemberTypeValue: string;
+    catchUpDays: number;
+  };
+  // The tag scripts/renewal-opt-out.mjs gave Salesforce's Renewal Opt Out contacts.
+  renewalOptOutTag: string;
+  // Mailchimp interests a person must have ticked to get that kind of email; null = not checked.
+  renewalInterest: string | null;
+  welcomeInterest: string | null;
+  // Labels set per run at most; the rest wait for tomorrow (inside catchUpDays).
   maxWritesPerRun: number;
 }
 

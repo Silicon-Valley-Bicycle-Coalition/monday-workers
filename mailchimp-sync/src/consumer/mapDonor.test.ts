@@ -22,6 +22,7 @@ const CONFIG: Config = {
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
   journeyLog: null,
   profileLinks: null,
+  stewardship: null,
 };
 
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {

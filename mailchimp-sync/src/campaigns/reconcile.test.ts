@@ -12,6 +12,7 @@ const CONFIG: Config = {
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
   journeyLog: null,
   profileLinks: null,
+  stewardship: null,
 };
 
 function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {

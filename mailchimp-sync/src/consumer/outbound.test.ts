@@ -25,6 +25,7 @@ const CONFIG: Config = {
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
   journeyLog: null,
   profileLinks: null,
+  stewardship: null,
 };
 
 function fakeDnsLog(alreadyLogged: string[] = []): DnsUnsubscribeLog {
