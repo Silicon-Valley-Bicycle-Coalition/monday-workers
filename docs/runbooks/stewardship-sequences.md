@@ -19,20 +19,25 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
 
 ## 1. Prerequisites (staff)
 
-- [ ] **Martha's mailbox is connected in Monday.** Sequences only send from a connected mailbox,
-      and **a Google Group can't be connected** — that blocked `learn@` for class emails
+- [ ] **`membership@bikesiliconvalley.org` is a mailbox, connected in Monday, managed by Martha.**
+      Every stewardship email is sent from `membership@` (Felicia, 2026-11-19), and Martha is the
+      person who manages that inbox (Deanna, 2026-11-19). Sequences only send from a connected
+      mailbox, and **a Google Group can't be connected** — that blocked `learn@` for class emails
       (`eventbrite-sync/docs/class-emails-setup.md`). A Gmail "Send mail as" alias is no substitute:
       tested 2026-11-19, a Sequence's **Send emails as** picker lists only connected accounts, not
-      their send-as aliases. `membership@` is a Google Group (Felicia and Martha), so on 2026-11-19
-      Deanna said to send from Martha's account. Monday → Emails & Activities: Martha signs in
-      and connects her mailbox.
-- [ ] **Replies are worked in Monday, not in `membership@`.** A reply to a Sequence email lands in
-      Martha's inbox and is logged on the person's People timeline, so the queue of replies needing
-      an answer lives in Monday (Felicia and Martha), not in the group.
-- Felicia had asked (2026-11-19) that the emails not come from a staff member. If that wins out
-  later, convert `membership@` to a licensed user (Google Admin: rename the group, create the user
-  in the **Staff** OU, delegate it, **Show this address only**, connect it in Monday) and switch
-  each Sequence's sender. Mail to it bounces during the switch, so do it after hours.
+      their send-as aliases. `membership@` is a Google Group today (Felicia and Martha). To convert
+      it, after hours (mail to it bounces during the switch):
+      1. Google Admin: rename the group (e.g. `membership-team@`), then create the user
+         `membership@` in the **Staff** OU. Free: Google Workspace for Nonprofits, 42 of 300
+         licenses assigned on 2026-11-19.
+      2. Gmail settings for `membership@`: delegate it to Martha, and to Felicia as backup (mail
+         delegation is on for the domain; delegating to a group is off, so add people one by one).
+         Under **Sender information**, choose **Show this address only**, so donors don't see
+         "sent by Martha". Optionally forward a copy to `membership-team@`.
+      3. Monday → Emails & Activities: sign in as `membership@` and connect it.
+- [ ] **Martha works replies in Monday.** A reply to a Sequence email lands in `membership@` and is
+      logged on the person's People timeline, so the queue of replies needing an answer lives in
+      Monday.
 - [x] **People board can take a Sequence.** Checked 2026-11-19: the "Connect a board" picker offers
       production People (Donors & Contacts, `18201685`) and sandbox People.
 - [x] Welcome #2 stays (Felicia, 2026-11-19).
@@ -67,7 +72,7 @@ For each:
   - [ ] Renewal day-of: "Sillicon" → "Silicon".
 - [ ] "Renew Your Gift Today" and the welcome-email links as buttons if the editor has them, else
       bold links.
-- [ ] **Sender: Martha's connected mailbox.** **Send window: Pacific**, the default 7:00 AM–5:00 PM. The Worker
+- [ ] **Sender: `membership@bikesiliconvalley.org`.** **Send window: Pacific**, the default 7:00 AM–5:00 PM. The Worker
       sets labels at 07:00 Pacific, so the emails go out that morning.
 - [ ] **Unsubscribe link on, global unsubscribe list on.** These are fundraising emails. Keep
       removal on reply, bounce and auto-reply.
