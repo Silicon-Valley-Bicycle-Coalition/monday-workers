@@ -1,6 +1,6 @@
 # Member portal: organization reps see their organization's giving and tax letters
 
-Date: 2026-11-19. Worker: `member-portal`. Status: design.
+Date: 2026-11-19. Worker: `member-portal`. Status: design, decisions complete.
 
 Third piece of the member portal rework, after sign-in (PR #17) and the card-first home page
 (PR #19). Builds on both.
@@ -65,6 +65,9 @@ reasons an organization's person might visit; they are not this piece.
   linking to the organization's statement.
 * **The year-end statement covers everything**: employee matching, contracts, sponsorships, grants
   and the rest, i.e. what the rep needs to write a report on their team's community outreach.
+* **Work Email signs a rep in to that organization only** (the user, 2026-11-19). The Work Email on
+  a Current Affiliation with Portal access works for sign-in and the January email. A session signed
+  in that way holds that one organization and no people: none of the person's own pages.
 * **Employee volunteering on the statement, aggregate only:** number of people and total hours,
   hidden below 3 people.
 
@@ -104,6 +107,18 @@ reasons an organization's person might visit; they are not this piece.
 Organizations come only from the person whose **Personal Email** matched the sign-in. Signing in with
 a shared Household Email doesn't carry a partner's organizations: access is granted per person, by
 staff. (Builder-check call.)
+
+### Work Email sign-in
+
+* Sign-in (link and code, same caps and cooldowns) also looks the address up on the Affiliations
+  board's Work Email column. A match counts only if that Affiliation is Current with Portal access.
+* The session gets `orgItemIds` = that Affiliation's organization and an empty person list. The home
+  page shows only the "You manage" section; person doors redirect home; the live check re-reads that
+  one Affiliation (Current, Portal access, same Work Email).
+* An address that matches both a person's Personal or Household Email and a Work Email signs in as
+  the person, and the person's own Affiliations add the organizations as usual.
+* Marking the Affiliation Former, or clearing Portal access, ends it on the next organization page.
+* `verified_emails` records a completed Work Email sign-in against the person, like the others.
 
 ### Live check
 
@@ -165,7 +180,8 @@ The letter cron gets an organization pass after the people pass:
 * Find organizations with any statement activity in the year (same sweep, Donor or Matched By on the
   Organizations board).
 * For each, find people with a Current Affiliation with Portal access to it, and queue one
-  statement-ready email per rep, at the rep's Personal Email, linking (through sign-in, `next=`) to the
+  statement-ready email per rep, at the Affiliation's Work Email when set, otherwise the rep's
+  Personal Email, linking (through sign-in, `next=`) to the
   organization's statement. Locale: the rep's Preferred Language. The copy is built-in i18n
   ("Acme Corp's 2026 year-end statement is ready"), not the Letter Settings templates, which are
   written to a donor about their own letter; no board change.
@@ -181,14 +197,6 @@ The letter cron gets an organization pass after the people pass:
 * Employee volunteering is an aggregate with a floor of 3 people, so no single
   employee's volunteering can be read off it.
 * Nothing about an organization appears on a person's own doors.
-
-## Open questions
-
-1. **Work Email for reps.** Corporate contacts are often on file only with a work address on their
-   Affiliation. Proposed: accept the Work Email of a Current Affiliation with Portal access, for
-   sign-in and the January email; signing in that way opens only that organization, never the
-   person's own pages. Alternative: Personal Email only, and the January job reports unreachable
-   reps to staff.
 
 ## Left to the builder
 
