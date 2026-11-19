@@ -84,14 +84,17 @@ function renewHeadline(state: Extract<PersonState, { kind: 'renew' }>, name: str
 }
 
 function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBlock {
-  const household = data.people.length > 1;
+  // The session covers everyone, loaded or not: with one record missing, the viewer may be the
+  // person who failed to load, so the copy still names whose state it is and the renew button
+  // still can't promise whose membership a gift renews.
+  const household = data.people.length + data.unavailableCount > 1;
   const holders = data.people.filter((e) => data.page.personIds.includes(e.person.id));
   const first = holders[0];
   const lettersHref = `/${locale}/portal/letters`;
   const cardHref = `/${locale}/portal/card`;
 
   if (first === undefined || data.page.kind === 'default') {
-    return { headline: t(locale, household ? 'home.defaultHeadlineMany' : 'home.defaultHeadline'), sub: null, button: null, note: null };
+    return { headline: t(locale, data.people.length > 1 ? 'home.defaultHeadlineMany' : 'home.defaultHeadline'), sub: null, button: null, note: null };
   }
 
   if (first.state.kind === 'taxLetter') {

@@ -3679,9 +3679,12 @@ describe('GET /:locale/portal — home page', () => {
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
     expect(html).toContain('Hi Jane');
     expect(html).not.toContain('Joe');
-    expect(html).toContain('Your membership ended Jul 31, 2026.');
+    // Still a household: the viewer may be Joe, so the button can't promise to renew Jane.
+    expect(html).toContain('Jane&#39;s membership ended Jul 31, 2026.');
     expect((html.match(/class="cta-button/g) ?? []).length).toBe(1);
-    expect(html).toContain('Renew your membership');
+    expect(html).toContain(`>${t('en', 'home.renewAny')}</a>`);
+    expect(html).not.toContain('Renew your membership');
+    expect(html).toContain(escapeHtml(t('en', 'home.renewEachNote')));
     expect(html).not.toContain('home-person-action');
   });
 });

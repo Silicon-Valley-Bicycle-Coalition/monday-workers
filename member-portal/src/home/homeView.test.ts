@@ -160,6 +160,22 @@ describe('homeView — household', () => {
     expect(html).toContain(`<a class="home-person-action" href="${escapeAmp(RENEW)}" rel="noopener noreferrer">Renew</a>`);
   });
 
+  // Review Focus #3: the viewer may be the person who failed to load, so the copy stays a household's.
+  it('treats a household with one record missing as a household', () => {
+    const sam = person('s', 'Sam', { status: 'Lapsed', until: '2026-10-31' });
+    const html = homeView(data([{ person: sam, state: { kind: 'renew', reason: 'lapsed', date: '2026-10-31' } }], { unavailableCount: 1 }), 'en', RENEW);
+    expect(html).toContain('Sam&#39;s membership ended Oct 31, 2026.');
+    expect(goldCount(html)).toBe(1);
+    expect(goldText(html)).toBe('Renew a membership');
+    expect(html).toContain(t('en', 'home.renewEachNote').replace(/'/g, '&#39;'));
+  });
+
+  it('names whose tax letter it is when one household record is missing', () => {
+    const html = homeView(data([{ person: person('j', 'Jordan', { letter }), state: { kind: 'taxLetter', letter } }], { unavailableCount: 1 }), 'en', RENEW);
+    expect(html).toContain('Jordan&#39;s 2026 tax letter is ready.');
+    expect(goldText(html)).toBe('Get Jordan&#39;s tax letter');
+  });
+
   it('shows the unavailable note when a record failed to load', () => {
     const html = homeView(data([{ person: jordan, state: { kind: 'default' } }], { unavailableCount: 1 }), 'en', RENEW);
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
