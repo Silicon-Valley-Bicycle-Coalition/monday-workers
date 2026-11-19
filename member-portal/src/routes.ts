@@ -9,7 +9,7 @@ import type { SessionInfo, SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/types';
 import type { IpRateLimiter } from './ratelimit';
-import type { Config, DonorImpact } from './types';
+import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
 import type { LetterSendStore } from './db/letterSends';
@@ -23,8 +23,9 @@ import { verifyLogin } from './auth/verifyLogin';
 import { verifyCode } from './auth/verifyCode';
 import type { CodeFailureStore } from './db/codeFailures';
 import type { VerifiedEmailStore } from './db/verifiedEmails';
-import { loadPortalData } from './portal/loadPortalData';
-import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
+import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
+import { loadHomeData } from './home/loadHomeData';
+import { homeView } from './home/homeView';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -38,13 +39,10 @@ import {
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
-  volunteerHistoryEnabled,
-  donationHistoryEnabled,
 } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
-import { selectImpact } from './impact/impact';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
@@ -53,12 +51,8 @@ import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
 import { loadEventRegistrations } from './events/loadEventRegistrations';
-import type { EventRegistrationListing } from './events/loadEventRegistrations';
 import { eventsListView, eventsUnavailableView } from './events/eventViews';
 import { buildCardData } from './card/loadCardData';
-import type { PortalCard } from './card/loadCardData';
-import { generateQrSvg } from './card/qr';
-import { getOrCreateCardToken } from './card/getOrCreateCardToken';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
 import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
@@ -556,6 +550,9 @@ export function createApp(deps: AppDeps) {
   // instead of 404ing.
   app.get('/portal', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
 
+  // The card-first home page: status, one next step, card(s), doors. Loads only membership fields,
+  // card tokens, the discount count and (Jan 1 to home.taxLetterUntil) last year's letter; each
+  // door loads its own section.
   app.get('/:locale/portal', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
@@ -563,72 +560,12 @@ export function createApp(deps: AppDeps) {
       return signInRedirect(c);
     }
 
-    // Same degrade-instead-of-fail treatment as volunteer history in loadPortalData: a Monday
-    // read failure here should cost the donor the Events tab, not the whole dashboard. Disabled
-    // and failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
-    // Started before loadPortalData and awaited after it (GL#99): the two are independent, and the
-    // catch is attached up front so a rejection is never unhandled when loadPortalData throws.
-    const eventsLeg: Promise<Record<string, EventRegistrationListing> | null> = eventsEnabled(deps.config)
-      ? loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now()).then(
-          (listings) => Object.fromEntries(listings.map((listing) => [listing.donorId, listing])),
-          (err: unknown) => {
-            console.error(`member-portal dashboard events load failed: ${errorText(err)}`);
-            return null;
-          }
-        )
-      : Promise.resolve(null);
-
-    const data = await loadPortalData(
-      donorItemIds,
-      deps.monday,
-      {
-        enabled: volunteerHistoryEnabled(deps.config),
-        completedStatuses: deps.config.volunteerHistory.completedStatuses,
-      },
-      donationHistoryEnabled(deps.config, deps.now())
-    );
+    const data = await loadHomeData(donorItemIds, deps, locale);
     c.header('Cache-Control', NO_STORE);
-    const eventsByDonor = await eventsLeg;
-
-    // The membership card is now a dashboard widget (one per donor), not a separate page — see
-    // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
-    // renders without a card widget; it must never take down the whole dashboard, since donation
-    // history, discounts, and everything else on the page is still useful without it.
-    // The per-donor token reads are independent, so they run concurrently (GL#99).
-    const cards: Record<string, PortalCard> = {};
-    if (cardEnabled(deps.config)) {
-      await Promise.all(
-        data.donors.map(async (donor) => {
-          try {
-            const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
-            const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
-            cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
-          } catch (err) {
-            console.error(`member-portal dashboard card failed for donor "${donor.id}": ${errorText(err)}`);
-          }
-        })
-      );
-    }
-
-    // "Your giving supported …" (v8): per donor, from the gifts already loaded for the Donations
-    // tab — so it follows the same date gate and costs no extra Monday read. Gated here rather
-    // than on an empty donations list, so a hidden history never leaks a "you gave in <year>".
-    const impact: Record<string, DonorImpact> = {};
-    if (data.donationHistoryEnabled) {
-      for (const donor of data.donors) {
-        const selected = selectImpact(donor.donations, deps.config.impact, locale);
-        if (selected !== null) impact[donor.id] = selected;
-      }
-    }
-
-    return c.html(
-      page(
-        t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
-        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact, deps.config.getInvolved.links),
-        locale,
-        { authenticated: true }
-      )
-    );
+    // Any gift renews a membership, so the general donate page stands in until the Funraise
+    // renewal link is configured.
+    const renewUrl = funraiseLinks(deps.config).renewMembershipUrl ?? ORG_DONATE_URL;
+    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), homeView(data, locale, renewUrl), locale, { authenticated: true }));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

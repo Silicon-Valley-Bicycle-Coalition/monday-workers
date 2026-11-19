@@ -24,6 +24,7 @@ export const PORTAL_CSS = `
        deliberately always-dark brand chrome, not page background. */
     --bg: var(--svbc-white);
     --text: var(--svbc-ink);
+    --text-muted: #666666;
     --surface: var(--svbc-white);
     --border: #ccc;
     --table-border: #eee;
@@ -36,6 +37,7 @@ export const PORTAL_CSS = `
     :root {
       --bg: #1c1b1b;
       --text: #ececec;
+      --text-muted: #b8b8b8;
       --surface: #2a2828;
       --border: #4d4a4a;
       --table-border: #3a3838;
@@ -311,6 +313,73 @@ export const PORTAL_CSS = `
     cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
   }
 
+  /* Card-first home page (src/home/homeView.ts). Phone first: status, card(s), then the doors as a
+     list. From 768px the status sits left of the card(s) and the doors become a row of tiles. */
+  .home { display: flex; flex-direction: column; gap: 20px; }
+  .home-greeting { margin: 0; color: var(--text-muted); }
+  .home-headline { font-size: 28px; margin: 2px 0 4px; }
+  .home-sub { margin: 0 0 14px; color: var(--text-muted); }
+  .home-note { margin: 10px 0 0; font-size: 14px; color: var(--text-muted); }
+  .home-action { margin-top: 0; }
+  .home-people { display: flex; flex-direction: column; gap: 12px; }
+  .home-person .member-card { margin: 0; }
+  .home-person p { margin: 6px 0 0; }
+  .member-card-lapsed { opacity: 0.55; filter: grayscale(1); }
+  .home-not-member {
+    max-width: 340px;
+    padding: 18px 22px;
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .home-not-member p { margin: 0; }
+  .home-not-member-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; }
+  .home-doors { display: flex; flex-direction: column; }
+  .home-door {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 12px 24px 12px 0;
+    border-top: 1px solid var(--table-border);
+    text-decoration: none;
+  }
+  .home-door:last-child { border-bottom: 1px solid var(--table-border); }
+  .home-door::after {
+    content: '›';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: var(--text-muted);
+  }
+  .home-door-title { font-weight: 600; }
+  .home-door-hint { font-size: 14px; color: var(--text-muted); }
+  @media (min-width: 768px) {
+    main:has(> .home) { max-width: 960px; }
+    .home {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+      column-gap: 40px;
+      row-gap: 28px;
+      align-items: start;
+    }
+    .home-headline { font-size: 40px; }
+    .home-unavailable, .home-doors { grid-column: 1 / -1; }
+    .home-doors {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .home-door, .home-door:last-child {
+      padding: 16px;
+      border: 1px solid var(--table-border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+    .home-door::after { content: none; }
+  }
+
   .site-footer {
     background: var(--svbc-chrome);
     color: var(--svbc-white);
@@ -340,6 +409,7 @@ export const PORTAL_CSS = `
 
   @media (max-width: 480px) {
     .site-header-inner, .site-footer-inner { padding-left: 20px; padding-right: 20px; }
+    main { padding-left: 16px; padding-right: 16px; }
     /* flex-wrap as a defensive fallback (logo + logout + donate wrap to a second row rather than
        overflowing off-screen) below the width this specific logo/button sizing was tuned to fit
        on one line down to a ~375px viewport. */

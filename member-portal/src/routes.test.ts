@@ -177,6 +177,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
         totalDonated: '0',
         donations: [],
         membershipExpiry: '',
+        memberSince: '',
+        memberType: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
@@ -226,6 +228,8 @@ function fakeMondayWithDonations(): MondayClient {
         totalDonated: '$40.00',
         donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
         membershipExpiry: '',
+        memberSince: '',
+        memberType: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
@@ -2042,52 +2046,23 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     expect(secondToken).toBe(firstToken);
   });
 
-  it('hides donation history on the dashboard until donations.historyVisibleFromISO, then shows it', async () => {
-    const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    // Visible from 2027-01-01; the deps clock is 2026-08-22.
-    const gatedConfig = structuredClone(config);
-    gatedConfig.donations.historyVisibleFromISO = '2027-01-01';
-
-    const before = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
-    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
-    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(hiddenHtml).toContain('Donor donor-1');
-    expect(hiddenHtml).not.toContain('$40.00');
-    expect(hiddenHtml).not.toContain('<td>gift</td>');
-    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
-
-    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: gatedConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
-    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
-    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
-    expect(shownHtml).toContain('$40.00');
-    expect(shownHtml).toContain('<td>gift</td>');
-  });
-
-  it("shows the impact statements for a year the donor gave in, and none while donation history is hidden", async () => {
+  // Donation history and impact live on the giving door; the home page never shows them, even once
+  // the history date gate has opened, and reads each person without donations.
+  it('never shows donation history or impact on the home page, gate open or not', async () => {
     const monday = fakeMondayWithDonations(); // one gift, dated 2025-03-14
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const impactConfig = structuredClone(config);
-    impactConfig.impact.statementsByYear = {
-      '2025': { en: ['Taught bike safety to 4,200 students'] },
-      '2026': { en: ['Opened 3 bike parking hubs'] },
-    };
-    impactConfig.donations.historyVisibleFromISO = '2027-01-01'; // the deps clock is 2026-08-22
+    const openConfig = structuredClone(config);
+    openConfig.donations.historyVisibleFromISO = '2020-01-01';
+    openConfig.impact.statementsByYear = { '2025': { en: ['Taught bike safety to 4,200 students'] } };
+    const app = createApp(makeDeps({ monday, emailSender, config: openConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const before = createApp(makeDeps({ monday, emailSender, config: impactConfig }));
-    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
-    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(hiddenHtml).toContain('Donor donor-1');
-    expect(hiddenHtml).not.toContain('Taught bike safety to 4,200 students');
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
 
-    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: impactConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
-    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
-    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
-    expect(shownHtml).toContain('<li>Taught bike safety to 4,200 students</li>');
-    // 2026 has statements too, but this donor has no 2026 gift.
-    expect(shownHtml).not.toContain('Opened 3 bike parking hubs');
+    expect(html).toContain('Donor donor-1');
+    expect(html).not.toContain('$40.00');
+    expect(html).not.toContain('Taught bike safety to 4,200 students');
+    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
   });
 
   it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {
@@ -2103,7 +2078,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('gift'); // donation history still renders
+    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
   });
 
   it('logs and omits just the card widget (not the whole dashboard) when getActiveToken throws', async () => {
@@ -2129,7 +2104,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('gift'); // donation history still renders
+    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
   });
 
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
@@ -2806,7 +2781,7 @@ describe('locale sweep', () => {
     expect(body).toContain(`<html lang="${locale}">`);
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
-    expect(body).toContain(t(locale, 'portal.heading'));
+    expect(body).toContain(escapeHtml(t(locale, 'home.defaultHeadline')));
   });
 });
 
@@ -2835,21 +2810,17 @@ describe('GET /:locale/portal volunteer history gate', () => {
     expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 
-  it('renders the status-filtered volunteer history once volunteersBoardId is configured', async () => {
+  // Volunteer history moved to the activity door (Task 4): the home page doesn't read it even when
+  // the feature is on, but links the door.
+  it('never queries the Volunteers board from the home page, and links the activity door once configured', async () => {
     const monday = mondayWithShifts();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    // Realistic column ids, not the shared fixture's empty-object columns: the gate's column
-    // half must pass because the ids are configured, not because they're absent.
     const volunteerColumns = {
       volunteerDonorLink: 'vol_link_col',
       volunteerHours: 'vol_hours_col',
       volunteerDate: 'vol_date_col',
       volunteerJob: 'vol_job_col',
       volunteerStatus: 'vol_status_col',
-      donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
-      donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
-      donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
-      donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
     } as never;
     const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
@@ -2859,11 +2830,9 @@ describe('GET /:locale/portal volunteer history gate', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'portal.volunteerHeading'));
-    expect(body).toContain('Bike Valet');
-    expect(body).toContain('Total volunteer hours: 3.5');
-    // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
-    expect(body).not.toContain('Ride Marshal');
+    expect(body).not.toContain('Bike Valet');
+    expect(body).toContain('href="/en/portal/activity"');
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 });
 
@@ -2888,25 +2857,8 @@ describe('GET /:locale/portal — events tab', () => {
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
-  it('renders the Events tab with the donor\'s registrations once eventRegistrations.boardId is configured', async () => {
-    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
-    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
-    ]);
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    const res = await app.request('/en/portal', { headers: { cookie } });
-    const body = await res.text();
-
-    expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'events.tabLabel'));
-    expect(body).toContain('Fall Gala');
-  });
-
-  it('shows the Find Upcoming Events CTA once configured for a donor with no registrations', async () => {
+  // Event registrations moved to the activity door (Task 4).
+  it('never queries the events board from the home page, and links the activity door once configured', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
@@ -2916,8 +2868,8 @@ describe('GET /:locale/portal — events tab', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'events.emptyMessage'));
-    expect(body).toContain('href="https://bikesiliconvalley.org/events"');
+    expect(body).toContain('href="/en/portal/activity"');
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
   it('logs and omits just the Events tab (not the whole dashboard) when the Monday lookup throws', async () => {
@@ -3016,8 +2968,8 @@ describe('GET /portal/events (bare, no locale)', () => {
   });
 });
 
-describe('portal home events link', () => {
-  it('links to the locale-prefixed events page', async () => {
+describe('portal home doors', () => {
+  it('leaves the activity door out while events, volunteering and Get involved are all off', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),
@@ -3026,8 +2978,9 @@ describe('portal home events link', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
-    expect(await res.text()).toContain('/en/portal/events');
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).not.toContain('/en/portal/activity');
+    expect(html).toContain('href="/en/portal/letters"');
   });
 });
 
@@ -3669,5 +3622,66 @@ describe('write switch', () => {
       const res = await post('off', {}, { challenge: 'abc' });
       expect(await res.json()).toEqual({ challenge: 'abc' });
     });
+  });
+});
+
+describe('GET /:locale/portal — home page', () => {
+  it('renders the home page: greeting, card and doors', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Hi Donor');
+    expect(html).toContain('class="member-card"');
+    expect(html).toContain('<a class="home-door" href="/en/portal/card"');
+    expect(html).toContain('<a class="home-door" href="/en/portal/info"');
+    expect(html).not.toContain('class="tabs"');
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+  });
+
+  // Review Focus #3: one household member failed to load.
+  it("shows the note and only the loaded person's state when one household record failed", async () => {
+    const monday = fakeMonday({
+      'home@example.org': [
+        { id: 'donor-1', name: 'Jane' },
+        { id: 'donor-2', name: 'Joe' },
+      ],
+    });
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'donor-2'
+        ? Promise.reject(new Error('monday: HTTP 500'))
+        : Promise.resolve({
+            id,
+            name: 'Jane Rivera',
+            membershipStatus: 'Lapsed',
+            membershipTier: 'Member',
+            totalDonated: '0',
+            donations: [],
+            membershipExpiry: '2026-07-31',
+            memberSince: '',
+            memberType: '',
+          })
+    );
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'home@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+    expect(html).toContain('Hi Jane');
+    expect(html).not.toContain('Joe');
+    expect(html).toContain('Your membership ended Jul 31, 2026.');
+    expect((html.match(/class="cta-button/g) ?? []).length).toBe(1);
+    expect(html).toContain('Renew your membership');
+    expect(html).not.toContain('home-person-action');
   });
 });

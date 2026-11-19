@@ -15,6 +15,9 @@ import { formatUsdText } from './money';
 import { formatShortDate } from './dates';
 import { parseAmount } from './amounts';
 import type { PortalCard } from './card/loadCardData';
+// Runtime import back into a module that imports views.ts: safe, since both sides only call each
+// other's functions at render time. Task 4 removes portalView, and with it this import.
+import { memberCardWidget } from './doors/card';
 // Type-only: eventViews.ts imports escapeHtml from this module, so a runtime import back from
 // there would be circular. The (small) event-table rendering below is duplicated rather than
 // shared for the same reason — see the comment on eventsPanel.
@@ -29,7 +32,7 @@ const ORG_ADDRESS = '95 S Market St, Suite 648, San José, CA 95113';
 const ORG_MAILING_ADDRESS = 'PO Box 1927, San José, CA 95109';
 const ORG_EIN = '77-0338658';
 const ORG_WEBSITE_URL = 'https://bikesiliconvalley.org';
-const ORG_DONATE_URL = 'https://bikesiliconvalley.org/ways-to-give';
+export const ORG_DONATE_URL = 'https://bikesiliconvalley.org/ways-to-give';
 const VOLUNTEER_CTA_URL = 'https://bikesiliconvalley.org/get-involved/volunteer';
 const EVENTS_CTA_URL = 'https://bikesiliconvalley.org/events';
 const ORG_PRIVACY_POLICY_URL = 'https://siliconvalleybicyclecoaliti.app.box.com/s/1diyqeoe5dcsfsg0qx2yk7oa539toz35';
@@ -47,7 +50,7 @@ export function escapeHtml(value: string): string {
 // than inlined into every no-store page. width/height mirror the SVG's own, so the browser has
 // the intrinsic aspect ratio before the file loads and CSS can set only a height. The org name
 // is a proper noun, so the alt text isn't translated.
-function logoImg(className?: string): string {
+export function logoImg(className?: string): string {
   const cls = className ? ` class="${className}"` : '';
   return `<img${cls} src="${LOGO_SVG_ASSET.path}" width="235" height="90" alt="Silicon Valley Bicycle Coalition" />`;
 }
@@ -334,32 +337,6 @@ function donationsPanel(donor: PortalView['donors'][number], locale: Locale): st
         </tr>
       </tfoot>
     </table>
-  `;
-}
-
-// Single-sided wallet card — no flip, no back face (an earlier flip-card design was scrapped
-// during review). Logo top-left, QR top-right (where a physical card's chip would sit), name,
-// then a meta row with member #, expiry, and a tier badge. The QR's target verify URL is never
-// rendered as visible text — the alt text is the only accessible label — since that URL is a
-// bearer credential (see /verify/:token in routes.ts).
-function memberCardWidget(card: PortalCard, locale: Locale): string {
-  const { data, qrSvg } = card;
-  return `
-    <div class="member-card">
-      <div class="member-card-top">
-        <div class="member-card-logo">${logoImg()}</div>
-        <div class="member-card-qr" role="img" aria-label="${escapeHtml(t(locale, 'card.qrAlt'))}">${qrSvg}</div>
-      </div>
-      <div class="member-card-name">${escapeHtml(data.donorName)}</div>
-      <div class="member-card-meta">
-        <div>${escapeHtml(data.memberNumber)}</div>
-        <div><span class="label">${escapeHtml(t(locale, 'card.expiresLabel'))}</span><span class="value">${escapeHtml(data.expiryShort)}</span></div>
-        <div class="member-card-tier">${escapeHtml(data.membershipTier)}</div>
-      </div>
-    </div>
-    <form class="member-card-regenerate" action="/${locale}/portal/card/${encodeURIComponent(data.donorId)}/regenerate" method="post">
-      <button type="submit">${escapeHtml(t(locale, 'card.regenerate'))}</button>
-    </form>
   `;
 }
 
