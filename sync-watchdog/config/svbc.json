@@ -14,7 +14,7 @@
     "mailchimp-sync": {
       "script": "svbc-mailchimp-sync",
       "expectedWrites": "on",
-      "crons": [{ "cron": "0 15 * * *", "maxGapHours": 48 }, { "cron": "5 * * * *", "maxGapHours": 3 }]
+      "crons": [{ "cron": "0 15 * * *", "maxGapHours": 48 }, { "cron": "5 * * * *", "maxGapHours": 3 }, { "cron": "20 * * * *", "maxGapHours": 3 }]
     },
     "member-map": { "script": "svbc-member-map", "expectedWrites": null, "crons": [{ "cron": "0 13 * * 1", "maxGapHours": 192 }] },
     "member-portal": { "script": "svbc-member-portal", "expectedWrites": "on", "crons": [{ "cron": "0 9 * * *", "maxGapHours": 48 }] },
