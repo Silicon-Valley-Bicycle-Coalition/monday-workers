@@ -65,6 +65,8 @@ reasons an organization's person might visit; they are not this piece.
   linking to the organization's statement.
 * **The year-end statement covers everything**: employee matching, contracts, sponsorships, grants
   and the rest, i.e. what the rep needs to write a report on their team's community outreach.
+* **Employee volunteering on the statement, aggregate only:** number of people and total hours,
+  hidden below 3 people.
 
 ## Approaches considered
 
@@ -143,7 +145,7 @@ to the organization (its name and address). Sections, each shown only when it ha
    date, amount and description, and a subtotal per group.
 3. **Employee matching.** Matches the organization paid in the year: count and total, one row per
    match (date, amount), no employee names.
-4. **Employee volunteering** (pending the user's answer, see Open questions): people with a Current
+4. **Employee volunteering** (the user, 2026-11-19: aggregate only): people with a Current
    Affiliation to the organization who completed volunteer shifts in the year, as an aggregate only:
    number of people and total hours. Hidden below 3 people.
 5. **Tax acknowledgment.** The existing letter rules applied to the organization's gifts: the
@@ -176,7 +178,7 @@ The letter cron gets an organization pass after the people pass:
 * A rep sees only organizations they were granted, re-checked live on every organization page.
 * An organization page shows no person's address, phone or name except the organization's own
   details; employer matches carry no employee name.
-* Employee volunteering, if included, is an aggregate with a floor of 3 people, so no single
+* Employee volunteering is an aggregate with a floor of 3 people, so no single
   employee's volunteering can be read off it.
 * Nothing about an organization appears on a person's own doors.
 
@@ -187,8 +189,6 @@ The letter cron gets an organization pass after the people pass:
    sign-in and the January email; signing in that way opens only that organization, never the
    person's own pages. Alternative: Personal Email only, and the January job reports unreachable
    reps to staff.
-2. **Employee volunteering on the statement** (section 4): include it as an aggregate with a floor
-   of 3, or leave it off.
 
 ## Left to the builder
 
