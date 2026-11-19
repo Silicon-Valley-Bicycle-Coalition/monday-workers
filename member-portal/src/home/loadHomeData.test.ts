@@ -254,6 +254,28 @@ describe('loadHomeData organizations', () => {
     ]);
   });
 
+  it("marks last year's statement ready in the window, per organization", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => [
+      { id: 'o1', name: 'Acme' },
+      { id: 'o2', name: 'Bike Shop' },
+    ]);
+    Object.assign(monday, {
+      getOrganization: vi.fn(async (id: string) => {
+        if (id === 'o2') throw new Error('monday down');
+        return { id, name: 'Acme', address: '1 Main' };
+      }),
+      getOrganizationGifts: vi.fn(async () => [{ itemId: 'g', date: '2026-05-01', amount: '$5.00', giftType: 'Donation', description: 'x' }]),
+      getOrganizationMatches: vi.fn(async () => []),
+    });
+    const full = { ...orgConfig, organizations: { ...orgConfig.organizations, volunteerFloor: 3, acknowledgmentSignedOff: false } } as unknown as Config;
+    const inWindow = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', full), 'en', grants);
+    expect(inWindow.orgs.map((o) => o.statementReadyYear)).toEqual([2026, null]);
+    const after = await loadHomeData(['j'], deps(monday, '2027-06-10T18:00:00Z', full), 'en', grants);
+    expect(after.orgs.map((o) => o.statementReadyYear)).toEqual([null, null]);
+    vi.restoreAllMocks();
+  });
+
   it('leaves names null when the read fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const monday = withNames(fakeMonday({ j: donor('j') }), async () => {

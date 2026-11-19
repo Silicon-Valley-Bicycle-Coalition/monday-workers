@@ -6,6 +6,7 @@ import type { MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { cardFor } from '../doors/card';
 import { loadLetterData } from '../letters/loadLetterData';
+import { loadOrgStatement } from '../orgs/loadOrgData';
 import { cardEnabled, eventsEnabled, lettersEnabled, orgAccessEnabled, volunteerHistoryEnabled } from '../config';
 import type { OrgGrant } from '../orgs/grants';
 import type { Locale } from '../i18n/locales';
@@ -31,7 +32,7 @@ export interface HomeData {
   unavailableCount: number;
   doors: DoorLink[];
   // The organizations the session manages ("You manage"), in grant order. `name` is null when the
-  // name read failed. `statementReadyYear` is null until the year-end statement wiring lands.
+  // name read failed. `statementReadyYear` is last year while its statement is ready, else null.
   orgs: { orgItemId: string; name: string | null; statementReadyYear: number | null }[];
 }
 
@@ -56,8 +57,23 @@ async function loadOrgs(orgGrants: OrgGrant[], deps: HomeDeps): Promise<HomeData
   } catch (err) {
     console.error(`member-portal home organization names failed: ${errorText(err)}`);
   }
-  // The ready line (last year's statement, until home.taxLetterUntil) is wired with the statements.
-  return orgGrants.map((g) => ({ orgItemId: g.orgItemId, name: names.get(g.orgItemId) ?? null, statementReadyYear: null }));
+  // The ready line: last year's statement exists, until home.taxLetterUntil. One read per
+  // organization; a failure costs that organization its ready line only.
+  const today = todayInLosAngeles(deps.now());
+  const lastYear = Number(today.slice(0, 4)) - 1;
+  const inWindow = today.slice(5) <= deps.config.home.taxLetterUntil;
+  const readyYears = await Promise.all(
+    orgGrants.map(async (g) => {
+      if (!inWindow) return null;
+      try {
+        return (await loadOrgStatement(g.orgItemId, lastYear, deps)) === null ? null : lastYear;
+      } catch (err) {
+        console.error(`member-portal home organization statement read failed for "${g.orgItemId}": ${errorText(err)}`);
+        return null;
+      }
+    })
+  );
+  return orgGrants.map((g, i) => ({ orgItemId: g.orgItemId, name: names.get(g.orgItemId) ?? null, statementReadyYear: readyYears[i]! }));
 }
 
 export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, locale: Locale, orgGrants: OrgGrant[] = []): Promise<HomeData> {

@@ -41,8 +41,20 @@ export function giftYear(date: string): number | null {
 // A DonationRecord's description is the board's Gift Type column (monday.columns.donationDescription
 // holds its id). The filter lives here rather than in the client because the portal's giving
 // history still shows every gift; only the letter treats them differently.
-function onLetter(donation: DonationRecord, taxLetter: TaxLetterConfig): boolean {
+function onLetter(donation: { description: string }, taxLetter: TaxLetterConfig): boolean {
   return !giftTypeIn(taxLetter.excludedGiftTypes, donation.description);
+}
+
+// The one rule for what a letter or statement acknowledges: drop the excluded Gift Types, then
+// split off the types listed separately. `description` is the Gift Type text. Input order is kept
+// (callers sort), so this stays a pure partition.
+export function splitForLetter<T extends { description: string }>(
+  gifts: T[],
+  taxLetter: TaxLetterConfig
+): { acknowledged: T[]; separate: T[] } {
+  const onThisLetter = gifts.filter((gift) => onLetter(gift, taxLetter));
+  const isSeparate = (gift: T) => giftTypeIn(taxLetter.separateGiftTypes, gift.description);
+  return { acknowledged: onThisLetter.filter((g) => !isSeparate(g)), separate: onThisLetter.filter(isSeparate) };
 }
 
 function completedYearsWithGifts(donations: DonationRecord[], taxLetter: TaxLetterConfig, now: Date): number[] {
@@ -83,14 +95,12 @@ export async function loadLetterData(
   }
 
   const donor = await monday.getMemberPortalData(donorItemId);
-  const onThisLetter = donor.donations
-    .filter((donation) => giftYear(donation.date) === year && onLetter(donation, taxLetter))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const isSeparate = (donation: DonationRecord) => giftTypeIn(taxLetter.separateGiftTypes, donation.description);
-  const acknowledged = onThisLetter.filter((donation) => !isSeparate(donation));
-  const separate = onThisLetter.filter(isSeparate);
+  const { acknowledged, separate } = splitForLetter(
+    donor.donations.filter((donation) => giftYear(donation.date) === year).sort((a, b) => a.date.localeCompare(b.date)),
+    taxLetter
+  );
 
-  if (onThisLetter.length === 0) {
+  if (acknowledged.length + separate.length === 0) {
     return null;
   }
 
