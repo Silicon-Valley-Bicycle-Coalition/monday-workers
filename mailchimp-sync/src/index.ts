@@ -19,6 +19,11 @@ import { reconcileCampaigns } from './campaigns/reconcile';
 import { runScheduledReconcile } from './campaigns/scheduled';
 import { CONSENT_CRON, runConsentSync } from './consent/run';
 import { runRenewalDue } from './renewalDue/run';
+import { JOURNEY_LOG_CRON, runJourneyLog } from './journeyLog/run';
+import { createJourneyLogMonday } from './journeyLog/monday';
+import { listJourneyEmails, readAddress, readSendTime, readSentTo } from './journeyLog/mailchimp';
+import { D1JourneySendStore } from './db/journeySends';
+import { adminBaseUrl, createProfileLinksMonday, runProfileLinks } from './profileLinks/run';
 import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
 import { isMondayOutage } from './monday/outage';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
@@ -137,27 +142,71 @@ export default {
   // A failed run is logged, not thrown, so Workers Issues shows the error line.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const config = configFor(env);
-    // Two crons (wrangler.jsonc): the hourly consent sync, and the daily one that keeps the
-    // renewal-due tag and runs the Campaigns reconcile. Any other cron string, or none, runs the
-    // daily work, as the one cron did before.
+    // Three crons (wrangler.jsonc): the hourly consent sync (with the Mailchimp Profile links),
+    // the hourly Journey send log, and the daily one that keeps the renewal-due tag and runs the
+    // Campaigns reconcile. Any other cron string, or none, runs the daily work, as the one cron
+    // did before.
     if (event.cron === CONSENT_CRON) {
+      const started = Date.now();
+      // Same tuning as HttpMondayClient's: a few in-process retries; the next hour does the rest.
+      const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
+      const request = <T>(query: string, variables: Record<string, unknown>) => transport.request<T>(query, variables);
+      // One member read for both steps: consent statuses, and each member's web_id for the
+      // Mailchimp Profile link. A failed read fails both, so neither plans on a partial audience.
+      const webIds = new Map<string, number>();
+      let memberRead: Promise<Map<string, string>> | undefined;
+      const readStatuses = () => (memberRead ??= readMailchimpStatuses({
+        fetchFn: fetch.bind(globalThis),
+        apiBaseUrl: config.mailchimp.apiBaseUrl,
+        apiKey: env.MAILCHIMP_API_KEY,
+        audienceId: config.mailchimp.audienceId,
+        webIds,
+      }));
       try {
         const gate = await skipContext(env);
-        // Same tuning as HttpMondayClient's: a few in-process retries; the next hour does the rest.
-        const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
         await runConsentSync(gate, {
           config,
-          monday: createConsentMonday((query, variables) => transport.request(query, variables), { isOutage: isMondayOutage }),
-          readStatuses: () => readMailchimpStatuses({
-            fetchFn: fetch.bind(globalThis),
-            apiBaseUrl: config.mailchimp.apiBaseUrl,
-            apiKey: env.MAILCHIMP_API_KEY,
-            audienceId: config.mailchimp.audienceId,
-          }),
+          monday: createConsentMonday(request, { isOutage: isMondayOutage }),
+          readStatuses,
           alert: (text) => sendAlert(env.SLACK_WEBHOOK_URL, text),
         });
       } catch (err) {
         console.error(`mailchimp-sync consent: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+      }
+      // After consent, with what is left of the cron's 15 minutes.
+      try {
+        await runProfileLinks(await skipContext(env), {
+          settings: config.profileLinks,
+          monday: createProfileLinksMonday(request),
+          readWebIds: () => readStatuses().then(() => webIds),
+          adminBaseUrl: adminBaseUrl(config.mailchimp.apiBaseUrl),
+          isOutage: isMondayOutage,
+          deadline: started + 13.5 * 60_000,
+        });
+      } catch (err) {
+        console.error(`mailchimp-sync profile-links: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+      }
+      return;
+    }
+    if (event.cron === JOURNEY_LOG_CRON) {
+      try {
+        const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
+        const read = { fetchFn: fetch.bind(globalThis), apiBaseUrl: config.mailchimp.apiBaseUrl, apiKey: env.MAILCHIMP_API_KEY, audienceId: config.mailchimp.audienceId };
+        await runJourneyLog(await skipContext(env), {
+          config,
+          mailchimp: {
+            listJourneyEmails: (ids) => listJourneyEmails(read, ids),
+            readSentTo: (id) => readSentTo(read, id),
+            readSendTime: (emailId, campaignId) => readSendTime(read, emailId, campaignId),
+            readAddress: (emailId) => readAddress(read, emailId),
+          },
+          monday: createJourneyLogMonday((query, variables, options) => transport.request(query, variables, options)),
+          store: new D1JourneySendStore(env.DB),
+          isOutage: isMondayOutage,
+          alert: (text) => sendAlert(env.SLACK_WEBHOOK_URL, text),
+        });
+      } catch (err) {
+        console.error(`mailchimp-sync journey-log: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
       }
       return;
     }

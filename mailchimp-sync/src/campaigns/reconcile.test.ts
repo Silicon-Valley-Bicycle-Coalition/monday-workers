@@ -10,6 +10,8 @@ const CONFIG: Config = {
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], journeyInterests: null, renewalDue: null, nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
+  journeyLog: null,
+  profileLinks: null,
 };
 
 function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {

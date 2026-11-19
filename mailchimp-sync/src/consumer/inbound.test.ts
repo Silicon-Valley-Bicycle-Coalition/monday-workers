@@ -18,6 +18,8 @@ const CONFIG: Config = {
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], journeyInterests: null, renewalDue: null, nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
+  journeyLog: null,
+  profileLinks: null,
 };
 
 function fakeMessage(email: string, attempts = 1): { body: InboundSyncMessage; attempts: number; ack: () => void; retry: () => void } {

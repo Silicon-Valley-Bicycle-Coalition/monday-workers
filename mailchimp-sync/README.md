@@ -77,6 +77,10 @@ Four independent flows — see the design doc for full sequence diagrams:
    columns to each address's current Mailchimp status — see [Consent columns](#consent-columns).
    Mailchimp → Monday only, by polling, so it needs no audience webhook.
 
+5. **Journey send log (hourly, :20)** and **Mailchimp Profile link (hourly, with consent):** every
+   Customer Journey email sent becomes a timeline entry on the recipient's People item, and each
+   People item links to its Mailchimp contact — see [Journey send log](#journey-send-log).
+
 **Retries.** A failed queue message is retried with exponential backoff — 1, 4, then 16 minutes
 across the queue's 3 retries — before landing in its `-dlq` dead-letter queue. When Mailchimp
 (429, `Retry-After`) or Monday (`retry_in_seconds`, `Retry-After`) says how long to wait, the
@@ -373,6 +377,59 @@ went back to 500 the same day.
 3. Read the first `consent-run` line after the next :05 (`failed: 0`, nothing held); rerun the
    plan script — it should plan nothing.
 4. `node ../scripts/mark-read-only-columns.mjs` against production with `--apply`.
+
+## Journey send log
+
+Spec: [`docs/superpowers/specs/2026-11-18-mailchimp-journey-send-log-design.md`](../docs/superpowers/specs/2026-11-18-mailchimp-journey-send-log-design.md)
+(verified end to end in the sandbox on 2026-11-18).
+
+**What staff see.** On a People item, under **Emails & Activities**, one "Mailchimp email" entry per
+Customer Journey email the person was sent: the subject, the Journey and step ("New member welcome
+series · email 1 of 2"), and a link to the email as sent, dated when Mailchimp sent it. A bounce
+reads "Not delivered: <subject>". Two 🔒 columns: **Last Journey Email** (date of the latest
+delivered one) and **Mailchimp Profile** (opens the contact in Mailchimp, where newsletter sends,
+opens and clicks live; newsletters are not logged in Monday).
+
+**How (`src/journeyLog`, cron `20 * * * *`).** Lists the audience's Journeys and their send-email
+steps (`/customer-journeys/journeys/{id}/steps`; each is an `automation-email` campaign). For each
+email whose `emails_sent` moved since its last read, reads `/reports/{id}/sent-to` and inserts the
+new recipients into D1 `journey_sends` (migration `0007`, keyed by campaign and subscriber hash,
+never the address) before moving that email's read mark. Then each `pending` row: match exactly one
+People item on `journeyLog.emailColumns`, read the send time from the member's `/activity`, advance
+Last Journey Email, create the timeline entry, mark `logged`. At-least-once: a failure leaves the
+row pending for the next hour (after 5 failures it's `failed`); a crash between the entry and the D1
+write repeats that one entry. No item or several: `unmatched` / `ambiguous`, no entry, never a new
+person. Follows the write switch: `hold` skips, `off` records new sends as `dropped` (never logged).
+Alerts on a failed Journeys read or failed entries; counts-only logs.
+
+**Mailchimp Profile (`src/profileLinks`, on the consent cron).** The consent sync's member read also
+collects each member's `web_id`; the link is `https://<dc>.admin.mailchimp.com/lists/members/view?id=<web_id>`
+for the address in `profileLinks.emailColumn`. Only differing links are written (capped per run), a
+link is cleared when the address leaves the audience, and nothing is planned on a failed read.
+
+**Turning it on** (both `null` in both configs until the Monday pieces exist):
+
+1. The **Mailchimp email** custom activity exists (created 2026-11-19; custom activities are per
+   account, so both environments use `8a429b81-1416-4211-b8fc-d23e0ce87752`). Add **Last Journey
+   Email** (Date) and **Mailchimp Profile** (Link) to People; run
+   `node scripts/mark-read-only-columns.mjs` (both are in `MARKED_COLUMNS`). The sandbox has both
+   (`date_mm98v7ej`, `link_mm98rz6c`) and its config is filled.
+2. Apply migration `0007` (`npx wrangler d1 migrations apply <db> --remote [--env sandbox]`).
+3. Fill the config, e.g. production:
+   ```json
+   "journeyLog": { "boardId": 18437909781, "emailColumns": ["email_mm8nx6qg", "email_mm8n2wzk"],
+     "timelineActivityId": "8a429b81-1416-4211-b8fc-d23e0ce87752", "journeyIds": null,
+     "lastJourneyEmailColumn": "<date column id>", "maxEntriesPerRun": 200 },
+   "profileLinks": { "boardId": 18437909781, "emailColumn": "email_mm8nx6qg",
+     "linkColumn": "<link column id>", "maxWritesPerRun": 500 }
+   ```
+4. Deploy **before** Felicia turns the Journeys on, so the first run has no history to log. A Journey
+   that already sent would have its earlier sends logged with their real send times on the first run.
+5. Sandbox: Journey 112 "TEST journey send log (sandbox)" (paused) in the sandbox audience sends one
+   email on **Tag added: journey-test** (a contact enters it once). Sandbox crons are off; run them
+   by hand with `npx wrangler dev --remote --env sandbox --test-scheduled`, then
+   `curl 'http://localhost:8787/__scheduled?cron=20+*+*+*+*'` (or `5+*+*+*+*`). Verified this way
+   on 2026-11-19 — see the spec's Verification.
 
 ## Resetting for new board ids
 

@@ -120,6 +120,39 @@ export interface Config {
   // Only then does the Worker unsubscribe the contact in Mailchimp — see consumer/outbound.ts.
   dnsConfirmedValue: string;
   consent: ConsentConfig;
+  // The hourly Journey send log (src/journeyLog): null turns it off.
+  journeyLog: JourneyLogConfig | null;
+  // The hourly Mailchimp Profile link on People (src/profileLinks): null turns it off.
+  profileLinks: ProfileLinksConfig | null;
+}
+
+// Every Customer Journey email sent becomes a timeline entry on the recipient's People item
+// (docs/superpowers/specs/2026-11-18-mailchimp-journey-send-log-design.md).
+export interface JourneyLogConfig {
+  // The People board the entries go on.
+  boardId: number;
+  // People's address columns a send is matched against; exactly one item must hold the address.
+  emailColumns: string[];
+  // The Monday custom activity ("Mailchimp email") each entry is created as.
+  timelineActivityId: string;
+  // Only these Journeys; null = every Journey on mailchimp.audienceId.
+  journeyIds: number[] | null;
+  // The 🔒 Last Journey Email date column, set to the latest delivered send. null = not kept.
+  lastJourneyEmailColumn: string | null;
+  // Entries created per run at most; the rest wait for the next hour.
+  maxEntriesPerRun: number;
+}
+
+// A link on each People item to its contact's profile in Mailchimp, where newsletter sends, opens
+// and clicks live (they are not logged in Monday).
+export interface ProfileLinksConfig {
+  boardId: number;
+  // The address column whose contact the link opens.
+  emailColumn: string;
+  // The 🔒 Mailchimp Profile link column.
+  linkColumn: string;
+  // Link writes per run at most; the first fill catches up over a few hours.
+  maxWritesPerRun: number;
 }
 
 export interface Env {

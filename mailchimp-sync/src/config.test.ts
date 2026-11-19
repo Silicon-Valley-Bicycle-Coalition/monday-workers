@@ -291,4 +291,26 @@ describe('validateConfig: consent', () => {
     raw.consent.enabled = 'yes';
     expect(() => validateConfig(raw)).toThrow(/consent/);
   });
+
+  it('reads journeyLog and profileLinks, both off when absent or null', () => {
+    const raw = validRaw() as Record<string, unknown>;
+    expect(validateConfig(raw).journeyLog).toBeNull();
+    expect(validateConfig(raw).profileLinks).toBeNull();
+    raw.journeyLog = { boardId: 1, emailColumns: ['e1', 'e2'], timelineActivityId: 'act', journeyIds: null, lastJourneyEmailColumn: 'd1', maxEntriesPerRun: 200 };
+    raw.profileLinks = { boardId: 1, emailColumn: 'e1', linkColumn: 'l1', maxWritesPerRun: 500 };
+    expect(validateConfig(raw).journeyLog).toEqual(raw.journeyLog);
+    expect(validateConfig(raw).profileLinks).toEqual(raw.profileLinks);
+  });
+
+  it('rejects a journeyLog or profileLinks missing what it needs', () => {
+    const base = { boardId: 1, emailColumns: ['e1'], timelineActivityId: 'act', journeyIds: null, lastJourneyEmailColumn: null, maxEntriesPerRun: 200 };
+    for (const bad of [{ emailColumns: [] }, { timelineActivityId: '' }, { journeyIds: [] }, { maxEntriesPerRun: 0 }, { lastJourneyEmailColumn: '' }]) {
+      const raw = validRaw() as Record<string, unknown>;
+      raw.journeyLog = { ...base, ...bad };
+      expect(() => validateConfig(raw)).toThrow(/journeyLog/);
+    }
+    const raw = validRaw() as Record<string, unknown>;
+    raw.profileLinks = { boardId: 1, emailColumn: 'e1', maxWritesPerRun: 1 };
+    expect(() => validateConfig(raw)).toThrow(/profileLinks/);
+  });
 });
