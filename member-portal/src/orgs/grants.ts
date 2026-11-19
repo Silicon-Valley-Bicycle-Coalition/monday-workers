@@ -73,8 +73,9 @@ export async function resolveOrgGrants(email: string, matches: DonorMatch[], dep
 // The live check every organization route runs first: re-reads the one granting Affiliation by id
 // (the spec's "re-reads the session people's Affiliations": the same guarantee in one read, and it
 // covers Work Email sessions, which hold no people). Still Current, Portal access still ticked,
-// still linked to this organization; a Work Email grant also needs the Work Email to still be the
-// address the session signed in with. Any failure reads as no access.
+// still linked to this organization and, for a person grant, to that person; a Work Email grant
+// also needs the Work Email to still be the address the session signed in with. Any failure reads
+// as no access.
 export async function hasOrgAccess(grant: OrgGrant, sessionEmailHash: string | null, deps: GrantDeps): Promise<boolean> {
   try {
     if (!orgAccessEnabled(deps.config)) return false;
@@ -87,7 +88,9 @@ export async function hasOrgAccess(grant: OrgGrant, sessionEmailHash: string | n
       if (workEmail === '' || sessionEmailHash === null) return false;
       return (await sha256Hex(workEmail)) === sessionEmailHash;
     }
-    return true;
+    // A person grant holds only while the Affiliation still links the person it was issued for:
+    // staff relinking it to someone else ends this session's access.
+    return grant.personItemId !== null && aff.personItemId === grant.personItemId;
   } catch (err) {
     console.error(`member-portal org access check failed for affiliation ${grant.affiliationItemId}: ${errorText(err)}`);
     return false;

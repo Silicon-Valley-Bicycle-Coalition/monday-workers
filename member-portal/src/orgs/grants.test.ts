@@ -161,6 +161,14 @@ describe('hasOrgAccess', () => {
     expect(await hasOrgAccess(personGrant, null, deps(orgAff({ organizationId: 'o2' })))).toBe(false);
   });
 
+  it('is false once the affiliation is relinked to another person', async () => {
+    expect(await hasOrgAccess(personGrant, null, deps(orgAff({ personItemId: 'p2' })))).toBe(false);
+  });
+
+  it('is false for a person grant with no person id', async () => {
+    expect(await hasOrgAccess({ ...personGrant, personItemId: null }, null, deps(orgAff({ personItemId: null })))).toBe(false);
+  });
+
   it('is false when the read fails', async () => {
     const d = deps(orgAff());
     d.monday.getAffiliation = vi.fn().mockRejectedValue(new Error('down'));
