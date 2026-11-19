@@ -3,7 +3,8 @@ import production from './svbc.json';
 import sandbox from './sandbox.json';
 
 // Keeps sandbox and production apart: no board id may appear in both.
-const ids = (c: typeof production): string[] =>
+type Boards = { donations: { boardId: string }; affiliations: { boardId: string }; organizationsBoardId: string; peopleBoardIds: string[] };
+const ids = (c: Boards): string[] =>
   [c.donations.boardId, c.affiliations.boardId, c.organizationsBoardId, ...c.peopleBoardIds];
 
 describe('config split', () => {
