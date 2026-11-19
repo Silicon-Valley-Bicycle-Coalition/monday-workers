@@ -21,7 +21,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, codeFailuresPerAddressDaily: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -66,6 +66,7 @@ const config: Config = {
   },
   matchingGifts: { doubleTheDonationPublicKey: null },
   impact: { statementsByYear: {} },
+  home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -119,7 +120,7 @@ function fakeMonday(): MondayClient {
 }
 
 function fakeTokenStore(): MagicLinkTokenStore {
-  return { createToken: vi.fn(), consumeToken: vi.fn() };
+  return { createToken: vi.fn(), consumeToken: vi.fn(), takeCodeAttempt: vi.fn(), claimByRequest: vi.fn() };
 }
 
 function fakeEmailSender(): EmailSender {

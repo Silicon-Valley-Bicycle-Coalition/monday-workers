@@ -1,4 +1,4 @@
-import { escapeHtml, someRecordsUnavailableNote } from '../views';
+import { escapeHtml } from '../views';
 import type { DonorContactInfo, PrefField } from '../types';
 import type { SubmitResult } from './submitChangeRequest';
 import type { PreferencesResult } from './submitPreferences';
@@ -13,6 +13,8 @@ function donorOption(donor: DonorContactInfo): string {
 // 'off': no Employer field; 'on': offered; 'preselected': offered and chosen (?field=employer).
 export type EmployerFieldMode = 'off' | 'on' | 'preselected';
 
+// No email row: the info door's address list is the one place addresses show, under the
+// household privacy rule (src/doors/emailLabels.ts).
 function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode): string {
   const employerRow =
     employerField === 'off'
@@ -23,7 +25,6 @@ function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerFie
       <h3>${escapeHtml(t(locale, 'changeRequest.currentDetailsHeading', { name: donor.name }))}</h3>
       <dl>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</dt><dd>${escapeHtml(donor.address)}</dd>
-        <dt>${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</dt><dd>${escapeHtml(donor.email)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</dt><dd>${escapeHtml(donor.phone)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</dt><dd>${escapeHtml(donor.preferredLanguage)}</dd>
         ${employerRow}
@@ -55,7 +56,7 @@ function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], 
   return `
     <section>
       <h3>${escapeHtml(t(locale, 'changeRequest.prefsHeading', { name: donor.name }))}</h3>
-      <form action="/${locale}/portal/change-request/preferences" method="post">
+      <form class="prefs-form" action="/${locale}/portal/change-request/preferences" method="post">
         <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
         ${prefFields.map((field) => prefRadioPair(field, donor[field] === true, locale)).join('')}
         <button type="submit">${escapeHtml(t(locale, 'changeRequest.prefsSubmit'))}</button>
@@ -72,20 +73,15 @@ function preferencesSection(donors: DonorContactInfo[], prefFields: PrefField[],
   `;
 }
 
-export function changeRequestFormView(
-  donors: DonorContactInfo[],
-  locale: Locale,
-  prefFields: PrefField[],
-  unavailableDonorCount = 0,
-  employerField: EmployerFieldMode = 'off'
-): string {
+// The info door's first section (src/doors/info.ts), which supplies the page heading, the
+// unavailable-records note and the way home.
+export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale, prefFields: PrefField[], employerField: EmployerFieldMode = 'off'): string {
   const employerOption =
     employerField === 'off'
       ? ''
       : `<option value="employer"${employerField === 'preselected' ? ' selected' : ''}>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</option>`;
   return `
-    <h1>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h1>
-    ${someRecordsUnavailableNote(unavailableDonorCount, locale)}
+    <h2>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
     <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
     ${donors.map((d) => donorCurrentValues(d, locale, employerField)).join('')}
     <form action="/${locale}/portal/change-request" method="post">
@@ -108,8 +104,12 @@ export function changeRequestFormView(
     </form>
     <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
     ${preferencesSection(donors, prefFields, locale)}
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
+}
+
+// Every result page leads back to the info door, where the form lives.
+function backToInfo(locale: Locale): string {
+  return `<p><a href="/${locale}/portal/info"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'home.doorInfo'))}</a></p>`;
 }
 
 // Maps the diff-based preferences result onto the existing result copy where it fits: any fresh
@@ -125,7 +125,7 @@ export function preferencesResultView(result: PreferencesResult, locale: Locale)
   return `
     <h1>${escapeHtml(t(locale, 'changeRequest.prefsNoChangesHeading'))}</h1>
     <p>${escapeHtml(t(locale, 'changeRequest.prefsNoChangesBody'))}</p>
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+    ${backToInfo(locale)}
   `;
 }
 
@@ -134,20 +134,20 @@ export function changeRequestResultView(result: SubmitResult, locale: Locale): s
     return `
       <h1>${escapeHtml(t(locale, 'changeRequest.submittedHeading'))}</h1>
       <p>${escapeHtml(t(locale, 'changeRequest.submittedBody'))}</p>
-      <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+      ${backToInfo(locale)}
     `;
   }
   if (result.kind === 'duplicate') {
     return `
       <h1>${escapeHtml(t(locale, 'changeRequest.duplicateHeading'))}</h1>
       <p>${escapeHtml(t(locale, 'changeRequest.duplicateBody'))}</p>
-      <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+      ${backToInfo(locale)}
     `;
   }
   return `
     <h1>${escapeHtml(t(locale, 'changeRequest.invalidHeading'))}</h1>
     <p>${escapeHtml(result.message)}</p>
-    <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'changeRequest.backToForm'))}</a></p>
+    <p><a href="/${locale}/portal/info">${escapeHtml(t(locale, 'changeRequest.backToForm'))}</a></p>
   `;
 }
 
@@ -155,6 +155,6 @@ export function changeRequestsUnavailableView(locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'changeRequest.unavailableHeading'))}</h1>
     <p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+    ${backToInfo(locale)}
   `;
 }

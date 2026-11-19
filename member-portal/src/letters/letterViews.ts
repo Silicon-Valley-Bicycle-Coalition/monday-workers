@@ -3,8 +3,11 @@ import type { TaxLetterConfig } from '../types';
 import type { LetterData, LetterGift, LetterYearListing } from './loadLetterData';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
+import { doorPage, personGroup } from '../doors/layout';
 
+// The letters door: one list of years per person (named only for a household) in the door frame.
 export function lettersListView(listings: LetterYearListing[], locale: Locale): string {
+  const household = listings.length > 1;
   const sections = listings
     .map((listing) => {
       const items =
@@ -16,16 +19,11 @@ export function lettersListView(listings: LetterYearListing[], locale: Locale): 
                   `<li><a href="/${locale}/portal/letters/${encodeURIComponent(listing.donorId)}/${year}">${escapeHtml(t(locale, 'letters.yearLink', { year: String(year) }))}</a></li>`
               )
               .join('')}</ul>`;
-      return `<section><h2>${escapeHtml(listing.donorName)}</h2>${items}</section>`;
+      return personGroup(listing.donorName, items, household);
     })
     .join('');
 
-  return `
-    <h1>${escapeHtml(t(locale, 'letters.listHeading'))}</h1>
-    <p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>
-    ${sections}
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
-  `;
+  return doorPage(t(locale, 'home.doorLetters'), `<p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>${sections}`, locale);
 }
 
 // The letter's own body — greeting, gift table, acknowledgment statement, signature — stays
@@ -104,9 +102,5 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
 }
 
 export function lettersUnavailableView(locale: Locale): string {
-  return `
-    <h1>${escapeHtml(t(locale, 'letters.listHeading'))}</h1>
-    <p>${escapeHtml(t(locale, 'letters.unavailable'))}</p>
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
-  `;
+  return doorPage(t(locale, 'home.doorLetters'), `<p>${escapeHtml(t(locale, 'letters.unavailable'))}</p>`, locale);
 }

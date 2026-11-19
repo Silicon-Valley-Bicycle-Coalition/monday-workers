@@ -9,7 +9,9 @@ describe('verifyLogin', () => {
   it('creates a session covering the token\'s donor item ids and returns a session token', async () => {
     const tokenStore: MagicLinkTokenStore = {
       createToken: vi.fn(),
-      consumeToken: vi.fn().mockResolvedValue(['donor-1', 'donor-2']),
+      consumeToken: vi.fn().mockResolvedValue({ donorItemIds: ['donor-1', 'donor-2'], emailHash: null }),
+      takeCodeAttempt: vi.fn(),
+      claimByRequest: vi.fn(),
     };
     const sessionStore: SessionStore = {
       createSession: vi.fn().mockResolvedValue(undefined),
@@ -17,7 +19,7 @@ describe('verifyLogin', () => {
       deleteSession: vi.fn(),
     };
 
-    const sessionToken = await verifyLogin('raw-token', { tokenStore, sessionStore, sessionTtlHours: 24, now });
+    const sessionToken = await verifyLogin('raw-token', { tokenStore, sessionStore, verifiedEmailStore: { recordVerified: vi.fn() }, sessionTtlHours: 24, now });
 
     expect(sessionToken).toMatch(/^[0-9a-f]{64}$/);
     expect(sessionStore.createSession).toHaveBeenCalledTimes(1);
@@ -28,14 +30,19 @@ describe('verifyLogin', () => {
   });
 
   it('returns null and creates no session when the token is invalid or already used', async () => {
-    const tokenStore: MagicLinkTokenStore = { createToken: vi.fn(), consumeToken: vi.fn().mockResolvedValue(null) };
+    const tokenStore: MagicLinkTokenStore = {
+      createToken: vi.fn(),
+      consumeToken: vi.fn().mockResolvedValue(null),
+      takeCodeAttempt: vi.fn(),
+      claimByRequest: vi.fn(),
+    };
     const sessionStore: SessionStore = {
       createSession: vi.fn(),
       getSession: vi.fn(),
       deleteSession: vi.fn(),
     };
 
-    const result = await verifyLogin('bad-token', { tokenStore, sessionStore, sessionTtlHours: 24, now });
+    const result = await verifyLogin('bad-token', { tokenStore, sessionStore, verifiedEmailStore: { recordVerified: vi.fn() }, sessionTtlHours: 24, now });
 
     expect(result).toBeNull();
     expect(sessionStore.createSession).not.toHaveBeenCalled();

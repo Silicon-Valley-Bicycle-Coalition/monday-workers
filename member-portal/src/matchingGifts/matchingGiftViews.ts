@@ -116,7 +116,7 @@ export interface MatchingGiftsViewOptions {
   publicApiKey: string | null;
   // SVBC's EIN from taxLetter config; null while that's still REPLACE_AFTER_SIGNOFF.
   ein: string | null;
-  // The portal's employer form (change-request page, Employer preselected); null or absent while
+  // The portal's employer form (the info door, Employer preselected); null or absent while
   // employerAnswerEnabled is off.
   employerFormUrl?: string | null;
 }

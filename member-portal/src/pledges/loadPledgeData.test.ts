@@ -9,6 +9,7 @@ function fakeMonday(names: { id: string; name: string }[], pledgesById: Record<s
     getMemberPortalData: vi.fn(),
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
+    getDonorEmails: vi.fn(),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
     findOrganizationsByNames: vi.fn().mockResolvedValue([]),
     getPersonAffiliations: vi.fn().mockResolvedValue([]),

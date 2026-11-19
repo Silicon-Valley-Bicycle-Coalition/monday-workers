@@ -21,6 +21,7 @@
       "donorPhone": "phone_mm8n5szp",
       "membershipExpiry": "date_mm8n6xgb",
       "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "donorHouseholdEmail": "email_mm8n2wzk",
       "donorEmailOptOut": "REPLACE_WITH_COLUMN_ID",
       "donorSmsOptOut": "REPLACE_WITH_COLUMN_ID",
       "donorDoNotMail": "boolean_mm8nes4f",
@@ -34,7 +35,11 @@
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
       "donorDtdLink": "REPLACE_WITH_COLUMN_ID",
-      "donorEmployer": "text_mm8nny92"
+      "donorEmployer": "text_mm8nny92",
+      "memberSince": "date_mm8nemca",
+      "memberType": "color_mm8pz9ry",
+      "donorEmailConsent": "color_mm8ntb35",
+      "donorHouseholdEmailConsent": "color_mm8nh158"
     }
   },
   "email": {
@@ -54,6 +59,7 @@
     "emailWindowSeconds": 900,
     "emailMaxAttempts": 5,
     "emailDailyMax": 10,
+    "codeFailuresPerAddressDaily": 10,
     "attemptRetentionHours": 24
   },
   "taxLetter": {
@@ -173,5 +179,10 @@
   },
   "impact": {
     "statementsByYear": {}
+  },
+  "home": {
+    "newMemberDays": 60,
+    "renewalWarningDays": 30,
+    "taxLetterUntil": "04-15"
   }
 }

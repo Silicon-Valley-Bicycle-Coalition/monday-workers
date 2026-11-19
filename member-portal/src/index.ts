@@ -5,6 +5,8 @@ import { pledgesEnabled } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
+import { D1VerifiedEmailStore } from './db/verifiedEmails';
+import { D1CodeFailureStore } from './db/codeFailures';
 import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
@@ -128,6 +130,8 @@ export default {
         testAccounts,
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         sessionStore: new D1SessionStore(env.DB),
+        verifiedEmailStore: new D1VerifiedEmailStore(env.DB),
+        codeFailureStore: new D1CodeFailureStore(env.DB),
         attemptStore: new D1LoginAttemptStore(env.DB),
         emailSender: new CloudflareEmailSender(
           emailBindingFor(env),
@@ -227,7 +231,7 @@ export default {
     if (Object.values(purgedAuth).some((n) => n !== null && n > 0)) {
       console.log(
         `member-portal scheduled: purged ${purgedAuth.loginAttempts ?? 'n/a'} login_attempts, ` +
-          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows`
+          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows, ${purgedAuth.codeFailures ?? 'n/a'} code_failures`
       );
     }
 

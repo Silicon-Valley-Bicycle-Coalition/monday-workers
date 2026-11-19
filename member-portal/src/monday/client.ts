@@ -4,6 +4,7 @@ import type {
   DonationRecord,
   DonationsConfig,
   DonorContactInfo,
+  DonorEmails,
   DonorMatch,
   EmployerAnswerConfig,
   MemberPortalData,
@@ -116,6 +117,8 @@ export interface MondayClient {
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
   getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
+  // Personal and Household Email with their consent labels, for the info door's address list.
+  getDonorEmails(donorItemId: string): Promise<DonorEmails>;
   // Lightweight id+name lookup (one query for all ids) — exists so the pledges page can label
   // per-donor sections without getMemberPortalData's full donation-history fetch per donor.
   getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]>;
@@ -207,17 +210,25 @@ export class HttpMondayClient implements MondayClient {
     // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
     // getMemberPortalData below: only request it once it's been configured with a real column id,
     // so the literal placeholder never ships to Monday's API.
+    const householdOn = this.columns.donorHouseholdEmail !== 'REPLACE_WITH_COLUMN_ID';
     const columnIds = [this.columns.donorEmail];
+    if (householdOn) columnIds.push(this.columns.donorHouseholdEmail);
     if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
       columnIds.push(this.columns.preferredLanguage);
     }
+    // Household Email is a second address that signs a donor in too (same gating as above): with it
+    // configured the query ORs the two columns; without, it stays the single Personal Email rule.
+    const rule = (columnId: string) => `{ column_id: "${columnId}", compare_value: [$email], operator: any_of }`;
+    const rules = householdOn
+      ? `rules: [${rule(this.columns.donorEmail)}, ${rule(this.columns.donorHouseholdEmail)}], operator: or`
+      : `rules: [${rule(this.columns.donorEmail)}]`;
     const query = `
       query ($boardId: ID!, $email: CompareValue) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 25,
             query_params: {
-              rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
+              ${rules}
             }
           ) {
             items { id name column_values(ids: ${JSON.stringify(columnIds)}) { id text value } }
@@ -235,7 +246,11 @@ export class HttpMondayClient implements MondayClient {
     // link never goes out for a donor record holding some other address.
     const wanted = email.trim().toLowerCase();
     return items
-      .filter((item) => columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted)
+      .filter(
+        (item) =>
+          columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted ||
+          (householdOn && columnEmail(item, this.columns.donorHouseholdEmail).trim().toLowerCase() === wanted),
+      )
       .map((item) => ({
         id: item.id,
         name: item.name,
@@ -254,6 +269,11 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.membershipExpiry !== 'REPLACE_WITH_COLUMN_ID') {
       donorColumnIds.push(this.columns.membershipExpiry);
     }
+    // memberSince / memberType: same gating, for the home page's state resolver.
+    const memberSinceOn = this.columns.memberSince !== 'REPLACE_WITH_COLUMN_ID';
+    const memberTypeOn = this.columns.memberType !== 'REPLACE_WITH_COLUMN_ID';
+    if (memberSinceOn) donorColumnIds.push(this.columns.memberSince);
+    if (memberTypeOn) donorColumnIds.push(this.columns.memberType);
     // The DTD link is only read when the whole match-line feature is on and donations are loaded.
     const matchLines = this.matchLinesOn();
     if (matchLines && options.includeDonations !== false) {
@@ -312,6 +332,8 @@ export class HttpMondayClient implements MondayClient {
       totalDonated,
       donations,
       membershipExpiry: columnText(donorItem, this.columns.membershipExpiry),
+      memberSince: memberSinceOn ? columnText(donorItem, this.columns.memberSince) : '',
+      memberType: memberTypeOn ? columnText(donorItem, this.columns.memberType) : '',
     };
   }
 
@@ -628,6 +650,36 @@ export class HttpMondayClient implements MondayClient {
       emailOptOut: checkboxState(item, this.columns.donorEmailOptOut),
       smsOptOut: checkboxState(item, this.columns.donorSmsOptOut),
       doNotMail: checkboxState(item, this.columns.donorDoNotMail),
+    };
+  }
+
+  async getDonorEmails(donorItemId: string): Promise<DonorEmails> {
+    // Household Email and both consent columns are gated: only requested once configured, so the
+    // literal placeholder never ships to Monday's API, and read as '' until then.
+    const configured = (columnId: string) => columnId !== 'REPLACE_WITH_COLUMN_ID';
+    const optional = [this.columns.donorHouseholdEmail, this.columns.donorEmailConsent, this.columns.donorHouseholdEmailConsent];
+    const columnIds = [this.columns.donorEmail, ...optional.filter(configured)];
+    const query = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          column_values(ids: ${JSON.stringify(columnIds)}) { id text value }
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemId: donorItemId });
+    const item = data.items[0];
+    if (!item) {
+      throw new Error(`monday: donor item "${donorItemId}" not found`);
+    }
+    // columnEmail reads the address itself, not an email column's display label.
+    const read = (columnId: string, value: (item: MondayItem, columnId: string) => string) =>
+      configured(columnId) ? value(item, columnId).trim() : '';
+    return {
+      personal: read(this.columns.donorEmail, columnEmail),
+      household: read(this.columns.donorHouseholdEmail, columnEmail),
+      personalConsent: read(this.columns.donorEmailConsent, columnText),
+      householdConsent: read(this.columns.donorHouseholdEmailConsent, columnText),
     };
   }
 

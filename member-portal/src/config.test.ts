@@ -17,6 +17,9 @@ import {
   employerAnswerEnabled,
 } from './config';
 
+import svbcConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+
 const validConfig = {
   monday: {
     apiUrl: 'https://api.monday.com/v2',
@@ -40,6 +43,7 @@ const validConfig = {
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
+      donorHouseholdEmail: 'household_email_col',
       donorEmailOptOut: 'check_email_opt',
       donorSmsOptOut: 'check_sms_opt',
       donorDoNotMail: 'check_no_mail',
@@ -53,11 +57,15 @@ const validConfig = {
       donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
       donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
       donorEmployer: 'text_employer',
+      memberSince: 'since_col',
+      memberType: 'member_type_col',
+      donorEmailConsent: 'email_consent_col',
+      donorHouseholdEmailConsent: 'household_consent_col',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
-  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, codeFailuresPerAddressDaily: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
     ein: '00-0000000',
@@ -136,6 +144,7 @@ const validConfig = {
     settingsItemName: 'Letter emails',
     maxTriggersPerRun: 200,
   },
+  home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
 };
 
 describe('validateConfig getInvolved', () => {
@@ -259,7 +268,7 @@ describe('validateConfig', () => {
     expect(() => validateConfig(validConfig)).not.toThrow();
   });
 
-  it.each(['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const)(
+  it.each(['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax', 'codeFailuresPerAddressDaily'] as const)(
     'rejects a non-positive or non-integer rateLimit.%s',
     (key) => {
       for (const value of [0, -1, 1.5, '5']) {
@@ -1092,5 +1101,71 @@ describe('changeRequests.employer', () => {
     const raw = withEmployer(null);
     delete raw.monday.columns.donorEmployer;
     expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorEmployer/);
+  });
+
+  it('accepts config with donorHouseholdEmail present (even as the placeholder), same as preferredLanguage', () => {
+    const cfg = {
+      ...validConfig,
+      monday: {
+        ...validConfig.monday,
+        columns: { ...validConfig.monday.columns, donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID' },
+      },
+    };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects config missing donorHouseholdEmail entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).donorHouseholdEmail;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.donorHouseholdEmail/);
+  });
+});
+
+describe('shipped configs', () => {
+  it.each([
+    ['svbc', svbcConfig, 'email_mm8n2wzk'],
+    ['sandbox', sandboxConfig, 'email_mm8hj3f8'],
+  ])('%s carries the Household Email column id', (_name, cfg, id) => {
+    expect(validateConfig(cfg).monday.columns.donorHouseholdEmail).toBe(id);
+  });
+});
+
+describe('home config and membership columns', () => {
+  it('rejects a config missing the home block', () => {
+    const cfg = structuredClone(validConfig) as Record<string, unknown>;
+    delete cfg.home;
+    expect(() => validateConfig(cfg)).toThrow(/home/);
+  });
+
+  it.each(['newMemberDays', 'renewalWarningDays', 'taxLetterUntil'])('rejects a home block missing %s', (key) => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.home as Record<string, unknown>)[key];
+    expect(() => validateConfig(cfg)).toThrow(new RegExp(`home\\.${key}`));
+  });
+
+  it('rejects non-positive-integer day counts and a malformed taxLetterUntil', () => {
+    for (const patch of [{ newMemberDays: 0 }, { renewalWarningDays: -1 }, { newMemberDays: 1.5 }, { taxLetterUntil: '4-15' }, { taxLetterUntil: '02-30' }, { taxLetterUntil: '2027-04-15' }]) {
+      const cfg = structuredClone(validConfig);
+      Object.assign(cfg.home, patch);
+      expect(() => validateConfig(cfg)).toThrow(/home\./);
+    }
+  });
+
+  it.each(['memberSince', 'memberType', 'donorEmailConsent', 'donorHouseholdEmailConsent'])('accepts %s as the placeholder but rejects it missing', (key) => {
+    const placeholder = structuredClone(validConfig);
+    (placeholder.monday.columns as Record<string, string>)[key] = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(placeholder)).not.toThrow();
+    const missing = structuredClone(validConfig);
+    delete (missing.monday.columns as Record<string, unknown>)[key];
+    expect(() => validateConfig(missing)).toThrow(new RegExp(`monday\\.columns\\.${key}`));
+  });
+
+  it.each([
+    ['svbc', svbcConfig, { memberSince: 'date_mm8nemca', memberType: 'color_mm8pz9ry', donorEmailConsent: 'color_mm8ntb35', donorHouseholdEmailConsent: 'color_mm8nh158' }],
+    ['sandbox', sandboxConfig, { memberSince: 'date_mm8h79b2', memberType: 'color_mm8jp69c', donorEmailConsent: 'color_mm8h9ee2', donorHouseholdEmailConsent: 'color_mm8hkgaa' }],
+  ])('%s carries the membership column ids and home thresholds', (_name, cfg, ids) => {
+    const valid = validateConfig(cfg);
+    expect(valid.monday.columns).toMatchObject(ids);
+    expect(valid.home).toEqual({ newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' });
   });
 });

@@ -24,24 +24,22 @@ export const PORTAL_CSS = `
        deliberately always-dark brand chrome, not page background. */
     --bg: var(--svbc-white);
     --text: var(--svbc-ink);
+    --text-muted: #666666;
     --surface: var(--svbc-white);
     --border: #ccc;
     --table-border: #eee;
     --row-stripe: #fafafa;
-    --tab-bg: #f0f0f0;
-    --tab-border: #ddd;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1c1b1b;
       --text: #ececec;
+      --text-muted: #b8b8b8;
       --surface: #2a2828;
       --border: #4d4a4a;
       --table-border: #3a3838;
       --row-stripe: #242222;
-      --tab-bg: #2a2828;
-      --tab-border: #4d4a4a;
     }
   }
   * { box-sizing: border-box; }
@@ -203,56 +201,28 @@ export const PORTAL_CSS = `
     border-bottom: none;
   }
 
-  /* CSS-only tabs (no JS anywhere in this portal): real radio inputs + labels, shown/hidden via
-     :checked and positional :nth-of-type sibling selectors — so the same static rule set works
-     for any subset of the three possible tabs (donations always; volunteering and event
-     registrations only when that feature is enabled), regardless of which ones a given donor
-     actually has. Inputs and labels share the same order value (flexbox then falls back to DOM
-     order within a tie, i.e. input-then-its-own-label), with panels after — no position:absolute
-     on the inputs, since taking three same-sized boxes out of flow collapses them on top of each
-     other instead of next to their own label, breaking anything that targets the input's own hit
-     area (assistive tech, automated clicks) even though clicking the visible label still "works"
-     by accident. */
-  .tabs { display: flex; flex-wrap: wrap; margin: 12px 0; }
-  .tab-input { order: 1; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
-  .tab-label {
-    order: 1;
-    padding: 8px 16px;
-    margin: 0 4px 0 0;
-    cursor: pointer;
-    background: var(--tab-bg);
-    border: 1px solid var(--tab-border);
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
+  /* The secondary button: an outline pill (design system), for links out that aren't the view's
+     one gold action. */
+  .outline-button {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--text);
+    padding: var(--button-pad);
+    font-family: var(--font-body);
+    font-size: 16px;
     font-weight: 600;
-    font-size: 14px;
+    line-height: 1.2;
+    border-radius: var(--radius-pill);
+    text-decoration: none;
   }
-  .tab-input:checked + .tab-label {
-    background: var(--svbc-black);
-    color: var(--svbc-gold);
-    border-color: var(--svbc-black);
-  }
-  .tab-input:focus-visible + .tab-label {
-    outline: 2px solid var(--svbc-gold);
-    outline-offset: 2px;
-  }
-  .tab-panel {
-    order: 2;
-    display: none;
-    width: 100%;
-    padding-top: 14px;
-    border-top: 2px solid var(--text);
-  }
-  .tab-input:nth-of-type(1):checked ~ .tab-panel:nth-of-type(1),
-  .tab-input:nth-of-type(2):checked ~ .tab-panel:nth-of-type(2),
-  .tab-input:nth-of-type(3):checked ~ .tab-panel:nth-of-type(3) {
-    display: block;
-  }
-  .tab-empty { padding: 8px 0; }
+  .door-empty { padding: 8px 0; }
   .cta-button { margin-top: 4px; }
 
-  /* Wallet-style membership card, embedded per-donor on the dashboard (not a separate page —
-     see routes.ts's GET /:locale/portal). Fixed max-width with aspect-ratio (not a fixed height)
+  /* Wallet-style membership card, on the home page and the card door (src/doors/card.ts).
+     Fixed max-width with aspect-ratio (not a fixed height)
      so it scales down cleanly on narrow viewports instead of overflowing. */
   .member-card {
     position: relative;
@@ -311,6 +281,108 @@ export const PORTAL_CSS = `
     cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
   }
 
+  /* Card-first home page (src/home/homeView.ts). Phone first: status, card(s), then the doors as a
+     list. From 768px the status sits left of the card(s) and the doors become a row of tiles. */
+  .home { display: flex; flex-direction: column; gap: 20px; }
+  .home-greeting { margin: 0; color: var(--text-muted); }
+  .home-headline { font-size: 28px; margin: 2px 0 4px; }
+  .home-sub { margin: 0 0 14px; color: var(--text-muted); }
+  .home-note { margin: 10px 0 0; font-size: 14px; color: var(--text-muted); }
+  .home-action { margin-top: 0; }
+  .home-people { display: flex; flex-direction: column; gap: 12px; }
+  .home-person .member-card { margin: 0; }
+  .home-person p { margin: 6px 0 0; }
+  .member-card-lapsed { opacity: 0.55; filter: grayscale(1); }
+  .home-not-member {
+    max-width: 340px;
+    padding: 18px 22px;
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .home-not-member p { margin: 0; }
+  .home-not-member-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; }
+  .home-doors { display: flex; flex-direction: column; }
+  .home-door {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 12px 24px 12px 0;
+    border-top: 1px solid var(--table-border);
+    text-decoration: none;
+  }
+  .home-door:last-child { border-bottom: 1px solid var(--table-border); }
+  .home-door::after {
+    content: '›';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: var(--text-muted);
+  }
+  .home-door-title { font-weight: 600; }
+  .home-door-hint { font-size: 14px; color: var(--text-muted); }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  @media (min-width: 768px) {
+    main:has(> .home) { max-width: 960px; }
+    .home {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+      column-gap: 40px;
+      row-gap: 28px;
+      align-items: start;
+    }
+    .home-headline { font-size: 40px; }
+    .home-unavailable, .home-doors { grid-column: 1 / -1; }
+    .home-doors {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .home-door, .home-door:last-child {
+      padding: 16px;
+      border: 1px solid var(--table-border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+    .home-door::after { content: none; }
+  }
+
+  /* Door pages (src/doors/): a way home, the title, then one section per person. */
+  .door-back { margin: 0 0 4px; }
+  .door-back a { color: var(--text-muted); text-decoration: none; }
+  .door-back a:hover { text-decoration: underline; }
+  .door h1 { margin-top: 0; }
+  .door-person { margin: 0 0 24px; }
+  .door-person .member-card { margin-top: 0; }
+  .door-links { list-style: none; padding: 0; }
+  /* Info door address list (src/doors/info.ts): address, then its kind and label as text pills,
+     wrapping under the address on a phone. Bounced is the one label with weight, never colour alone. */
+  /* The change request's submit is the info door's one gold action; each person's preferences
+     form takes the outline style (same out-specificity trick as .member-card-regenerate). */
+  .prefs-form button[type='submit'] {
+    background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
+  }
+  .info-emails { margin-top: 32px; }
+  .email-list { list-style: none; padding: 0; margin: 0 0 16px; }
+  .email-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--table-border); }
+  .email-address { overflow-wrap: anywhere; margin-right: auto; }
+  .email-kind { font-size: 14px; color: var(--text-muted); }
+  .email-label { font-size: 13px; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); }
+  .email-label-bounced { font-weight: 700; border-color: var(--text); }
+  .email-legend { font-size: 14px; color: var(--text-muted); }
+
   .site-footer {
     background: var(--svbc-chrome);
     color: var(--svbc-white);
@@ -340,6 +412,7 @@ export const PORTAL_CSS = `
 
   @media (max-width: 480px) {
     .site-header-inner, .site-footer-inner { padding-left: 20px; padding-right: 20px; }
+    main { padding-left: 16px; padding-right: 16px; }
     /* flex-wrap as a defensive fallback (logo + logout + donate wrap to a second row rather than
        overflowing off-screen) below the width this specific logo/button sizing was tuned to fit
        on one line down to a ~375px viewport. */
@@ -349,9 +422,6 @@ export const PORTAL_CSS = `
   }
   @media print {
     .site-header, .site-footer { display: none; }
-    /* A printed/PDF'd dashboard should show every tab's content, not just whichever was active
-       on screen. */
-    .tab-panel { display: block !important; }
-    .tab-label { display: none; }
+    .door-back, .home-doors { display: none; }
   }
 `;

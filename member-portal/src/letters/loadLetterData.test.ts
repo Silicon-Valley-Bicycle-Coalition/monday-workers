@@ -21,7 +21,7 @@ function donor(overrides: Partial<MemberPortalData>): MemberPortalData {
     id: 'donor-1', name: 'Jane Example', membershipStatus: 'Active', membershipTier: 'Member',
     totalDonated: '0',
     donations: [],
-    membershipExpiry: '',
+    membershipExpiry: '', memberSince: '', memberType: '',
     ...overrides,
   };
 }
@@ -166,7 +166,12 @@ describe('loadLetterData with the real client (status filtering)', () => {
     donorAddress: 'addr_col',
     donorPhone: 'phone_col',
     membershipExpiry: 'expiry_col',
+    memberSince: 'since_col',
+    memberType: 'member_type_col',
+    donorEmailConsent: 'email_consent_col',
+    donorHouseholdEmailConsent: 'household_consent_col',
     preferredLanguage: 'lang_col',
+    donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID',
     donorEmailOptOut: 'check_email_opt',
     donorSmsOptOut: 'check_sms_opt',
     donorDoNotMail: 'check_no_mail',

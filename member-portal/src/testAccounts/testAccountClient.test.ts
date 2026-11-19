@@ -55,10 +55,14 @@ describe('withTestAccounts', () => {
     expect((await client.getDonorContactInfo('test-lifetime')).email).toBe('test-lifetime@example.org');
     expect(await client.getVolunteerShiftsForDonor('test-lapsed')).toEqual([]);
     expect(await client.getPledgesForDonor('test-active')).toEqual([]);
+    expect((await client.getMemberPortalData('test-spanish')).memberType).toBe('New');
+    expect(await client.getDonorEmails('test-active')).toEqual({ personal: 'test-active@example.org', household: '', personalConsent: '', householdConsent: '' });
+    expect((await client.getDonorEmails('test-household-b')).household).toBe('test-household@example.org');
 
     expect(real.findDonorsByEmail).not.toHaveBeenCalled();
     expect(real.getMemberPortalData).not.toHaveBeenCalled();
     expect(real.getDonorContactInfo).not.toHaveBeenCalled();
+    expect(real.getDonorEmails).not.toHaveBeenCalled();
   });
 
   it('passes every other id and address to the real client', async () => {

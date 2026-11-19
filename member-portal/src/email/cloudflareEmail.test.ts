@@ -14,13 +14,13 @@ describe('CloudflareEmailSender', () => {
       const binding = fakeBinding();
       const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
 
-      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://portal.example.org/auth/callback?token=abc', locale: 'en' });
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://portal.example.org/auth/callback?token=abc', code: '482913', ttlMinutes: 15, locale: 'en' });
 
       expect(binding.send).toHaveBeenCalledTimes(1);
       const message = binding.send.mock.calls[0]![0];
       expect(message.to).toBe('donor@example.org');
       expect(message.from).toEqual({ email: 'login@example.org', name: 'Test Portal' });
-      expect(message.subject).toBe('🚴 Your SVBC member portal login link');
+      expect(message.subject).toBe('🚴 Your SVBC member portal sign-in code and link');
       expect(message.html).toContain('https://portal.example.org/auth/callback?token=abc');
       expect(message.text).toContain('https://portal.example.org/auth/callback?token=abc');
       // Wrapped in the shared branded layout (logo image + footer), not sent as a bare fragment.
@@ -28,16 +28,30 @@ describe('CloudflareEmailSender', () => {
       expect(message.text).toContain('Silicon Valley Bicycle Coalition');
     });
 
+    it('puts the code in both parts, before the link', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
+      const loginUrl = 'https://portal.example.org/auth/callback?lang=en#token=abc';
+
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl, code: '482913', ttlMinutes: 15, locale: 'en' });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.html).toContain('482913');
+      expect(message.text).toContain('482913');
+      expect(message.html.indexOf('482913')).toBeLessThan(message.html.indexOf(loginUrl));
+      expect(message.text.indexOf('482913')).toBeLessThan(message.text.indexOf(loginUrl));
+    });
+
     it('sends the subject and body for the given locale', async () => {
       const binding = fakeBinding();
       const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
 
-      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://portal.example.org/x', locale: 'es' });
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://portal.example.org/x', code: '482913', ttlMinutes: 15, locale: 'es' });
 
       const message = binding.send.mock.calls[0]![0];
       expect(message.subject).toBe(`🚴 ${t('es', 'email.subject')}`);
       expect(message.html).toContain(t('es', 'email.loginButton'));
-      expect(message.text).toContain(t('es', 'email.bodyIntro'));
+      expect(message.text).toContain(t('es', 'email.codeHint', { minutes: '15' }));
     });
 
     it('propagates errors thrown by the binding', async () => {
@@ -46,14 +60,14 @@ describe('CloudflareEmailSender', () => {
       };
       const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
 
-      await expect(sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' })).rejects.toThrow('domain not onboarded');
+      await expect(sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', code: '482913', ttlMinutes: 15, locale: 'en' })).rejects.toThrow('domain not onboarded');
     });
 
     it('sets the Reply-To header when one is configured', async () => {
       const binding = fakeBinding();
       const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL, 'contactus@bikesiliconvalley.org');
 
-      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' });
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', code: '482913', ttlMinutes: 15, locale: 'en' });
 
       const message = binding.send.mock.calls[0]![0];
       expect(message.replyTo).toBe('contactus@bikesiliconvalley.org');
@@ -63,7 +77,7 @@ describe('CloudflareEmailSender', () => {
       const binding = fakeBinding();
       const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
 
-      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' });
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', code: '482913', ttlMinutes: 15, locale: 'en' });
 
       const message = binding.send.mock.calls[0]![0];
       expect(message.replyTo).toBeUndefined();

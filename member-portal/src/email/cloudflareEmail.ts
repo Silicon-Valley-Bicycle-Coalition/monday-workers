@@ -15,11 +15,14 @@ export class CloudflareEmailSender implements EmailSender {
 
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
     const subject = `🚴 ${t(params.locale, 'email.subject')}`;
-    const bodyIntro = t(params.locale, 'email.bodyIntro');
+    const codeIntro = t(params.locale, 'email.codeIntro');
+    const codeHint = t(params.locale, 'email.codeHint', { minutes: String(params.ttlMinutes) });
     const loginButton = t(params.locale, 'email.loginButton');
     const body = renderEmailLayout({
-      bodyHtml: `<p>${bodyIntro}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`,
-      bodyText: `${bodyIntro}\n\n${params.loginUrl}`,
+      bodyHtml:
+        `<p>${codeIntro}</p><p style="font-size:32px; font-weight:700; letter-spacing:6px;">${params.code}</p>` +
+        `<p>${codeHint}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`,
+      bodyText: `${codeIntro}\n\n${params.code}\n\n${codeHint}\n\n${params.loginUrl}`,
       logoUrl: this.logoUrl,
     });
     await this.emailBinding.send({

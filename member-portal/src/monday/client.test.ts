@@ -19,6 +19,7 @@ const columns: MondayColumns = {
   donorPhone: 'phone_col',
   membershipExpiry: 'expiry_col',
   preferredLanguage: 'lang_col',
+  donorHouseholdEmail: 'household_col',
   donorEmailOptOut: 'check_email_opt',
   donorSmsOptOut: 'check_sms_opt',
   donorDoNotMail: 'check_no_mail',
@@ -32,6 +33,10 @@ const columns: MondayColumns = {
   donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
   donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
   donorEmployer: 'employer_col',
+  memberSince: 'since_col',
+  memberType: 'member_type_col',
+  donorEmailConsent: 'email_consent_col',
+  donorHouseholdEmailConsent: 'household_consent_col',
 };
 
 // Mirrors config donations.countableStatuses — the Donations-board status labels that count as
@@ -228,6 +233,64 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
   });
 
+  describe('Household Email', () => {
+    const capture = (items: unknown[]) => {
+      const calls: { query: string; variables: Record<string, unknown> }[] = [];
+      const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        calls.push(JSON.parse(init.body as string));
+        return { ok: true, status: 200, json: async () => ({ data: { boards: [{ items_page: { items } }] } }) };
+      });
+      return { calls, fetchMock };
+    };
+    const make = (cols: MondayColumns, fetchMock: ReturnType<typeof fetchReturning>) =>
+      new HttpMondayClient('https://api.monday.com/v2', 'token', cols, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    it('queries both email columns with operator or when donorHouseholdEmail is configured', async () => {
+      const { calls, fetchMock } = capture([]);
+      await make(columns, fetchMock).findDonorsByEmail('jane@example.org');
+      const q = calls[0]!.query;
+      expect(q).toContain('column_id: "email_col", compare_value: [$email], operator: any_of');
+      expect(q).toContain('column_id: "household_col", compare_value: [$email], operator: any_of');
+      expect(q).toContain('operator: or');
+      expect(q).toContain('"household_col"');
+      expect(calls[0]!.variables.email).toBe('jane@example.org');
+    });
+
+    it('returns an item whose Household Email equals the address, ignoring case and whitespace', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [{ id: 'household_col', text: '  Family@Example.org ', value: null }] },
+      ]);
+      const matches = await make(columns, fetchMock).findDonorsByEmail('family@example.org');
+      expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+    });
+
+    it('drops an item matching neither column exactly (Monday fuzzy hit)', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [emailValue('other@example.org'), { id: 'household_col', text: 'another@example.org', value: null }] },
+      ]);
+      expect(await make(columns, fetchMock).findDonorsByEmail('family@example.org')).toEqual([]);
+    });
+
+    it('returns both items sharing a Household Email', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [{ id: 'household_col', text: 'family@example.org', value: null }] },
+        { id: '2', name: 'Joe', column_values: [{ id: 'household_col', text: 'family@example.org', value: null }] },
+      ]);
+      const matches = await make(columns, fetchMock).findDonorsByEmail('family@example.org');
+      expect(matches.map((m) => m.id)).toEqual(['1', '2']);
+    });
+
+    it('sends the single Personal Email rule, no operator and no household id, while a placeholder', async () => {
+      const { calls, fetchMock } = capture([]);
+      await make({ ...columns, donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID' }, fetchMock).findDonorsByEmail('jane@example.org');
+      const q = calls[0]!.query;
+      expect(q).toContain('rules: [{ column_id: "email_col", compare_value: [$email], operator: any_of }]');
+      expect(q).not.toContain('operator: or');
+      expect(q).not.toContain('REPLACE_WITH_COLUMN_ID');
+      expect(q).toContain('column_values(ids: ["email_col","lang_col"])');
+    });
+  });
+
   // Issue GL#62: whatever Monday's filter returns, only an exact (case-insensitive) address match
   // may get a login link.
   it('drops items whose address is not exactly the submitted one', async () => {
@@ -356,7 +419,59 @@ describe('HttpMondayClient.getMemberPortalData', () => {
       totalDonated: '500',
       donations: [{ amount: '100', date: '2026-01-01', description: 'Annual gift' }],
       membershipExpiry: '2026-12-31',
+      memberSince: '',
+      memberType: '',
     });
+  });
+
+  it('requests memberSince and memberType when configured and returns their text', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementationOnce(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            items: [
+              {
+                id: 'donor-1',
+                name: 'Jane Donor',
+                column_values: [
+                  { id: 'status_col', text: 'Active' },
+                  { id: 'since_col', text: '2026-11-11' },
+                  { id: 'member_type_col', text: 'New' },
+                ],
+              },
+            ],
+          },
+        }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    const data = await client.getMemberPortalData('donor-1', { includeDonations: false });
+    expect(captured!.query).toContain('since_col');
+    expect(captured!.query).toContain('member_type_col');
+    expect(data.memberSince).toBe('2026-11-11');
+    expect(data.memberType).toBe('New');
+  });
+
+  it('omits placeholder memberSince and memberType column ids and returns empty strings', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementationOnce(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { items: [{ id: 'donor-1', name: 'Jane Donor', column_values: [{ id: 'status_col', text: 'Active' }] }] } }),
+      };
+    });
+    const gated: MondayColumns = { ...columns, memberSince: 'REPLACE_WITH_COLUMN_ID', memberType: 'REPLACE_WITH_COLUMN_ID' };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', gated, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    const data = await client.getMemberPortalData('donor-1', { includeDonations: false });
+    expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(data.memberSince).toBe('');
+    expect(data.memberType).toBe('');
   });
 
   it('never queries the Donations board when includeDonations is false, returning an empty, unloaded history', async () => {
@@ -2298,5 +2413,60 @@ describe('HttpMondayClient.getDonorContactInfo employer', () => {
     const { client } = sequencedClient([{ data: { items: [donorItem] } }], bodies, { ...columns, donorEmployer: 'REPLACE_WITH_COLUMN_ID' });
     expect((await client.getDonorContactInfo('d')).employer).toBe('');
     expect(bodies[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+  });
+});
+
+describe('HttpMondayClient.getDonorEmails', () => {
+  function capturing(items: unknown[], cols: MondayColumns = columns) {
+    const calls: { query: string; variables: Record<string, unknown> }[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      calls.push(JSON.parse(init.body as string));
+      return { ok: true, status: 200, json: async () => ({ data: { items } }) };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', cols, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    return { client, calls };
+  }
+
+  it('reads both addresses (from the email value, not its label) and both consent labels', async () => {
+    const { client, calls } = capturing([
+      {
+        id: 'donor-1',
+        name: 'Jordan',
+        column_values: [
+          { id: 'email_col', text: 'Jordan (work)', value: JSON.stringify({ email: 'jordan@example.org', text: 'Jordan (work)' }) },
+          { id: 'household_col', text: 'family@example.org', value: JSON.stringify({ email: 'family@example.org', text: 'family@example.org' }) },
+          { id: 'email_consent_col', text: 'Subscribed', value: null },
+          { id: 'household_consent_col', text: 'Cleaned', value: null },
+        ],
+      },
+    ]);
+
+    expect(await client.getDonorEmails('donor-1')).toEqual({
+      personal: 'jordan@example.org',
+      household: 'family@example.org',
+      personalConsent: 'Subscribed',
+      householdConsent: 'Cleaned',
+    });
+    expect(calls[0]!.variables).toEqual({ itemId: 'donor-1' });
+    expect(calls[0]!.query).toContain('column_values(ids: ["email_col","household_col","email_consent_col","household_consent_col"])');
+  });
+
+  it('leaves gated columns out of the query and reads them as blank', async () => {
+    const gated: MondayColumns = {
+      ...columns,
+      donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID',
+      donorEmailConsent: 'REPLACE_WITH_COLUMN_ID',
+      donorHouseholdEmailConsent: 'REPLACE_WITH_COLUMN_ID',
+    };
+    const { client, calls } = capturing([{ id: 'donor-1', name: 'Jane', column_values: [emailValue('jane@example.org')] }], gated);
+
+    expect(await client.getDonorEmails('donor-1')).toEqual({ personal: 'jane@example.org', household: '', personalConsent: '', householdConsent: '' });
+    expect(calls[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(calls[0]!.query).toContain('column_values(ids: ["email_col"])');
+  });
+
+  it('throws when the donor item does not exist', async () => {
+    const { client } = capturing([]);
+    await expect(client.getDonorEmails('missing')).rejects.toThrow('not found');
   });
 });

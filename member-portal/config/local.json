@@ -22,6 +22,7 @@
       "donorPhone": "phone",
       "membershipExpiry": "expiry",
       "preferredLanguage": "language",
+      "donorHouseholdEmail": "REPLACE_WITH_COLUMN_ID",
       "donorEmailOptOut": "email_opt_out",
       "donorSmsOptOut": "sms_opt_out",
       "donorDoNotMail": "do_not_mail",
@@ -34,7 +35,11 @@
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
       "donorDtdLink": "REPLACE_WITH_COLUMN_ID",
-      "donorEmployer": "REPLACE_WITH_COLUMN_ID"
+      "donorEmployer": "REPLACE_WITH_COLUMN_ID",
+      "memberSince": "REPLACE_WITH_COLUMN_ID",
+      "memberType": "REPLACE_WITH_COLUMN_ID",
+      "donorEmailConsent": "REPLACE_WITH_COLUMN_ID",
+      "donorHouseholdEmailConsent": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {
@@ -53,6 +58,7 @@
     "emailWindowSeconds": 900,
     "emailMaxAttempts": 5,
     "emailDailyMax": 10,
+    "codeFailuresPerAddressDaily": 10,
     "attemptRetentionHours": 24
   },
   "taxLetter": {
@@ -157,5 +163,10 @@
         "es": ["[Ejemplo de prueba] Enseñamos seguridad ciclista a 4,200 estudiantes", "[Ejemplo de prueba] Logramos 12 millas de ciclovías protegidas"]
       }
     }
+  },
+  "home": {
+    "newMemberDays": 60,
+    "renewalWarningDays": 30,
+    "taxLetterUntil": "04-15"
   }
 }

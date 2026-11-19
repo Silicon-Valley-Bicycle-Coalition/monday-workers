@@ -35,6 +35,14 @@ describe('changeRequestFormView', () => {
     expect(html).toContain(t('vi', 'changeRequest.formHeading'));
   });
 
+  // The info door's address list applies the household privacy rule; this list must not leak
+  // another person's Personal Email around it.
+  it("leaves every donor's email out of the current-details list", () => {
+    const html = changeRequestFormView(donors, 'en', []);
+    expect(html).not.toContain('jane@example.org');
+    expect(html).not.toContain(`<dt>${t('en', 'changeRequest.fieldEmail')}</dt>`);
+  });
+
   it('current-details list shows the stored preferred-language label', () => {
     const donor = { ...sampleDonor, preferredLanguage: 'Spanish' };
     const html = changeRequestFormView([donor], 'en', []);
@@ -53,9 +61,12 @@ describe('changeRequestResultView', () => {
   it('shows the validation message', () => {
     expect(changeRequestResultView({ kind: 'invalid', message: 'Unknown field.' }, 'en')).toContain('Unknown field.');
   });
-  it('locale-prefixes its "back to portal" / "back to form" links', () => {
-    const submitted = changeRequestResultView({ kind: 'submitted' }, 'ja');
-    expect(submitted).toContain('href="/ja/portal"');
+  it('links back to the locale-prefixed info door', () => {
+    expect(changeRequestResultView({ kind: 'submitted' }, 'ja')).toContain('href="/ja/portal/info"');
+    expect(changeRequestResultView({ kind: 'duplicate' }, 'ja')).toContain('href="/ja/portal/info"');
+    expect(changeRequestResultView({ kind: 'invalid', message: 'x' }, 'ja')).toContain('href="/ja/portal/info"');
+    expect(preferencesResultView({ kind: 'noChanges' }, 'ja')).toContain('href="/ja/portal/info"');
+    expect(changeRequestsUnavailableView('ja')).toContain('href="/ja/portal/info"');
   });
 
   it('renders actual translated copy for the requested locale, not just structure', () => {
@@ -142,13 +153,13 @@ describe('changeRequestFormView — employer', () => {
   const donor = { ...sampleDonor, employer: 'Acme <Corp>' };
 
   it('offers Employer and shows the current one when enabled', () => {
-    const html = changeRequestFormView([donor], 'en', [], 0, 'on');
+    const html = changeRequestFormView([donor], 'en', [], 'on');
     expect(html).toContain('<option value="employer">Employer</option>');
     expect(html).toContain('<dt>Employer</dt><dd>Acme &lt;Corp&gt;</dd>');
   });
 
   it('preselects Employer', () => {
-    expect(changeRequestFormView([donor], 'en', [], 0, 'preselected')).toContain('<option value="employer" selected>Employer</option>');
+    expect(changeRequestFormView([donor], 'en', [], 'preselected')).toContain('<option value="employer" selected>Employer</option>');
   });
 
   it('shows neither while off', () => {

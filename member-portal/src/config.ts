@@ -19,6 +19,7 @@ const REQUIRED_TOP_LEVEL = [
   'matchingGifts',
   'impact',
   'letterCron',
+  'home',
 ] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
@@ -50,10 +51,20 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 // not placeholder-freedom — same treatment as CARD_COLUMNS.
 const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
 
+// HOUSEHOLD_EMAIL_COLUMN deliberately isn't merged into REQUIRED_COLUMNS: sign-in only matches
+// Household Email once it's configured, so a fork without the column still works. Checked for
+// *presence* only, not placeholder-freedom — same treatment as PREFERRED_LANGUAGE_COLUMN.
+const HOUSEHOLD_EMAIL_COLUMN: (keyof MondayColumns)[] = ['donorHouseholdEmail'];
+
 // VOLUNTEER_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: these columns only matter
 // to the volunteer-history feature, which is gated (volunteerHistoryEnabled), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
 // CARD_COLUMNS.
+// MEMBERSHIP_HOME_COLUMNS only matter to the home page's gated state resolver and consent card, so
+// they're checked for *presence* only, not placeholder-freedom — same treatment as
+// PREFERRED_LANGUAGE_COLUMN.
+const MEMBERSHIP_HOME_COLUMNS: (keyof MondayColumns)[] = ['memberSince', 'memberType', 'donorEmailConsent', 'donorHouseholdEmailConsent'];
+
 const VOLUNTEER_COLUMNS: (keyof MondayColumns)[] = [
   'volunteerDonorLink',
   'volunteerHours',
@@ -105,6 +116,7 @@ const REQUIRED_RATE_LIMIT_KEYS = [
   'emailWindowSeconds',
   'emailMaxAttempts',
   'emailDailyMax',
+  'codeFailuresPerAddressDaily',
   'attemptRetentionHours',
 ] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
@@ -191,6 +203,8 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
+  requireKeys(columns, 'monday.columns', HOUSEHOLD_EMAIL_COLUMN);
+  requireKeys(columns, 'monday.columns', MEMBERSHIP_HOME_COLUMNS);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
   // Optional (GL#115): absent or the placeholder shows the Job alone.
   if ('volunteerTicketType' in columns && typeof columns.volunteerTicketType !== 'string') {
@@ -220,7 +234,7 @@ export function validateConfig(raw: unknown): Config {
 
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);
-  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const) {
+  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax', 'codeFailuresPerAddressDaily'] as const) {
     const value = rateLimit[key];
     if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
       throw new Error(`config: "rateLimit.${key}" must be a positive integer`);
@@ -396,6 +410,20 @@ export function validateConfig(raw: unknown): Config {
         throw new Error(`config: "${yearPath}.${locale}" must be a non-empty list of non-blank strings`);
       }
     }
+  }
+
+  const home = requireObject(cfg, 'home');
+  requireKeys(home, 'home', ['newMemberDays', 'renewalWarningDays', 'taxLetterUntil']);
+  for (const key of ['newMemberDays', 'renewalWarningDays'] as const) {
+    if (!Number.isInteger(home[key]) || (home[key] as number) <= 0) {
+      throw new Error(`config: "home.${key}" must be a positive integer`);
+    }
+  }
+  const until = home.taxLetterUntil;
+  const untilValid =
+    typeof until === 'string' && /^\d{2}-\d{2}$/.test(until) && new Date(`2024-${until}T00:00:00Z`).toISOString().slice(5, 10) === until;
+  if (!untilValid) {
+    throw new Error('config: "home.taxLetterUntil" must be a real MM-DD calendar date');
   }
 
   return cfg as unknown as Config;

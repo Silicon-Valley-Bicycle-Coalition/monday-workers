@@ -3,6 +3,8 @@ import { validateConfig } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
+import { D1VerifiedEmailStore } from './db/verifiedEmails';
+import { D1CodeFailureStore } from './db/codeFailures';
 import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
@@ -45,6 +47,8 @@ function buildApp(env: LocalEnv) {
     testAccounts: true,
     tokenStore: new D1MagicLinkTokenStore(env.DB),
     sessionStore: new D1SessionStore(env.DB),
+    verifiedEmailStore: new D1VerifiedEmailStore(env.DB),
+    codeFailureStore: new D1CodeFailureStore(env.DB),
     attemptStore: new D1LoginAttemptStore(env.DB),
     emailSender: new ConsoleEmailSender(),
     ipLimiter: noopIpLimiter,
