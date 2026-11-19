@@ -13,8 +13,8 @@ const config = {
 } as unknown as Config;
 const now = () => new Date('2027-01-10T18:00:00Z');
 const gifts = [
-  { itemId: 'g1', date: '2026-02-01', amount: '$100.00', giftType: 'Donation', description: 'n' },
-  { itemId: 'g2', date: '2025-02-01', amount: '$10.00', giftType: 'Donation', description: 'n' },
+  { itemId: 'g1', date: '2026-02-01', amount: '$100.00', giftType: 'Donation' },
+  { itemId: 'g2', date: '2025-02-01', amount: '$10.00', giftType: 'Donation' },
 ];
 
 function setup() {
@@ -92,7 +92,7 @@ describe('statementExists', () => {
   it('reads only gifts and matches', async () => {
     const monday = setup();
     monday.orgGifts.set('o1', []);
-    monday.orgMatches.set('o1', [{ itemId: 'm', date: '2026-04-01', amount: '$5.00', giftType: '', description: 'x' }]);
+    monday.orgMatches.set('o1', [{ itemId: 'm', date: '2026-04-01', amount: '$5.00', giftType: '' }]);
     const spies = [
       vi.spyOn(monday, 'getOrganization'),
       vi.spyOn(monday, 'getOrganizationAffiliations'),

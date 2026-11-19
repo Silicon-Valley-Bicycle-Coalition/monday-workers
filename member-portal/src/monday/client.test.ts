@@ -2687,7 +2687,7 @@ describe('HttpMondayClient organization gifts and matches', () => {
       { donationsCfg: floored },
     );
     const gifts = await client.getOrganizationGifts('501');
-    expect(gifts).toEqual([{ itemId: '1', date: '2026-03-01', amount: '$500.00', giftType: 'Sponsorship', description: 'Gift 1' }]);
+    expect(gifts).toEqual([{ itemId: '1', date: '2026-03-01', amount: '$500.00', giftType: 'Sponsorship' }]);
     expect(sent[0]!.query).toContain('link_col');
     expect(sent[0]!.variables).toMatchObject({ boardId: 1, donorItemId: 501 });
   });

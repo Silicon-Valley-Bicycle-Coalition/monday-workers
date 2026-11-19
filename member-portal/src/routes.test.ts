@@ -4173,7 +4173,7 @@ describe('organization page and year-end statement', () => {
   const grant: OrgGrant = { orgItemId: 'org-1', affiliationItemId: 'aff-1', via: 'workEmail', personItemId: null };
   const gifts = [
     { itemId: 'g1', date: '2025-03-01', amount: '$100.00', giftType: 'Donation', description: 'Spring gift' },
-    { itemId: 'g2', date: '2025-05-01', amount: '$500.00', giftType: 'Sponsorship', description: 'Ride sponsor' },
+    { itemId: 'g2', date: '2025-05-01', amount: '$500.00', giftType: 'Sponsorship', description: 'XX' },
     { itemId: 'g3', date: '2026-02-01', amount: '$40.00', giftType: 'Donation', description: 'This year' },
   ];
   const matches = [{ itemId: 'm1', date: '2025-04-01', amount: '$25.00', giftType: 'Matching', description: SECRET_EMPLOYEE }];
@@ -4228,8 +4228,7 @@ describe('organization page and year-end statement', () => {
     const html = await res.text();
     expect(html).toContain('Acme Bikes');
     expect(html).toContain('Sponsorship');
-    expect(html).toContain('Ride sponsor');
-    expect(html).toContain('Employee match');
+        expect(html).toContain('Employee match');
     expect(html).toContain('href="/en/portal/org/org-1/statement/2025"');
     expect(html).not.toContain('statement/2026');
     expect(html).not.toContain(SECRET_EMPLOYEE);
@@ -4284,7 +4283,7 @@ describe('organization page and year-end statement', () => {
   it('hides giving while the history gate is closed but keeps the statement links', async () => {
     const { app, headers } = await withSession({ cfg: orgConfig({ history: false }) });
     const html = await (await app.request('/en/portal/org/org-1', { headers })).text();
-    expect(html).not.toContain('Ride sponsor');
+    expect(html).not.toContain('XX');
     expect(html).toContain('statement/2025');
   });
 
@@ -4296,14 +4295,23 @@ describe('organization page and year-end statement', () => {
     const html = await res.text();
     expect(html).toContain('Acme Bikes');
     expect(html).toContain('Sponsorship');
-    expect(html).toContain('Ride sponsor');
-    expect(html).toContain('Employee matching');
+        expect(html).toContain('Employee matching');
     expect(html).toContain('00-0000000');
     expect(html).toContain('plain');
     expect(html).toContain('are not acknowledged as tax-deductible gifts');
     // Acknowledged total is the Donation alone, not the $500 Sponsorship.
     expect(html).toContain('Total deductible gifts for 2025: $100.00');
     expect(html).not.toContain(SECRET_EMPLOYEE);
+  });
+
+  it('keeps item names off the page and statement, and skips the will-follow line for sponsor-only years', async () => {
+    const named = [{ itemId: 'g9', date: '2025-05-01', amount: '$500.00', giftType: 'Sponsorship', description: 'Gift from Pat Employee-Name' }];
+    const { app, headers } = await withSession({ monday: orgMonday({ getOrganizationGifts: vi.fn().mockResolvedValue(named), getOrganizationMatches: vi.fn().mockResolvedValue([]) }) });
+    const page = await (await app.request('/en/portal/org/org-1', { headers })).text();
+    const stmt = await (await app.request('/en/portal/org/org-1/statement/2025', { headers })).text();
+    expect(page).not.toContain('Pat Employee-Name');
+    expect(stmt).not.toContain('Pat Employee-Name');
+    expect(stmt).not.toContain('will follow');
   });
 
   it('says an acknowledgment will follow while the switch is off', async () => {

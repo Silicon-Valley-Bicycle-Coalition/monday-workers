@@ -122,13 +122,12 @@ export interface OrgAffiliation {
 }
 
 // A Donations-board gift as an organization sees it. giftType is the Gift Type column
-// (donationDescription); description is the item's own name.
+// (donationDescription). The item's own name is deliberately not read: it can carry a person's name.
 export interface OrgGift {
   itemId: string;
   date: string;
   amount: string;
   giftType: string;
-  description: string;
 }
 
 // What the organization reads need beyond the board and column ids every client carries.
@@ -1200,7 +1199,6 @@ export class HttpMondayClient implements MondayClient {
         date: columnText(item, this.columns.donationDate),
         amount: columnText(item, this.columns.donationAmount),
         giftType: columnText(item, this.columns.donationDescription),
-        description: item.name,
       }));
   }
 

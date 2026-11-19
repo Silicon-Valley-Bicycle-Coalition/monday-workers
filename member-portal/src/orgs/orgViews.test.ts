@@ -11,7 +11,9 @@ const taxLetter = {
 } as TaxLetterConfig;
 
 const org = { id: 'o1', name: 'Acme <Bikes>', address: '1 Main St' };
-const gift = (itemId: string, date: string, amount: string, giftType = 'Donation') => ({ itemId, date, amount, giftType, description: `d-${itemId}` });
+// A stray item name (as an older client or a bad cast could pass along) must never be rendered.
+const gift = (itemId: string, date: string, amount: string, giftType = 'Donation') =>
+  ({ itemId, date, amount, giftType, description: 'Pat Employee-Name' }) as { itemId: string; date: string; amount: string; giftType: string };
 
 describe('orgPageView', () => {
   const base = {
@@ -26,8 +28,9 @@ describe('orgPageView', () => {
   it('escapes the name, lists newest first with a total per year', () => {
     const html = orgPageView(base, 'en');
     expect(html).toContain('Acme &lt;Bikes&gt;');
-    expect(html.indexOf('d-b')).toBeLessThan(html.indexOf('d-c'));
-    expect(html.indexOf('d-c')).toBeLessThan(html.indexOf('d-a'));
+    expect(html.indexOf('$20.00')).toBeLessThan(html.indexOf('$30.00'));
+    expect(html.indexOf('$30.00')).toBeLessThan(html.indexOf('$10.00'));
+    expect(html).not.toContain('Pat Employee-Name');
     expect(html).toContain('2025 total');
     expect(html).toContain('$40.00');
     expect(html).toContain('Employee match');
@@ -40,7 +43,7 @@ describe('orgPageView', () => {
 
   it('omits giving when the history gate is closed, noting when it opens', () => {
     const html = orgPageView({ ...base, showGiving: false, historyVisibleFromISO: '2027-01-01' }, 'en');
-    expect(html).not.toContain('d-a');
+    expect(html).not.toContain('$10.00');
     expect(html).toContain('January 1, 2027');
     expect(html).toContain('statement/2025');
   });
@@ -57,6 +60,7 @@ describe('orgStatementView', () => {
     totalSupport: '$100.00',
     groups: [{ label: 'Donation', gifts: [gift('a', '2025-01-05', '$100.00')], subtotal: '$100.00' }],
     matches: [], matchTotal: '$0.00', volunteering: { people: 4, hours: '12' },
+    hasDeductibleGifts: true,
     acknowledgment: { gifts: [gift('a', '2025-01-05', '$100.00')], separateGifts: [gift('s', '2025-02-05', '$7.00', 'DAF')], total: '$100.00', statement: 'PLAIN' },
   };
 
@@ -66,6 +70,18 @@ describe('orgStatementView', () => {
     expect(html).toContain('4 employees volunteered 12 hours');
     expect(html).toContain('Separate &lt;gifts&gt;.');
     expect(html).toContain('Acme &lt;Bikes&gt;');
+  });
+
+  it('never renders an item name', () => {
+    const html = orgStatementView(statement, taxLetter, { ackOn: true, generatedOn: 'x' }, 'en');
+    expect(html).not.toContain('Pat Employee-Name');
+  });
+
+  it('shows the will-follow line only when a gift is acknowledgeable', () => {
+    const opts = { ackOn: false, generatedOn: 'x' };
+    const line = 'A tax acknowledgment for these gifts will follow.';
+    expect(orgStatementView({ ...statement, hasDeductibleGifts: true }, taxLetter, opts, 'en')).toContain(line);
+    expect(orgStatementView({ ...statement, hasDeductibleGifts: false }, taxLetter, opts, 'en')).not.toContain(line);
   });
 
   it('translates the chrome but not the body', () => {

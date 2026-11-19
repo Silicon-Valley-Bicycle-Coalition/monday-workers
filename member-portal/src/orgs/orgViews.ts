@@ -43,7 +43,7 @@ function giftTables(gifts: OrgGift[], locale: Locale): string {
         <tr>
           <td>${escapeHtml(formatShortDate(g.date))}</td>
           <td class="col-amount">${escapeHtml(formatUsdText(g.amount))}</td>
-          <td>${escapeHtml(g.giftType)}${g.description ? `<div class="match-line">${escapeHtml(g.description)}</div>` : ''}</td>
+          <td>${escapeHtml(g.giftType)}</td>
         </tr>`
         )
         .join('');
@@ -101,13 +101,13 @@ export function orgPageView(data: OrgPageData, locale: Locale): string {
   );
 }
 
-const giftTable = (gifts: OrgGift[], withType: boolean) => `
+const giftTable = (gifts: OrgGift[]) => `
       <table>
-        <thead><tr><th>Date</th><th>Amount</th><th>Description</th></tr></thead>
+        <thead><tr><th>Date</th><th>Amount</th><th>Type</th></tr></thead>
         <tbody>${gifts
           .map(
             (g) =>
-              `<tr><td>${escapeHtml(g.date)}</td><td>${escapeHtml(g.amount)}</td><td>${escapeHtml((withType ? [g.giftType, g.description] : [g.description]).filter(Boolean).join(': '))}</td></tr>`
+              `<tr><td>${escapeHtml(g.date)}</td><td>${escapeHtml(g.amount)}</td><td>${escapeHtml(g.giftType)}</td></tr>`
           )
           .join('')}</tbody>
       </table>`;
@@ -133,7 +133,7 @@ export function orgStatementView(s: OrgStatement, taxLetter: TaxLetterConfig, op
     s.groups.length === 0
       ? ''
       : `<h2>Gifts and payments</h2>${s.groups
-          .map((g) => `<h3>${e(g.label)}</h3>${giftTable(g.gifts, false)}<p>Subtotal: ${e(g.subtotal)}</p>`)
+          .map((g) => `<h3>${e(g.label)}</h3>${giftTable(g.gifts)}<p>Subtotal: ${e(g.subtotal)}</p>`)
           .join('')}`;
 
   const matching =
@@ -155,13 +155,13 @@ export function orgStatementView(s: OrgStatement, taxLetter: TaxLetterConfig, op
 
   let acknowledgment = '';
   if (!opts.ackOn) {
-    if (s.groups.length > 0) acknowledgment = `<h2>Tax acknowledgment</h2><p>A tax acknowledgment for these gifts will follow.</p>`;
+    if (s.hasDeductibleGifts) acknowledgment = `<h2>Tax acknowledgment</h2><p>A tax acknowledgment for these gifts will follow.</p>`;
   } else if (s.acknowledgment !== null) {
     const a = s.acknowledgment;
     acknowledgment = `<h2>Tax acknowledgment</h2>
       <p>${e(taxLetter.orgLegalName)}<br>EIN: ${e(taxLetter.ein)}</p>
-      ${a.gifts.length > 0 ? `${giftTable(a.gifts, true)}<p class="total">Total deductible gifts for ${s.year}: ${e(a.total)}</p><p>${e(a.statement)}</p>` : ''}
-      ${a.separateGifts.length > 0 ? `<p>${e(taxLetter.separateGiftsStatement)}</p>${giftTable(a.separateGifts, true)}` : ''}
+      ${a.gifts.length > 0 ? `${giftTable(a.gifts)}<p class="total">Total deductible gifts for ${s.year}: ${e(a.total)}</p><p>${e(a.statement)}</p>` : ''}
+      ${a.separateGifts.length > 0 ? `<p>${e(taxLetter.separateGiftsStatement)}</p>${giftTable(a.separateGifts)}` : ''}
       <p>The other sections are listed for ${e(s.org.name)}'s records and are not acknowledged as tax-deductible gifts.</p>`;
   }
 

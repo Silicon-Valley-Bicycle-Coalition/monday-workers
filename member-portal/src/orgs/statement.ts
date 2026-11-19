@@ -17,6 +17,8 @@ export interface OrgStatement {
   // null below the volunteer floor or when volunteer history is off.
   volunteering: { people: number; hours: string } | null;
   acknowledgment: { gifts: OrgGift[]; separateGifts: OrgGift[]; total: string; statement: string } | null;
+  // Whether any gift is acknowledgeable (not excluded), whatever the acknowledgment switch says.
+  hasDeductibleGifts: boolean;
 }
 
 export const OTHER_GROUP_LABEL = 'Other';
@@ -59,22 +61,21 @@ export function buildStatement(input: {
   const summary = groups.map((g) => ({ label: g.label, count: g.gifts.length, total: g.subtotal }));
   if (matches.length > 0) summary.push({ label: MATCHING_LABEL, count: matches.length, total: formatUsd(matchTotal) });
 
+  // The letter rules read a gift's Gift Type as `description`.
+  const { acknowledged, separate } = splitForLetter(
+    gifts.map((gift) => ({ gift, description: gift.giftType })),
+    input.taxLetter
+  );
+  const hasDeductibleGifts = acknowledged.length + separate.length > 0;
   let acknowledgment: OrgStatement['acknowledgment'] = null;
-  if (input.acknowledgmentOn) {
-    // The letter rules read a gift's Gift Type as `description`.
-    const { acknowledged, separate } = splitForLetter(
-      gifts.map((gift) => ({ gift, description: gift.giftType })),
-      input.taxLetter
-    );
-    if (acknowledged.length + separate.length > 0) {
-      const ack = acknowledged.map((e) => e.gift);
-      acknowledgment = {
-        gifts: ack,
-        separateGifts: separate.map((e) => e.gift),
-        total: formatUsd(sum(ack)),
-        statement: input.taxLetter.plainStatement,
-      };
-    }
+  if (input.acknowledgmentOn && hasDeductibleGifts) {
+    const ack = acknowledged.map((e) => e.gift);
+    acknowledgment = {
+      gifts: ack,
+      separateGifts: separate.map((e) => e.gift),
+      total: formatUsd(sum(ack)),
+      statement: input.taxLetter.plainStatement,
+    };
   }
 
   return {
@@ -87,6 +88,7 @@ export function buildStatement(input: {
     matchTotal: formatUsd(matchTotal),
     volunteering: volunteering(input.volunteerHoursByPerson, input.employeeIds, input.volunteerFloor),
     acknowledgment,
+    hasDeductibleGifts,
   };
 }
 
