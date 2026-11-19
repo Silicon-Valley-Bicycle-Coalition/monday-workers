@@ -38,7 +38,11 @@ sign-in is where they fail:
   former employer could sign in as the member.
 * **Other Emails.** It exists only in the 2026-09-08 email-model spec, not on the production
   People board. Add it to the lookup if and when the column exists.
-* **Organizations** signing in for their own gifts. Out of scope.
+* **Organization reps.** A separate piece, after the home page. The likely shape: a rep signs in
+  as themselves, and a staff-ticked **Portal access** box on a **Current** Affiliation adds that
+  organization to their session ("You also manage: Acme Corp"). Nothing here should block it:
+  keep the session's `donor_item_ids` a plain list of Monday item ids, so an organization's item
+  can join it later.
 * **Showing** verified status to members or staff. The "Your info & emails" page that labels
   addresses (Verified / Subscribed / On file) is part of the home-page piece. No Monday column.
 * **Mailchimp double opt-in** as a second verification source (`ip_opt` / `timestamp_opt`). Later,
