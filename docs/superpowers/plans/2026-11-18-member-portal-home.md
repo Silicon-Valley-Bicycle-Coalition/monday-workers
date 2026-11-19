@@ -24,7 +24,7 @@
 - Renew/Join link: `funraiseLinks(config).renewMembershipUrl` when set, else `ORG_DONATE_URL` (`https://bikesiliconvalley.org/ways-to-give`).
 - Every Monday read degrades per section / per person, as `loadPortalData` does; a gated-off feature hides its content, and a door with nothing left is not linked.
 - Existing URLs keep working (redirect to their door): `/:locale/portal/card/:id`, `/:locale/portal/events`, `GET /:locale/portal/change-request`. `/:locale/portal/letters…`, `/pledges`, `/matching-gifts` stay as they are. POST routes unchanged. `next=` return paths (#127) keep validating against the `/:locale/portal` tree.
-- Household email privacy: in a session covering one person, show that person's Personal and Household Email. In a session covering several people, show only the address the session was signed in with, under each person whose record holds it; never another person's other addresses. (Plan ruling refining the spec's rule; same intent: one person's address never shown to another.)
+- Household email privacy (the spec's rule; the plan's earlier one-person exception is withdrawn, 2026-11-18): a person's Personal Email shows only when the session's sign-in hash equals that address's hash; their Household Email shows when the session hash equals it or equals that person's Personal Email hash. The same for a session of any size. A session with no sign-in hash (letter-ready link, pre-0008) shows no addresses, just a note.
 
 ## Review Focus
 
@@ -182,10 +182,10 @@
   Label rule: Cleaned → bounced; else verified row → verified; else Subscribed → subscribed; else onFile.
 
 - [ ] **Step 1: Failing tests**
-  - `visibleEmails`: one person, session by Personal → both addresses; household signed in by the shared Household Email → that address under each person holding it, no Personal Emails; household signed in by Jordan's Personal Email → only that address, under Jordan; household with `sessionEmailHash` null → nothing (Review Focus #1); labels for Cleaned, verified+Subscribed (verified wins), Subscribed, Unsubscribed (onFile).
+  - `visibleEmails`: one person, session by Personal → both addresses; household signed in by the shared Household Email → that address under each person holding it, no Personal Emails; household signed in by Jordan's Personal Email → Jordan's two addresses, nothing of Sam's; one person signed in by Household Email → only that address; `sessionEmailHash` null, any size → nothing (Review Focus #1); labels for Cleaned, verified+Subscribed (verified wins), Subscribed, Unsubscribed (onFile).
   - `verifiedFor` returns the keys for the given people only.
   - info door: renders the existing change-request form and preferences, then the address list with labels as text; `GET /en/portal/change-request` → `/en/portal/info`; POSTs to `/change-request` still work and their result page links back to `/info`.
-  - household with null session hash shows the one-line note `info.emailsHiddenHousehold`.
+  - a session with a null hash (one person or several) shows the one-line note `info.emailsHiddenNoAddress`.
   - letters list renders inside the door frame with "‹ Home".
 - [ ] **Step 2: Run** `npm test -- src/doors src/db src/monday src/routes.test.ts` — FAIL.
 - [ ] **Step 3: Implement**; `getDonorEmails` reads `donorEmail`, `donorHouseholdEmail`, `donorEmailConsent`, `donorHouseholdEmailConsent` (gated ones only when configured); hash with the sign-in normalization (trim, lowercase, `sha256Hex`).

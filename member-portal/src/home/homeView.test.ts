@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { homeView } from './homeView';
 import type { HomeData, DoorLink } from './loadHomeData';
 import type { HomePerson, PersonState } from './homeState';
-import { pageState } from './homeState';
+import { membershipEnded, pageState } from './homeState';
 import type { PortalCard } from '../card/loadCardData';
 import { t } from '../i18n/t';
 
@@ -27,8 +27,16 @@ const DOORS: DoorLink[] = [
   { key: 'info', href: '/en/portal/info', hint: 'Address, language, what we send' },
 ];
 
+// The loader's "today" for these fixtures.
+const TODAY = '2027-01-10';
+
 function data(entries: { person: HomePerson; state: PersonState; card?: PortalCard | null }[], overrides: Partial<HomeData> = {}): HomeData {
-  const people = entries.map((e) => ({ person: e.person, state: e.state, card: e.card === undefined ? card(e.person.id, `${e.person.firstName} Rivera`) : e.card }));
+  const people = entries.map((e) => ({
+    person: e.person,
+    state: e.state,
+    card: e.card === undefined ? card(e.person.id, `${e.person.firstName} Rivera`) : e.card,
+    ended: membershipEnded(e.person, TODAY),
+  }));
   return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, doors: DOORS, ...overrides };
 }
 
@@ -47,6 +55,18 @@ describe('homeView — one person', () => {
     expect(goldCount(html)).toBe(1);
     expect(goldHref(html)).toBe('/en/portal/letters');
     expect(goldText(html)).toBe('Get your tax letter');
+  });
+
+  // A letter whose only gifts are separately listed (donor-advised fund) acknowledges nothing and
+  // shows no total, so the home page doesn't claim "0 gifts · $0.00".
+  it('tax letter with no acknowledged gifts: no gift line', () => {
+    const dafOnly = { year: 2026, giftCount: 0, totalFormatted: '$0.00' };
+    const html = homeView(data([{ person: person('j', 'Jordan', { letter: dafOnly }), state: { kind: 'taxLetter', letter: dafOnly } }]), 'en', RENEW);
+    expect(html).toContain('Your 2026 tax letter is ready.');
+    expect(html).not.toContain('0 gifts');
+    expect(html).not.toContain('$0.00');
+    expect(html).not.toContain('class="home-sub"');
+    expect(goldHref(html)).toBe('/en/portal/letters');
   });
 
   it('renewal due: headline with the date and a gold renew button', () => {
@@ -68,6 +88,26 @@ describe('homeView — one person', () => {
     expect(html).toContain('member-card-lapsed');
     expect(html).toMatch(/Ended<\/span><span class="value">10\/2026</);
     expect(goldCount(html)).toBe(1);
+  });
+
+  it('an Active membership past its Member Until reads ended, with the year, on a greyed card', () => {
+    const html = homeView(
+      data([{ person: person('j', 'Jordan', { status: 'Active', until: '2026-10-31' }), state: { kind: 'renew', reason: 'lapsed', date: '2026-10-31' } }]),
+      'en',
+      RENEW
+    );
+    expect(html).toContain('Your membership ended Oct 31, 2026.');
+    expect(html).toContain('member-card-lapsed');
+    expect(html).toMatch(/Ended<\/span><span class="value">10\/2026</);
+  });
+
+  it('greys an ended card even while the tax letter holds the page', () => {
+    const html = homeView(
+      data([{ person: person('j', 'Jordan', { status: 'Active', until: '2026-10-31', letter }), state: { kind: 'taxLetter', letter } }]),
+      'en',
+      RENEW
+    );
+    expect(html).toContain('member-card-lapsed');
   });
 
   it('new member: names the shop count, gold button to the card door', () => {
@@ -176,6 +216,78 @@ describe('homeView — household', () => {
     expect(goldText(html)).toBe('Get Jordan&#39;s tax letter');
   });
 
+  it('two new members: the headline agrees with several names (Spanish plural)', () => {
+    const html = homeView(
+      data([
+        { person: person('j', 'Jordan', { memberType: 'New' }), state: { kind: 'newMember' } },
+        { person: person('s', 'Sam', { memberType: 'New' }), state: { kind: 'newMember' } },
+      ]),
+      'es',
+      RENEW
+    );
+    expect(html).toContain('Jordan y Sam se unieron a SVBC.');
+  });
+
+  it('one new member in a household: the headline stays singular', () => {
+    const html = homeView(
+      data([
+        { person: person('j', 'Jordan', { memberType: 'New' }), state: { kind: 'newMember' } },
+        { person: person('s', 'Sam'), state: { kind: 'default' } },
+      ]),
+      'es',
+      RENEW
+    );
+    expect(html).toContain('Jordan se unió a SVBC.');
+  });
+
+  it('a household where no one is a member yet gets join wording, not renew', () => {
+    const never: PersonState = { kind: 'renew', reason: 'never', date: null };
+    const blank = { status: '', tier: '', until: '' };
+    const html = homeView(
+      data([
+        { person: person('j', 'Jordan', blank), state: never, card: null },
+        { person: person('s', 'Sam', blank), state: never, card: null },
+      ]),
+      'en',
+      RENEW
+    );
+    expect(html).toContain('Not members yet: Jordan and Sam.');
+    expect(goldText(html)).toBe(t('en', 'home.joinAny'));
+    expect(html).toContain(t('en', 'home.joinSub'));
+    expect(html).toContain(t('en', 'home.joinEachNote').replace(/'/g, '&#39;'));
+    expect(html).not.toContain('Renew');
+    expect(html).not.toContain('renew');
+  });
+
+  it('one never-member in a household (the other loaded failed) still gets join wording', () => {
+    const html = homeView(
+      data([{ person: person('j', 'Jordan', { status: '', tier: '', until: '' }), state: { kind: 'renew', reason: 'never', date: null }, card: null }], { unavailableCount: 1 }),
+      'en',
+      RENEW
+    );
+    expect(html).toContain('Jordan isn&#39;t a member yet.');
+    expect(goldText(html)).toBe(t('en', 'home.joinAny'));
+    expect(html).not.toContain('Renew');
+  });
+
+  it('default: a household says "Your member cards", with one record missing too', () => {
+    const html = homeView(data([{ person: jordan, state: { kind: 'default' } }], { unavailableCount: 1 }), 'en', RENEW);
+    expect(html).toContain(`<h1 class="home-headline">${t('en', 'home.defaultHeadlineMany')}</h1>`);
+  });
+
+  it('default with no card to show: no "member card" headline', () => {
+    const html = homeView(
+      data([
+        { person: jordan, state: { kind: 'default' }, card: null },
+        { person: person('s', 'Sam'), state: { kind: 'default' }, card: null },
+      ]),
+      'en',
+      RENEW
+    );
+    expect(html).toContain(`<h1 class="home-headline">${t('en', 'home.defaultHeadlineNoCard')}</h1>`);
+    expect(html).not.toContain('member card');
+  });
+
   it('shows the unavailable note when a record failed to load', () => {
     const html = homeView(data([{ person: jordan, state: { kind: 'default' } }], { unavailableCount: 1 }), 'en', RENEW);
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
@@ -189,6 +301,11 @@ describe('homeView — doors', () => {
     expect(hrefs).toEqual(DOORS.map((d) => d.href));
     expect(html).toContain('Card &amp; discounts');
     expect(html).toContain('14 shops · keep it on your phone');
+  });
+
+  it("separates each door's title from its hint for screen readers", () => {
+    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
+    expect(html).toContain('<span class="home-door-title">Card &amp; discounts<span class="visually-hidden">: </span></span><span class="home-door-hint">');
   });
 
   it('renders only the doors it is given', () => {

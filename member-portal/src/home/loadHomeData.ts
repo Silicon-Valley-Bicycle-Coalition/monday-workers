@@ -10,7 +10,7 @@ import { cardEnabled, eventsEnabled, lettersEnabled, volunteerHistoryEnabled } f
 import type { Locale } from '../i18n/locales';
 import { t } from '../i18n/t';
 import { errorText } from '../logSafe';
-import { pageState, personState, todayInLosAngeles } from './homeState';
+import { membershipEnded, pageState, personState, todayInLosAngeles } from './homeState';
 import type { HomePerson, LetterSummary, PageState, PersonState } from './homeState';
 
 export interface DoorLink {
@@ -22,7 +22,8 @@ export interface DoorLink {
 
 export interface HomeData {
   // In record (session) order; a person whose read failed is left out and counted below.
-  people: { person: HomePerson; state: PersonState; card: PortalCard | null }[];
+  // `ended`: the card greys out and reads "Ended MM/YYYY" (membershipEnded), whatever the page state.
+  people: { person: HomePerson; state: PersonState; card: PortalCard | null; ended: boolean }[];
   // null when the discount read failed.
   discountCount: number | null;
   page: PageState;
@@ -102,7 +103,7 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
       // Someone who was never a member gets a "Not a member yet" panel, so no card token.
       const never = state.kind === 'renew' && state.reason === 'never';
       const card = withCards && !never ? await cardFor(donor, deps) : null;
-      return { person, state, card };
+      return { person, state, card, ended: membershipEnded(person, today) };
     })
   );
 

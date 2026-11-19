@@ -42,4 +42,9 @@ describe('static assets', () => {
       expect(FONT_FACE_CSS).toContain(`font-family: '${f.family}'; font-style: normal; font-weight: ${f.weight}; font-display: swap; src: url(${asset.path}) format('woff2'); unicode-range: ${f.unicodeRange};`);
     });
   });
+
+  it("hides the home page's door list in print, like the rest of the chrome", () => {
+    const print = PORTAL_CSS.slice(PORTAL_CSS.indexOf('@media print'));
+    expect(print).toMatch(/\.home-doors[^{]*\{\s*display: none;/);
+  });
 });

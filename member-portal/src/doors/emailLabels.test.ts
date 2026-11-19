@@ -20,7 +20,7 @@ const sam = {
 };
 
 describe('visibleEmails', () => {
-  it("shows one person both of their addresses, whichever one they signed in with", async () => {
+  it('shows one person signed in by their Personal Email both of their addresses', async () => {
     const shown = await visibleEmails([jordan], 'h:jordan@example.org', new Set(), hash);
     expect(shown).toEqual({
       jordan: [
@@ -30,9 +30,19 @@ describe('visibleEmails', () => {
     });
   });
 
-  it('shows one person both addresses even with no session address (a letter-ready link)', async () => {
-    const shown = await visibleEmails([jordan], null, new Set(), hash);
-    expect(shown.jordan!.map((e) => e.address)).toEqual(['jordan@example.org', 'family@example.org']);
+  it('shows one person signed in by their Household Email only that address', async () => {
+    const shown = await visibleEmails([jordan], 'h:family@example.org', new Set(), hash);
+    expect(shown).toEqual({ jordan: [{ address: 'family@example.org', kind: 'household', label: 'subscribed' }] });
+    expect(JSON.stringify(shown)).not.toContain('jordan@example.org');
+  });
+
+  // A letter-ready link (or a pre-0008 session) doesn't know its address, whatever its size.
+  it('shows one person with no session address nothing', async () => {
+    expect(await visibleEmails([jordan], null, new Set(), hash)).toEqual({ jordan: [] });
+  });
+
+  it('shows a household with no session address nothing', async () => {
+    expect(await visibleEmails([jordan, sam], null, new Set(), hash)).toEqual({ jordan: [], sam: [] });
   });
 
   it('shows a household signed in by the shared Household Email only that address, under each person holding it', async () => {
@@ -45,21 +55,55 @@ describe('visibleEmails', () => {
     expect(JSON.stringify(shown)).not.toContain('sam@example.org');
   });
 
-  it("shows a household signed in by Jordan's Personal Email only that address, under Jordan", async () => {
+  it("shows a household signed in by Jordan's Personal Email Jordan's two addresses, and nothing of Sam's", async () => {
     const shown = await visibleEmails([jordan, sam], 'h:jordan@example.org', new Set(), hash);
     expect(shown).toEqual({
-      jordan: [{ address: 'jordan@example.org', kind: 'personal', label: 'subscribed' }],
+      jordan: [
+        { address: 'jordan@example.org', kind: 'personal', label: 'subscribed' },
+        { address: 'family@example.org', kind: 'household', label: 'subscribed' },
+      ],
       sam: [],
     });
   });
 
-  // Review Focus #1: a household session that doesn't know its address shows no one's.
-  it('shows a household with no session address nothing', async () => {
-    const shown = await visibleEmails([jordan, sam], null, new Set(), hash);
-    expect(shown).toEqual({ jordan: [], sam: [] });
+  it("shows an address that is one person's Personal Email and another's Household Email under both, and nothing else of the other's", async () => {
+    const alex = { id: 'alex', emails: emails({ personal: 'alex@example.org', household: 'alexhome@example.org' }) };
+    const kim = { id: 'kim', emails: emails({ personal: 'kim@example.org', household: 'alex@example.org' }) };
+    const shown = await visibleEmails([alex, kim], 'h:alex@example.org', new Set(), hash);
+    expect(shown).toEqual({
+      alex: [
+        { address: 'alex@example.org', kind: 'personal', label: 'onFile' },
+        { address: 'alexhome@example.org', kind: 'household', label: 'onFile' },
+      ],
+      kim: [{ address: 'alex@example.org', kind: 'household', label: 'onFile' }],
+    });
   });
 
-  it('counts a person whose read failed (empty emails) toward the household', async () => {
+  it('shows a Personal Email shared by two records under each, with each record\'s Household Email', async () => {
+    const a = { id: 'a', emails: emails({ personal: 'shared@example.org', household: 'a-home@example.org' }) };
+    const b = { id: 'b', emails: emails({ personal: 'Shared@Example.org', household: '' }) };
+    const shown = await visibleEmails([a, b], 'h:shared@example.org', new Set(), hash);
+    expect(shown).toEqual({
+      a: [
+        { address: 'shared@example.org', kind: 'personal', label: 'onFile' },
+        { address: 'a-home@example.org', kind: 'household', label: 'onFile' },
+      ],
+      b: [{ address: 'Shared@Example.org', kind: 'personal', label: 'onFile' }],
+    });
+  });
+
+  it('matches a stored address with mixed case and surrounding space, as sign-in hashed it', async () => {
+    const padded = { id: 'p', emails: emails({ personal: '  Pat@Example.ORG ', household: ' Home@Example.org' }) };
+    const shown = await visibleEmails([padded], await signInEmailHash('pat@example.org'), new Set(), signInEmailHash);
+    expect(shown).toEqual({
+      p: [
+        { address: 'Pat@Example.ORG', kind: 'personal', label: 'onFile' },
+        { address: 'Home@Example.org', kind: 'household', label: 'onFile' },
+      ],
+    });
+  });
+
+  it('counts a person whose read failed (empty emails) as showing nothing', async () => {
     const shown = await visibleEmails([jordan, { id: 'sam', emails: emails() }], 'h:family@example.org', new Set(), hash);
     expect(shown.jordan).toEqual([{ address: 'family@example.org', kind: 'household', label: 'subscribed' }]);
     expect(shown.sam).toEqual([]);
@@ -67,12 +111,12 @@ describe('visibleEmails', () => {
 
   it('shows an address held in both columns once, as Personal', async () => {
     const same = { id: 'p', emails: emails({ personal: 'a@example.org', household: ' A@example.org' }) };
-    expect(await visibleEmails([same], null, new Set(), hash)).toEqual({ p: [{ address: 'a@example.org', kind: 'personal', label: 'onFile' }] });
+    expect(await visibleEmails([same], 'h:a@example.org', new Set(), hash)).toEqual({ p: [{ address: 'a@example.org', kind: 'personal', label: 'onFile' }] });
   });
 
   it('skips blank columns', async () => {
     const one = { id: 'p', emails: emails({ household: 'h@example.org' }) };
-    expect(await visibleEmails([one], null, new Set(), hash)).toEqual({ p: [{ address: 'h@example.org', kind: 'household', label: 'onFile' }] });
+    expect(await visibleEmails([one], 'h:h@example.org', new Set(), hash)).toEqual({ p: [{ address: 'h@example.org', kind: 'household', label: 'onFile' }] });
   });
 
   it('labels each address from its own consent column and the verified rows for that person', async () => {
@@ -81,9 +125,9 @@ describe('visibleEmails', () => {
       emails: emails({ personal: 'a@example.org', household: 'b@example.org', personalConsent: 'Subscribed', householdConsent: 'Cleaned' }),
     };
     // Verified for another person only: doesn't make it verified here.
-    const shown = await visibleEmails([person], null, new Set(['h:a@example.org:p', 'h:b@example.org:p', 'h:c@example.org:p']), hash);
+    const shown = await visibleEmails([person], 'h:a@example.org', new Set(['h:a@example.org:p', 'h:b@example.org:p', 'h:c@example.org:p']), hash);
     expect(shown.p!.map((e) => e.label)).toEqual(['verified', 'bounced']);
-    const other = await visibleEmails([person], null, new Set(['h:a@example.org:someone-else']), hash);
+    const other = await visibleEmails([person], 'h:a@example.org', new Set(['h:a@example.org:someone-else']), hash);
     expect(other.p![0]!.label).toBe('subscribed');
   });
 });

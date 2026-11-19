@@ -1,10 +1,12 @@
 // Which email addresses the info door shows, and the label each one carries.
 //
-// The privacy rule (design "Email address labels", refined by the plan): a session covering one
-// person shows that person's Personal and Household Email. A session covering several people shows
-// only the address it was signed in with, under each person whose record holds it, and never
-// another person's other addresses. A household session that doesn't know its address (a
-// letter-ready link, or a session from before migration 0008) shows none.
+// The privacy rule (design "Email address labels", decided 2026-11-18), the same for a session of
+// any size: a person's Personal Email shows only when the session was signed in with it; their
+// Household Email shows when the session was signed in with it, or with that person's Personal
+// Email. So one person signed in by Household Email sees only that address, and a household signed
+// in by its shared Household Email sees it under each person, never anyone's Personal Email. A
+// session that doesn't know its address (a letter-ready link, or one from before migration 0008)
+// shows none.
 import type { DonorEmails } from '../types';
 import { sha256Hex } from '../crypto/hash';
 
@@ -32,37 +34,41 @@ export function emailLabel(consent: string, verified: boolean): EmailLabel {
 }
 
 // `people` is everyone the session covers, in order; a person whose read failed is passed with
-// blank emails so the household is still counted as one. `verified` holds
-// `${emailHash}:${personId}` keys (VerifiedEmailStore.verifiedFor); `hash` is signInEmailHash.
+// blank emails. `verified` holds `${emailHash}:${personId}` keys (VerifiedEmailStore.verifiedFor);
+// `hash` is signInEmailHash.
 export async function visibleEmails(
   people: { id: string; emails: DonorEmails }[],
   sessionEmailHash: string | null,
   verified: Set<string>,
   hash: (address: string) => Promise<string>
 ): Promise<Record<string, ShownEmail[]>> {
-  const household = people.length > 1;
   const shown: Record<string, ShownEmail[]> = {};
   for (const person of people) {
-    const candidates = [
-      { address: person.emails.personal.trim(), kind: 'personal' as const, consent: person.emails.personalConsent },
-      { address: person.emails.household.trim(), kind: 'household' as const, consent: person.emails.householdConsent },
-    ];
-    const list: ShownEmail[] = [];
-    const seen = new Set<string>();
-    for (const candidate of candidates) {
-      if (candidate.address === '') continue;
-      const addressHash = await hash(candidate.address);
-      // The same address in both columns shows once, as Personal.
-      if (seen.has(addressHash)) continue;
-      seen.add(addressHash);
-      if (household && (sessionEmailHash === null || addressHash !== sessionEmailHash)) continue;
-      list.push({
-        address: candidate.address,
-        kind: candidate.kind,
-        label: emailLabel(candidate.consent, verified.has(`${addressHash}:${person.id}`)),
-      });
-    }
-    shown[person.id] = list;
+    shown[person.id] = sessionEmailHash === null ? [] : await personEmails(person, sessionEmailHash, verified, hash);
   }
   return shown;
+}
+
+async function personEmails(
+  person: { id: string; emails: DonorEmails },
+  sessionEmailHash: string,
+  verified: Set<string>,
+  hash: (address: string) => Promise<string>
+): Promise<ShownEmail[]> {
+  const personal = person.emails.personal.trim();
+  const household = person.emails.household.trim();
+  const personalHash = personal === '' ? null : await hash(personal);
+  const householdHash = household === '' ? null : await hash(household);
+  const signedInByPersonal = personalHash === sessionEmailHash;
+
+  const list: ShownEmail[] = [];
+  const add = (address: string, addressHash: string, kind: ShownEmail['kind'], consent: string) =>
+    list.push({ address, kind, label: emailLabel(consent, verified.has(`${addressHash}:${person.id}`)) });
+
+  if (personalHash !== null && signedInByPersonal) add(personal, personalHash, 'personal', person.emails.personalConsent);
+  // The same address in both columns shows once, as Personal.
+  if (householdHash !== null && householdHash !== personalHash && (householdHash === sessionEmailHash || signedInByPersonal)) {
+    add(household, householdHash, 'household', person.emails.householdConsent);
+  }
+  return list;
 }

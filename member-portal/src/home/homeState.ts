@@ -11,6 +11,8 @@ export interface HomeConfig {
 
 export interface LetterSummary {
   year: number;
+  // Acknowledged gifts only (LetterData.gifts), matching the letter's total; separately listed
+  // gifts are not counted.
   giftCount: number;
   totalFormatted: string;
 }
@@ -54,18 +56,28 @@ function daysBetween(from: string, to: string): number | null {
   return Math.round((b - a) / DAY_MS);
 }
 
+// A membership that has ended: Lapsed, or a Member Until already past (Monday's status can lag the
+// date). Never for Lifetime. Shared with the card widgets, so "Ended MM/YYYY" follows the same rule.
+export function membershipEnded(p: Pick<HomePerson, 'status' | 'tier' | 'until'>, today: string): boolean {
+  if (p.tier === 'Lifetime') return false;
+  if (p.status === 'Lapsed') return true;
+  const daysLeft = daysBetween(today, p.until.trim());
+  return daysLeft !== null && daysLeft < 0;
+}
+
 export function personState(p: HomePerson, today: string, cfg: HomeConfig): PersonState {
   if (p.letter !== null && today.slice(5) <= cfg.taxLetterUntil) {
     return { kind: 'taxLetter', letter: p.letter };
   }
 
-  const until = p.until.trim();
-  if (p.status === 'Lapsed') {
-    return { kind: 'renew', reason: 'lapsed', date: until === '' ? null : until };
-  }
+  // Lifetime first: a Lifetime member never gets the renew state, whatever the status says.
   if (p.tier !== 'Lifetime') {
+    const until = p.until.trim();
     if (p.status === '' && p.tier === '') {
       return { kind: 'renew', reason: 'never', date: null };
+    }
+    if (membershipEnded(p, today)) {
+      return { kind: 'renew', reason: 'lapsed', date: until === '' ? null : until };
     }
     const daysLeft = until === '' ? null : daysBetween(today, until);
     if (daysLeft !== null && daysLeft <= cfg.renewalWarningDays) {

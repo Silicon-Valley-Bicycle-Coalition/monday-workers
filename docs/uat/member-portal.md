@@ -96,13 +96,14 @@ back to the home page.
   - **On file**: SVBC has it, but it isn't subscribed.
   - **Bounced**: email to it comes back, so the member should send a new one.
 
-  Which addresses you see depends on how you signed in. One person sees their own email and
-  their Household Email. A household that signed in with the shared Household Email sees only
-  that address, under each person who has it, and **must not** see anyone's own personal email.
-  A household that signed in with one person's own email sees only that address, under that
-  person. A household that arrived from a "your tax letter is ready" email sees no addresses,
-  just a note to sign in with an email address. If you ever see another person's personal email,
-  stop and report it.
+  Which addresses you see depends on how you signed in. Signed in with your own (personal)
+  email, you see it and your Household Email. Signed in with a Household Email, you see only
+  that address, whether the sign-in covers one person or several: under each person who has it,
+  and you **must not** see anyone's own personal email. A household that signed in with one
+  person's own email sees only that person's addresses, under that person. Anyone who arrived
+  from a "your tax letter is ready" email, one person or a household, sees no addresses, just a
+  note to sign in with an email address. If you ever see another person's personal email, or a
+  personal email you didn't sign in with, stop and report it.
 
 A page that still uses an old link, such as a bookmark to the change-request page or the
 "Add your employer" link in an older letter email, should open the right door. Signing out and

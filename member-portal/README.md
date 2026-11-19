@@ -121,7 +121,7 @@ page shows the highest any person holds, and its button.
 | State | When | Button |
 |---|---|---|
 | Tax letter | a letter exists for last year and today (Pacific) is on or before `home.taxLetterUntil` (`04-15`) | Tax letters door |
-| Renew | Lapsed; or never a member (no status, no tier); or the membership ends within `home.renewalWarningDays` (30) days. Lifetime never renews | Funraise renewal link (the donate page until `funraise.renewMembershipUrl` is set) |
+| Renew | Lapsed, or Member Until already past (the card then greys out and reads "Ended MM/YYYY", on home and the card door); or never a member (no status, no tier); or the membership ends within `home.renewalWarningDays` (30) days. Lifetime never renews, whatever its status | Funraise renewal link (the donate page until `funraise.renewMembershipUrl` is set) |
 | New member | Member Type is New and Member Since is within `home.newMemberDays` (60) days | Card door |
 | Default | anything else | none |
 
@@ -131,7 +131,7 @@ returns to the door after sign-in. Each starts with "‹ Home" and, for a househ
 | Door | Path | Shows | Old paths that land here |
 |---|---|---|---|
 | Card & discounts | `/:locale/portal/card` | card, QR, "Get a new code", discount list | `/portal/card/:id` |
-| Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`), impact, Funraise links, pledges, matching gifts | |
+| Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, Funraise links, pledges, matching gifts | |
 | Tax letters | `/:locale/portal/letters` | one list of years per person (door shown while letters are enabled) | `/portal/letters` |
 | Rides, events & volunteering | `/:locale/portal/activity` | events, volunteer hours, Get involved (door shown when one is configured) | `/portal/events` |
 | Your info & emails | `/:locale/portal/info` | change-request form, communication preferences, email addresses | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
@@ -145,12 +145,15 @@ label: **Bounced** when its consent column (Personal Email Consent / Household E
 Cleaned; else **Verified** when `verified_emails` holds that address for that person; else
 **Subscribed** when the consent column says Subscribed; else **On file**. Which addresses show:
 
-* A session covering one person shows their Personal and Household Email.
-* A session covering several people shows only the address it signed in with, under each person
-  whose record holds it, and never another person's other addresses. Signed in with a shared
-  Household Email, Jordan and Sam each see that address; neither sees the other's Personal Email.
-* A household session that doesn't know its address (a letter-ready link, or a session from
-  before migration 0008) shows no addresses, just a note to sign in again with an email address.
+* A person's **Personal Email** shows only when the session was signed in with that address.
+* A person's **Household Email** shows when the session was signed in with it, or with that
+  person's Personal Email.
+* The rule is the same for one person or several. One person signed in with their Household
+  Email sees only that address. Signed in with a shared Household Email, Jordan and Sam each see
+  that address; neither sees the other's Personal Email.
+* A session that doesn't know its address (a letter-ready link, or a session from before
+  migration 0008) shows no addresses, whatever its size, just a note to sign in again with an
+  email address.
 
 That needs the session's sign-in address: `sessions.email_hash` (migration 0008, see
 Development), compared with each address hashed the way sign-in hashes it (trimmed, lowercased,

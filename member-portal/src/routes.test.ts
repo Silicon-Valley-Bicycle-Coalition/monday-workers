@@ -3745,15 +3745,55 @@ describe('doors', () => {
       expect(html).not.toContain('sam@example.org');
     });
 
-    it("shows a household signed in by Jordan's Personal Email only that address, under Jordan", async () => {
+    it("shows a household signed in by Jordan's Personal Email Jordan's addresses only, under Jordan", async () => {
       const monday = householdMonday('jordan@example.org');
       const { app, cookie } = await signedIn({ monday }, 'jordan@example.org');
 
       const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
       const emails = html.slice(html.indexOf('class="email-list"'));
       expect(emails).toContain('jordan@example.org');
-      expect(html).not.toContain('family@example.org');
+      // Jordan's own Household Email, once, under Jordan; nothing of Sam's.
+      expect(emails.match(/family@example\.org/g)?.length).toBe(1);
+      expect(html).toContain('<h3>Jordan Lee</h3>');
+      expect(html).not.toContain('<h3>Sam Lee</h3>');
       expect(html).not.toContain('sam@example.org');
+    });
+
+    it('shows one person signed in by their Household Email only that address', async () => {
+      const monday = fakeMonday({ 'family@example.org': [{ id: 'jordan', name: 'Jordan' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockResolvedValue(ADDRESSES.jordan);
+      const { app, cookie } = await signedIn({ monday }, 'family@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html.slice(html.indexOf('class="email-list"'))).toContain('family@example.org');
+      expect(html).not.toContain('jordan@example.org');
+    });
+
+    it('matches a stored address in mixed case with surrounding space to the sign-in address', async () => {
+      const monday = fakeMonday({ 'jordan@example.org': [{ id: 'jordan', name: 'Jordan' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockResolvedValue({ ...ADDRESSES.jordan, personal: '  Jordan@Example.ORG ' });
+      const { app, cookie } = await signedIn({ monday }, 'jordan@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      const emails = html.slice(html.indexOf('class="email-list"'));
+      expect(emails).toContain('Jordan@Example.ORG');
+      expect(emails).toContain('family@example.org');
+    });
+
+    it('shows a one-person session with no sign-in address no addresses, just the note', async () => {
+      const deps = makeDeps({ monday: householdMonday('family@example.org') });
+      await deps.sessionStore.createSession({
+        sessionHash: await sha256Hex('letter-session-one'),
+        donorItemIds: ['jordan'],
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        emailHash: null,
+      });
+      const app = createApp(deps);
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: '__Host-session=letter-session-one' } })).text();
+      expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
+      expect(html).not.toContain('@example.org');
+      expect(deps.monday.getDonorEmails).not.toHaveBeenCalled();
     });
 
     // Review Focus #1: a letter-ready link (or a pre-0008 session) doesn't know its address.
@@ -3768,7 +3808,7 @@ describe('doors', () => {
       const app = createApp(deps);
 
       const html = await (await app.request('/en/portal/info', { headers: { Cookie: '__Host-session=letter-session' } })).text();
-      expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenHousehold')));
+      expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
       expect(html).not.toContain('@example.org');
       expect(deps.monday.getDonorEmails).not.toHaveBeenCalled();
     });

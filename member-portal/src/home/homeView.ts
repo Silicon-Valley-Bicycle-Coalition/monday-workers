@@ -4,7 +4,7 @@ import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { escapeHtml, someRecordsUnavailableNote } from '../views';
 import { endedMonth, memberCardWidget } from '../doors/card';
-import type { HomePerson, PersonState } from './homeState';
+import type { PersonState } from './homeState';
 import { pluralKey, type DoorLink, type HomeData } from './loadHomeData';
 
 const DOOR_TITLES: Record<DoorLink['key'], TranslationKey> = {
@@ -55,7 +55,11 @@ function shopLine(count: number | null, locale: Locale): string {
   return t(locale, pluralKey(locale, count, 'home.newMemberSubOne', 'home.newMemberSub'), { count: String(count) });
 }
 
-function letterLine(letter: { year: number; giftCount: number; totalFormatted: string }, locale: Locale): string {
+// The letter's acknowledged gifts and their total, as the letter shows them. null when it
+// acknowledges none (only separately listed gifts, such as a donor-advised fund's): that letter
+// shows no total, so "0 gifts · $0.00" would misread it.
+function letterLine(letter: { year: number; giftCount: number; totalFormatted: string }, locale: Locale): string | null {
+  if (letter.giftCount === 0) return null;
   return t(locale, pluralKey(locale, letter.giftCount, 'home.letterSummaryOne', 'home.letterSummaryOther'), {
     count: String(letter.giftCount),
     total: letter.totalFormatted,
@@ -89,7 +93,10 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
   const cardHref = `/${locale}/portal/card`;
 
   if (first === undefined || data.page.kind === 'default') {
-    return { headline: t(locale, data.people.length > 1 ? 'home.defaultHeadlineMany' : 'home.defaultHeadline'), sub: null, button: null, note: null };
+    // Name the card(s) only when one shows (a card token can fail, or the card feature be off).
+    const cardShown = data.people.some((e) => e.card !== null);
+    const key = !cardShown ? 'home.defaultHeadlineNoCard' : household ? 'home.defaultHeadlineMany' : 'home.defaultHeadline';
+    return { headline: t(locale, key), sub: null, button: null, note: null };
   }
 
   if (first.state.kind === 'taxLetter') {
@@ -117,8 +124,8 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
   }
 
   if (first.state.kind === 'renew') {
-    const never = first.state.reason === 'never';
     if (!household) {
+      const never = first.state.reason === 'never';
       return {
         headline: renewHeadline(first.state, null, locale),
         sub: t(locale, never ? 'home.joinSub' : 'home.renewSub'),
@@ -127,23 +134,30 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
       };
     }
     // A Funraise gift renews whoever it matches the payer to, so the button can't promise to renew
-    // a particular person (spec, decided 2026-11-18).
+    // a particular person (spec, decided 2026-11-18). When no one it's for has ever been a member,
+    // the same button and note speak of joining instead.
+    const allNever = holders.every((e) => e.state.kind === 'renew' && e.state.reason === 'never');
+    const names = joinNames(holders.map((e) => e.person.firstName), locale);
     const headline =
       holders.length === 1
         ? renewHeadline(first.state, first.person.firstName, locale)
-        : t(locale, 'home.renewManyHeadline', { names: joinNames(holders.map((e) => e.person.firstName), locale) });
+        : t(locale, allNever ? 'home.joinManyHeadline' : 'home.renewManyHeadline', { names });
     return {
       headline,
-      sub: t(locale, holders.length === 1 && never ? 'home.joinSub' : 'home.renewSub'),
-      button: { href: renewUrl, text: t(locale, 'home.renewAny'), external: true },
-      note: t(locale, 'home.renewEachNote'),
+      sub: t(locale, allNever ? 'home.joinSub' : 'home.renewSub'),
+      button: { href: renewUrl, text: t(locale, allNever ? 'home.joinAny' : 'home.renewAny'), external: true },
+      note: t(locale, allNever ? 'home.joinEachNote' : 'home.renewEachNote'),
     };
   }
 
   // newMember
   return {
+    // One key per count, so a language whose verb agrees with its subject ("se unió" / "se
+    // unieron") reads right for one name or several.
     headline: household
-      ? t(locale, 'home.newMemberHeadlineNamed', { names: joinNames(holders.map((e) => e.person.firstName), locale) })
+      ? t(locale, holders.length > 1 ? 'home.newMemberHeadlineNamedMany' : 'home.newMemberHeadlineNamed', {
+          names: joinNames(holders.map((e) => e.person.firstName), locale),
+        })
       : t(locale, 'home.newMemberHeadline'),
     sub: shopLine(data.discountCount, locale),
     button: { href: cardHref, text: t(locale, 'home.newMemberButton'), external: false },
@@ -172,29 +186,26 @@ function personAction(state: PersonState, locale: Locale, renewUrl: string): Act
 }
 
 function personBlock(entry: HomeData['people'][number], data: HomeData, locale: Locale, renewUrl: string): string {
-  const { person, state, card } = entry;
+  const { person, state, card, ended } = entry;
   const never = state.kind === 'renew' && state.reason === 'never';
   let body = '';
   if (never) {
     body = `<div class="home-not-member"><p class="home-not-member-name">${escapeHtml(person.firstName)}</p><p>${escapeHtml(t(locale, 'home.notMember'))}</p></div>`;
   } else if (card !== null) {
-    body = memberCardWidget(card, locale, { regenerate: false, lapsed: isLapsed(person) ? { ended: endedMonth(person.until) } : null });
+    body = memberCardWidget(card, locale, { regenerate: false, lapsed: ended ? { ended: endedMonth(person.until) } : null });
   }
   const action = state.kind === data.page.kind ? null : personAction(state, locale, renewUrl);
   const actionHtml = action === null ? '' : `<p>${link(action, 'home-person-action')}</p>`;
   return `<div class="home-person">${body}${actionHtml}</div>`;
 }
 
-function isLapsed(person: HomePerson): boolean {
-  return person.status === 'Lapsed';
-}
-
+// The hidden ": " keeps a screen reader from running the title into the hint.
 function doorList(doors: DoorLink[], locale: Locale): string {
   if (doors.length === 0) return '';
   const items = doors
     .map(
       (door) =>
-        `<a class="home-door" href="${escapeHtml(door.href)}"><span class="home-door-title">${escapeHtml(t(locale, DOOR_TITLES[door.key]))}</span><span class="home-door-hint">${escapeHtml(door.hint)}</span></a>`
+        `<a class="home-door" href="${escapeHtml(door.href)}"><span class="home-door-title">${escapeHtml(t(locale, DOOR_TITLES[door.key]))}<span class="visually-hidden">: </span></span><span class="home-door-hint">${escapeHtml(door.hint)}</span></a>`
     )
     .join('');
   return `<nav class="home-doors" aria-label="${escapeHtml(t(locale, 'home.doorsLabel'))}">${items}</nav>`;

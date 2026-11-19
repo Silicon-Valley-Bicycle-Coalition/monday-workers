@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { cardDoorView, type CardDoorData, type CardDoorPerson } from './card';
+import { describe, it, expect, vi } from 'vitest';
+import { cardDoorView, loadCardDoor, type CardDoorData, type CardDoorPerson } from './card';
+import type { MondayClient } from '../monday/client';
+import type { Config, MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { t } from '../i18n/t';
 
@@ -114,5 +116,33 @@ describe('cardDoorView', () => {
     const html = cardDoorView({ people: [person('donor-1', 'Jane Donor')], discounts, unavailableCount: 0 }, 'en');
     expect(html).not.toContain('type="radio"');
     expect(html).not.toContain('class="tabs"');
+  });
+});
+
+describe('loadCardDoor', () => {
+  function member(id: string, overrides: Partial<MemberPortalData> = {}): MemberPortalData {
+    return { id, name: `${id} Rivera`, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '$0.00', donations: [], membershipExpiry: '2027-11-30', memberSince: '', memberType: '', ...overrides };
+  }
+
+  it('reads an ended membership from the same rule as the home page, not only the Lapsed label', async () => {
+    const donors: Record<string, MemberPortalData> = {
+      past: member('past', { membershipExpiry: '2026-10-31' }),
+      lapsed: member('lapsed', { membershipStatus: 'Lapsed', membershipExpiry: '2026-09-30' }),
+      lifetime: member('lifetime', { membershipStatus: 'Lapsed', membershipTier: 'Lifetime', membershipExpiry: '2020-01-01' }),
+      current: member('current'),
+    };
+    const monday = {
+      getMemberPortalData: vi.fn(async (id: string) => donors[id]!),
+      getDiscountOrganizations: vi.fn(async () => []),
+    } as unknown as MondayClient;
+    // Card tokens off: this test is about the ended rule only.
+    const config = { monday: { columns: { membershipExpiry: 'REPLACE_WITH_COLUMN_ID' } } } as unknown as Config;
+    const data = await loadCardDoor(['past', 'lapsed', 'lifetime', 'current'], {
+      monday,
+      config,
+      now: () => new Date('2026-12-01T18:00:00Z'),
+      cardTokenStore: {} as never,
+    });
+    expect(data.people.map((p) => p.lapsedEnded)).toEqual(['10/2026', '09/2026', null, null]);
   });
 });

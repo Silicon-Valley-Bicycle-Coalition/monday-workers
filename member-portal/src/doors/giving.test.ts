@@ -32,6 +32,7 @@ function data(overrides: Partial<GivingDoorData> = {}): GivingDoorData {
     impact: {},
     funraise: noFunraise,
     pledges: true,
+    historyVisibleFromISO: '2020-01-01',
     ...overrides,
   };
 }
@@ -131,6 +132,33 @@ describe('givingDoorView', () => {
     expect(household.indexOf('Annual gift')).toBeLessThan(household.indexOf('<h2>Jane Also</h2>'));
     expect(household.indexOf('Another gift')).toBeGreaterThan(household.indexOf('<h2>Jane Also</h2>'));
     expect(givingDoorView(data(), 'en')).not.toContain('<h2>Jane Donor</h2>');
+  });
+
+  it("puts a single person's section headings at h2, and a household's under each name at h3", () => {
+    const impact = { 'donor-1': { year: '2025', statements: ['Taught 4,200 students'] } };
+    const single = givingDoorView(data({ impact }), 'en');
+    expect(single).toContain(`<h2>${t('en', 'portal.donationsTabLabel')}</h2>`);
+    expect(single).toContain(`<h2>${t('en', 'portal.impactHeading', { year: '2025' })}</h2>`);
+    expect(single).not.toContain('<h3>');
+    const household = givingDoorView(data({ impact, donors: [donor('donor-1', 'Jane Donor'), donor('donor-2', 'Jane Also')] }), 'en');
+    expect(household).toContain(`<h3>${t('en', 'portal.donationsTabLabel')}</h3>`);
+    expect(household).toContain(`<h3>${t('en', 'portal.impactHeading', { year: '2025' })}</h3>`);
+  });
+
+  it('keeps at most one gold Donate on a household page with no gifts', () => {
+    const none = { totalDonated: '0', donations: [] };
+    const html = givingDoorView(data({ donors: [donor('donor-1', 'Jane Donor', none), donor('donor-2', 'Jane Also', none)] }), 'en');
+    expect((html.match(/class="cta-button/g) ?? []).length).toBe(1);
+    expect((html.match(/class="outline-button/g) ?? []).length).toBe(1);
+  });
+
+  it('says from when gift history will show while it is gated off', () => {
+    const html = givingDoorView(data({ donationHistoryEnabled: false, historyVisibleFromISO: '2027-01-01' }), 'en');
+    expect(html).toContain(t('en', 'door.givingHistoryFrom', { date: 'January 1, 2027' }));
+    const es = givingDoorView(data({ donationHistoryEnabled: false, historyVisibleFromISO: '2027-01-01' }), 'es');
+    expect(es).toContain(t('es', 'door.givingHistoryFrom', { date: '1 de enero de 2027' }));
+    expect(givingDoorView(data({ historyVisibleFromISO: '2027-01-01' }), 'en')).not.toContain('appears here from');
+    expect(givingDoorView(data({ donationHistoryEnabled: false, historyVisibleFromISO: null }), 'en')).not.toContain('appears here from');
   });
 
   it('tells the member when some records could not be loaded', () => {

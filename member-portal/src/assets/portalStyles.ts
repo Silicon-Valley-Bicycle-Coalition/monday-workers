@@ -323,6 +323,17 @@ export const PORTAL_CSS = `
   }
   .home-door-title { font-weight: 600; }
   .home-door-hint { font-size: 14px; color: var(--text-muted); }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
   @media (min-width: 768px) {
     main:has(> .home) { max-width: 960px; }
     .home {
@@ -411,6 +422,6 @@ export const PORTAL_CSS = `
   }
   @media print {
     .site-header, .site-footer { display: none; }
-    .door-back { display: none; }
+    .door-back, .home-doors { display: none; }
   }
 `;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { infoDoorView, type InfoDoorData } from './info';
+import { infoDoorView, loadInfoDoor, type InfoDoorData } from './info';
+import { vi } from 'vitest';
 import { t } from '../i18n/t';
 import { escapeHtml } from '../views';
 
@@ -61,8 +62,14 @@ describe('infoDoorView', () => {
 
   it('shows the one-line note for a household session that hides addresses', () => {
     const html = infoDoorView(data({ household: true, emailsHidden: true, people: [{ ...jane, emails: [] }, { id: 'donor-2', name: 'Sam', emails: [] }] }), 'en');
-    expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenHousehold')));
+    expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
     expect(html).not.toContain('class="email-list"');
+  });
+
+  it('shows the same note for a one-person session that hides addresses', () => {
+    const html = infoDoorView(data({ emailsHidden: true, people: [{ ...jane, emails: [] }] }), 'en');
+    expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
+    expect(html).not.toContain('jane@example.org');
   });
 
   it('groups a household by name and leaves out a person with nothing to show', () => {
@@ -91,5 +98,26 @@ describe('infoDoorView', () => {
     const html = infoDoorView(data({ people: [{ ...jane, emails: null }], unavailableCount: 1 }), 'en');
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
     expect(html).not.toContain(escapeHtml(t('en', 'info.emailsHeading')));
+  });
+});
+
+describe('loadInfoDoor', () => {
+  // A letter-ready link (or a pre-0008 session) for one person: no address read at all.
+  it('skips the address and verified reads for a one-person session with no sign-in address', async () => {
+    const monday = {
+      getDonorContactInfo: vi.fn(async () => contact),
+      getDonorEmails: vi.fn(async () => ({ personal: 'jane@example.org', household: '', personalConsent: '', householdConsent: '' })),
+    };
+    const verifiedEmailStore = { recordVerified: vi.fn(), verifiedFor: vi.fn(async () => new Set<string>()) };
+    const config = { changeRequests: { boardId: null } };
+    const result = await loadInfoDoor(
+      { donorItemIds: ['donor-1'], emailHash: null },
+      { monday, verifiedEmailStore, config } as never,
+      'off'
+    );
+    expect(result!.emailsHidden).toBe(true);
+    expect(result!.people).toEqual([{ id: 'donor-1', name: 'Jane Donor', emails: [] }]);
+    expect(monday.getDonorEmails).not.toHaveBeenCalled();
+    expect(verifiedEmailStore.verifiedFor).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,9 @@ export interface GivingDoorData {
   unavailableCount: number;
   // false until donations.historyVisibleFromISO: no donations were read, so none are shown.
   donationHistoryEnabled: boolean;
+  // The configured date history starts showing (YYYY-MM-DD), for the note shown until then; null
+  // while no date is set.
+  historyVisibleFromISO: string | null;
   // Keyed by donor id: a donor without an entry has no impact summary to show.
   impact: Record<string, DonorImpact>;
   funraise: FunraiseLinkUrls;
@@ -47,6 +50,7 @@ export async function loadGivingDoor(donorItemIds: string[], deps: GivingDeps, l
     donors: data.donors,
     unavailableCount: data.unavailableDonorCount ?? 0,
     donationHistoryEnabled: data.donationHistoryEnabled,
+    historyVisibleFromISO: deps.config.donations.historyVisibleFromISO,
     impact,
     funraise: funraiseLinks(deps.config),
     pledges: pledgesEnabled(deps.config),
@@ -84,10 +88,14 @@ function matchLine(donation: DonationRecord, locale: Locale): string {
 // show" is donations.length > 0 OR a nonzero totalDonated: a donor can have a nonzero lifetime
 // rollup with no itemized rows on file (e.g. older gifts never synced as line items), and that
 // donor has clearly already given, so "you haven't donated yet" would be wrong for them.
-function donationsPanel(donor: MemberPortalData, locale: Locale): string {
-  const hasDonations = donor.donations.length > 0 || (parseAmount(donor.totalDonated) ?? 0) !== 0;
-  if (!hasDonations) {
-    return emptyState('portal.donationsEmptyMessage', ORG_DONATE_URL, 'portal.donateButton', locale, true);
+function hasDonations(donor: MemberPortalData): boolean {
+  return donor.donations.length > 0 || (parseAmount(donor.totalDonated) ?? 0) !== 0;
+}
+
+// `gold`: only the page's first Donate prompt is the gold button; the rest are outlines.
+function donationsPanel(donor: MemberPortalData, locale: Locale, gold: boolean): string {
+  if (!hasDonations(donor)) {
+    return emptyState('portal.donationsEmptyMessage', ORG_DONATE_URL, 'portal.donateButton', locale, gold);
   }
   return `
     <table>
@@ -110,9 +118,9 @@ function donationsPanel(donor: MemberPortalData, locale: Locale): string {
 
 // "Your giving supported …" for the one year selectImpact picked for this donor. Statements are
 // operator-set config, not donor input; escaped anyway, like every other string the portal renders.
-function impactSummary(impact: DonorImpact, locale: Locale): string {
+function impactSummary(impact: DonorImpact, locale: Locale, heading: 'h2' | 'h3'): string {
   return `
-      <h3>${escapeHtml(t(locale, 'portal.impactHeading', { year: impact.year }))}</h3>
+      <${heading}>${escapeHtml(t(locale, 'portal.impactHeading', { year: impact.year }))}</${heading}>
       <p>${escapeHtml(t(locale, 'portal.impactIntro', { year: impact.year }))}</p>
       <ul>
         ${impact.statements.map((statement) => `<li>${escapeHtml(statement)}</li>`).join('')}
@@ -150,21 +158,32 @@ function moreLinks(pledges: boolean, locale: Locale): string {
   return `<ul class="door-links">${pledgeItem}<li><a href="/${locale}/portal/matching-gifts">${escapeHtml(t(locale, 'portal.matchingGiftsLink'))}</a></li></ul>`;
 }
 
+// "Your gift history appears here from January 1, 2027." while the history gate is closed.
+function historyFromNote(data: GivingDoorData, locale: Locale): string {
+  const iso = data.historyVisibleFromISO;
+  if (data.donationHistoryEnabled || iso === null || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const date = new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${iso}T00:00:00Z`));
+  return `<p class="door-note">${escapeHtml(t(locale, 'door.givingHistoryFrom', { date }))}</p>`;
+}
+
 export function givingDoorView(data: GivingDoorData, locale: Locale): string {
   const household = data.donors.length + data.unavailableCount > 1;
+  // Under a person's name (h2) on a household page; directly under the door title otherwise.
+  const heading = household ? 'h3' : 'h2';
+  const firstEmpty = data.donationHistoryEnabled ? data.donors.find((donor) => !hasDonations(donor)) : undefined;
   const groups = data.donors
     .map((donor) => {
       const history = data.donationHistoryEnabled
-        ? `<h3>${escapeHtml(t(locale, 'portal.donationsTabLabel'))}</h3>${donationsPanel(donor, locale)}`
+        ? `<${heading}>${escapeHtml(t(locale, 'portal.donationsTabLabel'))}</${heading}>${donationsPanel(donor, locale, donor === firstEmpty)}`
         : '';
       const impact = data.impact[donor.id];
-      const body = `${history}${impact ? impactSummary(impact, locale) : ''}`;
+      const body = `${history}${impact ? impactSummary(impact, locale, heading) : ''}`;
       return body === '' ? '' : personGroup(donor.name, body, household);
     })
     .join('');
   return doorPage(
     t(locale, 'home.doorGiving'),
-    `${someRecordsUnavailableNote(data.unavailableCount, locale)}${groups}${funraiseSection(data.funraise, locale)}${moreLinks(data.pledges, locale)}`,
+    `${someRecordsUnavailableNote(data.unavailableCount, locale)}${historyFromNote(data, locale)}${groups}${funraiseSection(data.funraise, locale)}${moreLinks(data.pledges, locale)}`,
     locale
   );
 }

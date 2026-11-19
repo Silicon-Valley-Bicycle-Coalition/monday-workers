@@ -182,6 +182,14 @@ describe('loadHomeData', () => {
     expect(data.people[0]!.card).toBeNull();
   });
 
+  it('marks an Active membership past its Member Until as ended and lapsed', async () => {
+    const monday = fakeMonday({ j: donor('j', { membershipExpiry: '2026-10-31' }), s: donor('s') });
+    const data = await loadHomeData(['j', 's'], deps(monday, '2026-12-01T18:00:00Z'), 'en');
+    expect(data.people[0]!.state).toEqual({ kind: 'renew', reason: 'lapsed', date: '2026-10-31' });
+    expect(data.people[0]!.ended).toBe(true);
+    expect(data.people[1]!.ended).toBe(false);
+  });
+
   it('lists the five doors in order', async () => {
     const monday = fakeMonday({ j: donor('j') });
     const data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z'), 'en');

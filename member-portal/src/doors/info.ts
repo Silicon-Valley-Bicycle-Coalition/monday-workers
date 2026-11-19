@@ -26,7 +26,8 @@ export interface InfoDoorData {
   // Everyone whose record loaded, in session order.
   people: InfoDoorPerson[];
   household: boolean;
-  // A household session that doesn't know which address it signed in with shows none.
+  // A session that doesn't know which address it signed in with (a letter-ready link, or one from
+  // before migration 0008) shows none, whatever its size.
   emailsHidden: boolean;
   unavailableCount: number;
 }
@@ -41,7 +42,7 @@ const NO_EMAILS: DonorEmails = { personal: '', household: '', personalConsent: '
 export async function loadInfoDoor(session: SessionInfo, deps: InfoDeps, employerField: EmployerFieldMode): Promise<InfoDoorData | null> {
   const ids = session.donorItemIds;
   const household = ids.length > 1;
-  const emailsHidden = household && session.emailHash === null;
+  const emailsHidden = session.emailHash === null;
 
   const [contacts, emailReads, verified] = await Promise.all([
     Promise.allSettled(ids.map((id) => deps.monday.getDonorContactInfo(id))),
@@ -116,7 +117,7 @@ function emailRow(email: ShownEmail, locale: Locale): string {
 function emailsSection(data: InfoDoorData, locale: Locale): string {
   const heading = `<h2>${escapeHtml(t(locale, 'info.emailsHeading'))}</h2>`;
   if (data.emailsHidden) {
-    return `<section class="info-emails">${heading}<p>${escapeHtml(t(locale, 'info.emailsHiddenHousehold'))}</p></section>`;
+    return `<section class="info-emails">${heading}<p>${escapeHtml(t(locale, 'info.emailsHiddenNoAddress'))}</p></section>`;
   }
   const loaded = data.people.filter((person): person is InfoDoorPerson & { emails: ShownEmail[] } => person.emails !== null);
   if (loaded.length === 0) return '';

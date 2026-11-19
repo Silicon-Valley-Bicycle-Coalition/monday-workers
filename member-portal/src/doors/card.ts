@@ -13,6 +13,7 @@ import { t } from '../i18n/t';
 import { errorText } from '../logSafe';
 import { escapeHtml, logoImg, someRecordsUnavailableNote } from '../views';
 import { doorPage, personGroup } from './layout';
+import { membershipEnded, todayInLosAngeles } from '../home/homeState';
 
 export interface MemberCardOptions {
   // The "Get a new code" form under the card: on the card door, not on the home page.
@@ -86,7 +87,7 @@ export interface CardDoorPerson {
   // null when the card feature is off, the person never joined, or their token failed.
   card: PortalCard | null;
   notMember: boolean;
-  // "MM/YYYY" ('' when unknown) for a lapsed membership, else null.
+  // "MM/YYYY" ('' when unknown) for an ended membership (membershipEnded), else null.
   lapsedEnded: string | null;
 }
 
@@ -101,6 +102,7 @@ export async function loadCardDoor(donorItemIds: string[], deps: CardDeps): Prom
   // Membership fields and the discount list; no donations. Throws only when no one loads.
   const data = await loadPortalData(donorItemIds, deps.monday, undefined, false);
   const withCards = cardEnabled(deps.config);
+  const today = todayInLosAngeles(deps.now());
   const people = await Promise.all(
     data.donors.map(async (donor) => {
       const notMember = neverAMember(donor);
@@ -109,7 +111,10 @@ export async function loadCardDoor(donorItemIds: string[], deps: CardDeps): Prom
         name: donor.name,
         card: withCards && !notMember ? await cardFor(donor, deps) : null,
         notMember,
-        lapsedEnded: donor.membershipStatus === 'Lapsed' ? endedMonth(donor.membershipExpiry) : null,
+        // The home page's rule (Lapsed, or a Member Until already past; never Lifetime).
+        lapsedEnded: membershipEnded({ status: donor.membershipStatus, tier: donor.membershipTier, until: donor.membershipExpiry }, today)
+          ? endedMonth(donor.membershipExpiry)
+          : null,
       };
     })
   );
