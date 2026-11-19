@@ -1,4 +1,4 @@
-import type { Config, ConsentConfig, JourneyInterestsConfig, JourneyLogConfig, ProfileLinksConfig, RenewalDueConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, JourneyInterestsConfig, JourneyLogConfig, ProfileLinksConfig, RenewalDueConfig, StewardshipConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
@@ -181,6 +181,45 @@ function profileLinksConfig(value: unknown): ProfileLinksConfig | null {
   return { boardId: obj.boardId, emailColumn: obj.emailColumn, linkColumn: obj.linkColumn, maxWritesPerRun: obj.maxWritesPerRun };
 }
 
+const STEWARDSHIP_COLUMNS = ['email', 'label', 'membershipStatus', 'membershipTier', 'memberType', 'memberSince', 'memberUntil', 'hasActiveRecurringGift', 'doNotSolicit'] as const;
+const STEWARDSHIP_LABELS = ['welcomeDayAfter', 'welcome3Weeks', 'renewal3Weeks', 'renewal1Week', 'renewalDayOf'] as const;
+
+// Optional: absent or null turns the stewardship labels off.
+function stewardshipConfig(value: unknown): StewardshipConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'stewardship');
+  if (typeof obj.boardId !== 'number') throw new Error('config: "stewardship.boardId" must be a number');
+  const columns = requireObject(obj.columns, 'stewardship.columns');
+  requireStringKeys(columns, STEWARDSHIP_COLUMNS, 'stewardship.columns');
+  const plan = requireObject(obj.plan, 'stewardship.plan');
+  const labels = requireObject(plan.labels, 'stewardship.plan.labels');
+  requireStringKeys(labels, STEWARDSHIP_LABELS, 'stewardship.plan.labels');
+  // Each label enrolls in its own Sequence; two sharing one would send the same email twice over.
+  if (new Set(STEWARDSHIP_LABELS.map((k) => labels[k])).size !== STEWARDSHIP_LABELS.length) {
+    throw new Error('config: "stewardship.plan.labels" must all differ');
+  }
+  requireStringKeys(plan, ['activeStatusValue', 'lifetimeTierValue', 'newMemberTypeValue'], 'stewardship.plan');
+  const catchUp = plan.catchUpDays;
+  // Past 6 the 1-week window would reach the day-of one.
+  if (typeof catchUp !== 'number' || !Number.isInteger(catchUp) || catchUp < 0 || catchUp > 6) {
+    throw new Error('config: "stewardship.plan.catchUpDays" must be an integer from 0 to 6');
+  }
+  if (!nonEmptyString(obj.renewalOptOutTag)) throw new Error('config: missing required key "stewardship.renewalOptOutTag"');
+  for (const key of ['renewalInterest', 'welcomeInterest'] as const) {
+    if (obj[key] !== null && !nonEmptyString(obj[key])) throw new Error(`config: "stewardship.${key}" must be an interest id or null`);
+  }
+  if (!positiveInt(obj.maxWritesPerRun)) throw new Error('config: "stewardship.maxWritesPerRun" must be a positive integer');
+  return {
+    boardId: obj.boardId,
+    columns: columns as unknown as StewardshipConfig['columns'],
+    plan: plan as unknown as StewardshipConfig['plan'],
+    renewalOptOutTag: obj.renewalOptOutTag,
+    renewalInterest: obj.renewalInterest as string | null,
+    welcomeInterest: obj.welcomeInterest as string | null,
+    maxWritesPerRun: obj.maxWritesPerRun,
+  };
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -260,5 +299,6 @@ export function validateConfig(raw: unknown): Config {
     consent: consentConfig(cfg.consent),
     journeyLog: journeyLogConfig(cfg.journeyLog),
     profileLinks: profileLinksConfig(cfg.profileLinks),
+    stewardship: stewardshipConfig(cfg.stewardship),
   };
 }

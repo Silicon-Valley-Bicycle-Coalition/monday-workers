@@ -57,7 +57,9 @@ const PEOPLE = {
     // mailchimp-sync's hourly consent sync (2026-11-16) sets these from Mailchimp.
     'Personal Email Consent', 'Household Email Consent',
     // mailchimp-sync's Journey send log and Mailchimp Profile link (2026-11-18).
-    'Last Journey Email', 'Mailchimp Profile'],
+    'Last Journey Email', 'Mailchimp Profile',
+    // mailchimp-sync's daily stewardship labels, which start the Monday Sequences (2026-11-19).
+    'Stewardship Email'],
   history: [...SALESFORCE, 'Salesforce Owner'],
 };
 
