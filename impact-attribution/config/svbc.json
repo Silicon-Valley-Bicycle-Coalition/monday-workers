@@ -21,7 +21,12 @@
   "organizationsBoardId": "18437909779",
   "rule": { "windowDays": 365, "minMatches": 2, "currentWithinDays": 365 },
   "excludedPayers": [
-    { "id": "13432214614", "note": "Applied Materials Foundation: pays Applied Materials employees' matches; the employer is Applied Materials" }
+    { "id": "13432214614", "note": "Applied Materials Foundation: pays Applied Materials employees' matches; the employer is Applied Materials" },
+    { "id": "13432320558", "note": "Intuitive Foundation: pays Intuitive Surgical employees' matches; the employer is Intuitive Surgical" },
+    { "id": "13432259621", "note": "Intel Foundation: pays Intel employees' matches; the employer is Intel Corporation" },
+    { "id": "13432214490", "note": "PlayStation Cares: Sony Interactive's giving program; the employer is Sony/PlayStation" },
+    { "id": "13432214632", "note": "KLA Foundation: pays KLA employees' matches; the employer is KLA" },
+    { "id": "13432320557", "note": "VMware Foundation: pays VMware employees' matches; the employer is VMware" }
   ],
   "maxProposalsPerRun": 25,
   "employerAnswers": {
@@ -78,7 +83,33 @@
       "yelp.com",
       "nextdoor.com"
     ],
-    "domainOverrides": {},
+    "domainOverrides": {
+      "baaqmd.gov": "13432191811",
+      "cityofgilroy.org": "13432261315",
+      "cityofpaloalto.org": "13432222920",
+      "cupertino.org": "13432222918",
+      "dot.ca.gov": "13432260030",
+      "greenfoothills.org": "13432190410",
+      "grpg.org": "13432260770",
+      "losgatosca.gov": "13432320677",
+      "menlopark.org": "13432259634",
+      "mikesbikes.com": "13432222927",
+      "mofo.com": "13432191149",
+      "motivateco.com": "13432211811",
+      "mountainview.gov": "13432211282",
+      "outridebike.org": "13432191015",
+      "paychex.com": "13432211405",
+      "portolavalley.net": "13432191874",
+      "redwoodcity.org": "13432321151",
+      "rei.com": "13432191106",
+      "sanjoseca.gov": "13432190329",
+      "santaclaraca.gov": "13432321215",
+      "sccgov.org": "13432214969",
+      "ssf.net": "13432320332",
+      "summitbicycles.com": "13432191941",
+      "sunnyvale.ca.gov": "13432190331",
+      "walmart.com": "13432212243"
+    },
     "blockedTlds": ["edu"],
     "proposeFromBoardIds": ["18437909781"],
     "staleAfterDays": 1095,

@@ -10,7 +10,10 @@ import type { AffiliationRecord, OrganizationRecord } from './domains';
 import { runEmailDomainProposals } from './run';
 import type { PersonRecord } from './select';
 
-const config: ImpactAttributionConfig = validateConfig(production);
+// Production's real domainOverrides name items these fixtures don't have; each test that wants an
+// override sets its own.
+const validated = validateConfig(production);
+const config: ImpactAttributionConfig = { ...validated, emailDomains: { ...validated.emailDomains, domainOverrides: {} } };
 const LIVE = config.peopleBoardIds[0]!;
 const NOW = '2026-11-17T11:00:00Z';
 
