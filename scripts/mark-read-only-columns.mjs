@@ -55,7 +55,9 @@ const PEOPLE = {
   locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On',
     'DTD Company ID', 'DTD Company', 'DTD match link',
     // mailchimp-sync's hourly consent sync (2026-11-16) sets these from Mailchimp.
-    'Personal Email Consent', 'Household Email Consent'],
+    'Personal Email Consent', 'Household Email Consent',
+    // mailchimp-sync's Journey send log and Mailchimp Profile link (2026-11-18).
+    'Last Journey Email', 'Mailchimp Profile'],
   history: [...SALESFORCE, 'Salesforce Owner'],
 };
 

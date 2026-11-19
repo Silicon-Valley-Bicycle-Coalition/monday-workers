@@ -20,6 +20,8 @@ const CONFIG: Config = {
   activeStatusValue: 'Active',
   dnsConfirmedValue: 'Confirmed',
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
+  journeyLog: null,
+  profileLinks: null,
 };
 
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {

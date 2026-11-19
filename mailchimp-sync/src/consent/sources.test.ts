@@ -42,6 +42,16 @@ describe('readMailchimpStatuses', () => {
     expect(urls[1]).toContain('status=archived');
   });
 
+  it("fills webIds with each member's web_id when asked, archived included", async () => {
+    const { fetchFn } = mailchimpFetch({
+      default: [{ email_address: 'Pat@Example.org', status: 'subscribed', web_id: 11 } as never],
+      archived: [{ email_address: 'c@x.org', status: 'archived', web_id: 33 } as never],
+    });
+    const webIds = new Map<string, number>();
+    await readMailchimpStatuses({ ...opts(fetchFn), webIds });
+    expect([...webIds]).toEqual([['pat@example.org', 11], ['c@x.org', 33]]);
+  });
+
   it('pages by offset until total_items', async () => {
     const members = ['a', 'b', 'c'].map((n) => ({ email_address: `${n}@x.org`, status: 'subscribed' }));
     const { fetchFn, urls } = mailchimpFetch({ default: members, archived: [] });

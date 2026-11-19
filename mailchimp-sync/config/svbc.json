@@ -122,5 +122,7 @@
         ]
       }
     ]
-  }
+  },
+  "journeyLog": null,
+  "profileLinks": null
 }

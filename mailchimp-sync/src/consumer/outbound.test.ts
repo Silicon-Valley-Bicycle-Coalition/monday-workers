@@ -23,6 +23,8 @@ const CONFIG: Config = {
   activeStatusValue: 'Active',
   dnsConfirmedValue: 'Confirmed',
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
+  journeyLog: null,
+  profileLinks: null,
 };
 
 function fakeDnsLog(alreadyLogged: string[] = []): DnsUnsubscribeLog {

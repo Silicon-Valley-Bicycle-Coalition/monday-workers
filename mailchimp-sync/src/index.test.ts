@@ -248,6 +248,11 @@ describe('scheduled', () => {
       expect(lines.some((l) => l.includes('skipping the consent run'))).toBe(true);
       expect(lines.some((l) => l.includes('no Campaigns board configured'))).toBe(false);
 
+      // The Journey send log's cron runs neither the consent sync nor the daily work.
+      lines.length = 0;
+      await worker.scheduled({ cron: '20 * * * *' } as ScheduledEvent, env);
+      expect(lines.some((l) => l.includes('no Campaigns board configured') || l.includes('consent'))).toBe(false);
+
       lines.length = 0;
       await worker.scheduled({ cron: '0 15 * * *' } as ScheduledEvent, env);
       expect(lines.some((l) => l.includes('no Campaigns board configured'))).toBe(true);

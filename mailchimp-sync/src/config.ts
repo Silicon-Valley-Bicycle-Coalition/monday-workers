@@ -1,4 +1,4 @@
-import type { Config, ConsentConfig, JourneyInterestsConfig, RenewalDueConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, JourneyInterestsConfig, JourneyLogConfig, ProfileLinksConfig, RenewalDueConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
@@ -139,6 +139,48 @@ function consentConfig(value: unknown): ConsentConfig {
   return { enabled: consent.enabled, maxChangesPerRun: max, boards };
 }
 
+const positiveInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+
+// Optional: absent or null turns the Journey send log off.
+function journeyLogConfig(value: unknown): JourneyLogConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'journeyLog');
+  if (typeof obj.boardId !== 'number') throw new Error('config: "journeyLog.boardId" must be a number');
+  if (!Array.isArray(obj.emailColumns) || obj.emailColumns.length === 0 || !obj.emailColumns.every(nonEmptyString)) {
+    throw new Error('config: "journeyLog.emailColumns" must be a non-empty array of column ids');
+  }
+  if (!nonEmptyString(obj.timelineActivityId)) throw new Error('config: missing required key "journeyLog.timelineActivityId"');
+  const ids = obj.journeyIds;
+  if (ids !== null && ids !== undefined && (!Array.isArray(ids) || ids.length === 0 || !ids.every(positiveInt))) {
+    throw new Error('config: "journeyLog.journeyIds" must be a non-empty array of Journey ids, or null');
+  }
+  const last = obj.lastJourneyEmailColumn;
+  if (last !== null && last !== undefined && !nonEmptyString(last)) {
+    throw new Error('config: "journeyLog.lastJourneyEmailColumn" must be a column id or null');
+  }
+  if (!positiveInt(obj.maxEntriesPerRun)) throw new Error('config: "journeyLog.maxEntriesPerRun" must be a positive integer');
+  return {
+    boardId: obj.boardId,
+    emailColumns: obj.emailColumns as string[],
+    timelineActivityId: obj.timelineActivityId,
+    journeyIds: (ids ?? null) as number[] | null,
+    lastJourneyEmailColumn: (last ?? null) as string | null,
+    maxEntriesPerRun: obj.maxEntriesPerRun,
+  };
+}
+
+// Optional: absent or null turns the Mailchimp Profile link off.
+function profileLinksConfig(value: unknown): ProfileLinksConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'profileLinks');
+  if (typeof obj.boardId !== 'number') throw new Error('config: "profileLinks.boardId" must be a number');
+  if (!nonEmptyString(obj.emailColumn) || !nonEmptyString(obj.linkColumn)) {
+    throw new Error('config: "profileLinks" needs emailColumn and linkColumn ids');
+  }
+  if (!positiveInt(obj.maxWritesPerRun)) throw new Error('config: "profileLinks.maxWritesPerRun" must be a positive integer');
+  return { boardId: obj.boardId, emailColumn: obj.emailColumn, linkColumn: obj.linkColumn, maxWritesPerRun: obj.maxWritesPerRun };
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -216,5 +258,7 @@ export function validateConfig(raw: unknown): Config {
     activeStatusValue: cfg.activeStatusValue,
     dnsConfirmedValue: cfg.dnsConfirmedValue,
     consent: consentConfig(cfg.consent),
+    journeyLog: journeyLogConfig(cfg.journeyLog),
+    profileLinks: profileLinksConfig(cfg.profileLinks),
   };
 }

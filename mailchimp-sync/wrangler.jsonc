@@ -87,8 +87,10 @@
   "triggers": {
     // Once daily, 15:00 UTC = 8am Pacific (PDT) / 7am Pacific (PST) — Campaigns-board
     // reconciliation, see Task 10. Fire hour doesn't affect correctness. Hourly at :05 — the
-    // consent column sync (src/consent/run.ts CONSENT_CRON; scheduled() dispatches on the string).
-    "crons": ["0 15 * * *", "5 * * * *"]
+    // consent column sync and the Mailchimp Profile links (src/consent/run.ts CONSENT_CRON);
+    // hourly at :20 — the Journey send log (src/journeyLog/run.ts JOURNEY_LOG_CRON). scheduled()
+    // dispatches on the string.
+    "crons": ["0 15 * * *", "5 * * * *", "20 * * * *"]
   },
   "observability": {
     "enabled": true,

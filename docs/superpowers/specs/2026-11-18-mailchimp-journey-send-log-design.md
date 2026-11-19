@@ -1,6 +1,6 @@
 # Mailchimp Journey send log — design
 
-Date: 2026-11-18 · Status: draft for approval · Worker: `mailchimp-sync`
+Date: 2026-11-18 · Status: approved, built (off in config until the Monday pieces exist) · Worker: `mailchimp-sync`
 
 ## Intent
 
@@ -32,7 +32,8 @@ send time.
 
 ## Data source
 
-An hourly step in `mailchimp-sync`'s existing `5 * * * *` cron:
+A new hourly cron in `mailchimp-sync`, `20 * * * *` (`src/journeyLog`), apart from the `:05` consent
+sync so each keeps its own 15-minute limit:
 
 1. **Catalog.** `GET /customer-journeys/journeys`, keep those on `mailchimp.audienceId` (or the
    ids in `journeyLog.journeyIds`, if set), then `GET …/steps` for each. Collect the
@@ -89,7 +90,7 @@ follows the precedent of `eventbrite-sync`'s class emails (`classEmails.timeline
   audience (deleted, not archived).
 
 Both go in `scripts/mark-read-only-columns.mjs`'s `MARKED_COLUMNS`. Config names them as
-`monday.columns.lastJourneyEmail` and `monday.columns.mailchimpProfile`; `null` turns either off.
+`journeyLog.lastJourneyEmailColumn` and `profileLinks.linkColumn` (see Config).
 
 ### Alternatives considered
 
@@ -117,21 +118,24 @@ email_id      TEXT    -- Mailchimp subscriber hash; never the address
 journey_id    INTEGER
 step_id       INTEGER
 delivery      TEXT    -- sent | hard | soft
-status        TEXT    -- pending | logged | unmatched | ambiguous | dropped
+status        TEXT    -- pending | logged | unmatched | ambiguous | failed | dropped
 people_item_id TEXT
+first_seen_at TEXT
 sent_at       TEXT    -- the entry's timestamp: member /activity, else first seen
 logged_at     TEXT
+attempts      INTEGER -- failed tries; `failed` after 5, so one bad item can't alert hourly forever
 PRIMARY KEY (campaign_id, email_id)
 ```
 
-plus `journey_email_counts(campaign_id PRIMARY KEY, emails_sent)`, the per-email "already read up
-to" mark.
+plus `journey_email_counts(campaign_id PRIMARY KEY, sent_to_count)`, the per-email "already read up
+to" mark (migration `0007`).
 
 - A new `sent-to` row is inserted `pending` (`INSERT … ON CONFLICT DO NOTHING`). The poll then works
   every `pending` row: match, `create_timeline_item`, then `logged`. A row that fails stays
   `pending` and is retried next hour.
-- `journey_email_counts` advances to the report's `emails_sent` only after every row from that read
-  is in D1, so a crashed read is read again.
+- `journey_email_counts` advances to the number of `sent-to` rows read, only after every one is in
+  D1, so a crashed or short read is read again. An email is skipped while its `emails_sent` equals
+  that count.
 - **At-least-once, not at-most-once.** A timeline entry can't be looked up to dedupe, so a crash
   between Monday's create and the D1 `logged` write duplicates that one entry next hour. That's the
   repo's invariant: a rare duplicate entry, not a missing one. (`eventbrite-sync` chose the opposite
@@ -143,8 +147,8 @@ to" mark.
   (`check-log-safety`).
 - **Backfill:** both Journeys are `draft` with 0 sent. **Deploy and turn this on before Felicia
   activates them**, so the first run has nothing to backfill. If a Journey is live first, the first run
-  logs its history at the poll's time, which is wrong-dated. In that case, insert the existing rows
-  `dropped` once (a `--baseline` option) rather than post them.
+  logs its earlier sends too, dated from each member's `/activity`, so they read correctly; a run
+  with writes `off` first would instead drop them.
 
 ## Volume
 
@@ -168,19 +172,31 @@ Mailchimp Profile.
 
 ## Config
 
-`mailchimp.journeyLog` in `config/*.json`, `null` to turn the step off:
+Two top-level keys in `config/*.json`, each `null` to turn its step off (both are `null` in both
+configs until the Monday pieces exist):
 
 ```json
 "journeyLog": {
+  "boardId": 18437909781,
+  "emailColumns": ["email_mm8nx6qg", "email_mm8n2wzk"],
   "timelineActivityId": "<custom activity id>",
-  "journeyIds": null
+  "journeyIds": null,
+  "lastJourneyEmailColumn": "<date column id>",
+  "maxEntriesPerRun": 200
+},
+"profileLinks": {
+  "boardId": 18437909781,
+  "emailColumn": "email_mm8nx6qg",
+  "linkColumn": "<link column id>",
+  "maxWritesPerRun": 500
 }
 ```
 
 The "Mailchimp email" custom activity is created once in Monday (Emails & Activities → custom
 activity), as `eventbrite-sync`'s "Logged email" was. The sandbox config points at the sandbox People
-board, and the sandbox audience already has a paused test Journey, 112 (see Verification). The split test keeps the two configs
-apart.
+board, and the sandbox audience already has a paused test Journey, 112 (see Verification). The
+split test keeps the two configs apart. Turning-on steps: `mailchimp-sync/README.md` → Journey send
+log.
 
 ## Verification (done 2026-11-18)
 

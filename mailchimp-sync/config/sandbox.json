@@ -118,5 +118,7 @@
         ]
       }
     ]
-  }
+  },
+  "journeyLog": null,
+  "profileLinks": null
 }

@@ -16,10 +16,13 @@ export interface MailchimpListOptions {
   apiKey: string;
   audienceId: string;
   pageSize?: number;
+  // When given, filled with each address's member web_id (the id in Mailchimp's own profile URL),
+  // archived members included, for the Mailchimp Profile link on People (src/profileLinks).
+  webIds?: Map<string, number>;
 }
 
 const REQUEST_TIMEOUT_MS = 20_000;
-const FIELDS = 'total_items,members.email_address,members.status';
+const FIELDS = 'total_items,members.email_address,members.status,members.web_id';
 
 /**
  * Every member of the audience, normalized address → status. Two passes: Mailchimp's member list
@@ -48,7 +51,7 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
     if (!response.ok) {
       throw new Error(`mailchimp list members${archived ? ' (archived)' : ''}: HTTP ${response.status} at offset ${offset}`);
     }
-    const page = (await response.json()) as { total_items: number; members: { email_address: string; status: string }[] };
+    const page = (await response.json()) as { total_items: number; members: { email_address: string; status: string; web_id?: number }[] };
     // Offset paging shifts when a member is archived or deleted mid-read, skipping one while the
     // final count can still match. A total that moves between pages is that shift: start over
     // next hour rather than plan on a read with a member missing.
@@ -56,7 +59,11 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
       throw new ConsentShortReadError(`mailchimp list members${archived ? ' (archived)' : ''}: total changed from ${total} to ${page.total_items} while paging`);
     }
     total = page.total_items;
-    for (const m of page.members) into.set(m.email_address.trim().toLowerCase(), m.status);
+    for (const m of page.members) {
+      const address = m.email_address.trim().toLowerCase();
+      into.set(address, m.status);
+      if (opts.webIds !== undefined && typeof m.web_id === 'number') opts.webIds.set(address, m.web_id);
+    }
     read += page.members.length;
     if (page.members.length === 0) break;
     offset += pageSize;

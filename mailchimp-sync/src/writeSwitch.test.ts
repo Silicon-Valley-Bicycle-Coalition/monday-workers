@@ -28,6 +28,8 @@ const CONFIG: Config = {
   },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
+  journeyLog: null,
+  profileLinks: null,
 };
 
 const EMAIL = 'someone@example.com';
