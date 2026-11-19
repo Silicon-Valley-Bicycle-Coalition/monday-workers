@@ -3370,4 +3370,17 @@ describe('sandbox test accounts', () => {
     expect(changeStore.createRequest).not.toHaveBeenCalled();
     expect(changeQueue.send).not.toHaveBeenCalled();
   });
+  it('gives a donor with no membership on file no membership card', async () => {
+    const app = createApp(testDeps());
+    const login = await postLogin(app, 'test-donor@example.org');
+    const cookie = (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).toContain('Dana Donor (test)');
+    expect(html).not.toContain('Member #test-donor');
+
+    const active = await postLogin(app, 'test-active@example.org');
+    const activeCookie = (active.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    expect(await (await app.request('/en/portal', { headers: { Cookie: activeCookie } })).text()).toContain('Member #test-active');
+  });
+
 });

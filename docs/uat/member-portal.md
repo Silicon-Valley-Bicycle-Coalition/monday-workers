@@ -45,7 +45,7 @@ records, and nothing you submit as one of them is saved.
 | `test-renewing@example.org` | Active member whose membership ends in about two weeks |
 | `test-lifetime@example.org` | Lifetime member: no end date on the card |
 | `test-lapsed@example.org` | Lapsed member: membership ended about three months ago |
-| `test-donor@example.org` | Gave but never joined: no membership status or tier |
+| `test-donor@example.org` | Gave but never joined: "no membership on file" and no membership card |
 | `test-household@example.org` | Two people sharing one inbox (one active, one lapsed) |
 | `test-spanish@example.org` | Active member whose preferred language is Spanish |
 

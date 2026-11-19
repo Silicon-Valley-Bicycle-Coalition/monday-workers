@@ -564,7 +564,9 @@ export function createApp(deps: AppDeps) {
     const cards: Record<string, PortalCard> = {};
     if (cardEnabled(deps.config)) {
       await Promise.all(
-        data.donors.map(async (donor) => {
+        // No card for someone with no membership on file (blank Membership Status): a card
+        // would show a member number, no status and "No expiration" to anyone scanning it.
+        data.donors.filter((donor) => donor.membershipStatus.trim() !== '').map(async (donor) => {
           try {
             const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
             const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
