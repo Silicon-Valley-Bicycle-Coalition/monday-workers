@@ -227,6 +227,30 @@ and the reports were polled every 30 s:
 - **Cleanup:** Journey 112 is **paused** (kept for re-testing the Worker in the sandbox, re-tag a
   contact to send again) and the test contact is **archived**.
 
+### The Worker in the sandbox (2026-11-19)
+
+The built Worker was deployed to `svbc-mailchimp-sync-sandbox` (migration `0007` applied) with
+`journeyLog` and `profileLinks` filled in `config/sandbox.json`, and its crons triggered by hand
+through `wrangler dev --remote --env sandbox --test-scheduled` (real D1, FLAGS and Monday broker).
+Account-wide custom activity **Mailchimp email** `8a429b81-1416-4211-b8fc-d23e0ce87752` (custom
+activities are per account, so production uses the same id, as `eventbrite-sync`'s "Logged email"
+does); sandbox People columns Last Journey Email `date_mm98v7ej` and Mailchimp Profile
+`link_mm98rz6c`. A second test contact, with a People item (`13588963658`), was sent the test
+Journey's email at 01:38:52 UTC.
+
+| Run | Result |
+|---|---|
+| `:20` | `read: 1, newRows: 2, logged: 1, unmatched: 1`. The entry is on the item under the custom activity, dated 01:38:52Z (from `/activity`). Last Journey Email = 2026-11-18 (Pacific). The first test contact (archived, no People item) is `unmatched`. |
+| `:20` again, row reset to `pending` | `read: 0` (count unchanged, no sent-to read), `logged: 1`: the address came back from Mailchimp by hash. |
+| `:05` | Consent wrote the item's Subscribed; profile links read 7,683 People, planned and wrote 1 link (`…/lists/members/view?id=616612933`). The whole run took ~2.5 min. |
+| `:05` after deleting the contact from the audience | Consent → Not in Mailchimp; profile links `cleared: 1` (writing `{}` empties a link column). |
+
+One fix came out of it: Monday stores timeline `content` as HTML (it escaped the URL's `&`), so a
+plain-text line break would not render. The content is now `<p>` paragraphs with an escaped
+`<a href>` link, as `eventbrite-sync`'s entries are, and title and summary are capped at 255
+characters. Afterwards: Journey 112 paused again, the second test contact deleted, the test People
+item kept (it shows both entries, the plain-text one and the HTML one).
+
 So the fallbacks considered earlier (a per-member feed poll, or Journey tag steps) aren't needed.
 
 ## Decisions (2026-11-18, dwk)

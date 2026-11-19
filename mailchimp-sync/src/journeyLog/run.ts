@@ -68,17 +68,29 @@ export interface JourneyLogSummary {
 const errName = (err: unknown): string => (err instanceof Error ? err.name : 'UnknownError');
 const errText = (err: unknown): string => redactEmails(err instanceof Error ? err.message : String(err));
 
+// create_timeline_item's limit on title and summary.
+const MAX_TIMELINE_TEXT = 255;
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// The entry's text. Content is HTML (Monday stores and renders it so, as eventbrite-sync's class
+// email entries do); title and summary are plain text.
 export function entryFor(row: PendingJourneySend, email: JourneyEmail | undefined): { title: string; summary: string; content: string } {
   const subject = email?.subject || 'Mailchimp Journey email';
   const where = email === undefined ? 'a Mailchimp Customer Journey' : `${email.journeyName} · email ${email.position} of ${email.of}`;
   const delivered = row.delivery === 'sent';
-  const content = [
-    delivered
-      ? `Sent by the Mailchimp Customer Journey ${email === undefined ? '' : `"${email.journeyName}" `}(email ${email?.position ?? '?'} of ${email?.of ?? '?'}).`
-      : `Not delivered: a ${row.delivery} bounce. Mailchimp's consent sync updates the address's consent column.`,
-    ...(email?.archiveUrl ? [`View the email: ${email.archiveUrl}`] : []),
-  ].join('\n');
-  return { title: delivered ? subject : `Not delivered: ${subject}`, summary: where, content };
+  const lead = delivered
+    ? `Sent by the Mailchimp Customer Journey ${email === undefined ? '' : `“${email.journeyName}” `}(email ${email?.position ?? '?'} of ${email?.of ?? '?'}).`
+    : `Not delivered: a ${row.delivery} bounce. mailchimp-sync's hourly consent sync updates the address's consent column.`;
+  const content = `<p>${escapeHtml(lead)}</p>`
+    + (email?.archiveUrl ? `<p><a href="${escapeHtml(email.archiveUrl)}">View the email as sent</a></p>` : '');
+  return {
+    title: (delivered ? subject : `Not delivered: ${subject}`).slice(0, MAX_TIMELINE_TEXT),
+    summary: where.slice(0, MAX_TIMELINE_TEXT),
+    content,
+  };
 }
 
 export async function runJourneyLog(gate: BatchSkipContext, deps: JourneyLogDeps): Promise<JourneyLogSummary> {

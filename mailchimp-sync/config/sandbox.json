@@ -119,6 +119,21 @@
       }
     ]
   },
-  "journeyLog": null,
-  "profileLinks": null
+  "journeyLog": {
+    "boardId": 18437342592,
+    "emailColumns": [
+      "email_mm8h4kkb",
+      "email_mm8hj3f8"
+    ],
+    "timelineActivityId": "8a429b81-1416-4211-b8fc-d23e0ce87752",
+    "journeyIds": null,
+    "lastJourneyEmailColumn": "date_mm98v7ej",
+    "maxEntriesPerRun": 200
+  },
+  "profileLinks": {
+    "boardId": 18437342592,
+    "emailColumn": "email_mm8h4kkb",
+    "linkColumn": "link_mm98rz6c",
+    "maxWritesPerRun": 500
+  }
 }

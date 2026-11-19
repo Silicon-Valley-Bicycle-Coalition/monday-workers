@@ -409,14 +409,16 @@ link is cleared when the address leaves the audience, and nothing is planned on 
 
 **Turning it on** (both `null` in both configs until the Monday pieces exist):
 
-1. In Monday, create the **Mailchimp email** custom activity (Emails & Activities → custom activity)
-   and note its id; add **Last Journey Email** (Date) and **Mailchimp Profile** (Link) to People; run
-   `node scripts/mark-read-only-columns.mjs` (both are in `MARKED_COLUMNS`).
+1. The **Mailchimp email** custom activity exists (created 2026-11-19; custom activities are per
+   account, so both environments use `8a429b81-1416-4211-b8fc-d23e0ce87752`). Add **Last Journey
+   Email** (Date) and **Mailchimp Profile** (Link) to People; run
+   `node scripts/mark-read-only-columns.mjs` (both are in `MARKED_COLUMNS`). The sandbox has both
+   (`date_mm98v7ej`, `link_mm98rz6c`) and its config is filled.
 2. Apply migration `0007` (`npx wrangler d1 migrations apply <db> --remote [--env sandbox]`).
 3. Fill the config, e.g. production:
    ```json
    "journeyLog": { "boardId": 18437909781, "emailColumns": ["email_mm8nx6qg", "email_mm8n2wzk"],
-     "timelineActivityId": "<activity id>", "journeyIds": null,
+     "timelineActivityId": "8a429b81-1416-4211-b8fc-d23e0ce87752", "journeyIds": null,
      "lastJourneyEmailColumn": "<date column id>", "maxEntriesPerRun": 200 },
    "profileLinks": { "boardId": 18437909781, "emailColumn": "email_mm8nx6qg",
      "linkColumn": "<link column id>", "maxWritesPerRun": 500 }
@@ -424,7 +426,10 @@ link is cleared when the address leaves the audience, and nothing is planned on 
 4. Deploy **before** Felicia turns the Journeys on, so the first run has no history to log. A Journey
    that already sent would have its earlier sends logged with their real send times on the first run.
 5. Sandbox: Journey 112 "TEST journey send log (sandbox)" (paused) in the sandbox audience sends one
-   email on **Tag added: journey-test**; sandbox crons are off, so run the handler by hand.
+   email on **Tag added: journey-test** (a contact enters it once). Sandbox crons are off; run them
+   by hand with `npx wrangler dev --remote --env sandbox --test-scheduled`, then
+   `curl 'http://localhost:8787/__scheduled?cron=20+*+*+*+*'` (or `5+*+*+*+*`). Verified this way
+   on 2026-11-19 — see the spec's Verification.
 
 ## Resetting for new board ids
 

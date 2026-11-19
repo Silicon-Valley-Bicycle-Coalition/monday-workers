@@ -175,8 +175,14 @@ describe('entryFor', () => {
     expect(entryFor(row, welcome)).toEqual({
       title: 'Welcome to SVBC!',
       summary: 'New member welcome series · email 1 of 2',
-      content: 'Sent by the Mailchimp Customer Journey "New member welcome series" (email 1 of 2).\nView the email: https://archive/camp1',
+      content: '<p>Sent by the Mailchimp Customer Journey “New member welcome series” (email 1 of 2).</p><p><a href="https://archive/camp1">View the email as sent</a></p>',
     });
+    // Escaped, so a subject or URL can't break the HTML; title capped at Monday's 255.
+    const odd = { ...welcome, journeyName: 'A & <B>', archiveUrl: 'https://a/?u=1&id=2', subject: 'x'.repeat(300) };
+    const entry = entryFor(row, odd);
+    expect(entry.content).toContain('“A &amp; &lt;B&gt;”');
+    expect(entry.content).toContain('href="https://a/?u=1&amp;id=2"');
+    expect(entry.title).toHaveLength(255);
     // A Journey deleted since the row was read still gets an entry.
     expect(entryFor({ ...row, delivery: 'soft' }, undefined).title).toBe('Not delivered: Mailchimp Journey email');
   });
