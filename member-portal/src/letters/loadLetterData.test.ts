@@ -167,6 +167,7 @@ describe('loadLetterData with the real client (status filtering)', () => {
     donorPhone: 'phone_col',
     membershipExpiry: 'expiry_col',
     preferredLanguage: 'lang_col',
+    donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID',
     donorEmailOptOut: 'check_email_opt',
     donorSmsOptOut: 'check_sms_opt',
     donorDoNotMail: 'check_no_mail',

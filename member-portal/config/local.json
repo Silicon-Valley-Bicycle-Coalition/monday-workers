@@ -22,6 +22,7 @@
       "donorPhone": "phone",
       "membershipExpiry": "expiry",
       "preferredLanguage": "language",
+      "donorHouseholdEmail": "REPLACE_WITH_COLUMN_ID",
       "donorEmailOptOut": "email_opt_out",
       "donorSmsOptOut": "sms_opt_out",
       "donorDoNotMail": "do_not_mail",

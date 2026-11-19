@@ -207,17 +207,25 @@ export class HttpMondayClient implements MondayClient {
     // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
     // getMemberPortalData below: only request it once it's been configured with a real column id,
     // so the literal placeholder never ships to Monday's API.
+    const householdOn = this.columns.donorHouseholdEmail !== 'REPLACE_WITH_COLUMN_ID';
     const columnIds = [this.columns.donorEmail];
+    if (householdOn) columnIds.push(this.columns.donorHouseholdEmail);
     if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
       columnIds.push(this.columns.preferredLanguage);
     }
+    // Household Email is a second address that signs a donor in too (same gating as above): with it
+    // configured the query ORs the two columns; without, it stays the single Personal Email rule.
+    const rule = (columnId: string) => `{ column_id: "${columnId}", compare_value: [$email], operator: any_of }`;
+    const rules = householdOn
+      ? `rules: [${rule(this.columns.donorEmail)}, ${rule(this.columns.donorHouseholdEmail)}], operator: or`
+      : `rules: [${rule(this.columns.donorEmail)}]`;
     const query = `
       query ($boardId: ID!, $email: CompareValue) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 25,
             query_params: {
-              rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
+              ${rules}
             }
           ) {
             items { id name column_values(ids: ${JSON.stringify(columnIds)}) { id text value } }
@@ -235,7 +243,11 @@ export class HttpMondayClient implements MondayClient {
     // link never goes out for a donor record holding some other address.
     const wanted = email.trim().toLowerCase();
     return items
-      .filter((item) => columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted)
+      .filter(
+        (item) =>
+          columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted ||
+          (householdOn && columnEmail(item, this.columns.donorHouseholdEmail).trim().toLowerCase() === wanted),
+      )
       .map((item) => ({
         id: item.id,
         name: item.name,

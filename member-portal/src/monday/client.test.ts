@@ -19,6 +19,7 @@ const columns: MondayColumns = {
   donorPhone: 'phone_col',
   membershipExpiry: 'expiry_col',
   preferredLanguage: 'lang_col',
+  donorHouseholdEmail: 'household_col',
   donorEmailOptOut: 'check_email_opt',
   donorSmsOptOut: 'check_sms_opt',
   donorDoNotMail: 'check_no_mail',
@@ -226,6 +227,64 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     expect(captured).not.toBeNull();
     expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
     expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+  });
+
+  describe('Household Email', () => {
+    const capture = (items: unknown[]) => {
+      const calls: { query: string; variables: Record<string, unknown> }[] = [];
+      const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+        calls.push(JSON.parse(init.body as string));
+        return { ok: true, status: 200, json: async () => ({ data: { boards: [{ items_page: { items } }] } }) };
+      });
+      return { calls, fetchMock };
+    };
+    const make = (cols: MondayColumns, fetchMock: ReturnType<typeof fetchReturning>) =>
+      new HttpMondayClient('https://api.monday.com/v2', 'token', cols, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    it('queries both email columns with operator or when donorHouseholdEmail is configured', async () => {
+      const { calls, fetchMock } = capture([]);
+      await make(columns, fetchMock).findDonorsByEmail('jane@example.org');
+      const q = calls[0]!.query;
+      expect(q).toContain('column_id: "email_col", compare_value: [$email], operator: any_of');
+      expect(q).toContain('column_id: "household_col", compare_value: [$email], operator: any_of');
+      expect(q).toContain('operator: or');
+      expect(q).toContain('"household_col"');
+      expect(calls[0]!.variables.email).toBe('jane@example.org');
+    });
+
+    it('returns an item whose Household Email equals the address, ignoring case and whitespace', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [{ id: 'household_col', text: '  Family@Example.org ', value: null }] },
+      ]);
+      const matches = await make(columns, fetchMock).findDonorsByEmail('family@example.org');
+      expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+    });
+
+    it('drops an item matching neither column exactly (Monday fuzzy hit)', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [emailValue('other@example.org'), { id: 'household_col', text: 'another@example.org', value: null }] },
+      ]);
+      expect(await make(columns, fetchMock).findDonorsByEmail('family@example.org')).toEqual([]);
+    });
+
+    it('returns both items sharing a Household Email', async () => {
+      const { fetchMock } = capture([
+        { id: '1', name: 'Jane', column_values: [{ id: 'household_col', text: 'family@example.org', value: null }] },
+        { id: '2', name: 'Joe', column_values: [{ id: 'household_col', text: 'family@example.org', value: null }] },
+      ]);
+      const matches = await make(columns, fetchMock).findDonorsByEmail('family@example.org');
+      expect(matches.map((m) => m.id)).toEqual(['1', '2']);
+    });
+
+    it('sends the single Personal Email rule, no operator and no household id, while a placeholder', async () => {
+      const { calls, fetchMock } = capture([]);
+      await make({ ...columns, donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID' }, fetchMock).findDonorsByEmail('jane@example.org');
+      const q = calls[0]!.query;
+      expect(q).toContain('rules: [{ column_id: "email_col", compare_value: [$email], operator: any_of }]');
+      expect(q).not.toContain('operator: or');
+      expect(q).not.toContain('REPLACE_WITH_COLUMN_ID');
+      expect(q).toContain('column_values(ids: ["email_col","lang_col"])');
+    });
   });
 
   // Issue GL#62: whatever Monday's filter returns, only an exact (case-insensitive) address match

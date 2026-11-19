@@ -21,6 +21,7 @@
       "donorPhone": "phone_mm8ht3gd",
       "membershipExpiry": "date_mm8hx0b7",
       "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "donorHouseholdEmail": "email_mm8hj3f8",
       "donorEmailOptOut": "REPLACE_WITH_COLUMN_ID",
       "donorSmsOptOut": "REPLACE_WITH_COLUMN_ID",
       "donorDoNotMail": "REPLACE_WITH_COLUMN_ID",

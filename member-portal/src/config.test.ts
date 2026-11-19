@@ -17,6 +17,9 @@ import {
   employerAnswerEnabled,
 } from './config';
 
+import svbcConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+
 const validConfig = {
   monday: {
     apiUrl: 'https://api.monday.com/v2',
@@ -40,6 +43,7 @@ const validConfig = {
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
+      donorHouseholdEmail: 'household_email_col',
       donorEmailOptOut: 'check_email_opt',
       donorSmsOptOut: 'check_sms_opt',
       donorDoNotMail: 'check_no_mail',
@@ -1092,5 +1096,31 @@ describe('changeRequests.employer', () => {
     const raw = withEmployer(null);
     delete raw.monday.columns.donorEmployer;
     expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorEmployer/);
+  });
+
+  it('accepts config with donorHouseholdEmail present (even as the placeholder), same as preferredLanguage', () => {
+    const cfg = {
+      ...validConfig,
+      monday: {
+        ...validConfig.monday,
+        columns: { ...validConfig.monday.columns, donorHouseholdEmail: 'REPLACE_WITH_COLUMN_ID' },
+      },
+    };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects config missing donorHouseholdEmail entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).donorHouseholdEmail;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.donorHouseholdEmail/);
+  });
+});
+
+describe('shipped configs', () => {
+  it.each([
+    ['svbc', svbcConfig, 'email_mm8n2wzk'],
+    ['sandbox', sandboxConfig, 'email_mm8hj3f8'],
+  ])('%s carries the Household Email column id', (_name, cfg, id) => {
+    expect(validateConfig(cfg).monday.columns.donorHouseholdEmail).toBe(id);
   });
 });

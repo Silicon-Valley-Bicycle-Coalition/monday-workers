@@ -18,6 +18,9 @@ export interface MondayColumns {
   donorPhone: string;
   membershipExpiry: string;
   preferredLanguage: string;
+  // Optional: the People board's Household Email, a second address that also signs a donor in.
+  // Absent or the placeholder, sign-in matches Personal Email only.
+  donorHouseholdEmail: string;
   donorEmailOptOut: string;
   donorSmsOptOut: string;
   donorDoNotMail: string;

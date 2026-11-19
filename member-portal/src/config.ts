@@ -50,6 +50,11 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 // not placeholder-freedom — same treatment as CARD_COLUMNS.
 const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
 
+// HOUSEHOLD_EMAIL_COLUMN deliberately isn't merged into REQUIRED_COLUMNS: sign-in only matches
+// Household Email once it's configured, so a fork without the column still works. Checked for
+// *presence* only, not placeholder-freedom — same treatment as PREFERRED_LANGUAGE_COLUMN.
+const HOUSEHOLD_EMAIL_COLUMN: (keyof MondayColumns)[] = ['donorHouseholdEmail'];
+
 // VOLUNTEER_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: these columns only matter
 // to the volunteer-history feature, which is gated (volunteerHistoryEnabled), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
@@ -191,6 +196,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
+  requireKeys(columns, 'monday.columns', HOUSEHOLD_EMAIL_COLUMN);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
   // Optional (GL#115): absent or the placeholder shows the Job alone.
   if ('volunteerTicketType' in columns && typeof columns.volunteerTicketType !== 'string') {
