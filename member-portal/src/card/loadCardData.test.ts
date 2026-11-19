@@ -46,6 +46,8 @@ describe('buildCardData', () => {
       totalDonated: '$500.00',
       donations: [],
       membershipExpiry: '2026-12-31',
+      memberSince: '',
+      memberType: '',
     };
 
     expect(buildCardData(donor)).toEqual({
@@ -68,6 +70,8 @@ describe('buildCardData', () => {
       totalDonated: '$1000.00',
       donations: [],
       membershipExpiry: '',
+      memberSince: '',
+      memberType: '',
     };
 
     expect(buildCardData(donor).expiryDisplay).toBe('No expiration');

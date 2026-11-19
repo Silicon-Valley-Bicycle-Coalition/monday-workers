@@ -266,6 +266,11 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.membershipExpiry !== 'REPLACE_WITH_COLUMN_ID') {
       donorColumnIds.push(this.columns.membershipExpiry);
     }
+    // memberSince / memberType: same gating, for the home page's state resolver.
+    const memberSinceOn = this.columns.memberSince !== 'REPLACE_WITH_COLUMN_ID';
+    const memberTypeOn = this.columns.memberType !== 'REPLACE_WITH_COLUMN_ID';
+    if (memberSinceOn) donorColumnIds.push(this.columns.memberSince);
+    if (memberTypeOn) donorColumnIds.push(this.columns.memberType);
     // The DTD link is only read when the whole match-line feature is on and donations are loaded.
     const matchLines = this.matchLinesOn();
     if (matchLines && options.includeDonations !== false) {
@@ -324,6 +329,8 @@ export class HttpMondayClient implements MondayClient {
       totalDonated,
       donations,
       membershipExpiry: columnText(donorItem, this.columns.membershipExpiry),
+      memberSince: memberSinceOn ? columnText(donorItem, this.columns.memberSince) : '',
+      memberType: memberTypeOn ? columnText(donorItem, this.columns.memberType) : '',
     };
   }
 

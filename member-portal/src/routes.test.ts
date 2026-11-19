@@ -304,6 +304,7 @@ const config: Config = {
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
   impact: { statementsByYear: {} },
+  home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },

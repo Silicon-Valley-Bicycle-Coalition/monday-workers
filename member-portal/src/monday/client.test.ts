@@ -33,6 +33,10 @@ const columns: MondayColumns = {
   donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
   donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
   donorEmployer: 'employer_col',
+  memberSince: 'since_col',
+  memberType: 'member_type_col',
+  donorEmailConsent: 'email_consent_col',
+  donorHouseholdEmailConsent: 'household_consent_col',
 };
 
 // Mirrors config donations.countableStatuses — the Donations-board status labels that count as
@@ -415,7 +419,59 @@ describe('HttpMondayClient.getMemberPortalData', () => {
       totalDonated: '500',
       donations: [{ amount: '100', date: '2026-01-01', description: 'Annual gift' }],
       membershipExpiry: '2026-12-31',
+      memberSince: '',
+      memberType: '',
     });
+  });
+
+  it('requests memberSince and memberType when configured and returns their text', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementationOnce(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            items: [
+              {
+                id: 'donor-1',
+                name: 'Jane Donor',
+                column_values: [
+                  { id: 'status_col', text: 'Active' },
+                  { id: 'since_col', text: '2026-11-11' },
+                  { id: 'member_type_col', text: 'New' },
+                ],
+              },
+            ],
+          },
+        }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    const data = await client.getMemberPortalData('donor-1', { includeDonations: false });
+    expect(captured!.query).toContain('since_col');
+    expect(captured!.query).toContain('member_type_col');
+    expect(data.memberSince).toBe('2026-11-11');
+    expect(data.memberType).toBe('New');
+  });
+
+  it('omits placeholder memberSince and memberType column ids and returns empty strings', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementationOnce(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { items: [{ id: 'donor-1', name: 'Jane Donor', column_values: [{ id: 'status_col', text: 'Active' }] }] } }),
+      };
+    });
+    const gated: MondayColumns = { ...columns, memberSince: 'REPLACE_WITH_COLUMN_ID', memberType: 'REPLACE_WITH_COLUMN_ID' };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', gated, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+    const data = await client.getMemberPortalData('donor-1', { includeDonations: false });
+    expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(data.memberSince).toBe('');
+    expect(data.memberType).toBe('');
   });
 
   it('never queries the Donations board when includeDonations is false, returning an empty, unloaded history', async () => {

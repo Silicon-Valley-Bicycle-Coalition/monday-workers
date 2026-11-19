@@ -1,6 +1,7 @@
 import type { Locale } from './i18n/locales';
 import type { WriteStamp } from './flags';
 import type { MondayTokenSource } from './monday/graphql';
+import type { HomeConfig } from './home/homeState';
 
 export interface MondayColumns {
   donorEmail: string;
@@ -42,6 +43,13 @@ export interface MondayColumns {
   // People → Employer Name (text). Read only, for the old value on an employer change request;
   // donation-rollups' employerSync writes it from the Current, Primary affiliation.
   donorEmployer: string;
+  // Donors-board membership fields for the home page (gated: absent from queries while the
+  // placeholder). Member Since is a date, Member Type a status (New / Continuing / Lapsed renewal /
+  // Lifetime). The two consent columns are read by the contact-consent card (a later task).
+  memberSince: string;
+  memberType: string;
+  donorEmailConsent: string;
+  donorHouseholdEmailConsent: string;
 }
 
 // The three donor-facing communication preferences. Each maps to its own gated checkbox column
@@ -299,6 +307,7 @@ export interface Config {
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
   impact: ImpactConfig;
+  home: HomeConfig;
 }
 
 export interface DonorMatch {
@@ -326,6 +335,9 @@ export interface MemberPortalData {
   totalDonated: string;
   donations: DonationRecord[];
   membershipExpiry: string;
+  // '' when the column is gated off (placeholder) or blank.
+  memberSince: string;
+  memberType: string;
 }
 
 export interface EventRegistrationRecord {

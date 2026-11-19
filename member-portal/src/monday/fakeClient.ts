@@ -162,6 +162,8 @@ export class FakeMondayClient implements MondayClient {
       totalDonated: includeDonations ? totalDonated(donor.donations) : '',
       donations: includeDonations ? donor.donations : [],
       membershipExpiry: donor.membershipExpiry,
+      memberSince: '',
+      memberType: '',
     };
   }
 

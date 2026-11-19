@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { MemberPortalData, VolunteerShift } from '../types';
 
 function donor(id: string, name: string): MemberPortalData {
-  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [], membershipExpiry: '' };
+  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [], membershipExpiry: '', memberSince: '', memberType: '' };
 }
 
 function fakeMonday(shiftsByDonor: Record<string, VolunteerShift[]> = {}): MondayClient {
