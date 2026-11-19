@@ -448,6 +448,16 @@ function impactSummary(impact: DonorImpact, locale: Locale): string {
   `;
 }
 
+// Membership Status and Tier are both blank on the People board for someone who gave but never
+// joined, and Tier can be blank on its own; never render the bare "Membership:  ()" template.
+function membershipLine(donor: { membershipStatus: string; membershipTier: string }, locale: Locale): string {
+  const status = donor.membershipStatus.trim();
+  const tier = donor.membershipTier.trim();
+  if (status === '') return t(locale, 'portal.notMember');
+  if (tier === '') return t(locale, 'portal.membershipNoTier', { status });
+  return t(locale, 'portal.membership', { status, tier });
+}
+
 function donorSection(
   donor: PortalView['donors'][number],
   locale: Locale,
@@ -476,7 +486,7 @@ function donorSection(
   return `
     <section>
       <h2>${escapeHtml(donor.name)}</h2>
-      <p>${escapeHtml(t(locale, 'portal.membership', { status: donor.membershipStatus, tier: donor.membershipTier }))}</p>
+      <p>${escapeHtml(membershipLine(donor, locale))}</p>
       ${card ? memberCardWidget(card, locale) : ''}
       ${impact ? impactSummary(impact, locale) : ''}
       ${renderTabs(tabs, `tabs-${donor.id}`)}

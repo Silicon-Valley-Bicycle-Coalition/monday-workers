@@ -62,6 +62,8 @@ export const es: Record<TranslationKey, string> = {
   'portal.heading': 'Tu portal de donante',
   'portal.someRecordsUnavailable': 'Algunos de tus registros no se pudieron cargar en este momento. Inténtalo de nuevo en unos minutos.',
   'portal.membership': 'Membresía: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'Membresía: {{status}}',
+  'portal.notMember': 'No tenemos una membresía registrada a su nombre.',
   'portal.totalLabel': 'Total donado',
   'portal.tableDate': 'Fecha',
   'portal.tableAmount': 'Monto',

@@ -13,7 +13,7 @@ const { role: _role, ...noRole } = rule;
 
 describe('validateConfig', () => {
   it('accepts both shipped configs', () => {
-    expect(validateConfig(production).boards.length).toBe(6);
+    expect(validateConfig(production).boards.length).toBe(7);
     expect(validateConfig(sandbox).boards.length).toBe(3);
   });
   it('accepts a type-driven rule', () => {

@@ -20,6 +20,7 @@ const CONFIG: Config = {
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
   journeyLog: null,
   profileLinks: null,
+  stewardship: null,
 };
 
 function fakeMessage(email: string, attempts = 1): { body: InboundSyncMessage; attempts: number; ack: () => void; retry: () => void } {

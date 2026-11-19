@@ -62,6 +62,8 @@ export const ptBR: Record<TranslationKey, string> = {
   'portal.heading': 'Seu portal do doador',
   'portal.someRecordsUnavailable': 'Não foi possível carregar alguns dos seus registros agora. Tente novamente em alguns minutos.',
   'portal.membership': 'Associação: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'Associação: {{status}}',
+  'portal.notMember': 'Não há uma associação registrada em seu nome.',
   'portal.totalLabel': 'Total doado',
   'portal.tableDate': 'Data',
   'portal.tableAmount': 'Valor',

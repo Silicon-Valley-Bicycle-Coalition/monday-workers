@@ -20,12 +20,13 @@ describe('config split', () => {
 
   it('production enables only the rules whose organization link exists on the live board', () => {
     // Live check 2026-11-11: BP Request Form has no organization link (text columns only), Grants &
-    // Contracts has no `Funder` column (its only org link, `Grant Provider`, points at the Grant
-    // Providers board), and Bike Education and Leads have none yet. Each is switched on once its
-    // Organization link exists.
+    // Contracts' `Funder (Organization)` points at the Grant Providers board, and Bike Education and
+    // Leads have none yet. Each is switched on once its Organization link exists. Since staff split
+    // the opportunity boards on 2026-11-19, Sponsorships holds past cycles and has no Contacts
+    // column; the current year's prospecting board carries the rule.
     const state = (on: boolean) => production.boards.filter((b) => b.enabled === on).map((b) => b.name);
-    expect(state(true)).toEqual(['Sponsorships', 'Donations']);
-    expect(state(false)).toEqual(['Grants & Contracts', 'BP Request Form', 'Bike Education Lifecycle Tracker', 'Leads']);
+    expect(state(true)).toEqual(['2027 PROSPECTING - Sponsorships', 'Donations']);
+    expect(state(false)).toEqual(['Sponsorships', 'Grants & Contracts', 'BP Request Form', 'Bike Education Lifecycle Tracker', 'Leads']);
   });
 
   it('the sandbox has only the boards that exist in CRM Sandbox v4, all enabled', () => {
@@ -39,7 +40,7 @@ describe('config split', () => {
     // sandbox Organizations board (18437342579).
     expect(sandbox.boards.every((b) => b.orgColumn !== '')).toBe(true);
     expect(sandbox.boards.find((b) => b.name === 'Sponsorships')?.orgColumn).toBe('Sponsor');
-    expect(production.boards.find((b) => b.name === 'Sponsorships')?.orgColumn).toBe('Organization');
+    expect(production.boards.find((b) => b.name === '2027 PROSPECTING - Sponsorships')?.orgColumn).toBe('Sponsor (Organization)');
   });
 
   it('BP Request Form, Bike Education and Leads are production-only', () => {

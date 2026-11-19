@@ -67,6 +67,8 @@ export const en = {
   'portal.heading': 'Your member portal',
   'portal.someRecordsUnavailable': 'Some of your records could not be loaded right now. Please try again in a few minutes.',
   'portal.membership': 'Membership: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'Membership: {{status}}',
+  'portal.notMember': 'You don’t have a membership on file.',
   'portal.totalLabel': 'Total donated',
   'portal.tableDate': 'Date',
   'portal.tableAmount': 'Amount',

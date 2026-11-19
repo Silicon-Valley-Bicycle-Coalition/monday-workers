@@ -23,6 +23,9 @@ import { verifyLogin } from './auth/verifyLogin';
 import { verifyCode } from './auth/verifyCode';
 import type { CodeFailureStore } from './db/codeFailures';
 import type { VerifiedEmailStore } from './db/verifiedEmails';
+import { localeFromMondayLabel } from './i18n/locales';
+import { findTestPersonasByEmail } from './testAccounts/personas';
+import { discardingChangeQueue, discardingChangeStore, isTestSession } from './testAccounts/testAccountClient';
 import { loadPortalData } from './portal/loadPortalData';
 import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
 import { sha256Base64, sha256Hex } from './crypto/hash';
@@ -92,6 +95,10 @@ export interface AppDeps {
   // The write switch for this request (src/writeSwitch.ts), read from KV at most once and only by
   // a route that writes.
   writeGate: () => Promise<BatchSkipContext>;
+  // Sandbox test accounts (src/testAccounts/): their addresses sign in at once, without an email.
+  // Set only by the sandbox and local entrypoints, never production's; `monday` must then be
+  // wrapped in withTestAccounts so the session's test ids resolve.
+  testAccounts?: boolean;
 }
 
 // __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
@@ -166,6 +173,37 @@ function confirmLoginScriptHash(): Promise<string> {
 }
 
 export function createApp(deps: AppDeps) {
+  // A test account's change requests are validated like anyone's, then dropped (see
+  // discardingChangeStore): its dummy item ids must never reach the writer or the board.
+  function changeSinks(donorItemIds: string[], mode: BatchSkipContext['mode']) {
+    if (deps.testAccounts === true && isTestSession(donorItemIds)) {
+      return { store: discardingChangeStore, queue: discardingChangeQueue };
+    }
+    return { store: deps.changeStore, queue: stampedQueue(deps.changeQueue, mode) };
+  }
+
+  // Sandbox test accounts sign in on the spot: a session for the address's personas and a
+  // redirect to the portal, skipping the email, the rate limits and the write switch. Their
+  // addresses are published to staff, so the enumeration guard has nothing to hide. Returns null
+  // for any other address, which then takes the normal magic-link path.
+  async function signInTestAccount(c: Context, locale: Locale): Promise<Response | null> {
+    const body = await c.req.parseBody();
+    const email = typeof body.email === 'string' ? body.email : '';
+    const personas = findTestPersonasByEmail(email, deps.now());
+    if (personas.length === 0) return null;
+    const sessionToken = generateToken();
+    const expiresAt = new Date(deps.now().getTime() + deps.config.auth.sessionTtlHours * 3_600_000).toISOString();
+    await deps.sessionStore.createSession({
+      sessionHash: await sha256Hex(sessionToken),
+      donorItemIds: personas.map((p) => p.id),
+      expiresAt,
+    });
+    setSessionCookie(c, sessionToken, deps);
+    const lang = localeFromMondayLabel(personas[0]!.preferredLanguage) ?? locale;
+    const next = portalReturnPath(body.next);
+    return c.redirect(next !== null ? applyLocaleToPath(next, lang) : `/${lang}/portal`, 303);
+  }
+
   const app = new Hono();
 
   // The one origin this deployment serves (member.bikesiliconvalley.org in production,
@@ -351,6 +389,10 @@ export function createApp(deps: AppDeps) {
 
   app.post('/', async (c) => {
     const locale = detectLocale(c);
+    if (deps.testAccounts === true) {
+      const testLogin = await signInTestAccount(c, locale);
+      if (testLogin !== null) return testLogin;
+    }
     // Every email gets the same page, so the enumeration guard below holds under the switch too.
     if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, false);
     const body = await c.req.parseBody();
@@ -593,7 +635,9 @@ export function createApp(deps: AppDeps) {
     const cards: Record<string, PortalCard> = {};
     if (cardEnabled(deps.config)) {
       await Promise.all(
-        data.donors.map(async (donor) => {
+        // No card for someone with no membership on file (blank Membership Status): a card
+        // would show a member number, no status and "No expiration" to anyone scanning it.
+        data.donors.filter((donor) => donor.membershipStatus.trim() !== '').map(async (donor) => {
           try {
             const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
             const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
@@ -804,8 +848,7 @@ export function createApp(deps: AppDeps) {
 
     const result = await submitChangeRequest(donorItemIds, input, {
       monday: deps.monday,
-      store: deps.changeStore,
-      queue: stampedQueue(deps.changeQueue, mode),
+      ...changeSinks(donorItemIds, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
       employerEnabled: employerAnswerEnabled(deps.config),
@@ -855,8 +898,7 @@ export function createApp(deps: AppDeps) {
 
     const result = await submitPreferences(donorItemIds, input, {
       monday: deps.monday,
-      store: deps.changeStore,
-      queue: stampedQueue(deps.changeQueue, mode),
+      ...changeSinks(donorItemIds, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });

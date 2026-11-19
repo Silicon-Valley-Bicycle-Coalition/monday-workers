@@ -62,6 +62,8 @@ export const fil: Record<TranslationKey, string> = {
   'portal.heading': 'Ang iyong member portal',
   'portal.someRecordsUnavailable': 'Hindi ma-load ngayon ang ilan sa iyong mga record. Pakisubukang muli pagkalipas ng ilang minuto.',
   'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'Katayuan ng membership: {{status}}',
+  'portal.notMember': 'Wala kang membership sa aming talaan.',
   'portal.totalLabel': 'Kabuuang na-donate',
   'portal.tableDate': 'Petsa',
   'portal.tableAmount': 'Halaga',

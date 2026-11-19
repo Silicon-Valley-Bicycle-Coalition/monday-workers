@@ -62,6 +62,8 @@ export const vi: Record<TranslationKey, string> = {
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
   'portal.someRecordsUnavailable': 'Hiện không thể tải một số hồ sơ của bạn. Vui lòng thử lại sau vài phút.',
   'portal.membership': 'Tư cách thành viên: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'Tư cách thành viên: {{status}}',
+  'portal.notMember': 'Chúng tôi không có hồ sơ thành viên của bạn.',
   'portal.totalLabel': 'Tổng số tiền đã quyên góp',
   'portal.tableDate': 'Ngày',
   'portal.tableAmount': 'Số tiền',
