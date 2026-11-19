@@ -19,8 +19,8 @@ async function setup(opts: { attempt?: boolean; failures?: number; claim?: boole
     claimByRequest: vi.fn().mockResolvedValue(opts.claim === false ? null : { donorItemIds: ['d1'], emailHash: EMAIL_HASH }),
   };
   const codeFailureStore: CodeFailureStore = {
-    recordFailure: vi.fn().mockResolvedValue(undefined),
-    countSince: vi.fn().mockResolvedValue(opts.failures ?? 0),
+    reserveFailure: vi.fn().mockResolvedValue((opts.failures ?? 0) >= 10 ? null : 77),
+    releaseFailure: vi.fn().mockResolvedValue(undefined),
   };
   const sessionStore: SessionStore = { createSession: vi.fn().mockResolvedValue(undefined), getSession: vi.fn(), deleteSession: vi.fn() };
   const verifiedEmailStore = { recordVerified: vi.fn().mockResolvedValue(undefined) };
@@ -32,7 +32,7 @@ describe('verifyCode', () => {
   it('returns null and records no failure when there is no usable row', async () => {
     const s = await setup({ attempt: false });
     expect(await verifyCode(REQUEST_ID, CODE, s.deps)).toBeNull();
-    expect(s.codeFailureStore.recordFailure).not.toHaveBeenCalled();
+    expect(s.codeFailureStore.reserveFailure).not.toHaveBeenCalled();
     expect(s.tokenStore.claimByRequest).not.toHaveBeenCalled();
   });
 
@@ -46,15 +46,18 @@ describe('verifyCode', () => {
   it('refuses when the address has 10 failures in the last 24 hours, even with the right code', async () => {
     const s = await setup({ failures: 10 });
     expect(await verifyCode(REQUEST_ID, CODE, s.deps)).toBeNull();
-    expect(s.codeFailureStore.countSince).toHaveBeenCalledWith(EMAIL_HASH, '2026-08-21T12:00:00.000Z');
+    expect(s.codeFailureStore.reserveFailure).toHaveBeenCalledTimes(1);
+    expect(s.codeFailureStore.reserveFailure).toHaveBeenCalledWith(EMAIL_HASH, '2026-08-22T12:00:00.000Z', '2026-08-21T12:00:00.000Z', 10);
+    expect(s.codeFailureStore.releaseFailure).not.toHaveBeenCalled();
     expect(s.tokenStore.claimByRequest).not.toHaveBeenCalled();
+    expect(s.sessionStore.createSession).not.toHaveBeenCalled();
   });
 
-  it('records one failure for a wrong code', async () => {
+  it('keeps its reserved slot for a wrong code', async () => {
     const s = await setup();
     expect(await verifyCode(REQUEST_ID, '000000', s.deps)).toBeNull();
-    expect(s.codeFailureStore.recordFailure).toHaveBeenCalledTimes(1);
-    expect(s.codeFailureStore.recordFailure).toHaveBeenCalledWith(EMAIL_HASH, '2026-08-22T12:00:00.000Z');
+    expect(s.codeFailureStore.reserveFailure).toHaveBeenCalledTimes(1);
+    expect(s.codeFailureStore.releaseFailure).not.toHaveBeenCalled();
     expect(s.tokenStore.claimByRequest).not.toHaveBeenCalled();
   });
 
@@ -62,6 +65,7 @@ describe('verifyCode', () => {
     const s = await setup();
     const token = await verifyCode(REQUEST_ID, CODE, s.deps);
     expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(s.codeFailureStore.releaseFailure).toHaveBeenCalledWith(77);
     expect(s.tokenStore.claimByRequest).toHaveBeenCalledWith(await sha256Hex(REQUEST_ID), '2026-08-22T12:00:00.000Z');
     expect(s.sessionStore.createSession).toHaveBeenCalledTimes(1);
   });

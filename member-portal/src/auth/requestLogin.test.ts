@@ -127,6 +127,7 @@ describe('requestLogin', () => {
     const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.code).toMatch(/^\d{6}$/);
+    expect(emailCall.ttlMinutes).toBe(15);
     expect(row.requestHash).toBe(await sha256Hex(REQUEST_ID));
     expect(row.codeHash).toBe(await sha256Hex(`${REQUEST_ID}:${emailCall.code}`));
     expect(row.emailHash).toBe(await sha256Hex('shared@example.org'));

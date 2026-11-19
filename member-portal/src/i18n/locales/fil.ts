@@ -168,10 +168,9 @@ export const fil: Record<TranslationKey, string> = {
 
   // Login email (src/email/resend.ts)
   'email.subject': 'Ang sign-in code at login link mo para sa SVBC member portal',
-  'email.bodyIntro': 'I-click sa ibaba para mag-log in sa member portal. Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
   'email.loginButton': 'Mag-log in',
   'email.codeIntro': 'Ang sign-in code mo:',
-  'email.codeHint': 'I-type ito sa page kung saan ka humiling na mag-log in, o gamitin ang button sa ibaba. Parehong mag-e-expire sa loob ng 15 minuto at isang beses lang gagana.',
+  'email.codeHint': 'I-type ito sa page kung saan ka humiling na mag-log in, o gamitin ang button sa ibaba. Parehong mag-e-expire sa loob ng {{minutes}} minuto at isang beses lang gagana.',
 
   // Pledges + employer matching gifts
   'title.pledges': 'Ang Iyong Mga Pangakong Donasyon',

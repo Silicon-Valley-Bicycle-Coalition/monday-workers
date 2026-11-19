@@ -25,15 +25,18 @@ export async function verifyCode(requestId: string, code: string, deps: VerifyCo
     return null;
   }
 
+  // Reserve a slot in the address's daily failure budget before comparing, in one statement, so
+  // parallel guesses can't all pass a count first. A wrong guess keeps its slot; a right one gives it back.
   const since = new Date(now.getTime() - 24 * 3_600_000).toISOString();
-  if ((await deps.codeFailureStore.countSince(attempt.emailHash, since)) >= deps.codeFailuresPerAddressDaily) {
+  const slot = await deps.codeFailureStore.reserveFailure(attempt.emailHash, nowISO, since, deps.codeFailuresPerAddressDaily);
+  if (slot === null) {
     return null;
   }
 
   if (!(await secretsMatch(await sha256Hex(`${requestId}:${code}`), attempt.codeHash))) {
-    await deps.codeFailureStore.recordFailure(attempt.emailHash, nowISO);
     return null;
   }
+  await deps.codeFailureStore.releaseFailure(slot);
 
   const consumed = await deps.tokenStore.claimByRequest(requestHash, nowISO);
   if (consumed === null) {

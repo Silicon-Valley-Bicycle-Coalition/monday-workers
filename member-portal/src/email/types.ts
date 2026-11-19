@@ -5,6 +5,8 @@ export interface SendLoginEmailParams {
   loginUrl: string;
   // The 6-digit sign-in code, shown before the link.
   code: string;
+  // How long the link and code last, for the email's expiry line.
+  ttlMinutes: number;
   locale: Locale;
 }
 

@@ -168,10 +168,9 @@ export const zhHans: Record<TranslationKey, string> = {
 
   // Login email (src/email/resend.ts)
   'email.subject': '您的 SVBC 捐赠者门户登录码和链接',
-  'email.bodyIntro': '点击下方链接登录捐赠者门户。此链接很快会失效，且只能使用一次。',
   'email.loginButton': '登录',
   'email.codeIntro': '您的登录码：',
-  'email.codeHint': '请在您申请登录的页面输入此码，或使用下方按钮。两者都将在 15 分钟后失效，且只能使用一次。',
+  'email.codeHint': '请在您申请登录的页面输入此码，或使用下方按钮。两者都将在 {{minutes}} 分钟后失效，且只能使用一次。',
 
   // Pledges + employer matching gifts
   'title.pledges': '您的认捐',

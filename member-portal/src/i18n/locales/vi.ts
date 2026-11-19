@@ -168,10 +168,9 @@ export const vi: Record<TranslationKey, string> = {
 
   // Login email (src/email/resend.ts)
   'email.subject': 'Mã đăng nhập và liên kết đăng nhập cổng thông tin nhà tài trợ SVBC của bạn',
-  'email.bodyIntro': 'Nhấp vào bên dưới để đăng nhập vào cổng thông tin nhà tài trợ. Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
   'email.loginButton': 'Đăng nhập',
   'email.codeIntro': 'Mã đăng nhập của bạn:',
-  'email.codeHint': 'Hãy nhập mã trên trang bạn đã yêu cầu đăng nhập, hoặc dùng nút bên dưới. Cả hai đều hết hạn sau 15 phút và chỉ dùng được một lần.',
+  'email.codeHint': 'Hãy nhập mã trên trang bạn đã yêu cầu đăng nhập, hoặc dùng nút bên dưới. Cả hai đều hết hạn sau {{minutes}} phút và chỉ dùng được một lần.',
 
   // Pledges + employer matching gifts
   'title.pledges': 'Cam Kết Quyên Góp Của Bạn',
