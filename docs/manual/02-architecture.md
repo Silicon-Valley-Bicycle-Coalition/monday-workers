@@ -217,9 +217,13 @@ in `scripts/mark-read-only-columns.mjs` and run that script.
 - **Per-IP rate limiting.** Every public route checks a `REQUEST_RATE_LIMITER` binding before it
   does anything else. Webhook receivers allow 60 requests a minute; the portal and calendars
   allow 120. Each limiter needs a unique `namespace_id` (CI: `rate-limit-namespaces`).
-- **CPU cap.** `limits.cpu_ms` is 100 ms per invocation for most Workers. That is far above
-  normal use and far below Workers Paid's 30-second default. Two exceptions: `monday-backup`
-  (300,000 ms) and `donation-rollups` (30,000 ms).
+- **CPU cap.** Every Worker sets `limits.cpu_ms`, so a runaway invocation can't bill Workers
+  Paid's 30-second default. Webhook receivers and the portal use 100 ms, far above their normal
+  use. Cron Workers that do real work per run are set higher, sized to measured use, from 500 ms
+  (`report-digests`) and 1,000 ms (`mailchimp-sync`, `contact-roles`, `people-reclassification`,
+  `sync-watchdog`) up to 30,000 ms (`donation-rollups`, `dtd-sync`, `impact-attribution`) and
+  300,000 ms (`monday-backup`, `member-map`). Appendix A has each value. A CPU-limit kill can't
+  be caught, so raise a cap when the dashboard's CPU metrics approach it.
 - **Preview URLs off** (`preview_urls: false`) everywhere, so branch uploads can't run with
   production bindings (CI: `preview-urls`).
 - **No email addresses in logs.** Workers Issues forwards the logs around an error to Slack, so

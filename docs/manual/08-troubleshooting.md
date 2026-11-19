@@ -94,7 +94,7 @@ modes".
 
 | Limit | Effect | Mitigation already in place |
 |---|---|---|
-| Worker CPU per invocation (`limits.cpu_ms`, usually 100 ms) | A kill can't be caught, and shows as `exceededCpu` | Raised for `monday-backup` and `donation-rollups`. Raise per Worker if metrics justify it. |
+| Worker CPU per invocation (`limits.cpu_ms`, 100 ms to 300,000 ms by Worker) | A kill can't be caught, and shows as `exceededCpu` | Each cap is sized to measured use (Appendix A). Raise one when dashboard CPU metrics approach it. |
 | Queue consumer wall time (15 min per batch) | Long batches die mid-way | Outage breaker, small batches |
 | Subrequests per invocation | Large fan-outs fail | Batching and checkpoints |
 | Queue retention (14 days, set by `flags.mjs retention`) | Older messages expire unseen | DLQ consumers record dead letters in D1 |
