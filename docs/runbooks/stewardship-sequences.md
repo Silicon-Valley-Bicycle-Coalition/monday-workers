@@ -19,14 +19,26 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
 
 ## 1. Prerequisites (staff)
 
-- [ ] **Felicia connects her Gmail** in Monday → Emails & Activities. The emails are signed by her;
-      Sequences can only send from a connected mailbox, and a Google Group can't be connected
-      (`eventbrite-sync/docs/class-emails-setup.md`).
-- [ ] **People board can take a Sequence.** Sequences only connect to boards in a monday CRM
-      workspace. Production People is in **Donors & Contacts** (`18201685`); confirm the Sequence
-      editor's "Connect a board" picker offers it. If not, that's a blocker to raise before going on.
-- [ ] Clarrissa's answers: keep Welcome #2 (open comment in the doc), and the accountant's word on
-      a deductibility line for the renewal emails, which mention Donor Perks.
+- [ ] **`membership@bikesiliconvalley.org` is a mailbox, connected in Monday.** Felicia asked on
+      2026-11-19 that the emails come from it, not from a staff member, and Clarrissa chose Monday
+      Sequences over Mailchimp Journeys for them the same day. Sequences only send from a connected
+      mailbox, and **a Google Group can't be connected** — that blocked `learn@` for class emails
+      (`eventbrite-sync/docs/class-emails-setup.md`). A Gmail "Send mail as" alias is no substitute:
+      tested 2026-11-19, a Sequence's **Send emails as** picker lists only connected accounts, not
+      their send-as aliases. `membership@` is a Google Group today, so the team sees replies while
+      Felicia is out. To convert it, after hours (mail to it bounces during the switch):
+      1. Google Admin: rename the group (e.g. `membership-team@`), then create the user
+         `membership@` in the **Staff** OU. Free: Google Workspace for Nonprofits, 42 of 300
+         licenses assigned on 2026-11-19.
+      2. Gmail settings for `membership@`: delegate it to Felicia and a backup (mail delegation is
+         on for the domain; delegating to a group is off, so add people one by one). Under
+         **Sender information**, choose **Show this address only**, so donors don't see "sent by
+         Felicia". Optionally forward a copy to `membership-team@` so the team keeps seeing it.
+      3. Monday → Emails & Activities: sign in as `membership@` and connect it.
+- [x] **People board can take a Sequence.** Checked 2026-11-19: the "Connect a board" picker offers
+      production People (Donors & Contacts, `18201685`) and sandbox People.
+- [x] Welcome #2 stays (Felicia, 2026-11-19).
+- [ ] The accountant's word on a deductibility line for the renewal emails, which mention Donor Perks.
 
 ## 2. Five Sequences (UI)
 
@@ -57,7 +69,7 @@ For each:
   - [ ] Renewal day-of: "Sillicon" → "Silicon".
 - [ ] "Renew Your Gift Today" and the welcome-email links as buttons if the editor has them, else
       bold links.
-- [ ] **Sender: Felicia's mailbox.** **Send window: Pacific**, the default 7:00 AM–5:00 PM. The Worker
+- [ ] **Sender: `membership@bikesiliconvalley.org`.** **Send window: Pacific**, the default 7:00 AM–5:00 PM. The Worker
       sets labels at 07:00 Pacific, so the emails go out that morning.
 - [ ] **Unsubscribe link on, global unsubscribe list on.** These are fundraising emails. Keep
       removal on reply, bounce and auto-reply.
