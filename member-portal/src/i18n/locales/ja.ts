@@ -21,7 +21,6 @@ export const ja: Record<TranslationKey, string> = {
   'title.lettersList': '税務書類',
   'title.changeRequest': '変更のリクエスト',
   'title.verify': '会員資格の確認',
-  'title.events': 'イベント参加登録',
 
   // Login
   'login.heading': '寄付者ポータル',
@@ -51,7 +50,6 @@ export const ja: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '現在、お客様の会員証を読み込めませんでした。数分後に再度お試しください。',
   'error.cardRegenerateFailed': '現在、会員証を再発行できませんでした。数分後に再度お試しください。',
   'error.verifyLoadFailed': '現在、この会員証を確認できませんでした。数分後に再度お試しください。',
-  'error.eventsLoadFailed': '現在、イベント参加登録を読み込めません。数分後にもう一度お試しください。',
   'error.generic': 'エラーが発生しました。もう一度ログインしてください。',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': '一時的にご利用いただけません',
@@ -59,9 +57,7 @@ export const ja: Record<TranslationKey, string> = {
   'unavailable.body': 'システムを更新中のため、現在この機能はご利用いただけません。しばらくしてからもう一度お試しください。',
 
   // Portal
-  'portal.heading': '寄付者ポータル',
   'portal.someRecordsUnavailable': '一部の記録を現在読み込めませんでした。数分後にもう一度お試しください。',
-  'portal.membership': '会員資格: {{status}}（{{tier}}）',
   'portal.totalLabel': '寄付合計額',
   'portal.tableDate': '日付',
   'portal.tableAmount': '金額',
@@ -92,7 +88,6 @@ export const ja: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'カレンダーに追加',
   'portal.discountsHeading': '自転車店の割引',
   'portal.taxDocumentsLink': '税務書類',
-  'portal.eventsLink': 'イベント参加登録',
   'portal.changeRequestLink': '登録情報の変更をリクエスト',
   'portal.logout': 'ログアウト',
 
@@ -108,11 +103,9 @@ export const ja: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'この公式書類は英語で発行されます。',
 
   // Event registrations
-  'events.listHeading': 'イベント参加登録',
   'events.tabLabel': 'イベント',
   'events.upcomingHeading': '今後の予定',
   'events.pastHeading': '過去',
-  'events.noneYet': '{{name}}さんのイベント参加登録はまだありません。',
   'events.emptyMessage': 'まだイベントに参加登録されていません。',
   'events.findEventsButton': '今後のイベントを探す',
   'events.tableEvent': 'イベント',
@@ -120,8 +113,6 @@ export const ja: Record<TranslationKey, string> = {
   'events.tableStatus': 'ステータス',
   'events.statusAttended': '参加済み',
   'events.statusRegistered': '登録済み',
-  'events.backToPortal': 'ポータルに戻る',
-  'events.unavailable': 'ポータルでのイベント参加登録の表示はまだご利用いただけません。後日改めてご確認ください。',
 
   // Change request
   'changeRequest.formHeading': '登録情報の変更をリクエスト',
@@ -223,6 +214,9 @@ export const ja: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}}年分は1月にご用意',
   'home.doorHintActivity': '申し込みと活動時間',
   'home.doorHintInfo': '住所、言語、お送りする内容',
+  // Door pages (src/doors/)
+  'door.home': 'ホーム',
+  'door.activityEmpty': 'ここに表示する内容はまだありません。SVBCのイベントやボランティアに申し込んだ後にもう一度ご確認ください。',
   'verify.heading': '会員資格の確認',
   'verify.disclaimer': 'この情報は当団体の記録からリアルタイムで取得されています。',
   'verify.notValid': 'この会員証は無効です。再発行されたか、すでに有効でなくなっている可能性があります。',

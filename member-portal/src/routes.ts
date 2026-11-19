@@ -26,6 +26,9 @@ import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
 import { loadHomeData } from './home/loadHomeData';
 import { homeView } from './home/homeView';
+import { cardDoorView, loadCardDoor } from './doors/card';
+import { givingDoorView, loadGivingDoor } from './doors/giving';
+import { activityDoorView, loadActivityDoor } from './doors/activity';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -34,7 +37,6 @@ import {
   configuredPrefFields,
   lettersEnabled,
   cardEnabled,
-  eventsEnabled,
   funraiseLinks,
   pledgesEnabled,
   matchingGiftsSearchEnabled,
@@ -50,8 +52,6 @@ import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
-import { loadEventRegistrations } from './events/loadEventRegistrations';
-import { eventsListView, eventsUnavailableView } from './events/eventViews';
 import { buildCardData } from './card/loadCardData';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
@@ -305,7 +305,7 @@ export function createApp(deps: AppDeps) {
   // tree (/<locale>/portal...) is accepted, parsed the same way as the language switcher's `to`
   // (sameOriginRedirectPath, issue GL#32) — so it can't point off-origin, nor at /auth/callback,
   // /lang or anything else that acts on arrival. Anything else is dropped (null), and sign-in
-  // lands on the dashboard as before.
+  // lands on the home page as before.
   function portalReturnPath(raw: unknown): string | null {
     if (typeof raw !== 'string' || raw.length === 0) return null;
     const target = sameOriginRedirectPath(raw);
@@ -316,7 +316,7 @@ export function createApp(deps: AppDeps) {
   }
 
   // Every session-gated route's "no session" answer. A GET carries the page as `next`, unless
-  // it's the dashboard (where sign-in lands anyway); a POST can't be replayed, so it doesn't.
+  // it's the home page (where sign-in lands anyway); a POST can't be replayed, so it doesn't.
   function signInRedirect(c: Context) {
     if (c.req.method !== 'GET') return c.redirect('/');
     const url = new URL(c.req.url);
@@ -539,7 +539,7 @@ export function createApp(deps: AppDeps) {
 
     setSessionCookie(c, sessionToken, deps);
     // 303: the browser follows a POST's redirect with a GET. The link's lang wins over the
-    // locale segment `next` was captured with, as it does for the dashboard.
+    // locale segment `next` was captured with, as it does for the home page.
     const next = portalReturnPath(body.next);
     if (next !== null) return c.redirect(lang === null ? next : applyLocaleToPath(next, lang), 303);
     return c.redirect(`/${lang ?? DEFAULT_LOCALE}/portal`, 303);
@@ -566,6 +566,35 @@ export function createApp(deps: AppDeps) {
     // renewal link is configured.
     const renewUrl = funraiseLinks(deps.config).renewMembershipUrl ?? ORG_DONATE_URL;
     return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), homeView(data, locale, renewUrl), locale, { authenticated: true }));
+  });
+
+  // The doors (src/doors/): each loads only its own section. A person whose read fails is left out
+  // with a note; with no one loaded the read throws to onError's error page, as home does.
+  app.get('/:locale/portal/card', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return signInRedirect(c);
+    const data = await loadCardDoor(donorItemIds, deps);
+    c.header('Cache-Control', NO_STORE);
+    return c.html(page(t(locale, 'home.doorCard') + ' — ' + t(locale, 'site.title'), cardDoorView(data, locale), locale, { authenticated: true }));
+  });
+
+  app.get('/:locale/portal/giving', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return signInRedirect(c);
+    const data = await loadGivingDoor(donorItemIds, deps, locale);
+    c.header('Cache-Control', NO_STORE);
+    return c.html(page(t(locale, 'home.doorGiving') + ' — ' + t(locale, 'site.title'), givingDoorView(data, locale), locale, { authenticated: true }));
+  });
+
+  app.get('/:locale/portal/activity', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return signInRedirect(c);
+    const data = await loadActivityDoor(donorItemIds, deps);
+    c.header('Cache-Control', NO_STORE);
+    return c.html(page(t(locale, 'home.doorActivity') + ' — ' + t(locale, 'site.title'), activityDoorView(data, locale), locale, { authenticated: true }));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.
@@ -639,30 +668,9 @@ export function createApp(deps: AppDeps) {
     return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale, { authenticated: true }));
   });
 
-  // Back-compat: same reasoning as the bare /portal redirect above.
-  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/events`));
-
-  app.get('/:locale/portal/events', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
-
-    c.header('Cache-Control', NO_STORE);
-    if (!eventsEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsUnavailableView(locale), locale, { authenticated: true }));
-    }
-
-    let listings;
-    try {
-      listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
-    } catch (err) {
-      // Same reasoning as the letters routes above: a Monday read failure isn't an auth
-      // problem, so it shouldn't fall through to the global onError's login-focused copy.
-      console.error(`member-portal events list failed: ${errorText(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.eventsLoadFailed', locale), locale, { authenticated: true }), 500);
-    }
-    return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsListView(listings, locale), locale, { authenticated: true }));
-  });
+  // The events page became the activity door. Signed in or not: the door handles sign-in.
+  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/activity`));
+  app.get('/:locale/portal/events', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/activity`));
 
   // Back-compat: same reasoning as the bare /portal redirect above.
   app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/change-request`));
@@ -871,12 +879,10 @@ export function createApp(deps: AppDeps) {
     return c.html(matchingGiftsSearchDocument(deps.config.matchingGifts.doubleTheDonationPublicKey as string, locale));
   });
 
-  // The membership card used to be its own page — it's now a dashboard widget (see GET
-  // /:locale/portal above), so both the bare and locale-prefixed forms just redirect a stale
-  // link/bookmark to the dashboard instead of 404ing, matching this route table's existing
-  // back-compat convention (see the bare /portal redirect above).
-  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
-  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal`));
+  // The old per-card page: a stale link or bookmark lands on the card door, which shows every card
+  // the session covers, instead of 404ing.
+  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/card`));
+  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/card`));
 
   // No bare-POST redirect for /regenerate — same reasoning as the change-request POST above: the
   // form action is always rendered locale-prefixed already, so there is no unprefixed submitter.
@@ -885,19 +891,17 @@ export function createApp(deps: AppDeps) {
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
 
-    // No dedicated "unavailable" page to render for this anymore (the card is a dashboard
-    // widget, not a page) — the widget and its regenerate button only ever render when
-    // cardEnabled() is already true, so a POST arriving with it false is a stale form/replay.
-    // Just send them back to the dashboard rather than a full error page.
+    // The regenerate button only renders while cardEnabled() is true, so a POST arriving with it
+    // false is a stale form or a replay: back to the card door rather than a full error page.
     if (!cardEnabled(deps.config)) {
-      return c.redirect(`/${locale}/portal`);
+      return c.redirect(`/${locale}/portal/card`);
     }
 
     const donorItemId = c.req.param('donorItemId');
     if (!donorItemIds.includes(donorItemId)) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale, { authenticated: true }), 404);
     }
-    // The card the dashboard already shows stays valid; only a new one waits for the switch.
+    // The card already shown stays valid; only a new one waits for the switch.
     if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, true);
 
     const now = deps.now().toISOString();
@@ -930,9 +934,9 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // Back to the dashboard, not a per-card page — the card widget there picks up the freshly
-    // regenerated token on next render (getOrCreateCardToken reads whatever is currently active).
-    return c.redirect(`/${locale}/portal`);
+    // Back to the card door, which picks up the freshly regenerated token on render
+    // (getOrCreateCardToken reads whatever is currently active).
+    return c.redirect(`/${locale}/portal/card`);
   });
 
   // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR

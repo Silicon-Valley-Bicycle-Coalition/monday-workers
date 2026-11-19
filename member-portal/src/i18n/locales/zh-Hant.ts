@@ -21,7 +21,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'title.lettersList': '稅務文件',
   'title.changeRequest': '申請變更',
   'title.verify': '會員驗證',
-  'title.events': '您的活動報名',
 
   // Login
   'login.heading': '捐款者入口網站',
@@ -51,7 +50,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '我們目前無法載入您的會員卡，請稍後幾分鐘再試。',
   'error.cardRegenerateFailed': '我們目前無法重新產生您的會員卡，請稍後幾分鐘再試。',
   'error.verifyLoadFailed': '我們目前無法驗證此卡片，請稍後幾分鐘再試。',
-  'error.eventsLoadFailed': '目前無法載入您的活動報名記錄。請幾分鐘後再試。',
   'error.generic': '發生問題，請重新登入。',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': '暫時無法使用',
@@ -59,9 +57,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'unavailable.body': '我們正在更新系統，此功能暫時無法使用。請稍後再試。',
 
   // Portal
-  'portal.heading': '您的捐款者入口網站',
   'portal.someRecordsUnavailable': '暫時無法載入您的部分記錄，請於幾分鐘後再試。',
-  'portal.membership': '會員狀態：{{status}}（{{tier}}）',
   'portal.totalLabel': '捐款總額',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金額',
@@ -92,7 +88,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'portal.addToCalendar': '加入行事曆',
   'portal.discountsHeading': '單車店優惠',
   'portal.taxDocumentsLink': '稅務文件',
-  'portal.eventsLink': '活動報名',
   'portal.changeRequestLink': '申請變更您的資料',
   'portal.logout': '登出',
 
@@ -108,11 +103,9 @@ export const zhHant: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': '本正式文件以英文發出。',
 
   // Event registrations
-  'events.listHeading': '您的活動報名',
   'events.tabLabel': '活動',
   'events.upcomingHeading': '即將舉行',
   'events.pastHeading': '過往',
-  'events.noneYet': '{{name}} 目前還沒有活動報名記錄。',
   'events.emptyMessage': '您目前還沒有報名任何活動。',
   'events.findEventsButton': '尋找近期活動',
   'events.tableEvent': '活動',
@@ -120,8 +113,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'events.tableStatus': '狀態',
   'events.statusAttended': '已出席',
   'events.statusRegistered': '已報名',
-  'events.backToPortal': '返回您的入口網站',
-  'events.unavailable': '入口網站中的活動報名功能尚未開放。請稍後再來查看。',
 
   // Change request
   'changeRequest.formHeading': '申請變更您的資料',
@@ -223,6 +214,9 @@ export const zhHant: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} 年信函將於一月提供',
   'home.doorHintActivity': '您的報名與服務時數',
   'home.doorHintInfo': '地址、語言、我們寄送的內容',
+  // Door pages (src/doors/)
+  'door.home': '首頁',
+  'door.activityEmpty': '這裡暫時沒有內容。報名參加 SVBC 活動或志工服務後再來看看。',
   'verify.heading': '會員驗證',
   'verify.disclaimer': '此資訊為即時從我們的記錄中擷取。',
   'verify.notValid': '此卡片無效，可能已重新產生或已不再生效。',

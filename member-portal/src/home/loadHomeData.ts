@@ -4,9 +4,7 @@
 import type { AppDeps } from '../routes';
 import type { MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
-import { buildCardData } from '../card/loadCardData';
-import { generateQrSvg } from '../card/qr';
-import { getOrCreateCardToken } from '../card/getOrCreateCardToken';
+import { cardFor } from '../doors/card';
 import { loadLetterData } from '../letters/loadLetterData';
 import { cardEnabled, eventsEnabled, lettersEnabled, volunteerHistoryEnabled } from '../config';
 import type { Locale } from '../i18n/locales';
@@ -41,16 +39,6 @@ function firstNameOf(name: string): string {
 
 export function pluralKey<K extends string>(locale: Locale, count: number, one: K, other: K): K {
   return new Intl.PluralRules(locale).select(count) === 'one' ? one : other;
-}
-
-async function cardFor(donor: MemberPortalData, deps: HomeDeps): Promise<PortalCard | null> {
-  try {
-    const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
-    return { data: buildCardData(donor), qrSvg: generateQrSvg(`${deps.config.auth.portalBaseUrl}/verify/${token}`) };
-  } catch (err) {
-    console.error(`member-portal home card failed for donor "${donor.id}": ${errorText(err)}`);
-    return null;
-  }
 }
 
 export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, locale: Locale): Promise<HomeData> {

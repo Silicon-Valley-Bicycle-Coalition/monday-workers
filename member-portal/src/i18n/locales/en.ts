@@ -19,7 +19,6 @@ export const en = {
   'title.lettersList': 'Tax Documents',
   'title.changeRequest': 'Request a Change',
   'title.verify': 'Membership Verification',
-  'title.events': 'Your Event Registrations',
   'title.pledges': 'Your Pledges',
   'title.matchingGifts': 'Matching Gifts',
 
@@ -54,7 +53,6 @@ export const en = {
   'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
   'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
-  'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.changeRequestLoadFailed': 'We could not load your contact details right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
@@ -64,9 +62,7 @@ export const en = {
   'unavailable.body': 'We’re updating our systems, so this isn’t available right now. Please try again in a little while.',
 
   // Portal
-  'portal.heading': 'Your member portal',
   'portal.someRecordsUnavailable': 'Some of your records could not be loaded right now. Please try again in a few minutes.',
-  'portal.membership': 'Membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donated',
   'portal.tableDate': 'Date',
   'portal.tableAmount': 'Amount',
@@ -97,7 +93,6 @@ export const en = {
   'portal.addToCalendar': 'Add to calendar',
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
-  'portal.eventsLink': 'Event registrations',
   'portal.changeRequestLink': 'Request a change to your details',
   'portal.pledgesLink': 'Your pledges',
   'portal.matchingGiftsLink': 'Employer matching gifts',
@@ -115,11 +110,9 @@ export const en = {
   'letters.englishOnlyNote': 'This official document is issued in English.',
 
   // Event registrations
-  'events.listHeading': 'Your event registrations',
   'events.tabLabel': 'Events',
   'events.upcomingHeading': 'Upcoming',
   'events.pastHeading': 'Past',
-  'events.noneYet': 'No event registrations on file yet for {{name}}.',
   'events.emptyMessage': "You have not registered for any events yet.",
   'events.findEventsButton': 'Find Upcoming Events',
   'events.tableEvent': 'Event',
@@ -127,8 +120,6 @@ export const en = {
   'events.tableStatus': 'Status',
   'events.statusAttended': 'Attended',
   'events.statusRegistered': 'Registered',
-  'events.backToPortal': 'Back to your portal',
-  'events.unavailable': 'Event registrations are not available yet in the portal. Please check back soon.',
 
   // Change request
   'changeRequest.formHeading': 'Request a change to your details',
@@ -230,6 +221,9 @@ export const en = {
   'home.doorHintLettersLater': '{{year}} ready in January',
   'home.doorHintActivity': 'Your sign-ups and hours',
   'home.doorHintInfo': 'Address, language, what we send',
+  // Door pages (src/doors/)
+  'door.home': 'Home',
+  'door.activityEmpty': 'Nothing to show here yet. Check back after you sign up for an SVBC event or volunteer shift.',
   'verify.heading': 'Membership verification',
   'verify.disclaimer': 'This information is fetched live from our records.',
   'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',

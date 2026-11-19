@@ -21,7 +21,6 @@ export const vi: Record<TranslationKey, string> = {
   'title.lettersList': 'Tài liệu thuế',
   'title.changeRequest': 'Yêu cầu thay đổi',
   'title.verify': 'Xác minh tư cách thành viên',
-  'title.events': 'Đăng ký sự kiện của bạn',
 
   // Login
   'login.heading': 'Cổng thông tin Nhà tài trợ',
@@ -51,7 +50,6 @@ export const vi: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Hiện chúng tôi không thể tải thẻ của bạn. Vui lòng thử lại sau vài phút.',
   'error.cardRegenerateFailed': 'Hiện chúng tôi không thể tạo lại thẻ của bạn. Vui lòng thử lại sau vài phút.',
   'error.verifyLoadFailed': 'Hiện chúng tôi không thể xác minh thẻ này. Vui lòng thử lại sau vài phút.',
-  'error.eventsLoadFailed': 'Hiện không thể tải các đăng ký sự kiện của bạn. Vui lòng thử lại sau vài phút.',
   'error.generic': 'Đã xảy ra lỗi. Vui lòng thử đăng nhập lại.',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': 'Tạm Thời Không Khả Dụng',
@@ -59,9 +57,7 @@ export const vi: Record<TranslationKey, string> = {
   'unavailable.body': 'Chúng tôi đang cập nhật hệ thống nên chức năng này tạm thời chưa dùng được. Vui lòng thử lại sau ít phút.',
 
   // Portal
-  'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
   'portal.someRecordsUnavailable': 'Hiện không thể tải một số hồ sơ của bạn. Vui lòng thử lại sau vài phút.',
-  'portal.membership': 'Tư cách thành viên: {{status}} ({{tier}})',
   'portal.totalLabel': 'Tổng số tiền đã quyên góp',
   'portal.tableDate': 'Ngày',
   'portal.tableAmount': 'Số tiền',
@@ -92,7 +88,6 @@ export const vi: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'Thêm vào lịch',
   'portal.discountsHeading': 'Ưu đãi tại cửa hàng xe đạp',
   'portal.taxDocumentsLink': 'Tài liệu thuế',
-  'portal.eventsLink': 'Đăng ký sự kiện',
   'portal.changeRequestLink': 'Yêu cầu thay đổi thông tin của bạn',
   'portal.logout': 'Đăng xuất',
 
@@ -108,11 +103,9 @@ export const vi: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'Tài liệu chính thức này được phát hành bằng tiếng Anh.',
 
   // Event registrations
-  'events.listHeading': 'Đăng ký sự kiện của bạn',
   'events.tabLabel': 'Sự kiện',
   'events.upcomingHeading': 'Sắp diễn ra',
   'events.pastHeading': 'Đã diễn ra',
-  'events.noneYet': 'Chưa có đăng ký sự kiện nào được ghi nhận cho {{name}}.',
   'events.emptyMessage': 'Bạn chưa đăng ký sự kiện nào.',
   'events.findEventsButton': 'Tìm sự kiện sắp diễn ra',
   'events.tableEvent': 'Sự kiện',
@@ -120,8 +113,6 @@ export const vi: Record<TranslationKey, string> = {
   'events.tableStatus': 'Trạng thái',
   'events.statusAttended': 'Đã tham dự',
   'events.statusRegistered': 'Đã đăng ký',
-  'events.backToPortal': 'Quay lại cổng thông tin của bạn',
-  'events.unavailable': 'Tính năng đăng ký sự kiện chưa khả dụng trên cổng thông tin. Vui lòng quay lại sau.',
 
   // Change request
   'changeRequest.formHeading': 'Yêu cầu thay đổi thông tin của bạn',
@@ -223,6 +214,9 @@ export const vi: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': 'Thư năm {{year}} có vào tháng Một',
   'home.doorHintActivity': 'Các đăng ký và số giờ của bạn',
   'home.doorHintInfo': 'Địa chỉ, ngôn ngữ, những gì chúng tôi gửi',
+  // Door pages (src/doors/)
+  'door.home': 'Trang chủ',
+  'door.activityEmpty': 'Chưa có gì để hiển thị ở đây. Hãy quay lại sau khi bạn đăng ký một sự kiện hoặc ca tình nguyện của SVBC.',
   'verify.heading': 'Xác minh tư cách thành viên',
   'verify.disclaimer': 'Thông tin này được lấy trực tiếp từ hồ sơ của chúng tôi theo thời gian thực.',
   'verify.notValid': 'Thẻ này không hợp lệ. Thẻ có thể đã được tạo lại hoặc không còn hoạt động.',

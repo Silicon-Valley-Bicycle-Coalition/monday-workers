@@ -21,7 +21,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.lettersList': '税务文件',
   'title.changeRequest': '申请变更',
   'title.verify': '会员验证',
-  'title.events': '您的活动报名',
 
   // Login
   'login.heading': '捐赠者门户',
@@ -51,7 +50,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '我们暂时无法加载您的会员卡，请几分钟后再试。',
   'error.cardRegenerateFailed': '我们暂时无法重新生成您的会员卡，请几分钟后再试。',
   'error.verifyLoadFailed': '我们暂时无法验证此卡片，请几分钟后再试。',
-  'error.eventsLoadFailed': '目前无法加载您的活动报名记录。请几分钟后再试。',
   'error.generic': '出现问题，请重新登录。',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': '暂时无法使用',
@@ -59,9 +57,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'unavailable.body': '我们正在更新系统，此功能暂时无法使用。请稍后再试。',
 
   // Portal
-  'portal.heading': '您的捐赠者门户',
   'portal.someRecordsUnavailable': '暂时无法加载您的部分记录，请几分钟后重试。',
-  'portal.membership': '会员状态：{{status}}（{{tier}}）',
   'portal.totalLabel': '捐款总额',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金额',
@@ -92,7 +88,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'portal.addToCalendar': '添加到日历',
   'portal.discountsHeading': '自行车店折扣',
   'portal.taxDocumentsLink': '税务文件',
-  'portal.eventsLink': '活动报名',
   'portal.changeRequestLink': '申请变更您的信息',
   'portal.logout': '退出登录',
 
@@ -108,11 +103,9 @@ export const zhHans: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': '此正式文件以英文出具。',
 
   // Event registrations
-  'events.listHeading': '您的活动报名',
   'events.tabLabel': '活动',
   'events.upcomingHeading': '即将举行',
   'events.pastHeading': '往期',
-  'events.noneYet': '{{name}} 目前还没有活动报名记录。',
   'events.emptyMessage': '您还没有报名任何活动。',
   'events.findEventsButton': '查找近期活动',
   'events.tableEvent': '活动',
@@ -120,8 +113,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'events.tableStatus': '状态',
   'events.statusAttended': '已出席',
   'events.statusRegistered': '已报名',
-  'events.backToPortal': '返回您的门户',
-  'events.unavailable': '门户中的活动报名功能尚未开放。请稍后再来查看。',
 
   // Change request
   'changeRequest.formHeading': '申请变更您的信息',
@@ -223,6 +214,9 @@ export const zhHans: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} 年信函将于一月提供',
   'home.doorHintActivity': '您的报名与服务时数',
   'home.doorHintInfo': '地址、语言、我们发送的内容',
+  // Door pages (src/doors/)
+  'door.home': '首页',
+  'door.activityEmpty': '这里暂时没有内容。报名参加 SVBC 活动或志愿者工作后再来看看。',
   'verify.heading': '会员验证',
   'verify.disclaimer': '此信息为实时从我们的记录中获取。',
   'verify.notValid': '此卡片无效，可能已被重新生成或已不再有效。',

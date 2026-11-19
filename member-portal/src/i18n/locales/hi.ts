@@ -21,7 +21,6 @@ export const hi: Record<TranslationKey, string> = {
   'title.lettersList': 'टैक्स दस्तावेज़',
   'title.changeRequest': 'बदलाव का अनुरोध करें',
   'title.verify': 'सदस्यता सत्यापन',
-  'title.events': 'आपके इवेंट पंजीकरण',
 
   // Login
   'login.heading': 'डोनर पोर्टल',
@@ -51,7 +50,6 @@ export const hi: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'हम अभी आपका कार्ड लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.cardRegenerateFailed': 'हम अभी आपका कार्ड फिर से जनरेट नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.verifyLoadFailed': 'हम अभी इस कार्ड को सत्यापित नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
-  'error.eventsLoadFailed': 'हम अभी आपके इवेंट पंजीकरण लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से प्रयास करें।',
   'error.generic': 'कुछ गड़बड़ हो गई। कृपया फिर से लॉग इन करने की कोशिश करें।',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': 'अस्थायी रूप से उपलब्ध नहीं',
@@ -59,9 +57,7 @@ export const hi: Record<TranslationKey, string> = {
   'unavailable.body': 'हम अपने सिस्टम अपडेट कर रहे हैं, इसलिए यह अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर से कोशिश करें।',
 
   // Portal
-  'portal.heading': 'आपका डोनर पोर्टल',
   'portal.someRecordsUnavailable': 'आपके कुछ रिकॉर्ड अभी लोड नहीं हो सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
-  'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
   'portal.totalLabel': 'कुल दान',
   'portal.tableDate': 'तारीख़',
   'portal.tableAmount': 'राशि',
@@ -92,7 +88,6 @@ export const hi: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'कैलेंडर में जोड़ें',
   'portal.discountsHeading': 'बाइक शॉप छूट',
   'portal.taxDocumentsLink': 'टैक्स दस्तावेज़',
-  'portal.eventsLink': 'इवेंट पंजीकरण',
   'portal.changeRequestLink': 'अपनी जानकारी में बदलाव का अनुरोध करें',
   'portal.logout': 'लॉग आउट करें',
 
@@ -108,11 +103,9 @@ export const hi: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'यह आधिकारिक दस्तावेज़ अंग्रेज़ी में जारी किया जाता है।',
 
   // Event registrations
-  'events.listHeading': 'आपके इवेंट पंजीकरण',
   'events.tabLabel': 'इवेंट',
   'events.upcomingHeading': 'आगामी',
   'events.pastHeading': 'पिछले',
-  'events.noneYet': '{{name}} के लिए अभी तक कोई इवेंट पंजीकरण दर्ज नहीं है।',
   'events.emptyMessage': 'आपने अभी तक किसी इवेंट के लिए पंजीकरण नहीं कराया है।',
   'events.findEventsButton': 'आगामी इवेंट खोजें',
   'events.tableEvent': 'इवेंट',
@@ -120,8 +113,6 @@ export const hi: Record<TranslationKey, string> = {
   'events.tableStatus': 'स्थिति',
   'events.statusAttended': 'उपस्थित रहे',
   'events.statusRegistered': 'पंजीकृत',
-  'events.backToPortal': 'अपने पोर्टल पर वापस जाएँ',
-  'events.unavailable': 'पोर्टल में इवेंट पंजीकरण अभी उपलब्ध नहीं हैं। कृपया जल्द ही फिर से देखें।',
 
   // Change request
   'changeRequest.formHeading': 'अपनी जानकारी में बदलाव का अनुरोध करें',
@@ -223,6 +214,9 @@ export const hi: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} का पत्र जनवरी में तैयार',
   'home.doorHintActivity': 'आपके पंजीकरण और घंटे',
   'home.doorHintInfo': 'पता, भाषा, हम क्या भेजते हैं',
+  // Door pages (src/doors/)
+  'door.home': 'होम',
+  'door.activityEmpty': 'यहाँ अभी दिखाने के लिए कुछ नहीं है। किसी SVBC कार्यक्रम या स्वयंसेवा शिफ़्ट के लिए साइन अप करने के बाद फिर देखें।',
   'verify.heading': 'सदस्यता सत्यापन',
   'verify.disclaimer': 'यह जानकारी हमारे रिकॉर्ड से लाइव प्राप्त की जाती है।',
   'verify.notValid': 'यह कार्ड मान्य नहीं है। हो सकता है इसे फिर से जनरेट किया गया हो या यह अब सक्रिय न हो।',

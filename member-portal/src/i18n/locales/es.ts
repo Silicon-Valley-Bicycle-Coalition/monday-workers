@@ -21,7 +21,6 @@ export const es: Record<TranslationKey, string> = {
   'title.lettersList': 'Documentos fiscales',
   'title.changeRequest': 'Solicitar un cambio',
   'title.verify': 'Verificación de membresía',
-  'title.events': 'Tus inscripciones a eventos',
 
   // Login
   'login.heading': 'Portal de Donantes',
@@ -51,7 +50,6 @@ export const es: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'No pudimos cargar tu tarjeta en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.cardRegenerateFailed': 'No pudimos regenerar tu tarjeta en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.verifyLoadFailed': 'No pudimos verificar esta tarjeta en este momento. Por favor intenta de nuevo en unos minutos.',
-  'error.eventsLoadFailed': 'No pudimos cargar tus inscripciones a eventos en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.generic': 'Algo salió mal. Por favor intenta iniciar sesión de nuevo.',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': 'No disponible por ahora',
@@ -59,9 +57,7 @@ export const es: Record<TranslationKey, string> = {
   'unavailable.body': 'Estamos actualizando nuestros sistemas, así que esto no está disponible en este momento. Por favor intenta de nuevo en un rato.',
 
   // Portal
-  'portal.heading': 'Tu portal de donante',
   'portal.someRecordsUnavailable': 'Algunos de tus registros no se pudieron cargar en este momento. Inténtalo de nuevo en unos minutos.',
-  'portal.membership': 'Membresía: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donado',
   'portal.tableDate': 'Fecha',
   'portal.tableAmount': 'Monto',
@@ -92,7 +88,6 @@ export const es: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'Añadir al calendario',
   'portal.discountsHeading': 'Descuentos en tiendas de bicicletas',
   'portal.taxDocumentsLink': 'Documentos fiscales',
-  'portal.eventsLink': 'Inscripciones a eventos',
   'portal.changeRequestLink': 'Solicitar un cambio a tus datos',
   'portal.logout': 'Cerrar sesión',
 
@@ -108,11 +103,9 @@ export const es: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'Este documento oficial se emite en inglés.',
 
   // Event registrations
-  'events.listHeading': 'Tus inscripciones a eventos',
   'events.tabLabel': 'Eventos',
   'events.upcomingHeading': 'Próximos',
   'events.pastHeading': 'Pasados',
-  'events.noneYet': 'Aún no hay inscripciones a eventos registradas para {{name}}.',
   'events.emptyMessage': 'Aún no te has inscrito en ningún evento.',
   'events.findEventsButton': 'Buscar próximos eventos',
   'events.tableEvent': 'Evento',
@@ -120,8 +113,6 @@ export const es: Record<TranslationKey, string> = {
   'events.tableStatus': 'Estado',
   'events.statusAttended': 'Asistió',
   'events.statusRegistered': 'Inscrito',
-  'events.backToPortal': 'Volver a tu portal',
-  'events.unavailable': 'Las inscripciones a eventos aún no están disponibles en el portal. Por favor vuelve pronto.',
 
   // Change request
   'changeRequest.formHeading': 'Solicitar un cambio a tus datos',
@@ -223,6 +214,9 @@ export const es: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} disponible en enero',
   'home.doorHintActivity': 'Tus inscripciones y horas',
   'home.doorHintInfo': 'Dirección, idioma, lo que te enviamos',
+  // Door pages (src/doors/)
+  'door.home': 'Inicio',
+  'door.activityEmpty': 'Todavía no hay nada que mostrar aquí. Vuelve después de inscribirte en un evento o turno de voluntariado de SVBC.',
   'verify.heading': 'Verificación de membresía',
   'verify.disclaimer': 'Esta información se obtiene en tiempo real de nuestros registros.',
   'verify.notValid': 'Esta tarjeta no es válida. Es posible que haya sido regenerada o que ya no esté activa.',

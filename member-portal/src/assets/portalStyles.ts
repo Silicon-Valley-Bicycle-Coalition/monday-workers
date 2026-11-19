@@ -29,8 +29,6 @@ export const PORTAL_CSS = `
     --border: #ccc;
     --table-border: #eee;
     --row-stripe: #fafafa;
-    --tab-bg: #f0f0f0;
-    --tab-border: #ddd;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -42,8 +40,6 @@ export const PORTAL_CSS = `
       --border: #4d4a4a;
       --table-border: #3a3838;
       --row-stripe: #242222;
-      --tab-bg: #2a2828;
-      --tab-border: #4d4a4a;
     }
   }
   * { box-sizing: border-box; }
@@ -205,56 +201,28 @@ export const PORTAL_CSS = `
     border-bottom: none;
   }
 
-  /* CSS-only tabs (no JS anywhere in this portal): real radio inputs + labels, shown/hidden via
-     :checked and positional :nth-of-type sibling selectors — so the same static rule set works
-     for any subset of the three possible tabs (donations always; volunteering and event
-     registrations only when that feature is enabled), regardless of which ones a given donor
-     actually has. Inputs and labels share the same order value (flexbox then falls back to DOM
-     order within a tie, i.e. input-then-its-own-label), with panels after — no position:absolute
-     on the inputs, since taking three same-sized boxes out of flow collapses them on top of each
-     other instead of next to their own label, breaking anything that targets the input's own hit
-     area (assistive tech, automated clicks) even though clicking the visible label still "works"
-     by accident. */
-  .tabs { display: flex; flex-wrap: wrap; margin: 12px 0; }
-  .tab-input { order: 1; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
-  .tab-label {
-    order: 1;
-    padding: 8px 16px;
-    margin: 0 4px 0 0;
-    cursor: pointer;
-    background: var(--tab-bg);
-    border: 1px solid var(--tab-border);
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
+  /* The secondary button: an outline pill (design system), for links out that aren't the view's
+     one gold action. */
+  .outline-button {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--text);
+    padding: var(--button-pad);
+    font-family: var(--font-body);
+    font-size: 16px;
     font-weight: 600;
-    font-size: 14px;
+    line-height: 1.2;
+    border-radius: var(--radius-pill);
+    text-decoration: none;
   }
-  .tab-input:checked + .tab-label {
-    background: var(--svbc-black);
-    color: var(--svbc-gold);
-    border-color: var(--svbc-black);
-  }
-  .tab-input:focus-visible + .tab-label {
-    outline: 2px solid var(--svbc-gold);
-    outline-offset: 2px;
-  }
-  .tab-panel {
-    order: 2;
-    display: none;
-    width: 100%;
-    padding-top: 14px;
-    border-top: 2px solid var(--text);
-  }
-  .tab-input:nth-of-type(1):checked ~ .tab-panel:nth-of-type(1),
-  .tab-input:nth-of-type(2):checked ~ .tab-panel:nth-of-type(2),
-  .tab-input:nth-of-type(3):checked ~ .tab-panel:nth-of-type(3) {
-    display: block;
-  }
-  .tab-empty { padding: 8px 0; }
+  .door-empty { padding: 8px 0; }
   .cta-button { margin-top: 4px; }
 
-  /* Wallet-style membership card, embedded per-donor on the dashboard (not a separate page —
-     see routes.ts's GET /:locale/portal). Fixed max-width with aspect-ratio (not a fixed height)
+  /* Wallet-style membership card, on the home page and the card door (src/doors/card.ts).
+     Fixed max-width with aspect-ratio (not a fixed height)
      so it scales down cleanly on narrow viewports instead of overflowing. */
   .member-card {
     position: relative;
@@ -380,6 +348,15 @@ export const PORTAL_CSS = `
     .home-door::after { content: none; }
   }
 
+  /* Door pages (src/doors/): a way home, the title, then one section per person. */
+  .door-back { margin: 0 0 4px; }
+  .door-back a { color: var(--text-muted); text-decoration: none; }
+  .door-back a:hover { text-decoration: underline; }
+  .door h1 { margin-top: 0; }
+  .door-person { margin: 0 0 24px; }
+  .door-person .member-card { margin-top: 0; }
+  .door-links { list-style: none; padding: 0; }
+
   .site-footer {
     background: var(--svbc-chrome);
     color: var(--svbc-white);
@@ -419,9 +396,6 @@ export const PORTAL_CSS = `
   }
   @media print {
     .site-header, .site-footer { display: none; }
-    /* A printed/PDF'd dashboard should show every tab's content, not just whichever was active
-       on screen. */
-    .tab-panel { display: block !important; }
-    .tab-label { display: none; }
+    .door-back { display: none; }
   }
 `;

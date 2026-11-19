@@ -3,7 +3,7 @@
 import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { escapeHtml, someRecordsUnavailableNote } from '../views';
-import { memberCardWidget } from '../doors/card';
+import { endedMonth, memberCardWidget } from '../doors/card';
 import type { HomePerson, PersonState } from './homeState';
 import { pluralKey, type DoorLink, type HomeData } from './loadHomeData';
 
@@ -48,11 +48,6 @@ function formatDate(iso: string, locale: Locale, withYear: boolean): string {
   const date = utcDate(iso);
   if (date === null) return iso;
   return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(date);
-}
-
-// "10/2026" for a lapsed card.
-function endedMonth(until: string): string {
-  return utcDate(until.trim()) === null ? '' : `${until.slice(5, 7)}/${until.slice(0, 4)}`;
 }
 
 function shopLine(count: number | null, locale: Locale): string {

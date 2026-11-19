@@ -21,7 +21,6 @@ export const fil: Record<TranslationKey, string> = {
   'title.lettersList': 'Mga Dokumento sa Buwis',
   'title.changeRequest': 'Humiling ng Pagbabago',
   'title.verify': 'Pagpapatunay ng Membership',
-  'title.events': 'Ang Iyong mga Pagpaparehistro sa Event',
 
   // Login
   'login.heading': 'Member Portal',
@@ -51,7 +50,6 @@ export const fil: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Hindi namin ma-load ang iyong card sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.cardRegenerateFailed': 'Hindi namin ma-regenerate ang iyong card sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.verifyLoadFailed': 'Hindi namin ma-verify ang card na ito sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
-  'error.eventsLoadFailed': 'Hindi namin ma-load ang iyong mga pagpaparehistro sa event ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
   'error.generic': 'May naganap na problema. Pakisubukan mag-log in ulit.',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': 'Pansamantalang Hindi Available',
@@ -59,9 +57,7 @@ export const fil: Record<TranslationKey, string> = {
   'unavailable.body': 'Ina-update namin ang aming mga system, kaya hindi ito available ngayon. Pakisubukang muli mamaya.',
 
   // Portal
-  'portal.heading': 'Ang iyong member portal',
   'portal.someRecordsUnavailable': 'Hindi ma-load ngayon ang ilan sa iyong mga record. Pakisubukang muli pagkalipas ng ilang minuto.',
-  'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Kabuuang na-donate',
   'portal.tableDate': 'Petsa',
   'portal.tableAmount': 'Halaga',
@@ -92,7 +88,6 @@ export const fil: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'Idagdag sa kalendaryo',
   'portal.discountsHeading': 'Mga diskwento sa bike shop',
   'portal.taxDocumentsLink': 'Mga dokumento sa buwis',
-  'portal.eventsLink': 'Mga pagpaparehistro sa event',
   'portal.changeRequestLink': 'Humiling ng pagbabago sa iyong impormasyon',
   'portal.logout': 'Mag-log out',
 
@@ -108,11 +103,9 @@ export const fil: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'Ang opisyal na dokumentong ito ay inilalabas sa Ingles.',
 
   // Event registrations
-  'events.listHeading': 'Ang iyong mga pagpaparehistro sa event',
   'events.tabLabel': 'Mga Event',
   'events.upcomingHeading': 'Paparating',
   'events.pastHeading': 'Nakaraan',
-  'events.noneYet': 'Wala pang nakatalang pagpaparehistro sa event para kay {{name}}.',
   'events.emptyMessage': 'Wala ka pang naparehistro sa anumang event.',
   'events.findEventsButton': 'Maghanap ng Paparating na Event',
   'events.tableEvent': 'Event',
@@ -120,8 +113,6 @@ export const fil: Record<TranslationKey, string> = {
   'events.tableStatus': 'Katayuan',
   'events.statusAttended': 'Dumalo',
   'events.statusRegistered': 'Nakarehistro',
-  'events.backToPortal': 'Bumalik sa iyong portal',
-  'events.unavailable': 'Hindi pa available ang mga pagpaparehistro sa event sa portal. Pakibalikan sa lalong madaling panahon.',
 
   // Change request
   'changeRequest.formHeading': 'Humiling ng pagbabago sa iyong impormasyon',
@@ -223,6 +214,9 @@ export const fil: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': 'Handa ang {{year}} sa Enero',
   'home.doorHintActivity': 'Ang iyong mga sign-up at oras',
   'home.doorHintInfo': 'Address, wika, ang ipinapadala namin',
+  // Door pages (src/doors/)
+  'door.home': 'Home',
+  'door.activityEmpty': 'Wala pang maipapakita rito. Bumalik pagkatapos mong mag-sign up para sa isang SVBC event o volunteer shift.',
   'verify.heading': 'Pagpapatunay ng membership',
   'verify.disclaimer': 'Kinukuha nang live ang impormasyong ito mula sa aming records.',
   'verify.notValid': 'Hindi valid ang card na ito. Maaaring na-regenerate na ito o hindi na active.',

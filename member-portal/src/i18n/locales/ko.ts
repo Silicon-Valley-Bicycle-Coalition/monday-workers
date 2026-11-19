@@ -21,7 +21,6 @@ export const ko: Record<TranslationKey, string> = {
   'title.lettersList': '세금 서류',
   'title.changeRequest': '변경 요청',
   'title.verify': '회원 자격 확인',
-  'title.events': '이벤트 참가 신청 내역',
 
   // Login
   'login.heading': '기부자 포털',
@@ -51,7 +50,6 @@ export const ko: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '지금은 카드를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.cardRegenerateFailed': '지금은 카드를 재발급할 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.verifyLoadFailed': '지금은 이 카드를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
-  'error.eventsLoadFailed': '지금은 이벤트 참가 신청 내역을 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'error.generic': '문제가 발생했습니다. 다시 로그인해 주세요.',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': '일시적으로 이용할 수 없음',
@@ -59,9 +57,7 @@ export const ko: Record<TranslationKey, string> = {
   'unavailable.body': '시스템을 업데이트하고 있어 지금은 이 기능을 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
 
   // Portal
-  'portal.heading': '기부자 포털',
   'portal.someRecordsUnavailable': '일부 기록을 지금 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
-  'portal.membership': '회원 자격: {{status}} ({{tier}})',
   'portal.totalLabel': '총 기부금',
   'portal.tableDate': '날짜',
   'portal.tableAmount': '금액',
@@ -92,7 +88,6 @@ export const ko: Record<TranslationKey, string> = {
   'portal.addToCalendar': '캘린더에 추가',
   'portal.discountsHeading': '자전거 매장 할인',
   'portal.taxDocumentsLink': '세금 서류',
-  'portal.eventsLink': '이벤트 참가 신청',
   'portal.changeRequestLink': '정보 변경 요청',
   'portal.logout': '로그아웃',
 
@@ -108,11 +103,9 @@ export const ko: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': '이 공식 문서는 영어로 발급됩니다.',
 
   // Event registrations
-  'events.listHeading': '이벤트 참가 신청 내역',
   'events.tabLabel': '이벤트',
   'events.upcomingHeading': '예정',
   'events.pastHeading': '지난 이벤트',
-  'events.noneYet': '{{name}}님의 이벤트 참가 신청 기록이 아직 없습니다.',
   'events.emptyMessage': '아직 신청한 이벤트가 없습니다.',
   'events.findEventsButton': '예정된 이벤트 찾기',
   'events.tableEvent': '이벤트',
@@ -120,8 +113,6 @@ export const ko: Record<TranslationKey, string> = {
   'events.tableStatus': '상태',
   'events.statusAttended': '참석함',
   'events.statusRegistered': '신청됨',
-  'events.backToPortal': '포털로 돌아가기',
-  'events.unavailable': '포털에서 이벤트 참가 신청 내역은 아직 제공되지 않습니다. 곧 다시 확인해 주세요.',
 
   // Change request
   'changeRequest.formHeading': '정보 변경 요청',
@@ -223,6 +214,9 @@ export const ko: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}}년 서신은 1월에 준비됩니다',
   'home.doorHintActivity': '내 신청 및 봉사 시간',
   'home.doorHintInfo': '주소, 언어, 받는 소식',
+  // Door pages (src/doors/)
+  'door.home': '홈',
+  'door.activityEmpty': '아직 표시할 내용이 없습니다. SVBC 행사나 자원봉사에 신청한 후 다시 확인해 주세요.',
   'verify.heading': '회원 자격 확인',
   'verify.disclaimer': '이 정보는 저희 기록에서 실시간으로 불러온 것입니다.',
   'verify.notValid': '이 카드는 유효하지 않습니다. 재발급되었거나 더 이상 활성 상태가 아닐 수 있습니다.',

@@ -21,7 +21,6 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.lettersList': 'Documentos Fiscais',
   'title.changeRequest': 'Solicitar uma Alteração',
   'title.verify': 'Verificação de Associação',
-  'title.events': 'Suas Inscrições em Eventos',
 
   // Login
   'login.heading': 'Portal do Doador',
@@ -51,7 +50,6 @@ export const ptBR: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Não foi possível carregar sua carteirinha no momento. Tente novamente em alguns minutos.',
   'error.cardRegenerateFailed': 'Não foi possível gerar uma nova carteirinha no momento. Tente novamente em alguns minutos.',
   'error.verifyLoadFailed': 'Não foi possível verificar esta carteirinha no momento. Tente novamente em alguns minutos.',
-  'error.eventsLoadFailed': 'Não foi possível carregar suas inscrições em eventos agora. Tente novamente em alguns minutos.',
   'error.generic': 'Algo deu errado. Tente entrar novamente.',
   // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
   'title.unavailable': 'Temporariamente Indisponível',
@@ -59,9 +57,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'unavailable.body': 'Estamos atualizando nossos sistemas, por isso isto não está disponível agora. Tente novamente daqui a pouco.',
 
   // Portal
-  'portal.heading': 'Seu portal do doador',
   'portal.someRecordsUnavailable': 'Não foi possível carregar alguns dos seus registros agora. Tente novamente em alguns minutos.',
-  'portal.membership': 'Associação: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total doado',
   'portal.tableDate': 'Data',
   'portal.tableAmount': 'Valor',
@@ -92,7 +88,6 @@ export const ptBR: Record<TranslationKey, string> = {
   'portal.addToCalendar': 'Adicionar ao calendário',
   'portal.discountsHeading': 'Descontos em lojas de bicicletas',
   'portal.taxDocumentsLink': 'Documentos fiscais',
-  'portal.eventsLink': 'Inscrições em eventos',
   'portal.changeRequestLink': 'Solicitar uma alteração em seus dados',
   'portal.logout': 'Sair',
 
@@ -108,11 +103,9 @@ export const ptBR: Record<TranslationKey, string> = {
   'letters.englishOnlyNote': 'Este documento oficial é emitido em inglês.',
 
   // Event registrations
-  'events.listHeading': 'Suas inscrições em eventos',
   'events.tabLabel': 'Eventos',
   'events.upcomingHeading': 'Próximos',
   'events.pastHeading': 'Anteriores',
-  'events.noneYet': 'Ainda não há inscrições em eventos registradas para {{name}}.',
   'events.emptyMessage': 'Você ainda não se inscreveu em nenhum evento.',
   'events.findEventsButton': 'Encontrar próximos eventos',
   'events.tableEvent': 'Evento',
@@ -120,8 +113,6 @@ export const ptBR: Record<TranslationKey, string> = {
   'events.tableStatus': 'Status',
   'events.statusAttended': 'Compareceu',
   'events.statusRegistered': 'Inscrito',
-  'events.backToPortal': 'Voltar ao seu portal',
-  'events.unavailable': 'As inscrições em eventos ainda não estão disponíveis no portal. Volte em breve.',
 
   // Change request
   'changeRequest.formHeading': 'Solicitar uma alteração em seus dados',
@@ -223,6 +214,9 @@ export const ptBR: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} disponível em janeiro',
   'home.doorHintActivity': 'Suas inscrições e horas',
   'home.doorHintInfo': 'Endereço, idioma, o que enviamos',
+  // Door pages (src/doors/)
+  'door.home': 'Início',
+  'door.activityEmpty': 'Ainda não há nada para mostrar aqui. Volte depois de se inscrever em um evento ou turno de voluntariado da SVBC.',
   'verify.heading': 'Verificação de associação',
   'verify.disclaimer': 'Esta informação é obtida em tempo real diretamente de nossos registros.',
   'verify.notValid': 'Esta carteirinha não é válida. Ela pode ter sido substituída por uma nova ou não estar mais ativa.',

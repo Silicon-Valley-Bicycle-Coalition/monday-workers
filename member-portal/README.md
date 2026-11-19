@@ -730,8 +730,8 @@ employer affiliation without a staff step.
 
 From the IT Requests board (["Member portal: event
 registrations"](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527106),
-scoped 2026-08-25). A read-only page (`GET /:locale/portal/events`, linked from the portal home)
-listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
+scoped 2026-08-25). Read-only, on the activity door (`GET /:locale/portal/activity`; the old
+`/:locale/portal/events` redirects there), listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
 later, soonest first) and **Past** (latest first; past rows show Attended/Registered from the
 board's checkbox, and undated registrations sort last). Same multi-donor-household rule as the
 rest of the portal: one explicitly labeled section per matched donor item. No D1 tables, no
