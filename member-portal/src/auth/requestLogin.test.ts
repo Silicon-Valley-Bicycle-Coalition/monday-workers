@@ -4,6 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
+import type { Config } from '../types';
 
 const REQUEST_ID = 'req-abc';
 
@@ -47,7 +48,30 @@ function fakeEmailSender(): EmailSender {
   };
 }
 
+// Only the fields the organization gates read; portal 'REPLACE_WITH_COLUMN_ID' keeps the feature off.
+function orgConfig(portalAccessColumn: string): Config {
+  return {
+    monday: { organizationsBoardId: 900 },
+    changeRequests: {
+      employer: {
+        affiliationsBoardId: 555,
+        affiliationColumns: { personLink: 'aff_person', organizationLink: 'aff_org', status: 'aff_status', primary: 'aff_primary' },
+        currentStatusLabel: 'Current',
+        personAffiliationsLink: 'people_aff',
+      },
+    },
+    organizations: {
+      portalAccessColumn,
+      workEmailColumn: 'work_email_col',
+      addressColumns: ['REPLACE_WITH_COLUMN_ID'],
+      acknowledgmentSignedOff: false,
+      volunteerFloor: 3,
+    },
+  } as unknown as Config;
+}
+
 const baseDeps = {
+  config: orgConfig('REPLACE_WITH_COLUMN_ID'),
   portalBaseUrl: 'https://portal.example.org',
   magicLinkTtlMinutes: 15,
   now: () => new Date('2026-08-22T00:00:00.000Z'),
@@ -139,5 +163,55 @@ describe('requestLogin', () => {
     expect(row.requestHash).toBe(await sha256Hex(REQUEST_ID));
     expect(row.codeHash).toBe(await sha256Hex(`${REQUEST_ID}:${emailCall.code}`));
     expect(row.emailHash).toBe(await sha256Hex('shared@example.org'));
+  });
+
+  describe('organization grants', () => {
+    const workAff = { id: 'w1', personItemId: 'p9', organizationId: 'o1', statusLabel: 'Current', portalAccess: true, workEmail: 'rep@acme.org' };
+
+    it('signs in a work-only address with no people and one grant', async () => {
+      const monday = fakeMonday([]);
+      monday.findAffiliationsByWorkEmail = vi.fn().mockResolvedValue([workAff]);
+      const tokenStore = fakeTokenStore();
+      const emailSender = fakeEmailSender();
+
+      await requestLogin('rep@acme.org', 'es', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps, config: orgConfig('portal_col') });
+
+      const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(row.donorItemIds).toEqual([]);
+      expect(row.orgGrants).toEqual([{ orgItemId: 'o1', affiliationItemId: 'w1', via: 'workEmail', personItemId: 'p9' }]);
+      const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(emailCall.to).toBe('rep@acme.org');
+      expect(emailCall.locale).toBe('es');
+    });
+
+    it('sends nothing to an address matching no person and no Work Email', async () => {
+      const monday = fakeMonday([]);
+      const tokenStore = fakeTokenStore();
+      const emailSender = fakeEmailSender();
+
+      await requestLogin('nobody@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps, config: orgConfig('portal_col') });
+
+      expect(monday.findAffiliationsByWorkEmail).toHaveBeenCalled();
+      expect(tokenStore.createToken).not.toHaveBeenCalled();
+      expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+    });
+
+    it("still signs a person in for their own records when grant resolution throws", async () => {
+      const monday = fakeMonday([{ id: 'donor-1', name: 'Jane', preferredLanguage: '' }]);
+      const tokenStore = fakeTokenStore();
+      const emailSender = fakeEmailSender();
+      const config = orgConfig('portal_col');
+      Object.defineProperty(config, 'organizations', { get: () => { throw new Error('config broke for jane@example.org'); } });
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await requestLogin('jane@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps, config });
+
+      const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(row.donorItemIds).toEqual(['donor-1']);
+      expect(row.orgGrants).toEqual([]);
+      expect(emailSender.sendLoginEmail).toHaveBeenCalledTimes(1);
+      expect(errors.mock.calls.flat().join(' ')).not.toContain('jane@example.org');
+      errors.mockRestore();
+    });
   });
 });

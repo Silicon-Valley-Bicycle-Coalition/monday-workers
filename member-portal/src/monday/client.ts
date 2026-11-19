@@ -1036,8 +1036,8 @@ export class HttpMondayClient implements MondayClient {
   }
 
   // ---- Organization reps (spec 2026-11-19-member-portal-organization-reps-design.md) ----
-  // GraphQL shapes here follow the ones this file already uses live; the ones new to this section
-  // (items(ids:) with `board { id }`, linked_items { id board { id } }) are not yet verified live.
+  // GraphQL shapes here follow the ones this file already uses live. items(ids:) with `board { id }`
+  // was verified live 2026-11-19; linked_items { id board { id } } is not yet verified live.
 
   // Null while the Portal access column is unconfigured: it is never requested and reads false.
   private portalAccessColumn(): string | null {
@@ -1116,20 +1116,22 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getAffiliation(affiliationItemId: string): Promise<OrgAffiliation | null> {
-    this.affiliationsConfig();
+    const employer = this.affiliationsConfig();
     const query = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
           id
           state
+          board { id }
           column_values(ids: ${JSON.stringify(this.affiliationColumnIds())}) { id text value ... on BoardRelationValue { linked_item_ids } }
         }
       }
     `;
     const data = await this.request<{ items: MondayItem[] }>(query, { itemId: Number(affiliationItemId) });
     const item = data.items[0];
-    // items(ids:) returns archived and deleted items too.
-    if (!item || item.state !== 'active') return null;
+    // items(ids:) returns archived and deleted items too, and items on any board: an id from
+    // another board must never read as an Affiliation (the live organization access check).
+    if (!item || item.state !== 'active' || String(item.board?.id) !== String(employer.affiliationsBoardId)) return null;
     return this.toOrgAffiliation(item);
   }
 

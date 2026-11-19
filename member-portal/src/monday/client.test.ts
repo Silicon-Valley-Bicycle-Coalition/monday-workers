@@ -2575,14 +2575,28 @@ describe('HttpMondayClient.findAffiliationsByWorkEmail', () => {
 });
 
 describe('HttpMondayClient.getAffiliation', () => {
-  it('returns the affiliation when active', async () => {
-    const { client } = orgClient([{ data: { items: [affItem('7', { work: 'r@acme.org', status: 'Former' })] } }]);
+  // items(ids:) answers for any board, so the read asks for the item's board.
+  const onBoard = (item: ReturnType<typeof affItem>, boardId: string | number = 555) => ({ ...item, board: { id: String(boardId) } });
+
+  it('returns the affiliation when active on the Affiliations board', async () => {
+    const { client, sent } = orgClient([{ data: { items: [onBoard(affItem('7', { work: 'r@acme.org', status: 'Former' }))] } }]);
     const aff = await client.getAffiliation('7');
     expect(aff).toMatchObject({ id: '7', statusLabel: 'Former', workEmail: 'r@acme.org', portalAccess: false });
+    expect(sent[0]!.query).toContain('board { id }');
+  });
+
+  it('returns null for an item on another board', async () => {
+    const { client } = orgClient([{ data: { items: [onBoard(affItem('7', { portal: true }), 999)] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
+  });
+
+  it('returns null for an item without a board', async () => {
+    const { client } = orgClient([{ data: { items: [affItem('7', { portal: true })] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
   });
 
   it('returns null for an archived item', async () => {
-    const { client } = orgClient([{ data: { items: [affItem('7', { state: 'archived' })] } }]);
+    const { client } = orgClient([{ data: { items: [onBoard(affItem('7', { state: 'archived' }))] } }]);
     expect(await client.getAffiliation('7')).toBeNull();
   });
 
@@ -2788,7 +2802,7 @@ describe('Portal access column placeholder', () => {
     const { client, sent } = orgClient(
       [
         page([item]),
-        { data: { items: [item] } },
+        { data: { items: [{ ...item, board: { id: '555' } }] } },
         page([item]),
         { data: { items: [{ id: 'p1', name: 'P', state: 'active', column_values: [{ id: 'people_aff', text: '', linked_item_ids: ['1'] }] }] } },
         { data: { items: [item] } },

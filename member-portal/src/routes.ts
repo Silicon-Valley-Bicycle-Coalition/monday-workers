@@ -384,6 +384,7 @@ export function createApp(deps: AppDeps) {
           // response returns immediately regardless of match state.
           const work = requestLogin(email, locale, requestId, {
             monday: deps.monday,
+            config: deps.config,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
             portalBaseUrl: deps.config.auth.portalBaseUrl,
