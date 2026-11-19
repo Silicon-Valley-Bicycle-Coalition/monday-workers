@@ -81,6 +81,7 @@ export const MARKED_COLUMNS = {
   // Only boards whose names are in the workspace are touched, so an environment that lacks one
   // (the sandbox has no BP Request Form, say) just skips it.
   'Sponsorships': { locked: ['Contacts'], history: [] },
+  '2027 PROSPECTING - Sponsorships': { locked: ['Contacts'], history: [] },
   'Grants & Contracts': { locked: ['Contacts'], history: [] },
   'BP Request Form': { locked: ['Contacts'], history: [] },
   'Bike Education Lifecycle Tracker': { locked: ['Contacts'], history: [] },
