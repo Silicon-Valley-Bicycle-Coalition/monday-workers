@@ -382,7 +382,7 @@ went back to 500 the same day.
 
 Decided 2026-11-19 (Clarrissa): the two welcome emails and three renewal reminders are sent by
 **monday CRM Sequences**, not Mailchimp Customer Journeys. This Worker decides who gets which email;
-Monday sends it from a connected staff mailbox and logs it on the person's timeline. Setup and
+Monday sends it from `membership@bikesiliconvalley.org` (a connected mailbox) and logs it on the person's timeline. Setup and
 go-live: [`docs/runbooks/stewardship-sequences.md`](../docs/runbooks/stewardship-sequences.md).
 
 **How (`src/stewardship`, on the daily `0 15 * * *` cron, after the renewal-due tag).** Reads
