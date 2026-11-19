@@ -63,3 +63,14 @@ export async function loadOrgStatement(orgItemId: string, year: number, deps: Or
     acknowledgmentOn: orgAcknowledgmentEnabled(deps.config),
   });
 }
+
+// Whether a completed year has a statement, from gifts and matches alone: no organization,
+// affiliation or volunteer reads. The home page's "ready" line uses it. A match that is also a
+// gift shares its date, so the year set is the same as the statement's.
+export async function statementExists(orgItemId: string, year: number, deps: OrgDeps): Promise<boolean> {
+  const [gifts, matches] = await Promise.all([
+    deps.monday.getOrganizationGifts(orgItemId),
+    deps.monday.getOrganizationMatches(orgItemId),
+  ]);
+  return statementYears(gifts, matches, deps.now()).includes(year);
+}

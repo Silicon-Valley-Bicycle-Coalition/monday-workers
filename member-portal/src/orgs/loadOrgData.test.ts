@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { loadOrgPage, loadOrgStatement } from './loadOrgData';
+import { loadOrgPage, loadOrgStatement, statementExists } from './loadOrgData';
 import { FakeMondayClient } from '../monday/fakeClient';
 import type { Config } from '../types';
 
@@ -85,5 +85,23 @@ describe('loadOrgStatement', () => {
     const monday = setup();
     vi.spyOn(monday, 'getOrganizationGifts').mockRejectedValue(new Error('down'));
     await expect(loadOrgStatement('o1', 2026, { monday, config, now })).rejects.toThrow('down');
+  });
+});
+
+describe('statementExists', () => {
+  it('reads only gifts and matches', async () => {
+    const monday = setup();
+    monday.orgGifts.set('o1', []);
+    monday.orgMatches.set('o1', [{ itemId: 'm', date: '2026-04-01', amount: '$5.00', giftType: '', description: 'x' }]);
+    const spies = [
+      vi.spyOn(monday, 'getOrganization'),
+      vi.spyOn(monday, 'getOrganizationAffiliations'),
+      vi.spyOn(monday, 'getCompletedVolunteerHoursInYear'),
+    ];
+    const deps = { monday, config, now };
+    expect(await statementExists('o1', 2026, deps)).toBe(true);
+    expect(await statementExists('o1', 2025, deps)).toBe(false);
+    expect(await statementExists('o1', 2027, deps)).toBe(false);
+    spies.forEach((s) => expect(s).not.toHaveBeenCalled());
   });
 });

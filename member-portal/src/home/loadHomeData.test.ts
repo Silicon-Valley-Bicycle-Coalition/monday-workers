@@ -261,19 +261,32 @@ describe('loadHomeData organizations', () => {
       { id: 'o2', name: 'Bike Shop' },
     ]);
     Object.assign(monday, {
-      getOrganization: vi.fn(async (id: string) => {
+      getOrganizationGifts: vi.fn(async (id: string) => {
         if (id === 'o2') throw new Error('monday down');
-        return { id, name: 'Acme', address: '1 Main' };
+        return [{ itemId: 'g', date: '2026-05-01', amount: '$5.00', giftType: 'Donation', description: 'x' }];
       }),
-      getOrganizationGifts: vi.fn(async () => [{ itemId: 'g', date: '2026-05-01', amount: '$5.00', giftType: 'Donation', description: 'x' }]),
       getOrganizationMatches: vi.fn(async () => []),
     });
+    const extra = { getOrganizationAffiliations: vi.fn(), getCompletedVolunteerHoursInYear: vi.fn() };
+    Object.assign(monday, extra);
     const full = { ...orgConfig, organizations: { ...orgConfig.organizations, volunteerFloor: 3, acknowledgmentSignedOff: false } } as unknown as Config;
     const inWindow = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', full), 'en', grants);
     expect(inWindow.orgs.map((o) => o.statementReadyYear)).toEqual([2026, null]);
+    expect(extra.getOrganizationAffiliations).not.toHaveBeenCalled();
+    expect(extra.getCompletedVolunteerHoursInYear).not.toHaveBeenCalled();
     const after = await loadHomeData(['j'], deps(monday, '2027-06-10T18:00:00Z', full), 'en', grants);
     expect(after.orgs.map((o) => o.statementReadyYear)).toEqual([null, null]);
     vi.restoreAllMocks();
+  });
+
+  it('reports the year when last year has only a match', async () => {
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => [{ id: 'o1', name: 'Acme' }]);
+    Object.assign(monday, {
+      getOrganizationGifts: vi.fn(async () => []),
+      getOrganizationMatches: vi.fn(async () => [{ itemId: 'm', date: '2026-05-01', amount: '$5.00', giftType: '', description: 'x' }]),
+    });
+    const data = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants.slice(0, 1));
+    expect(data.orgs[0]!.statementReadyYear).toBe(2026);
   });
 
   it('leaves names null when the read fails', async () => {

@@ -6,7 +6,7 @@ import type { MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { cardFor } from '../doors/card';
 import { loadLetterData } from '../letters/loadLetterData';
-import { loadOrgStatement } from '../orgs/loadOrgData';
+import { statementExists } from '../orgs/loadOrgData';
 import { cardEnabled, eventsEnabled, lettersEnabled, orgAccessEnabled, volunteerHistoryEnabled } from '../config';
 import type { OrgGrant } from '../orgs/grants';
 import type { Locale } from '../i18n/locales';
@@ -66,7 +66,7 @@ async function loadOrgs(orgGrants: OrgGrant[], deps: HomeDeps): Promise<HomeData
     orgGrants.map(async (g) => {
       if (!inWindow) return null;
       try {
-        return (await loadOrgStatement(g.orgItemId, lastYear, deps)) === null ? null : lastYear;
+        return (await statementExists(g.orgItemId, lastYear, deps)) ? lastYear : null;
       } catch (err) {
         console.error(`member-portal home organization statement read failed for "${g.orgItemId}": ${errorText(err)}`);
         return null;
