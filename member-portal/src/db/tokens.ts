@@ -16,14 +16,25 @@ export interface ConsumedToken {
 export interface CodeAttempt {
   codeHash: string;
   emailHash: string;
+  // The code_failures row this try reserved in the address's daily budget, or null when the
+  // budget is spent (the caller then refuses without comparing). A wrong guess keeps the slot; a
+  // right one gives it back through CodeFailureStore.releaseFailure.
+  failureSlot: number | null;
+}
+
+// The per-address window wrong guesses are counted over: failures at or after sinceISO, at most max.
+export interface FailureBudget {
+  sinceISO: string;
+  max: number;
 }
 
 export interface MagicLinkTokenStore {
   createToken(params: NewMagicLinkToken): Promise<void>;
   consumeToken(tokenHash: string, nowISO: string): Promise<ConsumedToken | null>;
-  // Atomically counts one try against the row; null = nothing usable (expired, used, no code,
-  // unknown, or already at maxAttempts).
-  takeCodeAttempt(requestHash: string, nowISO: string, maxAttempts: number): Promise<CodeAttempt | null>;
+  // Counts one try against the row and, in the same transaction, reserves a slot in the address's
+  // failure budget. null = nothing usable (expired, used, no code or address, unknown, or already
+  // at maxAttempts), and then no slot is reserved either.
+  takeCodeAttempt(requestHash: string, nowISO: string, maxAttempts: number, budget: FailureBudget): Promise<CodeAttempt | null>;
   // Single-use claim of the row by request hash, for a correct code. null = nothing to claim.
   claimByRequest(requestHash: string, nowISO: string): Promise<ConsumedToken | null>;
 }
@@ -78,18 +89,38 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
     return row === null ? null : toConsumed(row);
   }
 
-  async takeCodeAttempt(requestHash: string, nowISO: string, maxAttempts: number): Promise<CodeAttempt | null> {
-    const row = await this.db
-      .prepare(
-        `UPDATE magic_link_tokens SET failed_code_attempts = failed_code_attempts + 1
-         WHERE request_hash = ?1 AND used_at IS NULL AND expires_at > ?2
-           AND failed_code_attempts < ?3 AND code_hash IS NOT NULL
-         RETURNING code_hash, email_hash`
-      )
-      .bind(requestHash, nowISO, maxAttempts)
-      .first<{ code_hash: string; email_hash: string }>();
+  // One db.batch (one transaction, one round trip) whatever the request matched, so a request
+  // that matched no donor costs the same as one that did (see verifyCode). The INSERT reserves only
+  // when the UPDATE just counted a live try: changes() is the UPDATE's row count, so a row the
+  // UPDATE skipped (already at the cap, expired, used) never takes a slot. Its count subquery and
+  // insert run as one statement, so parallel tries can't all pass the count first.
+  async takeCodeAttempt(requestHash: string, nowISO: string, maxAttempts: number, budget: FailureBudget): Promise<CodeAttempt | null> {
+    const [attempt, slot] = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE magic_link_tokens SET failed_code_attempts = failed_code_attempts + 1
+           WHERE request_hash = ?1 AND used_at IS NULL AND expires_at > ?2
+             AND failed_code_attempts < ?3 AND code_hash IS NOT NULL AND email_hash IS NOT NULL
+           RETURNING code_hash, email_hash`
+        )
+        .bind(requestHash, nowISO, maxAttempts),
+      this.db
+        .prepare(
+          `INSERT INTO code_failures (email_hash, failed_at)
+           SELECT t.email_hash, ?2 FROM magic_link_tokens t
+           WHERE changes() > 0
+             AND t.request_hash = ?1 AND t.used_at IS NULL AND t.expires_at > ?2
+             AND t.code_hash IS NOT NULL AND t.email_hash IS NOT NULL
+             AND (SELECT COUNT(*) FROM code_failures f WHERE f.email_hash = t.email_hash AND f.failed_at >= ?3) < ?4
+           RETURNING id`
+        )
+        .bind(requestHash, nowISO, budget.sinceISO, budget.max),
+    ]);
 
-    return row === null ? null : { codeHash: row.code_hash, emailHash: row.email_hash };
+    const row = (attempt!.results as { code_hash: string; email_hash: string }[])[0];
+    if (row === undefined) return null;
+    const reserved = (slot!.results as { id: number }[])[0];
+    return { codeHash: row.code_hash, emailHash: row.email_hash, failureSlot: reserved?.id ?? null };
   }
 
   async claimByRequest(requestHash: string, nowISO: string): Promise<ConsumedToken | null> {

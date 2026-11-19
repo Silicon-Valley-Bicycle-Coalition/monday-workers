@@ -45,9 +45,14 @@ function inMemoryCardTokenStore(): CardTokenStore {
   };
 }
 
+// The code_failures table both fakes below share: takeCodeAttempt reserves, releaseFailure frees.
+type FailureLedger = { id: number; emailHash: string; at: string }[];
+let nextFailureId = 1;
+
 // Same semantics as D1MagicLinkTokenStore: one row per request, link and code share used_at,
-// attempts are capped, and everything stops at expiry.
-function inMemoryTokenStore(): MagicLinkTokenStore {
+// attempts are capped, everything stops at expiry, and a counted try reserves a failure slot
+// while the address's budget lasts.
+function inMemoryTokenStore(failures: FailureLedger = []): MagicLinkTokenStore {
   interface Row {
     donorItemIds: string[];
     expiresAt: string;
@@ -77,11 +82,19 @@ function inMemoryTokenStore(): MagicLinkTokenStore {
       row.usedAt = nowISO;
       return { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
     },
-    async takeCodeAttempt(requestHash, nowISO, maxAttempts) {
+    async takeCodeAttempt(requestHash, nowISO, maxAttempts, budget) {
       const row = byRequest(requestHash);
-      if (!row || row.usedAt !== null || row.expiresAt <= nowISO || row.attempts >= maxAttempts || row.codeHash === null) return null;
+      if (!row || row.usedAt !== null || row.expiresAt <= nowISO || row.attempts >= maxAttempts || row.codeHash === null || row.emailHash === null) {
+        return null;
+      }
       row.attempts += 1;
-      return { codeHash: row.codeHash, emailHash: row.emailHash as string };
+      const emailHash = row.emailHash;
+      let failureSlot: number | null = null;
+      if (failures.filter((f) => f.emailHash === emailHash && f.at >= budget.sinceISO).length < budget.max) {
+        failureSlot = nextFailureId++;
+        failures.push({ id: failureSlot, emailHash, at: nowISO });
+      }
+      return { codeHash: row.codeHash, emailHash, failureSlot };
     },
     async claimByRequest(requestHash, nowISO) {
       const row = byRequest(requestHash);
@@ -92,20 +105,11 @@ function inMemoryTokenStore(): MagicLinkTokenStore {
   };
 }
 
-// Same budget rule as D1CodeFailureStore.
-function inMemoryCodeFailureStore(): CodeFailureStore {
-  const rows: { id: number; emailHash: string; at: string }[] = [];
-  let nextId = 1;
+function inMemoryCodeFailureStore(failures: FailureLedger): CodeFailureStore {
   return {
-    async reserveFailure(emailHash, atISO, sinceISO, max) {
-      if (rows.filter((row) => row.emailHash === emailHash && row.at >= sinceISO).length >= max) return null;
-      const id = nextId++;
-      rows.push({ id, emailHash, at: atISO });
-      return id;
-    },
     async releaseFailure(id) {
-      const index = rows.findIndex((row) => row.id === id);
-      if (index >= 0) rows.splice(index, 1);
+      const index = failures.findIndex((row) => row.id === id);
+      if (index >= 0) failures.splice(index, 1);
     },
   };
 }
@@ -313,12 +317,13 @@ const config: Config = {
 const SAME_ORIGIN = { Origin: 'https://portal.example.org' } as const;
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
+  const failures: FailureLedger = [];
   return {
     monday: fakeMonday({}),
-    tokenStore: inMemoryTokenStore(),
+    tokenStore: inMemoryTokenStore(failures),
     sessionStore: inMemorySessionStore(),
     verifiedEmailStore: { recordVerified: vi.fn().mockResolvedValue(undefined) },
-    codeFailureStore: inMemoryCodeFailureStore(),
+    codeFailureStore: inMemoryCodeFailureStore(failures),
     attemptStore: inMemoryAttemptStore(),
     emailSender: {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),

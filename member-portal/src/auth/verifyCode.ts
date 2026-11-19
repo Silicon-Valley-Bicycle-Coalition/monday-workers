@@ -7,6 +7,9 @@ import { startSession, type StartSessionDeps } from './session';
 // Tries one request's code may take, right or wrong.
 export const MAX_CODE_ATTEMPTS = 5;
 
+// Not hex, so it never equals a code hash.
+const NO_CODE = 'no-code';
+
 export interface VerifyCodeDeps extends StartSessionDeps {
   tokenStore: MagicLinkTokenStore;
   codeFailureStore: CodeFailureStore;
@@ -20,23 +23,25 @@ export async function verifyCode(requestId: string, code: string, deps: VerifyCo
   const nowISO = now.toISOString();
   const requestHash = await sha256Hex(requestId);
 
-  const attempt = await deps.tokenStore.takeCodeAttempt(requestHash, nowISO, MAX_CODE_ATTEMPTS);
-  if (attempt === null) {
-    return null;
-  }
-
-  // Reserve a slot in the address's daily failure budget before comparing, in one statement, so
-  // parallel guesses can't all pass a count first. A wrong guess keeps its slot; a right one gives it back.
+  // Uniform shape (the enumeration guard): whether or not the request matched a donor, this is one
+  // D1 round trip and the presented code is hashed and compared. A request that matched no donor
+  // has no row, so without this its refusal would come back measurably faster, telling anyone who
+  // requested a code for an address from their own browser whether that address is on file.
   const since = new Date(now.getTime() - 24 * 3_600_000).toISOString();
-  const slot = await deps.codeFailureStore.reserveFailure(attempt.emailHash, nowISO, since, deps.codeFailuresPerAddressDaily);
-  if (slot === null) {
+  const attempt = await deps.tokenStore.takeCodeAttempt(requestHash, nowISO, MAX_CODE_ATTEMPTS, {
+    sinceISO: since,
+    max: deps.codeFailuresPerAddressDaily,
+  });
+  const presented = await sha256Hex(`${requestId}:${code}`);
+  // With no row, or the address's failure budget spent, compare against a value no hash can equal:
+  // the real code is never checked, but the work matches a checked one.
+  const usable = attempt !== null && attempt.failureSlot !== null;
+  const matched = await secretsMatch(presented, usable ? attempt.codeHash : NO_CODE);
+  if (!usable || !matched) {
     return null;
   }
-
-  if (!(await secretsMatch(await sha256Hex(`${requestId}:${code}`), attempt.codeHash))) {
-    return null;
-  }
-  await deps.codeFailureStore.releaseFailure(slot);
+  // A wrong guess kept the slot the store reserved; a right one gives it back.
+  await deps.codeFailureStore.releaseFailure(attempt.failureSlot!);
 
   const consumed = await deps.tokenStore.claimByRequest(requestHash, nowISO);
   if (consumed === null) {
