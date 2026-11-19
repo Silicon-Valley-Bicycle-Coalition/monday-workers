@@ -76,9 +76,11 @@ export function endedMonth(until: string): string {
   return `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 }
 
-// No membership status or tier at all: the home page's "never a member" rule (homeState.ts).
+// No membership on file: a blank Membership Status (with or without a Tier). Covers the home page's
+// "never a member" rule (homeState.ts: status and tier both blank); a card for a blank status would
+// show a member number with no status to anyone scanning it.
 function neverAMember(donor: MemberPortalData): boolean {
-  return donor.membershipStatus === '' && donor.membershipTier === '';
+  return donor.membershipStatus.trim() === '';
 }
 
 export interface CardDoorPerson {

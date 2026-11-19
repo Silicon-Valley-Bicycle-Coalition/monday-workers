@@ -30,6 +30,7 @@ import { D1AuthRetentionStore } from './db/authRetention';
 import { checkRequestRateLimit } from './requestRateLimit';
 import { lazyGate, readGate, type BatchSkipContext } from './writeSwitch';
 import { logSkip } from './flags';
+import { withTestAccounts } from './testAccounts/testAccountClient';
 
 // In the sandbox every email is redirected to the sink; in production the binding is used as
 // is. Exported for tests. The platform-side guard (the binding's allowed_destination_addresses
@@ -104,29 +105,35 @@ export default {
     return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
       if (limited) return limited;
 
-      const app = createApp({
-        // Discount list cached per isolate — see monday/discountCache.ts.
-        monday: withCachedDiscounts(
-          new HttpMondayClient(
-            config.monday.apiUrl,
-            tokenProviderFor(env),
-            config.monday.columns,
-            donorsBoardId,
-            donationsBoardId,
-            organizationsBoardId,
-            config.donations,
-            // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
-            // non-null assertion below can't fire on a placeholder config.
-            pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
-            // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
-            // null board id rather than querying a sentinel.
-            config.monday.volunteersBoardId,
-            undefined,
-            orgReadConfig(config)
-          ),
-          discountOrganizationsCache,
-          `${config.monday.apiUrl}#${organizationsBoardId}`
+      // Sandbox only: test-account addresses sign in at once and read dummy personas
+      // (src/testAccounts/). Keyed on the environment, not config, so production can't turn it on.
+      const testAccounts = environmentOf(env) === 'sandbox';
+      const realMonday = withCachedDiscounts(
+        new HttpMondayClient(
+          config.monday.apiUrl,
+          tokenProviderFor(env),
+          config.monday.columns,
+          donorsBoardId,
+          donationsBoardId,
+          organizationsBoardId,
+          config.donations,
+          // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+          // non-null assertion below can't fire on a placeholder config.
+          pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
+          // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+          // null board id rather than querying a sentinel.
+          config.monday.volunteersBoardId,
+          undefined,
+          orgReadConfig(config)
         ),
+        discountOrganizationsCache,
+        `${config.monday.apiUrl}#${organizationsBoardId}`
+      );
+      const now = () => new Date();
+
+      const app = createApp({
+        monday: testAccounts ? withTestAccounts(realMonday, now) : realMonday,
+        testAccounts,
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         sessionStore: new D1SessionStore(env.DB),
         verifiedEmailStore: new D1VerifiedEmailStore(env.DB),
@@ -141,7 +148,7 @@ export default {
         ),
         ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
         config,
-        now: () => new Date(),
+        now,
         changeStore: new D1ChangeRequestStore(env.DB),
         changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
         letterSendStore: new D1LetterSendStore(env.DB),

@@ -228,6 +228,27 @@ of them, labeled as above.
 `verified_emails` table (`email_hash`, `person_item_id`, first and last verified) records the
 address against each person the session covers. Hashes only; no raw address is stored.
 
+## Sandbox test accounts
+
+In the sandbox (and `npm run dev:local`), a fixed set of `test-*@example.org` addresses signs in
+at once on `POST /`, with no magic link, rate limit or write-switch check, and reads dummy
+personas instead of Monday: one per membership state (Active Member, Active Lifetime, Lapsed,
+never joined), plus a renewal-window member, a shared household inbox and a Spanish speaker who
+just joined (the home page's new-member state). The
+list lives in `src/testAccounts/personas.ts` (staff copy: `docs/uat/member-portal.md`); dates are
+relative to the request's clock.
+
+- **Never in production.** `src/index.ts` turns it on from `ENVIRONMENT === 'sandbox'`, not from
+  config, so no config edit can enable it.
+- **Isolated from Monday.** Persona ids start with `test-` (Monday ids are all digits), and
+  `withTestAccounts` answers those ids itself, passing every other id to the real client. Their
+  change requests run every check, then go to a discarding store and queue, so nothing reaches
+  D1's `change_requests`, the writer or the Change Requests board. Card tokens are written to D1
+  as usual, so `/verify` works for a test card, and the session stores the sign-in address's hash
+  like any other, so the info door shows that address (the household's under each person).
+- **Not an enumeration leak.** The addresses are published to staff, and the reserved
+  `example.org` domain can't belong to a donor.
+
 ## Sending the email
 
 **Do not use Cloudflare's old free MailChannels-Workers integration — it's dead.** MailChannels

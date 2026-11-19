@@ -313,4 +313,41 @@ describe('validateConfig: consent', () => {
     raw.profileLinks = { boardId: 1, emailColumn: 'e1', maxWritesPerRun: 1 };
     expect(() => validateConfig(raw)).toThrow(/profileLinks/);
   });
+
+  const stewardship = () => ({
+    boardId: 1,
+    columns: {
+      email: 'e', label: 'l', membershipStatus: 'ms', membershipTier: 't', memberType: 'mt',
+      memberSince: 's', memberUntil: 'u', hasActiveRecurringGift: 'r', doNotSolicit: 'd',
+    },
+    plan: {
+      labels: { welcomeDayAfter: 'W1', welcome3Weeks: 'W2', renewal3Weeks: 'R1', renewal1Week: 'R2', renewalDayOf: 'R3' },
+      activeStatusValue: 'Active', lifetimeTierValue: 'Lifetime', newMemberTypeValue: 'New', catchUpDays: 2,
+    },
+    renewalOptOutTag: 'renewal-opt-out', renewalInterest: 'r1', welcomeInterest: null, maxWritesPerRun: 200,
+  });
+
+  it('reads stewardship, off when absent or null', () => {
+    const raw = validRaw() as Record<string, unknown>;
+    expect(validateConfig(raw).stewardship).toBeNull();
+    raw.stewardship = stewardship();
+    expect(validateConfig(raw).stewardship).toEqual(stewardship());
+  });
+
+  it('rejects a stewardship block missing what it needs', () => {
+    const s = stewardship();
+    for (const bad of [
+      { ...s, columns: { ...s.columns, label: '' } },
+      { ...s, plan: { ...s.plan, labels: { ...s.plan.labels, renewalDayOf: 'R1' } } },
+      { ...s, plan: { ...s.plan, catchUpDays: 7 } },
+      { ...s, plan: { ...s.plan, newMemberTypeValue: undefined } },
+      { ...s, renewalOptOutTag: '' },
+      { ...s, renewalInterest: '' },
+      { ...s, maxWritesPerRun: 0 },
+    ]) {
+      const raw = validRaw() as Record<string, unknown>;
+      raw.stewardship = bad;
+      expect(() => validateConfig(raw)).toThrow(/stewardship/);
+    }
+  });
 });

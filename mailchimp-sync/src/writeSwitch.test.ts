@@ -30,6 +30,7 @@ const CONFIG: Config = {
   consent: { enabled: false, maxChangesPerRun: 500, boards: [] },
   journeyLog: null,
   profileLinks: null,
+  stewardship: null,
 };
 
 const EMAIL = 'someone@example.com';

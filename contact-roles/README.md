@@ -63,7 +63,10 @@ breaks a lookup.
 
 ## Which boards are on
 
-**Production enabled:** Sponsorships and Donations (Donations reads `Matched By`, sparse).
+**Production enabled:** 2027 PROSPECTING - Sponsorships (reads `Sponsor (Organization)`) and Donations
+(Donations reads `Matched By`, sparse). Since staff split the opportunity boards on 2026-11-19, the
+historic Sponsorships board has no Contacts column, so its rule is off; a new year's prospecting
+board needs its own entry.
 
 **Production disabled, and what switches each on** (add the Organization link, then set
 `enabled: true` in `config/svbc.json`):
@@ -71,7 +74,9 @@ breaks a lookup.
 | Board | Why off | To enable |
 |---|---|---|
 | BP Request Form | The live board has no organization link, only text columns | Add an Organization link, point `orgColumn` at it |
-| Grants & Contracts | Its only organization link is `Grant Provider`, which points at the Grant Providers board, not Organizations; there is no `Funder` column on production | Add a `Funder` link to Organizations |
+| Sponsorships | Past cycles only since 2026-11-19; staff deleted its Contacts column | Re-add a `Contacts` link to People |
+| Grants & Contracts | `Funder (Organization)` points at the Grant Providers board, not Organizations (its `Sponsor` link does point at Organizations) | Point `orgColumn` at an Organizations link |
+| 2027 PROSPECTING - Grants & Contracts | Not listed: no Contacts column, and `Funder (Organization)` points at Grant Providers | Add a `Contacts` link and an Organizations link, then a rule |
 | Bike Education Lifecycle Tracker | No organization link | Add one |
 | Leads | Needs an Organization link and final Type values; role follows Type (sponsorship → Sponsorship, grant → Grants) | Enable when the Leads redesign lands, after checking `typeRoles` against the final Type labels |
 

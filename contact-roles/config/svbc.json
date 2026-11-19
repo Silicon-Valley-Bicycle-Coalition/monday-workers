@@ -9,7 +9,8 @@
     "currentLabel": "Current"
   },
   "boards": [
-    { "name": "Sponsorships", "boardId": "18391037433", "orgColumn": "Organization", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
+    { "name": "Sponsorships", "boardId": "18391037433", "orgColumn": "Sponsor (Organization)", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": false },
+    { "name": "2027 PROSPECTING - Sponsorships", "boardId": "18440758694", "orgColumn": "Sponsor (Organization)", "contactsColumn": "Contacts", "role": "Sponsorship", "enabled": true },
     { "name": "Grants & Contracts", "boardId": "7896177072", "orgColumn": "Funder", "contactsColumn": "Contacts", "role": "Grants", "enabled": false },
     { "name": "BP Request Form", "boardId": "18395469629", "orgColumn": "Host Organization", "contactsColumn": "Contacts", "role": "Bike Parking", "enabled": false },
     { "name": "Donations", "boardId": "18437909794", "orgColumn": "Matched By", "contactsColumn": "Contacts", "role": "Donation Matching", "sparse": true, "enabled": true },
