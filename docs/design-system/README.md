@@ -75,8 +75,9 @@ Portal UI sizes stay small and functional (14–16px controls, 13px footer in co
 ## Accessibility and behaviour
 
 - Focus: 2px `svbc-gold` outline, 2px offset (map: 3px `map-accent`).
-- No JavaScript in the portal: tabs are radio inputs kept in flow so keyboards and assistive tech reach them; forms post to the server.
-- Print hides header and footer and shows every tab panel.
+- No JavaScript in the portal: forms post to the server. The portal no longer uses tabs: its home page links to one page per section (a "door"), each starting with a "‹ Home" link. The Tabs component and `tab-*` tokens stay here for any future surface, built as radio inputs kept in flow so keyboards and assistive tech reach them.
+- Labels are words, never colour alone (the info door's email labels are outlined text pills; Bounced is bold).
+- Print hides header and footer and each door's "‹ Home" link.
 - Emails are table-based with inline styles; dark-mode overrides are best effort.
 
 ## Components

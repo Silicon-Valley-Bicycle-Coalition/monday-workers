@@ -29,6 +29,7 @@ import { homeView } from './home/homeView';
 import { cardDoorView, loadCardDoor } from './doors/card';
 import { givingDoorView, loadGivingDoor } from './doors/giving';
 import { activityDoorView, loadActivityDoor } from './doors/activity';
+import { infoDoorView, loadInfoDoor } from './doors/info';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -51,7 +52,7 @@ import { letterView, lettersListView, lettersUnavailableView } from './letters/l
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
-import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
 import { buildCardData } from './card/loadCardData';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
@@ -610,7 +611,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
+      return c.html(page(t(locale, 'home.doorLetters') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
     }
     let listings;
     try {
@@ -621,7 +622,7 @@ export function createApp(deps: AppDeps) {
       console.error(`member-portal letters list failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale, { authenticated: true }), 500);
     }
-    return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
+    return c.html(page(t(locale, 'home.doorLetters') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
   });
 
   app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
@@ -631,7 +632,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
+      return c.html(page(t(locale, 'home.doorLetters') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
     }
 
     // The path param selects among the session's own donor items — never widens them.
@@ -672,45 +673,25 @@ export function createApp(deps: AppDeps) {
   app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/activity`));
   app.get('/:locale/portal/events', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/activity`));
 
-  // Back-compat: same reasoning as the bare /portal redirect above.
-  app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/change-request`));
+  // The change-request page became the info door; an old link or emailed ?field=employer keeps its query.
+  app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/info${new URL(c.req.url).search}`));
+  app.get('/:locale/portal/change-request', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/info${new URL(c.req.url).search}`));
 
-  app.get('/:locale/portal/change-request', async (c) => {
+  // Needs the session's sign-in address, not just its ids: which email addresses show depends on
+  // it (src/doors/emailLabels.ts).
+  app.get('/:locale/portal/info', async (c) => {
     const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
+    const session = await getSessionInfo(c, deps);
+    if (session === null) return signInRedirect(c);
 
     c.header('Cache-Control', NO_STORE);
-    if (!changeRequestsEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
-    }
-    // Per donor (issue GL#31): one household record's failed read drops that donor from the form
-    // instead of failing the page; only when none load is it an error — and then this route's
-    // own copy, not the global onError's login-flavored one.
-    const results = await Promise.allSettled(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
-    const donors = results.flatMap((result, index) => {
-      if (result.status === 'fulfilled') return [result.value];
-      const reason = errorText(result.reason);
-      console.error(`member-portal change-request form load failed for donor "${donorItemIds[index]}": ${reason}`);
-      return [];
-    });
-    if (donors.length === 0) {
+    const employerField = !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on';
+    const data = await loadInfoDoor(session, deps, employerField);
+    if (data === null) {
+      // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.changeRequestLoadFailed', locale), locale, { authenticated: true }), 500);
     }
-    return c.html(
-      page(
-        t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
-        changeRequestFormView(
-          donors,
-          locale,
-          configuredPrefFields(deps.config),
-          results.length - donors.length,
-          !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on'
-        ),
-        locale,
-        { authenticated: true }
-      )
-    );
+    return c.html(page(t(locale, 'home.doorInfo') + ' — ' + t(locale, 'site.title'), infoDoorView(data, locale), locale, { authenticated: true }));
   });
 
   app.post('/:locale/portal/change-request', async (c) => {
@@ -855,7 +836,7 @@ export function createApp(deps: AppDeps) {
     // runs only inside the sandboxed /search document framed below (issue GL#102).
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
-    const employerFormUrl = employerAnswerEnabled(deps.config) ? `/${locale}/portal/change-request?field=employer` : null;
+    const employerFormUrl = employerAnswerEnabled(deps.config) ? `/${locale}/portal/info?field=employer` : null;
     return c.html(
       page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein, employerFormUrl }, locale), locale, {
         authenticated: true,

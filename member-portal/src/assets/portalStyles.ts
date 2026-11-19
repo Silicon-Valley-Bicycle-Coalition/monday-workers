@@ -356,6 +356,21 @@ export const PORTAL_CSS = `
   .door-person { margin: 0 0 24px; }
   .door-person .member-card { margin-top: 0; }
   .door-links { list-style: none; padding: 0; }
+  /* Info door address list (src/doors/info.ts): address, then its kind and label as text pills,
+     wrapping under the address on a phone. Bounced is the one label with weight, never colour alone. */
+  /* The change request's submit is the info door's one gold action; each person's preferences
+     form takes the outline style (same out-specificity trick as .member-card-regenerate). */
+  .prefs-form button[type='submit'] {
+    background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
+  }
+  .info-emails { margin-top: 32px; }
+  .email-list { list-style: none; padding: 0; margin: 0 0 16px; }
+  .email-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--table-border); }
+  .email-address { overflow-wrap: anywhere; margin-right: auto; }
+  .email-kind { font-size: 14px; color: var(--text-muted); }
+  .email-label { font-size: 13px; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); }
+  .email-label-bounced { font-weight: 700; border-color: var(--text); }
+  .email-legend { font-size: 14px; color: var(--text-muted); }
 
   .site-footer {
     background: var(--svbc-chrome);

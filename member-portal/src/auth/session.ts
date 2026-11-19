@@ -7,7 +7,7 @@ import { errorText } from '../logSafe';
 
 export interface StartSessionDeps {
   sessionStore: SessionStore;
-  verifiedEmailStore: VerifiedEmailStore;
+  verifiedEmailStore: Pick<VerifiedEmailStore, 'recordVerified'>;
   sessionTtlHours: number;
   now: () => Date;
 }

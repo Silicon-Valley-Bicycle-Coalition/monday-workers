@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { t } from '../i18n/t';
 import { lettersListView, letterView, lettersUnavailableView } from './letterViews';
 import type { LetterData } from './loadLetterData';
 import type { TaxLetterConfig } from '../types';
@@ -40,7 +41,23 @@ describe('lettersListView', () => {
   it('locale-prefixes its year links', () => {
     const html = lettersListView([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'vi');
     expect(html).toContain('/vi/portal/letters/d1/2025');
-    expect(html).toContain('href="/vi/portal"'); // "back to your portal" link
+    expect(html).toContain('href="/vi/portal"'); // the door's "‹ Home" link
+  });
+
+  it('renders inside the door frame, naming each person only for a household', () => {
+    const one = lettersListView([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'en');
+    expect(one).toContain('class="door"');
+    expect(one).toContain(`<h1>${t('en', 'home.doorLetters')}</h1>`);
+    expect(one).not.toContain('<h2>Jane</h2>');
+    const two = lettersListView(
+      [
+        { donorId: 'd1', donorName: 'Jane', years: [2025] },
+        { donorId: 'd2', donorName: 'Sam', years: [] },
+      ],
+      'en'
+    );
+    expect(two).toContain('<h2>Jane</h2>');
+    expect(two).toContain('<h2>Sam</h2>');
   });
 });
 

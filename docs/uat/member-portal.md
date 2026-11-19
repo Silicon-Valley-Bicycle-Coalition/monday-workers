@@ -42,8 +42,8 @@ can safely use any real donor's email address while testing.
    subject like `[sandbox → the address you typed] Your SVBC member portal login link` — the
    bracketed part tells you which test address the email is "pretending" to be for.
 4. Click the link in that email, then press **Continue to your portal** on the page it opens.
-   You'll land on that person's test portal page, seeing their donation history, membership
-   status, and discounts.
+   You'll land on that person's portal home page: a short status line, their membership card,
+   and a list of pages to open (see below).
 5. **Sign in with the code instead.** Go back to the sign-in page and enter the address again.
    The email now also shows a 6-digit code. In the same browser tab that asked for it, type
    the code into the **Got a code? Enter it here** box and press **Sign in**. You should land
@@ -59,23 +59,72 @@ can safely use any real donor's email address while testing.
 
 ## What to try while you're in there
 
-- **Log in** and confirm you land on a page with donation history, membership status, and
-  discounts — not an error or a blank page.
-- **Look at the donation history** — does it look reasonable and readable?
-- **Look for "Your 2025 impact" or "Your 2026 impact"** above the donation history. It lists
+### The home page
+
+After signing in you land on the home page. It shows one status line with one gold button
+(besides Donate), the membership card, then a list of pages ("doors"). What the status line says
+depends on the person's record, so try people in different situations if your test list has them:
+
+- **Tax letter season (January 1 to April 15):** someone who gave last year sees their letter
+  ("Your 2025 letter is ready", with the number of gifts and the total) and a button to the
+  tax letters page. This outranks everything below.
+- **Time to renew:** someone whose membership has ended, ends within 30 days, or who has never
+  been a member sees a renew (or join) message and a button that opens the giving form. A
+  Lifetime member never sees this. An ended membership also greys out the card and shows when it
+  ended.
+- **New member:** someone whose Member Type is New and whose Member Since date is within the
+  last 60 days sees a welcome and a button to their card and discounts.
+- **Everyone else:** a plain greeting and their card, with no extra button.
+- **A household** (one sign-in covering two or more people) sees everyone's cards, in order,
+  and one status line for the most urgent person: for example "Sam's membership ended …".
+
+There should be no tabs anywhere. Each door opens a page that starts with **‹ Home**, which goes
+back to the home page.
+
+### The doors
+
+- **Card & discounts:** each person's card with its QR code and a **Get a new code** button,
+  then the list of bike-shop discounts.
+- **Your giving:** donation history and total, "Your 2025 impact" or "Your 2026 impact" (below),
+  and links to manage a recurring gift, renew, see pledges and employer matching gifts.
+- **Tax letters:** a list of letter years for each person. Open one to see the letter.
+- **Rides, events & volunteering:** event sign-ups, volunteer hours and the Get involved links.
+- **Your info & emails:** the form to request a change to your details, your email and mail
+  preferences, and **your email addresses**, each with a label in words:
+  - **Verified**: you've signed in with it.
+  - **Subscribed**: it gets SVBC's email news.
+  - **On file**: SVBC has it, but it isn't subscribed.
+  - **Bounced**: email to it comes back, so the member should send a new one.
+
+  Which addresses you see depends on how you signed in. One person sees their own email and
+  their Household Email. A household that signed in with the shared Household Email sees only
+  that address, under each person who has it, and **must not** see anyone's own personal email.
+  A household that signed in with one person's own email sees only that address, under that
+  person. A household that arrived from a "your tax letter is ready" email sees no addresses,
+  just a note to sign in with an email address. If you ever see another person's personal email,
+  stop and report it.
+
+A page that still uses an old link, such as a bookmark to the change-request page or the
+"Add your employer" link in an older letter email, should open the right door. Signing out and
+opening a door's link should take you to sign in, then straight back to that door.
+
+### Things to check in detail
+
+- **Look at the donation history** on the giving door: does it look reasonable and readable?
+- **Look for "Your 2025 impact" or "Your 2026 impact"** under the donation history. It lists
   what that person's giving helped do that year. It shows only for someone who gave in 2025 or
   2026, and it shows the most recent of those years. The statements say **"[Sample for
   testing]"** because the real ones haven't been written yet. Someone whose last gift was
   before 2025 should see no impact section at all.
-- **Look at the membership status and any bike-shop discounts** — do they display clearly?
-- **Open the digital membership card** — does it show and look right?
-- **Submit a change** — try updating an address, email, or phone number through the portal and
-  confirm you get a confirmation message. Then open the
+- **Look at the membership card and any bike-shop discounts** on the card door: do they display
+  clearly?
+- **Submit a change** on the info door: try updating an address, email, or phone number and
+  confirm you get a confirmation message with a link back to **Your info & emails**. Then open the
   [Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18439574429) board
   in the CRM Sandbox: the request should be there as a new item with the donor, the field, and
   the old and new values. Staff apply changes from that board; the portal never edits a donor's
   record directly.
-- **Tell the portal where you work** — on the change-request page, choose **Employer** (the
+- **Tell the portal where you work** — on the info door, choose **Employer** (the
   matching-gifts page's "Add your employer" link opens it with Employer already chosen). Try
   three answers, one at a time:
   - the exact name of an organization on

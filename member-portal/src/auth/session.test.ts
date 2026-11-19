@@ -7,7 +7,7 @@ const now = () => new Date('2026-08-22T00:00:00.000Z');
 
 function deps(recordVerified = vi.fn().mockResolvedValue(undefined)) {
   const sessionStore: SessionStore = { createSession: vi.fn().mockResolvedValue(undefined), getSession: vi.fn(), deleteSession: vi.fn() };
-  const verifiedEmailStore: VerifiedEmailStore = { recordVerified };
+  const verifiedEmailStore: Pick<VerifiedEmailStore, 'recordVerified'> = { recordVerified };
   return { sessionStore, verifiedEmailStore, sessionTtlHours: 24, now };
 }
 

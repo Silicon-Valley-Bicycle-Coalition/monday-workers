@@ -46,4 +46,16 @@ describe('D1VerifiedEmailStore', () => {
     await store.recordVerified('ve-d', [], '2026-11-18T10:00:00.000Z');
     expect(await rows('ve-d')).toEqual([]);
   });
+
+  it('verifiedFor returns `${emailHash}:${personId}` keys for the given people only', async () => {
+    const store = new D1VerifiedEmailStore(env.DB);
+    await store.recordVerified('vf-shared', ['vf-p1', 'vf-p2', 'vf-p3'], '2026-11-18T10:00:00.000Z');
+    await store.recordVerified('vf-own', ['vf-p1'], '2026-11-18T10:00:00.000Z');
+    await store.recordVerified('vf-other', ['vf-p3'], '2026-11-18T10:00:00.000Z');
+    expect([...(await store.verifiedFor(['vf-p1', 'vf-p2']))].sort()).toEqual(['vf-own:vf-p1', 'vf-shared:vf-p1', 'vf-shared:vf-p2']);
+  });
+
+  it('verifiedFor an empty id list is an empty set', async () => {
+    expect((await new D1VerifiedEmailStore(env.DB).verifiedFor([])).size).toBe(0);
+  });
 });

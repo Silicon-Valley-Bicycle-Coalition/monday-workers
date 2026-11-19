@@ -46,7 +46,7 @@ describe('t — full English key set', () => {
     const { t } = await import('./t');
     const sample: TranslationKey[] = [
       'site.title', 'login.prompt', 'login.submit', 'languagePicker.label',
-      'error.invalidLink', 'home.doorCard', 'door.home', 'letters.listHeading',
+      'error.invalidLink', 'home.doorCard', 'door.home', 'home.doorLetters',
       'changeRequest.fieldLanguage', 'card.regenerate', 'verify.notValid', 'email.subject',
     ];
     for (const key of sample) {

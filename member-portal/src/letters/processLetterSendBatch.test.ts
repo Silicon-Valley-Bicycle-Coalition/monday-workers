@@ -167,7 +167,7 @@ describe('processLetterSendBatch', () => {
       store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: employerConfig, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
     const params = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
-    expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/change-request?field=employer`);
+    expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/info?field=employer`);
   });
 
   it('passes no employer URL while employer answers are off', async () => {

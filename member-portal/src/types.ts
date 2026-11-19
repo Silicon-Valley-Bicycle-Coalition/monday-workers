@@ -379,6 +379,15 @@ export interface DonorContactInfo {
   doNotMail: boolean | null;
 }
 
+// A person's two addresses and their Mailchimp consent labels (Subscribed / Unsubscribed /
+// Cleaned / ...), for the info door. '' for a blank cell or a column still gated off.
+export interface DonorEmails {
+  personal: string;
+  household: string;
+  personalConsent: string;
+  householdConsent: string;
+}
+
 export interface VolunteerShift {
   date: string;
   hours: string;
