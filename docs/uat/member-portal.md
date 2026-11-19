@@ -44,7 +44,17 @@ can safely use any real donor's email address while testing.
 4. Click the link in that email, then press **Continue to your portal** on the page it opens.
    You'll land on that person's test portal page, seeing their donation history, membership
    status, and discounts.
-5. If nothing shows up after a minute or two, see [If something seems stuck](#if-something-seems-stuck)
+5. **Sign in with the code instead.** Go back to the sign-in page and enter the address again.
+   The email now also shows a 6-digit code. In the same browser tab that asked for it, type
+   the code into the **Got a code? Enter it here** box and press **Sign in**. You should land
+   on the same portal page, with no extra confirmation step. Then try a wrong code: you should
+   see "That code didn't work" and the box again. (The code only works in the browser that
+   asked for it, and only once; using the link spends the code, and the other way round.)
+6. **Sign in with a Household Email.** Ask for a test address that is only listed as someone's
+   Household Email (not their own email), if you were given one. You should get the email and
+   sign in as for any other address; if several people share that address, the portal shows
+   each of them under their own name.
+7. If nothing shows up after a minute or two, see [If something seems stuck](#if-something-seems-stuck)
    below before assuming it's broken.
 
 ## What to try while you're in there

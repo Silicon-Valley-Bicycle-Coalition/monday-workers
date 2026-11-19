@@ -30,7 +30,10 @@ export const es: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': 'Revisa tu correo',
-  'checkEmail.body': 'Revisa tu correo electrónico: si esa dirección está registrada, un enlace de acceso está en camino. Caduca pronto y solo se puede usar una vez.',
+  'checkEmail.body': 'Revisa tu correo electrónico: si esa dirección está registrada, un enlace de acceso y un código están en camino. Caducan pronto y solo se pueden usar una vez.',
+  'checkEmail.codeLabel': '¿Tienes un código? Ingrésalo aquí',
+  'checkEmail.codeSubmit': 'Iniciar sesión',
+  'checkEmail.codeError': 'Ese código no funcionó. Revísalo o pide un correo nuevo.',
   'confirmLogin.heading': 'Continúa a tu portal',
   'confirmLogin.body': 'Usa el botón de abajo para terminar de iniciar sesión.',
   'confirmLogin.submit': 'Continuar a tu portal',

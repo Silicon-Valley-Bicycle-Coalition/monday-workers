@@ -30,7 +30,10 @@ export const fil: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': 'Tingnan ang iyong email',
-  'checkEmail.body': 'Pakitingnan ang iyong email: kung nasa records namin ang address na iyon, paparating na ang isang login link. Malapit na itong mag-expire at isang beses lang magagamit.',
+  'checkEmail.body': 'Pakitingnan ang iyong email: kung nasa records namin ang address na iyon, paparating na ang isang sign-in link at code. Malapit na silang mag-expire at isang beses lang magagamit.',
+  'checkEmail.codeLabel': 'May code ka ba? Ilagay dito',
+  'checkEmail.codeSubmit': 'Mag-sign in',
+  'checkEmail.codeError': 'Hindi gumana ang code na iyon. Suriin ito, o humiling ng bagong email.',
   'confirmLogin.heading': 'Magpatuloy sa iyong portal',
   'confirmLogin.body': 'Gamitin ang button sa ibaba para tapusin ang pag-log in.',
   'confirmLogin.submit': 'Magpatuloy sa iyong portal',

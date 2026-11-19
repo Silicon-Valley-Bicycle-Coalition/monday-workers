@@ -30,7 +30,10 @@ export const zhHans: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': '请查收邮件',
-  'checkEmail.body': '请查收您的电子邮箱：如果该地址在我们的记录中，登录链接即将发送到您的邮箱。链接很快会失效，且只能使用一次。',
+  'checkEmail.body': '请查收您的电子邮箱：如果该地址在我们的记录中，登录链接和验证码即将发送到您的邮箱。它们很快会失效，且只能使用一次。',
+  'checkEmail.codeLabel': '有验证码？请在此输入',
+  'checkEmail.codeSubmit': '登录',
+  'checkEmail.codeError': '该验证码无效。请检查后重试，或重新获取一封邮件。',
   'confirmLogin.heading': '继续进入您的门户',
   'confirmLogin.body': '请点击下方按钮完成登录。',
   'confirmLogin.submit': '继续进入您的门户',

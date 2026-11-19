@@ -147,6 +147,30 @@ email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSe
 IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
 stretch a lockout by retrying.
 
+**Sign-in code.** The same email carries a 6-digit code beside the link, for a donor who reads
+mail on one device and signs in on another (or whose mail app opens links in a browser without
+their portal session). Each `POST /` makes a request id, sends it to the browser in the
+`__Host-login-request` cookie (HttpOnly, Secure, SameSite=Lax, Path=/, 15 minutes) and binds the
+code to it: the stored hash is of `<request id>:<code>`, so the code is useless without that
+browser's cookie. The check-email page posts the code to `POST /auth/code`, which strips spaces,
+requires six digits and signs the donor in exactly as the link does (same session cookie, same
+`next` redirect), then clears the request cookie. The link and the code are one row in
+`magic_link_tokens` and share `used_at`: whichever is used first spends both. The cookie is set
+whether or not the address matched, or was even well-formed, so the response reveals nothing; it
+is withheld only when the per-address limiter denied the request, since no code was sent. Two
+caps guard guessing: each request's code gets `MAX_CODE_ATTEMPTS` (5) tries, right or wrong, and
+each address gets `rateLimit.codeFailuresPerAddressDaily` (10) wrong guesses per rolling 24 hours
+across all its requests (`code_failures`, reserved atomically before the comparison). The IP
+limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic page.
+
+**Household Email.** Sign-in matches an address against a donor's Household Email as well as
+their own, so a shared household address signs in every person on it; the session covers all
+of them, labeled as above.
+
+**Verified addresses.** A correct code or a used link proves control of the address, so the
+`verified_emails` table (`email_hash`, `person_item_id`, first and last verified) records the
+address against each person the session covers. Hashes only; no raw address is stored.
+
 ## Sending the email
 
 **Do not use Cloudflare's old free MailChannels-Workers integration — it's dead.** MailChannels
@@ -258,7 +282,7 @@ Routing destination). A live login-link request for a real sandbox People record
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
-* CSRF: every state-changing form POST (login, logout, change requests, preferences, card
+* CSRF: every state-changing form POST (login, sign-in code, logout, change requests, preferences, card
   regenerate) passes Hono's `csrf()` — `Sec-Fetch-Site: same-origin` or an `Origin` exactly equal
   to `auth.portalBaseUrl`'s origin, else 403. `SameSite=Lax` alone isn't enough here: it still
   sends the session cookie on POSTs from sibling `*.bikesiliconvalley.org` hosts (same-site,
@@ -888,13 +912,17 @@ Every write the portal makes on a donor's behalf is gated by the shared write sw
   queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording
   proxies, logging one `"writeSwitch":"skipped"` line per would-be Monday create or email and
   acking. **A missing key means `off`**; a KV read error behaves like hold (queues not paused).
+Apply D1 migration `0007_sign_in_codes.sql` (sign-in code columns, `verified_emails`,
+`code_failures`) before deploying the build that reads it:
+`npx wrangler d1 migrations apply svbc-member-portal --remote` (the sandbox database is `svbc-member-portal-sandbox`).
+
 - `member-portal:log` — `debug` adds redacted payloads to those lines (names, contact details,
   old/new values and login links masked).
 
 | Path | `on` | `hold` | `off` | KV error |
 |---|---|---|---|---|
 | `POST /` (login link), both change-request POSTs, card regenerate | live | 503 "temporarily unavailable" page | 503 | 503 |
-| Every GET, `POST /auth/callback`, `POST /logout` | live | live | live | live |
+| Every GET, `POST /auth/callback`, `POST /auth/code`, `POST /logout` | live | live | live | live |
 | `POST /webhooks/monday/letters` | live | live (row + message; the queue is paused) | skip line, 200, no `letter_sends` row | 503 (Monday retries) |
 | Letter cron | runs | skip line | skip line | skip line |
 | Retention purges (scheduled) | run | run | run | run |

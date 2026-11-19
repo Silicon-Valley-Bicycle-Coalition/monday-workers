@@ -20,6 +20,8 @@ import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
+import { verifyCode } from './auth/verifyCode';
+import type { CodeFailureStore } from './db/codeFailures';
 import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { loadPortalData } from './portal/loadPortalData';
 import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
@@ -75,6 +77,7 @@ export interface AppDeps {
   tokenStore: MagicLinkTokenStore;
   sessionStore: SessionStore;
   verifiedEmailStore: VerifiedEmailStore;
+  codeFailureStore: CodeFailureStore;
   attemptStore: LoginAttemptStore;
   emailSender: EmailSender;
   ipLimiter: IpRateLimiter;
@@ -94,6 +97,9 @@ export interface AppDeps {
 // __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
 // subdomain can't plant a session cookie scoped to a longer path (GL#103).
 const SESSION_COOKIE = '__Host-session';
+// Ties a typed code to the browser that asked for it: holds the request id the emailed code was
+// bound to, so a code read off someone else's screen or mail is useless without it.
+export const LOGIN_REQUEST_COOKIE = '__Host-login-request';
 export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
@@ -342,6 +348,11 @@ export function createApp(deps: AppDeps) {
     const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
     const next = portalReturnPath(body.next);
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const requestId = generateToken();
+    // Set on every answer but a per-address denial, so whether an address matched (or was even
+    // well-formed) never shows in the headers. A denied request sent no code, so there's nothing
+    // for the cookie to unlock.
+    let issueRequestCookie = true;
 
     if (email.length > 0) {
       try {
@@ -351,13 +362,14 @@ export function createApp(deps: AppDeps) {
           { ipLimiter: deps.ipLimiter, attemptStore: deps.attemptStore, config: deps.config.rateLimit },
           deps.now()
         );
+        if (!allowed) issueRequestCookie = false;
         if (allowed) {
           // requestLogin does a D1 write plus an email-send round-trip; awaiting it inline
           // would make the matching-email case measurably slower than the non-matching/denied
           // cases even though the response body is identical, letting an attacker distinguish
           // "matched" from "didn't match" by response latency alone. Defer it instead so the
           // response returns immediately regardless of match state.
-          const work = requestLogin(email, locale, generateToken(), {
+          const work = requestLogin(email, locale, requestId, {
             monday: deps.monday,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
@@ -386,7 +398,61 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale), locale));
+    if (issueRequestCookie) {
+      setCookie(c, LOGIN_REQUEST_COOKIE, requestId, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+        path: '/',
+        maxAge: deps.config.auth.magicLinkTtlMinutes * 60,
+      });
+    }
+    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next), locale));
+  });
+
+  // The typed-code half of sign-in. Like POST /auth/callback it is CSRF-checked and stays live
+  // under hold (it writes a session and a verified address, not a Monday record). Every refusal is
+  // the same page, so nothing says why a code failed.
+  app.post('/auth/code', async (c) => {
+    const body = await c.req.parseBody();
+    const locale = detectLocale(c);
+    const next = portalReturnPath(body.next);
+    const codeError = () =>
+      c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, true), locale));
+
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    if (!(await deps.ipLimiter.limit(`code:${ip}`)).success) return codeError();
+
+    const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
+    const requestId = getCookie(c, LOGIN_REQUEST_COOKIE);
+    if (!/^\d{6}$/.test(code) || !requestId) return codeError();
+
+    let sessionToken: string | null;
+    try {
+      sessionToken = await verifyCode(requestId, code, {
+        tokenStore: deps.tokenStore,
+        sessionStore: deps.sessionStore,
+        verifiedEmailStore: deps.verifiedEmailStore,
+        codeFailureStore: deps.codeFailureStore,
+        codeFailuresPerAddressDaily: deps.config.rateLimit.codeFailuresPerAddressDaily,
+        sessionTtlHours: deps.config.auth.sessionTtlHours,
+        now: deps.now,
+      });
+    } catch (err) {
+      console.error(`member-portal code verification failed: ${errorText(err)}`);
+      return codeError();
+    }
+    if (sessionToken === null) return codeError();
+
+    setCookie(c, SESSION_COOKIE, sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: deps.config.auth.sessionTtlHours * 3600,
+    });
+    deleteCookie(c, LOGIN_REQUEST_COOKIE, { secure: true, path: '/' });
+    return c.redirect(next ?? `/${locale}/portal`, 303);
   });
 
   // The emailed magic link (login and letter-ready alike) lands here — and so do the corporate

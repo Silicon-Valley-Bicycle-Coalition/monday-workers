@@ -30,7 +30,10 @@ export const ptBR: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': 'Verifique seu e-mail',
-  'checkEmail.body': 'Verifique seu e-mail: se esse endereço estiver em nosso cadastro, um link de acesso está a caminho. Ele expira em breve e só pode ser usado uma vez.',
+  'checkEmail.body': 'Verifique seu e-mail: se esse endereço estiver em nosso cadastro, um link de acesso e um código estão a caminho. Eles expiram em breve e só podem ser usados uma vez.',
+  'checkEmail.codeLabel': 'Recebeu um código? Digite aqui',
+  'checkEmail.codeSubmit': 'Entrar',
+  'checkEmail.codeError': 'Esse código não funcionou. Confira-o ou peça um novo e-mail.',
   'confirmLogin.heading': 'Continue para seu portal',
   'confirmLogin.body': 'Use o botão abaixo para concluir o login.',
   'confirmLogin.submit': 'Continuar para seu portal',

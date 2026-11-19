@@ -30,7 +30,10 @@ export const zhHant: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': '請查收電郵',
-  'checkEmail.body': '請查收您的電郵：如該地址在我們的記錄中，登入連結即將寄出。連結將於短時間內失效，且只能使用一次。',
+  'checkEmail.body': '請查收您的電郵：如該地址在我們的記錄中，登入連結和驗證碼即將寄出。它們將於短時間內失效，且只能使用一次。',
+  'checkEmail.codeLabel': '有驗證碼？請在此輸入',
+  'checkEmail.codeSubmit': '登入',
+  'checkEmail.codeError': '該驗證碼無效。請檢查後重試，或重新索取一封電郵。',
   'confirmLogin.heading': '繼續進入您的入口網站',
   'confirmLogin.body': '請點擊下方按鈕完成登入。',
   'confirmLogin.submit': '繼續進入您的入口網站',

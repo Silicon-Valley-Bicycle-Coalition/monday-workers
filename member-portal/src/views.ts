@@ -154,10 +154,20 @@ export function loginFormView(locale: Locale, next: string | null = null): strin
   `;
 }
 
-export function checkEmailView(locale: Locale): string {
+// The code form posts to /auth/code; the request cookie it relies on was set by POST /. `next`
+// arrives already validated by routes.ts's portalReturnPath. codeError re-renders the page after a
+// refused code.
+export function checkEmailView(locale: Locale, next: string | null = null, codeError = false): string {
+  const nextField = next === null ? '' : `\n      <input type="hidden" name="next" value="${escapeHtml(next)}" />`;
+  const error = codeError ? `\n    <p role="alert">${escapeHtml(t(locale, 'checkEmail.codeError'))}</p>` : '';
   return `
     <h1>${escapeHtml(t(locale, 'checkEmail.heading'))}</h1>
-    <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>
+    <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>${error}
+    <form action="/auth/code" method="post">
+      <label for="sign-in-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
+      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />${nextField}
+      <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>
+    </form>
   `;
 }
 

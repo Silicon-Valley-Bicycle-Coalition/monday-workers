@@ -10,11 +10,12 @@ import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
 import type { CardTokenStore } from './db/cardTokens';
+import type { CodeFailureStore } from './db/codeFailures';
 import { SUPPORTED_LOCALES } from './i18n/locales';
 import { t } from './i18n/t';
 import type { WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
-import { CONFIRM_LOGIN_SCRIPT } from './views';
+import { CONFIRM_LOGIN_SCRIPT, escapeHtml } from './views';
 import { DEFAULT_CSP } from './securityHeaders';
 
 function inMemoryCardTokenStore(): CardTokenStore {
@@ -44,23 +45,67 @@ function inMemoryCardTokenStore(): CardTokenStore {
   };
 }
 
+// Same semantics as D1MagicLinkTokenStore: one row per request, link and code share used_at,
+// attempts are capped, and everything stops at expiry.
 function inMemoryTokenStore(): MagicLinkTokenStore {
-  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; usedAt: string | null }>();
+  interface Row {
+    donorItemIds: string[];
+    expiresAt: string;
+    usedAt: string | null;
+    requestHash: string | null;
+    codeHash: string | null;
+    emailHash: string | null;
+    attempts: number;
+  }
+  const rows = new Map<string, Row>();
+  const byRequest = (requestHash: string) => [...rows.values()].find((row) => row.requestHash === requestHash);
   return {
     async createToken(params) {
-      rows.set(params.tokenHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, usedAt: null });
+      rows.set(params.tokenHash, {
+        donorItemIds: params.donorItemIds,
+        expiresAt: params.expiresAt,
+        usedAt: null,
+        requestHash: params.requestHash ?? null,
+        codeHash: params.codeHash ?? null,
+        emailHash: params.emailHash ?? null,
+        attempts: 0,
+      });
     },
     async consumeToken(tokenHash, nowISO) {
       const row = rows.get(tokenHash);
       if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
       row.usedAt = nowISO;
-      return { donorItemIds: row.donorItemIds, emailHash: null };
+      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
     },
-    async takeCodeAttempt() {
-      return null;
+    async takeCodeAttempt(requestHash, nowISO, maxAttempts) {
+      const row = byRequest(requestHash);
+      if (!row || row.usedAt !== null || row.expiresAt <= nowISO || row.attempts >= maxAttempts || row.codeHash === null) return null;
+      row.attempts += 1;
+      return { codeHash: row.codeHash, emailHash: row.emailHash as string };
     },
-    async claimByRequest() {
-      return null;
+    async claimByRequest(requestHash, nowISO) {
+      const row = byRequest(requestHash);
+      if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
+      row.usedAt = nowISO;
+      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
+    },
+  };
+}
+
+// Same budget rule as D1CodeFailureStore.
+function inMemoryCodeFailureStore(): CodeFailureStore {
+  const rows: { id: number; emailHash: string; at: string }[] = [];
+  let nextId = 1;
+  return {
+    async reserveFailure(emailHash, atISO, sinceISO, max) {
+      if (rows.filter((row) => row.emailHash === emailHash && row.at >= sinceISO).length >= max) return null;
+      const id = nextId++;
+      rows.push({ id, emailHash, at: atISO });
+      return id;
+    },
+    async releaseFailure(id) {
+      const index = rows.findIndex((row) => row.id === id);
+      if (index >= 0) rows.splice(index, 1);
     },
   };
 }
@@ -273,6 +318,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     tokenStore: inMemoryTokenStore(),
     sessionStore: inMemorySessionStore(),
     verifiedEmailStore: { recordVerified: vi.fn().mockResolvedValue(undefined) },
+    codeFailureStore: inMemoryCodeFailureStore(),
     attemptStore: inMemoryAttemptStore(),
     emailSender: {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),
@@ -953,6 +999,277 @@ describe('GET /email/logo.png', () => {
     const bytes = new Uint8Array(await res.arrayBuffer());
     // PNG magic bytes
     expect(bytes.slice(0, 8)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  });
+});
+
+describe('sign in with the emailed code', () => {
+  const FORM_HEADERS = { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' };
+  const REQUEST_COOKIE = '__Host-login-request';
+
+  function sender() {
+    return { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  function setup(matches: Record<string, { id: string; name: string }[]> = { 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }) {
+    const emailSender = sender();
+    const verifiedEmailStore = { recordVerified: vi.fn().mockResolvedValue(undefined) };
+    const deps = makeDeps({ monday: fakeMonday(matches), emailSender, verifiedEmailStore });
+    return { deps, app: createApp(deps), emailSender, verifiedEmailStore };
+  }
+
+  function requestSignIn(app: ReturnType<typeof createApp>, email: string, extra: Record<string, string> = {}) {
+    return app.request('/', { method: 'POST', body: new URLSearchParams({ email, ...extra }), headers: FORM_HEADERS });
+  }
+
+  // The name=value pair of the request cookie a response set, or '' when it set none.
+  function requestCookieOf(res: Response): string {
+    const header = res.headers.get('set-cookie') ?? '';
+    const match = new RegExp(`${REQUEST_COOKIE}=[^;]+`).exec(header);
+    return match === null ? '' : match[0];
+  }
+
+  function submitCode(app: ReturnType<typeof createApp>, code: string, cookie: string, extra: Record<string, string> = {}, headers: Record<string, string> = FORM_HEADERS) {
+    return app.request('/auth/code', {
+      method: 'POST',
+      body: new URLSearchParams({ code, ...extra }),
+      headers: { ...headers, ...(cookie === '' ? {} : { Cookie: cookie }) },
+      redirect: 'manual',
+    });
+  }
+
+  function lastEmail(emailSender: ReturnType<typeof sender>): { loginUrl: string; code: string } {
+    const calls = emailSender.sendLoginEmail.mock.calls;
+    return calls[calls.length - 1]![0];
+  }
+
+  it('sets the request cookie for matching and non-matching addresses alike, with the same body', async () => {
+    const { app } = setup();
+    const matching = await requestSignIn(app, 'donor@example.org');
+    const other = await requestSignIn(app, 'nobody@example.org');
+
+    expect(await matching.text()).toBe(await other.text());
+    for (const res of [matching, other]) {
+      const header = res.headers.get('set-cookie') ?? '';
+      expect(header).toMatch(/__Host-login-request=[^;]+/);
+      expect(header).toContain('HttpOnly');
+      expect(header).toContain('Secure');
+      expect(header).toContain('SameSite=Lax');
+      expect(header).toContain('Path=/');
+      expect(header).toContain('Max-Age=900');
+      expect(header).not.toMatch(/Domain=/i);
+    }
+  });
+
+  it('sets the request cookie for a malformed address', async () => {
+    const { app } = setup();
+    const res = await requestSignIn(app, 'not an email');
+    expect(requestCookieOf(res)).not.toBe('');
+  });
+
+  it('sets no request cookie when the per-address limiter denies', async () => {
+    const attemptStore = { tryReserve: vi.fn().mockResolvedValue(false) };
+    const deps = makeDeps({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }), attemptStore });
+    const res = await requestSignIn(createApp(deps), 'donor@example.org');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie') ?? '').not.toContain(REQUEST_COOKIE);
+  });
+
+  it('shows a code form on the check-email page, carrying next', async () => {
+    const { app } = setup();
+    const html = await (await requestSignIn(app, 'donor@example.org', { next: '/en/portal/letters' })).text();
+    expect(html).toContain('action="/auth/code"');
+    expect(html).toContain('inputmode="numeric"');
+    expect(html).toContain('autocomplete="one-time-code"');
+    expect(html).toContain('maxlength="6"');
+    expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
+    expect(html).not.toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('omits the hidden next when the sign-in form carried none', async () => {
+    const { app } = setup();
+    const html = await (await requestSignIn(app, 'donor@example.org')).text();
+    expect(html).toContain('action="/auth/code"');
+    expect(html).not.toContain('name="next"');
+  });
+
+  it('signs in with the emailed code, clears the request cookie and records the address as verified', async () => {
+    const { app, emailSender, verifiedEmailStore } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+
+    const res = await submitCode(app, code, cookie);
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/en/portal');
+    const header = res.headers.get('set-cookie') ?? '';
+    expect(header).toMatch(/__Host-session=[^;]+/);
+    expect(header).toMatch(/__Host-login-request=;/);
+    expect(verifiedEmailStore.recordVerified).toHaveBeenCalledTimes(1);
+
+    const sessionCookie = /__Host-session=[^;]+/.exec(header)![0];
+    const portal = await app.request('/en/portal', { headers: { cookie: sessionCookie } });
+    expect(await portal.text()).toContain('Donor donor-1');
+  });
+
+  it('goes to next after a code sign-in', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const res = await submitCode(app, lastEmail(emailSender).code, cookie, { next: '/en/portal/letters' });
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/en/portal/letters');
+  });
+
+  it('accepts a code typed with a space in the middle', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+    const res = await submitCode(app, `${code.slice(0, 3)} ${code.slice(3)}`, cookie);
+    expect(res.status).toBe(303);
+  });
+
+  it('shows the code-error page and the form for a wrong code', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+    const wrong = code === '000000' ? '111111' : '000000';
+
+    const res = await submitCode(app, wrong, cookie);
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    expect(html).toContain('action="/auth/code"');
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('__Host-session');
+  });
+
+  it('keeps next on the code-error page', async () => {
+    const { app } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const html = await (await submitCode(app, '000000', cookie, { next: '/en/portal/letters' })).text();
+    expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
+  });
+
+  it('refuses a code that is not six digits without touching the stores', async () => {
+    const { deps, app } = setup();
+    const takeCodeAttempt = vi.spyOn(deps.tokenStore, 'takeCodeAttempt');
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+
+    for (const bad of ['12345', '1234567', 'abcdef', '']) {
+      const res = await submitCode(app, bad, cookie);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    }
+    expect(takeCodeAttempt).not.toHaveBeenCalled();
+  });
+
+  it('refuses the right code without the request cookie', async () => {
+    const { app, emailSender } = setup();
+    await requestSignIn(app, 'donor@example.org');
+    const res = await submitCode(app, lastEmail(emailSender).code, '');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it("refuses a code used with another browser's request cookie", async () => {
+    const { app, emailSender } = setup();
+    await requestSignIn(app, 'donor@example.org');
+    const { code } = lastEmail(emailSender);
+    const otherCookie = requestCookieOf(await requestSignIn(app, 'nobody@example.org'));
+
+    const res = await submitCode(app, code, otherCookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('refuses the code once the link has been used', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { loginUrl, code } = lastEmail(emailSender);
+
+    expect((await completeLogin(app, { token: extractToken(loginUrl) })).status).toBe(303);
+    const res = await submitCode(app, code, cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('refuses the link once the code has been used', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { loginUrl, code } = lastEmail(emailSender);
+
+    expect((await submitCode(app, code, cookie)).status).toBe(303);
+    const res = await completeLogin(app, { token: extractToken(loginUrl) });
+
+    expect(await res.text()).toContain(t('en', 'error.expiredLink'));
+  });
+
+  it('signs a shared Household Email in to every person on it and verifies each', async () => {
+    const { app, emailSender, verifiedEmailStore } = setup({
+      'home@example.org': [
+        { id: 'donor-1', name: 'Jane' },
+        { id: 'donor-2', name: 'Joe' },
+      ],
+    });
+    const cookie = requestCookieOf(await requestSignIn(app, 'home@example.org'));
+
+    const res = await submitCode(app, lastEmail(emailSender).code, cookie);
+
+    expect(res.status).toBe(303);
+    expect(verifiedEmailStore.recordVerified).toHaveBeenCalledTimes(1);
+    expect(verifiedEmailStore.recordVerified.mock.calls[0]![1]).toEqual(['donor-1', 'donor-2']);
+    const sessionCookie = /__Host-session=[^;]+/.exec(res.headers.get('set-cookie') ?? '')![0];
+    const html = await (await app.request('/en/portal', { headers: { cookie: sessionCookie } })).text();
+    expect(html).toContain('Donor donor-1');
+    expect(html).toContain('Donor donor-2');
+  });
+
+  it('refuses the code after the per-address failure budget is spent', async () => {
+    const { deps, emailSender } = (() => {
+      const s = setup();
+      return { deps: s.deps, emailSender: s.emailSender };
+    })();
+    const app = createApp({ ...deps, config: { ...config, rateLimit: { ...config.rateLimit, codeFailuresPerAddressDaily: 1 } } });
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+    const wrong = code === '000000' ? '111111' : '000000';
+
+    await submitCode(app, wrong, cookie);
+    const res = await submitCode(app, code, cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('shows the code-error page when the IP limiter denies the attempt', async () => {
+    const { deps, app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+    const limit = vi.fn().mockResolvedValue({ success: false });
+    const res = await submitCode(createApp({ ...deps, ipLimiter: { limit } }), code, cookie);
+
+    expect(limit).toHaveBeenCalledWith('code:unknown');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('rejects a cross-origin POST /auth/code', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const res = await submitCode(app, lastEmail(emailSender).code, cookie, {}, {
+      Origin: 'https://evil.example',
+      'Sec-Fetch-Site': 'cross-site',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('stays live under hold', async () => {
+    const { deps, app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const res = await submitCode(createApp({ ...deps, writeGate: gateFor('hold') }), lastEmail(emailSender).code, cookie);
+    expect(res.status).toBe(303);
   });
 });
 

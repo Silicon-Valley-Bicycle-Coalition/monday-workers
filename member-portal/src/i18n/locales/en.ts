@@ -30,7 +30,10 @@ export const en = {
 
   // Check email
   'checkEmail.heading': 'Check your email',
-  'checkEmail.body': 'Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.',
+  'checkEmail.body': 'Please check your email: if that address is on file, a sign-in link and code are on their way. They expire soon and can only be used once.',
+  'checkEmail.codeLabel': 'Got a code? Enter it here',
+  'checkEmail.codeSubmit': 'Sign in',
+  'checkEmail.codeError': 'That code didn\'t work. Check it, or ask for a new email.',
 
   // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
   // scanners that prefetch links can't burn the single-use token (issue GL#31).

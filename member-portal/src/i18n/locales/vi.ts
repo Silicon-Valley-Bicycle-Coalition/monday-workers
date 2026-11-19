@@ -30,7 +30,10 @@ export const vi: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': 'Kiểm tra email của bạn',
-  'checkEmail.body': 'Vui lòng kiểm tra email của bạn: nếu địa chỉ đó có trong hồ sơ của chúng tôi, một liên kết đăng nhập đang được gửi đến. Liên kết sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'checkEmail.body': 'Vui lòng kiểm tra email của bạn: nếu địa chỉ đó có trong hồ sơ của chúng tôi, một liên kết đăng nhập và một mã đang được gửi đến. Chúng sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'checkEmail.codeLabel': 'Có mã? Nhập tại đây',
+  'checkEmail.codeSubmit': 'Đăng nhập',
+  'checkEmail.codeError': 'Mã đó không hợp lệ. Hãy kiểm tra lại, hoặc yêu cầu một email mới.',
   'confirmLogin.heading': 'Tiếp tục đến cổng thông tin của bạn',
   'confirmLogin.body': 'Nhấn nút bên dưới để hoàn tất đăng nhập.',
   'confirmLogin.submit': 'Tiếp tục đến cổng thông tin',

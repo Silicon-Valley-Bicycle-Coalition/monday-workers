@@ -30,7 +30,10 @@ export const ja: Record<TranslationKey, string> = {
 
   // Check email
   'checkEmail.heading': 'メールをご確認ください',
-  'checkEmail.body': 'メールをご確認ください。ご登録のメールアドレスであれば、まもなくログインリンクが届きます。このリンクは有効期限が短く、1回のみご利用いただけます。',
+  'checkEmail.body': 'メールをご確認ください。ご登録のメールアドレスであれば、まもなくサインイン用のリンクとコードが届きます。有効期限は短く、1回のみご利用いただけます。',
+  'checkEmail.codeLabel': 'コードをお持ちですか？こちらに入力してください',
+  'checkEmail.codeSubmit': 'サインイン',
+  'checkEmail.codeError': 'このコードは使用できませんでした。ご確認いただくか、新しいメールをリクエストしてください。',
   'confirmLogin.heading': 'ポータルへ進む',
   'confirmLogin.body': '下のボタンを押してログインを完了してください。',
   'confirmLogin.submit': 'ポータルへ進む',
