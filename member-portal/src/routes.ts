@@ -20,6 +20,7 @@ import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
+import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { loadPortalData } from './portal/loadPortalData';
 import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
 import { sha256Base64, sha256Hex } from './crypto/hash';
@@ -73,6 +74,7 @@ export interface AppDeps {
   monday: MondayClient;
   tokenStore: MagicLinkTokenStore;
   sessionStore: SessionStore;
+  verifiedEmailStore: VerifiedEmailStore;
   attemptStore: LoginAttemptStore;
   emailSender: EmailSender;
   ipLimiter: IpRateLimiter;
@@ -355,7 +357,7 @@ export function createApp(deps: AppDeps) {
           // cases even though the response body is identical, letting an attacker distinguish
           // "matched" from "didn't match" by response latency alone. Defer it instead so the
           // response returns immediately regardless of match state.
-          const work = requestLogin(email, locale, {
+          const work = requestLogin(email, locale, generateToken(), {
             monday: deps.monday,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
@@ -443,6 +445,7 @@ export function createApp(deps: AppDeps) {
       sessionToken = await verifyLogin(token, {
         tokenStore: deps.tokenStore,
         sessionStore: deps.sessionStore,
+        verifiedEmailStore: deps.verifiedEmailStore,
         sessionTtlHours: deps.config.auth.sessionTtlHours,
         now: deps.now,
       });

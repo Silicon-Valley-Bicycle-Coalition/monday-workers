@@ -272,6 +272,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     monday: fakeMonday({}),
     tokenStore: inMemoryTokenStore(),
     sessionStore: inMemorySessionStore(),
+    verifiedEmailStore: { recordVerified: vi.fn().mockResolvedValue(undefined) },
     attemptStore: inMemoryAttemptStore(),
     emailSender: {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),

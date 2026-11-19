@@ -3,6 +3,9 @@ import { requestLogin } from './requestLogin';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
+import { sha256Hex } from '../crypto/hash';
+
+const REQUEST_ID = 'req-abc';
 
 function fakeMonday(matches: { id: string; name: string; preferredLanguage: string }[]): MondayClient {
   return {
@@ -48,7 +51,7 @@ describe('requestLogin', () => {
     const tokenStore = fakeTokenStore();
     const emailSender = fakeEmailSender();
 
-    await requestLogin('nobody@example.org', 'en', { monday, tokenStore, emailSender, ...baseDeps });
+    await requestLogin('nobody@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
 
     expect(tokenStore.createToken).not.toHaveBeenCalled();
     expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
@@ -62,7 +65,7 @@ describe('requestLogin', () => {
     const tokenStore = fakeTokenStore();
     const emailSender = fakeEmailSender();
 
-    await requestLogin('shared@example.org', 'en', { monday, tokenStore, emailSender, ...baseDeps });
+    await requestLogin('shared@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
 
     expect(tokenStore.createToken).toHaveBeenCalledTimes(1);
     const call = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -82,7 +85,7 @@ describe('requestLogin', () => {
     const tokenStore = fakeTokenStore();
     const emailSender = fakeEmailSender();
 
-    await requestLogin('shared@example.org', 'en', { monday, tokenStore, emailSender, ...baseDeps });
+    await requestLogin('shared@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
 
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.loginUrl).toContain('lang=es');
@@ -94,7 +97,7 @@ describe('requestLogin', () => {
     const tokenStore = fakeTokenStore();
     const emailSender = fakeEmailSender();
 
-    await requestLogin('shared@example.org', 'vi', { monday, tokenStore, emailSender, ...baseDeps });
+    await requestLogin('shared@example.org', 'vi', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
 
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.loginUrl).toContain('lang=vi');
@@ -106,10 +109,26 @@ describe('requestLogin', () => {
     const tokenStore = fakeTokenStore();
     const emailSender = fakeEmailSender();
 
-    await requestLogin('shared@example.org', 'en', { monday, tokenStore, emailSender, ...baseDeps });
+    await requestLogin('shared@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
 
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.loginUrl).toContain('lang=en');
     expect(emailCall.locale).toBe('en');
+  });
+
+  it('stores request, code and email hashes on the one row and emails the same code', async () => {
+    const monday = fakeMonday([{ id: 'donor-1', name: 'Jane', preferredLanguage: '' }]);
+    const tokenStore = fakeTokenStore();
+    const emailSender = fakeEmailSender();
+
+    await requestLogin('shared@example.org', 'en', REQUEST_ID, { monday, tokenStore, emailSender, ...baseDeps });
+
+    expect(tokenStore.createToken).toHaveBeenCalledTimes(1);
+    const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(emailCall.code).toMatch(/^\d{6}$/);
+    expect(row.requestHash).toBe(await sha256Hex(REQUEST_ID));
+    expect(row.codeHash).toBe(await sha256Hex(`${REQUEST_ID}:${emailCall.code}`));
+    expect(row.emailHash).toBe(await sha256Hex('shared@example.org'));
   });
 });

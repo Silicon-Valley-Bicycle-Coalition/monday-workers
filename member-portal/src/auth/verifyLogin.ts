@@ -1,29 +1,16 @@
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { SessionStore } from '../db/sessions';
 import { sha256Hex } from '../crypto/hash';
-import { generateToken } from '../crypto/token';
+import { startSession, type StartSessionDeps } from './session';
 
-export interface VerifyLoginDeps {
+export interface VerifyLoginDeps extends StartSessionDeps {
   tokenStore: MagicLinkTokenStore;
-  sessionStore: SessionStore;
-  sessionTtlHours: number;
-  now: () => Date;
 }
 
 export async function verifyLogin(rawToken: string, deps: VerifyLoginDeps): Promise<string | null> {
   const tokenHash = await sha256Hex(rawToken);
-  const now = deps.now();
-  const consumed = await deps.tokenStore.consumeToken(tokenHash, now.toISOString());
+  const consumed = await deps.tokenStore.consumeToken(tokenHash, deps.now().toISOString());
   if (consumed === null) {
     return null;
   }
-  const { donorItemIds } = consumed;
-
-  const rawSessionToken = generateToken();
-  const sessionHash = await sha256Hex(rawSessionToken);
-  const expiresAt = new Date(now.getTime() + deps.sessionTtlHours * 3_600_000).toISOString();
-
-  await deps.sessionStore.createSession({ sessionHash, donorItemIds, expiresAt });
-
-  return rawSessionToken;
+  return startSession(consumed, deps);
 }

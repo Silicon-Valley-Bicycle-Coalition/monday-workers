@@ -19,7 +19,7 @@ describe('verifyLogin', () => {
       deleteSession: vi.fn(),
     };
 
-    const sessionToken = await verifyLogin('raw-token', { tokenStore, sessionStore, sessionTtlHours: 24, now });
+    const sessionToken = await verifyLogin('raw-token', { tokenStore, sessionStore, verifiedEmailStore: { recordVerified: vi.fn() }, sessionTtlHours: 24, now });
 
     expect(sessionToken).toMatch(/^[0-9a-f]{64}$/);
     expect(sessionStore.createSession).toHaveBeenCalledTimes(1);
@@ -42,7 +42,7 @@ describe('verifyLogin', () => {
       deleteSession: vi.fn(),
     };
 
-    const result = await verifyLogin('bad-token', { tokenStore, sessionStore, sessionTtlHours: 24, now });
+    const result = await verifyLogin('bad-token', { tokenStore, sessionStore, verifiedEmailStore: { recordVerified: vi.fn() }, sessionTtlHours: 24, now });
 
     expect(result).toBeNull();
     expect(sessionStore.createSession).not.toHaveBeenCalled();

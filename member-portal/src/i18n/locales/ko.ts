@@ -167,9 +167,11 @@ export const ko: Record<TranslationKey, string> = {
   'verify.notValid': '이 카드는 유효하지 않습니다. 재발급되었거나 더 이상 활성 상태가 아닐 수 있습니다.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'SVBC 기부자 포털 로그인 링크',
+  'email.subject': 'SVBC 기부자 포털 로그인 코드 및 링크',
   'email.bodyIntro': '아래 버튼을 클릭해 기부자 포털에 로그인하세요. 이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
   'email.loginButton': '로그인',
+  'email.codeIntro': '로그인 코드:',
+  'email.codeHint': '로그인을 요청한 페이지에 입력하거나 아래 버튼을 사용하세요. 둘 다 15분 후에 만료되며 한 번만 사용할 수 있습니다.',
 
   // Pledges + employer matching gifts
   'title.pledges': '나의 서약 기부',

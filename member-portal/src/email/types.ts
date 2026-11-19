@@ -3,6 +3,8 @@ import type { Locale } from '../i18n/locales';
 export interface SendLoginEmailParams {
   to: string;
   loginUrl: string;
+  // The 6-digit sign-in code, shown before the link.
+  code: string;
   locale: Locale;
 }
 

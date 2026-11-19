@@ -2,7 +2,7 @@ export interface NewMagicLinkToken {
   tokenHash: string;
   donorItemIds: string[];
   expiresAt: string;
-  // Set on rows that carry a 6-digit code: every row one request created shares requestHash.
+  // Set on rows that carry a 6-digit code: one row per request, found again by requestHash.
   requestHash?: string;
   codeHash?: string;
   emailHash?: string;

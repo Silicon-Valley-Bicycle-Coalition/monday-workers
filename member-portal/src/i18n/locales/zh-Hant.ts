@@ -167,9 +167,11 @@ export const zhHant: Record<TranslationKey, string> = {
   'verify.notValid': '此卡片無效，可能已重新產生或已不再生效。',
 
   // Login email (src/email/resend.ts)
-  'email.subject': '您的 SVBC 捐款者入口網站登入連結',
+  'email.subject': '您的 SVBC 捐款者入口網站登入碼和連結',
   'email.bodyIntro': '請按下方按鈕登入捐款者入口網站。此連結將於短時間內失效，且只能使用一次。',
   'email.loginButton': '登入',
+  'email.codeIntro': '您的登入碼：',
+  'email.codeHint': '請在您申請登入的頁面輸入此碼，或使用下方按鈕。兩者都將於 15 分鐘後失效，且只能使用一次。',
 
   // Pledges + employer matching gifts
   'title.pledges': '您的認捐',
