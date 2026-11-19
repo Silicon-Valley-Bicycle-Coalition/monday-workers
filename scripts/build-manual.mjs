@@ -55,17 +55,46 @@ export function anchorFirstHeading(markdown, anchor) {
   }).join('\n');
 }
 
-const LINK = /\[([^\]]*)\]\(\s*([^)\s]+)((?:\s+"[^"]*")?)\s*\)/g;
+// GitHub's heading slug: lowercase, drop everything but letters, digits, spaces, hyphens and
+// underscores, then spaces to hyphens.
+export function githubSlug(heading) {
+  return heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+}
+
+// Gives every heading (outside fenced code) without an explicit id the id `<prefix>--<slug>`,
+// numbering repeats within the chapter as GitHub does (-1, -2, …). Headings in different chapters
+// then can't collide once the chapters are concatenated into one document.
+export function addHeadingIds(markdown, prefix) {
+  const seen = new Map();
+  let inFence = false;
+  return markdown.split('\n').map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const m = !inFence && line.match(/^(#{1,6}) (.+?)\s*$/);
+    if (!m || /\{#[^}]+\}$/.test(m[2])) return line;
+    const base = githubSlug(m[2]);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return `${m[1]} ${m[2]} {#${prefix}--${n ? `${base}-${n}` : base}}`;
+  }).join('\n');
+}
+
+const LINK = /\[([^\]]*)\]\(\s*<?([^)\s>]+)>?((?:\s+"[^"]*")?)\s*\)/g;
+const CODE_SPAN = /`[^`\n]*`/g;
+const PLACEHOLDER = /\u0000(\d+)\u0000/g;
 
 // Rewrites relative links in a chapter (`fromFile`, relative to docs/manual/): links to other
-// manual chapters become #anchors, other repo paths become GitHub URLs at `sha` (blob/ for files,
-// tree/ for directories), keeping any #anchor. URLs, bare anchors, images and code are untouched.
+// manual chapters become #anchors (a heading anchor gets that chapter's prefix, as addHeadingIds
+// assigns), other repo paths become GitHub URLs at `sha` (blob/ for files, tree/ for
+// directories), keeping any #anchor. URLs, images and code are untouched; link text may be code.
 export function rewriteLinks(markdown, fromFile, { sha, manualFiles, isDir }) {
   const rewrite = (match, text, target, title, offset, whole) => {
-    if (whole[offset - 1] === '!' || /^(https?:|mailto:|#)/.test(target)) return match;
+    if (whole[offset - 1] === '!' || /^(https?:|mailto:)/.test(target)) return match;
     const [path, anchor] = target.split('#');
+    if (!path) return `[${text}](#${chapterAnchor(fromFile)}--${anchor}${title})`;
     const inManual = posix.normalize(posix.join(posix.dirname(fromFile), path));
-    if (manualFiles.has(inManual)) return `[${text}](#${anchor || chapterAnchor(inManual)}${title})`;
+    if (manualFiles.has(inManual)) {
+      return `[${text}](#${anchor ? `${chapterAnchor(inManual)}--${anchor}` : chapterAnchor(inManual)}${title})`;
+    }
     const inRepo = posix.normalize(posix.join('docs/manual', posix.dirname(fromFile), path)).replace(/\/$/, '');
     if (inRepo.startsWith('..')) return match;
     const kind = isDir(inRepo) ? 'tree' : 'blob';
@@ -78,7 +107,11 @@ export function rewriteLinks(markdown, fromFile, { sha, manualFiles, isDir }) {
       return line;
     }
     if (inFence) return line;
-    return line.split(/(`[^`\n]*`)/).map((part) => (part.startsWith('`') ? part : part.replace(LINK, rewrite))).join('');
+    // Code spans become placeholders, so a link whose text is code still matches and code that
+    // merely looks like a link is never rewritten.
+    const spans = [];
+    const masked = line.replace(CODE_SPAN, (span) => `\u0000${spans.push(span) - 1}\u0000`);
+    return masked.replace(LINK, rewrite).replace(PLACEHOLDER, (_, i) => spans[Number(i)]);
   }).join('\n');
 }
 
@@ -244,7 +277,7 @@ function checkTools() {
   return chrome;
 }
 
-function assembleManual(root, sha) {
+export function assembleManual(root, sha) {
   const manual = join(root, 'docs/manual');
   const roster = rosterDirs(JSON.parse(readFileSync(join(root, '.github/workers.json'), 'utf8')));
   const refDir = join(manual, 'reference');
@@ -262,7 +295,7 @@ function assembleManual(root, sha) {
     for (const file of files) {
       const path = join(manual, file);
       if (!existsSync(path)) fail(`chapter ${file} is in the build order but missing`);
-      const text = anchorFirstHeading(readFileSync(path, 'utf8'), chapterAnchor(file));
+      const text = addHeadingIds(anchorFirstHeading(readFileSync(path, 'utf8'), chapterAnchor(file)), chapterAnchor(file));
       out.push('<div class="chapter">', '', rewriteLinks(text, file, { sha, manualFiles, isDir }), '', '</div>', '');
     }
   }

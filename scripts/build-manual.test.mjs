@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GITHUB_BASE, anchorFirstHeading, chapterAnchor, chapterOrder, findChrome, fontFaceCss, rewriteLinks, tokenCss,
+  GITHUB_BASE, addHeadingIds, anchorFirstHeading, chapterAnchor, chapterOrder, findChrome, fontFaceCss, rewriteLinks, tokenCss,
 } from './build-manual.mjs';
 
 describe('chapterAnchor', () => {
@@ -9,6 +9,18 @@ describe('chapterAnchor', () => {
     assert.equal(chapterAnchor('02-architecture.md'), 'ch-02-architecture');
     assert.equal(chapterAnchor('workers/funraise-sync.md'), 'ch-workers-funraise-sync');
     assert.equal(chapterAnchor('reference/funraise-sync.md'), 'ref-funraise-sync');
+  });
+});
+
+describe('addHeadingIds', () => {
+  it('gives every heading a chapter-prefixed GitHub-style id', () => {
+    const md = '# Title {#ch-x}\n\n## The write switch\n\n```\n## not a heading\n```\n### `checks.yml` steps\n## The write switch\n';
+    assert.equal(addHeadingIds(md, 'ch-x'),
+      '# Title {#ch-x}\n\n## The write switch {#ch-x--the-write-switch}\n\n```\n## not a heading\n```\n### `checks.yml` steps {#ch-x--checksyml-steps}\n## The write switch {#ch-x--the-write-switch-1}\n');
+  });
+  it('matches GitHub slugs for punctuation', () => {
+    assert.equal(addHeadingIds("## What's public and what isn't\n", 'p'), "## What's public and what isn't {#p--whats-public-and-what-isnt}\n");
+    assert.equal(addHeadingIds('## Monday access: the token broker\n', 'p'), '## Monday access: the token broker {#p--monday-access-the-token-broker}\n');
   });
 });
 
@@ -42,6 +54,7 @@ describe('rewriteLinks', () => {
     manualFiles: new Set(['02-architecture.md', 'workers/funraise-sync.md', 'reference/funraise-sync.md']),
     isDir: (p) => p === 'scripts',
   };
+  const opts2 = { ...opts, manualFiles: new Set([...opts.manualFiles, '07-operations.md', '00-about.md']) };
   it('turns a repo file link into a pinned GitHub blob URL with its anchor', () => {
     assert.equal(
       rewriteLinks('[d](../../../funraise-sync/README.md#deploy)', 'workers/funraise-sync.md', opts),
@@ -55,11 +68,21 @@ describe('rewriteLinks', () => {
     assert.equal(rewriteLinks('[a](../02-architecture.md)', 'workers/funraise-sync.md', opts), '[a](#ch-02-architecture)');
     assert.equal(rewriteLinks('[r](../reference/funraise-sync.md)', 'workers/funraise-sync.md', opts), '[r](#ref-funraise-sync)');
   });
-  it('keeps a heading anchor inside a linked chapter', () => {
-    assert.equal(rewriteLinks('[w](02-architecture.md#write-switch)', '00-about.md', opts), '[w](#write-switch)');
+  it('keeps a heading anchor inside a linked chapter, prefixed by that chapter', () => {
+    assert.equal(rewriteLinks('[w](02-architecture.md#write-switch)', '00-about.md', opts), '[w](#ch-02-architecture--write-switch)');
+  });
+  it('rewrites a link whose text is code', () => {
+    assert.equal(
+      rewriteLinks('[`funraise-sync`](workers/funraise-sync.md) and [`uat`](../uat/README.md)', '01-system-overview.md', opts),
+      `[\`funraise-sync\`](#ch-workers-funraise-sync) and [\`uat\`](${GITHUB_BASE}/blob/abc123/docs/uat/README.md)`,
+    );
+  });
+  it('prefixes heading anchors with their chapter, so equal headings in two chapters stay distinct', () => {
+    assert.equal(rewriteLinks('[w](07-operations.md#the-write-switch)', '00-about.md', opts2), '[w](#ch-07-operations--the-write-switch)');
+    assert.equal(rewriteLinks('[w](#local-heading)', '07-operations.md', opts2), '[w](#ch-07-operations--local-heading)');
   });
   it('leaves URLs, bare anchors, code and figures alone', () => {
-    const md = '[u](https://x.org) [h](#top) `[c](c.md)`\n```\n[f](f.md)\n```\n![fig](figures/a.svg)';
+    const md = '[u](https://x.org) `[c](c.md)`\n```\n[f](f.md)\n```\n![fig](figures/a.svg)';
     assert.equal(rewriteLinks(md, '00-about.md', opts), md);
   });
 });
