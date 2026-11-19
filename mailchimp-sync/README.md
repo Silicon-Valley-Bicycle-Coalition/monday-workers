@@ -378,7 +378,43 @@ went back to 500 the same day.
    plan script — it should plan nothing.
 4. `node ../scripts/mark-read-only-columns.mjs` against production with `--apply`.
 
+## Stewardship emails (Monday Sequences)
+
+Decided 2026-11-19 (Clarrissa): the two welcome emails and three renewal reminders are sent by
+**monday CRM Sequences**, not Mailchimp Customer Journeys. This Worker decides who gets which email;
+Monday sends it from a connected staff mailbox and logs it on the person's timeline. Setup and
+go-live: [`docs/runbooks/stewardship-sequences.md`](../docs/runbooks/stewardship-sequences.md).
+
+**How (`src/stewardship`, on the daily `0 15 * * *` cron, after the renewal-due tag).** Reads
+People and plans one label per person on the 🔒 **Stewardship Email** status column:
+
+| Label | When | Who |
+|---|---|---|
+| `Welcome: day after` | 1 day after Member Since | Member Type New, label blank |
+| `Welcome: 3 weeks` | 21 days after Member Since | label is `Welcome: day after` |
+| `Renewal: 3 weeks before` | 21 days before Member Until | Active, not Lifetime, no active recurring gift |
+| `Renewal: 1 week before` | 7 days before | same |
+| `Renewal: day of` | on Member Until | same |
+
+Nobody with Do Not Solicit or without a Personal Email. Before setting a send label it reads the
+person's Mailchimp member (`GET /lists/{id}/members/{hash}`): only `subscribed`, and for renewals not
+tagged `renewal-opt-out` and with the Renewal Reminders interest ticked (`stewardship.renewalInterest`;
+on 2026-11-19 every subscribed active member had it ticked except the 137 Salesforce opt-outs). A
+person not in the audience is never sent to. A Monday automation per label ("When Stewardship Email
+changes to X, enroll item in Sequence X") does the enrolling; each Sequence is one automatic email.
+
+The label is the state. A stage is set once (re-runs are no-ops), a missed day is caught up within
+`plan.catchUpDays` (2), day-of is never sent after the date, and a renewal label is cleared once
+Member Until moves past 21 days (a renewal), so next year's reminders start fresh. Someone who renews
+between reminders gets no further one: each email is decided on its own day. Follows the write
+switch (`hold` skips the day, `off` logs what it would set). Logs carry item ids and labels only.
+`stewardship: null` turns it off; production stays `null` until the Sequences and automations exist,
+since a label set with no automation listening would use up that person's email.
+
 ## Journey send log
+
+Superseded for the stewardship emails by the Monday Sequences above, which log their own sends; it
+stays built and off (`journeyLog: null` in production) for any Journey staff may still run.
 
 Spec: [`docs/superpowers/specs/2026-11-18-mailchimp-journey-send-log-design.md`](../docs/superpowers/specs/2026-11-18-mailchimp-journey-send-log-design.md)
 (verified end to end in the sandbox on 2026-11-18).
