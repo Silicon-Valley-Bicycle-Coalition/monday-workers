@@ -16,6 +16,7 @@ import type { WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
 import { CONFIRM_LOGIN_SCRIPT } from './views';
 import { DEFAULT_CSP } from './securityHeaders';
+import { withTestAccounts } from './testAccounts/testAccountClient';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -3283,5 +3284,90 @@ describe('write switch', () => {
       const res = await post('off', {}, { challenge: 'abc' });
       expect(await res.json()).toEqual({ challenge: 'abc' });
     });
+  });
+});
+
+describe('sandbox test accounts', () => {
+  function postLogin(app: ReturnType<typeof createApp>, email: string, extra: Record<string, string> = {}) {
+    return app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email, ...extra }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+  }
+
+  function testDeps(overrides: Partial<AppDeps> = {}): AppDeps {
+    const deps = makeDeps(overrides);
+    return { ...deps, monday: withTestAccounts(deps.monday, deps.now), testAccounts: true, ...overrides };
+  }
+
+  it('signs a test address straight in, with no email, and shows its persona', async () => {
+    const deps = testDeps();
+    const app = createApp(deps);
+    const res = await postLogin(app, 'Test-Lapsed@Example.org');
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/en/portal');
+    expect(deps.emailSender.sendLoginEmail).not.toHaveBeenCalled();
+
+    const cookie = (res.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const portal = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    expect(portal.status).toBe(200);
+    expect(await portal.text()).toContain('Logan Lapsed (test)');
+  });
+
+  it('skips the rate limits and the write switch', async () => {
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const app = createApp(testDeps({ ipLimiter, writeGate: gateFor('hold') }));
+    const res = await postLogin(app, 'test-active@example.org');
+    expect(res.status).toBe(303);
+    expect(ipLimiter.limit).not.toHaveBeenCalled();
+  });
+
+  it('opens a shared household address on both people', async () => {
+    const app = createApp(testDeps());
+    const res = await postLogin(app, 'test-household@example.org');
+    const cookie = (res.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).toContain('Harper Household (test)');
+    expect(html).toContain('Hayden Household (test)');
+  });
+
+  it('opens in the persona’s preferred language and keeps a valid next', async () => {
+    const app = createApp(testDeps());
+    expect((await postLogin(app, 'test-spanish@example.org')).headers.get('Location')).toBe('/es/portal');
+    expect((await postLogin(app, 'test-spanish@example.org', { next: '/en/portal/letters' })).headers.get('Location')).toBe('/es/portal/letters');
+  });
+
+  it('sends any other address down the normal magic-link path', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const deps = testDeps({ monday: withTestAccounts(monday, () => new Date('2026-08-22T00:00:00.000Z')) });
+    const res = await postLogin(createApp(deps), 'donor@example.org');
+    expect(res.status).toBe(200);
+    expect(deps.emailSender.sendLoginEmail).toHaveBeenCalledOnce();
+  });
+
+  it('is off unless the entrypoint turns it on', async () => {
+    const deps = makeDeps({ monday: withTestAccounts(fakeMonday({}), () => new Date('2026-08-22T00:00:00.000Z')) });
+    const res = await postLogin(createApp(deps), 'test-active@example.org');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+  });
+
+  it('accepts a test account’s change request without storing or queueing it', async () => {
+    const changeStore = fakeChangeStore({ createRequest: vi.fn().mockResolvedValue(1) });
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(testDeps({ changeStore, changeQueue }));
+    const login = await postLogin(app, 'test-active@example.org');
+    const cookie = (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+
+    const res = await app.request('/en/portal/change-request', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'test-active', field: 'address', newValue: '2 New Ave' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('review');
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
   });
 });

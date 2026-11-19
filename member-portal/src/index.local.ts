@@ -7,6 +7,7 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
 import { FakeMondayClient } from './monday/fakeClient';
+import { withTestAccounts } from './testAccounts/testAccountClient';
 import { ConsoleEmailSender } from './email/devEmail';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { processLetterSendBatch } from './letters/processLetterSendBatch';
@@ -39,7 +40,9 @@ const LOCAL_GATE: BatchSkipContext = { worker: WORKER, environment: 'production'
 function buildApp(env: LocalEnv) {
   const config = validateConfig(rawConfig);
   return createApp({
-    monday: new FakeMondayClient(),
+    // Sandbox test accounts work here too, so their personas can be previewed offline.
+    monday: withTestAccounts(new FakeMondayClient(), () => new Date()),
+    testAccounts: true,
     tokenStore: new D1MagicLinkTokenStore(env.DB),
     sessionStore: new D1SessionStore(env.DB),
     attemptStore: new D1LoginAttemptStore(env.DB),

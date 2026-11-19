@@ -147,6 +147,25 @@ email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSe
 IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
 stretch a lockout by retrying.
 
+## Sandbox test accounts
+
+In the sandbox (and `npm run dev:local`), a fixed set of `test-*@example.org` addresses signs in
+at once on `POST /`, with no magic link, rate limit or write-switch check, and reads dummy
+personas instead of Monday: one per membership state (Active Member, Active Lifetime, Lapsed,
+never joined), plus a renewal-window member, a shared household inbox and a Spanish speaker. The
+list lives in `src/testAccounts/personas.ts` (staff copy: `docs/uat/member-portal.md`); dates are
+relative to the request's clock.
+
+- **Never in production.** `src/index.ts` turns it on from `ENVIRONMENT === 'sandbox'`, not from
+  config, so no config edit can enable it.
+- **Isolated from Monday.** Persona ids start with `test-` (Monday ids are all digits), and
+  `withTestAccounts` answers those ids itself, passing every other id to the real client. Their
+  change requests run every check, then go to a discarding store and queue, so nothing reaches
+  D1's `change_requests`, the writer or the Change Requests board. Card tokens are written to D1
+  as usual, so `/verify` works for a test card.
+- **Not an enumeration leak.** The addresses are published to staff, and the reserved
+  `example.org` domain can't belong to a donor.
+
 ## Sending the email
 
 **Do not use Cloudflare's old free MailChannels-Workers integration — it's dead.** MailChannels
