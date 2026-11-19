@@ -17,9 +17,9 @@ Design: [`docs/superpowers/specs/2026-11-19-it-manual-design.md`](../superpowers
 | | `glossary.md` | Terms |
 | Appendix A | `reference/<dir>.md` (generated, gitignored) | Each Worker's routes, crons, queues, D1, KV, R2, bindings and limits, from its `wrangler*.jsonc` |
 | | `figures/` | SVG figures |
-| | `cover.md`, `print.css` | PDF cover and print styles |
+| | `print.css` | PDF print styles (the cover is pandoc's title block) |
 
-The PDF order lives in `CHAPTER_ORDER` in `scripts/build-manual.mjs`.
+The PDF order lives in `chapterOrder()` in `scripts/build-manual.mjs`.
 
 ## Keeping it current
 
