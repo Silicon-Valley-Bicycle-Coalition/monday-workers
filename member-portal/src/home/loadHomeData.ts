@@ -100,9 +100,10 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
         letter,
       };
       const state = personState(person, today, cfg);
-      // Someone who was never a member gets a "Not a member yet" panel, so no card token.
-      const never = state.kind === 'renew' && state.reason === 'never';
-      const card = withCards && !never ? await cardFor(donor, deps) : null;
+      // Someone who was never a member gets a "Not a member yet" panel, so no card token. Nor does
+      // anyone with a blank Membership Status: the card would show a member number with no status.
+      const noCard = (state.kind === 'renew' && state.reason === 'never') || donor.membershipStatus.trim() === '';
+      const card = withCards && !noCard ? await cardFor(donor, deps) : null;
       return { person, state, card, ended: membershipEnded(person, today) };
     })
   );

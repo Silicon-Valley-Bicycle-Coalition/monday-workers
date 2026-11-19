@@ -30,6 +30,9 @@ import { cardDoorView, loadCardDoor } from './doors/card';
 import { givingDoorView, loadGivingDoor } from './doors/giving';
 import { activityDoorView, loadActivityDoor } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
+import { signInEmailHash } from './doors/emailLabels';
+import { findTestPersonasByEmail } from './testAccounts/personas';
+import { discardingChangeQueue, discardingChangeStore, isTestSession } from './testAccounts/testAccountClient';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -56,7 +59,7 @@ import { changeRequestResultView, changeRequestsUnavailableView, preferencesResu
 import { buildCardData } from './card/loadCardData';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
-import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
+import { isLocale, DEFAULT_LOCALE, localeFromMondayLabel } from './i18n/locales';
 import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
@@ -87,6 +90,10 @@ export interface AppDeps {
   // The write switch for this request (src/writeSwitch.ts), read from KV at most once and only by
   // a route that writes.
   writeGate: () => Promise<BatchSkipContext>;
+  // Sandbox test accounts (src/testAccounts/): their addresses sign in at once, without an email.
+  // Set only by the sandbox and local entrypoints, never production's; `monday` must then be
+  // wrapped in withTestAccounts so the session's test ids resolve.
+  testAccounts?: boolean;
 }
 
 // __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
@@ -166,6 +173,40 @@ function confirmLoginScriptHash(): Promise<string> {
 }
 
 export function createApp(deps: AppDeps) {
+  // A test account's change requests are validated like anyone's, then dropped (see
+  // discardingChangeStore): its dummy item ids must never reach the writer or the board.
+  function changeSinks(donorItemIds: string[], mode: BatchSkipContext['mode']) {
+    if (deps.testAccounts === true && isTestSession(donorItemIds)) {
+      return { store: discardingChangeStore, queue: discardingChangeQueue };
+    }
+    return { store: deps.changeStore, queue: stampedQueue(deps.changeQueue, mode) };
+  }
+
+  // Sandbox test accounts sign in on the spot: a session for the address's personas and a
+  // redirect to the portal, skipping the email, the rate limits and the write switch. Their
+  // addresses are published to staff, so the enumeration guard has nothing to hide. Returns null
+  // for any other address, which then takes the normal magic-link path.
+  async function signInTestAccount(c: Context, locale: Locale): Promise<Response | null> {
+    const body = await c.req.parseBody();
+    const email = typeof body.email === 'string' ? body.email : '';
+    const personas = findTestPersonasByEmail(email, deps.now());
+    if (personas.length === 0) return null;
+    const sessionToken = generateToken();
+    const expiresAt = new Date(deps.now().getTime() + deps.config.auth.sessionTtlHours * 3_600_000).toISOString();
+    await deps.sessionStore.createSession({
+      sessionHash: await sha256Hex(sessionToken),
+      donorItemIds: personas.map((p) => p.id),
+      expiresAt,
+      // The address it signed in with, so the info door shows it (the household's shared inbox
+      // under each person).
+      emailHash: await signInEmailHash(email),
+    });
+    setSessionCookie(c, sessionToken, deps);
+    const lang = localeFromMondayLabel(personas[0]!.preferredLanguage) ?? locale;
+    const next = portalReturnPath(body.next);
+    return c.redirect(next !== null ? applyLocaleToPath(next, lang) : `/${lang}/portal`, 303);
+  }
+
   const app = new Hono();
 
   // The one origin this deployment serves (member.bikesiliconvalley.org in production,
@@ -351,6 +392,10 @@ export function createApp(deps: AppDeps) {
 
   app.post('/', async (c) => {
     const locale = detectLocale(c);
+    if (deps.testAccounts === true) {
+      const testLogin = await signInTestAccount(c, locale);
+      if (testLogin !== null) return testLogin;
+    }
     // Every email gets the same page, so the enumeration guard below holds under the switch too.
     if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, false);
     const body = await c.req.parseBody();
@@ -735,8 +780,7 @@ export function createApp(deps: AppDeps) {
 
     const result = await submitChangeRequest(donorItemIds, input, {
       monday: deps.monday,
-      store: deps.changeStore,
-      queue: stampedQueue(deps.changeQueue, mode),
+      ...changeSinks(donorItemIds, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
       employerEnabled: employerAnswerEnabled(deps.config),
@@ -786,8 +830,7 @@ export function createApp(deps: AppDeps) {
 
     const result = await submitPreferences(donorItemIds, input, {
       monday: deps.monday,
-      store: deps.changeStore,
-      queue: stampedQueue(deps.changeQueue, mode),
+      ...changeSinks(donorItemIds, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });

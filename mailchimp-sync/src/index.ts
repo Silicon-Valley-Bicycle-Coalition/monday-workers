@@ -19,6 +19,7 @@ import { reconcileCampaigns } from './campaigns/reconcile';
 import { runScheduledReconcile } from './campaigns/scheduled';
 import { CONSENT_CRON, runConsentSync } from './consent/run';
 import { runRenewalDue } from './renewalDue/run';
+import { createMemberReader, createStewardshipMonday, runStewardship } from './stewardship/run';
 import { JOURNEY_LOG_CRON, runJourneyLog } from './journeyLog/run';
 import { createJourneyLogMonday } from './journeyLog/monday';
 import { listJourneyEmails, readAddress, readSendTime, readSentTo } from './journeyLog/mailchimp';
@@ -216,6 +217,18 @@ export default {
       await runRenewalDue(await skipContext(env), { config, fetchFn: fetch.bind(globalThis), apiKey: env.MAILCHIMP_API_KEY });
     } catch (err) {
       console.error(`mailchimp-sync renewal-due: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+    }
+    // Then the stewardship labels that start the Monday Sequences, also on their own.
+    try {
+      const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
+      await runStewardship(await skipContext(env), {
+        settings: config.stewardship,
+        monday: createStewardshipMonday((query, variables) => transport.request(query, variables)),
+        readMember: createMemberReader({ fetchFn: fetch.bind(globalThis), apiBaseUrl: config.mailchimp.apiBaseUrl, apiKey: env.MAILCHIMP_API_KEY, audienceId: config.mailchimp.audienceId }),
+        isOutage: isMondayOutage,
+      });
+    } catch (err) {
+      console.error(`mailchimp-sync stewardship: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
     }
     try {
       const gate = await skipContext(env);

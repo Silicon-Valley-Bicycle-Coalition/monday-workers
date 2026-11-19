@@ -135,5 +135,36 @@
     "emailColumn": "email_mm8h4kkb",
     "linkColumn": "link_mm98rz6c",
     "maxWritesPerRun": 500
+  },
+  "stewardship": {
+    "boardId": 18437342592,
+    "columns": {
+      "email": "email_mm8h4kkb",
+      "label": "color_mm98np52",
+      "membershipStatus": "color_mm8h207g",
+      "membershipTier": "color_mm8hg8eh",
+      "memberType": "color_mm8jp69c",
+      "memberSince": "date_mm8h79b2",
+      "memberUntil": "date_mm8hx0b7",
+      "hasActiveRecurringGift": "boolean_mm8hzx4e",
+      "doNotSolicit": "boolean_mm8h1x0b"
+    },
+    "plan": {
+      "labels": {
+        "welcomeDayAfter": "Welcome: day after",
+        "welcome3Weeks": "Welcome: 3 weeks",
+        "renewal3Weeks": "Renewal: 3 weeks before",
+        "renewal1Week": "Renewal: 1 week before",
+        "renewalDayOf": "Renewal: day of"
+      },
+      "activeStatusValue": "Active",
+      "lifetimeTierValue": "Lifetime",
+      "newMemberTypeValue": "New",
+      "catchUpDays": 2
+    },
+    "renewalOptOutTag": "renewal-opt-out",
+    "renewalInterest": null,
+    "welcomeInterest": null,
+    "maxWritesPerRun": 200
   }
 }

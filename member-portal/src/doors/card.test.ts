@@ -145,4 +145,24 @@ describe('loadCardDoor', () => {
     });
     expect(data.people.map((p) => p.lapsedEnded)).toEqual(['10/2026', '09/2026', null, null]);
   });
+
+  it('treats a blank Membership Status as no membership on file, Tier or not', async () => {
+    const donors: Record<string, MemberPortalData> = {
+      blank: member('blank', { membershipStatus: '', membershipTier: '' }),
+      tierOnly: member('tierOnly', { membershipStatus: ' ', membershipTier: 'Member' }),
+      current: member('current'),
+    };
+    const monday = {
+      getMemberPortalData: vi.fn(async (id: string) => donors[id]!),
+      getDiscountOrganizations: vi.fn(async () => []),
+    } as unknown as MondayClient;
+    const config = { monday: { columns: { membershipExpiry: 'REPLACE_WITH_COLUMN_ID' } } } as unknown as Config;
+    const data = await loadCardDoor(['blank', 'tierOnly', 'current'], {
+      monday,
+      config,
+      now: () => new Date('2026-12-01T18:00:00Z'),
+      cardTokenStore: {} as never,
+    });
+    expect(data.people.map((p) => p.notMember)).toEqual([true, true, false]);
+  });
 });

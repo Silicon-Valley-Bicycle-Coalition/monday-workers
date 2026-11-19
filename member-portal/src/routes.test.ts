@@ -18,6 +18,7 @@ import type { BatchSkipContext } from './writeSwitch';
 import { CONFIRM_LOGIN_SCRIPT, escapeHtml } from './views';
 import { DEFAULT_CSP } from './securityHeaders';
 import { sha256Hex } from './crypto/hash';
+import { withTestAccounts } from './testAccounts/testAccountClient';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -4038,5 +4039,137 @@ describe('doors', () => {
       expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
       expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('sandbox test accounts', () => {
+  function postLogin(app: ReturnType<typeof createApp>, email: string, extra: Record<string, string> = {}) {
+    return app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email, ...extra }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+  }
+
+  function testDeps(overrides: Partial<AppDeps> = {}): AppDeps {
+    const deps = makeDeps(overrides);
+    return { ...deps, monday: withTestAccounts(deps.monday, deps.now), testAccounts: true, ...overrides };
+  }
+
+  it('signs a test address straight in, with no email, and shows its persona', async () => {
+    const deps = testDeps();
+    const app = createApp(deps);
+    const res = await postLogin(app, 'Test-Lapsed@Example.org');
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/en/portal');
+    expect(deps.emailSender.sendLoginEmail).not.toHaveBeenCalled();
+
+    const cookie = (res.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const portal = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    expect(portal.status).toBe(200);
+    expect(await portal.text()).toContain('Logan Lapsed (test)');
+  });
+
+  it('skips the rate limits and the write switch', async () => {
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const app = createApp(testDeps({ ipLimiter, writeGate: gateFor('hold') }));
+    const res = await postLogin(app, 'test-active@example.org');
+    expect(res.status).toBe(303);
+    expect(ipLimiter.limit).not.toHaveBeenCalled();
+  });
+
+  it('opens a shared household address on both people', async () => {
+    const app = createApp(testDeps());
+    const res = await postLogin(app, 'test-household@example.org');
+    const cookie = (res.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).toContain('Harper Household (test)');
+    expect(html).toContain('Hayden Household (test)');
+  });
+
+  it('opens in the persona’s preferred language and keeps a valid next', async () => {
+    const app = createApp(testDeps());
+    expect((await postLogin(app, 'test-spanish@example.org')).headers.get('Location')).toBe('/es/portal');
+    expect((await postLogin(app, 'test-spanish@example.org', { next: '/en/portal/letters' })).headers.get('Location')).toBe('/es/portal/letters');
+  });
+
+  it('sends any other address down the normal magic-link path', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const deps = testDeps({ monday: withTestAccounts(monday, () => new Date('2026-08-22T00:00:00.000Z')) });
+    const res = await postLogin(createApp(deps), 'donor@example.org');
+    expect(res.status).toBe(200);
+    expect(deps.emailSender.sendLoginEmail).toHaveBeenCalledOnce();
+  });
+
+  it('is off unless the entrypoint turns it on', async () => {
+    const deps = makeDeps({ monday: withTestAccounts(fakeMonday({}), () => new Date('2026-08-22T00:00:00.000Z')) });
+    const res = await postLogin(createApp(deps), 'test-active@example.org');
+    expect(res.status).toBe(200);
+    // Only the sign-in request cookie every POST / sets; no session.
+    expect(res.headers.get('Set-Cookie') ?? '').not.toContain('__Host-session=');
+  });
+
+  it('accepts a test account’s change request without storing or queueing it', async () => {
+    const changeStore = fakeChangeStore({ createRequest: vi.fn().mockResolvedValue(1) });
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(testDeps({ changeStore, changeQueue }));
+    const login = await postLogin(app, 'test-active@example.org');
+    const cookie = (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+
+    const res = await app.request('/en/portal/change-request', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'test-active', field: 'address', newValue: '2 New Ave' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('review');
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  async function signInAs(app: ReturnType<typeof createApp>, email: string): Promise<string> {
+    const login = await postLogin(app, email);
+    return (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+  }
+
+  async function homeOf(app: ReturnType<typeof createApp>, email: string, locale = 'en'): Promise<string> {
+    const cookie = await signInAs(app, email);
+    const res = await app.request(`/${locale}/portal`, { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  it('gives a donor with no membership on file no membership card, on home or the card door', async () => {
+    const app = createApp(testDeps());
+    const home = await homeOf(app, 'test-donor@example.org');
+    expect(home).toContain('Hi Dana');
+    expect(home).toContain(t('en', 'home.notMember'));
+    expect(home).not.toContain('class="member-card"');
+
+    const cookie = await signInAs(app, 'test-donor@example.org');
+    const door = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+    expect(door).toContain(t('en', 'home.notMember'));
+    expect(door).not.toContain('class="member-card"');
+
+    expect(await homeOf(app, 'test-active@example.org')).toContain('class="member-card"');
+  });
+
+  it("shows each persona's home state", async () => {
+    const app = createApp(testDeps());
+    expect(await homeOf(app, 'test-renewing@example.org')).toContain('Your membership ends');
+    expect(await homeOf(app, 'test-lapsed@example.org')).toContain('Your membership ended');
+    const lifetime = await homeOf(app, 'test-lifetime@example.org');
+    expect(lifetime).toContain('class="member-card"');
+    expect(lifetime).not.toContain(t('en', 'home.renewButton'));
+    expect(await homeOf(app, 'test-spanish@example.org', 'es')).toContain(escapeHtml(t('es', 'home.newMemberHeadline')));
+  });
+
+  it("shows the household's shared address under each person on the info door", async () => {
+    const app = createApp(testDeps());
+    const cookie = await signInAs(app, 'test-household@example.org');
+    const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+    expect(html.match(/test-household@example\.org/g)?.length).toBe(2);
+    expect(html).toContain('<h3>Harper Household (test)</h3>');
+    expect(html).toContain('<h3>Hayden Household (test)</h3>');
   });
 });

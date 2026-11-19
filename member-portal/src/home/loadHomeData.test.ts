@@ -182,6 +182,13 @@ describe('loadHomeData', () => {
     expect(data.people[0]!.card).toBeNull();
   });
 
+  it('gives no card to someone with a Tier but a blank Membership Status', async () => {
+    const monday = fakeMonday({ j: donor('j', { membershipStatus: ' ', membershipTier: 'Member' }), s: donor('s') });
+    const data = await loadHomeData(['j', 's'], deps(monday), 'en');
+    expect(data.people[0]!.card).toBeNull();
+    expect(data.people[1]!.card).not.toBeNull();
+  });
+
   it('marks an Active membership past its Member Until as ended and lapsed', async () => {
     const monday = fakeMonday({ j: donor('j', { membershipExpiry: '2026-10-31' }), s: donor('s') });
     const data = await loadHomeData(['j', 's'], deps(monday, '2026-12-01T18:00:00Z'), 'en');
