@@ -184,5 +184,12 @@
     "newMemberDays": 60,
     "renewalWarningDays": 30,
     "taxLetterUntil": "04-15"
+  },
+  "organizations": {
+    "portalAccessColumn": "REPLACE_WITH_COLUMN_ID",
+    "workEmailColumn": "email_mm8ndy69",
+    "addressColumn": "text_mm8nhnjq",
+    "acknowledgmentSignedOff": false,
+    "volunteerFloor": 3
   }
 }

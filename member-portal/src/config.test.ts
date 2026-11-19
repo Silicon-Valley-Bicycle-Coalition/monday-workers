@@ -15,6 +15,9 @@ import {
   eventsEnabled,
   letterCronConfigured,
   employerAnswerEnabled,
+  orgAccessEnabled,
+  workEmailSignInEnabled,
+  orgAcknowledgmentEnabled,
 } from './config';
 
 import svbcConfig from '../config/svbc.json';
@@ -145,6 +148,13 @@ const validConfig = {
     maxTriggersPerRun: 200,
   },
   home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
+  organizations: {
+    portalAccessColumn: 'REPLACE_WITH_COLUMN_ID',
+    workEmailColumn: 'email_work',
+    addressColumn: 'text_addr',
+    acknowledgmentSignedOff: false,
+    volunteerFloor: 3,
+  },
 };
 
 describe('validateConfig getInvolved', () => {
@@ -1167,5 +1177,70 @@ describe('home config and membership columns', () => {
     const valid = validateConfig(cfg);
     expect(valid.monday.columns).toMatchObject(ids);
     expect(valid.home).toEqual({ newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' });
+  });
+});
+
+describe('organizations', () => {
+  const orgRaw = (patch: Record<string, unknown> = {}, mondayPatch: Record<string, unknown> = {}) => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as Record<string, any>;
+    raw.changeRequests.employer = {
+      affiliationsBoardId: 555,
+      affiliationColumns: { personLink: 'connect_p', organizationLink: 'connect_o', status: 'status_a', primary: 'check_p' },
+      currentStatusLabel: 'Current',
+      personAffiliationsLink: 'connect_pa',
+    };
+    raw.monday.organizationsBoardId = 3;
+    Object.assign(raw.monday, mondayPatch);
+    Object.assign(raw.organizations, patch);
+    return raw;
+  };
+
+  it('accepts the block', () => {
+    expect(validateConfig(orgRaw()).organizations.volunteerFloor).toBe(3);
+  });
+
+  it('rejects a missing block, a non-boolean sign-off and a floor below 1', () => {
+    const raw = orgRaw();
+    delete raw.organizations;
+    expect(() => validateConfig(raw)).toThrow(/organizations/);
+    expect(() => validateConfig(orgRaw({ acknowledgmentSignedOff: 'yes' }))).toThrow(/acknowledgmentSignedOff/);
+    expect(() => validateConfig(orgRaw({ volunteerFloor: 0 }))).toThrow(/volunteerFloor/);
+    expect(() => validateConfig(orgRaw({ volunteerFloor: 2.5 }))).toThrow(/volunteerFloor/);
+    expect(() => validateConfig(orgRaw({ workEmailColumn: '' }))).toThrow(/workEmailColumn/);
+  });
+
+  it('orgAccessEnabled needs a real portalAccessColumn, an employer block and an Organizations board', () => {
+    expect(orgAccessEnabled(validateConfig(orgRaw()))).toBe(false);
+    expect(orgAccessEnabled(validateConfig(orgRaw({ portalAccessColumn: 'check_portal' })))).toBe(true);
+    expect(orgAccessEnabled(validateConfig(orgRaw({ portalAccessColumn: 'check_portal' }, { organizationsBoardId: null })))).toBe(false);
+    const noEmployer = orgRaw({ portalAccessColumn: 'check_portal' });
+    noEmployer.changeRequests.employer = null;
+    expect(orgAccessEnabled(validateConfig(noEmployer))).toBe(false);
+  });
+
+  it('workEmailSignInEnabled also needs a real workEmailColumn', () => {
+    expect(workEmailSignInEnabled(validateConfig(orgRaw({ portalAccessColumn: 'check_portal' })))).toBe(true);
+    expect(workEmailSignInEnabled(validateConfig(orgRaw({ portalAccessColumn: 'check_portal', workEmailColumn: 'REPLACE_WITH_COLUMN_ID' })))).toBe(false);
+    expect(workEmailSignInEnabled(validateConfig(orgRaw({ workEmailColumn: 'email_work' })))).toBe(false);
+  });
+
+  it('orgAcknowledgmentEnabled needs the sign-off flag and a signed-off EIN', () => {
+    const base = { portalAccessColumn: 'check_portal' };
+    expect(orgAcknowledgmentEnabled(validateConfig(orgRaw(base)))).toBe(false);
+    const signed = orgRaw({ ...base, acknowledgmentSignedOff: true });
+    signed.taxLetter.ein = '12-3456789';
+    expect(orgAcknowledgmentEnabled(validateConfig(signed))).toBe(true);
+    const noEin = orgRaw({ ...base, acknowledgmentSignedOff: true });
+    noEin.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    expect(orgAcknowledgmentEnabled(validateConfig(noEin))).toBe(false);
+  });
+});
+
+describe('shipped configs organizations block', () => {
+  it.each([['svbc', svbcConfig], ['sandbox', sandboxConfig]])('%s has the block, off until the column exists', (_n, cfg) => {
+    const v = validateConfig(cfg);
+    expect(v.organizations.acknowledgmentSignedOff).toBe(false);
+    expect(v.organizations.volunteerFloor).toBe(3);
+    expect(orgAccessEnabled(v)).toBe(false);
   });
 });

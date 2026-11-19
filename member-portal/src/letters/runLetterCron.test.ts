@@ -55,6 +55,13 @@ const config: Config = {
   matchingGifts: { doubleTheDonationPublicKey: null },
   impact: { statementsByYear: {} },
   home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
+  organizations: {
+    portalAccessColumn: 'REPLACE_WITH_COLUMN_ID',
+    workEmailColumn: 'REPLACE_WITH_COLUMN_ID',
+    addressColumn: 'REPLACE_WITH_COLUMN_ID',
+    acknowledgmentSignedOff: false,
+    volunteerFloor: 3,
+  },
   letterCron: {
     boardId: 456,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
