@@ -21,7 +21,12 @@ export async function startSession(consumed: ConsumedToken, deps: StartSessionDe
   const sessionHash = await sha256Hex(rawSessionToken);
   const expiresAt = new Date(now.getTime() + deps.sessionTtlHours * 3_600_000).toISOString();
 
-  await deps.sessionStore.createSession({ sessionHash, donorItemIds: consumed.donorItemIds, expiresAt });
+  await deps.sessionStore.createSession({
+    sessionHash,
+    donorItemIds: consumed.donorItemIds,
+    expiresAt,
+    emailHash: consumed.emailHash,
+  });
 
   if (consumed.emailHash !== null) {
     try {

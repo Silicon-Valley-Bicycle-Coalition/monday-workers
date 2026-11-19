@@ -990,8 +990,9 @@ on the deployed sandbox D1, whose boards hadn't changed.
 
 ## Development
 
-**Migration 0007 must be applied before this code reaches `main`.** `0007_sign_in_codes.sql`
-(sign-in code columns on `magic_link_tokens`, `verified_emails`, `code_failures`) has to be on
+**Migrations 0007 and 0008 must be applied before this code reaches `main`.** `0007_sign_in_codes.sql`
+(sign-in code columns on `magic_link_tokens`, `verified_emails`, `code_failures`) and
+`0008_session_email_hash.sql` (`sessions.email_hash`, which `getSession` selects) have to be on
 **both** D1 databases before the branch that adds sign-in codes merges. The `deploy-sandbox` job in
 `.github/workflows/workers.yml` deploys on every push to `main` and never applies migrations, and
 without 0007 every sign-in fails, existing emailed links and letter-ready links included, because

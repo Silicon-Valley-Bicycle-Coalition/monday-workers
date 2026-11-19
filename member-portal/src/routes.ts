@@ -5,7 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
-import type { SessionStore } from './db/sessions';
+import type { SessionInfo, SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/types';
 import type { IpRateLimiter } from './ratelimit';
@@ -119,11 +119,16 @@ function isPlausibleEmail(email: string): boolean {
 const NO_STORE = 'private, no-store, max-age=0';
 
 // Shared by every authenticated route: resolves the session cookie to the donor item ids it
-// grants access to, or null if there is no valid session. Callers redirect to / (login) on null.
-async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] | null> {
+// grants access to (and the address it signed in with), or null if there is no valid session.
+async function getSessionInfo(c: Context, deps: AppDeps): Promise<SessionInfo | null> {
   const sessionToken = getCookie(c, SESSION_COOKIE);
   if (!sessionToken) return null;
   return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
+}
+
+// The donor ids alone, for routes that don't need the address. Callers redirect to / (login) on null.
+async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] | null> {
+  return (await getSessionInfo(c, deps))?.donorItemIds ?? null;
 }
 
 // Signs the browser in (link or code alike) and drops the request cookie: once either half of a

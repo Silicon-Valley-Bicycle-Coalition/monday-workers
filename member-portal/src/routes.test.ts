@@ -115,14 +115,14 @@ function inMemoryCodeFailureStore(failures: FailureLedger): CodeFailureStore {
 }
 
 function inMemorySessionStore(): SessionStore {
-  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string }>();
+  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; emailHash: string | null }>();
   return {
     async createSession(params) {
-      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt });
+      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, emailHash: params.emailHash });
     },
     async getSession(sessionHash, nowISO) {
       const row = rows.get(sessionHash);
-      return !row || row.expiresAt <= nowISO ? null : row.donorItemIds;
+      return !row || row.expiresAt <= nowISO ? null : { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
     },
     async deleteSession(sessionHash) {
       rows.delete(sessionHash);
