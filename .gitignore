@@ -29,3 +29,7 @@ data/
 
 # github-migration-review/ holds copied GitLab issue text, which may include personal data.
 github-migration-review/
+
+# IT manual build output: generated reference pages and PDFs (scripts/build-manual.mjs)
+docs/manual/reference/
+dist/
