@@ -139,7 +139,7 @@ const ROWS = [
 
 // One Worker's Appendix A page.
 export function renderWorker(dir, configs, inScope) {
-  const out = [`# ${dir} {#ref-${dir}}`, ''];
+  const out = [`# ${dir}: infrastructure {#ref-${dir}}`, ''];
   if (configs.length === 0) {
     out.push('Local CLI, no Wrangler configuration. It runs on an operator\'s machine; see its chapter.', '');
     return out.join('\n');

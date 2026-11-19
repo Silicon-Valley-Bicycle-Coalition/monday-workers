@@ -256,8 +256,9 @@ function assembleManual(root, sha) {
   const manualFiles = new Set(parts.flatMap((p) => p.files));
   const isDir = (p) => existsSync(join(root, p)) && statSync(join(root, p)).isDirectory();
   const out = [];
-  for (const { part, files } of parts) {
-    out.push(`<div class="part-title">${part}</div>`, '');
+  for (const [i, { part, files }] of parts.entries()) {
+    // A heading, so the part appears in the contents and the PDF bookmarks.
+    out.push(`# ${part} {#part-${i + 1} .part-title}`, '');
     for (const file of files) {
       const path = join(manual, file);
       if (!existsSync(path)) fail(`chapter ${file} is in the build order but missing`);
