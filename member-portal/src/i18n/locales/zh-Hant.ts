@@ -59,6 +59,8 @@ export const zhHant: Record<TranslationKey, string> = {
   'portal.heading': '您的捐款者入口網站',
   'portal.someRecordsUnavailable': '暫時無法載入您的部分記錄，請於幾分鐘後再試。',
   'portal.membership': '會員狀態：{{status}}（{{tier}}）',
+  'portal.membershipNoTier': '會員狀態：{{status}}',
+  'portal.notMember': '我們的紀錄中沒有您的會員資格。',
   'portal.totalLabel': '捐款總額',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金額',

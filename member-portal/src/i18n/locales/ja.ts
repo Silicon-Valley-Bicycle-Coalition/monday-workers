@@ -59,6 +59,8 @@ export const ja: Record<TranslationKey, string> = {
   'portal.heading': '寄付者ポータル',
   'portal.someRecordsUnavailable': '一部の記録を現在読み込めませんでした。数分後にもう一度お試しください。',
   'portal.membership': '会員資格: {{status}}（{{tier}}）',
+  'portal.membershipNoTier': '会員資格: {{status}}',
+  'portal.notMember': '会員登録の記録はありません。',
   'portal.totalLabel': '寄付合計額',
   'portal.tableDate': '日付',
   'portal.tableAmount': '金額',

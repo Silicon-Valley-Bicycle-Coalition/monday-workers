@@ -59,6 +59,8 @@ export const zhHans: Record<TranslationKey, string> = {
   'portal.heading': '您的捐赠者门户',
   'portal.someRecordsUnavailable': '暂时无法加载您的部分记录，请几分钟后重试。',
   'portal.membership': '会员状态：{{status}}（{{tier}}）',
+  'portal.membershipNoTier': '会员状态：{{status}}',
+  'portal.notMember': '我们的记录中没有您的会员资格。',
   'portal.totalLabel': '捐款总额',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金额',

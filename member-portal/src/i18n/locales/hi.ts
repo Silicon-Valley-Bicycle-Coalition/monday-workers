@@ -59,6 +59,8 @@ export const hi: Record<TranslationKey, string> = {
   'portal.heading': 'आपका डोनर पोर्टल',
   'portal.someRecordsUnavailable': 'आपके कुछ रिकॉर्ड अभी लोड नहीं हो सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
   'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
+  'portal.membershipNoTier': 'सदस्यता: {{status}}',
+  'portal.notMember': 'हमारे रिकॉर्ड में आपकी कोई सदस्यता नहीं है।',
   'portal.totalLabel': 'कुल दान',
   'portal.tableDate': 'तारीख़',
   'portal.tableAmount': 'राशि',

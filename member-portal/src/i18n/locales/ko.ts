@@ -59,6 +59,8 @@ export const ko: Record<TranslationKey, string> = {
   'portal.heading': '기부자 포털',
   'portal.someRecordsUnavailable': '일부 기록을 지금 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'portal.membership': '회원 자격: {{status}} ({{tier}})',
+  'portal.membershipNoTier': '회원 자격: {{status}}',
+  'portal.notMember': '등록된 회원 자격이 없습니다.',
   'portal.totalLabel': '총 기부금',
   'portal.tableDate': '날짜',
   'portal.tableAmount': '금액',

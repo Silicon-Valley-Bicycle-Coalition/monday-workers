@@ -806,3 +806,33 @@ describe('portalView match lines', () => {
     expect(html).not.toContain('"onmouseover=');
   });
 });
+
+describe('portalView membership line', () => {
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+  function htmlFor(membershipStatus: string, membershipTier: string): string {
+    const data: PortalView = {
+      donors: [{ id: 'd1', name: 'Pat', membershipStatus, membershipTier, totalDonated: '', donations: [], membershipExpiry: '' }],
+      discounts: [],
+      donationHistoryEnabled: false,
+      volunteerHistory: null,
+    };
+    return portalView(data, 'en', {}, noFunraise);
+  }
+
+  it('shows status and tier when both are set', () => {
+    expect(htmlFor('Lapsed', 'Member')).toContain('Membership: Lapsed (Member)');
+  });
+
+  it('drops the empty parentheses when the tier is blank', () => {
+    const html = htmlFor('Active', ' ');
+    expect(html).toContain('Membership: Active<');
+    expect(html).not.toContain('()');
+  });
+
+  it('says there is no membership on file when the status is blank', () => {
+    const html = htmlFor('', '');
+    expect(html).toContain(t('en', 'portal.notMember'));
+    expect(html).not.toContain('Membership:');
+  });
+});
+

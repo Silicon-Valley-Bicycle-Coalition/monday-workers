@@ -32,7 +32,30 @@ This is guaranteed two separate ways at once, so that even if one of them failed
 still catch it. That's a deliberate, tested safety design — not a "please be careful" request. You
 can safely use any real donor's email address while testing.
 
+## Test accounts: sign in instantly
+
+For a quick look, or to see what a particular kind of member sees when you're helping one, use
+one of these addresses. They sign you straight in, with no email and no waiting, and always show
+the same made-up person (every name ends in "(test)"). They never show anything from the test
+records, and nothing you submit as one of them is saved.
+
+| Address | Who it shows |
+| --- | --- |
+| `test-active@example.org` | Active member: card, gifts with an employer match, volunteer shifts |
+| `test-renewing@example.org` | Active member whose membership ends in about two weeks |
+| `test-lifetime@example.org` | Lifetime member: no end date on the card |
+| `test-lapsed@example.org` | Lapsed member: membership ended about three months ago |
+| `test-donor@example.org` | Gave but never joined: "no membership on file" and no membership card |
+| `test-household@example.org` | Two people sharing one inbox (one active, one lapsed) |
+| `test-spanish@example.org` | Active member whose preferred language is Spanish |
+
+Dates move with today's date, so "ends in about two weeks" stays true. A request to change your
+details shows the normal confirmation, but nothing is sent to staff and you can repeat it. These
+addresses work only in the test copy, never on the real portal.
+
 ## How to test it
+
+To test the real sign-in (the emailed link), use the test records instead:
 
 1. Open a web browser and go to **https://member.sandbox.bikesiliconvalley.org**.
 2. Enter an email address from the test list you were given for this round of testing. (If you
