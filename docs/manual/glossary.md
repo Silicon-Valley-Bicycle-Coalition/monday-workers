@@ -42,8 +42,9 @@ after a confirmed Monday write.
 
 **D1.** Cloudflare's serverless SQLite database. Each Worker has its own, one per environment.
 
-**DLQ (dead-letter queue).** Where a queue message goes after its retries run out. Every DLQ here
-has a consumer that records the failure in D1 and logs an error.
+**DLQ (dead-letter queue).** Where a queue message goes after its retries run out. Most DLQs here
+have a consumer that records the failure in D1 and logs an error. `member-portal`'s two DLQs have
+none, so inspect them by hand (its chapter).
 
 **Dry run.** What a Worker does under the `off` write switch: it computes and logs, and writes
 nothing.

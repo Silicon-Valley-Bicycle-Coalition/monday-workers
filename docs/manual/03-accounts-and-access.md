@@ -49,7 +49,7 @@ Things to know:
   - GitHub's optional `CLOUDFLARE_API_TOKEN` for sandbox deploys is **not set** (see
     [chapter 6](06-ci-and-deploy.md)).
 - **Cloudflare Access** protects the staff-only Workers (`member-map`, `nearby-search`). Each has
-  an Access application in Zero Trust → Access → Applications, allowing SVBC staff email
+  (or, for `nearby-search`, will have once it's deployed) an Access application in Zero Trust → Access → Applications, allowing SVBC staff email
   addresses. The Worker also verifies the Access JWT itself (`access.aud` and `access.teamDomain`
   in its config).
 - **WAF / Super Bot Fight Mode.** The zone challenges non-browser clients. Calendar apps polling
@@ -88,7 +88,10 @@ Rules:
 
 - **Never create or use a personal API token for an integration user.** It would be unscoped and
   never expire. Operator scripts use the operator's own personal admin token, in
-  `MONDAY_API_TOKEN` in the shell or the `.env.*` files.
+  `MONDAY_API_TOKEN` in the shell or the `.env.*` files. **To verify:** at least one
+  operator's `.env.production` has held an integration user's personal token. If one still
+  does, regenerate that token as the integration user (which invalidates it) and switch the
+  file to your own.
 - **Integration users' email.** Monday emails a user each time they're subscribed to a board.
   Turn off email notifications in the integration user's profile, or filter that subject in its
   mailbox.

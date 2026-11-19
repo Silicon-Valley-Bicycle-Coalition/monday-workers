@@ -69,7 +69,7 @@ Everything runs from inside the Worker's directory:
 cd funraise-sync
 npm ci
 npm test                              # vitest run, in workerd with simulated bindings
-npm test -- test/route.test.ts        # one file
+npm test -- src/routes.test.ts        # one file
 npm test -- -t "dedupes a retried"    # one test by name
 npm run typecheck                     # wrangler types, then tsc --noEmit
 npm run dev:sandbox                   # local Worker, sandbox config
@@ -99,7 +99,8 @@ npm run dev:sandbox                   # local Worker, sandbox config
   src/monday/          GraphQL transport (copy), client, outage breaker (copy)
   migrations/          D1 schema migrations, numbered
   scripts/             operator scripts (.mjs), each with a test
-  test/                Vitest tests
+  src/**/*.test.ts     Vitest tests, beside the code they test
+  test/                test helpers (migrations, env types)
 scripts/               repo-wide CI checks and operator tools (.mjs, node:test)
 docs/                  manual, runbooks, design specs, UAT scripts, design system
 .github/workers.json   CI roster: every Worker directory
@@ -127,7 +128,7 @@ applying a migration ahead of a deploy is always safe.
 - **Config, not constants,** for anything SVBC-specific
   ([chapter 2](02-architecture.md#configuration-not-hardcoding)).
 - **Never log an email address, a token or `c.req.url`.** Log the Monday item id. `logSafe.ts`
-  helpers exist in `member-portal` and `mailchimp-sync`.
+  helpers exist in several Workers (for example `member-portal` and `mailchimp-sync`).
 - **Find Monday columns by bare title** with `bareTitle()`, or by id from config.
 - **Tests first** for any behavior change. Scripts under `scripts/` use `node:test`
   (`node --test scripts/*.test.mjs`).

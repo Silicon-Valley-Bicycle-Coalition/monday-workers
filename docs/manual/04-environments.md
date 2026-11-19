@@ -7,8 +7,9 @@ production boards. Design:
 
 ## How the split works
 
-Every deployed Worker except `svbc-calendars` has a `sandbox` Wrangler environment: an
-`env.sandbox` block in its `wrangler.jsonc`. `member-portal`'s writer has one too, in
+Every deployed Worker has a `sandbox` Wrangler environment: an `env.sandbox` block in its
+`wrangler.jsonc`. `svbc-calendars`' sandbox is different: it only isolates its cache and
+analytics, and it doesn't follow the rest of this chapter. `member-portal`'s writer has one too, in
 `wrangler.writer.jsonc`.
 
 | | Production | Sandbox |
@@ -23,7 +24,7 @@ Every deployed Worker except `svbc-calendars` has a `sandbox` Wrangler environme
 | Monday boards | Production workspaces (e.g. Donors & Contacts) | The CRM Sandbox workspace |
 | Email | Real recipients | Only `sandbox@bikesiliconvalley.org` |
 | Alerts | Slack, Workers Issues automations | None |
-| Crons | On | Often empty (`crons: []`) to save cost; run handlers by hand |
+| Crons | On | Off (`crons: []` in every sandbox) to save cost; run handlers by hand |
 
 Wrangler doesn't let an environment inherit **bindings** (vars, D1, queues, KV, services, email,
 secrets) from the top level, so a sandbox deployment can't pick up a production binding by

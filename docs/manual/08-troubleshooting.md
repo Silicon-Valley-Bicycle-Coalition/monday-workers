@@ -7,6 +7,10 @@ modes".
 
 ## First response, for any problem
 
+Who to contact first in an outage (named in the private appendix): the Cloudflare Super
+Administrator for platform problems, the Monday account admin for consent, board and permission
+problems, and the vendor's admin for anything on their side.
+
 1. **Is it still happening?** Watch it live: `npx wrangler tail svbc-<worker>`. In the dashboard,
    look at the Worker's **Observability** (logs) and **Issues**.
 2. **Stop the damage if data is being written wrong:**
@@ -22,7 +26,9 @@ modes".
    - a merged pull request;
    - a Monday board or column edit (the board's Activity log);
    - a write-switch change (`node scripts/flags.mjs status --env production`).
-5. **Fix, deploy, then release:** turn writes back `on` and re-drive any dead letters
+5. **Know which build is live** before reading code
+   ([chapter 7](07-operations.md#which-version-is-live)).
+6. **Fix, deploy, then release:** turn writes back `on` and re-drive any dead letters
    ([chapter 7](07-operations.md#queues-and-dead-letters)).
 
 ## Alerts in Slack

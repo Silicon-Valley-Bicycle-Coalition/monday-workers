@@ -54,9 +54,9 @@ Why it's built this way:
   consumer stops calling Monday for the rest of that batch and retries everything later
   (`src/monday/outage.ts`). This keeps one bad minute from spending every message's retries.
 - **DLQ consumers** mark the D1 row as dead-lettered and log one error. The error raises a
-  Workers Issues alert in Slack. Workers that have it ship `scripts/redrive-failed.mjs` to put
-  dead letters back on the main queue once the cause is fixed
-  ([chapter 7](07-operations.md#queues-and-dead-letters)).
+  Workers Issues alert in Slack. (`member-portal`'s two DLQs are the exception: they have no
+  consumer.) Several Workers ship a re-drive script that puts dead letters back through the
+  normal path once the cause is fixed ([chapter 7](07-operations.md#queues-and-dead-letters)).
 
 ## Pattern 2: cron-polled Workers and the cursor rule
 
@@ -220,8 +220,8 @@ in `scripts/mark-read-only-columns.mjs` and run that script.
 - **CPU cap.** Every Worker sets `limits.cpu_ms`, so a runaway invocation can't bill Workers
   Paid's 30-second default. Webhook receivers and the portal use 100 ms, far above their normal
   use. Cron Workers that do real work per run are set higher, sized to measured use, from 500 ms
-  (`report-digests`) and 1,000 ms (`mailchimp-sync`, `contact-roles`, `people-reclassification`,
-  `sync-watchdog`) up to 30,000 ms (`donation-rollups`, `dtd-sync`, `impact-attribution`) and
+  (`report-digests`), 1,000 ms (`mailchimp-sync`, `contact-roles`, `people-reclassification`,
+  `sync-watchdog`) and 2,000 ms (`nearby-search`) up to 30,000 ms (`donation-rollups`, `dtd-sync`, `impact-attribution`) and
   300,000 ms (`monday-backup`, `member-map`). Appendix A has each value. A CPU-limit kill can't
   be caught, so raise a cap when the dashboard's CPU metrics approach it.
 - **Preview URLs off** (`preview_urls: false`) everywhere, so branch uploads can't run with

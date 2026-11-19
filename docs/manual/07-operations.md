@@ -66,10 +66,15 @@ A growing **main queue** backlog has one of three causes: the consumer is failin
 (check Workers Issues and `wrangler tail`), the Worker is on `hold`, or Monday is down.
 Messages wait up to 14 days.
 
-A message in a **dead-letter queue** has used all its retries. The DLQ consumer:
+A message in a **dead-letter queue** has used all its retries. Every DLQ except
+`member-portal`'s two has a consumer, which:
 
 - marks the Worker's D1 row as dead-lettered;
 - logs one error per batch, which raises a Workers Issues alert in Slack.
+
+`member-portal`'s DLQs (`member-portal-change-requests-dlq`, `member-portal-letter-emails-dlq`)
+raise no alert, so check them by hand: `npx wrangler queues info <name>` shows the backlog. See
+its chapter.
 
 To recover:
 
@@ -85,6 +90,38 @@ To recover:
 
    Each script's header and the Worker's README give the flags. Run it with `--env sandbox`
    first if you can.
+
+## Which version is live?
+
+`main` isn't necessarily what's running, because most Workers deploy by hand
+([chapter 6](06-ci-and-deploy.md#what-deploys-when)). Before debugging code, find out which build is
+live:
+
+```sh
+npx wrangler deployments list --name svbc-<worker>     # recent deploys: time, version id, author, message
+npx wrangler versions view <version-id> --name svbc-<worker>
+```
+
+Wrangler records no Git commit, so pass one when you deploy:
+`npx wrangler deploy --message "$(git rev-parse --short HEAD)"`. If the latest deployment has no
+commit in its message, compare its time with `git log --merges main` and the Worker's README
+status. If in doubt, redeploy from a known commit.
+
+## Inspecting a Worker's D1 database
+
+Each Worker's D1 holds its ledger: events received, what was written, cursors, failures. The
+schema is in `<worker>/migrations/`. Query it read-only from your laptop:
+
+```sh
+cd <worker>
+npx wrangler d1 execute svbc-<worker> --remote --command "select name from sqlite_master where type='table'"
+npx wrangler d1 execute svbc-<worker> --remote --command "select * from events order by received_at desc limit 20"
+npx wrangler d1 execute svbc-<worker>-sandbox --env sandbox --remote --command "…"
+```
+
+Rows can hold donor names and emails, so don't paste results into issues or chat. Only write to
+D1 by hand if a runbook says to. D1 Time Travel can undo a mistake within 30 days:
+`npx wrangler d1 time-travel restore svbc-<worker> --timestamp <ISO time>`.
 
 ## Logs
 
@@ -194,8 +231,8 @@ comment describing its usage. Load your Monday token first (`source .env.product
 
 ## Costs
 
-The Cloudflare account is on Workers Paid ($5 a month base) through Project Galileo, which
-covers the zone's Business plan. Usage at SVBC's volume stays near the included limits. Queues
+The Cloudflare account pays for Workers Paid ($5 a month base). Project Galileo covers the
+zone's Business plan, not Workers. Usage at SVBC's volume stays near the included limits. Queues
 and D1 operations are well under quota. The $10-a-month billing alert is the early warning.
 Per-Worker CPU and request metrics are in the dashboard. Monday seats (including the integration
 user's) and vendor subscriptions are billed by those vendors. See the private appendix.

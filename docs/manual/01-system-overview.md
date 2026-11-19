@@ -36,14 +36,14 @@ of a dedicated integration user. No Worker holds a Monday token of its own.
 |---|---|---|---|
 | [`funraise-sync`](workers/funraise-sync.md) | Ingest | Webhook, hourly cron | Funraise donations become Donations items; recurring gifts are mirrored hourly |
 | [`eventbrite-sync`](workers/eventbrite-sync.md) | Ingest | Webhooks, hourly cron | Paid Eventbrite orders become Donations items; attendee feeds for classes |
-| [`benevity-import`](workers/benevity-import.md) | Ingest | Monday webhook | A Benevity report staff upload to Monday becomes Donations items |
+| [`benevity-import`](workers/benevity-import.md) | Ingest | Monday webhook, daily cron | A Benevity report staff upload to Monday becomes Donations items |
 | [`dtd-sync`](workers/dtd-sync.md) | Ingest | Hourly cron | Double the Donation matching-gift status in both directions |
 | [`mailchimp-sync`](workers/mailchimp-sync.md) | Ingest / serve | Webhooks, crons | Keeps Mailchimp's audience and Monday's People and consent columns in step |
 | [`donation-rollups`](workers/donation-rollups.md) | Keep current | Monday webhooks, crons | Lifetime and yearly giving, membership, tier and last gift on People and Organizations |
 | [`people-reclassification`](workers/people-reclassification.md) | Keep current | Daily cron, webhook | Moves people inactive for 7 years to People (Historical), and back |
 | [`contact-roles`](workers/contact-roles.md) | Keep current | 10-minute cron | Fills the read-only Contacts column on opportunity boards from affiliations |
 | [`impact-attribution`](workers/impact-attribution.md) | Keep current | Nightly cron | Proposes draft employer affiliations from matching gifts and email domains |
-| [`member-portal`](workers/member-portal.md) | Serve | HTTP (donors) | Donors sign in by email link, see their giving and membership, request changes |
+| [`member-portal`](workers/member-portal.md) | Serve | HTTP (donors), daily cron | Donors sign in by email link, see their giving and membership, request changes |
 | [`bp-feedback-notify`](workers/bp-feedback-notify.md) | Serve | Monday webhook | Emails an event organizer a feedback request after a bike-parking event |
 | [`report-digests`](workers/report-digests.md) | Serve | Hourly cron | Scheduled email digests of Monday board views for staff |
 | [`member-map`](workers/member-map.md) | Serve | HTTP (staff), weekly cron | Staff-only map of members and membership gaps |
@@ -71,7 +71,7 @@ Two more items in the repository aren't on that list:
 | Service | Used for | Direction |
 |---|---|---|
 | Monday.com (Pro plan, CRM and Work Management seats) | System of record | Read and write |
-| Cloudflare (Workers Paid, through Project Galileo) | Runs every Worker, plus D1, Queues, KV, R2, Email sending, Access and WAF on `bikesiliconvalley.org` | Platform |
+| Cloudflare (Workers Paid; the zone's Business plan through Project Galileo) | Runs every Worker, plus D1, Queues, KV, R2, Email sending, Access and WAF on `bikesiliconvalley.org` | Platform |
 | GitHub | Source code, pull requests, CI (GitHub Actions) | Platform |
 | Funraise | Online donation forms | Inbound webhook and API |
 | Eventbrite | Event tickets and registrations | Inbound webhook and API |
