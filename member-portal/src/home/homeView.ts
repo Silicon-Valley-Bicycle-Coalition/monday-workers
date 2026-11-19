@@ -211,7 +211,30 @@ function doorList(doors: DoorLink[], locale: Locale): string {
   return `<nav class="home-doors" aria-label="${escapeHtml(t(locale, 'home.doorsLabel'))}">${items}</nav>`;
 }
 
+// "You manage": one plain link per organization, no gold button. The hidden ": " keeps a screen
+// reader from running the name into the statement line.
+function orgSection(orgs: HomeData['orgs'], locale: Locale): string {
+  if (orgs.length === 0) return '';
+  const rows = orgs
+    .map((org) => {
+      const name = org.name !== null && org.name.trim() !== '' ? org.name : t(locale, 'orgs.unnamed');
+      const ready =
+        org.statementReadyYear === null
+          ? ''
+          : `<span class="home-door-hint">${escapeHtml(t(locale, 'orgs.statementReady', { year: String(org.statementReadyYear) }))}</span>`;
+      const href = `/${locale}/portal/org/${encodeURIComponent(org.orgItemId)}`;
+      const hidden = ready === '' ? '' : '<span class="visually-hidden">: </span>';
+      return `<a class="home-door" href="${escapeHtml(href)}"><span class="home-door-title">${escapeHtml(name)}${hidden}</span>${ready}</a>`;
+    })
+    .join('');
+  return `<section class="home-orgs" aria-labelledby="home-orgs-title"><h2 id="home-orgs-title" class="home-orgs-title">${escapeHtml(t(locale, 'orgs.sectionTitle'))}</h2><div class="home-doors">${rows}</div></section>`;
+}
+
 export function homeView(data: HomeData, locale: Locale, renewUrl: string): string {
+  // Work-only session: no greeting, headline, cards or doors, just the organizations.
+  if (data.people.length === 0 && data.orgs.length > 0) {
+    return `<div class="home">${orgSection(data.orgs, locale)}</div>`;
+  }
   const names = data.people.map((e) => e.person.firstName).filter((n) => n !== '');
   const greeting =
     names.length === 0
@@ -232,6 +255,7 @@ export function homeView(data: HomeData, locale: Locale, renewUrl: string): stri
       </div>
       ${data.unavailableCount > 0 ? `<div class="home-unavailable">${someRecordsUnavailableNote(data.unavailableCount, locale)}</div>` : ''}
       ${doorList(data.doors, locale)}
+      ${orgSection(data.orgs, locale)}
     </div>
   `;
 }

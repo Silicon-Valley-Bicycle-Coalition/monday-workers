@@ -4071,3 +4071,98 @@ describe('doors', () => {
     });
   });
 });
+
+describe('organizations on the home page', () => {
+  function orgConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.monday.organizationsBoardId = 77;
+    cfg.changeRequests.employer = {
+      affiliationsBoardId: 555,
+      affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' },
+      currentStatusLabel: 'Current',
+      personAffiliationsLink: 'pa',
+    };
+    cfg.organizations.portalAccessColumn = 'check_portal';
+    return cfg;
+  }
+  const grant: OrgGrant = { orgItemId: 'org-1', affiliationItemId: 'aff-1', via: 'workEmail', personItemId: null };
+
+  async function withSession(donorItemIds: string[], orgGrants: OrgGrant[], overrides: Partial<AppDeps> = {}) {
+    const deps = makeDeps({ config: orgConfig(), ...overrides });
+    await deps.sessionStore.createSession({
+      sessionHash: await sha256Hex('org-session'),
+      donorItemIds,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      emailHash: null,
+      orgGrants,
+    });
+    return { deps, app: createApp(deps), headers: { Cookie: '__Host-session=org-session' } };
+  }
+
+  it('lists the organization with its name and a link for a person with a grant', async () => {
+    const monday = fakeMondayWithDonations();
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'org-1', name: 'Acme Bikes' }]);
+    const { app, headers } = await withSession(['donor-1'], [grant], { monday });
+    const html = await (await app.request('/en/portal', { headers })).text();
+    expect(html).toContain('You manage');
+    expect(html).toContain('Acme Bikes');
+    expect(html).toContain('href="/en/portal/org/org-1"');
+    expect(html).toContain('home-doors');
+  });
+
+  it('shows only the section for a session with no people', async () => {
+    const monday = fakeMondayWithDonations();
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'org-1', name: 'Acme Bikes' }]);
+    const { app, headers } = await withSession([], [grant], { monday });
+    const res = await app.request('/en/portal', { headers });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Acme Bikes');
+    expect(html).not.toContain('home-greeting');
+    expect(html).not.toContain('home-person');
+    expect(html).not.toContain('aria-label="Your portal"');
+  });
+
+  it('falls back to the unnamed copy when the names read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = fakeMondayWithDonations();
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const { app, headers } = await withSession([], [grant], { monday });
+    const html = await (await app.request('/en/portal', { headers })).text();
+    expect(html).toContain(t('en', 'orgs.unnamed'));
+    vi.restoreAllMocks();
+  });
+
+  it('renders home as before for a person with no grants, reading no names', async () => {
+    const monday = fakeMondayWithDonations();
+    const { app, headers } = await withSession(['donor-1'], [], { monday });
+    const html = await (await app.request('/en/portal', { headers })).text();
+    expect(html).not.toContain('You manage');
+    expect(monday.getDonorNames).not.toHaveBeenCalled();
+  });
+
+  it('ignores grants while the gate is off', async () => {
+    const monday = fakeMondayWithDonations();
+    const { app, headers } = await withSession(['donor-1'], [grant], { monday, config: structuredClone(config) });
+    const html = await (await app.request('/en/portal', { headers })).text();
+    expect(html).not.toContain('You manage');
+    expect(monday.getDonorNames).not.toHaveBeenCalled();
+  });
+
+  it.each(['card', 'giving', 'activity', 'letters', 'letters/donor-1/2026', 'info', 'pledges', 'matching-gifts'])(
+    'sends a session with no people from /en/portal/%s to home',
+    async (path) => {
+      const { app, headers } = await withSession([], [grant]);
+      const res = await app.request(`/en/portal/${path}`, { headers });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/en/portal');
+    }
+  );
+
+  it('sends a session with no people posting a card regenerate to home', async () => {
+    const { app, headers } = await withSession([], [grant]);
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...headers, ...SAME_ORIGIN } });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+});

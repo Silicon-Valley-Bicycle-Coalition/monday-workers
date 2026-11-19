@@ -6,7 +6,8 @@ import type { MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { cardFor } from '../doors/card';
 import { loadLetterData } from '../letters/loadLetterData';
-import { cardEnabled, eventsEnabled, lettersEnabled, volunteerHistoryEnabled } from '../config';
+import { cardEnabled, eventsEnabled, lettersEnabled, orgAccessEnabled, volunteerHistoryEnabled } from '../config';
+import type { OrgGrant } from '../orgs/grants';
 import type { Locale } from '../i18n/locales';
 import { t } from '../i18n/t';
 import { errorText } from '../logSafe';
@@ -29,6 +30,9 @@ export interface HomeData {
   page: PageState;
   unavailableCount: number;
   doors: DoorLink[];
+  // The organizations the session manages ("You manage"), in grant order. `name` is null when the
+  // name read failed. `statementReadyYear` is null until the year-end statement wiring lands.
+  orgs: { orgItemId: string; name: string | null; statementReadyYear: number | null }[];
 }
 
 type HomeDeps = Pick<AppDeps, 'monday' | 'config' | 'now' | 'cardTokenStore'>;
@@ -42,13 +46,29 @@ export function pluralKey<K extends string>(locale: Locale, count: number, one: 
   return new Intl.PluralRules(locale).select(count) === 'one' ? one : other;
 }
 
-export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, locale: Locale): Promise<HomeData> {
+// One name read for every organization; a failure (or a missing item) leaves the name null.
+async function loadOrgs(orgGrants: OrgGrant[], deps: HomeDeps): Promise<HomeData['orgs']> {
+  if (orgGrants.length === 0 || !orgAccessEnabled(deps.config)) return [];
+  let names = new Map<string, string>();
+  try {
+    const rows = await deps.monday.getDonorNames(orgGrants.map((g) => g.orgItemId));
+    names = new Map(rows.map((r) => [r.id, r.name]));
+  } catch (err) {
+    console.error(`member-portal home organization names failed: ${errorText(err)}`);
+  }
+  // The ready line (last year's statement, until home.taxLetterUntil) is wired with the statements.
+  return orgGrants.map((g) => ({ orgItemId: g.orgItemId, name: names.get(g.orgItemId) ?? null, statementReadyYear: null }));
+}
+
+export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, locale: Locale, orgGrants: OrgGrant[] = []): Promise<HomeData> {
   const now = deps.now();
   const today = todayInLosAngeles(now);
   const cfg = deps.config.home;
   const lastYear = Number(today.slice(0, 4)) - 1;
   // Same rule as the letters page: the letter exists once the sign-off gate is open.
   const letterWindow = today.slice(5) <= cfg.taxLetterUntil && lettersEnabled(deps.config);
+
+  const orgsLeg = loadOrgs(orgGrants, deps);
 
   const discountLeg = deps.monday.getDiscountOrganizations().then(
     (list) => list.length,
@@ -109,12 +129,15 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
 
   const discountCount = await discountLeg;
   const page = pageState(people);
+  const orgs = await orgsLeg;
   return {
     people,
     discountCount,
     page,
     unavailableCount: results.length - loaded.length,
-    doors: doorLinks(people, discountCount, Number(today.slice(0, 4)), deps, locale),
+    // A session with no people has no doors: its page is the organizations alone.
+    doors: people.length === 0 ? [] : doorLinks(people, discountCount, Number(today.slice(0, 4)), deps, locale),
+    orgs,
   };
 }
 

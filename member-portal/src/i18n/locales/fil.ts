@@ -214,6 +214,9 @@ export const fil: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': 'Handa ang {{year}} sa Enero',
   'home.doorHintActivity': 'Ang iyong mga sign-up at oras',
   'home.doorHintInfo': 'Address, wika, ang ipinapadala namin',
+  'orgs.sectionTitle': 'Pinamamahalaan mo',
+  'orgs.unnamed': 'Isang organisasyong pinamamahalaan mo',
+  'orgs.statementReady': 'Handa na ang iyong year-end statement para sa {{year}}',
   // Door pages (src/doors/)
   'door.home': 'Home',
   'door.activityEmpty': 'Wala pang maipapakita rito. Bumalik pagkatapos mong mag-sign up para sa isang SVBC event o volunteer shift.',

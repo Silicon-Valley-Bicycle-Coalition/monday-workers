@@ -214,6 +214,9 @@ export const ja: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}}年分は1月にご用意',
   'home.doorHintActivity': '申し込みと活動時間',
   'home.doorHintInfo': '住所、言語、お送りする内容',
+  'orgs.sectionTitle': '管理している組織',
+  'orgs.unnamed': '管理している組織',
+  'orgs.statementReady': '{{year}}年の年間明細書をご用意しました',
   // Door pages (src/doors/)
   'door.home': 'ホーム',
   'door.activityEmpty': 'ここに表示する内容はまだありません。SVBCのイベントやボランティアに申し込んだ後にもう一度ご確認ください。',

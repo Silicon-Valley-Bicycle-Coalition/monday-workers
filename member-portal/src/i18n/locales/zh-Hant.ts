@@ -214,6 +214,9 @@ export const zhHant: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} 年信函將於一月提供',
   'home.doorHintActivity': '您的報名與服務時數',
   'home.doorHintInfo': '地址、語言、我們寄送的內容',
+  'orgs.sectionTitle': '您管理的組織',
+  'orgs.unnamed': '您管理的一個組織',
+  'orgs.statementReady': '您的 {{year}} 年度總結對帳單已準備好',
   // Door pages (src/doors/)
   'door.home': '首頁',
   'door.activityEmpty': '這裡暫時沒有內容。報名參加 SVBC 活動或志工服務後再來看看。',

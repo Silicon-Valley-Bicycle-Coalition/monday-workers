@@ -37,7 +37,7 @@ function data(entries: { person: HomePerson; state: PersonState; card?: PortalCa
     card: e.card === undefined ? card(e.person.id, `${e.person.firstName} Rivera`) : e.card,
     ended: membershipEnded(e.person, TODAY),
   }));
-  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, doors: DOORS, ...overrides };
+  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, doors: DOORS, orgs: [], ...overrides };
 }
 
 const goldCount = (html: string) => (html.match(/class="cta-button/g) ?? []).length;
@@ -317,3 +317,52 @@ describe('homeView — doors', () => {
 function escapeAmp(url: string): string {
   return url.replace(/&/g, '&amp;');
 }
+
+describe('homeView — organizations', () => {
+  const jordan = { person: person('j', 'Jordan'), state: { kind: 'default' } as PersonState };
+
+  it('puts "You manage" below the doors, one plain link per organization, no gold button', () => {
+    const html = homeView(data([jordan], { orgs: [{ orgItemId: 'o1', name: 'Acme & Sons', statementReadyYear: null }] }), 'en', RENEW);
+    expect(html).toContain('You manage');
+    expect(html).toContain('href="/en/portal/org/o1"');
+    expect(html).toContain('Acme &amp; Sons');
+    expect(html.indexOf('home-doors')).toBeLessThan(html.indexOf('You manage'));
+    expect(html).not.toContain('year-end statement');
+    expect(goldCount(html)).toBe(0);
+  });
+
+  it('shows the unnamed copy when the name is missing, and the ready line when a year is set', () => {
+    const html = homeView(
+      data([jordan], {
+        orgs: [
+          { orgItemId: 'o1', name: null, statementReadyYear: 2026 },
+          { orgItemId: 'o2', name: '<b>x</b>', statementReadyYear: null },
+        ],
+      }),
+      'en',
+      RENEW
+    );
+    expect(html).toContain('An organization you manage');
+    expect(html).toContain('Your 2026 year-end statement is ready');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(html).not.toContain('<b>x</b>');
+  });
+
+  it('a session with no people shows only the section: no greeting, cards or doors', () => {
+    const html = homeView(
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, doors: [], orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }] },
+      'en',
+      RENEW
+    );
+    expect(html).toContain('You manage');
+    expect(html).toContain('Acme');
+    expect(html).not.toContain('home-greeting');
+    expect(html).not.toContain('home-headline');
+    expect(html).not.toContain('home-people');
+    expect(html).not.toContain('aria-label="Your portal"');
+  });
+
+  it('renders no section without organizations', () => {
+    expect(homeView(data([jordan]), 'en', RENEW)).not.toContain('You manage');
+  });
+});

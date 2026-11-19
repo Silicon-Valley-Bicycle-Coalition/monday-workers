@@ -214,6 +214,9 @@ export const hi: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} का पत्र जनवरी में तैयार',
   'home.doorHintActivity': 'आपके पंजीकरण और घंटे',
   'home.doorHintInfo': 'पता, भाषा, हम क्या भेजते हैं',
+  'orgs.sectionTitle': 'आप प्रबंधित करते हैं',
+  'orgs.unnamed': 'आपके द्वारा प्रबंधित एक संगठन',
+  'orgs.statementReady': 'आपका {{year}} का वर्ष-अंत विवरण तैयार है',
   // Door pages (src/doors/)
   'door.home': 'होम',
   'door.activityEmpty': 'यहाँ अभी दिखाने के लिए कुछ नहीं है। किसी SVBC कार्यक्रम या स्वयंसेवा शिफ़्ट के लिए साइन अप करने के बाद फिर देखें।',

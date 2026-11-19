@@ -321,6 +321,7 @@ export const PORTAL_CSS = `
     font-size: 20px;
     color: var(--text-muted);
   }
+  .home-orgs-title { font-family: var(--font-heading); font-size: 20px; margin: 24px 0 8px; }
   .home-door-title { font-weight: 600; }
   .home-door-hint { font-size: 14px; color: var(--text-muted); }
   .visually-hidden {
@@ -344,7 +345,8 @@ export const PORTAL_CSS = `
       align-items: start;
     }
     .home-headline { font-size: 40px; }
-    .home-unavailable, .home-doors { grid-column: 1 / -1; }
+    .home-unavailable, .home-doors, .home-orgs { grid-column: 1 / -1; }
+    .home-orgs-title { margin-top: 0; }
     .home-doors {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

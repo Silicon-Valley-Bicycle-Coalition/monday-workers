@@ -214,6 +214,9 @@ export const vi: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': 'Thư năm {{year}} có vào tháng Một',
   'home.doorHintActivity': 'Các đăng ký và số giờ của bạn',
   'home.doorHintInfo': 'Địa chỉ, ngôn ngữ, những gì chúng tôi gửi',
+  'orgs.sectionTitle': 'Bạn quản lý',
+  'orgs.unnamed': 'Một tổ chức bạn quản lý',
+  'orgs.statementReady': 'Bảng sao kê cuối năm {{year}} của bạn đã sẵn sàng',
   // Door pages (src/doors/)
   'door.home': 'Trang chủ',
   'door.activityEmpty': 'Chưa có gì để hiển thị ở đây. Hãy quay lại sau khi bạn đăng ký một sự kiện hoặc ca tình nguyện của SVBC.',

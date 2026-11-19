@@ -221,6 +221,9 @@ export const en = {
   'home.doorHintLettersLater': '{{year}} ready in January',
   'home.doorHintActivity': 'Your sign-ups and hours',
   'home.doorHintInfo': 'Address, language, what we send',
+  'orgs.sectionTitle': 'You manage',
+  'orgs.unnamed': 'An organization you manage',
+  'orgs.statementReady': 'Your {{year}} year-end statement is ready',
   // Door pages (src/doors/)
   'door.home': 'Home',
   'door.activityEmpty': 'Nothing to show here yet. Check back after you sign up for an SVBC event or volunteer shift.',

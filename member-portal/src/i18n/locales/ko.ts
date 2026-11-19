@@ -214,6 +214,9 @@ export const ko: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}}년 서신은 1월에 준비됩니다',
   'home.doorHintActivity': '내 신청 및 봉사 시간',
   'home.doorHintInfo': '주소, 언어, 받는 소식',
+  'orgs.sectionTitle': '관리 중인 단체',
+  'orgs.unnamed': '관리 중인 단체',
+  'orgs.statementReady': '{{year}}년 연말 내역서가 준비되었습니다',
   // Door pages (src/doors/)
   'door.home': '홈',
   'door.activityEmpty': '아직 표시할 내용이 없습니다. SVBC 행사나 자원봉사에 신청한 후 다시 확인해 주세요.',

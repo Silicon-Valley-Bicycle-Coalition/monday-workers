@@ -214,6 +214,9 @@ export const zhHans: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} 年信函将于一月提供',
   'home.doorHintActivity': '您的报名与服务时数',
   'home.doorHintInfo': '地址、语言、我们发送的内容',
+  'orgs.sectionTitle': '您管理的组织',
+  'orgs.unnamed': '您管理的一个组织',
+  'orgs.statementReady': '您的 {{year}} 年度总结对账单已准备好',
   // Door pages (src/doors/)
   'door.home': '首页',
   'door.activityEmpty': '这里暂时没有内容。报名参加 SVBC 活动或志愿者工作后再来看看。',

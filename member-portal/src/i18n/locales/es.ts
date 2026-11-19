@@ -214,6 +214,9 @@ export const es: Record<TranslationKey, string> = {
   'home.doorHintLettersLater': '{{year}} disponible en enero',
   'home.doorHintActivity': 'Tus inscripciones y horas',
   'home.doorHintInfo': 'Dirección, idioma, lo que te enviamos',
+  'orgs.sectionTitle': 'Tú administras',
+  'orgs.unnamed': 'Una organización que administras',
+  'orgs.statementReady': 'Tu estado de cuenta de fin de año {{year}} está listo',
   // Door pages (src/doors/)
   'door.home': 'Inicio',
   'door.activityEmpty': 'Todavía no hay nada que mostrar aquí. Vuelve después de inscribirte en un evento o turno de voluntariado de SVBC.',
