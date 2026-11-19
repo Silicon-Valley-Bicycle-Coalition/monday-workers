@@ -165,7 +165,7 @@ export function checkEmailView(locale: Locale, next: string | null = null, codeE
     <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>${error}
     <form action="/auth/code" method="post">
       <label for="sign-in-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
-      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />${nextField}
+      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />${nextField}
       <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>
     </form>
   `;

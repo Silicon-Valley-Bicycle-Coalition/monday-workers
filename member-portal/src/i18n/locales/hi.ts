@@ -171,7 +171,7 @@ export const hi: Record<TranslationKey, string> = {
 
   // Login email (src/email/resend.ts)
   'email.subject': 'SVBC डोनर पोर्टल का आपका लॉगिन कोड और लिंक',
-  'email.loginButton': 'लॉग इन करें',
+  'email.loginButton': 'साइन इन करें',
   'email.codeIntro': 'आपका लॉगिन कोड:',
   'email.codeHint': 'इसे उस पेज पर दर्ज करें जहाँ आपने लॉग इन के लिए अनुरोध किया था, या नीचे दिए बटन का उपयोग करें। दोनों {{minutes}} मिनट में समाप्त हो जाते हैं और केवल एक बार काम करते हैं।',
 

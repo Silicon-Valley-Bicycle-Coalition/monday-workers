@@ -1085,7 +1085,8 @@ describe('sign in with the emailed code', () => {
     expect(html).toContain('action="/auth/code"');
     expect(html).toContain('inputmode="numeric"');
     expect(html).toContain('autocomplete="one-time-code"');
-    expect(html).toContain('maxlength="6"');
+    // Room for a pasted "123 456"; the server strips the space.
+    expect(html).toContain('maxlength="7"');
     expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
     expect(html).not.toContain(escapeHtml(t('en', 'checkEmail.codeError')));
   });
@@ -1257,6 +1258,61 @@ describe('sign in with the emailed code', () => {
     expect(limit).toHaveBeenCalledWith('code:unknown');
     expect(res.status).toBe(200);
     expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+  });
+
+  it('shows the code-error page when the IP limiter throws', async () => {
+    const { deps, app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const limit = vi.fn().mockRejectedValue(new Error('limiter down'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await submitCode(createApp({ ...deps, ipLimiter: { limit } }), lastEmail(emailSender).code, cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('__Host-session');
+    expect(error).toHaveBeenCalledWith('member-portal code rate limit failed: limiter down');
+    error.mockRestore();
+  });
+
+  it('refuses the right code once the row has expired', async () => {
+    const { deps, app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    // magicLinkTtlMinutes is 15; one minute past it.
+    const later = createApp({ ...deps, now: () => new Date('2026-08-22T00:16:00.000Z') });
+
+    const res = await submitCode(later, lastEmail(emailSender).code, cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('__Host-session');
+  });
+
+  it('refuses the right code after five wrong tries on the request', async () => {
+    const { app, emailSender } = setup();
+    const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
+    const { code } = lastEmail(emailSender);
+    const wrong = code === '000000' ? '111111' : '000000';
+
+    for (let i = 0; i < 5; i++) {
+      expect(await (await submitCode(app, wrong, cookie)).text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    }
+    const res = await submitCode(app, code, cookie);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
+    expect(res.headers.get('set-cookie') ?? '').not.toContain('__Host-session');
+  });
+
+  it('clears the request cookie after a link sign-in', async () => {
+    const { app, emailSender } = setup();
+    await requestSignIn(app, 'donor@example.org');
+
+    const res = await completeLogin(app, { token: extractToken(lastEmail(emailSender).loginUrl) });
+
+    expect(res.status).toBe(303);
+    const header = res.headers.get('set-cookie') ?? '';
+    expect(header).toMatch(/__Host-session=[^;]+/);
+    expect(header).toMatch(/__Host-login-request=;/);
   });
 
   it('rejects a cross-origin POST /auth/code', async () => {

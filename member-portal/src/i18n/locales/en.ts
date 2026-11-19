@@ -201,7 +201,7 @@ export const en = {
 
   // Login email (src/email/cloudflareEmail.ts)
   'email.subject': 'Your SVBC member portal sign-in code and link',
-  'email.loginButton': 'Log in',
+  'email.loginButton': 'Sign in',
   'email.codeIntro': 'Your sign-in code:',
   'email.codeHint': 'Type it on the page where you asked to sign in, or use the button below. Both expire in {{minutes}} minutes and work once.',
 

@@ -171,7 +171,7 @@ export const ja: Record<TranslationKey, string> = {
 
   // Login email (src/email/resend.ts)
   'email.subject': 'SVBC寄付者ポータルへのログインコードとリンク',
-  'email.loginButton': 'ログイン',
+  'email.loginButton': 'サインイン',
   'email.codeIntro': 'ログインコード:',
   'email.codeHint': 'ログインをリクエストしたページで入力するか、下のボタンをご利用ください。どちらも{{minutes}}分で有効期限が切れ、1回のみ使えます。',
 

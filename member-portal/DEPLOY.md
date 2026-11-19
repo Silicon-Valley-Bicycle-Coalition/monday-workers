@@ -87,7 +87,7 @@ From `member-portal/`, in order:
 # SVBC: the D1 already exists and its id is in wrangler.jsonc — skip the create. Forks: run it
 # and paste the returned id into wrangler.jsonc database_id.
 wrangler d1 create svbc-member-portal
-wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0006 (0006 hashes login_attempts; without it logins send no email)
+wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0007 (0006 hashes login_attempts; without it logins send no email; 0007 adds sign-in codes; without it every sign-in fails)
 wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
 wrangler queues create member-portal-letter-emails
@@ -275,6 +275,27 @@ its own README's "Sandbox environment" section.
    that IP's login posts to the other hostname); repeated identical change requests report
    "already submitted."
 7. **Logout + cache:** after logout, back-button must not show portal data (no-store headers).
+
+## Schema migrations (existing deployments)
+
+CI never applies D1 migrations: the `deploy-sandbox` job in `.github/workflows/workers.yml`
+deploys the sandbox Worker on every push to `main`, and production deploys run `npm run deploy`
+alone. Apply a new migration to **both** databases before the pull request that reads it merges,
+or the deployed code queries columns that don't exist yet. From `member-portal/`:
+
+```sh
+npx wrangler d1 migrations apply svbc-member-portal-sandbox --remote --env sandbox
+npx wrangler d1 migrations apply svbc-member-portal --remote
+```
+
+`migrations apply` runs only the files the database hasn't recorded, so it is safe to repeat.
+Every migration here is additive (new tables, nullable or defaulted columns), so the build
+already deployed keeps working against the migrated schema.
+
+- **0007 (`0007_sign_in_codes.sql`, sign-in codes, Household Email, `verified_emails`,
+  `code_failures`):** must be on both databases before the sign-in code branch merges to `main`.
+  Without it every sign-in fails, emailed links and letter-ready links included, because
+  `consumeToken` selects `email_hash`.
 
 ## Go-live, rollback, and aftercare
 

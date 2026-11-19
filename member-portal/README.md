@@ -157,11 +157,14 @@ requires six digits and signs the donor in exactly as the link does (same sessio
 `next` redirect), then clears the request cookie. The link and the code are one row in
 `magic_link_tokens` and share `used_at`: whichever is used first spends both. The cookie is set
 whether or not the address matched, or was even well-formed, so the response reveals nothing; it
-is withheld only when the per-address limiter denied the request, since no code was sent. Two
-caps guard guessing: each request's code gets `MAX_CODE_ATTEMPTS` (5) tries, right or wrong, and
-each address gets `rateLimit.codeFailuresPerAddressDaily` (10) wrong guesses per rolling 24 hours
-across all its requests (`code_failures`, reserved atomically before the comparison). The IP
-limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic page.
+is withheld only when a rate limit (per IP or per address) denied the request, since no code was
+sent. Two caps guard guessing: each request's code gets `MAX_CODE_ATTEMPTS` (5) tries, right or
+wrong, and each address gets `rateLimit.codeFailuresPerAddressDaily` (10) wrong guesses per
+rolling 24 hours across all its requests (`code_failures`). One D1 batch counts the try and
+reserves the failure slot before the comparison, and a request that matched no donor runs the
+same batch and hashes the code too, so response time doesn't tell whether an address is on file.
+The IP limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic
+page.
 
 **Household Email.** Sign-in matches an address against a donor's Household Email as well as
 their own, so a shared household address signs in every person on it; the session covers all
@@ -912,9 +915,6 @@ Every write the portal makes on a donor's behalf is gated by the shared write sw
   queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording
   proxies, logging one `"writeSwitch":"skipped"` line per would-be Monday create or email and
   acking. **A missing key means `off`**; a KV read error behaves like hold (queues not paused).
-Apply D1 migration `0007_sign_in_codes.sql` (sign-in code columns, `verified_emails`,
-`code_failures`) before deploying the build that reads it:
-`npx wrangler d1 migrations apply svbc-member-portal --remote` (the sandbox database is `svbc-member-portal-sandbox`).
 
 - `member-portal:log` — `debug` adds redacted payloads to those lines (names, contact details,
   old/new values and login links masked).
@@ -989,6 +989,21 @@ local D1, plus one seeded row per table): the four tables cleared, `letter_sends
 on the deployed sandbox D1, whose boards hadn't changed.
 
 ## Development
+
+**Migration 0007 must be applied before this code reaches `main`.** `0007_sign_in_codes.sql`
+(sign-in code columns on `magic_link_tokens`, `verified_emails`, `code_failures`) has to be on
+**both** D1 databases before the branch that adds sign-in codes merges. The `deploy-sandbox` job in
+`.github/workflows/workers.yml` deploys on every push to `main` and never applies migrations, and
+without 0007 every sign-in fails, existing emailed links and letter-ready links included, because
+`consumeToken` selects `email_hash`. From `member-portal/`:
+
+```sh
+npx wrangler d1 migrations apply svbc-member-portal-sandbox --remote --env sandbox
+npx wrangler d1 migrations apply svbc-member-portal --remote
+```
+
+The same holds for any later migration: apply it to both databases before merging the code that
+reads it (DEPLOY.md, "Schema migrations").
 
 ```sh
 npm install

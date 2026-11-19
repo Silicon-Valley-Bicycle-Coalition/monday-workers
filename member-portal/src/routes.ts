@@ -126,6 +126,19 @@ async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] |
   return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
 }
 
+// Signs the browser in (link or code alike) and drops the request cookie: once either half of a
+// sign-in request has been used, the row it pointed at is claimed and the cookie unlocks nothing.
+function setSessionCookie(c: Context, sessionToken: string, deps: AppDeps): void {
+  setCookie(c, SESSION_COOKIE, sessionToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: deps.config.auth.sessionTtlHours * 3600,
+  });
+  deleteCookie(c, LOGIN_REQUEST_COOKIE, { secure: true, path: '/' });
+}
+
 // Shared by every authenticated route: the authenticated zone's locale comes from the `:locale`
 // path param (not cookie/header sniffing like detectLocale). An unsupported code never reaches a
 // handler — the requireSupportedLocale middleware in createApp 404s it — so the fallback below
@@ -349,9 +362,9 @@ export function createApp(deps: AppDeps) {
     const next = portalReturnPath(body.next);
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const requestId = generateToken();
-    // Set on every answer but a per-address denial, so whether an address matched (or was even
-    // well-formed) never shows in the headers. A denied request sent no code, so there's nothing
-    // for the cookie to unlock.
+    // Set on every answer but a rate-limit denial (per IP or per address), so whether an address
+    // matched (or was even well-formed) never shows in the headers. A denied request sent no code,
+    // so there's nothing for the cookie to unlock.
     let issueRequestCookie = true;
 
     if (email.length > 0) {
@@ -421,7 +434,13 @@ export function createApp(deps: AppDeps) {
       c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, true), locale));
 
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-    if (!(await deps.ipLimiter.limit(`code:${ip}`)).success) return codeError();
+    try {
+      if (!(await deps.ipLimiter.limit(`code:${ip}`)).success) return codeError();
+    } catch (err) {
+      // Fail closed, on the same page as any other refusal rather than a 500.
+      console.error(`member-portal code rate limit failed: ${errorText(err)}`);
+      return codeError();
+    }
 
     const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
     const requestId = getCookie(c, LOGIN_REQUEST_COOKIE);
@@ -444,14 +463,7 @@ export function createApp(deps: AppDeps) {
     }
     if (sessionToken === null) return codeError();
 
-    setCookie(c, SESSION_COOKIE, sessionToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Lax',
-      path: '/',
-      maxAge: deps.config.auth.sessionTtlHours * 3600,
-    });
-    deleteCookie(c, LOGIN_REQUEST_COOKIE, { secure: true, path: '/' });
+    setSessionCookie(c, sessionToken, deps);
     return c.redirect(next ?? `/${locale}/portal`, 303);
   });
 
@@ -526,13 +538,7 @@ export function createApp(deps: AppDeps) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
     }
 
-    setCookie(c, SESSION_COOKIE, sessionToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Lax',
-      path: '/',
-      maxAge: deps.config.auth.sessionTtlHours * 3600,
-    });
+    setSessionCookie(c, sessionToken, deps);
     // 303: the browser follows a POST's redirect with a GET. The link's lang wins over the
     // locale segment `next` was captured with, as it does for the dashboard.
     const next = portalReturnPath(body.next);
