@@ -193,7 +193,7 @@
     "taxLetterUntil": "04-15"
   },
   "organizations": {
-    "portalAccessColumn": "REPLACE_WITH_COLUMN_ID",
+    "portalAccessColumn": "boolean_mm986pxt",
     "workEmailColumn": "email_mm8h6cxh",
     "addressColumns": ["text_mm8ht7ja", "text_mm8hvt8v", "text_mm8hwhsz"],
     "acknowledgmentSignedOff": false,

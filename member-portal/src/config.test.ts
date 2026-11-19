@@ -1240,11 +1240,12 @@ describe('organizations', () => {
 });
 
 describe('shipped configs organizations block', () => {
-  it.each([['svbc', svbcConfig], ['sandbox', sandboxConfig]])('%s has the block, off until the column exists', (_n, cfg) => {
+  // Production stays off until its Portal access column exists; the sandbox column does.
+  it.each([['svbc', svbcConfig, false], ['sandbox', sandboxConfig, true]])('%s has the block, org access %s', (_n, cfg, enabled) => {
     const v = validateConfig(cfg);
     expect(v.organizations.acknowledgmentSignedOff).toBe(false);
     expect(v.organizations.volunteerFloor).toBe(3);
-    expect(orgAccessEnabled(v)).toBe(false);
+    expect(orgAccessEnabled(v)).toBe(enabled);
     expect(v.organizations.addressColumns).toHaveLength(3);
   });
 });
