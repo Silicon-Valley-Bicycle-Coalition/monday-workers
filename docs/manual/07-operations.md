@@ -142,8 +142,9 @@ Slack if a run is partial.
 Restoring is an operator task done from a laptop: `cd monday-backup && npm run restore`. Follow
 [`monday-backup/RESTORE.md`](../../monday-backup/RESTORE.md): pick a snapshot, decrypt, dry run,
 restore into an **empty** workspace, then verify. A restore creates new boards with new ids. It
-doesn't overwrite the live ones. **To verify:** the full restore hasn't been rehearsed end to end
-yet (RESTORE.md, "Restore rehearsal"). Treat a first real restore with care.
+doesn't overwrite the live ones. **The full restore hasn't been rehearsed end to end yet**
+(RESTORE.md, "Restore rehearsal"), so treat a first real restore with care and rehearse it in
+the sandbox when you can.
 
 Also keep in mind:
 

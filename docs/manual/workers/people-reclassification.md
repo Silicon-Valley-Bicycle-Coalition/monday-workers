@@ -97,8 +97,9 @@ column can't be mapped in a move and Monday's API can't create one to fix a mism
 deliveries. See the root README's section on Monday's signed webhook JWT.
 
 **To verify:** that the current `RECLASSIFY_SECRET` values (both environments) are stored somewhere
-recoverable. The README records that earlier values were not saved. **To verify:** whether
-`MONDAY_SIGNING_SECRET` is set and `MONDAY_WEBHOOK_JWT_REQUIRED` is `"true"` in production.
+recoverable. The README records that earlier values were not saved. `MONDAY_SIGNING_SECRET` is set
+in both environments. `MONDAY_WEBHOOK_JWT_REQUIRED` isn't set in `wrangler.jsonc`, so a signed
+delivery must verify, and an unsigned one is still accepted with a logged warning.
 
 ## Write switch
 

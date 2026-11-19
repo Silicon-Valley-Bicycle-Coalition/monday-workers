@@ -108,7 +108,7 @@ Rules:
 | Mailchimp | `mailchimp-sync` | `MAILCHIMP_API_KEY`, `MAILCHIMP_WEBHOOK_SECRET`, `MONDAY_WEBHOOK_SECRET` | Mailchimp → Profile → Extras → API keys | Separate "SVBC Sandbox" audience; the sandbox key may write only there |
 | Double the Donation | `dtd-sync` | `DTD_PRIVATE_KEY` | DTD dashboard (**To verify** menu path) | **To verify** whether DTD offers a test key |
 | Benevity | `benevity-import` | `BENEVITY_WEBHOOK_SECRET` (URL secret for the Monday webhook) | No API. Staff download the report from the Benevity Causes portal and upload it to Monday. | n/a |
-| Google Workspace | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `BACKUP_ENCRYPTION_KEY`; var `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Google Cloud console → IAM → Service accounts → Keys. The account is a **Contributor** member of the backup Shared Drive. | Separate Drive folder (not yet configured) |
+| Google Workspace | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `BACKUP_ENCRYPTION_KEY` | Google Cloud console → IAM → Service accounts → Keys. The account is a **Contributor** member of the backup Shared Drive. | Separate Drive folder (not yet configured) |
 | Slack | `monday-auth`, `monday-backup`, `mailchimp-sync`, `svbc-calendars`, `sync-watchdog`; Workers Issues | `SLACK_WEBHOOK_URL` (an incoming webhook into the private staff channel) | Slack app → Incoming Webhooks (**To verify** which Slack app owns them) | Mostly unset; sandbox Workers don't alert |
 | Intuit QuickBooks | `quickbooks-sync` (postponed) | `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`, `QB_TOKEN_ENCRYPTION_KEY` | Intuit Developer portal | Intuit sandbox company |
 | Box | Nobody in code | — | — | — |
@@ -125,6 +125,16 @@ npx wrangler secret list                  # production names (never values)
 npx wrangler secret list --env sandbox    # sandbox names
 npx wrangler secret put FUNRAISE_API_KEY  # prompts for the new value; takes effect on the next request
 ```
+
+**Leftover secrets to clean up.** A listing on 2026-11-19 found secrets no current code needs:
+
+- `MONDAY_API_TOKEN` on six sandbox Workers (`benevity-import`, `eventbrite-sync`,
+  `funraise-sync`, `mailchimp-sync`, `quickbooks-sync`, `report-digests`). These are from before
+  the broker. Each of those Workers prefers its `MONDAY_AUTH` binding, but still falls back to
+  this token.
+- `FUNRAISE_WEBHOOK_SECRET` on production `report-digests`, which never reads it.
+
+Confirm each is unused, then remove it with `npx wrangler secret delete <NAME> [--env sandbox]`.
 
 To rotate a secret, change it at the issuer first if the issuer holds it. Then put the new value
 in the Worker, then update the password manager. For URL secrets, also update the URL at the

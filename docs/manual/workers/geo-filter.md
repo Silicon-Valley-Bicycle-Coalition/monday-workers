@@ -36,7 +36,7 @@ There is no config file. The board is whatever `--board` names, usually People. 
 
 | Name | Purpose | Issued by | Rotate |
 |---|---|---|---|
-| `MONDAY_API_TOKEN` (operator shell) | Read the board | A Monday user who can see that board. Prefer the SVBC Integration user's token over a personal one. **To verify:** which token operators use. | With that user's token |
+| `MONDAY_API_TOKEN` (operator shell) | Read the board | The operator's own personal Monday token, from `.env.production` or `.env.sandbox`. Never an integration user's token ([chapter 3](../03-accounts-and-access.md#mondaycom)). | With that user's token |
 
 ## Write switch
 
