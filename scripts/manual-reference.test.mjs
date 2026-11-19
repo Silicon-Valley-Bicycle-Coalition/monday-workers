@@ -55,6 +55,25 @@ describe('summarizeEnv', () => {
   });
 });
 
+describe('summarizeEnv: analytics and assets', () => {
+  it('lists Analytics Engine datasets and static assets', () => {
+    const s = summarizeEnv({
+      analytics_engine_datasets: [{ binding: 'CALENDAR_ANALYTICS', dataset: 'svbc_calendars' }],
+      assets: { directory: './public', binding: 'ASSETS' },
+    });
+    assert.deepEqual(s.analytics, [{ binding: 'CALENDAR_ANALYTICS', dataset: 'svbc_calendars' }]);
+    assert.deepEqual(s.assets, { binding: 'ASSETS', directory: './public' });
+    assertNoUndefined(s);
+  });
+  it('renders every Wrangler key used in the repo', () => {
+    const md = renderWorker('x', [{ file: 'x/wrangler.jsonc', production: summarizeEnv({
+      analytics_engine_datasets: [{ binding: 'A', dataset: 'ds' }], assets: { directory: './public' },
+    }), sandbox: null }], false);
+    assert.match(md, /Analytics Engine \| `A` → `ds`/);
+    assert.match(md, /Static assets \| `\.\/public`/);
+  });
+});
+
 describe('sandboxConfig', () => {
   it('applies Wrangler inheritance to env.sandbox', () => {
     const top = { name: 'svbc-x', main: 'src/index.ts', compatibility_date: '2026-08-01', triggers: { crons: ['0 * * * *'] },

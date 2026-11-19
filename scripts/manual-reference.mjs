@@ -56,6 +56,8 @@ export function summarizeEnv(cfg) {
     r2: list(cfg.r2_buckets).map((r) => ({ binding: r.binding, bucket: r.bucket_name })),
     services: list(cfg.services).map((s) => ({ binding: s.binding, service: s.service, entrypoint: orNull(s.entrypoint) })),
     workflows: list(cfg.workflows).map((w) => ({ binding: w.binding, name: w.name })),
+    analytics: list(cfg.analytics_engine_datasets).map((a) => ({ binding: a.binding, dataset: orNull(a.dataset) })),
+    assets: cfg.assets ? { binding: orNull(cfg.assets.binding), directory: orNull(cfg.assets.directory) } : null,
     sendEmail: list(cfg.send_email).map((e) => ({ name: e.name, allowed: list(e.allowed_destination_addresses ?? e.destination_address) })),
     rateLimits: list(cfg.ratelimits).map((r) => ({
       name: r.name,
@@ -70,7 +72,7 @@ export function summarizeEnv(cfg) {
 
 // Keys a Wrangler environment inherits from the top level unless it sets them itself. Bindings
 // (vars, D1, KV, queues, services, …) are not inherited.
-const INHERITED = ['main', 'compatibility_date', 'workers_dev', 'preview_urls', 'routes', 'route', 'triggers', 'limits', 'observability'];
+const INHERITED = ['main', 'compatibility_date', 'workers_dev', 'preview_urls', 'routes', 'route', 'triggers', 'limits', 'observability', 'assets'];
 
 // env.sandbox as Wrangler resolves it (null when there is none): inheritable keys fall back to
 // the top level, and the name defaults to `<name>-sandbox`.
@@ -127,6 +129,8 @@ const ROWS = [
   ['R2 buckets', (s) => cell(s.r2.map((r) => `${code(r.binding)} → ${code(r.bucket)}`))],
   ['Service bindings', (s) => cell(s.services.map((b) => `${code(b.binding)} → ${code(b.service)}${b.entrypoint ? ` (${code(b.entrypoint)})` : ''}`))],
   ['Workflows', (s) => cell(s.workflows.map((w) => `${code(w.binding)} → ${code(w.name)}`))],
+  ['Analytics Engine', (s) => cell(s.analytics.map((a) => `${code(a.binding)}${a.dataset ? ` → ${code(a.dataset)}` : ''}`))],
+  ['Static assets', (s) => (s.assets ? `${scalar(s.assets.directory)}${s.assets.binding ? ` (binding ${code(s.assets.binding)})` : ''}` : '—')],
   ['Send email', (s) => cell(s.sendEmail.map((e) => `${code(e.name)}${e.allowed.length ? ` (to ${e.allowed.map(code).join(', ')})` : ''}`))],
   ['Rate limiters', (s) => cell(s.rateLimits.map((r) => `${code(r.name)} ns ${code(r.namespaceId)}${r.limit !== null ? ` (${r.limit}/${r.period}s per key)` : ''}`))],
   ['Vars', (s) => cell(s.vars.map(code))],
