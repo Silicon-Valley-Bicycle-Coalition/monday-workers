@@ -1276,7 +1276,7 @@ export class HttpMondayClient implements MondayClient {
     // Backs the January letter cron: one sweep of the Donations board bounded to the target year,
     // instead of a getMemberPortalData call per Donors-board item. The Donor link also reads each
     // linked item's board, so organizations (which the letter run must not treat as people) split
-    // off from donors. An id with no board information counts as a person.
+    // off from donors. Only Donors-board ids count as people.
     const matchedBy = this.columns.donationMatchedBy !== 'REPLACE_WITH_COLUMN_ID' ? this.columns.donationMatchedBy : null;
     const columnIds = [
       this.columns.donationDate,
@@ -1299,6 +1299,8 @@ export class HttpMondayClient implements MondayClient {
     const countable = new Set(this.donations.countableStatuses);
     const floor = this.donations.historyStartISO;
     const orgBoardId = String(this.organizationsBoardId);
+    const donorsBoardId = String(this.donorsBoardId);
+    let dropped = 0;
     for (const item of allItems) {
       const date = columnText(item, this.columns.donationDate);
       if (!date.startsWith(`${year}-`)) continue;
@@ -1310,16 +1312,24 @@ export class HttpMondayClient implements MondayClient {
       // Same Gift Type rule as loadLetterData (donationDescription is the Gift Type column), for
       // people only: an organization's excluded-type gift (a sponsorship) still counts as activity.
       const excluded = giftTypeIn(excludedGiftTypes, columnText(item, this.columns.donationDescription));
-      for (const linkedId of link?.linked_item_ids ?? []) {
-        const boardId = link?.linked_items?.find((l) => l.id === linkedId)?.board?.id;
-        if (boardId !== undefined && String(boardId) === orgBoardId) organizationIds.add(linkedId);
-        else if (!excluded) personIds.add(linkedId);
+      // Classified by the linked item's own board, from linked_items (a link whose item is
+      // deleted or inaccessible has an id but no board entry). Only the Donors board counts as
+      // people, so an organization id can never enter the person letter run; anything else
+      // (no board info, Historical People, other boards) is dropped.
+      for (const linked of link?.linked_items ?? []) {
+        const boardId = linked.board?.id === undefined ? null : String(linked.board.id);
+        if (linked.id === undefined || boardId === null) dropped++;
+        else if (boardId === orgBoardId) organizationIds.add(linked.id);
+        else if (boardId === donorsBoardId) {
+          if (!excluded) personIds.add(linked.id);
+        } else dropped++;
       }
       if (matchedBy !== null) {
         const matched = (item.column_values ?? []).find((c) => c.id === matchedBy);
         for (const orgId of matched?.linked_item_ids ?? []) organizationIds.add(orgId);
       }
     }
+    if (dropped > 0) console.warn(`member-portal year sweep skipped ${dropped} linked donor(s) not on the Donors or Organizations board`);
     return { personIds: [...personIds], organizationIds: [...organizationIds] };
   }
 }

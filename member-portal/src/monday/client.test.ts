@@ -1836,7 +1836,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-03-01' },
                       { id: 'donation_status_col', text: 'Received' },
-                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
                   {
@@ -1844,7 +1844,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-11-12' },
                       { id: 'donation_status_col', text: 'Received' },
-                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
                 ],
@@ -1863,7 +1863,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                 column_values: [
                   { id: 'date_col', text: '2026-06-30' },
                   { id: 'donation_status_col', text: 'Received' },
-                  { id: 'link_col', text: 'Sam', linked_item_ids: ['88'] },
+                  { id: 'link_col', text: 'Sam', linked_item_ids: ['88'], linked_items: [{ id: '88', board: { id: '999' } }] },
                 ],
               },
             ],
@@ -1888,7 +1888,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       column_values: [
         { id: 'date_col', text: date },
         { id: 'donation_status_col', text: 'Received' },
-        { id: 'link_col', text: 'x', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'x', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     const fetchMock = vi.fn().mockResolvedValue({
@@ -1911,7 +1911,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
         { id: 'date_col', text: '2026-03-01' },
         { id: 'desc_col', text: giftType },
         { id: 'donation_status_col', text: 'Received' },
-        { id: 'link_col', text: 'x', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'x', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     let query = '';
@@ -1966,7 +1966,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                       column_values: [
                         { id: 'date_col', text: '2026-03-01' },
                         { id: 'donation_status_col', text: 'Received' },
-                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                       ],
                     },
                   ],
@@ -1996,7 +1996,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                   column_values: [
                     { id: 'date_col', text: '2025-12-31' },
                     { id: 'donation_status_col', text: 'Received' },
-                    { id: 'link_col', text: 'Old', linked_item_ids: ['66'] },
+                    { id: 'link_col', text: 'Old', linked_item_ids: ['66'], linked_items: [{ id: '66', board: { id: '999' } }] },
                   ],
                 },
                 {
@@ -2004,7 +2004,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                   column_values: [
                     { id: 'date_col', text: '2026-01-01' },
                     { id: 'donation_status_col', text: 'Received' },
-                    { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                    { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                   ],
                 },
               ],
@@ -2023,7 +2023,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       column_values: [
         { id: 'date_col', text: '2026-04-01' },
         { id: 'donation_status_col', text: status },
-        { id: 'link_col', text: 'Donor', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'Donor', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     const client = makeClient({
@@ -2731,6 +2731,25 @@ describe('HttpMondayClient.listYearActivity', () => {
     expect(result.organizationIds.sort()).toEqual(['501', '502', '503']);
     expect(sent[0]!.query).toContain('board { id }');
     expect(sent[0]!.query).toContain('matched_by_col');
+  });
+
+  it('counts an id with no board info, or on a third board, as neither a person nor an organization', async () => {
+    const orphan = linkedItem('1', 'Donation', [{ id: '77', board: '999' }]);
+    // 66 appears in linked_item_ids only (deleted/inaccessible); 55 sits on a third board.
+    const link = orphan.column_values.find((c) => c.id === 'link_col')!;
+    link.linked_item_ids = ['77', '66', '55'];
+    (link as { linked_items: unknown }).linked_items = [
+      { id: '77', board: { id: '999' } },
+      { id: '55', board: { id: '4242' } },
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { client } = orgClient([page([orphan])]);
+
+    const result = await client.listYearActivity(2026, []);
+
+    expect(result).toEqual({ personIds: ['77'], organizationIds: [] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 
   it('does not request Matched By when it is the placeholder', async () => {
