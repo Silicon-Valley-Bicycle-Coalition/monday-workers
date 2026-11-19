@@ -35,6 +35,8 @@ export function withTestAccounts(real: MondayClient, now: () => Date): MondayCli
         totalDonated: includeDonations ? totalDonated(p.donations) : '',
         donations: includeDonations ? p.donations : [],
         membershipExpiry: p.membershipExpiry,
+        memberSince: p.memberSince,
+        memberType: p.memberType,
       };
     },
     async getVolunteerShiftsForDonor(donorItemId) {
@@ -55,6 +57,18 @@ export function withTestAccounts(real: MondayClient, now: () => Date): MondayCli
         emailOptOut: false,
         smsOptOut: false,
         doNotMail: false,
+      };
+    },
+    // The sign-in address in its column, so the info door shows it (and only it): Personal Email,
+    // or the Household Email for the shared-inbox household.
+    async getDonorEmails(donorItemId) {
+      if (!isTestDonorId(donorItemId)) return real.getDonorEmails(donorItemId);
+      const p = persona(donorItemId);
+      return {
+        personal: p.sharedInbox ? '' : p.email,
+        household: p.sharedInbox ? p.email : '',
+        personalConsent: '',
+        householdConsent: '',
       };
     },
     async getDonorNames(donorItemIds) {

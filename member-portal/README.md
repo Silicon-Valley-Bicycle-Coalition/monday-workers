@@ -107,6 +107,60 @@ live from Monday, scoped only to the authenticated Donor's own item id (never cl
 Nothing is written back to Monday at any point.
 ```
 
+## Home page and doors
+
+`GET /:locale/portal` is a card-first home page, not a tabbed dashboard: a status line with one
+gold button, the member card(s), then a list of doors. Each door is its own page and loads only its
+own section; the home page reads membership fields, card tokens, the discount count and (in the
+letter window) last year's letter, nothing else. Design:
+`docs/superpowers/specs/2026-11-18-member-portal-home-design.md`.
+
+**States** (`src/home/homeState.ts`, a pure resolver; highest first). Each person gets one; the
+page shows the highest any person holds, and its button.
+
+| State | When | Button |
+|---|---|---|
+| Tax letter | a letter exists for last year and today (Pacific) is on or before `home.taxLetterUntil` (`04-15`) | Tax letters door |
+| Renew | Lapsed, or Member Until already past (the card then greys out and reads "Ended MM/YYYY", on home and the card door); or never a member (no status, no tier); or the membership ends within `home.renewalWarningDays` (30) days. Lifetime never renews, whatever its status | Funraise renewal link (the donate page until `funraise.renewMembershipUrl` is set) |
+| New member | Member Type is New and Member Since is within `home.newMemberDays` (60) days | Card door |
+| Default | anything else | none |
+
+**Doors** (`src/doors/`), each behind the session like every portal page; a signed-out visit
+returns to the door after sign-in. Each starts with "‹ Home" and, for a household, groups by person.
+
+| Door | Path | Shows | Old paths that land here |
+|---|---|---|---|
+| Card & discounts | `/:locale/portal/card` | card, QR, "Get a new code", discount list | `/portal/card/:id` |
+| Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, Funraise links, pledges, matching gifts | |
+| Tax letters | `/:locale/portal/letters` | one list of years per person (door shown while letters are enabled) | `/portal/letters` |
+| Rides, events & volunteering | `/:locale/portal/activity` | events, volunteer hours, Get involved (door shown when one is configured) | `/portal/events` |
+| Your info & emails | `/:locale/portal/info` | change-request form, communication preferences, email addresses | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
+
+The change-request and preferences POSTs keep their paths; their result pages link back to the
+info door. A failed Monday read costs that person or that section, with the "some records could
+not be loaded" note, never the page; only when no one loads does a door show its error page.
+
+**Email addresses on the info door** (`src/doors/emailLabels.ts`). Each shown address carries a text
+label: **Bounced** when its consent column (Personal Email Consent / Household Email Consent) says
+Cleaned; else **Verified** when `verified_emails` holds that address for that person; else
+**Subscribed** when the consent column says Subscribed; else **On file**. Which addresses show:
+
+* A person's **Personal Email** shows only when the session was signed in with that address.
+* A person's **Household Email** shows when the session was signed in with it, or with that
+  person's Personal Email.
+* The rule is the same for one person or several. One person signed in with their Household
+  Email sees only that address. Signed in with a shared Household Email, Jordan and Sam each see
+  that address; neither sees the other's Personal Email.
+* A session that doesn't know its address (a letter-ready link, or a session from before
+  migration 0008) shows no addresses, whatever its size, just a note to sign in again with an
+  email address.
+
+That needs the session's sign-in address: `sessions.email_hash` (migration 0008, see
+Development), compared with each address hashed the way sign-in hashes it (trimmed, lowercased,
+SHA-256). The change form's current-details list no longer shows an email, for the same reason.
+Household Email and both consent columns are gated placeholders: until configured, only the
+Personal Email shows, labeled Verified or On file.
+
 ## Auth: passwordless email magic link, not username/password
 
 SVBC has no reason to store donor passwords — pure breach liability with no offsetting benefit at
@@ -123,10 +177,10 @@ silent misattribution. Never fall into the accidental default (first match wins)
 one family member another's giving history unlabeled.
 
 **Return-to after sign-in.** A signed-out GET of any `/<locale>/portal/...` page other than the
-dashboard redirects to `/?next=<that path>`. The sign-in form, the emailed link
+home page redirects to `/?next=<that path>`. The sign-in form, the emailed link
 (`/auth/callback?lang=…&next=…#token=…`) and the confirm page carry `next` through, and the
 callback redirects there (its locale segment rewritten to the link's `lang`) instead of to the
-dashboard. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
+home page. `next` is accepted only when it parses as a same-origin path in the `/<locale>/portal`
 tree, with the language switcher's parser (issue [GL#32](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/32)); anything else is dropped. The footer
 language picker sends `location.pathname + location.search` as `to`, so switching language on the
 sign-in page keeps `next`.
@@ -179,7 +233,8 @@ address against each person the session covers. Hashes only; no raw address is s
 In the sandbox (and `npm run dev:local`), a fixed set of `test-*@example.org` addresses signs in
 at once on `POST /`, with no magic link, rate limit or write-switch check, and reads dummy
 personas instead of Monday: one per membership state (Active Member, Active Lifetime, Lapsed,
-never joined), plus a renewal-window member, a shared household inbox and a Spanish speaker. The
+never joined), plus a renewal-window member, a shared household inbox and a Spanish speaker who
+just joined (the home page's new-member state). The
 list lives in `src/testAccounts/personas.ts` (staff copy: `docs/uat/member-portal.md`); dates are
 relative to the request's clock.
 
@@ -189,7 +244,8 @@ relative to the request's clock.
   `withTestAccounts` answers those ids itself, passing every other id to the real client. Their
   change requests run every check, then go to a discarding store and queue, so nothing reaches
   D1's `change_requests`, the writer or the Change Requests board. Card tokens are written to D1
-  as usual, so `/verify` works for a test card.
+  as usual, so `/verify` works for a test card, and the session stores the sign-in address's hash
+  like any other, so the info door shows that address (the household's under each person).
 - **Not an enumeration leak.** The addresses are published to staff, and the reserved
   `example.org` domain can't belong to a donor.
 
@@ -275,7 +331,7 @@ Routing destination). A live login-link request for a real sandbox People record
   is no signing key; the server looks each one up), single-use for the magic link, short expiry
   (the letter-ready link's is `auth.letterLinkTtlHours`), stored in D1 keyed to a SHA-256 of the
   token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
-  QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
+  QR code is redrawn from them on every home-page and card-door load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
 * The emailed login link carries its token in the URL fragment
   (`/auth/callback?lang=en#token=…`, issue [GL#61](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/61)): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
@@ -429,7 +485,7 @@ Operator setup, in addition to v1/v2 steps:
 ## v2.2 — Communication preferences
 
 From [IT Requests #12893526579](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893526579).
-A "Communication preferences" section on the existing change-request page lets a donor set three
+A "Communication preferences" section on the info door (formerly the change-request page) lets a donor set three
 preferences — **Email Opt-Out**, **SMS Opt-Out**, and **Do Not Mail** — flowing through the same
 staff-review write path as the free-text change requests (the portal still never writes donor
 records; staff apply approved changes by hand). The form shows the current state read live from
@@ -534,8 +590,8 @@ Operator setup, in addition to v1/v2/v2.1 steps:
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (a widget per donor on the dashboard, `GET /:locale/portal`; the old
-`/:locale/portal/card/:donorItemId` page now redirects there) — name, member number, tier, status, expiry — with a
+live card (a widget per donor on the home page, `GET /:locale/portal`, and on the card door,
+`/:locale/portal/card`, where the old `/:locale/portal/card/:donorItemId` page now redirects) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"
@@ -560,7 +616,7 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 `0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
 
 **Card tokens are stored in plaintext in D1 — deliberately, unlike session and magic-link
-tokens** (issue [GL#32](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/32)). The difference is that a card token is re-displayed: every dashboard load
+tokens** (issue [GL#32](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/32)). The difference is that a card token is re-displayed: every home-page or card-door load
 redraws the card's QR code from the active token, so the Worker needs the token itself back, not
 just a way to recognize it. Session and login tokens are only ever *checked*, so a hash suffices.
 Storing card tokens hashed would therefore mean deriving or decrypting them from a new Worker
@@ -749,8 +805,8 @@ employer affiliation without a staff step.
 
 From the IT Requests board (["Member portal: event
 registrations"](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527106),
-scoped 2026-08-25). A read-only page (`GET /:locale/portal/events`, linked from the portal home)
-listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
+scoped 2026-08-25). Read-only, on the activity door (`GET /:locale/portal/activity`; the old
+`/:locale/portal/events` redirects there), listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
 later, soonest first) and **Past** (latest first; past rows show Attended/Registered from the
 board's checkbox, and undated registrations sort last). Same multi-donor-household rule as the
 rest of the portal: one explicitly labeled section per matched donor item. No D1 tables, no
@@ -833,17 +889,16 @@ the `donations` stanza, both required, each `"YYYY-MM-DD"` or `null`:
   dated earlier, and undated gifts (they can't be shown to be on or after the floor), in the same
   strict spirit as `countableStatuses`. So portal history, tax-letter year listings and totals,
   the staff letter button, and the January letter sweep all agree without their own logic. With
-  a floor set, the dashboard's total is the sum of the gifts shown rather than the Lifetime
+  a floor set, the giving door's total is the sum of the gifts shown rather than the Lifetime
   Giving rollup, so it never exceeds the rows under it. `null` means no floor. SVBC:
   `"2026-01-01"`.
-* **`historyVisibleFromISO`** — the launch gate. The Donations tab renders only once the current
-  UTC date reaches it; until then the portal home never queries the Donations board at all, and
-  a donor's section shows name, membership, and whichever other tabs are enabled (a lone
-  Volunteer or Events tab gets a heading instead of a tab label). `null` means never shown —
+* **`historyVisibleFromISO`** — the launch gate. Donation history on the giving door renders only once
+  the current UTC date reaches it; until then no portal page queries the Donations board for
+  history (the home page never does). `null` means never shown —
   the default for a fresh fork, and how this ships ahead of launch so the rest of the portal can
   be tested. Date-gated rather than a boolean so January needs no deploy. SVBC: `"2027-01-01"`,
   the first day of the first full calendar year after the clean start. `config/local.json` sets a
-  past date so the tab is visible in local testing.
+  past date so history is visible in local testing.
 
 The January letter cron skips (`year-before-history-floor`) when the floor is at or after
 January 1 of the year following its target year — SVBC's first automatic letters are for 2026,
@@ -853,14 +908,14 @@ unaffected — they remain full-history stewardship rollups for staff.
 
 **Upgrading an existing deployment (forks included):** config validation requires both keys to
 *exist*. Copy them from this repo's `config/svbc.json` — `null` for both keeps the previous
-always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides the tab, so a
+always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides history, so a
 fork that wants history visible immediately should set it to any past date.
 
 ## v8 — Impact summary
 
 From the IT Requests board Feature Request "Donor portal: impact summary" (item 12893527105,
 filed from the 2026-08-24 v2 brainstorm): tell a donor what their giving supported. Each donor's
-portal section gains a "Your 2026 impact" block above the tabs — a short list of org-wide
+section of the giving door gains a "Your 2026 impact" block under their history — a short list of org-wide
 statements for one calendar year, shown only to a donor who has a countable gift dated in that
 year, so "your giving in 2026" is always true of the person reading it.
 
@@ -888,8 +943,8 @@ The statements are static config, not Monday data — the `impact` stanza:
   locales, and each list must be non-empty with no blank strings.
 
 **Gated two ways, both already in place.** An empty `statementsByYear` (`{}`, how
-`config/svbc.json` ships) renders nothing. And the block reads the gifts already loaded for the
-Donations tab, so it follows v7's date gate: nothing shows before
+`config/svbc.json` ships) renders nothing. And the block reads the gifts already loaded for
+donation history, so it follows v7's date gate: nothing shows before
 `donations.historyVisibleFromISO` (SVBC: 2027-01-01), and only gifts on or after
 `historyStartISO` count. For SVBC the first statements anyone can see are 2026's, in January
 2027. It costs no extra Monday read, no D1 migration, no queue and no secret.
@@ -905,7 +960,7 @@ stanza to *exist*. Copy `"impact": { "statementsByYear": {} }` from this repo's
 
 ## v9 — Get involved links
 
-A "Get involved" section on the dashboard (`GET /:locale/portal`) links every member to the
+A "Get involved" section on the activity door (`GET /:locale/portal/activity`) links every member to the
 public meetings where South Bay bike decisions get made and to SVBC's own calendar, grouped as
 city bike/pedestrian committees, transit-agency committees (BART, Caltrain), SVBC events and
 volunteer opportunities. The list lives in `config/*.json`'s `getInvolved.links`, one entry per
@@ -918,7 +973,7 @@ Each `calendarUrl` is the matching `svbc-calendars` ICS feed
 (`https://committees.bikesiliconvalley.org/calendars/<feed-id>.ics`), so adding a committee here
 usually means adding its source there too. The links are public pages, not donor data, so
 sandbox and local configs carry the same list. The section is the same for every member: the
-dashboard doesn't load a donor's address, so it isn't filtered by city. It costs no Monday read.
+door doesn't load a donor's address, so it isn't filtered by city. It costs no Monday read.
 
 **Upgrading an existing deployment (forks included):** config validation requires the
 `getInvolved` stanza to exist. `"getInvolved": { "links": [] }` keeps the section off.
@@ -998,7 +1053,7 @@ queries because D1 caps a compound `SELECT` at five terms.)
 | Table | Reset | Why |
 |---|---|---|
 | `sessions`, `magic_link_tokens` | cleared | `donor_item_ids` are People items on the old board; a session that outlived the reset would load items that are gone. Donors sign in again. |
-| `card_tokens` | cleared | Each token resolves to an old People item, so `/verify` can only fail. A new token is minted on the donor's next dashboard visit; a card saved before the reset stops verifying. |
+| `card_tokens` | cleared | Each token resolves to an old People item, so `/verify` can only fail. A new token is minted on the donor's next home-page or card-door visit; a card saved before the reset stops verifying. |
 | `change_requests` | cleared, after step 2 | `written` rows are spent audit rows; a `queued` row can't be replayed because its donor link is an old item. |
 | `letter_sends` | **kept** | The record of letter emails that went out, which a board rebuild doesn't undo. It can no longer dedupe: its key is the old item id, so a donor with a `sent` row for the year being sent gets the email again on the next trigger. If step 4 shows any, settle that with staff before re-arming the send. |
 | `login_attempts` | kept | No item ids; rate-limit history the daily cron purges. |
@@ -1009,8 +1064,9 @@ on the deployed sandbox D1, whose boards hadn't changed.
 
 ## Development
 
-**Migration 0007 must be applied before this code reaches `main`.** `0007_sign_in_codes.sql`
-(sign-in code columns on `magic_link_tokens`, `verified_emails`, `code_failures`) has to be on
+**Migrations 0007 and 0008 must be applied before this code reaches `main`.** `0007_sign_in_codes.sql`
+(sign-in code columns on `magic_link_tokens`, `verified_emails`, `code_failures`) and
+`0008_session_email_hash.sql` (`sessions.email_hash`, which `getSession` selects) have to be on
 **both** D1 databases before the branch that adds sign-in codes merges. The `deploy-sandbox` job in
 `.github/workflows/workers.yml` deploys on every push to `main` and never applies migrations, and
 without 0007 every sign-in fails, existing emailed links and letter-ready links included, because

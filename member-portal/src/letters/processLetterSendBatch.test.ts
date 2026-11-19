@@ -66,6 +66,7 @@ const config: Config = {
   },
   matchingGifts: { doubleTheDonationPublicKey: null },
   impact: { statementsByYear: {} },
+  home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -166,7 +167,7 @@ describe('processLetterSendBatch', () => {
       store: fakeStore(row), monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config: employerConfig, now: () => new Date('2026-08-24T10:00:00.000Z'),
     });
     const params = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
-    expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/change-request?field=employer`);
+    expect(params.employerUrl).toBe(`https://portal.example.org/${params.locale}/portal/info?field=employer`);
   });
 
   it('passes no employer URL while employer answers are off', async () => {

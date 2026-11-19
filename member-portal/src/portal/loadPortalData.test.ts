@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { MemberPortalData, VolunteerShift } from '../types';
 
 function donor(id: string, name: string): MemberPortalData {
-  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [], membershipExpiry: '' };
+  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [], membershipExpiry: '', memberSince: '', memberType: '' };
 }
 
 function fakeMonday(shiftsByDonor: Record<string, VolunteerShift[]> = {}): MondayClient {
@@ -16,6 +16,7 @@ function fakeMonday(shiftsByDonor: Record<string, VolunteerShift[]> = {}): Monda
     getDiscountOrganizations: vi.fn().mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]),
     getVolunteerShiftsForDonor: vi.fn().mockImplementation((id: string) => Promise.resolve(shiftsByDonor[id] ?? [])),
     getDonorContactInfo: vi.fn(),
+    getDonorEmails: vi.fn(),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
     findOrganizationsByNames: vi.fn().mockResolvedValue([]),
     getPersonAffiliations: vi.fn().mockResolvedValue([]),

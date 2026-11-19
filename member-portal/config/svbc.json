@@ -35,7 +35,11 @@
       "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
       "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
       "donorDtdLink": "REPLACE_WITH_COLUMN_ID",
-      "donorEmployer": "text_mm8nny92"
+      "donorEmployer": "text_mm8nny92",
+      "memberSince": "date_mm8nemca",
+      "memberType": "color_mm8pz9ry",
+      "donorEmailConsent": "color_mm8ntb35",
+      "donorHouseholdEmailConsent": "color_mm8nh158"
     }
   },
   "email": {
@@ -175,5 +179,10 @@
   },
   "impact": {
     "statementsByYear": {}
+  },
+  "home": {
+    "newMemberDays": 60,
+    "renewalWarningDays": 30,
+    "taxLetterUntil": "04-15"
   }
 }

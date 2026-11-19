@@ -7,7 +7,7 @@ const now = () => new Date('2026-08-22T00:00:00.000Z');
 
 function deps(recordVerified = vi.fn().mockResolvedValue(undefined)) {
   const sessionStore: SessionStore = { createSession: vi.fn().mockResolvedValue(undefined), getSession: vi.fn(), deleteSession: vi.fn() };
-  const verifiedEmailStore: VerifiedEmailStore = { recordVerified };
+  const verifiedEmailStore: Pick<VerifiedEmailStore, 'recordVerified'> = { recordVerified };
   return { sessionStore, verifiedEmailStore, sessionTtlHours: 24, now };
 }
 
@@ -18,6 +18,7 @@ describe('startSession', () => {
     expect(token).toMatch(/^[0-9a-f]{64}$/);
     const call = (d.sessionStore.createSession as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(call.donorItemIds).toEqual(['a', 'b']);
+    expect(call.emailHash).toBeNull();
     expect(call.expiresAt).toBe('2026-08-23T00:00:00.000Z');
   });
 
@@ -25,6 +26,13 @@ describe('startSession', () => {
     const recordVerified = vi.fn().mockResolvedValue(undefined);
     await startSession({ donorItemIds: ['a'], emailHash: 'h'.repeat(64) }, deps(recordVerified));
     expect(recordVerified).toHaveBeenCalledWith('h'.repeat(64), ['a'], '2026-08-22T00:00:00.000Z');
+  });
+
+  it('passes the consumed emailHash into createSession', async () => {
+    const d = deps();
+    await startSession({ donorItemIds: ['a'], emailHash: 'h'.repeat(64) }, d);
+    const call = (d.sessionStore.createSession as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(call.emailHash).toBe('h'.repeat(64));
   });
 
   it('does not record anything when emailHash is null', async () => {

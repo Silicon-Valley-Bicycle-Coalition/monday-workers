@@ -176,7 +176,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   // Issue GL#127: the portal's Employer field, preselected. Session-gated like every /portal page,
   // so a donor who clicks it before the login link lands on sign-in first.
   const employerUrl = employerAnswerEnabled(deps.config)
-    ? `${deps.config.auth.portalBaseUrl}/${locale}/portal/change-request?field=employer`
+    ? `${deps.config.auth.portalBaseUrl}/${locale}/portal/info?field=employer`
     : undefined;
 
   // At-most-once: claim the row (queued → sending) immediately before the send, which is the only

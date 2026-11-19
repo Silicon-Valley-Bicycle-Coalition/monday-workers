@@ -5,7 +5,7 @@ import type { DonationRecord, VolunteerShift } from '../types';
 // as a reference when helping a member ("what does a lapsed member see?"). One persona per
 // membership state on the People board (Membership Status Active/Lapsed/blank × Tier
 // Member/Lifetime), plus a renewal-window member, a shared household inbox and a Spanish
-// speaker. The list for staff is in docs/uat/member-portal.md; keep the two in step.
+// speaker who joined recently (the home page's new-member state). The list for staff is in docs/uat/member-portal.md; keep the two in step.
 //
 // Dates are relative to the request's clock so "renews in two weeks" and "lapsed last year"
 // stay true however long after this was written someone looks.
@@ -22,6 +22,12 @@ export interface TestPersona {
   membershipStatus: string;
   membershipTier: string;
   membershipExpiry: string;
+  // Member Since (YYYY-MM-DD) and Member Type (New / Continuing / Lapsed renewal / Lifetime), read
+  // by the home page's state resolver; '' for someone who never joined.
+  memberSince: string;
+  memberType: string;
+  // The sign-in address is this person's Household Email (a shared inbox), not their Personal Email.
+  sharedInbox: boolean;
   address: string;
   phone: string;
   preferredLanguage: string;
@@ -44,6 +50,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: 'Active',
       membershipTier: 'Member',
       membershipExpiry: d(240),
+      memberSince: d(-490),
+      memberType: 'Continuing',
+      sharedInbox: false,
       address: '100 Test St, San José, CA 95113',
       phone: '408-555-0101',
       preferredLanguage: 'English',
@@ -73,6 +82,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: 'Active',
       membershipTier: 'Member',
       membershipExpiry: d(14),
+      memberSince: d(-716),
+      memberType: 'Continuing',
+      sharedInbox: false,
       address: '200 Test Ave, Sunnyvale, CA 94086',
       phone: '408-555-0102',
       preferredLanguage: 'English',
@@ -91,6 +103,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipTier: 'Lifetime',
       // Lifetime members have no Member Until date; the card reads "No expiration".
       membershipExpiry: '',
+      memberSince: d(-300),
+      memberType: 'Lifetime',
+      sharedInbox: false,
       address: '300 Test Blvd, Palo Alto, CA 94301',
       phone: '650-555-0103',
       preferredLanguage: 'English',
@@ -108,6 +123,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: 'Lapsed',
       membershipTier: 'Member',
       membershipExpiry: d(-90),
+      memberSince: d(-455),
+      memberType: 'Continuing',
+      sharedInbox: false,
       address: '400 Test Way, Mountain View, CA 94041',
       phone: '',
       preferredLanguage: 'English',
@@ -123,6 +141,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: '',
       membershipTier: '',
       membershipExpiry: '',
+      memberSince: '',
+      memberType: '',
+      sharedInbox: false,
       address: '',
       phone: '408-555-0105',
       preferredLanguage: 'English',
@@ -140,6 +161,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: 'Active',
       membershipTier: 'Member',
       membershipExpiry: d(180),
+      memberSince: d(-185),
+      memberType: 'Continuing',
+      sharedInbox: true,
       address: '600 Test Ct, Santa Clara, CA 95050',
       phone: '408-555-0106',
       preferredLanguage: 'English',
@@ -154,6 +178,9 @@ export function testPersonas(now: Date): TestPersona[] {
       membershipStatus: 'Lapsed',
       membershipTier: 'Member',
       membershipExpiry: d(-30),
+      memberSince: d(-395),
+      memberType: 'Continuing',
+      sharedInbox: true,
       address: '600 Test Ct, Santa Clara, CA 95050',
       phone: '408-555-0107',
       preferredLanguage: 'English',
@@ -167,12 +194,15 @@ export function testPersonas(now: Date): TestPersona[] {
       name: 'Sofía Español (test)',
       membershipStatus: 'Active',
       membershipTier: 'Member',
-      membershipExpiry: d(300),
+      membershipExpiry: d(345),
+      memberSince: d(-20),
+      memberType: 'New',
+      sharedInbox: false,
       address: '700 Calle Prueba, San José, CA 95116',
       phone: '408-555-0108',
       preferredLanguage: 'Spanish',
       employer: '',
-      donations: [{ date: d(-65), amount: '50.00', description: 'Membership' }],
+      donations: [{ date: d(-20), amount: '50.00', description: 'Membership' }],
       volunteerShifts: [],
     },
   ];

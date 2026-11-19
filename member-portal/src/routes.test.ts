@@ -17,6 +17,7 @@ import type { WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
 import { CONFIRM_LOGIN_SCRIPT, escapeHtml } from './views';
 import { DEFAULT_CSP } from './securityHeaders';
+import { sha256Hex } from './crypto/hash';
 import { withTestAccounts } from './testAccounts/testAccountClient';
 
 function inMemoryCardTokenStore(): CardTokenStore {
@@ -116,14 +117,14 @@ function inMemoryCodeFailureStore(failures: FailureLedger): CodeFailureStore {
 }
 
 function inMemorySessionStore(): SessionStore {
-  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string }>();
+  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; emailHash: string | null }>();
   return {
     async createSession(params) {
-      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt });
+      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, emailHash: params.emailHash });
     },
     async getSession(sessionHash, nowISO) {
       const row = rows.get(sessionHash);
-      return !row || row.expiresAt <= nowISO ? null : row.donorItemIds;
+      return !row || row.expiresAt <= nowISO ? null : { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
     },
     async deleteSession(sessionHash) {
       rows.delete(sessionHash);
@@ -178,6 +179,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
         totalDonated: '0',
         donations: [],
         membershipExpiry: '',
+        memberSince: '',
+        memberType: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
@@ -193,6 +196,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
         employer: 'Acme',
       })
     ),
+    getDonorEmails: vi.fn().mockResolvedValue({ personal: 'donor@example.org', household: '', personalConsent: 'Subscribed', householdConsent: '' }),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
     findOrganizationsByNames: vi.fn().mockResolvedValue([]),
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
@@ -227,6 +231,8 @@ function fakeMondayWithDonations(): MondayClient {
         totalDonated: '$40.00',
         donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
         membershipExpiry: '',
+        memberSince: '',
+        memberType: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
@@ -242,6 +248,7 @@ function fakeMondayWithDonations(): MondayClient {
         employer: 'Acme',
       })
     ),
+    getDonorEmails: vi.fn().mockResolvedValue({ personal: 'donor@example.org', household: '', personalConsent: 'Subscribed', householdConsent: '' }),
     findChangeRequestItem: vi.fn().mockResolvedValue(null),
     findOrganizationsByNames: vi.fn().mockResolvedValue([]),
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
@@ -305,6 +312,7 @@ const config: Config = {
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
   impact: { statementsByYear: {} },
+  home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -323,7 +331,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     monday: fakeMonday({}),
     tokenStore: inMemoryTokenStore(failures),
     sessionStore: inMemorySessionStore(),
-    verifiedEmailStore: { recordVerified: vi.fn().mockResolvedValue(undefined) },
+    verifiedEmailStore: { recordVerified: vi.fn().mockResolvedValue(undefined), verifiedFor: vi.fn().mockResolvedValue(new Set()) },
     codeFailureStore: inMemoryCodeFailureStore(failures),
     attemptStore: inMemoryAttemptStore(),
     emailSender: {
@@ -833,7 +841,7 @@ describe('GET /', () => {
 // Return-to after sign-in: a donor who opens a portal page without a session (the letter email's
 // "Add your employer" link, GL#127) signs in and lands back on that page, not the dashboard.
 describe('return to the requested page after sign-in', () => {
-  const EMPLOYER_PATH = '/en/portal/change-request?field=employer';
+  const EMPLOYER_PATH = '/en/portal/info?field=employer';
   const NEXT = encodeURIComponent(EMPLOYER_PATH);
 
   async function requestLink(app: ReturnType<typeof createApp>, fields: Record<string, string>) {
@@ -893,7 +901,7 @@ describe('return to the requested page after sign-in', () => {
     expect(loginUrl.searchParams.get('next')).toBe(EMPLOYER_PATH);
 
     const confirmHtml = await (await app.request(`${loginUrl.pathname}${loginUrl.search}`)).text();
-    expect(confirmHtml).toContain('<input type="hidden" name="next" value="/en/portal/change-request?field=employer" />');
+    expect(confirmHtml).toContain('<input type="hidden" name="next" value="/en/portal/info?field=employer" />');
 
     const res = await completeLogin(app, { token: extractToken(loginUrl.href), lang: 'en', next: EMPLOYER_PATH });
     expect(res.status).toBe(303);
@@ -907,7 +915,7 @@ describe('return to the requested page after sign-in', () => {
     const token = extractToken(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
 
     const res = await completeLogin(app, { token, lang: 'es', next: EMPLOYER_PATH });
-    expect(res.headers.get('location')).toBe('/es/portal/change-request?field=employer');
+    expect(res.headers.get('location')).toBe('/es/portal/info?field=employer');
   });
 
   it('leaves next out of the emailed link when the form had none or a hostile one', async () => {
@@ -1018,7 +1026,7 @@ describe('sign in with the emailed code', () => {
 
   function setup(matches: Record<string, { id: string; name: string }[]> = { 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }) {
     const emailSender = sender();
-    const verifiedEmailStore = { recordVerified: vi.fn().mockResolvedValue(undefined) };
+    const verifiedEmailStore = { recordVerified: vi.fn().mockResolvedValue(undefined), verifiedFor: vi.fn().mockResolvedValue(new Set<string>()) };
     const deps = makeDeps({ monday: fakeMonday(matches), emailSender, verifiedEmailStore });
     return { deps, app: createApp(deps), emailSender, verifiedEmailStore };
   }
@@ -1471,6 +1479,7 @@ describe('POST / error handling', () => {
       getDiscountOrganizations: vi.fn(),
       getVolunteerShiftsForDonor: vi.fn(),
       getDonorContactInfo: vi.fn(),
+      getDonorEmails: vi.fn(),
       findChangeRequestItem: vi.fn().mockResolvedValue(null),
       findOrganizationsByNames: vi.fn().mockResolvedValue([]),
       getPersonAffiliations: vi.fn().mockResolvedValue([]),
@@ -1531,7 +1540,7 @@ describe('GET /:locale/portal/letters', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('/en/portal/letters/donor-1/2025');
-    expect(html).toContain('<title>Tax Documents — SVBC Member Portal</title>');
+    expect(html).toContain('<title>Tax letters — SVBC Member Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
@@ -1664,10 +1673,11 @@ describe('GET /portal/letters/:donorItemId/:year (bare, no locale)', () => {
   });
 });
 
-describe('GET /:locale/portal/change-request', () => {
+describe('GET /:locale/portal/info', () => {
   it('redirects to / without a session', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/change-request');
+    const res = await createApp(makeDeps()).request('/en/portal/info');
     expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Finfo');
   });
 
   it('renders the form with current values for the logged-in donor', async () => {
@@ -1679,11 +1689,11 @@ describe('GET /:locale/portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('1 Old St');
-    expect(html).toContain('<title>Request a Change — SVBC Member Portal</title>');
+    expect(html).toContain('<title>Your info &amp; emails — SVBC Member Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
@@ -1701,7 +1711,7 @@ describe('GET /:locale/portal/change-request', () => {
     const cookie = await loginAndGetCookie(app, emailSender, 'family@example.org');
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
 
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -1720,7 +1730,7 @@ describe('GET /:locale/portal/change-request', () => {
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
 
     expect(res.status).toBe(500);
     expect(await res.text()).toContain(t('en', 'error.changeRequestLoadFailed'));
@@ -1738,12 +1748,12 @@ describe('GET /:locale/portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
   });
 });
 
-describe('/:locale/portal/change-request — employer', () => {
+describe('/:locale/portal/info — employer', () => {
   function employerConfig(): Config {
     const cfg = structuredClone(config);
     cfg.monday.columns = { donorEmployer: 'emp_col' } as never;
@@ -1761,7 +1771,7 @@ describe('/:locale/portal/change-request — employer', () => {
     const sender = emailSender();
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
-    const html = await (await app.request('/en/portal/change-request?field=employer', { headers: { Cookie: cookie } })).text();
+    const html = await (await app.request('/en/portal/info?field=employer', { headers: { Cookie: cookie } })).text();
     expect(html).toContain('<option value="employer" selected>');
   });
 
@@ -1769,7 +1779,7 @@ describe('/:locale/portal/change-request — employer', () => {
     const sender = emailSender();
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
-    const html = await (await app.request('/en/portal/change-request?field=%22%3E%3Cscript%3E', { headers: { Cookie: cookie } })).text();
+    const html = await (await app.request('/en/portal/info?field=%22%3E%3Cscript%3E', { headers: { Cookie: cookie } })).text();
     expect(html).toContain('<option value="employer">');
     expect(html).not.toContain('value="employer" selected');
     expect(html).not.toContain('"><script>');
@@ -1796,7 +1806,7 @@ describe('/:locale/portal/change-request — employer', () => {
       const app = createApp(makeDeps({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }), emailSender: sender, config: cfg }));
       const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
       const html = await (await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } })).text();
-      expect(html.includes('href="/en/portal/change-request?field=employer"')).toBe(expectLink);
+      expect(html.includes('href="/en/portal/info?field=employer"')).toBe(expectLink);
     }
   });
 });
@@ -1806,7 +1816,7 @@ describe('GET /portal/change-request (bare, no locale)', () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/change-request', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/change-request');
+    expect(res.headers.get('location')).toBe('/en/portal/info');
   });
 });
 
@@ -1831,7 +1841,10 @@ describe('POST /:locale/portal/change-request', () => {
 
     const res = await postForm(app, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('review');
+    const html = await res.text();
+    expect(html).toContain('review');
+    // Back to the door the form lives on.
+    expect(html).toContain('href="/en/portal/info"');
     expect(changeQueue.send).toHaveBeenCalledOnce();
   });
 
@@ -2042,52 +2055,23 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     expect(secondToken).toBe(firstToken);
   });
 
-  it('hides donation history on the dashboard until donations.historyVisibleFromISO, then shows it', async () => {
-    const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    // Visible from 2027-01-01; the deps clock is 2026-08-22.
-    const gatedConfig = structuredClone(config);
-    gatedConfig.donations.historyVisibleFromISO = '2027-01-01';
-
-    const before = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
-    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
-    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(hiddenHtml).toContain('Donor donor-1');
-    expect(hiddenHtml).not.toContain('$40.00');
-    expect(hiddenHtml).not.toContain('<td>gift</td>');
-    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
-
-    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: gatedConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
-    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
-    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
-    expect(shownHtml).toContain('$40.00');
-    expect(shownHtml).toContain('<td>gift</td>');
-  });
-
-  it("shows the impact statements for a year the donor gave in, and none while donation history is hidden", async () => {
+  // Donation history and impact live on the giving door; the home page never shows them, even once
+  // the history date gate has opened, and reads each person without donations.
+  it('never shows donation history or impact on the home page, gate open or not', async () => {
     const monday = fakeMondayWithDonations(); // one gift, dated 2025-03-14
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const impactConfig = structuredClone(config);
-    impactConfig.impact.statementsByYear = {
-      '2025': { en: ['Taught bike safety to 4,200 students'] },
-      '2026': { en: ['Opened 3 bike parking hubs'] },
-    };
-    impactConfig.donations.historyVisibleFromISO = '2027-01-01'; // the deps clock is 2026-08-22
+    const openConfig = structuredClone(config);
+    openConfig.donations.historyVisibleFromISO = '2020-01-01';
+    openConfig.impact.statementsByYear = { '2025': { en: ['Taught bike safety to 4,200 students'] } };
+    const app = createApp(makeDeps({ monday, emailSender, config: openConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const before = createApp(makeDeps({ monday, emailSender, config: impactConfig }));
-    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
-    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(hiddenHtml).toContain('Donor donor-1');
-    expect(hiddenHtml).not.toContain('Taught bike safety to 4,200 students');
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
 
-    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: impactConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
-    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
-    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
-    expect(shownHtml).toContain('<li>Taught bike safety to 4,200 students</li>');
-    // 2026 has statements too, but this donor has no 2026 gift.
-    expect(shownHtml).not.toContain('Opened 3 bike parking hubs');
+    expect(html).toContain('Donor donor-1');
+    expect(html).not.toContain('$40.00');
+    expect(html).not.toContain('Taught bike safety to 4,200 students');
+    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
   });
 
   it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {
@@ -2103,7 +2087,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('gift'); // donation history still renders
+    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
   });
 
   it('logs and omits just the card widget (not the whole dashboard) when getActiveToken throws', async () => {
@@ -2129,7 +2113,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('gift'); // donation history still renders
+    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
   });
 
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
@@ -2175,18 +2159,18 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
 });
 
 describe('GET /portal/card/:donorItemId (old standalone card page)', () => {
-  it('redirects the bare form to the default-locale dashboard instead of 404ing', async () => {
+  it('redirects the bare form to the default-locale card door instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/card/donor-1', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/en/portal/card');
   });
 
-  it('redirects the locale-prefixed form to that locale\'s dashboard instead of 404ing', async () => {
+  it('redirects the locale-prefixed form to that locale\'s card door instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/es/portal/card/donor-1', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/es/portal');
+    expect(res.headers.get('location')).toBe('/es/portal/card');
   });
 });
 
@@ -2207,7 +2191,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     expect(res.status).toBe(404);
   });
 
-  it('redirects to the dashboard when cardEnabled is false, and does not touch the existing token', async () => {
+  it('redirects to the card door when cardEnabled is false, and does not touch the existing token', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const cardTokenStore = inMemoryCardTokenStore();
@@ -2229,7 +2213,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal');
+    expect(regenRes.headers.get('location')).toBe('/en/portal/card');
 
     // The pre-existing token must still work — regenerate did not revoke or mint anything.
     const stillWorksRes = await app.request(`/verify/${existingToken}`);
@@ -2248,7 +2232,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal');
+    expect(regenRes.headers.get('location')).toBe('/en/portal/card');
 
     const oldVerifyRes = await app.request(`/verify/${oldToken}`, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
@@ -2295,7 +2279,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/en/portal/card');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -2806,7 +2790,7 @@ describe('locale sweep', () => {
     expect(body).toContain(`<html lang="${locale}">`);
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
-    expect(body).toContain(t(locale, 'portal.heading'));
+    expect(body).toContain(escapeHtml(t(locale, 'home.defaultHeadline')));
   });
 });
 
@@ -2835,21 +2819,17 @@ describe('GET /:locale/portal volunteer history gate', () => {
     expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 
-  it('renders the status-filtered volunteer history once volunteersBoardId is configured', async () => {
+  // Volunteer history moved to the activity door (Task 4): the home page doesn't read it even when
+  // the feature is on, but links the door.
+  it('never queries the Volunteers board from the home page, and links the activity door once configured', async () => {
     const monday = mondayWithShifts();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    // Realistic column ids, not the shared fixture's empty-object columns: the gate's column
-    // half must pass because the ids are configured, not because they're absent.
     const volunteerColumns = {
       volunteerDonorLink: 'vol_link_col',
       volunteerHours: 'vol_hours_col',
       volunteerDate: 'vol_date_col',
       volunteerJob: 'vol_job_col',
       volunteerStatus: 'vol_status_col',
-      donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
-      donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
-      donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
-      donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
     } as never;
     const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
@@ -2859,11 +2839,9 @@ describe('GET /:locale/portal volunteer history gate', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'portal.volunteerHeading'));
-    expect(body).toContain('Bike Valet');
-    expect(body).toContain('Total volunteer hours: 3.5');
-    // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
-    expect(body).not.toContain('Ride Marshal');
+    expect(body).not.toContain('Bike Valet');
+    expect(body).toContain('href="/en/portal/activity"');
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 });
 
@@ -2888,25 +2866,8 @@ describe('GET /:locale/portal — events tab', () => {
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
-  it('renders the Events tab with the donor\'s registrations once eventRegistrations.boardId is configured', async () => {
-    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
-    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
-    ]);
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    const res = await app.request('/en/portal', { headers: { cookie } });
-    const body = await res.text();
-
-    expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'events.tabLabel'));
-    expect(body).toContain('Fall Gala');
-  });
-
-  it('shows the Find Upcoming Events CTA once configured for a donor with no registrations', async () => {
+  // Event registrations moved to the activity door (Task 4).
+  it('never queries the events board from the home page, and links the activity door once configured', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
@@ -2916,8 +2877,8 @@ describe('GET /:locale/portal — events tab', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).toContain(t('en', 'events.emptyMessage'));
-    expect(body).toContain('href="https://bikesiliconvalley.org/events"');
+    expect(body).toContain('href="/en/portal/activity"');
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
   it('logs and omits just the Events tab (not the whole dashboard) when the Monday lookup throws', async () => {
@@ -2936,88 +2897,26 @@ describe('GET /:locale/portal — events tab', () => {
   });
 });
 
+// The events page became the activity door (Task 4); its tests live in the 'doors' block below.
 describe('GET /:locale/portal/events', () => {
-  function enabledEventsConfig(): Config {
-    const cfg = structuredClone(config);
-    cfg.eventRegistrations.boardId = 555;
-    return cfg;
-  }
-
-  it('redirects to / without a session', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/events');
+  it('redirects to the activity door, signed in or not', async () => {
+    const res = await createApp(makeDeps()).request('/es/portal/events', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fevents');
-  });
-
-  it('shows the unavailable state while the eventRegistrations board is unconfigured', async () => {
-    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = {
-      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
-    };
-    const app = createApp(makeDeps({ monday, emailSender }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain('not available yet');
-    // The gate must not leak whether any Monday data exists.
-    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
-  });
-
-  it('renders the logged-in donor registrations with no-store caching when enabled', async () => {
-    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
-    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
-    ]);
-    const emailSender = {
-      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
-    };
-    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('Fall Gala');
-    expect(html).toContain('<title>Your Event Registrations — SVBC Member Portal</title>');
-    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
-    // The query is scoped to the session's donor item, never a client-supplied id.
-    expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(
-      expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 })
-    );
-  });
-
-  it('shows an events-specific error page when the Monday lookup throws', async () => {
-    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = {
-      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
-    };
-    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
-
-    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(500);
-    expect(await res.text()).toContain('We could not load your event registrations');
+    expect(res.headers.get('location')).toBe('/es/portal/activity');
   });
 });
 
 describe('GET /portal/events (bare, no locale)', () => {
-  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+  it('redirects to the default-locale activity door instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/events', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/events');
+    expect(res.headers.get('location')).toBe('/en/portal/activity');
   });
 });
 
-describe('portal home events link', () => {
-  it('links to the locale-prefixed events page', async () => {
+describe('portal home doors', () => {
+  it('leaves the activity door out while events, volunteering and Get involved are all off', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),
@@ -3026,8 +2925,9 @@ describe('portal home events link', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
-    expect(await res.text()).toContain('/en/portal/events');
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).not.toContain('/en/portal/activity');
+    expect(html).toContain('href="/en/portal/letters"');
   });
 });
 
@@ -3069,14 +2969,14 @@ function prefsEmailSender() {
   };
 }
 
-describe('GET /:locale/portal/change-request — communication preferences section', () => {
+describe('GET /:locale/portal/info — communication preferences section', () => {
   it('renders the preferences forms with current state when the columns are configured', async () => {
     const monday = fakeMondayWithPrefs();
     const emailSender = prefsEmailSender();
     const app = createApp(makeDeps({ monday, emailSender, config: prefsConfig() }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
     const html = await res.text();
     expect(html).toContain('action="/en/portal/change-request/preferences"');
     expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
@@ -3089,7 +2989,7 @@ describe('GET /:locale/portal/change-request — communication preferences secti
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
     expect(await res.text()).not.toContain('change-request/preferences');
   });
 });
@@ -3447,9 +3347,9 @@ describe('security headers', () => {
     expectBaseline(res);
   });
 
-  it('frame-protects the change-request form', async () => {
+  it('frame-protects the info door', async () => {
     const { app, cookie } = await loggedIn();
-    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     expectBaseline(res);
   });
@@ -3520,11 +3420,11 @@ describe('write switch', () => {
     expect(await res.text()).toContain('Donor donor-1');
   });
 
-  it('keeps the login page and the change-request form working under hold', async () => {
+  it('keeps the login page and the info door working under hold', async () => {
     const { deps, cookie } = await loggedInUnder('hold');
     const app = createApp(deps);
     expect((await app.request('/')).status).toBe(200);
-    expect((await app.request('/en/portal/change-request', { headers: { Cookie: cookie } })).status).toBe(200);
+    expect((await app.request('/en/portal/info', { headers: { Cookie: cookie } })).status).toBe(200);
   });
 
   it.each<WriteMode>(['hold', 'off', 'unknown'])('POST change-request under %s is 503 and creates no row and no message', async (mode) => {
@@ -3672,6 +3572,476 @@ describe('write switch', () => {
   });
 });
 
+describe('GET /:locale/portal — home page', () => {
+  it('renders the home page: greeting, card and doors', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Hi Donor');
+    expect(html).toContain('class="member-card"');
+    expect(html).toContain('<a class="home-door" href="/en/portal/card"');
+    expect(html).toContain('<a class="home-door" href="/en/portal/info"');
+    expect(html).not.toContain('class="tabs"');
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+  });
+
+  // Review Focus #3: one household member failed to load.
+  it("shows the note and only the loaded person's state when one household record failed", async () => {
+    const monday = fakeMonday({
+      'home@example.org': [
+        { id: 'donor-1', name: 'Jane' },
+        { id: 'donor-2', name: 'Joe' },
+      ],
+    });
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'donor-2'
+        ? Promise.reject(new Error('monday: HTTP 500'))
+        : Promise.resolve({
+            id,
+            name: 'Jane Rivera',
+            membershipStatus: 'Lapsed',
+            membershipTier: 'Member',
+            totalDonated: '0',
+            donations: [],
+            membershipExpiry: '2026-07-31',
+            memberSince: '',
+            memberType: '',
+          })
+    );
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'home@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+    expect(html).toContain('Hi Jane');
+    expect(html).not.toContain('Joe');
+    // Still a household: the viewer may be Joe, so the button can't promise to renew Jane.
+    expect(html).toContain('Jane&#39;s membership ended Jul 31, 2026.');
+    expect((html.match(/class="cta-button/g) ?? []).length).toBe(1);
+    expect(html).toContain(`>${t('en', 'home.renewAny')}</a>`);
+    expect(html).not.toContain('Renew your membership');
+    expect(html).toContain(escapeHtml(t('en', 'home.renewEachNote')));
+    expect(html).not.toContain('home-person-action');
+  });
+});
+
+describe('doors', () => {
+  function sender() {
+    return { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  // Every door-backed feature on: donation history visible, events and volunteering configured,
+  // Get involved links, impact statements.
+  function allOnConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.donations.historyVisibleFromISO = '2020-01-01';
+    cfg.eventRegistrations.boardId = 555;
+    cfg.monday.volunteersBoardId = 4;
+    cfg.monday.columns = {
+      volunteerDonorLink: 'vol_link_col',
+      volunteerHours: 'vol_hours_col',
+      volunteerDate: 'vol_date_col',
+      volunteerJob: 'vol_job_col',
+      volunteerStatus: 'vol_status_col',
+    } as never;
+    cfg.getInvolved.links = [{ category: 'civic', label: 'San José BPAC', url: 'https://sj.example/bpac' }];
+    cfg.impact.statementsByYear = { '2025': { en: ['Taught bike safety to 4,200 students'] } };
+    return cfg;
+  }
+
+  async function signedIn(overrides: Partial<AppDeps> = {}, email = 'donor@example.org') {
+    const emailSender = sender();
+    const app = createApp(makeDeps({ emailSender, ...overrides }));
+    const cookie = await loginAndGetCookie(app, emailSender, email);
+    return { app, cookie };
+  }
+
+  it.each(['card', 'giving', 'activity', 'info', 'letters'])('signed out, GET /en/portal/%s returns to it after sign-in', async (door) => {
+    const res = await createApp(makeDeps()).request(`/en/portal/${door}`, { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/?next=%2Fen%2Fportal%2F${door}`);
+  });
+
+  it('redirects an old card link to the card door', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/card/123', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/card');
+  });
+
+  it('shows no old dashboard tabs on the home page or any door, every feature on', async () => {
+    const monday = fakeMondayWithDonations();
+    const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
+    for (const path of ['/en/portal', '/en/portal/card', '/en/portal/giving', '/en/portal/activity', '/en/portal/letters']) {
+      const res = await app.request(path, { headers: { Cookie: cookie } });
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get('cache-control'), path).toBe('private, no-store, max-age=0');
+      const html = await res.text();
+      expect(html, path).not.toContain('type="radio"');
+      expect(html, path).not.toContain('class="tabs"');
+    }
+  });
+
+  describe('GET /:locale/portal/info', () => {
+    // Jordan and Sam share family@example.org as Household Email; each has a Personal Email.
+    const ADDRESSES: Record<string, { personal: string; household: string; personalConsent: string; householdConsent: string }> = {
+      jordan: { personal: 'jordan@example.org', household: 'family@example.org', personalConsent: 'Cleaned', householdConsent: 'Subscribed' },
+      sam: { personal: 'sam@example.org', household: 'family@example.org', personalConsent: 'Subscribed', householdConsent: 'Unsubscribed' },
+    };
+
+    function householdMonday(email: string) {
+      const monday = fakeMonday({ [email]: [{ id: 'jordan', name: 'Jordan' }, { id: 'sam', name: 'Sam' }] });
+      (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+        Promise.resolve({ id, name: id === 'jordan' ? 'Jordan Lee' : 'Sam Lee', email: ADDRESSES[id]!.personal, address: '1 Shared Rd', phone: '', preferredLanguage: '', employer: '' })
+      );
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockImplementation((id: string) => Promise.resolve(ADDRESSES[id]));
+      return monday;
+    }
+
+    it('shows the change form, then one person their addresses with labels as text', async () => {
+      const monday = fakeMonday({ 'jordan@example.org': [{ id: 'jordan', name: 'Jordan' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockResolvedValue(ADDRESSES.jordan);
+      const verifiedEmailStore = {
+        recordVerified: vi.fn().mockResolvedValue(undefined),
+        verifiedFor: vi.fn().mockResolvedValue(new Set([`${await sha256Hex('family@example.org')}:jordan`])),
+      };
+      const { app, cookie } = await signedIn({ monday, verifiedEmailStore }, 'jordan@example.org');
+
+      const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+      const html = await res.text();
+      expect(html).toContain(`<title>${escapeHtml(t('en', 'home.doorInfo'))} — ${t('en', 'site.title')}</title>`);
+      expect(html).toContain('‹ </span>Home</a>');
+      expect(html).toContain('action="/en/portal/change-request"');
+      const form = html.indexOf('action="/en/portal/change-request"');
+      const list = html.indexOf('class="email-list"');
+      expect(form).toBeGreaterThan(-1);
+      expect(list).toBeGreaterThan(form);
+      expect(html).toContain('jordan@example.org');
+      expect(html).toContain('family@example.org');
+      expect(html).toContain(`>${t('en', 'info.labelBounced')}<`);
+      expect(html).toContain(`>${t('en', 'info.labelVerified')}<`);
+      expect(verifiedEmailStore.verifiedFor).toHaveBeenCalledWith(['jordan']);
+    });
+
+    it("shows a household signed in by the shared Household Email that address under each person, and no one's Personal Email", async () => {
+      const { app, cookie } = await signedIn({ monday: householdMonday('family@example.org') }, 'family@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html.match(/family@example\.org/g)?.length).toBe(2);
+      expect(html).toContain('<h3>Jordan Lee</h3>');
+      expect(html).toContain('<h3>Sam Lee</h3>');
+      expect(html).not.toContain('jordan@example.org');
+      expect(html).not.toContain('sam@example.org');
+    });
+
+    it("shows a household signed in by Jordan's Personal Email Jordan's addresses only, under Jordan", async () => {
+      const monday = householdMonday('jordan@example.org');
+      const { app, cookie } = await signedIn({ monday }, 'jordan@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      const emails = html.slice(html.indexOf('class="email-list"'));
+      expect(emails).toContain('jordan@example.org');
+      // Jordan's own Household Email, once, under Jordan; nothing of Sam's.
+      expect(emails.match(/family@example\.org/g)?.length).toBe(1);
+      expect(html).toContain('<h3>Jordan Lee</h3>');
+      expect(html).not.toContain('<h3>Sam Lee</h3>');
+      expect(html).not.toContain('sam@example.org');
+    });
+
+    it('shows one person signed in by their Household Email only that address', async () => {
+      const monday = fakeMonday({ 'family@example.org': [{ id: 'jordan', name: 'Jordan' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockResolvedValue(ADDRESSES.jordan);
+      const { app, cookie } = await signedIn({ monday }, 'family@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html.slice(html.indexOf('class="email-list"'))).toContain('family@example.org');
+      expect(html).not.toContain('jordan@example.org');
+    });
+
+    it('matches a stored address in mixed case with surrounding space to the sign-in address', async () => {
+      const monday = fakeMonday({ 'jordan@example.org': [{ id: 'jordan', name: 'Jordan' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockResolvedValue({ ...ADDRESSES.jordan, personal: '  Jordan@Example.ORG ' });
+      const { app, cookie } = await signedIn({ monday }, 'jordan@example.org');
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      const emails = html.slice(html.indexOf('class="email-list"'));
+      expect(emails).toContain('Jordan@Example.ORG');
+      expect(emails).toContain('family@example.org');
+    });
+
+    it('shows a one-person session with no sign-in address no addresses, just the note', async () => {
+      const deps = makeDeps({ monday: householdMonday('family@example.org') });
+      await deps.sessionStore.createSession({
+        sessionHash: await sha256Hex('letter-session-one'),
+        donorItemIds: ['jordan'],
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        emailHash: null,
+      });
+      const app = createApp(deps);
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: '__Host-session=letter-session-one' } })).text();
+      expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
+      expect(html).not.toContain('@example.org');
+      expect(deps.monday.getDonorEmails).not.toHaveBeenCalled();
+    });
+
+    // Review Focus #1: a letter-ready link (or a pre-0008 session) doesn't know its address.
+    it('shows a household session with no sign-in address no addresses, just the one-line note', async () => {
+      const deps = makeDeps({ monday: householdMonday('family@example.org') });
+      await deps.sessionStore.createSession({
+        sessionHash: await sha256Hex('letter-session'),
+        donorItemIds: ['jordan', 'sam'],
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        emailHash: null,
+      });
+      const app = createApp(deps);
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: '__Host-session=letter-session' } })).text();
+      expect(html).toContain(escapeHtml(t('en', 'info.emailsHiddenNoAddress')));
+      expect(html).not.toContain('@example.org');
+      expect(deps.monday.getDonorEmails).not.toHaveBeenCalled();
+    });
+
+    it('still shows the form when the address read fails, with the some-records note', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      (monday.getDonorEmails as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+      const { app, cookie } = await signedIn({ monday });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const res = await app.request('/en/portal/info', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('action="/en/portal/change-request"');
+      expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+      expect(html).not.toContain('class="email-list"');
+      vi.restoreAllMocks();
+    });
+
+    it('still shows the addresses when change requests are off', async () => {
+      const gated = structuredClone(config);
+      gated.changeRequests.boardId = null;
+      const { app, cookie } = await signedIn({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }), config: gated });
+
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html).toContain(escapeHtml(t('en', 'changeRequest.unavailableBody')));
+      expect(html).not.toContain('action="/en/portal/change-request"');
+      expect(html).toContain('donor@example.org');
+      expect(html).toContain(`>${t('en', 'info.labelSubscribed')}<`);
+    });
+
+    it.each(['/en/portal/change-request', '/en/portal/change-request?field=employer'])('redirects the old %s to the info door, keeping the query', async (path) => {
+      const res = await createApp(makeDeps()).request(path, { redirect: 'manual' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(path.replace('/change-request', '/info'));
+    });
+  });
+
+  describe('GET /:locale/portal/letters', () => {
+    it('renders the letters list in the door frame', async () => {
+      const { app, cookie } = await signedIn({ monday: fakeMondayWithDonations() });
+      const html = await (await app.request('/en/portal/letters', { headers: { Cookie: cookie } })).text();
+      expect(html).toContain('class="door"');
+      expect(html).toContain('‹ </span>Home</a>');
+      expect(html).toContain(`<h1>${escapeHtml(t('en', 'home.doorLetters'))}</h1>`);
+      expect(html).toContain('/en/portal/letters/donor-1/2025');
+    });
+  });
+
+  describe('GET /:locale/portal/card', () => {
+    it("shows the person's card with its QR and regenerate form, then the discount list", async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
+      const { app, cookie } = await signedIn({ monday });
+
+      const res = await app.request('/es/portal/card', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(`<title>${escapeHtml(t('es', 'home.doorCard'))} — ${t('es', 'site.title')}</title>`);
+      expect(html).toContain('href="/es/portal"');
+      expect(html).toContain('class="member-card"');
+      expect(html).toContain('class="member-card-qr"');
+      expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+      expect(html).toContain('<li>Local Bikes: 10% off</li>');
+      expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });
+    });
+
+    it('still shows the cards when the discount read fails', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+      const { app, cookie } = await signedIn({ monday });
+
+      const res = await app.request('/en/portal/card', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('class="member-card"');
+      expect(html).not.toContain(t('en', 'portal.discountsHeading'));
+    });
+
+    it('hides the cards while the card feature is off, keeping the discount list', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
+      const gated = structuredClone(config);
+      gated.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+      const { app, cookie } = await signedIn({ monday, config: gated });
+
+      const html = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+      expect(html).not.toContain('class="member-card"');
+      expect(html).toContain('<li>Local Bikes: 10% off</li>');
+    });
+
+    it('lands on the card door after a regenerate, showing the new code', async () => {
+      const monday = fakeMondayWithDonations();
+      const cardTokenStore = inMemoryCardTokenStore();
+      const { app, cookie } = await signedIn({ monday, cardTokenStore });
+      await app.request('/en/portal/card', { headers: { Cookie: cookie } });
+      const oldToken = await cardTokenStore.getActiveToken('donor-1');
+
+      const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie }, redirect: 'manual' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/en/portal/card');
+      const newToken = await cardTokenStore.getActiveToken('donor-1');
+      expect(newToken).not.toBe(oldToken);
+      const html = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+      expect(html).toContain('class="member-card"');
+      expect(await cardTokenStore.getActiveToken('donor-1')).toBe(newToken);
+    });
+  });
+
+  describe('GET /:locale/portal/giving', () => {
+    it('shows the donation table, total, impact, Funraise, pledges and matching-gifts links once history is visible', async () => {
+      const monday = fakeMondayWithDonations();
+      const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
+
+      const res = await app.request('/en/portal/giving', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<td>gift</td>');
+      expect(html).toContain('$40.00');
+      expect(html).toContain(t('en', 'portal.totalLabel'));
+      expect(html).toContain('<li>Taught bike safety to 4,200 students</li>');
+      expect(html).toContain('href="https://example.funraise.org/account"');
+      expect(html).toContain('href="/en/portal/pledges"');
+      expect(html).toContain('href="/en/portal/matching-gifts"');
+      expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: true });
+      expect(monday.getDiscountOrganizations).not.toHaveBeenCalled();
+    });
+
+    it('hides donation history and impact until donations.historyVisibleFromISO, then shows them', async () => {
+      const monday = fakeMondayWithDonations();
+      const gated = allOnConfig();
+      gated.donations.historyVisibleFromISO = '2027-01-01'; // the deps clock is 2026-08-22
+      const before = await signedIn({ monday, config: gated });
+      const hidden = await (await before.app.request('/en/portal/giving', { headers: { Cookie: before.cookie } })).text();
+      expect(hidden).not.toContain('$40.00');
+      expect(hidden).not.toContain('<td>gift</td>');
+      expect(hidden).not.toContain('Taught bike safety to 4,200 students');
+      expect(hidden).toContain('href="/en/portal/matching-gifts"');
+      expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
+
+      const after = await signedIn({ monday, config: gated, now: () => new Date('2027-01-01T00:00:00.000Z') });
+      const shown = await (await after.app.request('/en/portal/giving', { headers: { Cookie: after.cookie } })).text();
+      expect(shown).toContain('$40.00');
+      expect(shown).toContain('<td>gift</td>');
+      expect(shown).toContain('<li>Taught bike safety to 4,200 students</li>');
+    });
+
+    it('groups a household under names and notes a record that failed to load', async () => {
+      const monday = fakeMonday({
+        'home@example.org': [
+          { id: 'donor-1', name: 'Jane' },
+          { id: 'donor-2', name: 'Joe' },
+          { id: 'donor-3', name: 'Kim' },
+        ],
+      });
+      const base = monday.getMemberPortalData.bind(monday);
+      monday.getMemberPortalData = vi.fn((id: string, opts?: { includeDonations?: boolean }) =>
+        id === 'donor-3' ? Promise.reject(new Error('monday: HTTP 500')) : base(id, opts)
+      ) as MondayClient['getMemberPortalData'];
+      const { app, cookie } = await signedIn({ monday, config: allOnConfig() }, 'home@example.org');
+
+      const res = await app.request('/en/portal/giving', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<h2>Donor donor-1</h2>');
+      expect(html).toContain('<h2>Donor donor-2</h2>');
+      expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+    });
+  });
+
+  describe('GET /:locale/portal/activity', () => {
+    function mondayWithActivity(): MondayClient {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+      (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
+        { registrationName: 'reg-2', eventName: 'Spring Ride', eventDate: '2026-03-01', attended: true },
+      ]);
+      (monday.getVolunteerShiftsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' },
+        { date: '2026-02-01', hours: '4', job: 'Ride Marshal', status: 'No-Show' },
+      ]);
+      return monday;
+    }
+
+    it('shows upcoming and past registrations, completed volunteer shifts and Get involved links', async () => {
+      const monday = mondayWithActivity();
+      const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
+
+      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(t('en', 'events.upcomingHeading'));
+      expect(html).toContain('Fall Gala');
+      expect(html).toContain(t('en', 'events.pastHeading'));
+      expect(html).toContain('Spring Ride');
+      expect(html).toContain('Bike Valet');
+      expect(html).toContain('Total volunteer hours: 3.5');
+      // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
+      expect(html).not.toContain('Ride Marshal');
+      expect(html).toContain('href="https://sj.example/bpac"');
+      // The query is scoped to the session's donor item, never a client-supplied id.
+      expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 }));
+      expect(monday.getDiscountOrganizations).not.toHaveBeenCalled();
+    });
+
+    it('still renders volunteer history and Get involved when the events read fails', async () => {
+      const monday = mondayWithActivity();
+      (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+      const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
+
+      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain('Fall Gala');
+      expect(html).toContain('Bike Valet');
+      expect(html).toContain('href="https://sj.example/bpac"');
+    });
+
+    it('never queries the events or Volunteers boards while those features are off', async () => {
+      const monday = mondayWithActivity();
+      const { app, cookie } = await signedIn({ monday });
+
+      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain(t('en', 'door.activityEmpty'));
+      expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+      expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+    });
+  });
+});
+
 describe('sandbox test accounts', () => {
   function postLogin(app: ReturnType<typeof createApp>, email: string, extra: Record<string, string> = {}) {
     return app.request('/', {
@@ -3756,17 +4126,50 @@ describe('sandbox test accounts', () => {
     expect(changeStore.createRequest).not.toHaveBeenCalled();
     expect(changeQueue.send).not.toHaveBeenCalled();
   });
-  it('gives a donor with no membership on file no membership card', async () => {
-    const app = createApp(testDeps());
-    const login = await postLogin(app, 'test-donor@example.org');
-    const cookie = (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
-    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(html).toContain('Dana Donor (test)');
-    expect(html).not.toContain('Member #test-donor');
 
-    const active = await postLogin(app, 'test-active@example.org');
-    const activeCookie = (active.headers.get('Set-Cookie') ?? '').split(';')[0]!;
-    expect(await (await app.request('/en/portal', { headers: { Cookie: activeCookie } })).text()).toContain('Member #test-active');
+  async function signInAs(app: ReturnType<typeof createApp>, email: string): Promise<string> {
+    const login = await postLogin(app, email);
+    return (login.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+  }
+
+  async function homeOf(app: ReturnType<typeof createApp>, email: string, locale = 'en'): Promise<string> {
+    const cookie = await signInAs(app, email);
+    const res = await app.request(`/${locale}/portal`, { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  it('gives a donor with no membership on file no membership card, on home or the card door', async () => {
+    const app = createApp(testDeps());
+    const home = await homeOf(app, 'test-donor@example.org');
+    expect(home).toContain('Hi Dana');
+    expect(home).toContain(t('en', 'home.notMember'));
+    expect(home).not.toContain('class="member-card"');
+
+    const cookie = await signInAs(app, 'test-donor@example.org');
+    const door = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+    expect(door).toContain(t('en', 'home.notMember'));
+    expect(door).not.toContain('class="member-card"');
+
+    expect(await homeOf(app, 'test-active@example.org')).toContain('class="member-card"');
   });
 
+  it("shows each persona's home state", async () => {
+    const app = createApp(testDeps());
+    expect(await homeOf(app, 'test-renewing@example.org')).toContain('Your membership ends');
+    expect(await homeOf(app, 'test-lapsed@example.org')).toContain('Your membership ended');
+    const lifetime = await homeOf(app, 'test-lifetime@example.org');
+    expect(lifetime).toContain('class="member-card"');
+    expect(lifetime).not.toContain(t('en', 'home.renewButton'));
+    expect(await homeOf(app, 'test-spanish@example.org', 'es')).toContain(escapeHtml(t('es', 'home.newMemberHeadline')));
+  });
+
+  it("shows the household's shared address under each person on the info door", async () => {
+    const app = createApp(testDeps());
+    const cookie = await signInAs(app, 'test-household@example.org');
+    const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+    expect(html.match(/test-household@example\.org/g)?.length).toBe(2);
+    expect(html).toContain('<h3>Harper Household (test)</h3>');
+    expect(html).toContain('<h3>Hayden Household (test)</h3>');
+  });
 });

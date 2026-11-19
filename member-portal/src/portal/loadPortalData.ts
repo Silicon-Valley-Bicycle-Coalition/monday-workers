@@ -28,7 +28,9 @@ export async function loadPortalData(
   volunteerOptions?: VolunteerHistoryOptions,
   // routes.ts passes donationHistoryEnabled(config, now). Defaults to true so callers that
   // predate the gate keep the always-on behavior.
-  donationHistoryEnabled = true
+  donationHistoryEnabled = true,
+  // A door that doesn't show the discount list skips its read (discounts comes back null).
+  options: { discounts?: boolean } = {}
 ): Promise<PortalView> {
   // The volunteer read degrades instead of failing the page: a Volunteers-board error (the
   // integration user not yet granted access, a Monday 429, an unverified query shape) should
@@ -41,14 +43,17 @@ export async function loadPortalData(
     : Promise.resolve(null);
 
   // Same degrade-instead-of-fail rule for the shared discount list: an Organizations-board error
-  // costs the donor the discounts section (null → omitted), not the dashboard.
-  const discountLeg: Promise<DiscountOrganization[] | null> = monday.getDiscountOrganizations().catch((err) => {
-    console.error(`member-portal discount organizations load failed: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
-  });
+  // costs the donor the discounts section (null → omitted), not the page.
+  const discountLeg: Promise<DiscountOrganization[] | null> =
+    options.discounts === false
+      ? Promise.resolve(null)
+      : monday.getDiscountOrganizations().catch((err) => {
+          console.error(`member-portal discount organizations load failed: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        });
 
   // Per donor, not all-or-nothing (issue GL#31): a household login spans several donor items, and
-  // one bad record (a deleted item, a Monday error on that id) used to fail the whole dashboard.
+  // one bad record (a deleted item, a Monday error on that id) used to fail the whole page.
   const [donorResults, discounts, shiftsPerDonor] = await Promise.all([
     Promise.allSettled(donorItemIds.map((id) => monday.getMemberPortalData(id, { includeDonations: donationHistoryEnabled }))),
     discountLeg,

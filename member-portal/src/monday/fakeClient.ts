@@ -7,6 +7,7 @@ import type {
   DiscountOrganization,
   DonationRecord,
   DonorContactInfo,
+  DonorEmails,
   DonorMatch,
   MemberPortalData,
   EventRegistrationColumns,
@@ -162,6 +163,8 @@ export class FakeMondayClient implements MondayClient {
       totalDonated: includeDonations ? totalDonated(donor.donations) : '',
       donations: includeDonations ? donor.donations : [],
       membershipExpiry: donor.membershipExpiry,
+      memberSince: '',
+      memberType: '',
     };
   }
 
@@ -185,6 +188,13 @@ export class FakeMondayClient implements MondayClient {
       smsOptOut: null,
       doNotMail: null,
     };
+  }
+
+  // Previews each address label: Jordan subscribed, the Riveras unsubscribed, Casey bounced.
+  async getDonorEmails(donorItemId: string): Promise<DonorEmails> {
+    const donor = findDonor(donorItemId);
+    const consent: Record<string, string> = { '1001': 'Subscribed', '1002': 'Unsubscribed', '1003': 'Unsubscribed', '1004': 'Cleaned' };
+    return { personal: donor.email, household: '', personalConsent: consent[donor.id] ?? '', householdConsent: '' };
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
