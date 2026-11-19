@@ -4166,3 +4166,173 @@ describe('organizations on the home page', () => {
     expect(res.headers.get('location')).toBe('/en/portal');
   });
 });
+
+describe('organization page and year-end statement', () => {
+  const WORK_EMAIL = 'rep@acme.example';
+  const SECRET_EMPLOYEE = 'Zelda Employee-Secret';
+  const grant: OrgGrant = { orgItemId: 'org-1', affiliationItemId: 'aff-1', via: 'workEmail', personItemId: null };
+  const gifts = [
+    { itemId: 'g1', date: '2025-03-01', amount: '$100.00', giftType: 'Donation', description: 'Spring gift' },
+    { itemId: 'g2', date: '2025-05-01', amount: '$500.00', giftType: 'Sponsorship', description: 'Ride sponsor' },
+    { itemId: 'g3', date: '2026-02-01', amount: '$40.00', giftType: 'Donation', description: 'This year' },
+  ];
+  const matches = [{ itemId: 'm1', date: '2025-04-01', amount: '$25.00', giftType: 'Matching', description: SECRET_EMPLOYEE }];
+
+  function orgConfig(opts: { ack?: boolean; history?: boolean } = {}): Config {
+    const cfg = structuredClone(config);
+    cfg.monday.organizationsBoardId = 77;
+    cfg.changeRequests.employer = {
+      affiliationsBoardId: 555,
+      affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' },
+      currentStatusLabel: 'Current',
+      personAffiliationsLink: 'pa',
+    };
+    cfg.organizations.portalAccessColumn = 'check_portal';
+    cfg.organizations.acknowledgmentSignedOff = opts.ack ?? false;
+    cfg.taxLetter.excludedGiftTypes = ['Sponsorship'];
+    cfg.donations.historyVisibleFromISO = opts.history === false ? null : '2020-01-01';
+    return cfg;
+  }
+
+  function orgMonday(overrides: Record<string, unknown> = {}): MondayClient {
+    const monday = fakeMonday({});
+    Object.assign(monday, {
+      getAffiliation: vi.fn().mockResolvedValue({
+        id: 'aff-1', personItemId: null, organizationId: 'org-1', statusLabel: 'Current', portalAccess: true, workEmail: WORK_EMAIL,
+      }),
+      getOrganization: vi.fn().mockResolvedValue({ id: 'org-1', name: 'Acme Bikes', address: '1 Main St' }),
+      getOrganizationGifts: vi.fn().mockResolvedValue(gifts),
+      getOrganizationMatches: vi.fn().mockResolvedValue(matches),
+      ...overrides,
+    });
+    return monday;
+  }
+
+  async function withSession(opts: { grants?: OrgGrant[]; donorItemIds?: string[]; monday?: MondayClient; cfg?: Config } = {}) {
+    const deps = makeDeps({ config: opts.cfg ?? orgConfig(), monday: opts.monday ?? orgMonday() });
+    await deps.sessionStore.createSession({
+      sessionHash: await sha256Hex('org-page-session'),
+      donorItemIds: opts.donorItemIds ?? [],
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      emailHash: await sha256Hex(WORK_EMAIL),
+      orgGrants: opts.grants ?? [grant],
+    });
+    return { deps, app: createApp(deps), headers: { Cookie: '__Host-session=org-page-session' } };
+  }
+
+  it('shows a granted rep the name, gifts with Gift Type, employee match and statement links', async () => {
+    const { app, headers } = await withSession();
+    const res = await app.request('/en/portal/org/org-1', { headers });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');
+    const html = await res.text();
+    expect(html).toContain('Acme Bikes');
+    expect(html).toContain('Sponsorship');
+    expect(html).toContain('Ride sponsor');
+    expect(html).toContain('Employee match');
+    expect(html).toContain('href="/en/portal/org/org-1/statement/2025"');
+    expect(html).not.toContain('statement/2026');
+    expect(html).not.toContain(SECRET_EMPLOYEE);
+  });
+
+  it('sends a signed-out visitor to sign-in with next=', async () => {
+    const { app } = await withSession();
+    const res = await app.request('/en/portal/org/org-1', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/?next=${encodeURIComponent('/en/portal/org/org-1')}`);
+    const res2 = await app.request('/en/portal/org/org-1/statement/2025', { redirect: 'manual' });
+    expect(res2.headers.get('location')).toBe(`/?next=${encodeURIComponent('/en/portal/org/org-1/statement/2025')}`);
+  });
+
+  it('answers every refusal with the same 404 and reads no donations', async () => {
+    const refusals: Array<[string, Parameters<typeof withSession>[0]]> = [
+      ['no grant for that org', { grants: [{ ...grant, orgItemId: 'org-2' }] }],
+      ['no grants at all', { grants: [] }],
+      ['affiliation unticked', { monday: orgMonday({ getAffiliation: vi.fn().mockResolvedValue({ id: 'aff-1', personItemId: null, organizationId: 'org-1', statusLabel: 'Current', portalAccess: false, workEmail: WORK_EMAIL }) }) }],
+      ['affiliation read fails', { monday: orgMonday({ getAffiliation: vi.fn().mockRejectedValue(new Error('down')) }) }],
+      ['not an organization', { monday: orgMonday({ getOrganization: vi.fn().mockResolvedValue(null) }) }],
+      ['gate off', { cfg: structuredClone(config) }],
+    ];
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: Array<{ status: number; body: string; headers: string }> = [];
+    for (const [, opts] of refusals) {
+      const { app, headers, deps } = await withSession(opts);
+      const res = await app.request('/en/portal/org/org-1', { headers });
+      seen.push({ status: res.status, body: await res.text(), headers: JSON.stringify([...res.headers.entries()].sort()) });
+      expect(res.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');
+      expect(deps.monday.getOrganizationGifts).not.toHaveBeenCalled();
+      expect(deps.monday.getOrganizationMatches).not.toHaveBeenCalled();
+    }
+    vi.restoreAllMocks();
+    expect(new Set(seen.map((s) => s.status))).toEqual(new Set([404]));
+    expect(new Set(seen.map((s) => s.body)).size).toBe(1);
+    expect(new Set(seen.map((s) => s.headers)).size).toBe(1);
+    expect(seen[0]!.body).not.toContain('Acme');
+  });
+
+  it('refuses a People-board id under /org/ and an org id under /letters/', async () => {
+    const monday = orgMonday({ getOrganization: vi.fn().mockResolvedValue(null) });
+    const { app, headers } = await withSession({ monday, grants: [{ ...grant, orgItemId: 'donor-1' }], donorItemIds: ['donor-1'] });
+    expect((await app.request('/en/portal/org/donor-1', { headers })).status).toBe(404);
+
+    const other = await withSession({ donorItemIds: ['donor-1'] });
+    const res = await other.app.request('/en/portal/letters/org-1/2025', { headers: other.headers });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain(t('en', 'error.letterNotFound'));
+  });
+
+  it('hides giving while the history gate is closed but keeps the statement links', async () => {
+    const { app, headers } = await withSession({ cfg: orgConfig({ history: false }) });
+    const html = await (await app.request('/en/portal/org/org-1', { headers })).text();
+    expect(html).not.toContain('Ride sponsor');
+    expect(html).toContain('statement/2025');
+  });
+
+  it('renders the statement with Sponsorship listed but not acknowledged, and no employee name', async () => {
+    const { app, headers } = await withSession({ cfg: orgConfig({ ack: true }) });
+    const res = await app.request('/en/portal/org/org-1/statement/2025', { headers });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store, max-age=0');
+    const html = await res.text();
+    expect(html).toContain('Acme Bikes');
+    expect(html).toContain('Sponsorship');
+    expect(html).toContain('Ride sponsor');
+    expect(html).toContain('Employee matching');
+    expect(html).toContain('00-0000000');
+    expect(html).toContain('plain');
+    expect(html).toContain('are not acknowledged as tax-deductible gifts');
+    // Acknowledged total is the Donation alone, not the $500 Sponsorship.
+    expect(html).toContain('Total deductible gifts for 2025: $100.00');
+    expect(html).not.toContain(SECRET_EMPLOYEE);
+  });
+
+  it('says an acknowledgment will follow while the switch is off', async () => {
+    const { app, headers } = await withSession();
+    const html = await (await app.request('/en/portal/org/org-1/statement/2025', { headers })).text();
+    expect(html).toContain('A tax acknowledgment for these gifts will follow.');
+    expect(html).not.toContain('00-0000000');
+  });
+
+  it.each(['abc', '25', '20255', '2026', '2027', '2024'])('answers 404 for statement year %s', async (year) => {
+    const { app, headers } = await withSession();
+    const res = await app.request(`/en/portal/org/org-1/statement/${year}`, { headers });
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a statement for an org outside the grants before any donation read', async () => {
+    const { app, headers, deps } = await withSession({ grants: [{ ...grant, orgItemId: 'org-2' }] });
+    const res = await app.request('/en/portal/org/org-1/statement/2025', { headers });
+    expect(res.status).toBe(404);
+    expect(deps.monday.getOrganizationGifts).not.toHaveBeenCalled();
+  });
+
+  it('shows the unavailable page when Monday fails after access passed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = orgMonday({ getOrganizationGifts: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')) });
+    const { app, headers } = await withSession({ monday });
+    const res = await app.request('/en/portal/org/org-1', { headers });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(t('en', 'error.orgLoadFailed'));
+    vi.restoreAllMocks();
+  });
+});

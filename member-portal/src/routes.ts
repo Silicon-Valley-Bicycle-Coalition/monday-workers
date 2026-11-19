@@ -42,7 +42,13 @@ import {
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
+  orgAccessEnabled,
+  orgAcknowledgmentEnabled,
+  donationHistoryEnabled,
 } from './config';
+import { grantFor, hasOrgAccess } from './orgs/grants';
+import { loadOrgPage, loadOrgStatement } from './orgs/loadOrgData';
+import { orgNotFoundView, orgPageView, orgStatementView } from './orgs/orgViews';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
@@ -678,6 +684,78 @@ export function createApp(deps: AppDeps) {
     // its own, not just say "SVBC Member Portal".
     const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
     return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale, { authenticated: true }));
+  });
+
+  // Organization pages. The order is the access guard: session, gate, the session's own grant for
+  // this id, a live re-read of the granting Affiliation, and only then any organization or
+  // donation read. Every refusal is the same 404 (status, body and headers), so a response never
+  // says whether an id exists or why it was refused.
+  async function orgAccess(c: Context, locale: Locale, orgItemId: string): Promise<'ok' | Response> {
+    const session = await getSessionInfo(c, deps);
+    if (session === null) return signInRedirect(c);
+    c.header('Cache-Control', NO_STORE);
+    const refuse = () =>
+      c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), orgNotFoundView(locale), locale, { authenticated: true }), 404);
+    if (!orgAccessEnabled(deps.config)) return refuse();
+    const grant = grantFor(session.orgGrants, orgItemId);
+    if (grant === null) return refuse();
+    if (!(await hasOrgAccess(grant, session.emailHash, deps))) return refuse();
+    return 'ok';
+  }
+
+  const orgNotFound = (c: Context, locale: Locale) =>
+    c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), orgNotFoundView(locale), locale, { authenticated: true }), 404);
+
+  const orgLoadFailed = (c: Context, locale: Locale, err: unknown) => {
+    console.error(`member-portal organization load failed: ${errorText(err)}`);
+    return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.orgLoadFailed', locale), locale, { authenticated: true }), 500);
+  };
+
+  app.get('/:locale/portal/org/:orgItemId', async (c) => {
+    const locale = resolvePathLocale(c);
+    const orgItemId = c.req.param('orgItemId');
+    const access = await orgAccess(c, locale, orgItemId);
+    if (access !== 'ok') return access;
+
+    let data;
+    try {
+      data = await loadOrgPage(orgItemId, deps);
+    } catch (err) {
+      return orgLoadFailed(c, locale, err);
+    }
+    if (data === null) return orgNotFound(c, locale);
+    const view = orgPageView(
+      {
+        ...data,
+        showGiving: donationHistoryEnabled(deps.config, deps.now()),
+        historyVisibleFromISO: deps.config.donations.historyVisibleFromISO,
+      },
+      locale
+    );
+    return c.html(page(data.org.name + ' — ' + t(locale, 'site.title'), view, locale, { authenticated: true }));
+  });
+
+  app.get('/:locale/portal/org/:orgItemId/statement/:year', async (c) => {
+    const locale = resolvePathLocale(c);
+    const orgItemId = c.req.param('orgItemId');
+    const access = await orgAccess(c, locale, orgItemId);
+    if (access !== 'ok') return access;
+
+    const yearParam = c.req.param('year');
+    if (!/^\d{4}$/.test(yearParam)) return orgNotFound(c, locale);
+    let statement;
+    try {
+      statement = await loadOrgStatement(orgItemId, Number(yearParam), deps);
+    } catch (err) {
+      return orgLoadFailed(c, locale, err);
+    }
+    if (statement === null) return orgNotFound(c, locale);
+
+    const generatedOn = deps.now().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    // Printed or saved as a PDF, so the title identifies the statement on its own.
+    const title = `SVBC ${statement.year} Year-End Statement — ${statement.org.name}`;
+    const view = orgStatementView(statement, deps.config.taxLetter, { ackOn: orgAcknowledgmentEnabled(deps.config), generatedOn }, locale);
+    return c.html(page(title, view, locale, { authenticated: true }));
   });
 
   // The events page became the activity door. Signed in or not: the door handles sign-in.
