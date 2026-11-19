@@ -110,6 +110,7 @@ const REQUIRED_RATE_LIMIT_KEYS = [
   'emailWindowSeconds',
   'emailMaxAttempts',
   'emailDailyMax',
+  'codeFailuresPerAddressDaily',
   'attemptRetentionHours',
 ] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
@@ -226,7 +227,7 @@ export function validateConfig(raw: unknown): Config {
 
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);
-  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const) {
+  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax', 'codeFailuresPerAddressDaily'] as const) {
     const value = rateLimit[key];
     if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
       throw new Error(`config: "rateLimit.${key}" must be a positive integer`);

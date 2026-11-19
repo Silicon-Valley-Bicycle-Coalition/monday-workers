@@ -63,4 +63,16 @@ describe('D1AuthRetentionStore', () => {
     expect(await count("SELECT COUNT(*) AS n FROM login_attempts WHERE email_hash = 'purge-b'")).toBe(1);
     expect(await store.purgeLoginAttemptsBefore('2026-08-22T00:00:00.000Z')).toBe(1);
   });
+
+  it('deletes code_failures older than the cutoff and keeps newer ones', async () => {
+    const store = new D1AuthRetentionStore(env.DB);
+    for (const at of ['2026-08-20T00:00:00.000Z', '2026-08-21T00:00:00.000Z', '2026-08-22T12:00:00.000Z']) {
+      await env.DB.prepare('INSERT INTO code_failures (email_hash, failed_at) VALUES (?1, ?2)').bind('purge-cf', at).run();
+    }
+
+    const deleted = await store.purgeCodeFailuresBefore('2026-08-22T00:00:00.000Z');
+
+    expect(deleted).toBe(2);
+    expect(await count("SELECT COUNT(*) AS n FROM code_failures WHERE email_hash = 'purge-cf'")).toBe(1);
+  });
 });

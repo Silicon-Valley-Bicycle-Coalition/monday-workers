@@ -7,6 +7,7 @@ function fakeStore(overrides: Partial<AuthRetentionStore> = {}): AuthRetentionSt
     purgeLoginAttemptsBefore: vi.fn().mockResolvedValue(3),
     purgeSessionsExpiredBefore: vi.fn().mockResolvedValue(2),
     purgeMagicLinkTokensExpiredBefore: vi.fn().mockResolvedValue(1),
+    purgeCodeFailuresBefore: vi.fn().mockResolvedValue(4),
     ...overrides,
   };
 }
@@ -22,7 +23,8 @@ describe('purgeExpiredAuthRows', () => {
     expect(store.purgeLoginAttemptsBefore).toHaveBeenCalledWith('2026-08-23T12:00:00.000Z');
     expect(store.purgeSessionsExpiredBefore).toHaveBeenCalledWith('2026-08-24T12:00:00.000Z');
     expect(store.purgeMagicLinkTokensExpiredBefore).toHaveBeenCalledWith('2026-08-24T12:00:00.000Z');
-    expect(result).toEqual({ loginAttempts: 3, sessions: 2, magicLinkTokens: 1 });
+    expect(store.purgeCodeFailuresBefore).toHaveBeenCalledWith('2026-08-23T12:00:00.000Z');
+    expect(result).toEqual({ loginAttempts: 3, sessions: 2, magicLinkTokens: 1, codeFailures: 4 });
   });
 
   // Runs inside scheduled() ahead of the letter cron: one table's D1 error must not skip the
@@ -33,8 +35,19 @@ describe('purgeExpiredAuthRows', () => {
 
     const result = await purgeExpiredAuthRows({ store, attemptRetentionHours: 24, now });
 
-    expect(result).toEqual({ loginAttempts: 3, sessions: null, magicLinkTokens: 1 });
+    expect(result).toEqual({ loginAttempts: 3, sessions: null, magicLinkTokens: 1, codeFailures: 4 });
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('sessions'));
+    errorSpy.mockRestore();
+  });
+
+  it('reports a failed code_failures purge as null without skipping the others', async () => {
+    const store = fakeStore({ purgeCodeFailuresBefore: vi.fn().mockRejectedValue(new Error('D1 down')) });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await purgeExpiredAuthRows({ store, attemptRetentionHours: 24, now });
+
+    expect(result).toEqual({ loginAttempts: 3, sessions: 2, magicLinkTokens: 1, codeFailures: null });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('code_failures'));
     errorSpy.mockRestore();
   });
 });

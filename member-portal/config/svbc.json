@@ -55,6 +55,7 @@
     "emailWindowSeconds": 900,
     "emailMaxAttempts": 5,
     "emailDailyMax": 10,
+    "codeFailuresPerAddressDaily": 10,
     "attemptRetentionHours": 24
   },
   "taxLetter": {

@@ -13,10 +13,11 @@ export interface VerifyLoginDeps {
 export async function verifyLogin(rawToken: string, deps: VerifyLoginDeps): Promise<string | null> {
   const tokenHash = await sha256Hex(rawToken);
   const now = deps.now();
-  const donorItemIds = await deps.tokenStore.consumeToken(tokenHash, now.toISOString());
-  if (donorItemIds === null) {
+  const consumed = await deps.tokenStore.consumeToken(tokenHash, now.toISOString());
+  if (consumed === null) {
     return null;
   }
+  const { donorItemIds } = consumed;
 
   const rawSessionToken = generateToken();
   const sessionHash = await sha256Hex(rawSessionToken);

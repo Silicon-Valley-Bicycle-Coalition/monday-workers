@@ -281,6 +281,8 @@ export interface Config {
     emailMaxAttempts: number;
     // Login emails allowed per address per rolling 24 hours.
     emailDailyMax: number;
+    // Wrong sign-in codes allowed per address per rolling 24 hours.
+    codeFailuresPerAddressDaily: number;
     // How long login_attempts rows (hashed addresses, donor or not) survive the daily purge.
     // The daily cap reads back 24 hours, so this must be at least that (validated).
     attemptRetentionHours: number;

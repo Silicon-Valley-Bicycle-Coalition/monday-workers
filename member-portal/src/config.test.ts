@@ -61,7 +61,7 @@ const validConfig = {
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
-  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, codeFailuresPerAddressDaily: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
     ein: '00-0000000',
@@ -263,7 +263,7 @@ describe('validateConfig', () => {
     expect(() => validateConfig(validConfig)).not.toThrow();
   });
 
-  it.each(['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const)(
+  it.each(['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax', 'codeFailuresPerAddressDaily'] as const)(
     'rejects a non-positive or non-integer rateLimit.%s',
     (key) => {
       for (const value of [0, -1, 1.5, '5']) {

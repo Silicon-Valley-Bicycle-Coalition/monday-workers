@@ -12,6 +12,7 @@ export interface PurgeExpiredAuthResult {
   loginAttempts: number | null;
   sessions: number | null;
   magicLinkTokens: number | null;
+  codeFailures: number | null;
 }
 
 // Daily retention purge for the auth tables (issue GL#31): login_attempts kept a row per submitted
@@ -27,6 +28,7 @@ export async function purgeExpiredAuthRows(deps: PurgeExpiredAuthDeps): Promise<
     loginAttempts: await attempt('login_attempts', () => deps.store.purgeLoginAttemptsBefore(attemptCutoffISO)),
     sessions: await attempt('sessions', () => deps.store.purgeSessionsExpiredBefore(nowISO)),
     magicLinkTokens: await attempt('magic_link_tokens', () => deps.store.purgeMagicLinkTokensExpiredBefore(nowISO)),
+    codeFailures: await attempt('code_failures', () => deps.store.purgeCodeFailuresBefore(attemptCutoffISO)),
   };
 }
 

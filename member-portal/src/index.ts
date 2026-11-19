@@ -220,7 +220,7 @@ export default {
     if (Object.values(purgedAuth).some((n) => n !== null && n > 0)) {
       console.log(
         `member-portal scheduled: purged ${purgedAuth.loginAttempts ?? 'n/a'} login_attempts, ` +
-          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows`
+          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows, ${purgedAuth.codeFailures ?? 'n/a'} code_failures`
       );
     }
 

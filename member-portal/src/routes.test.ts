@@ -54,7 +54,13 @@ function inMemoryTokenStore(): MagicLinkTokenStore {
       const row = rows.get(tokenHash);
       if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
       row.usedAt = nowISO;
-      return row.donorItemIds;
+      return { donorItemIds: row.donorItemIds, emailHash: null };
+    },
+    async takeCodeAttempt() {
+      return null;
+    },
+    async claimByRequest() {
+      return null;
     },
   };
 }
@@ -204,7 +210,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, codeFailuresPerAddressDaily: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
