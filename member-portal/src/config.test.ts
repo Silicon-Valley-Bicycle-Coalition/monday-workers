@@ -151,7 +151,7 @@ const validConfig = {
   organizations: {
     portalAccessColumn: 'REPLACE_WITH_COLUMN_ID',
     workEmailColumn: 'email_work',
-    addressColumn: 'text_addr',
+    addressColumns: ['text_addr', 'text_city', 'text_zip'],
     acknowledgmentSignedOff: false,
     volunteerFloor: 3,
   },
@@ -1207,6 +1207,9 @@ describe('organizations', () => {
     expect(() => validateConfig(orgRaw({ volunteerFloor: 0 }))).toThrow(/volunteerFloor/);
     expect(() => validateConfig(orgRaw({ volunteerFloor: 2.5 }))).toThrow(/volunteerFloor/);
     expect(() => validateConfig(orgRaw({ workEmailColumn: '' }))).toThrow(/workEmailColumn/);
+    expect(() => validateConfig(orgRaw({ addressColumns: 'text_addr' }))).toThrow(/addressColumns/);
+    expect(() => validateConfig(orgRaw({ addressColumns: ['text_addr', ''] }))).toThrow(/addressColumns/);
+    expect(validateConfig(orgRaw({ addressColumns: [] })).organizations.addressColumns).toEqual([]);
   });
 
   it('orgAccessEnabled needs a real portalAccessColumn, an employer block and an Organizations board', () => {
@@ -1242,5 +1245,6 @@ describe('shipped configs organizations block', () => {
     expect(v.organizations.acknowledgmentSignedOff).toBe(false);
     expect(v.organizations.volunteerFloor).toBe(3);
     expect(orgAccessEnabled(v)).toBe(false);
+    expect(v.organizations.addressColumns).toHaveLength(3);
   });
 });

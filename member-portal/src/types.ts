@@ -318,8 +318,8 @@ export interface OrganizationsConfig {
   portalAccessColumn: string;
   // Affiliations "Work Email": the second sign-in address.
   workEmailColumn: string;
-  // Organizations address (placeholder = no address line).
-  addressColumn: string;
+  // Organizations street, city and zip columns, in that order. Empty or any placeholder entry = no address line.
+  addressColumns: string[];
   // The acknowledgment letter wording and EIN are approved; gates orgAcknowledgmentEnabled.
   acknowledgmentSignedOff: boolean;
   // Employee volunteering shows only as an aggregate of at least this many people.

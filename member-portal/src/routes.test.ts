@@ -315,7 +315,7 @@ const config: Config = {
   organizations: {
     portalAccessColumn: 'REPLACE_WITH_COLUMN_ID',
     workEmailColumn: 'REPLACE_WITH_COLUMN_ID',
-    addressColumn: 'REPLACE_WITH_COLUMN_ID',
+    addressColumns: ['REPLACE_WITH_COLUMN_ID'],
     acknowledgmentSignedOff: false,
     volunteerFloor: 3,
   },

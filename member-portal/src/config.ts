@@ -428,12 +428,16 @@ export function validateConfig(raw: unknown): Config {
   }
 
   const organizations = requireObject(cfg, 'organizations');
-  requireKeys(organizations, 'organizations', ['portalAccessColumn', 'workEmailColumn', 'addressColumn', 'acknowledgmentSignedOff', 'volunteerFloor']);
-  for (const key of ['portalAccessColumn', 'workEmailColumn', 'addressColumn'] as const) {
+  requireKeys(organizations, 'organizations', ['portalAccessColumn', 'workEmailColumn', 'addressColumns', 'acknowledgmentSignedOff', 'volunteerFloor']);
+  for (const key of ['portalAccessColumn', 'workEmailColumn'] as const) {
     const value = organizations[key];
     if (typeof value !== 'string' || value.length === 0) {
       throw new Error(`config: "organizations.${key}" must be a Monday column id string (or the placeholder "${PLACEHOLDER_COLUMN_VALUE}")`);
     }
+  }
+  const addressColumns = organizations.addressColumns;
+  if (!Array.isArray(addressColumns) || !addressColumns.every((c) => typeof c === 'string' && c.length > 0)) {
+    throw new Error('config: "organizations.addressColumns" must be a list of Monday column id strings (placeholders allowed)');
   }
   if (typeof organizations.acknowledgmentSignedOff !== 'boolean') {
     throw new Error('config: "organizations.acknowledgmentSignedOff" must be a boolean');

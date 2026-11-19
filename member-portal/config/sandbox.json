@@ -195,7 +195,7 @@
   "organizations": {
     "portalAccessColumn": "REPLACE_WITH_COLUMN_ID",
     "workEmailColumn": "email_mm8h6cxh",
-    "addressColumn": "text_mm8ht7ja",
+    "addressColumns": ["text_mm8ht7ja", "text_mm8hvt8v", "text_mm8hwhsz"],
     "acknowledgmentSignedOff": false,
     "volunteerFloor": 3
   }
