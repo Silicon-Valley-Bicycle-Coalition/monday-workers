@@ -330,6 +330,9 @@ export interface DonorMatch {
   id: string;
   name: string;
   preferredLanguage: string;
+  // The address equals the Personal Email (not only the Household Email). Organization sign-in
+  // uses it to tell a person's own address from one shared with a household.
+  matchedPersonal: boolean;
 }
 
 export interface DonationRecord {

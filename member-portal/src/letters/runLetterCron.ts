@@ -80,7 +80,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   // the first day of the year *following* the target year, every gift the sweep could find is
   // below the floor, so there is nothing to mail. (SVBC: a 2026-01-01 floor means the January
   // 2026 run, which would target 2025, does nothing.) A floor inside the target year falls
-  // through — listDonorIdsWithDonationsInYear applies it per gift.
+  // through — listYearActivity applies it per gift.
   const targetYear = deps.now().getUTCFullYear() - 1;
   const floor = config.donations.historyStartISO;
   if (floor !== null && floor >= `${targetYear + 1}-01-01`) {
@@ -105,7 +105,8 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   }
 
   const year = targetYear;
-  const eligibleDonorIds = await deps.monday.listDonorIdsWithDonationsInYear(year, config.taxLetter.excludedGiftTypes);
+  // personIds only: organizations are swept too, but the tax-letter run is for people.
+  const { personIds: eligibleDonorIds } = await deps.monday.listYearActivity(year, config.taxLetter.excludedGiftTypes);
   const handled = await deps.letterStore.listDonorItemIdsForYear(year);
   const pending = eligibleDonorIds.filter((id) => !handled.has(id));
   const batch = pending.slice(0, config.letterCron.maxTriggersPerRun);

@@ -76,7 +76,7 @@ const now = () => new Date('2027-01-15T10:00:00.000Z');
 function fakeMonday(overrides: Partial<Record<keyof MondayClient, unknown>> = {}): MondayClient {
   return {
     getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '2027-01-10', bodyTemplate: '' }),
-    listDonorIdsWithDonationsInYear: vi.fn().mockResolvedValue(['d1', 'd2']),
+    listYearActivity: vi.fn().mockResolvedValue({ personIds: ['d1', 'd2'], organizationIds: ['o1'] }),
     getMemberPortalData: vi.fn().mockImplementation(async (id: string) => ({
       id,
       name: `Donor ${id}`,
@@ -134,7 +134,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({ getLetterSettings: vi.fn().mockResolvedValue(null) });
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'no-settings' });
-    expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
+    expect(monday.listYearActivity).not.toHaveBeenCalled();
   });
 
   it('skips while the Auto-send checkbox is unchecked', async () => {
@@ -143,7 +143,7 @@ describe('runLetterCron', () => {
     });
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'auto-send-off' });
-    expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
+    expect(monday.listYearActivity).not.toHaveBeenCalled();
   });
 
   it('skips while the start date is unset', async () => {
@@ -172,7 +172,7 @@ describe('runLetterCron', () => {
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now: jan2026, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'year-before-history-floor' });
-    expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
+    expect(monday.listYearActivity).not.toHaveBeenCalled();
   });
 
   it('still sweeps when the target year straddles a mid-year floor (the sweep applies the floor per gift)', async () => {
@@ -181,7 +181,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
 
-    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026, []);
+    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
     expect(result).toMatchObject({ kind: 'ran', year: 2026 });
   });
 
@@ -194,7 +194,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
 
-    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026, []);
+    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 });
     expect(queue.send).toHaveBeenCalledTimes(2);
   });
@@ -213,7 +213,7 @@ describe('runLetterCron', () => {
 
   it('defers donors beyond maxTriggersPerRun to the next daily run', async () => {
     const monday = fakeMonday({
-      listDonorIdsWithDonationsInYear: vi.fn().mockResolvedValue(['d1', 'd2', 'd3']),
+      listYearActivity: vi.fn().mockResolvedValue({ personIds: ['d1', 'd2', 'd3'], organizationIds: [] }),
     });
     const capped: Config = { ...config, letterCron: { ...config.letterCron, maxTriggersPerRun: 2 } };
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: capped, now, mode: 'on' });
@@ -282,7 +282,7 @@ describe('runLetterCron', () => {
 
   it('returns an error result instead of throwing when the donations sweep fails', async () => {
     const monday = fakeMonday({
-      listDonorIdsWithDonationsInYear: vi.fn().mockRejectedValue(new Error('monday: HTTP 429')),
+      listYearActivity: vi.fn().mockRejectedValue(new Error('monday: HTTP 429')),
     });
 
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
@@ -293,7 +293,7 @@ describe('runLetterCron', () => {
   it('counts a donor whose gifts vanished since the sweep as triggered work, not a failure', async () => {
     // listLetterYears sees no completed prior year → triggerLetterSend returns 'no-eligible-year'.
     const monday = fakeMonday({
-      listDonorIdsWithDonationsInYear: vi.fn().mockResolvedValue(['d1']),
+      listYearActivity: vi.fn().mockResolvedValue({ personIds: ['d1'], organizationIds: [] }),
     });
     (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'd1',

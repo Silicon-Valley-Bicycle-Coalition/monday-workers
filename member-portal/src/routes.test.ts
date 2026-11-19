@@ -207,7 +207,14 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     getPledgesForDonor: vi.fn().mockResolvedValue([]),
     getLetterSettings: vi.fn().mockResolvedValue(null),
-    listDonorIdsWithDonationsInYear: vi.fn(),
+    listYearActivity: vi.fn(),
+    findAffiliationsByWorkEmail: vi.fn().mockResolvedValue([]),
+    getAffiliation: vi.fn().mockResolvedValue(null),
+    getOrganizationAffiliations: vi.fn().mockResolvedValue([]),
+    getOrganization: vi.fn().mockResolvedValue(null),
+    getOrganizationGifts: vi.fn().mockResolvedValue([]),
+    getOrganizationMatches: vi.fn().mockResolvedValue([]),
+    getCompletedVolunteerHoursInYear: vi.fn().mockResolvedValue(new Map()),
   };
 }
 
@@ -259,7 +266,14 @@ function fakeMondayWithDonations(): MondayClient {
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     getPledgesForDonor: vi.fn().mockResolvedValue([]),
     getLetterSettings: vi.fn().mockResolvedValue(null),
-    listDonorIdsWithDonationsInYear: vi.fn(),
+    listYearActivity: vi.fn(),
+    findAffiliationsByWorkEmail: vi.fn().mockResolvedValue([]),
+    getAffiliation: vi.fn().mockResolvedValue(null),
+    getOrganizationAffiliations: vi.fn().mockResolvedValue([]),
+    getOrganization: vi.fn().mockResolvedValue(null),
+    getOrganizationGifts: vi.fn().mockResolvedValue([]),
+    getOrganizationMatches: vi.fn().mockResolvedValue([]),
+    getCompletedVolunteerHoursInYear: vi.fn().mockResolvedValue(new Map()),
   };
 }
 
@@ -1497,7 +1511,14 @@ describe('POST / error handling', () => {
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
       getPledgesForDonor: vi.fn().mockResolvedValue([]),
       getLetterSettings: vi.fn().mockResolvedValue(null),
-      listDonorIdsWithDonationsInYear: vi.fn(),
+      listYearActivity: vi.fn(),
+      findAffiliationsByWorkEmail: vi.fn().mockResolvedValue([]),
+      getAffiliation: vi.fn().mockResolvedValue(null),
+      getOrganizationAffiliations: vi.fn().mockResolvedValue([]),
+      getOrganization: vi.fn().mockResolvedValue(null),
+      getOrganizationGifts: vi.fn().mockResolvedValue([]),
+      getOrganizationMatches: vi.fn().mockResolvedValue([]),
+      getCompletedVolunteerHoursInYear: vi.fn().mockResolvedValue(new Map()),
     };
     const app = createApp(makeDeps({ monday }));
 

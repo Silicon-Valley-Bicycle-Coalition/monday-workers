@@ -10,7 +10,7 @@ import { D1CodeFailureStore } from './db/codeFailures';
 import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
-import { HttpMondayClient } from './monday/client';
+import { HttpMondayClient, orgReadConfig } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import { discountOrganizationsCache, withCachedDiscounts } from './monday/discountCache';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
@@ -116,7 +116,9 @@ export default {
             pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
             // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
             // null board id rather than querying a sentinel.
-            config.monday.volunteersBoardId
+            config.monday.volunteersBoardId,
+            undefined,
+            orgReadConfig(config)
           ),
           discountOrganizationsCache,
           `${config.monday.apiUrl}#${organizationsBoardId}`
@@ -165,7 +167,9 @@ export default {
       null,
       // Same treatment as pledges above: no queue consumer reads volunteer history, and
       // getVolunteerShiftsForDonor throws its own config error on a null board id.
-      config.monday.volunteersBoardId
+      config.monday.volunteersBoardId,
+      undefined,
+      orgReadConfig(config)
     );
 
     await routeQueueBatch(batch, {
@@ -241,7 +245,11 @@ export default {
         config.monday.donorsBoardId ?? 0,
         config.monday.donationsBoardId ?? 0,
         config.monday.organizationsBoardId ?? 0,
-        config.donations
+        config.donations,
+        null,
+        config.monday.volunteersBoardId,
+        undefined,
+        orgReadConfig(config)
       ),
       letterStore: new D1LetterSendStore(env.DB),
       queue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
