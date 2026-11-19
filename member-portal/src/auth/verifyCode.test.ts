@@ -19,7 +19,7 @@ async function setup(opts: { attempt?: boolean; failures?: number; claim?: boole
     createToken: vi.fn(),
     consumeToken: vi.fn(),
     takeCodeAttempt: vi.fn().mockResolvedValue(opts.attempt === false ? null : { codeHash, emailHash: EMAIL_HASH, failureSlot }),
-    claimByRequest: vi.fn().mockResolvedValue(opts.claim === false ? null : { donorItemIds: ['d1'], emailHash: EMAIL_HASH }),
+    claimByRequest: vi.fn().mockResolvedValue(opts.claim === false ? null : { donorItemIds: ['d1'], emailHash: EMAIL_HASH, orgGrants: [] }),
   };
   const codeFailureStore: CodeFailureStore = { releaseFailure: vi.fn().mockResolvedValue(undefined) };
   const sessionStore: SessionStore = { createSession: vi.fn().mockResolvedValue(undefined), getSession: vi.fn(), deleteSession: vi.fn() };

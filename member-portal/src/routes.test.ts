@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { OrgGrant } from './orgs/grants';
 import { createApp } from './routes';
 import type { AppDeps } from './routes';
 import type { MondayClient } from './monday/client';
@@ -81,7 +82,7 @@ function inMemoryTokenStore(failures: FailureLedger = []): MagicLinkTokenStore {
       const row = rows.get(tokenHash);
       if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
       row.usedAt = nowISO;
-      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
+      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash, orgGrants: [] };
     },
     async takeCodeAttempt(requestHash, nowISO, maxAttempts, budget) {
       const row = byRequest(requestHash);
@@ -101,7 +102,7 @@ function inMemoryTokenStore(failures: FailureLedger = []): MagicLinkTokenStore {
       const row = byRequest(requestHash);
       if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
       row.usedAt = nowISO;
-      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
+      return { donorItemIds: row.donorItemIds, emailHash: row.emailHash, orgGrants: [] };
     },
   };
 }
@@ -116,14 +117,14 @@ function inMemoryCodeFailureStore(failures: FailureLedger): CodeFailureStore {
 }
 
 function inMemorySessionStore(): SessionStore {
-  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; emailHash: string | null }>();
+  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; emailHash: string | null; orgGrants: OrgGrant[] }>();
   return {
     async createSession(params) {
-      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, emailHash: params.emailHash });
+      rows.set(params.sessionHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, emailHash: params.emailHash, orgGrants: params.orgGrants });
     },
     async getSession(sessionHash, nowISO) {
       const row = rows.get(sessionHash);
-      return !row || row.expiresAt <= nowISO ? null : { donorItemIds: row.donorItemIds, emailHash: row.emailHash };
+      return !row || row.expiresAt <= nowISO ? null : { donorItemIds: row.donorItemIds, emailHash: row.emailHash, orgGrants: row.orgGrants };
     },
     async deleteSession(sessionHash) {
       rows.delete(sessionHash);
@@ -3794,6 +3795,7 @@ describe('doors', () => {
         donorItemIds: ['jordan'],
         expiresAt: '2099-01-01T00:00:00.000Z',
         emailHash: null,
+        orgGrants: [],
       });
       const app = createApp(deps);
 
@@ -3811,6 +3813,7 @@ describe('doors', () => {
         donorItemIds: ['jordan', 'sam'],
         expiresAt: '2099-01-01T00:00:00.000Z',
         emailHash: null,
+        orgGrants: [],
       });
       const app = createApp(deps);
 
