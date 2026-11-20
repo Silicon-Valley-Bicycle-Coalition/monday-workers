@@ -1,0 +1,29 @@
+{
+  "name": "zoom-phone-sync",
+  "version": "0.1.0",
+  "description": "Zoom Phone call and text webhooks → Monday.com People timeline entries and Last Phone Contact.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "dev:sandbox": "wrangler dev --env sandbox",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "hono": "^4.13.18"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}

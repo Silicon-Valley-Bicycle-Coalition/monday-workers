@@ -1,0 +1,17 @@
+{
+  "event": "phone.sms_received",
+  "event_ts": 1763600000000,
+  "payload": {
+    "account_id": "acct_test",
+    "object": {
+      "message_id": "msg_in_1",
+      "session_id": "sess_1",
+      "date_time": "2026-11-19T20:05:00Z",
+      "message_type": 1,
+      "message": "SECRET-TEXT thanks, I'll be there",
+      "sender": { "display_name": "Jane Rider", "phone_number": "+14085550123" },
+      "to_members": [{ "user_id": "user_ann", "display_name": "Ann Staff", "phone_number": "+14085550100" }],
+      "owner": { "id": "user_ann", "type": "user", "name": "Ann Staff" }
+    }
+  }
+}

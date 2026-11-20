@@ -1,0 +1,72 @@
+{
+  "name": "svbc-zoom-phone-sync",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "preview_urls": false,
+  "upload_source_maps": true,
+  // Zoom posts to /webhooks/zoom on the workers.dev host, outside the bikesiliconvalley.org zone,
+  // so no Super Bot Fight Mode skip rule is needed. No custom domain.
+  "workers_dev": true,
+  "routes": [],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-zoom-phone-sync",
+      // Not created yet: `wrangler d1 create svbc-zoom-phone-sync` before the first deploy (#55), then
+      // put its id here. Tests run on a local D1 and don't read it.
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    // Producer only for now (#52, ingest). The consumer, its outage retry policy and the
+    // dead-letter queue come with the Monday writes (#54). Messages carry the D1 key only.
+    "producers": [{ "queue": "zoom-phone-sync-writes", "binding": "WRITE_QUEUE" }]
+  },
+  // Write-switch flags (scripts/flags.mjs): `zoom-phone-sync:writes` in the shared FLAGS namespace
+  // (`sandbox-FLAGS` under env.sandbox); scripts/check-worker-flags.mjs checks the ids.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // A signed delivery skips this (src/rateLimit.ts); it bounds everything else on the public host.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2103", "simple": { "limit": 60, "period": 60 } }],
+  "limits": { "cpu_ms": 100 },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken). Unused until #54.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `npm run deploy:sandbox` deploys svbc-zoom-phone-sync-sandbox, fed by the sandbox's own Zoom
+  // S2S app (#50) and writing the CRM Sandbox People board (config/sandbox.json). Nothing here is
+  // inherited from the top level. Secret: `wrangler secret put ZOOM_WEBHOOK_SECRET --env sandbox`.
+  "env": {
+    "sandbox": {
+      "preview_urls": false,
+      "workers_dev": true,
+      // Explicit, never inherited: an env block without routes can take over the top level's.
+      "routes": [],
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-zoom-phone-sync-sandbox",
+          // Not created yet: `wrangler d1 create svbc-zoom-phone-sync-sandbox` (#55).
+          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "zoom-phone-sync-writes-sandbox", "binding": "WRITE_QUEUE" }]
+      },
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2104", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      },
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
+    }
+  }
+}
