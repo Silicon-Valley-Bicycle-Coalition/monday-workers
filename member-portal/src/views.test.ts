@@ -180,7 +180,8 @@ describe('checkEmailView code form and resend', () => {
     expect(html).toContain('name="email" value="a&quot;&lt;b@x.org"');
     expect(html).not.toContain('a"<b@x.org');
     expect(html).toContain('name="next" value="/p"');
-    expect(html).toContain('name="lang" value="en"');
+    // POST / picks the locale itself (detectLocale), so the form sends none.
+    expect(html).not.toContain('name="lang"');
     expect(html).toMatch(/style="[^"]*animation-duration: 60s[^"]*"[\s\S]*>Send again<\/button>/);
     expect(PORTAL_CSS).toContain('0% { visibility: hidden }');
     expect(PORTAL_CSS).toContain('steps(1, end)');

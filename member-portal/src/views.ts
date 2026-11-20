@@ -187,7 +187,7 @@ export function checkEmailView(locale: Locale, options: CheckEmailOptions = {}):
     html += `
     <p>${escapeHtml(t(locale, 'checkEmail.resendHelp'))}</p>
     <div class="resend-reveal" style="animation-duration: ${Math.max(0, Math.floor(resend.delaySeconds))}s">
-      <form method="post" action="/">${hidden('email', resend.email)}${nextField(resend.next)}${hidden('lang', locale)}
+      <form method="post" action="/">${hidden('email', resend.email)}${nextField(resend.next)}
         <button type="submit">${escapeHtml(t(locale, 'checkEmail.resend'))}</button>
       </form>
     </div>
