@@ -99,16 +99,16 @@ describe('sandboxEmailBinding', () => {
     expect(sent.html).not.toContain('<b>x</b>');
   });
 
-  it('logs one structured sandboxOutbound line per send, with a recipient count and no address', async () => {
+  it('logs one structured sandboxOutbound line per send, with a recipient count and no address or subject', async () => {
     const inner = fakeInner();
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
-      await sandboxEmailBinding(inner, SINK).send(loginMessage());
+      // The login email's subject carries its one-time code.
+      await sandboxEmailBinding(inner, SINK).send(loginMessage({ subject: '123456 is your login code' }));
       expect(log).toHaveBeenCalledTimes(1);
       expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({
         sandboxOutbound: 'email',
         recipients: 1,
-        subject: 'Your login link',
       });
     } finally {
       log.mockRestore();
