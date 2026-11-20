@@ -65,7 +65,7 @@ Apple Mail.
 1. **`POST /`** (login form). For **every** submission that reaches the check-email page
    (matched, unmatched, malformed, rate-limited, request failure), generate a 32-byte random
    request id and set it as `__Host-login-request`: `HttpOnly`, `Secure`, `SameSite=Lax`,
-   `Path=/`, `Max-Age` = `magicLinkTtlMinutes * 60`. No D1 write happens in the response path.
+   `Path=/`, `Max-Age` = `magicLinkTtlMinutes * 60`. Nothing in the response path depends on whether the address is on file: the token write and the send are deferred. (The per-address rate limiter's reservation does write before the response, but it records every address the same way.)
    The deferred `requestLogin` work receives the request id. When the address matches, it stores
    `request_hash = sha256(requestId)` and the code hash on the same `magic_link_tokens` row as the
    link token. Unmatched addresses write nothing, as today.
@@ -171,7 +171,8 @@ KV flag, since it isn't an outage control).
   `CREATE TABLE login_code_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, email_hash TEXT NOT NULL, checked_at TEXT NOT NULL);`
   with indexes on `(email_hash, checked_at)` and `(checked_at)`,
   plus an index on `request_hash`. Letter-ready rows leave the new columns null. The retention
-  purge needs no change (it deletes by `expires_at`).
+  purge deletes `magic_link_tokens` by `expires_at` as before, and now also purges
+  `login_code_checks` rows older than `rateLimit.attemptRetentionHours`.
 
 ### The email
 

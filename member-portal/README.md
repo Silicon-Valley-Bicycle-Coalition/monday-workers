@@ -147,6 +147,42 @@ email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSe
 IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
 stretch a lockout by retrying.
 
+### Login code (browser-bound, behind `auth.loginCodeEnabled`)
+
+The login email can also carry a 6-digit code, so a donor can stay in the browser they started in:
+the "check your email" page has a code box (`autocomplete="one-time-code"`, which Apple's Password
+AutoFill fills from Mail), and the email's link still works. Using the code or the link uses up
+both.
+
+* **Flow.** Every `POST /` that renders the check-email page sets `__Host-login-request`
+  (`HttpOnly`, `Secure`, `SameSite=Lax`, lifetime `auth.magicLinkTtlMinutes`) holding a random
+  request id, identical for matched, unmatched and rate-limited addresses. The code is stored as
+  `sha256(requestId:code)` beside the link token, and `POST /auth/code` checks it only together
+  with that cookie, so a code is useless in any other browser. A repeat request from the same
+  browser keeps its request id, so the codes from both emails work. Wrong code, no cookie,
+  expired, used and spent all give one generic error.
+* **Switch.** `auth.loginCodeEnabled` (config, so flipping it is a deploy): **off in
+  `svbc.json`, on in `sandbox.json` and `dev:local`**. Off means no cookie, no code form, no code
+  in the email, and `POST /auth/code` returns the generic error. `auth.displayTimeZone`
+  (`America/Los_Angeles`, an IANA zone) sets the zone for the expiry time the email prints.
+* **Send again.** The check-email page has a button that re-POSTs `/` with the same address. It
+  appears after `rateLimit.emailCooldownSeconds` (a CSS delay, no script) and goes through the
+  usual limits. It is **not** behind the switch: it helps link-only donors too.
+* **Limits.** At most 5 code checks per browser request id, and 10 per address per 24 hours across
+  all browsers (`login_code_checks`, keyed by the address hash, purged after
+  `rateLimit.attemptRetentionHours`), plus the per-IP limiter on `POST /auth/code`. The links are
+  never limited, so a donor whose codes are spent still signs in by link, and a stranger can't
+  lock a donor out.
+* **Rollout.** Migration `0007_login_codes.sql` adds columns and a table, so apply it with
+  `wrangler d1 migrations apply` to **both** databases **before** deploying this code ([DEPLOY.md](DEPLOY.md)).
+  Ship it with the switch off in production, then run the AutoFill check there: set
+  `loginCodeEnabled: true` and deploy, request a login for your own donor record in Safari on iOS
+  and on macOS with that mailbox in Apple Mail, and confirm AutoFill offers the code on the
+  check-email page (note any delay). If it does, leave it on; if not, set it back to `false` and
+  deploy. The sandbox can't stand in for this check, since its subject prefix and notice
+  paragraph throw off Apple's detection. Record the result in the PR. Design:
+  [`docs/superpowers/specs/2026-11-19-login-email-code-design.md`](../docs/superpowers/specs/2026-11-19-login-email-code-design.md).
+
 ## Sandbox test accounts
 
 In the sandbox (and `npm run dev:local`), a fixed set of `test-*@example.org` addresses signs in
@@ -262,7 +298,7 @@ Routing destination). A live login-link request for a real sandbox People record
   so keep log access (Workers observability, Logpush destinations) to the people who need it.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
-* Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
+* Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, `login_code_checks` rows older than `rateLimit.attemptRetentionHours`, and
   `login_attempts` rows (one per login email allowed, donor or not, keyed by a SHA-256 of the
   lowercased address since migration `0006`) older than `rateLimit.attemptRetentionHours` (24;
   validated to cover the 24-hour daily cap). Deletes are batched and capped per run
