@@ -2,7 +2,7 @@
 
 [Appendix A](../reference/impact-attribution.md) lists this Worker's routes, crons, queues, storage and bindings.
 
-`impact-attribution` runs as the Cloudflare Worker `svbc-impact-attribution` (sandbox: `svbc-impact-attribution-sandbox`). It has no hostname: `fetch` returns 404. It runs on a nightly cron and also exposes one service-binding RPC entrypoint, `EmployerAnswers`, which `eventbrite-sync` calls. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). Production writes stay off until the `excludedPayers` list has been reviewed (see "Write switch"). Check the root README's [Status at a glance](../../../README.md#status-at-a-glance) table for current deploy state.
+`impact-attribution` runs as the Cloudflare Worker `svbc-impact-attribution` (sandbox: `svbc-impact-attribution-sandbox`). It has no hostname: `fetch` returns 404. It runs on a nightly cron and also exposes one service-binding RPC entrypoint, `EmployerAnswers`, which `eventbrite-sync` calls. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). Production's `excludedPayers` list has been reviewed and writes are on (see "Write switch"). Check the root README's [Status at a glance](../../../README.md#status-at-a-glance) table for current deploy state.
 
 ## What it does
 
@@ -72,7 +72,7 @@ Key `impact-attribution:writes`. See [Operations](../07-operations.md).
 | `off` | Refreshes `matches`, `email_index` and answer states in D1. Creates nothing on Monday and records no proposals. Logs `wouldPropose`, a `payers` summary (every organization that would get a Draft, uncapped), and `emailDomainProposalDomains` (domains it would propose from, plus ambiguous ones). |
 | `hold` / `unknown` | Skips the night. Nothing to catch up. |
 
-**Production gate.** Do not set production to `on` until someone has reviewed the `off` run's `payers` summary and put every non-employer payer (foundations, donor-advised-fund sponsors) into `excludedPayers` in `config/svbc.json`, each with a note. In the same pass, review `emailDomainProposalDomains`: add `excludedDomains` for non-employer domains and `domainOverrides` for ambiguous ones worth settling. Deploy, wait for one more dry run, then run `node scripts/flags.mjs impact-attribution writes on --env production`.
+**Turning writes on in a new environment.** SVBC's production passed this gate. For a rebuilt or forked environment, don't set writes `on` until someone has reviewed the `off` run's `payers` summary and put every non-employer payer (foundations, donor-advised-fund sponsors) into `excludedPayers` in `config/svbc.json`, each with a note. In the same pass, review `emailDomainProposalDomains`: add `excludedDomains` for non-employer domains and `domainOverrides` for ambiguous ones worth settling. Deploy, wait for one more dry run, then run `node scripts/flags.mjs impact-attribution writes on --env production`.
 
 ## Failure modes
 

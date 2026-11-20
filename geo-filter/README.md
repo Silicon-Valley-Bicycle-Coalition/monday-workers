@@ -71,5 +71,6 @@ npm run typecheck
 
 `src/monday.ts` (the Monday-fetching half) only has stubbed-`fetch` tests for its column
 resolution — it's a thin, direct mirror of the same `graphql()`/pagination pattern already proven
-elsewhere in this monorepo (e.g. `salesforce-import/scripts/create-letter-settings-board.mjs`),
+elsewhere in this monorepo (the shared transport, `monday-backup/src/monday/graphql.ts`, of which
+this CLI carries a copy),
 and needs a real board + token to exercise meaningfully.

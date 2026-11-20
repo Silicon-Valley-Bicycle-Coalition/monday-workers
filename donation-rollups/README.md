@@ -467,10 +467,8 @@ owner was fetched since, it is coalesced with no Monday call; and each webhook i
   that reads it** — the same ordering lesson as 0005/0006, and stricter: the webhook insert
   writes `kind` and the ledger refresh reads and writes `term_start` whether or not the
   membership block is on, so deploying first breaks every recompute, not just membership. 
-  `config/sandbox.json` carries `membership: null` today (it turns on once the CRM Sandbox v3
-  column ids are filled in); `config/svbc.json` carries the full block with
-  `REPLACE_WITH_COLUMN_ID` / board-id `0` placeholders that must be replaced before it is
-  deployed. For any other database (a fresh fork, the production cutover) the safe first deploy
+  Both `config/sandbox.json` and `config/svbc.json` carry the full block with real ids. For any
+  other database (a fresh fork, the production cutover) the safe first deploy
   sets `donationRollups.membership` to `null` until 0009 is applied and the ids are filled. In
   order:
   1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
@@ -1285,15 +1283,12 @@ sandbox gets rebuilt before cutover:
 
 ## Non-destructive by design
 
-Every board id in `config/sandbox.json` — the Donations board and all 3 owner boards — is a CRM
-**Sandbox** id (the "(sandbox v2)" set, verified directly 2026-08-31), not copied from a
-production workspace; `config/svbc.json` is the production placeholder file, whose ids must be
-verified against the production workspace before cutover. There is no production Monday
-workspace with real cutover data yet (that's October); until there is, this Worker cannot touch
-live donor data no matter what triggers it.
-**Before ever repointing any id in that config at a production workspace, re-verify every single
-one against production directly** (the sandbox gets rebuilt before cutover, so today's ids won't
-necessarily match) — don't assume sandbox and production share ids just because the schema matches.
+Every board id in `config/sandbox.json` is a CRM Sandbox v4 id (workspace `18210301`), and every
+id in `config/svbc.json` is a production id, taken from `salesforce-import`'s production load.
+`config/split.test.ts` fails if the two share any id, so the sandbox Worker can't write to a
+production board. When boards are rebuilt, **re-verify every id in the affected config against
+that workspace directly** before deploying. Don't assume sandbox and production share ids just
+because the schema matches, and follow "Resetting for new board ids" below.
 
 ## Resetting for new board ids
 
@@ -1382,8 +1377,8 @@ descriptions, archive, Annual Giving Summary items, alerts), every fan-out enque
 `donation-rollups-recompute`, and every D1 projection write is gated by the shared write switch
 (spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
 byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`).
-It is read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
-namespaces exist):
+It is read from the `FLAGS` KV namespace (`wrangler.jsonc` binds both namespace ids,
+`FLAGS` and `sandbox-FLAGS`):
 
 - `donation-rollups:writes` — `on` writes normally; `hold` writes nothing, keeps recompute
   messages on the queue (retrying at 1 minute doubling to an hour), skips the daily custodian
@@ -1432,7 +1427,8 @@ Monday daily limit still defers to midnight UTC.
   the five-part fix are in "Status and verification — operational findings, 2026-09-17" above.
   Repair (re-enqueue in slices) only after the write-amplification fixes or Workers Paid — the
   account is on Workers Paid now (confirmed 2026-09-29), so the repair is unblocked.
-* **DLQ has no consumer** — dead messages expire unseen after 4 days; see the same section.
+* ~~DLQ has no consumer~~ Fixed: `src/consumer/processDeadLetters.ts` consumes
+  `donation-rollups-recompute-dlq` and stamps each dead message on its D1 row.
 * ~~Dedicated least-privilege API token~~ Superseded by the `monday-auth` broker's Staff Sync
   OAuth app (see "APIs & auth" above); the sandbox QA and the `MONDAY_API_TOKEN` secret's removal
   happen at deploy time.
@@ -1447,17 +1443,10 @@ Monday daily limit still defers to midnight UTC.
   shouldn't make), and the next sandbox rebuild from `salesforce-import` creates only the text
   column anyway, so the cheapest answer may be to let the rebuild retire it. Decide before
   production cutover; nothing here depends on it.
-* **This/Last Year go stale exactly once a year, on the fiscal-year boundary, if nothing else
-  triggers a recompute.** A donor with no new gifts near July 1st keeps last fiscal year's
-  This/Last Year split until their next Donation changes. Not a bug this Worker's design can fix
-  on its own — a small annual cron sweep (recompute every owner once, first week of July) would
-  close this gap if it turns out to matter in practice; docs/20's custodian duties list already
-  includes it alongside the year-end archive run.
-* **Affiliation model shipped but not turned on.** `config/sandbox.json`'s `affiliations` is still
-  `null` — the Affiliations board and its columns haven't been provisioned in the sandbox yet.
-  Run `scripts/setup-affiliation-columns.mjs`, paste its output into config, and set
-  `donationRollups.donationBoards[].columns.actingForLink`; see "Affiliation model (Plan 2)"
-  above.
+* ~~This/Last Year go stale once a year at the fiscal-year boundary~~ Closed by the custodian's
+  `sweep` duty (July 1; "Custodian duties" above).
+* ~~Affiliation model shipped but not turned on~~ Done: both `config/sandbox.json` and
+  `config/svbc.json` carry the `affiliations` block.
 * **Sync Member Type and Current Term Start to Mailchimp merge fields (`mailchimp-sync`), so a
   welcome-back Journey can target Lapsed renewal.**
 * **Non-money rollups (registrations, volunteer hours, activities) and post-cutover Donor

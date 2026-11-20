@@ -850,7 +850,7 @@ no second item). Production repeats the list under the production names at cutov
 Every Monday write and ledger update is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
 byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `eventbrite-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages queued
   (they retry); `off` writes nothing and logs one `"writeSwitch":"skipped"` line per would-be

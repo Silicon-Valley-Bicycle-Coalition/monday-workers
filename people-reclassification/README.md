@@ -20,10 +20,12 @@ Two things to know when operating it:
 * **`POST /reclassify/run` outlives its HTTP request.** A 400-move pass takes about 20 minutes,
   and the client connection drops after about 2 minutes (curl reported `HTTP 000`), but the pass
   keeps running. Follow it in `runs` and `moves` (or `GET /reclassify/status`), not the
-  response. Production is not provisioned: no D1, and
-`config/svbc.json` still holds `0` board ids (the production `svbc-people-reclassification` is
-only a placeholder created by setting `RECLASSIFY_SECRET`: no D1, no cron). Every Monday write
-ships **off** (the write switch `people-reclassification:writes` is unset, which means `off`).
+  response.
+
+Production is provisioned and live: its D1, daily cron and production board ids in
+`config/svbc.json` are in place, and `people-reclassification:writes` is `on` in both
+environments (checked 2026-11-19). A new deployment of this Worker for a fork still ships
+**off**: an unset write switch means `off`.
 
 First sandbox dry run (2026-11-02, cutoff 2019-11-02): 8,084 People / 8,053 Historical scanned;
 538 people decided to-historical and 133 to-live; 400 to-historical planned (the

@@ -404,8 +404,7 @@ email, company, amount, and date only.
 
 ## Monday targets
 
-All ids in `config/sandbox.json` (the CRM Sandbox) or `config/svbc.json` (production,
-placeholders until cutover), validated at first request, none hardcoded:
+All ids in `config/sandbox.json` (the CRM Sandbox) or `config/svbc.json` (production), validated at first request, none hardcoded:
 
 | Board / column | Purpose |
 |---|---|
@@ -500,9 +499,9 @@ the match only. The two Donations items, the upload item and the three D1 rows w
 afterwards, so the sandbox tables are empty again. The whole check was then repeated, with the
 same result, on a second deploy that also carries [GL#40](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/40) (the gate on a disbursement's Period
 Ending), which merged to `main` the same evening. One thing the check showed that is not part of
-the remap: Fiscal Year Ending is written as `2027-06-30`, where `salesforce-import` and
-`funraise-sync` write the bare year `2027`. `donation-rollups` falls back to deriving the year
-from Date, so totals are unaffected, but the column is inconsistent for board filters.
+the remap: Fiscal Year Ending was then written as `2027-06-30`, where `salesforce-import` and
+`funraise-sync` write the bare year `2027`. That has since been fixed: `src/mapping/fiscalYear.ts`
+writes the bare year too (see the column table above).
 
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
@@ -519,7 +518,7 @@ Every Monday write (worklist items and labels, Donations and the archive of a du
 every row-status write is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
 byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `benevity-import:writes` — `on` writes normally; `hold` writes nothing; `off` writes nothing
   and logs one `"writeSwitch":"skipped"` line per would-be Monday write. **A missing key means
