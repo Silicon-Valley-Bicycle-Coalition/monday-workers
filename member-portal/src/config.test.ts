@@ -1244,7 +1244,7 @@ describe('organizations', () => {
 
 describe('shipped configs organizations block', () => {
   // Production stays off until its Portal access column exists; the sandbox column does.
-  it.each([['svbc', svbcConfig, false], ['sandbox', sandboxConfig, true]])('%s has the block, org access %s', (_n, cfg, enabled) => {
+  it.each([['svbc', svbcConfig, true], ['sandbox', sandboxConfig, true]])('%s has the block, org access %s', (_n, cfg, enabled) => {
     const v = validateConfig(cfg);
     expect(v.organizations.acknowledgmentSignedOff).toBe(false);
     expect(v.organizations.volunteerFloor).toBe(3);

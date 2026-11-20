@@ -1032,8 +1032,8 @@ Gates in `src/config.ts`: `orgAccessEnabled` (a real Portal access column, the
 January pass; `workEmailSignInEnabled` adds a real Work Email column; `orgAcknowledgmentEnabled`
 adds `acknowledgmentSignedOff: true` and a signed-off EIN. The Portal access checkbox exists on both
 Affiliations boards: sandbox `boolean_mm986pxt` (configured in `config/sandbox.json`, so the
-feature is **on in the sandbox**), production `boolean_mm9859qh` (created, **not yet in
-`config/svbc.json`**, so production is off until it is pasted in).
+feature is **on in the sandbox**), production `boolean_mm9859qh` (in `config/svbc.json` since 2026-11-19, so it is **on in
+production** too; nothing shows until staff tick the box on a Current Affiliation).
 
 **Migration `0009_organization_reps.sql`** adds `org_grants` to `magic_link_tokens` and `sessions`
 and creates `org_statement_sends`. Apply it to the sandbox and production D1 databases **before**
