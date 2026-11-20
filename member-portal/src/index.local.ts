@@ -50,6 +50,7 @@ function buildApp(env: LocalEnv) {
     ipLimiter: noopIpLimiter,
     config,
     now: () => new Date(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     changeStore: new D1ChangeRequestStore(env.DB),
     changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
     letterSendStore: new D1LetterSendStore(env.DB),

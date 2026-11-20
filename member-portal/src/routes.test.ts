@@ -19,6 +19,7 @@ import { CONFIRM_LOGIN_SCRIPT, escapeHtml } from './views';
 import { sha256Hex } from './crypto/hash';
 import { DEFAULT_CSP } from './securityHeaders';
 import { withTestAccounts } from './testAccounts/testAccountClient';
+import { LOGIN_CODE_MIN_FAILURE_MS } from './auth/loginCode';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -312,6 +313,8 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     ipLimiter: { limit: vi.fn().mockResolvedValue({ success: true }) },
     config,
     now: () => new Date('2026-08-22T00:00:00.000Z'),
+    // No real waiting: the login-code failure floor has its own tests.
+    sleep: async () => {},
     changeStore: fakeChangeStore(),
     changeQueue: { send: vi.fn().mockResolvedValue(undefined) },
     letterSendStore: fakeLetterSendStore(),
@@ -650,6 +653,86 @@ describe('login code', () => {
     const deps = codeDeps(uniqueAddress());
     const app = createApp({ ...deps, tokenStore: { ...deps.tokenStore, consumeCode: vi.fn().mockRejectedValue(new Error('D1 down')) } });
     await expectCodeError(await postCode(app, { code: '123456' }, `${REQUEST_COOKIE}=${'b'.repeat(64)}`));
+  });
+
+  describe('failure floor', () => {
+    // A clock consumeCode moves forward by workMs, as its D1 work would, and a sleep that records
+    // each wait and moves the clock by it.
+    function timed(email: string, workMs: number, overrides: Partial<AppDeps> = {}) {
+      let ms = Date.parse('2026-08-22T00:00:00.000Z');
+      const sleep = vi.fn(async (wait: number) => {
+        ms += wait;
+      });
+      const deps = codeDeps(email, { now: () => new Date(ms), sleep, ...overrides });
+      const real = deps.tokenStore.consumeCode.bind(deps.tokenStore);
+      vi.spyOn(deps.tokenStore, 'consumeCode').mockImplementation(async (...args) => {
+        const result = await real(...args);
+        ms += workMs;
+        return result;
+      });
+      return { deps, sleep, clock: () => ms };
+    }
+
+    it('waits out the rest of the floor for a request with no code on file', async () => {
+      const { deps, sleep } = timed(uniqueAddress(), 40);
+      await expectCodeError(await postCode(createApp(deps), { code: '123456' }, `${REQUEST_COOKIE}=${'d'.repeat(64)}`));
+      expect(LOGIN_CODE_MIN_FAILURE_MS).toBe(500);
+      expect(sleep.mock.calls).toEqual([[460]]);
+    });
+
+    it('waits out the rest of the floor for a wrong code on a request that has one', async () => {
+      const email = uniqueAddress();
+      const { deps, sleep, clock } = timed(email, 150);
+      const app = createApp(deps);
+      const { cookie, code } = await requested(app, deps, email);
+
+      const start = clock();
+      await expectCodeError(await postCode(app, { code: wrongCode(code) }, cookie));
+      expect(sleep.mock.calls).toEqual([[350]]);
+      expect(clock() - start).toBe(LOGIN_CODE_MIN_FAILURE_MS);
+    });
+
+    it('applies the floor to failures that never reach D1', async () => {
+      const email = uniqueAddress();
+      const off = timed(email, 0, { config });
+      await expectCodeError(await postCode(createApp(off.deps), { code: '123456' }, `${REQUEST_COOKIE}=${'e'.repeat(64)}`));
+      expect(off.sleep.mock.calls).toEqual([[500]]);
+
+      const malformed = timed(email, 0);
+      await expectCodeError(await postCode(createApp(malformed.deps), { code: '123456' }, `${REQUEST_COOKIE}=nope`));
+      expect(malformed.sleep.mock.calls).toEqual([[500]]);
+
+      const limited = timed(email, 0, { ipLimiter: { limit: vi.fn().mockResolvedValue({ success: false }) } });
+      await expectCodeError(await postCode(createApp(limited.deps), { code: '123456' }, `${REQUEST_COOKIE}=${'e'.repeat(64)}`));
+      expect(limited.sleep.mock.calls).toEqual([[500]]);
+    });
+
+    it('applies the floor when the check throws', async () => {
+      const { deps, sleep } = timed(uniqueAddress(), 0);
+      vi.spyOn(deps.tokenStore, 'consumeCode').mockRejectedValue(new Error('D1 down'));
+      await expectCodeError(await postCode(createApp(deps), { code: '123456' }, `${REQUEST_COOKIE}=${'f'.repeat(64)}`));
+      expect(sleep.mock.calls).toEqual([[500]]);
+    });
+
+    it('waits no further when the work already took longer', async () => {
+      const email = uniqueAddress();
+      const { deps, sleep } = timed(email, 700);
+      const app = createApp(deps);
+      const { cookie, code } = await requested(app, deps, email);
+
+      await expectCodeError(await postCode(app, { code: wrongCode(code) }, cookie));
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
+    it('does not delay a sign-in', async () => {
+      const email = uniqueAddress();
+      const { deps, sleep } = timed(email, 40);
+      const app = createApp(deps);
+      const { cookie, code } = await requested(app, deps, email);
+
+      expect((await postCode(app, { code }, cookie)).status).toBe(303);
+      expect(sleep).not.toHaveBeenCalled();
+    });
   });
 
   it('renders the error page in the form’s language', async () => {

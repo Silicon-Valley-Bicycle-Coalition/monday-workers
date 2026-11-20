@@ -139,6 +139,7 @@ export default {
         ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
         config,
         now,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         changeStore: new D1ChangeRequestStore(env.DB),
         changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
         letterSendStore: new D1LetterSendStore(env.DB),

@@ -20,7 +20,7 @@ import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { createSessionFor, verifyLogin } from './auth/verifyLogin';
-import { hashLoginCode, isRequestId, normalizeLoginCode } from './auth/loginCode';
+import { hashLoginCode, isRequestId, LOGIN_CODE_MIN_FAILURE_MS, normalizeLoginCode } from './auth/loginCode';
 import { localeFromMondayLabel } from './i18n/locales';
 import { findTestPersonasByEmail } from './testAccounts/personas';
 import { discardingChangeQueue, discardingChangeStore, isTestSession } from './testAccounts/testAccountClient';
@@ -82,6 +82,8 @@ export interface AppDeps {
   ipLimiter: IpRateLimiter;
   config: Config;
   now: () => Date;
+  // Waits ms milliseconds. Injected so tests of the login-code failure floor don't really wait.
+  sleep: (ms: number) => Promise<void>;
   changeStore: ChangeRequestStore;
   changeQueue: { send(message: ChangeQueueMessage): Promise<void> };
   letterSendStore: LetterSendStore;
@@ -560,13 +562,23 @@ export function createApp(deps: AppDeps) {
   // expired or used code, checks spent, D1 error) renders the same page, status 200, so none can
   // be told apart. Not behind the write switch: signing in isn't a Monday write, as with the link.
   app.post('/auth/code', async (c) => {
+    const started = deps.now().getTime();
     const body = await c.req.parseBody();
     // The form's lang only renders the error page; a sign-in lands in the row's locale.
     const lang = typeof body.lang === 'string' && isLocale(body.lang) ? body.lang : null;
     const locale = lang ?? detectLocale(c);
     const next = portalReturnPath(body.next);
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const failed = () => checkEmailPage(c, locale, { codeForm: { next, error: true }, resend: resendFor(email, next) });
+    // Every failure answers no sooner than LOGIN_CODE_MIN_FAILURE_MS after the request arrived.
+    // consumeCode does more D1 work when the browser's request holds a code for an address on
+    // file, so without the floor someone who asked for a target's code in their own browser could
+    // time wrong guesses to learn whether the address is a donor's. Success isn't delayed: only
+    // the right code reaches it.
+    const failed = async () => {
+      const remaining = LOGIN_CODE_MIN_FAILURE_MS - (deps.now().getTime() - started);
+      if (remaining > 0) await deps.sleep(remaining);
+      return checkEmailPage(c, locale, { codeForm: { next, error: true }, resend: resendFor(email, next) });
+    };
 
     if (!deps.config.auth.loginCodeEnabled) return failed();
 
