@@ -5,7 +5,7 @@
 Deployed as `svbc-bike-lanes` on the custom domain `lanes.bikesiliconvalley.org`, behind Cloudflare
 Access (staff only). It is a static site with no Worker script and no Monday access, and it isn't
 part of the CRM migration. It moved here from its own GitLab repository and from Cloudflare Pages
-in November 2026. There is no sandbox copy.
+on 2026-11-20. There is no sandbox copy.
 
 ## What it does
 
