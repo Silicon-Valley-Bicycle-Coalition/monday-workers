@@ -254,7 +254,7 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH' | 'EMPLOYER_ANSW
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   // impact-attribution's EmployerAnswers entrypoint (wrangler.jsonc services), restated as its RPC
-  // shape. Sandbox only for now: missing = the feature is off (spec "The binding is optional").
+  // shape. Bound in both environments; missing = the feature is off (spec "The binding is optional").
   EMPLOYER_ANSWERS?: EmployerAnswerSink;
   // Eventbrite private token (`wrangler secret put EVENTBRITE_PRIVATE_TOKEN`), sent as
   // `Authorization: Bearer` on every order fetch. Optional in the type because secrets aren't

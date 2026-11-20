@@ -81,8 +81,9 @@ Four independent flows — see the design doc for full sequence diagrams:
    Customer Journey email sent becomes a timeline entry on the recipient's People item, and each
    People item links to its Mailchimp contact — see [Journey send log](#journey-send-log).
 
-**Retries.** A failed queue message is retried with exponential backoff — 1, 4, then 16 minutes
-across the queue's 3 retries — before landing in its `-dlq` dead-letter queue. When Mailchimp
+**Retries.** A failed queue message is retried with exponential backoff — 1 minute doubling to an
+hour (`retryDelaySeconds` in `src/flags.ts`), up to the queue's 100 retries (about four days) —
+before landing in its `-dlq` dead-letter queue. When Mailchimp
 (429, `Retry-After`) or Monday (`retry_in_seconds`, `Retry-After`) says how long to wait, the
 retry waits at least that long; Monday's `DAILY_LIMIT_EXCEEDED` with no hint waits until
 midnight UTC. Every delay is capped at Queues' 12-hour maximum. A permanent Mailchimp rejection
@@ -329,8 +330,8 @@ Monday is lifted only by Mailchimp saying subscribed.
 * A board whose read fails (a mistyped column id in config, say) is logged and skipped; the
   others still run.
 
-**Switches.** `consent.enabled` in `config/*.json`: `true` in the sandbox, `false` in production
-until David's go-ahead; off, each hourly run logs one line. Under the write switch: `on` writes,
+**Switches.** `consent.enabled` in `config/*.json`: `true` in both the sandbox and production;
+when it's `false`, each hourly run logs one line and does nothing else. Under the write switch: `on` writes,
 `off` reads and plans and logs a `"writeSwitch":"skipped"` line per write chunk, `hold` / `unknown`
 skip the run (nothing to catch up — the next `on` run writes whatever still differs).
 
@@ -714,8 +715,8 @@ column, Campaigns-board create/rename/archive) and every D1 bookkeeping write a 
 daily reconcile cron makes is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
 byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`),
-read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
-namespaces exist):
+read from the `FLAGS` KV namespace (`wrangler.jsonc` binds both namespace ids,
+`FLAGS` and `sandbox-FLAGS`):
 
 - `mailchimp-sync:writes` — `on` writes normally; `hold` writes nothing, keeps messages on the
   queues (retrying at 1 minute doubling to an hour) and skips the reconcile cron; `off` runs the

@@ -3,11 +3,12 @@
 **Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
 **Status:** Production config filled 2026-11-02 (813261b: People, Donations, Organizations and
-Volunteers ids from the Donors & Contacts workspace, 18201685); this repo doesn't record a
-production deploy yet. Still placeholders in `config/svbc.json`, each a feature gate rather than a
-deploy blocker: `preferredLanguage`, the email/SMS opt-out columns, `changeRequests` (no
-production Change Requests board yet), `letterCron`, `eventRegistrations`, `pledges`,
-`taxLetter.benefitStatement` and `funraise.renewMembershipUrl`. Code-complete through v8 (the
+Volunteers ids from the Donors & Contacts workspace, 18201685), and the Change Requests and
+letter boards (`changeRequests`, `letterCron`) are filled too. `svbc-member-portal` and
+`svbc-member-portal-writer` are deployed in production (checked 2026-11-19). Still placeholders in
+`config/svbc.json`, each a feature gate rather than a deploy blocker: `preferredLanguage`, the
+email/SMS opt-out columns, `eventRegistrations`, `pledges`, `taxLetter.benefitStatement` and
+`funraise.renewMembershipUrl`. Code-complete through v8 (the
 sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
 live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
@@ -356,12 +357,12 @@ Routing destination). A live login-link request for a real sandbox People record
   validated to cover the 24-hour daily cap). Deletes are batched and capped per run
   (`src/db/authRetention.ts`); indexes in migrations `0005`/`0006`. The hash is unkeyed: it keeps
   addresses out of D1 dumps, not out of reach of someone testing a known address.
-* The Worker's Monday API token comes from a dedicated integration user with access to only the
-  boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
-  v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
-  a staff member's
-  personal token, which would make this public-facing Worker a door to the whole workspace. See
-  `../README.md`'s least-privilege-token note.
+* The Worker's Monday token comes from the `monday-auth` broker's Portal app (`PortalToken`,
+  `boards:read` and `me:read` only), authorized by the SVBC Integration user — never a staff
+  member's personal token. It cannot write. It can, however, **read every board SVBC Integration
+  can see**, not only the ones this portal displays: an accepted risk, mitigated by keeping
+  sensitive boards private and the integration user off private boards it doesn't need. See
+  `../README.md`'s least-privilege-token note and `monday-auth/README.md`, "Accepted risk".
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
@@ -1082,7 +1083,7 @@ Staff steps are in [`docs/uat/member-portal.md`](../docs/uat/member-portal.md#gi
 Every write the portal makes on a donor's behalf is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`; this Worker holds the canonical
 `src/flags.ts`, and its gating is `src/writeSwitch.ts`), read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `member-portal:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
   queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording

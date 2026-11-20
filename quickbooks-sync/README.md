@@ -285,12 +285,10 @@ QuickBooks Id column, so Monday → QuickBooks creates are enabled), `QuickBooks
 the staff prerequisites above (an Intuit sandbox company and development keys, a token pair
 seeded via the OAuth Playground) plus the Intuit app-review question below, now resolved.
 
-**Workers Builds:** connect a second Worker, `svbc-quickbooks-sync-sandbox`, to this repo with
-root directory `/quickbooks-sync`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
+**Deploys:** by hand only (`npm run deploy:sandbox`). Since the postponement this Worker has no
+Workers Builds connection and no CI sandbox deploy: its `.github/workers.json` entry has no
+`sandbox` key, so `workers.yml`'s `deploy-sandbox` job skips it. Merging to `main` runs its tests
+and nothing else.
 
 ## Open question before starting — resolved 2026-09-21
 
@@ -326,7 +324,7 @@ was worried it might be.
 Every Monday write, QuickBooks Customer create and ledger update is gated by the shared write
 switch (spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`,
 a byte-identical copy of `member-portal/src/flags.ts`). It is read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `quickbooks-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
   queue (retrying at 1 minute doubling to an hour); `off` writes nothing and logs one

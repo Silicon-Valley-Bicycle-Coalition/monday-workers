@@ -124,8 +124,9 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
 
 Every send is logged (`bp-feedback-sent` / `bp-feedback-send-failed`, with the item id, in
 Workers observability), but staff only watch the board, so a failed send is otherwise invisible
-to them — the webhook just gets a 500. To surface it, set `sendStatus` in `config/production.json`
-(and/or `config/sandbox.json`, pointing at the sandbox mirror board) from `null` to:
+to them — the webhook just gets a 500. To surface it, `sendStatus` is set in
+`config/production.json` (the sandbox's `config/sandbox.json` keeps it `null`; set it there,
+pointing at the sandbox mirror board, to test). Its shape:
 
 ```json
 "sendStatus": {

@@ -319,8 +319,9 @@ the old snapshots.
 ## Shared Drive membership
 
 Shared Drive membership is still what controls who can download the snapshot files, and the
-plaintext manifests. Older `monday-backup/2` snapshots (2026-11-04 until encryption is deployed)
-are full plaintext CRM copies and stay that way. Keep the membership to the people who could
+plaintext manifests. Encryption is live in production (`BACKUP_ENCRYPTION_KEY` is set and the
+deployed build writes `monday-backup/3`). Older `monday-backup/2` snapshots, from 2026-11-04 until
+encryption shipped, are full plaintext CRM copies and stay that way. Keep the membership to the people who could
 restore the CRM anyway, the same rule the root README applies to Cloudflare account members:
 
 * the backup service account, as **Contributor** (see "Contributor, not Content manager");
