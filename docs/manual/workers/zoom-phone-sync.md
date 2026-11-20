@@ -47,8 +47,11 @@ Ids live in `config/svbc.json` (production) and `config/sandbox.json` (CRM Sandb
 |---|---|---|
 | People | Phone (`people.phoneColumn`) | Timeline entries (custom activities Zoom Phone call / text), 🔒 Last Phone Contact |
 
-The custom activities and the Last Phone Contact column are created by #51; their ids are `null` in
-config until then. It never creates a person.
+The custom activities Zoom Phone call (`ee8aa7f6-37b1-48e5-984a-0e7fbe434d58`) and Zoom Phone text
+(`1a24bb64-a468-4d5e-af7b-ba103e24002c`) were created 2026-11-20 (#51). Custom activities are per
+Monday account, so both configs name the same ids. Last Phone Contact is `date_mm997y73` on
+production People and `date_mm99hywz` on the sandbox's; neither People board has a form view to
+hide it from. It never creates a person.
 
 ## Secrets
 
