@@ -19,12 +19,13 @@ import { triggerLetterSend } from './letters/triggerLetterSend';
 import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
-import { verifyLogin } from './auth/verifyLogin';
+import { createSessionFor, verifyLogin } from './auth/verifyLogin';
+import { hashLoginCode, isRequestId, normalizeLoginCode } from './auth/loginCode';
 import { localeFromMondayLabel } from './i18n/locales';
 import { findTestPersonasByEmail } from './testAccounts/personas';
 import { discardingChangeQueue, discardingChangeStore, isTestSession } from './testAccounts/testAccountClient';
 import { loadPortalData } from './portal/loadPortalData';
-import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
+import { CONFIRM_LOGIN_SCRIPT, checkEmailView, type CheckEmailOptions, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -99,6 +100,10 @@ export interface AppDeps {
 // __Host- makes the browser reject any copy that isn't Secure, Path=/ and Domain-less, so a sibling
 // subdomain can't plant a session cookie scoped to a longer path (GL#103).
 const SESSION_COOKIE = '__Host-session';
+// The browser a login code was sent for: a random request id (32 bytes, hex) that POST / sets and
+// POST /auth/code requires, so an emailed code only works in the browser that asked for it. Only
+// its hash reaches D1.
+export const LOGIN_REQUEST_COOKIE = '__Host-login-request';
 export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
@@ -180,12 +185,9 @@ export function createApp(deps: AppDeps) {
     const email = typeof body.email === 'string' ? body.email : '';
     const personas = findTestPersonasByEmail(email, deps.now());
     if (personas.length === 0) return null;
-    const sessionToken = generateToken();
-    const expiresAt = new Date(deps.now().getTime() + deps.config.auth.sessionTtlHours * 3_600_000).toISOString();
-    await deps.sessionStore.createSession({
-      sessionHash: await sha256Hex(sessionToken),
-      donorItemIds: personas.map((p) => p.id),
-      expiresAt,
+    const sessionToken = await createSessionFor(personas.map((p) => p.id), deps.now(), {
+      sessionStore: deps.sessionStore,
+      sessionTtlHours: deps.config.auth.sessionTtlHours,
     });
     setSessionCookie(c, sessionToken);
     const lang = localeFromMondayLabel(personas[0]!.preferredLanguage) ?? locale;
@@ -353,6 +355,36 @@ export function createApp(deps: AppDeps) {
     return c.redirect(`/?next=${encodeURIComponent(next)}`);
   }
 
+  // POST /'s request id, set on every response that renders the check-email page: the browser's
+  // existing one if it sent a well-formed id, else a fresh one. Null (and no cookie) with the
+  // login code switched off.
+  function loginRequestFor(c: Context): string | null {
+    if (!deps.config.auth.loginCodeEnabled) return null;
+    const existing = getCookie(c, LOGIN_REQUEST_COOKIE);
+    const requestId = isRequestId(existing) ? existing : generateToken();
+    setCookie(c, LOGIN_REQUEST_COOKIE, requestId, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: deps.config.auth.magicLinkTtlMinutes * 60,
+    });
+    return requestId;
+  }
+
+  // The "Send again" form echoes the donor's own address back. Whether it renders depends only on
+  // the address's format, never on whether it's on file.
+  function resendFor(email: string, next: string | null): CheckEmailOptions['resend'] {
+    if (!isPlausibleEmail(email)) return undefined;
+    return { email, next, delaySeconds: deps.config.rateLimit.emailCooldownSeconds };
+  }
+
+  // The page holds the donor's address (the resend form), so it's never cached.
+  function checkEmailPage(c: Context, locale: Locale, options: CheckEmailOptions) {
+    c.header('Cache-Control', NO_STORE);
+    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, options), locale));
+  }
+
   app.get('/lang/:code', (c) => {
     const locale = setLangCookie(c, c.req.param('code'));
     return c.redirect(langRedirectTarget(c, locale));
@@ -392,6 +424,10 @@ export function createApp(deps: AppDeps) {
     const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
     const next = portalReturnPath(body.next);
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    // Every address gets the cookie, with the same attributes, before anything looks the address
+    // up. A repeat request from this browser keeps its id, so a resend the cooldown refuses
+    // doesn't orphan the first email's code.
+    const requestId = loginRequestFor(c);
 
     if (email.length > 0) {
       try {
@@ -415,7 +451,7 @@ export function createApp(deps: AppDeps) {
             magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
             displayTimeZone: deps.config.auth.displayTimeZone,
             now: deps.now,
-          }, next).catch((err) => {
+          }, next, requestId).catch((err) => {
             // Same enumeration-guard rule as below: a failure here must never surface as a
             // different response than the generic one — log and swallow.
             console.error(`member-portal login request failed: ${errorText(err)}`);
@@ -437,7 +473,7 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale), locale));
+    return checkEmailPage(c, locale, { codeForm: requestId === null ? undefined : { next, error: false }, resend: resendFor(email, next) });
   });
 
   // The emailed magic link (login and letter-ready alike) lands here — and so do the corporate
@@ -516,6 +552,52 @@ export function createApp(deps: AppDeps) {
     const next = portalReturnPath(body.next);
     if (next !== null) return c.redirect(lang === null ? next : applyLocaleToPath(next, lang), 303);
     return c.redirect(`/${lang ?? DEFAULT_LOCALE}/portal`, 303);
+  });
+
+  // The code form on the check-email page. Covered by the app-wide CSRF check (not in
+  // CSRF_EXEMPT). The code only counts alongside the request cookie of the browser that asked for
+  // it. Every failure (switch off, IP over its limit, no or malformed cookie, malformed, wrong,
+  // expired or used code, checks spent, D1 error) renders the same page, status 200, so none can
+  // be told apart. Not behind the write switch: signing in isn't a Monday write, as with the link.
+  app.post('/auth/code', async (c) => {
+    const body = await c.req.parseBody();
+    // The form's lang only renders the error page; a sign-in lands in the row's locale.
+    const lang = typeof body.lang === 'string' && isLocale(body.lang) ? body.lang : null;
+    const locale = lang ?? detectLocale(c);
+    const next = portalReturnPath(body.next);
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const failed = () => checkEmailPage(c, locale, { codeForm: { next, error: true }, resend: resendFor(email, next) });
+
+    if (!deps.config.auth.loginCodeEnabled) return failed();
+
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    let signedIn: { sessionToken: string; locale: Locale | null };
+    try {
+      // Before D1: an IP guessing across many requests is stopped without a write.
+      if (!(await deps.ipLimiter.limit(`code:${ip}`)).success) return failed();
+      const requestId = getCookie(c, LOGIN_REQUEST_COOKIE);
+      const code = normalizeLoginCode(body.code);
+      if (!isRequestId(requestId) || code === null) return failed();
+
+      const now = deps.now();
+      const consumed = await deps.tokenStore.consumeCode(await sha256Hex(requestId), await hashLoginCode(requestId, code), now.toISOString());
+      if (consumed === null) return failed();
+      const sessionToken = await createSessionFor(consumed.donorItemIds, now, {
+        sessionStore: deps.sessionStore,
+        sessionTtlHours: deps.config.auth.sessionTtlHours,
+      });
+      signedIn = { sessionToken, locale: consumed.locale };
+    } catch (err) {
+      console.error(`member-portal login code check failed: ${errorText(err)}`);
+      return failed();
+    }
+
+    setSessionCookie(c, signedIn.sessionToken);
+    deleteCookie(c, LOGIN_REQUEST_COOKIE, { path: '/', secure: true });
+    // As POST /auth/callback does with the link's lang: the row's locale wins over the locale
+    // segment `next` was captured with.
+    if (next !== null) return c.redirect(signedIn.locale === null ? next : applyLocaleToPath(next, signedIn.locale), 303);
+    return c.redirect(`/${signedIn.locale ?? DEFAULT_LOCALE}/portal`, 303);
   });
 
   // Back-compat: anything still linking to the old unprefixed /portal (a stale bookmark, an

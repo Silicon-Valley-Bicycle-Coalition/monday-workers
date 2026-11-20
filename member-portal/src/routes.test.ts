@@ -1,20 +1,22 @@
+import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from './routes';
 import type { AppDeps } from './routes';
 import type { MondayClient } from './monday/client';
-import type { MagicLinkTokenStore } from './db/tokens';
+import { D1MagicLinkTokenStore, type MagicLinkTokenStore } from './db/tokens';
 import type { SessionStore } from './db/sessions';
-import type { LoginAttemptStore } from './db/loginAttempts';
+import { D1LoginAttemptStore, type LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/types';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
 import type { CardTokenStore } from './db/cardTokens';
-import { SUPPORTED_LOCALES } from './i18n/locales';
+import { SUPPORTED_LOCALES, type Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import type { WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
-import { CONFIRM_LOGIN_SCRIPT } from './views';
+import { CONFIRM_LOGIN_SCRIPT, escapeHtml } from './views';
+import { sha256Hex } from './crypto/hash';
 import { DEFAULT_CSP } from './securityHeaders';
 import { withTestAccounts } from './testAccounts/testAccountClient';
 
@@ -45,20 +47,45 @@ function inMemoryCardTokenStore(): CardTokenStore {
   };
 }
 
+// Keeps consumeCode's per-request cap but not the per-address daily one; the 'login code' tests
+// run against the real D1MagicLinkTokenStore for both.
 function inMemoryTokenStore(): MagicLinkTokenStore {
-  const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; usedAt: string | null }>();
+  interface Row {
+    donorItemIds: string[];
+    expiresAt: string;
+    usedAt: string | null;
+    requestHash: string | null;
+    codeHash: string | null;
+    locale: Locale | null;
+    codeAttempts: number;
+  }
+  const rows = new Map<string, Row>();
+  const live = (row: Row, nowISO: string) => row.usedAt === null && row.expiresAt > nowISO;
   return {
     async createToken(params) {
-      rows.set(params.tokenHash, { donorItemIds: params.donorItemIds, expiresAt: params.expiresAt, usedAt: null });
+      rows.set(params.tokenHash, {
+        donorItemIds: params.donorItemIds,
+        expiresAt: params.expiresAt,
+        usedAt: null,
+        requestHash: params.requestHash ?? null,
+        codeHash: params.codeHash ?? null,
+        locale: params.locale ?? null,
+        codeAttempts: 0,
+      });
     },
     async consumeToken(tokenHash, nowISO) {
       const row = rows.get(tokenHash);
-      if (!row || row.usedAt !== null || row.expiresAt <= nowISO) return null;
+      if (!row || !live(row, nowISO)) return null;
       row.usedAt = nowISO;
       return row.donorItemIds;
     },
-    async consumeCode() {
-      return null;
+    async consumeCode(requestHash, codeHash, nowISO) {
+      const counted = [...rows.values()].filter((row) => row.requestHash === requestHash && live(row, nowISO) && row.codeAttempts < 5);
+      for (const row of counted) row.codeAttempts += 1;
+      const match = counted.find((row) => row.codeHash === codeHash);
+      if (match === undefined) return null;
+      match.usedAt = nowISO;
+      return { donorItemIds: match.donorItemIds, locale: match.locale };
     },
   };
 }
@@ -339,8 +366,379 @@ describe('POST /', () => {
       headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
-    expect(await matchingRes.text()).toBe(await nonMatchingRes.text());
+    // The page echoes the submitted address into its resend form; apart from that, nothing varies.
+    expect((await matchingRes.text()).replaceAll('donor@example.org', 'EMAIL')).toBe((await nonMatchingRes.text()).replaceAll('nobody@example.org', 'EMAIL'));
     expect(matchingRes.status).toBe(nonMatchingRes.status);
+  });
+});
+
+describe('login code', () => {
+  const FORM = { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' } as const;
+  const CODE_CONFIG: Config = { ...config, auth: { ...config.auth, loginCodeEnabled: true } };
+  const REQUEST_COOKIE = '__Host-login-request';
+  const REQUEST_COOKIE_ATTRS = '; Max-Age=900; Path=/; HttpOnly; Secure; SameSite=Lax';
+  const NO_STORE = 'private, no-store, max-age=0';
+
+  // Per-address daily code limits live in D1, so every test signs in with an address of its own.
+  function uniqueAddress(): string {
+    return `donor-${crypto.randomUUID()}@example.org`;
+  }
+
+  function sender() {
+    return { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  // A clock the test can move: deps.now reads it on every call.
+  function clock(startISO = '2026-08-22T00:00:00.000Z') {
+    let ms = Date.parse(startISO);
+    return { now: () => new Date(ms), advance: (seconds: number) => (ms += seconds * 1000) };
+  }
+
+  // The real D1 token store, so consumeCode's per-request and per-address caps are the ones that
+  // ship.
+  function codeDeps(email: string, overrides: Partial<AppDeps> = {}): AppDeps {
+    return makeDeps({
+      config: CODE_CONFIG,
+      monday: fakeMonday({ [email]: [{ id: 'donor-1', name: 'Jane' }] }),
+      tokenStore: new D1MagicLinkTokenStore(env.DB),
+      emailSender: sender(),
+      ...overrides,
+    });
+  }
+
+  function post(path: string, app: ReturnType<typeof createApp>, fields: Record<string, string>, cookie?: string, extra: Record<string, string> = {}) {
+    return app.request(path, {
+      method: 'POST',
+      body: new URLSearchParams(fields),
+      headers: { ...FORM, ...extra, ...(cookie === undefined ? {} : { Cookie: cookie }) },
+      redirect: 'manual',
+    });
+  }
+  const postLogin = (...args: [ReturnType<typeof createApp>, Record<string, string>, string?, Record<string, string>?]) => post('/', ...args);
+  const postCode = (...args: [ReturnType<typeof createApp>, Record<string, string>, string?, Record<string, string>?]) => post('/auth/code', ...args);
+
+  function setCookies(res: Response, name: string): string[] {
+    return res.headers.getSetCookie().filter((header) => header.startsWith(`${name}=`));
+  }
+
+  // The request id the response set, or null if it set none.
+  function requestIdFrom(res: Response): string | null {
+    const headers = setCookies(res, REQUEST_COOKIE);
+    if (headers.length === 0) return null;
+    expect(headers).toHaveLength(1);
+    return /^__Host-login-request=([^;]*)/.exec(headers[0]!)![1]!;
+  }
+
+  function sentEmail(emailSender: AppDeps['emailSender'], call = 0) {
+    return (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[call]![0];
+  }
+
+  function wrongCode(code: string): string {
+    return code === '000000' ? '111111' : '000000';
+  }
+
+  // Requests a login for `email` and hands back the browser's request cookie and the emailed code.
+  async function requested(app: ReturnType<typeof createApp>, deps: AppDeps, email: string, extra: Record<string, string> = {}) {
+    const requestId = requestIdFrom(await postLogin(app, { email }, undefined, extra))!;
+    return { cookie: `${REQUEST_COOKIE}=${requestId}`, code: sentEmail(deps.emailSender).loginCode.code as string, requestId };
+  }
+
+  async function expectCodeError(res: Response, locale: 'en' | 'es' = 'en'): Promise<string> {
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(escapeHtml(t(locale, 'checkEmail.codeError')));
+    expect(html).toContain('action="/auth/code"');
+    expect(setCookies(res, '__Host-session')).toEqual([]);
+    expect(res.headers.get('cache-control')).toBe(NO_STORE);
+    return html;
+  }
+
+  it('sets the request cookie identically for every address', async () => {
+    const email = uniqueAddress();
+    const apps = [
+      createApp(codeDeps(email)),
+      createApp(codeDeps(email, { monday: fakeMonday({}) })),
+      createApp(codeDeps(email, { ipLimiter: { limit: vi.fn().mockResolvedValue({ success: false }) } })),
+      createApp(codeDeps(email, { attemptStore: { tryReserve: vi.fn().mockResolvedValue(false) } })),
+      createApp(codeDeps(email, { attemptStore: { tryReserve: vi.fn().mockRejectedValue(new Error('D1 down')) } })),
+    ];
+    const responses = [];
+    for (const app of apps) responses.push(await postLogin(app, { email }));
+    const malformed = await postLogin(createApp(codeDeps(email)), { email: 'weird"address@example.org' });
+
+    const bodies: string[] = [];
+    for (const res of [...responses, malformed]) {
+      expect(res.status).toBe(200);
+      const headers = setCookies(res, REQUEST_COOKIE);
+      expect(headers).toHaveLength(1);
+      expect(headers[0]!.replace(/^__Host-login-request=[0-9a-f]{64}/, '')).toBe(REQUEST_COOKIE_ATTRS);
+      expect(res.headers.getSetCookie()).toHaveLength(1);
+      const html = await res.text();
+      expect(html).not.toContain(requestIdFrom(res)!);
+      expect(html).toContain('action="/auth/code"');
+      bodies.push(html);
+    }
+    expect(new Set(bodies.slice(0, responses.length)).size).toBe(1);
+  });
+
+  it('keeps the request id on a repeat request', async () => {
+    const email = uniqueAddress();
+    const app = createApp(codeDeps(email));
+    const first = requestIdFrom(await postLogin(app, { email }))!;
+
+    expect(requestIdFrom(await postLogin(app, { email }, `${REQUEST_COOKIE}=${first}`))).toBe(first);
+
+    const fresh = requestIdFrom(await postLogin(app, { email }, `${REQUEST_COOKIE}=${first.toUpperCase()}`))!;
+    expect(fresh).toMatch(/^[0-9a-f]{64}$/);
+    expect(fresh).not.toBe(first);
+  });
+
+  it('passes the request id to requestLogin', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const { requestId } = await requested(createApp(deps), deps, email);
+
+    const row = await env.DB.prepare('SELECT request_hash FROM magic_link_tokens WHERE request_hash = ?1')
+      .bind(await sha256Hex(requestId))
+      .first<{ request_hash: string }>();
+    expect(row).not.toBeNull();
+  });
+
+  it('signs in with the emailed code', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    const res = await postCode(app, { code, lang: 'en', next: '/en/portal/letters' }, cookie);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/en/portal/letters');
+    expect(setCookies(res, '__Host-session')).toHaveLength(1);
+    const cleared = setCookies(res, REQUEST_COOKIE);
+    expect(cleared).toHaveLength(1);
+    expect(cleared[0]).toMatch(/^__Host-login-request=;.*Max-Age=0.*Path=\/.*Secure/);
+
+    const session = setCookies(res, '__Host-session')[0]!.split(';')[0]!;
+    const portal = await app.request('/en/portal', { headers: { Cookie: session } });
+    expect(await portal.text()).toContain('Donor donor-1');
+
+    // The code burned the link too.
+    const used = await completeLogin(app, { token: extractToken(sentEmail(deps.emailSender).loginUrl) });
+    expect(used.status).toBe(200);
+    expect(await used.text()).toContain('expired or was already used');
+  });
+
+  it('lands in the row’s locale, not the form’s', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email, { Cookie: 'lang=es' });
+
+    const res = await postCode(app, { code, lang: 'en' }, cookie);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/es/portal');
+  });
+
+  it('rewrites next to the row’s locale', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email, { Cookie: 'lang=es' });
+
+    const res = await postCode(app, { code, lang: 'en', next: '/en/portal/letters' }, cookie);
+    expect(res.headers.get('Location')).toBe('/es/portal/letters');
+  });
+
+  it('drops a hostile next', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    const res = await postCode(app, { code, next: 'https://evil.example/en/portal' }, cookie);
+    expect(res.headers.get('Location')).toBe('/en/portal');
+  });
+
+  it('accepts a code with spaces', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    const res = await postCode(app, { code: ` ${code.slice(0, 3)} ${code.slice(3)} ` }, cookie);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('Location')).toBe('/en/portal');
+  });
+
+  it('code without cookie shows generic error with link hint', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { code } = await requested(app, deps, email);
+
+    const html = await expectCodeError(await postCode(app, { code, next: '/en/portal/letters', email }));
+    expect(html).toContain('use its link');
+    // The form comes back with the posted next, and the resend form with the posted address.
+    expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
+    expect(html).toMatch(new RegExp(`<form method="post" action="/">\\s*<input type="hidden" name="email" value="${email}" />`));
+  });
+
+  it('rejects another browser’s cookie, a wrong code and a malformed code with the same page', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    const pages = [
+      await expectCodeError(await postCode(app, { code }, `${REQUEST_COOKIE}=${'a'.repeat(64)}`)),
+      await expectCodeError(await postCode(app, { code }, `${REQUEST_COOKIE}=nope`)),
+      await expectCodeError(await postCode(app, { code: wrongCode(code) }, cookie)),
+      await expectCodeError(await postCode(app, { code: '12345' }, cookie)),
+      await expectCodeError(await postCode(app, {}, cookie)),
+    ];
+    expect(new Set(pages).size).toBe(1);
+
+    // One wrong guess spent one of five; the right code still works.
+    expect((await postCode(app, { code }, cookie)).status).toBe(303);
+  });
+
+  it('rejects an expired code', async () => {
+    const email = uniqueAddress();
+    const time = clock();
+    const deps = codeDeps(email, { now: time.now });
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    time.advance(15 * 60 + 1);
+    await expectCodeError(await postCode(app, { code }, cookie));
+  });
+
+  it('rejects a code whose link was already used', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+    expect((await completeLogin(app, { token: extractToken(sentEmail(deps.emailSender).loginUrl) })).status).toBe(303);
+
+    await expectCodeError(await postCode(app, { code }, cookie));
+  });
+
+  it('rejects the right code on the sixth attempt', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    for (let i = 0; i < 5; i++) await expectCodeError(await postCode(app, { code: wrongCode(code) }, cookie));
+    await expectCodeError(await postCode(app, { code }, cookie));
+  });
+
+  it('rejects an IP over its limit before checking the code', async () => {
+    const email = uniqueAddress();
+    const limit = vi.fn(async (key: string) => ({ success: !key.startsWith('code:') }));
+    const deps = codeDeps(email, { ipLimiter: { limit } });
+    const consumeCode = vi.spyOn(deps.tokenStore, 'consumeCode');
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    await expectCodeError(await postCode(app, { code }, cookie, { 'cf-connecting-ip': '203.0.113.9' }));
+    expect(limit).toHaveBeenCalledWith('code:203.0.113.9');
+    expect(consumeCode).not.toHaveBeenCalled();
+  });
+
+  it('shows the same page, not a 500, when the code check throws', async () => {
+    const deps = codeDeps(uniqueAddress());
+    const app = createApp({ ...deps, tokenStore: { ...deps.tokenStore, consumeCode: vi.fn().mockRejectedValue(new Error('D1 down')) } });
+    await expectCodeError(await postCode(app, { code: '123456' }, `${REQUEST_COOKIE}=${'b'.repeat(64)}`));
+  });
+
+  it('renders the error page in the form’s language', async () => {
+    const app = createApp(codeDeps(uniqueAddress()));
+    const html = await expectCodeError(await postCode(app, { code: '123456', lang: 'es' }), 'es');
+    expect(html).toContain('<html lang="es"');
+  });
+
+  it('is covered by the CSRF check', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email);
+    const app = createApp(deps);
+    const { cookie, code } = await requested(app, deps, email);
+
+    const res = await postCode(app, { code }, cookie, { Origin: 'https://evil.example' });
+    expect(res.status).toBe(403);
+    // The rejected post spent nothing.
+    expect((await postCode(app, { code }, cookie)).status).toBe(303);
+  });
+
+  it('switch off: no request cookie, no form, and the code route only errors', async () => {
+    const email = uniqueAddress();
+    const deps = codeDeps(email, { config });
+    const consumeCode = vi.spyOn(deps.tokenStore, 'consumeCode');
+    const app = createApp(deps);
+
+    const res = await postLogin(app, { email });
+    expect(res.status).toBe(200);
+    expect(requestIdFrom(res)).toBeNull();
+    expect(await res.text()).not.toContain('action="/auth/code"');
+    expect(sentEmail(deps.emailSender).loginCode).toBeUndefined();
+
+    await expectCodeError(await postCode(app, { code: '123456' }, `${REQUEST_COOKIE}=${'c'.repeat(64)}`));
+    expect(consumeCode).not.toHaveBeenCalled();
+  });
+
+  it('sets no request cookie on the unavailable page or a test-account sign-in', async () => {
+    const email = uniqueAddress();
+    const unavailable = await postLogin(createApp(codeDeps(email, { writeGate: gateFor('hold') })), { email });
+    expect(unavailable.status).toBe(503);
+    expect(requestIdFrom(unavailable)).toBeNull();
+
+    const deps = codeDeps(email);
+    const testApp = createApp({ ...deps, monday: withTestAccounts(deps.monday, deps.now), testAccounts: true });
+    const testLogin = await postLogin(testApp, { email: 'test-active@example.org' });
+    expect(testLogin.status).toBe(303);
+    expect(requestIdFrom(testLogin)).toBeNull();
+  });
+
+  it('offers resend with the submitted email', async () => {
+    const email = uniqueAddress();
+    const resendForm = new RegExp(
+      `<form method="post" action="/">\\s*<input type="hidden" name="email" value="${email}" />\\s*<input type="hidden" name="next" value="/en/portal/letters" />`
+    );
+    const pages: string[] = [];
+    for (const deps of [codeDeps(email), codeDeps(email, { monday: fakeMonday({}) })]) {
+      const res = await postLogin(createApp(deps), { email, next: '/en/portal/letters' });
+      expect(res.headers.get('cache-control')).toBe(NO_STORE);
+      const html = await res.text();
+      expect(html).toMatch(resendForm);
+      expect(html).toContain('animation-duration: 60s');
+      pages.push(html);
+    }
+    expect(pages[0]).toBe(pages[1]);
+
+    const malformed = await (await postLogin(createApp(codeDeps(email)), { email: 'not an address' })).text();
+    expect(malformed).not.toContain('action="/"');
+
+    const switchOff = await postLogin(createApp(codeDeps(email, { config })), { email, next: '/en/portal/letters' });
+    expect(switchOff.headers.get('cache-control')).toBe(NO_STORE);
+    expect(await switchOff.text()).toMatch(resendForm);
+  });
+
+  it('resend goes through the cooldown', async () => {
+    const email = uniqueAddress();
+    const time = clock();
+    const deps = codeDeps(email, { now: time.now, attemptStore: new D1LoginAttemptStore(env.DB) });
+    const app = createApp(deps);
+    const first = await postLogin(app, { email });
+    const cookie = `${REQUEST_COOKIE}=${requestIdFrom(first)}`;
+
+    time.advance(10);
+    const second = await postLogin(app, { email }, cookie);
+
+    expect(deps.emailSender.sendLoginEmail).toHaveBeenCalledOnce();
+    expect(requestIdFrom(second)).toBe(requestIdFrom(first));
+    expect(await second.text()).toBe(await first.text());
+    // The first email's code still works in this browser.
+    expect((await postCode(app, { code: sentEmail(deps.emailSender).loginCode.code }, cookie)).status).toBe(303);
   });
 });
 
@@ -1023,7 +1421,13 @@ describe('POST / email validation', () => {
     });
 
     expect(malformedRes.status).toBe(nonMatchingRes.status);
-    expect(await malformedRes.text()).toBe(await nonMatchingRes.text());
+    // A well-formed address also gets the "Send again" form (nothing to resend for a malformed
+    // one): that varies with the input's format only, never with whether it's on file.
+    const help = escapeHtml(t('en', 'checkEmail.resendHelp')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const resendBlock = new RegExp(`\\s*<p>${help}</p>\\s*<div class="resend-reveal"[\\s\\S]*?</div>`);
+    const nonMatchingHtml = await nonMatchingRes.text();
+    expect(nonMatchingHtml).toMatch(resendBlock);
+    expect(await malformedRes.text()).toBe(nonMatchingHtml.replace(resendBlock, ''));
     expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
   });
 
