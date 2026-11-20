@@ -3,6 +3,7 @@ import { submitPreferences } from './submitPreferences';
 import type { ChangeRequestStore } from '../db/changeRequests';
 import type { MondayClient } from '../monday/client';
 import type { DonorContactInfo } from '../types';
+import { sha256Hex } from '../crypto/hash';
 
 const contact: DonorContactInfo = {
   id: 'donor-1',
@@ -79,23 +80,36 @@ describe('submitPreferences', () => {
     expect(store.createRequest).not.toHaveBeenCalled();
   });
 
-  it('counts an already-pending duplicate separately from fresh submissions', async () => {
-    const store = fakeStore({
-      findRecentByDedupeHash: vi
-        .fn()
-        .mockResolvedValueOnce({ id: 7, status: 'written' })
-        .mockResolvedValue(null),
-    });
+  // The store answers by value: which requests are still in the dedupe window, with their ids.
+  async function pendingStore(pending: Record<string, number>) {
+    const byHash = new Map<string, { id: number; status: 'written' }>();
+    for (const [key, id] of Object.entries(pending)) byHash.set(await sha256Hex(key), { id, status: 'written' });
+    return fakeStore({ findRecentByDedupeHash: vi.fn(async (hash: string) => byHash.get(hash) ?? null) });
+  }
+  const created = (store: ChangeRequestStore) => (store.createRequest as ReturnType<typeof vi.fn>).mock.calls.map(([row]) => [row.field, row.oldValue, row.newValue]);
+
+  it('treats a choice that repeats the pending request as no change', async () => {
+    const store = await pendingStore({ 'donor-1|emailOptOut|Opted out of email': 7 });
+    const result = await submitPreferences(['donor-1'], { donorItemId: 'donor-1', prefs: { emailOptOut: true, doNotMail: false } }, makeDeps(store));
+    expect(result).toEqual({ kind: 'submitted', submitted: 1, duplicates: 0 });
+    expect(created(store)).toEqual([['doNotMail', 'Do not mail', 'OK to mail']]);
+  });
+
+  it('files a switch-back over a pending request, though it matches Monday, recording what it overrides', async () => {
+    // Monday still says subscribed; the opt-out saved a moment ago is pending.
+    const store = await pendingStore({ 'donor-1|emailOptOut|Opted out of email': 7 });
     const deps = makeDeps(store);
+    const result = await submitPreferences(['donor-1'], { donorItemId: 'donor-1', prefs: { emailOptOut: false } }, deps);
+    expect(result).toEqual({ kind: 'submitted', submitted: 1, duplicates: 0 });
+    expect(created(store)).toEqual([['emailOptOut', 'Opted out of email', 'Subscribed to email']]);
+    expect(deps.queue.send).toHaveBeenCalledOnce();
+  });
 
-    const result = await submitPreferences(
-      ['donor-1'],
-      { donorItemId: 'donor-1', prefs: { emailOptOut: true, doNotMail: false } },
-      deps
-    );
-
-    expect(result).toEqual({ kind: 'submitted', submitted: 1, duplicates: 1 });
-    expect(store.createRequest).toHaveBeenCalledTimes(1);
+  it('files a third switch though an identical first request is still in the window', async () => {
+    const store = await pendingStore({ 'donor-1|emailOptOut|Opted out of email': 7, 'donor-1|emailOptOut|Subscribed to email': 9 });
+    const result = await submitPreferences(['donor-1'], { donorItemId: 'donor-1', prefs: { emailOptOut: true } }, makeDeps(store));
+    expect(result).toEqual({ kind: 'submitted', submitted: 1, duplicates: 0 });
+    expect(created(store)).toEqual([['emailOptOut', 'Subscribed to email', 'Opted out of email']]);
   });
 
   it('rejects a donor item id outside the session', async () => {

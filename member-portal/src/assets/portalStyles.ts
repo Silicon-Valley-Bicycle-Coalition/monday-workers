@@ -175,8 +175,9 @@ export const PORTAL_CSS = `
     color: var(--svbc-gold);
     border-color: var(--svbc-gold);
   }
+  /* 16px: anything smaller and iOS zooms the page when the field takes focus. */
   input[type='email'], input[type='text'], input[type='tel'], select {
-    font-size: 14px;
+    font-size: 16px;
     padding: 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -457,6 +458,15 @@ export const PORTAL_CSS = `
   .prefs-table th { background: none; color: var(--text); font-weight: 600; width: 40%; vertical-align: top; border-bottom: 1px solid var(--table-border); }
   .prefs-table td { vertical-align: top; }
   .prefs-table tbody tr:nth-child(even) td { background: none; }
+  /* On a phone four columns don't fit (the choices overlapped): each row stacks, the channel on
+     its own line, its two choices side by side under it, the save status under those. */
+  @media (max-width: 599px) {
+    .prefs-table, .prefs-table tbody { display: block; }
+    .prefs-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--table-border); }
+    .prefs-table th, .prefs-table td { width: auto; padding: 0; border: 0; background: none; }
+    .prefs-table th, .prefs-table .pref-status { grid-column: 1 / -1; }
+    .prefs-table .pref-status:empty { display: none; }
+  }
   /* Live save (portalTabs.ts): html.js hides the button; each row's last cell shows a spinning bike
      wheel while it saves, then a check. Reduced motion: the wheel holds still. */
   html.js .prefs-form button[type='submit'] { display: none; }

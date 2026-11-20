@@ -1,5 +1,6 @@
 import type { PrefField } from '../types';
 import { submitChangeRequest, PREF_VALUES, type SubmitDeps } from './submitChangeRequest';
+import { sha256Hex } from '../crypto/hash';
 
 // Render/diff order for the preference fields — matches PREF_FIELD_COLUMNS in config.ts.
 export const PREF_FIELD_ORDER: PrefField[] = ['emailOptOut', 'smsOptOut', 'doNotMail'];
@@ -16,9 +17,15 @@ export type PreferencesResult =
   | { kind: 'noChanges' }
   | { kind: 'invalid'; message: string };
 
-// Diffs the submitted preference states against the donor's current Monday state and files one
-// change request per actual change, through the same staff-review path as the free-text fields.
+// Diffs the submitted preference states against the donor's effective state and files one change
+// request per actual change, through the same Change Requests path as the free-text fields.
 // Unchanged preferences produce nothing — staff only ever see real changes.
+//
+// The effective state is the member's latest request still inside the dedupe window, else Monday.
+// Requests are applied in order, so a preference saved live and switched back before the first
+// was applied must be filed again ("Opted out → Subscribed"), not read as "matches Monday": that
+// would leave the opt-out pending. Likewise a third switch must file even though an identical
+// first request is still in the window (supersedes skips the dedupe).
 export async function submitPreferences(
   sessionDonorIds: string[],
   input: PreferencesInput,
@@ -29,7 +36,18 @@ export async function submitPreferences(
   }
 
   const contact = await deps.monday.getDonorContactInfo(input.donorItemId);
-  const changes: { field: PrefField; newValue: string }[] = [];
+  const sinceISO = new Date(deps.now().getTime() - deps.dedupeWindowHours * 3600 * 1000).toISOString();
+  // The newest request in the window for this field (true = opted out), or null for none.
+  const latestPending = async (field: PrefField): Promise<boolean | null> => {
+    const find = async (value: string) =>
+      deps.store.findRecentByDedupeHash(await sha256Hex(`${input.donorItemId}|${field}|${value}`), sinceISO);
+    const [on, off] = await Promise.all([find(PREF_VALUES[field].on), find(PREF_VALUES[field].off)]);
+    if (on === null && off === null) return null;
+    if (off === null) return true;
+    if (on === null) return false;
+    return on.id > off.id;
+  };
+  const changes: { field: PrefField; newValue: string; supersedes?: { oldValue: string } }[] = [];
   for (const field of PREF_FIELD_ORDER) {
     const desired = input.prefs[field];
     if (desired === undefined) continue;
@@ -37,8 +55,13 @@ export async function submitPreferences(
     if (current === null) {
       return { kind: 'invalid', message: 'This preference is not available yet.' };
     }
-    if (desired !== current) {
-      changes.push({ field, newValue: desired ? PREF_VALUES[field].on : PREF_VALUES[field].off });
+    const pending = await latestPending(field);
+    const effective = pending ?? current;
+    if (desired !== effective) {
+      const newValue = desired ? PREF_VALUES[field].on : PREF_VALUES[field].off;
+      // Filed over a pending request: record what it overrides and skip the dedupe.
+      const supersedes = pending === null ? undefined : { oldValue: pending ? PREF_VALUES[field].on : PREF_VALUES[field].off };
+      changes.push({ field, newValue, ...(supersedes === undefined ? {} : { supersedes }) });
     }
   }
   if (changes.length === 0) {
@@ -50,7 +73,7 @@ export async function submitPreferences(
   for (const change of changes) {
     const result = await submitChangeRequest(
       sessionDonorIds,
-      { donorItemId: input.donorItemId, field: change.field, newValue: change.newValue },
+      { donorItemId: input.donorItemId, ...change },
       deps
     );
     if (result.kind === 'submitted') submitted += 1;

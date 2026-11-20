@@ -521,6 +521,13 @@ the Donors board and submits a diff: only preferences that actually changed beco
 requests, with fixed staff-facing values ("Opted out of email" / "Subscribed to email", "Opted
 out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail") rather than free text.
 
+The diff is against the member's *effective* state: their newest request for that preference
+still inside `dedupeWindowHours`, else Monday. Profile saves each choice as it's made, so a
+member who opts out and switches straight back would otherwise read as "matches Monday" and
+leave the opt-out pending. Instead the switch-back is filed as its own request recording what it
+overrides ("Opted out of email" → "Subscribed to email"), skipping the dedupe so a third switch
+files too; applying the Change Requests items in order lands on the member's last choice.
+
 Two compliance notes baked into the design:
 
 * **The staff-review path is deliberate, not a shortcut.** Mailchimp is SVBC's real system of
