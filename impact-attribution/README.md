@@ -329,7 +329,9 @@ Run from this directory unless noted. Sandbox first, then production.
    holds Applied Materials, Intuitive, Intel, KLA and VMware Foundations and PlayStation Cares, and
    `domainOverrides` settles 25 domains (`5afc37ce`). That config reached production on 2026-11-20
    (version `c7d72f28`), after the first live run below, which therefore still proposed 10 Drafts
-   to those five foundations; staff retarget or delete them. To recheck the list later, set writes
+   to those five foundations. Those 10 were deleted 2026-11-20 (their `proposals` rows stay, so the
+   pairs aren't proposed again). `kla-tencor.com` is in `excludedDomains`: a staff-entered Work Email
+   mapped it to KLA Foundation, and there is no KLA company item to override it to. To recheck the list later, set writes
    `off` for a night and read the `payers` and `emailDomainProposalDomains` lines.
 9. ~~`node ../scripts/flags.mjs impact-attribution writes on --env production`~~ done 2026-11-18.
    The first live run (2026-11-19 11:00 UTC) made 50 Drafts. Pause with `writes hold`: a held night

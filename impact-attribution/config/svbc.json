@@ -62,7 +62,7 @@
       "mindspring.com",
       "juno.com"
     ],
-    "excludedDomains": ["stanfordalumni.org"],
+    "excludedDomains": ["stanfordalumni.org", "kla-tencor.com"],
     "platformDomains": [
       "linkedin.com",
       "facebook.com",
