@@ -192,7 +192,7 @@ Also keep in mind:
   in Monday's 30-day trash, Worker D1 databases, and Cloudflare configuration (which is in Git).
   D1 has its own point-in-time recovery: `npx wrangler d1 time-travel restore <db> --timestamp …`
   covers the last 30 days. Secrets are
-  in the password manager.
+  in Secret Manager ([chapter 3](03-accounts-and-access.md#where-secret-values-live-secret-manager)).
 
 ## Operator scripts at the repo root
 

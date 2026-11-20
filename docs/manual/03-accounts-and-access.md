@@ -10,7 +10,7 @@ is stored, is in the **private appendix** ([chapter 0](00-about.md#whats-public-
   through the broker's OAuth apps ([chapter 2](02-architecture.md#monday-access-the-token-broker)).
   Other vendors' keys are issued to SVBC's account and stored only as Cloudflare Worker secrets.
 - **Secrets live in two places only:** as Cloudflare Worker secrets (`npx wrangler secret put`),
-  and as values in the password manager. Operators also keep local `.env` files at the repo root,
+  and in Google Cloud Secret Manager ([below](#where-secret-values-live-secret-manager)). Operators also keep local `.env` files at the repo root,
   which are gitignored: `.env` (dev), `.env.sandbox` and `.env.production`. These hold the
   operator's own personal tokens for running scripts. Never commit a secret, paste one into an
   issue or chat, or log one.
@@ -125,6 +125,67 @@ Each Worker chapter lists its own secrets, including internal ones such as `STAR
 `TOKEN_ENC_KEY`, `CUSTODIAN_SECRET`, `DIGESTS_SECRET` and `RECLASSIFY_SECRET`. Operators
 generate those (`openssl rand -hex 32`) and no vendor issues them.
 
+## Where secret values live: Secret Manager
+
+Every shared IT secret has one home: **Google Cloud Secret Manager**, in the Google Cloud project
+that owns `monday-backup`'s service account (the private appendix names the project and its
+owner and backup holder). Staff keep their own logins in Google Passwords, but Google Passwords
+can't share an item with anyone else, so it is not the place for anything here. The shared Box
+note, Box files, email and chat are never the place either. (Staff on Google Passwords: Tech
+Sync, 2026-11-20. Secret Manager for shared IT secrets: chosen the same day.)
+
+What goes in it:
+
+- every Worker secret, production and sandbox: webhook and operator secrets, vendor API keys,
+  Slack webhook URLs, `START_KEY`, `TOKEN_ENC_KEY`, `BACKUP_ENCRYPTION_KEY`;
+- the Monday OAuth apps' client secrets and Signing Secrets;
+- the Google service account key and `sync-watchdog`'s Cloudflare token;
+- the logins that only one account can use: the SVBC Integration and Sandbox Integration Monday
+  users, and the Zoom accounts. Store the password and the second factor's recovery codes.
+
+Shared mailboxes (admin@, acctpay@, membership@) don't need a shared password at all: give
+people [delegated access](https://support.google.com/mail/answer/138350) or make the address a
+[Collaborative Inbox](https://support.google.com/a/answer/167430), so each person signs in as
+themselves.
+
+**Access** is by Google Workspace group, not by person: the IT group holds
+`roles/secretmanager.secretAccessor` (read) and the owner and backup holder hold
+`roles/secretmanager.admin`. Adding or removing someone is a group membership change. Every read
+is in the project's [audit logs](https://cloud.google.com/secret-manager/docs/audit-logging).
+
+**Naming:** `<environment>-<worker>-<NAME>`, with the Worker's own secret name, e.g.
+`production-monday-auth-START_KEY` or `sandbox-funraise-sync-FUNRAISE_API_KEY`. Accounts that
+aren't a Worker's use `<environment>-<account>-<what>`, e.g.
+`production-monday-integration-password`.
+
+```sh
+gcloud config set project <project-id>      # from the private appendix
+
+# Store a new secret without it touching your shell history or screen
+openssl rand -hex 32 | tr -d '\n' | \
+  gcloud secrets create sandbox-monday-auth-START_KEY --replication-policy=automatic --data-file=-
+
+# Copy it into the Worker
+gcloud secrets versions access latest --secret=sandbox-monday-auth-START_KEY | \
+  (cd monday-auth && npx wrangler secret put START_KEY --env sandbox)
+
+# Rotate: add a new version (the old one stays until you disable or destroy it)
+openssl rand -hex 32 | tr -d '\n' | \
+  gcloud secrets versions add sandbox-monday-auth-START_KEY --data-file=-
+
+gcloud secrets list                          # names only
+```
+
+Old versions stay until destroyed (a disabled one can be re-enabled). Keep every old `BACKUP_ENCRYPTION_KEY` version as
+long as its snapshots are kept, and never destroy one that a kept snapshot needs.
+
+**One exception, by design:** Secret Manager is Google, and so is the backup Shared Drive, so
+`BACKUP_ENCRYPTION_KEY` also keeps a second copy outside Google and Cloudflare
+([monday-backup](workers/monday-backup.md)). The private appendix says where.
+
+Forks: substitute your own secret store; what matters is one shared place, group-based access,
+and a second copy of the backup key outside the backup's own provider.
+
 ## Listing and rotating secrets
 
 ```sh
@@ -147,12 +208,13 @@ Secret listings can lag a minute or two after a change. Check the deployed versi
 rather than trusting a single listing.
 
 To rotate a secret, change it at the issuer first if the issuer holds it. Then put the new value
-in the Worker, then update the password manager. For URL secrets, also update the URL at the
+in Secret Manager as a new version, then copy it into the Worker. For URL secrets, also update the URL at the
 sender. A secret change applies immediately and needs no deploy.
 
 ## Quick access checklist for a new IT person
 
-1. Password manager: access to the SVBC IT vault (see the private appendix).
+1. Secret Manager: added to the IT Google group, then `gcloud auth login` and
+   `gcloud secrets list` against the project named in the private appendix.
 2. Cloudflare: invited as a member of SVBC Account. Run `npx wrangler login`, then
    `npx wrangler whoami`.
 3. GitHub: a member of the `Silicon-Valley-Bicycle-Coalition` organization with write access to

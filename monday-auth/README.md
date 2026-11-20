@@ -101,7 +101,7 @@ Set with `npx wrangler secret put NAME [--env sandbox]` (values come from that e
 | `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET` | Portal app |
 | `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET` | Staff sync app |
 | `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET` | Read-only app |
-| `START_KEY` | Operator key for `/oauth/start`, `/oauth/probe` and `/oauth/webhooks`. At least 32 characters (`openssl rand -hex 32`); a shorter key is refused outright. Keep it in the password manager. |
+| `START_KEY` | Operator key for `/oauth/start`, `/oauth/probe` and `/oauth/webhooks`. At least 32 characters (`openssl rand -hex 32`); a shorter key is refused outright. Keep it in Secret Manager ([IT manual, chapter 3](../docs/manual/03-accounts-and-access.md#where-secret-values-live-secret-manager)). |
 | `TOKEN_ENC_KEY` | AES-256-GCM key (`openssl rand -base64 32`) for the `access_token`/`refresh_token` columns in D1 (`enc:v1:` values, column name bound as associated data; `src/tokenCipher.ts`, from quickbooks-sync). **Set it before deploying** a build that reads it: without it every token read and write fails. Rows written earlier as plaintext still read, and the next refresh or consent encrypts them. Losing the key means re-running consent for each app. Use a different value per environment. |
 | `SLACK_WEBHOOK_URL` | The alerts above. Optional in sandbox (alerts then only reach the logs); **required in production**: `/health` must show `"alerts": "configured"`. |
 
