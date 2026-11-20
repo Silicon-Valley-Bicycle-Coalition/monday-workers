@@ -4,6 +4,7 @@ import worker, { isDeadLetterBatch, runScheduled } from './index';
 import type { Env } from './types';
 import type { checkMissedOrders } from './missedOrders/check';
 import type { sweepEndedEvents } from './endedEvents/sweep';
+import type { sweepSendLinks } from './sendLinks/sweep';
 
 describe('isDeadLetterBatch', () => {
   it('recognizes the production and sandbox dead-letter queues', () => {
@@ -70,6 +71,33 @@ describe('scheduled (daily missed-order check)', () => {
   const flags = (get: () => Promise<string | null>) => ({ ...withToken, FLAGS: { get } }) as unknown as Env;
   const quietCheck = () => vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 0, missing: [] });
   const idleSweep = () => vi.fn<typeof sweepEndedEvents>().mockResolvedValue({ queued: [], failed: [] });
+  const idleLinks = () => vi.fn<typeof sweepSendLinks>().mockResolvedValue({ stale: 0, written: 0, failed: [], dryRun: false });
+
+  it('runs the send-link sweep at the check hour only, as a dry run under off and not at all under hold', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const links = idleLinks();
+    await runScheduled(offHour, flags(async () => 'on'), quietCheck(), idleSweep(), undefined, links);
+    expect(links).not.toHaveBeenCalled();
+
+    await runScheduled(checkController, flags(async () => 'on'), quietCheck(), idleSweep(), undefined, links);
+    const deps = links.mock.calls[0]![0];
+    expect(deps.dryRun).toBe(false);
+    expect(deps.pageUrl).toMatch(/^https:\/\/script\.google\.com\//);
+    expect(deps.sendLinkColumn).toBe('link_mm8sk30a');
+
+    await runScheduled(checkController, flags(async () => 'off'), quietCheck(), idleSweep(), undefined, links);
+    expect(links.mock.calls[1]![0].dryRun).toBe(true);
+
+    await runScheduled(checkController, flags(async () => 'hold'), quietCheck(), idleSweep(), undefined, links);
+    expect(links).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the send-link sweep when the config has no page to link to', async () => {
+    const links = idleLinks();
+    const sandboxEnv = { ...withToken, ENVIRONMENT: 'sandbox', FLAGS: { get: async () => 'on' } } as unknown as Env;
+    await runScheduled(checkController, sandboxEnv, quietCheck(), idleSweep(), vi.fn().mockResolvedValue([]), links);
+    expect(links).not.toHaveBeenCalled();
+  });
 
   it('runs the check only at the check hour', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -77,7 +105,7 @@ describe('scheduled (daily missed-order check)', () => {
     await runScheduled(offHour, withToken, check, idleSweep());
     expect(check).not.toHaveBeenCalled();
 
-    await runScheduled(checkController, withToken, check, idleSweep());
+    await runScheduled(checkController, withToken, check, idleSweep(), undefined, idleLinks());
     expect(check.mock.calls[0]![0]).toEqual(new Date(checkTime));
     expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
   });
@@ -88,14 +116,14 @@ describe('scheduled (daily missed-order check)', () => {
     const sandboxEnv = { ...withToken, ENVIRONMENT: 'sandbox' } as unknown as Env;
     await runScheduled(offHour, sandboxEnv, quietCheck(), idleSweep(), counts);
     expect(counts).not.toHaveBeenCalled();
-    await runScheduled(checkController, sandboxEnv, quietCheck(), idleSweep(), counts);
+    await runScheduled(checkController, sandboxEnv, quietCheck(), idleSweep(), counts, idleLinks());
     expect(counts.mock.calls[0]![1].eventIds).toEqual(['1977741403778']);
   });
 
   it('skips the pledge count check under hold', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const counts = vi.fn().mockResolvedValue([]);
-    await runScheduled(checkController, flags(async () => 'hold'), quietCheck(), idleSweep(), counts);
+    await runScheduled(checkController, flags(async () => 'hold'), quietCheck(), idleSweep(), counts, idleLinks());
     expect(counts).not.toHaveBeenCalled();
   });
 
@@ -129,7 +157,7 @@ describe('scheduled (daily missed-order check)', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 3, missing: ['55'] });
-    await runScheduled(checkController, withToken, check, idleSweep());
+    await runScheduled(checkController, withToken, check, idleSweep(), undefined, idleLinks());
     expect(error.mock.calls[0]![0]).toContain('1 of 3 orders');
   });
 
@@ -137,14 +165,14 @@ describe('scheduled (daily missed-order check)', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>().mockRejectedValue(new Error('HTTP 503'));
-    await expect(runScheduled(checkController, withToken, check, idleSweep())).resolves.toBeUndefined();
+    await expect(runScheduled(checkController, withToken, check, idleSweep(), undefined, idleLinks())).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith('eventbrite-sync missed orders: check failed: HTTP 503');
   });
 
   it('logs an unset EVENTBRITE_PRIVATE_TOKEN and does not run the check', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const check = vi.fn<typeof checkMissedOrders>();
-    await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, check, idleSweep());
+    await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, check, idleSweep(), undefined, idleLinks());
     expect(check).not.toHaveBeenCalled();
     expect(error.mock.calls[0]![0]).toContain('EVENTBRITE_PRIVATE_TOKEN is not set');
   });
@@ -154,7 +182,7 @@ describe('scheduled (daily missed-order check)', () => {
     it.each(['on', 'off'] as const)('%s: runs the check (it only reads and logs, so a dry run is the live run)', async (mode) => {
       vi.spyOn(console, 'log').mockImplementation(() => {});
       const check = quietCheck();
-      await runScheduled(checkController, flags(async () => mode), check, idleSweep());
+      await runScheduled(checkController, flags(async () => mode), check, idleSweep(), undefined, idleLinks());
       expect(check).toHaveBeenCalled();
     });
 
@@ -196,7 +224,7 @@ describe('scheduled (daily missed-order check)', () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
       const check = quietCheck();
       const sweep = vi.fn<typeof sweepEndedEvents>().mockRejectedValue(new Error('D1 unavailable'));
-      await expect(runScheduled(checkController, flags(async () => 'on'), check, sweep)).resolves.toBeUndefined();
+      await expect(runScheduled(checkController, flags(async () => 'on'), check, sweep, undefined, idleLinks())).resolves.toBeUndefined();
       expect(check).toHaveBeenCalledTimes(1);
       expect(error).toHaveBeenCalledWith('eventbrite-sync ended events: sweep failed: D1 unavailable');
     });
@@ -212,7 +240,7 @@ describe('scheduled (daily missed-order check)', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const check = quietCheck();
       const sweep = idleSweep();
-      await runScheduled(checkController, flags(get), check, sweep);
+      await runScheduled(checkController, flags(get), check, sweep, undefined, idleLinks());
       expect(sweep).not.toHaveBeenCalled();
       expect(check).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
