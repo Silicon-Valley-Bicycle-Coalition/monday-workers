@@ -155,9 +155,11 @@ export default {
       // Same tuning as HttpMondayClient's: a few in-process retries; the next hour does the rest.
       const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
       const request = <T>(query: string, variables: Record<string, unknown>) => transport.request<T>(query, variables);
-      // One member read for both steps: consent statuses, and each member's web_id for the
-      // Mailchimp Profile link. A failed read fails both, so neither plans on a partial audience.
+      // One member read for both steps: consent statuses, and each member's web_id and
+      // unique_email_id for the Mailchimp Profile and Email Preferences links. A failed read fails
+      // both, so neither plans on a partial audience.
       const webIds = new Map<string, number>();
+      const uniqueEmailIds = new Map<string, string>();
       let memberRead: Promise<Map<string, string>> | undefined;
       const readStatuses = () => (memberRead ??= readMailchimpStatuses({
         fetchFn: fetch.bind(globalThis),
@@ -165,6 +167,7 @@ export default {
         apiKey: env.MAILCHIMP_API_KEY,
         audienceId: config.mailchimp.audienceId,
         webIds,
+        uniqueEmailIds,
       }));
       try {
         const gate = await skipContext(env);
@@ -182,7 +185,7 @@ export default {
         await runProfileLinks(await skipContext(env), {
           settings: config.profileLinks,
           monday: createProfileLinksMonday(request),
-          readWebIds: () => readStatuses().then(() => webIds),
+          readMembers: () => readStatuses().then(() => ({ webIds, uniqueEmailIds })),
           adminBaseUrl: adminBaseUrl(config.mailchimp.apiBaseUrl),
           isOutage: isMondayOutage,
           deadline: started + 13.5 * 60_000,
