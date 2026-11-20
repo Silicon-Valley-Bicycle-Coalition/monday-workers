@@ -42,12 +42,10 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
       production People (Donors & Contacts, `18201685`) and sandbox People.
 - [x] Welcome #2 stays (Felicia, 2026-11-19).
 - [ ] The accountant's word on a deductibility line for the renewal emails, which mention Donor Perks.
-- [ ] **🔒 Email Preferences filled on production People.** Add a Link column **Email Preferences**
-      to production People, run `node scripts/mark-read-only-columns.mjs`, then turn on
-      `profileLinks` (with `preferences`) in `mailchimp-sync/config/svbc.json` as in
-      `mailchimp-sync/README.md`, "Turning it on" (it needs the **Mailchimp Profile** column too).
-      PR, merge, deploy. The hourly run fills the column within a few hours (500 writes a run).
-      Sandbox: `link_mm99ntk0`, config filled.
+- [x] **🔒 Email Preferences on production People** (2026-11-20): `link_mm99tvcv`, with 🔒 Mailchimp
+      Profile `link_mm99hxpv`, both marked read-only; `profileLinks` turned on in
+      `mailchimp-sync/config/svbc.json`. The hourly run fills them over the first day (500 writes a
+      run). Sandbox: `link_mm99ntk0`.
 
 ## 2. Five Sequences (UI)
 
