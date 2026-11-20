@@ -207,7 +207,7 @@ export const ko: Record<TranslationKey, string> = {
   'stats.totalGiven': '총 기부액',
   'stats.hoursVolunteered': '자원봉사 시간',
   'stats.memberSince': '회원 가입 연도',
-  'benefits.cardIntro': '참여 매장에서 카드를 보여 주세요. 다른 사람이 카드 코드 사본을 가지고 있다면 새 코드를 발급받으세요. 이전 코드는 더 이상 작동하지 않습니다.',
+  'card.newCodeIntro': '다른 사람이 카드 코드 사본을 가지고 있다면 새 코드를 발급받으세요. 이전 코드는 더 이상 작동하지 않습니다.',
   'orgs.sectionTitle': '관리 중인 단체',
   'orgs.unnamed': '관리 중인 단체',
   'orgs.tableType': '유형',

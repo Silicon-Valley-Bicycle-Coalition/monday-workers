@@ -207,7 +207,7 @@ export const hi: Record<TranslationKey, string> = {
   'stats.totalGiven': 'कुल दान',
   'stats.hoursVolunteered': 'स्वयंसेवा के घंटे',
   'stats.memberSince': 'सदस्य कब से',
-  'benefits.cardIntro': 'किसी भाग लेने वाली दुकान पर अपना कार्ड दिखाएं। अगर किसी और के पास आपके कार्ड के कोड की कॉपी है, तो नया कोड लें और पुराना कोड काम करना बंद कर देगा।',
+  'card.newCodeIntro': 'अगर किसी और के पास आपके कार्ड के कोड की कॉपी है, तो नया कोड लें और पुराना कोड काम करना बंद कर देगा।',
   'orgs.sectionTitle': 'आप प्रबंधित करते हैं',
   'orgs.unnamed': 'आपके द्वारा प्रबंधित एक संगठन',
   'orgs.tableType': 'प्रकार',

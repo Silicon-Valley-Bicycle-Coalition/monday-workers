@@ -207,7 +207,7 @@ export const ja: Record<TranslationKey, string> = {
   'stats.totalGiven': '寄付総額',
   'stats.hoursVolunteered': 'ボランティア時間',
   'stats.memberSince': '入会年',
-  'benefits.cardIntro': '参加店舗でカードを提示してください。カードのコードを他の人が持っている場合は、新しいコードを発行すると古いコードは使えなくなります。',
+  'card.newCodeIntro': 'カードのコードを他の人が持っている場合は、新しいコードを発行すると古いコードは使えなくなります。',
   'orgs.sectionTitle': '管理している組織',
   'orgs.unnamed': '管理している組織',
   'orgs.tableType': '種類',

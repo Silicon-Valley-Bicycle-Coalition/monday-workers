@@ -1,6 +1,7 @@
 // The Profile tab: the change-request form and communication preferences (formerly
-// /portal/change-request), then the member's email addresses with a text label each. Which
-// addresses show follows the privacy rule in emailLabels.ts.
+// /portal/change-request), the member's email addresses with a text label each, then "Get a new
+// code" for each card (cardCodeSection in card.ts, passed in). Which addresses show follows the
+// privacy rule in emailLabels.ts.
 import type { AppDeps } from '../routes';
 import type { SessionInfo } from '../db/sessions';
 import type { DonorContactInfo, DonorEmails, PrefField } from '../types';
@@ -138,10 +139,10 @@ function emailsSection(data: InfoDoorData, locale: Locale): string {
   return `<section class="info-emails">${heading}${body}</section>`;
 }
 
-export function infoDoorView(data: InfoDoorData, locale: Locale): string {
+export function infoDoorView(data: InfoDoorData, locale: Locale, cardCodes = ''): string {
   const form =
     data.form === null
       ? `<p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>`
       : changeRequestFormView(data.form.donors, locale, data.form.prefFields, data.form.employerField);
-  return tabPanel(t(locale, 'tabs.profile'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}`);
+  return tabPanel(t(locale, 'tabs.profile'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}${cardCodes}`);
 }

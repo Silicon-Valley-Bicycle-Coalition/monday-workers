@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { benefitsTabView, memberCardWidget } from './card';
+import { benefitsTabView, cardCodeSection, memberCardWidget } from './card';
 import type { HomeData } from '../home/loadHomeData';
 import type { PortalCard } from '../card/loadCardData';
 import type { DiscountOrganization } from '../types';
@@ -63,15 +63,13 @@ describe('memberCardWidget', () => {
 });
 
 describe('benefitsTabView', () => {
-  it('lists the discounts first, then the card code section with a regenerate form', () => {
+  it('lists the discounts, with no regenerate form (that is on Profile)', () => {
     const html = benefitsTabView(home([{ id: 'donor-1', firstName: 'Jane' }]), 'es');
     expect(html).toContain(`<h1 class="visually-hidden">${t('es', 'tabs.benefits')}</h1>`);
     expect(html).toContain('<section id="discounts">');
     expect(html).toContain('<li>Local Bikes: 10% off</li>');
     expect(html).toContain('<li>Spoke Shop: 15% off parts</li>');
-    expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
-    expect(html).toContain(t('es', 'benefits.cardIntro'));
-    expect(html.indexOf('id="discounts"')).toBeLessThan(html.indexOf('/regenerate"'));
+    expect(html).not.toContain('/regenerate"');
     // The card itself is in the portal header, not the tab.
     expect(html).not.toContain('class="member-card"');
   });
@@ -79,21 +77,6 @@ describe('benefitsTabView', () => {
   it('leaves out the discount list when its read failed', () => {
     const html = benefitsTabView(home([{ id: 'donor-1', firstName: 'Jane' }], { discounts: null }), 'en');
     expect(html).not.toContain(t('en', 'portal.discountsHeading'));
-    expect(html).toContain('/regenerate"');
-  });
-
-  it('shows no card code section when no one has a card', () => {
-    const html = benefitsTabView(home([{ id: 'donor-1', firstName: 'Jane', card: null }]), 'en');
-    expect(html).not.toContain('/regenerate"');
-    expect(html).not.toContain(t('en', 'benefits.cardIntro'));
-    expect(html).toContain('<li>Local Bikes: 10% off</li>');
-  });
-
-  it("names each person's regenerate form in a household", () => {
-    const html = benefitsTabView(home([{ id: 'donor-1', firstName: 'Jordan' }, { id: 'donor-2', firstName: 'Sam' }]), 'en');
-    expect(html).toContain(t('en', 'home.defaultHeadlineMany'));
-    expect(html).toContain('<span class="card-code-name">Jordan</span><button');
-    expect(html).toContain('action="/en/portal/card/donor-2/regenerate"');
   });
 
   it('shows the organizations the session manages', () => {
@@ -112,5 +95,27 @@ describe('benefitsTabView', () => {
     expect(html).not.toContain('<img src=x');
     expect(html).not.toContain('<script>x</script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+describe('cardCodeSection', () => {
+  it('gives each card a regenerate form under the intro', () => {
+    const html = cardCodeSection(home([{ id: 'donor-1', firstName: 'Jane' }]), 'es');
+    expect(html).toContain(t('es', 'home.defaultHeadline'));
+    expect(html).toContain(t('es', 'card.newCodeIntro'));
+    expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+    expect(html).not.toContain('card-code-name');
+  });
+
+  it('is empty when no one has a card', () => {
+    expect(cardCodeSection(home([{ id: 'donor-1', firstName: 'Jane', card: null }]), 'en')).toBe('');
+  });
+
+  it("names each person's regenerate form in a household, escaping names", () => {
+    const html = cardCodeSection(home([{ id: 'donor-1', firstName: 'Jordan' }, { id: 'donor-2', firstName: '<b>Sam</b>' }]), 'en');
+    expect(html).toContain(t('en', 'home.defaultHeadlineMany'));
+    expect(html).toContain('<span class="card-code-name">Jordan</span><button');
+    expect(html).toContain('<span class="card-code-name">&lt;b&gt;Sam&lt;/b&gt;</span>');
+    expect(html).toContain('action="/en/portal/card/donor-2/regenerate"');
   });
 });

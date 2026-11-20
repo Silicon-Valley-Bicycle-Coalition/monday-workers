@@ -214,7 +214,7 @@ export const en = {
   'stats.totalGiven': 'Total given',
   'stats.hoursVolunteered': 'Hours volunteered',
   'stats.memberSince': 'Member since',
-  'benefits.cardIntro': "Show your card at a participating shop. If someone else has a copy of your card's code, get a new one and the old code stops working.",
+  'card.newCodeIntro': "If someone else has a copy of your card's code, get a new one and the old code stops working.",
   'orgs.sectionTitle': 'You manage',
   'orgs.unnamed': 'An organization you manage',
   'orgs.tableType': 'Type',

@@ -207,7 +207,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'stats.totalGiven': 'Total doado',
   'stats.hoursVolunteered': 'Horas de voluntariado',
   'stats.memberSince': 'Membro desde',
-  'benefits.cardIntro': 'Mostre seu cartão em uma loja participante. Se outra pessoa tiver uma cópia do código do seu cartão, gere um novo e o código antigo deixará de funcionar.',
+  'card.newCodeIntro': 'Se outra pessoa tiver uma cópia do código do seu cartão, gere um novo e o código antigo deixará de funcionar.',
   'orgs.sectionTitle': 'Você gerencia',
   'orgs.unnamed': 'Uma organização que você gerencia',
   'orgs.tableType': 'Tipo',

@@ -2260,7 +2260,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal');
+    expect(regenRes.headers.get('location')).toBe('/en/portal/info');
 
     const oldVerifyRes = await app.request(`/verify/${oldToken}`, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
@@ -2307,7 +2307,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/en/portal/info');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -3921,7 +3921,7 @@ describe('doors', () => {
   });
 
   describe('GET /:locale/portal (Benefits)', () => {
-    it('shows the card with its QR in the header, then the discount list and the regenerate form', async () => {
+    it('shows the card with its QR in the header, then the discount list, and no regenerate form', async () => {
       const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
       (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
       const { app, cookie } = await signedIn({ monday });
@@ -3932,7 +3932,7 @@ describe('doors', () => {
       expect(html).toContain(`<title>${escapeHtml(t('es', 'title.portal'))} — ${t('es', 'site.title')}</title>`);
       expect(html).toContain('class="member-card"');
       expect(html).toContain('class="member-card-qr"');
-      expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+      expect(html).not.toContain('/regenerate"');
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
       expect(html.indexOf('class="member-card"')).toBeLessThan(html.indexOf('<li>Local Bikes'));
       expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });
@@ -3963,7 +3963,16 @@ describe('doors', () => {
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
     });
 
-    it('lands on Benefits after a regenerate, showing the new code', async () => {
+    it('puts the regenerate form on Profile, after the email addresses', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      const { app, cookie } = await signedIn({ monday });
+      const html = await (await app.request('/es/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+      expect(html).toContain(t('es', 'card.newCodeIntro'));
+      expect(html.indexOf('class="portal-panel"')).toBeLessThan(html.indexOf('/regenerate"'));
+    });
+
+    it('lands on Profile after a regenerate, showing the new code', async () => {
       const monday = fakeMondayWithDonations();
       const cardTokenStore = inMemoryCardTokenStore();
       const { app, cookie } = await signedIn({ monday, cardTokenStore });
@@ -3972,10 +3981,10 @@ describe('doors', () => {
 
       const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie }, redirect: 'manual' });
       expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('/en/portal');
+      expect(res.headers.get('location')).toBe('/en/portal/info');
       const newToken = await cardTokenStore.getActiveToken('donor-1');
       expect(newToken).not.toBe(oldToken);
-      const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('class="member-card"');
       expect(await cardTokenStore.getActiveToken('donor-1')).toBe(newToken);
     });

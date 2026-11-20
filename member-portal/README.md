@@ -141,11 +141,11 @@ household each tab groups by person.
 
 | Tab | Path | Shows | Shown when | Old paths that land here |
 |---|---|---|---|---|
-| Benefits | `/:locale/portal` | discount list, "Regenerate card" per card, organizations the session manages | always | `/portal/card`, `/portal/card/:id` |
+| Benefits | `/:locale/portal` | discount list, organizations the session manages | always | `/portal/card`, `/portal/card/:id` |
 | Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, tax letters (`#tax-letters`, while letters are enabled), Funraise links, pledges, matching gifts | always | `/portal/letters` |
 | Events | `/:locale/portal/events` | registrations (upcoming, past), Get involved meeting and event links | events configured, or a non-volunteer Get involved link | `/portal/activity` |
 | Volunteering | `/:locale/portal/volunteering` | completed shifts and total, volunteer Get involved links | volunteer history configured, or a volunteer link | |
-| Profile | `/:locale/portal/info` | change-request form, communication preferences, email addresses | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
+| Profile | `/:locale/portal/info` | change-request form, communication preferences, email addresses, "Get a new code" per card (a regenerate lands back here) | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
 
 A hidden tab's path redirects to Benefits. A session with no people (an organization rep only)
 sees Benefits with just its organizations; every other tab sends it there.
@@ -610,9 +610,9 @@ Operator setup, in addition to v1/v2/v2.1 steps:
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (a widget per donor in the header of every portal tab, with "Regenerate card" on
-Benefits, `GET /:locale/portal`, where the old `/:locale/portal/card` and `/card/:donorItemId`
-pages now redirect) — name, member number, tier, status, expiry — with a
+live card (a widget per donor in the header of every portal tab, with "Get a new code" on
+Profile, `GET /:locale/portal/info`; the old `/:locale/portal/card` and `/card/:donorItemId`
+pages now redirect to Benefits) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"

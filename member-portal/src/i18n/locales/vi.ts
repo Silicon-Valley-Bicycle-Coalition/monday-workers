@@ -207,7 +207,7 @@ export const vi: Record<TranslationKey, string> = {
   'stats.totalGiven': 'Tổng số đã đóng góp',
   'stats.hoursVolunteered': 'Số giờ tình nguyện',
   'stats.memberSince': 'Thành viên từ',
-  'benefits.cardIntro': 'Xuất trình thẻ của bạn tại cửa hàng tham gia. Nếu người khác có bản sao mã thẻ của bạn, hãy tạo mã mới và mã cũ sẽ ngừng hoạt động.',
+  'card.newCodeIntro': 'Nếu người khác có bản sao mã thẻ của bạn, hãy tạo mã mới và mã cũ sẽ ngừng hoạt động.',
   'orgs.sectionTitle': 'Bạn quản lý',
   'orgs.unnamed': 'Một tổ chức bạn quản lý',
   'orgs.tableType': 'Loại',

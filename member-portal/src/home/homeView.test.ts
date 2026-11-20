@@ -142,7 +142,7 @@ describe('homeView — one person', () => {
     expect(html).toContain('Your member card');
     expect(goldCount(html)).toBe(0);
     expect(html).toContain('class="member-card"');
-    // The home page's card has no regenerate form (that lives on the card door).
+    // The header card has no regenerate form (that lives on the Profile tab).
     expect(html).not.toContain('/regenerate');
   });
 

@@ -207,7 +207,7 @@ export const fil: Record<TranslationKey, string> = {
   'stats.totalGiven': 'Kabuuang naibigay',
   'stats.hoursVolunteered': 'Oras ng pagboboluntaryo',
   'stats.memberSince': 'Miyembro mula',
-  'benefits.cardIntro': 'Ipakita ang iyong card sa isang kalahok na tindahan. Kung may ibang may kopya ng code ng iyong card, kumuha ng bago at hindi na gagana ang luma.',
+  'card.newCodeIntro': 'Kung may ibang may kopya ng code ng iyong card, kumuha ng bago at hindi na gagana ang luma.',
   'orgs.sectionTitle': 'Pinamamahalaan mo',
   'orgs.unnamed': 'Isang organisasyong pinamamahalaan mo',
   'orgs.tableType': 'Uri',

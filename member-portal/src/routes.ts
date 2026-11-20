@@ -26,7 +26,7 @@ import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
 import { loadHomeData, type HomeData, type TabKey } from './home/loadHomeData';
 import { TAB_TITLES, portalView } from './home/homeView';
-import { benefitsTabView } from './doors/card';
+import { benefitsTabView, cardCodeSection } from './doors/card';
 import { givingTabData, givingTabView } from './doors/giving';
 import { eventsTabView, loadEventsTab, volunteeringTabView } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
@@ -830,11 +830,11 @@ export function createApp(deps: AppDeps) {
         console.error(`member-portal info load failed: ${errorText(err)}`);
         return null;
       });
-      return async () => {
+      return async (home) => {
         const data = await infoLeg;
         // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
         if (data === null) return { panel: errorView('error.changeRequestLoadFailed', locale), status: 500 };
-        return { panel: infoDoorView(data, locale) };
+        return { panel: infoDoorView(data, locale, cardCodeSection(home, locale)) };
       };
     })
   );
@@ -1061,9 +1061,9 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // Back to Benefits, whose header card picks up the freshly regenerated token on render
-    // (getOrCreateCardToken reads whatever is currently active).
-    return c.redirect(`/${locale}/portal`);
+    // Back to Profile, where the button lives; the header card picks up the freshly regenerated
+    // token on render (getOrCreateCardToken reads whatever is currently active).
+    return c.redirect(`/${locale}/portal/info`);
   });
 
   // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR

@@ -207,7 +207,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'stats.totalGiven': '累计捐赠',
   'stats.hoursVolunteered': '志愿服务时长',
   'stats.memberSince': '入会年份',
-  'benefits.cardIntro': '在参与商店出示您的会员卡。如果他人持有您会员卡代码的副本，请获取新代码，旧代码将失效。',
+  'card.newCodeIntro': '如果他人持有您会员卡代码的副本，请获取新代码，旧代码将失效。',
   'orgs.sectionTitle': '您管理的组织',
   'orgs.unnamed': '您管理的一个组织',
   'orgs.tableType': '类型',

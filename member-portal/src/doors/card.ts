@@ -1,5 +1,5 @@
-// The member card widget (shown in the portal header) and the Benefits tab: the discount list,
-// "Get a new code" for each card, and the organizations the session manages.
+// The member card widget (shown in the portal header), "Get a new code" for each card (on the
+// Profile tab), and the Benefits tab: the discount list and the organizations the session manages.
 import type { AppDeps } from '../routes';
 import type { DiscountOrganization, MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
@@ -70,7 +70,8 @@ function discountRow(discount: DiscountOrganization): string {
 }
 
 // "Get a new code" for each card the header shows: a code someone else has a copy of stops working.
-function cardCodeSection(data: HomeData, locale: Locale): string {
+// Rendered on the Profile tab.
+export function cardCodeSection(data: HomeData, locale: Locale): string {
   const withCards = data.people.filter((e) => e.card !== null);
   if (withCards.length === 0) return '';
   const household = data.people.length + data.unavailableCount > 1;
@@ -83,13 +84,13 @@ function cardCodeSection(data: HomeData, locale: Locale): string {
   return `
     <section>
       <h2>${escapeHtml(t(locale, withCards.length > 1 ? 'home.defaultHeadlineMany' : 'home.defaultHeadline'))}</h2>
-      <p>${escapeHtml(t(locale, 'benefits.cardIntro'))}</p>
+      <p>${escapeHtml(t(locale, 'card.newCodeIntro'))}</p>
       ${forms}
     </section>`;
 }
 
-// The Benefits tab: the shop discount list, the card's "Get a new code", then the organizations the
-// session manages. Everything comes from the header's read.
+// The Benefits tab: the shop discount list, then the organizations the session manages. Everything
+// comes from the header's read.
 export function benefitsTabView(data: HomeData, locale: Locale): string {
   const discounts = data.portal.discounts;
   const discountSection =
@@ -101,5 +102,5 @@ export function benefitsTabView(data: HomeData, locale: Locale): string {
         ${discounts.map(discountRow).join('')}
       </ul>
     </section>`;
-  return tabPanel(t(locale, 'tabs.benefits'), `${discountSection}${cardCodeSection(data, locale)}${orgSection(data.orgs, locale)}`);
+  return tabPanel(t(locale, 'tabs.benefits'), `${discountSection}${orgSection(data.orgs, locale)}`);
 }

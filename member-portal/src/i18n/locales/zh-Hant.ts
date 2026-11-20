@@ -207,7 +207,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'stats.totalGiven': '累計捐款',
   'stats.hoursVolunteered': '志工服務時數',
   'stats.memberSince': '入會年份',
-  'benefits.cardIntro': '在參與商店出示您的會員卡。如果他人持有您會員卡代碼的副本，請取得新代碼，舊代碼將失效。',
+  'card.newCodeIntro': '如果他人持有您會員卡代碼的副本，請取得新代碼，舊代碼將失效。',
   'orgs.sectionTitle': '您管理的組織',
   'orgs.unnamed': '您管理的一個組織',
   'orgs.tableType': '類型',

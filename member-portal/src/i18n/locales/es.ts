@@ -207,7 +207,7 @@ export const es: Record<TranslationKey, string> = {
   'stats.totalGiven': 'Total donado',
   'stats.hoursVolunteered': 'Horas de voluntariado',
   'stats.memberSince': 'Miembro desde',
-  'benefits.cardIntro': 'Muestra tu tarjeta en una tienda participante. Si alguien más tiene una copia del código de tu tarjeta, genera uno nuevo y el anterior dejará de funcionar.',
+  'card.newCodeIntro': 'Si alguien más tiene una copia del código de tu tarjeta, genera uno nuevo y el anterior dejará de funcionar.',
   'orgs.sectionTitle': 'Tú administras',
   'orgs.unnamed': 'Una organización que administras',
   'orgs.tableType': 'Tipo',
