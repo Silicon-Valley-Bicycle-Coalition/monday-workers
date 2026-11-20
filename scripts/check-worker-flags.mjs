@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 export const IN_SCOPE = [
   'benevity-import', 'bp-feedback-notify', 'contact-roles', 'donation-rollups', 'dtd-sync', 'eventbrite-sync',
   'funraise-sync', 'impact-attribution', 'mailchimp-sync', 'member-portal', 'monday-backup', 'nearby-search',
-  'people-reclassification', 'quickbooks-sync', 'report-digests',
+  'people-reclassification', 'quickbooks-sync', 'report-digests', 'zoom-phone-sync',
 ];
 const CANONICAL = 'member-portal/src/flags.ts';
 

@@ -51,6 +51,8 @@ export const QUEUES = {
   'people-reclassification': [],
   'quickbooks-sync': ['quickbooks-sync-writes'],
   'report-digests': [],
+  // zoom-phone-sync-writes joins with its consumer (#54); until then nothing consumes it to pause.
+  'zoom-phone-sync': [],
 };
 
 export const queuesFor = (worker, env) =>

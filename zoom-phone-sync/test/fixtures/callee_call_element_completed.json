@@ -1,0 +1,28 @@
+{
+  "event": "phone.callee_call_element_completed",
+  "event_ts": 1763600000000,
+  "payload": {
+    "account_id": "acct_test",
+    "object": {
+      "call_elements": [
+        {
+          "call_element_id": "ce_in_1",
+          "call_id": "call_in_1",
+          "user_id": "user_ann",
+          "direction": "inbound",
+          "connect_type": "external",
+          "result": "voicemail",
+          "start_time": "2026-11-19T19:30:00Z",
+          "talk_time": 0,
+          "caller_name": "Jane Rider",
+          "caller_did_number": "+14085550123",
+          "callee_name": "Ann Staff",
+          "callee_email": "ann@example.org",
+          "callee_ext_number": "101",
+          "callee_did_number": "+14085550100",
+          "voicemail_id": "vm_should_not_be_stored"
+        }
+      ]
+    }
+  }
+}
