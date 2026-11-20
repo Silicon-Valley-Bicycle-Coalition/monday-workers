@@ -66,9 +66,9 @@ describe('config split: board ids', () => {
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
-  it('sets ENVIRONMENT only under env.sandbox, and carries no DRY_RUN in either environment', () => {
-    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
-    expect(wrangler.vars).toBeUndefined();
+  it('sets ENVIRONMENT only under env.sandbox, requires the webhook JWT in both, and carries no DRY_RUN', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', MONDAY_WEBHOOK_JWT_REQUIRED: 'true' });
+    expect(wrangler.vars).toEqual({ MONDAY_WEBHOOK_JWT_REQUIRED: 'true' });
     expect(wranglerText).not.toContain('DRY_RUN');
   });
 

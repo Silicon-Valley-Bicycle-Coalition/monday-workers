@@ -230,8 +230,9 @@ but logged since waits for the next pass.
 
 **A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
 either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
-(`PROMOTE_WEBHOOK_SECRET`); with `MONDAY_SIGNING_SECRET` set it also verifies the `Authorization`
-JWT Monday signs app-created webhooks with (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110); rollout and operator steps in the root
+(`PROMOTE_WEBHOOK_SECRET`) and verifies the `Authorization` JWT Monday signs app-created webhooks
+with, rejecting a delivery without one (`MONDAY_WEBHOOK_JWT_REQUIRED` is `"true"` in both
+environments, so `MONDAY_SIGNING_SECRET` is required) (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110); rollout and operator steps in the root
 README, "Monday's signed webhook JWT"). The Worker writes `Promoted On` = today, moves the item if it's on
 Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
 for the window. On People it restarts the window with no move.
