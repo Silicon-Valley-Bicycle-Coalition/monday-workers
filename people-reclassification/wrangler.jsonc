@@ -5,6 +5,10 @@
   "compatibility_date": "2026-08-01",
   "preview_urls": false,
   "upload_source_maps": true,
+  // Reject promote-webhook deliveries that lack Monday's signed JWT (issue #3, src/mondayJwt.ts).
+  // Needs the MONDAY_SIGNING_SECRET secret (the Staff sync app's Signing Secret) in this
+  // environment: with the switch on and the secret unset or empty, every delivery gets a 401.
+  "vars": { "MONDAY_WEBHOOK_JWT_REQUIRED": "true" },
   // Write-switch flags (scripts/flags.mjs). Every Monday mutation (moves, the IT Requests alert) is
   // off unless `people-reclassification:writes` is `on`. The namespace is `FLAGS` (`sandbox-FLAGS`
   // under env.sandbox); every in-scope Worker carries the same two ids, which
@@ -45,12 +49,12 @@
   // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
   // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (RECLASSIFY_SECRET). Monday access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN
+  // (RECLASSIFY_SECRET, PROMOTE_WEBHOOK_SECRET, MONDAY_SIGNING_SECRET). Monday access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN
   // secret.
   "env": {
     "sandbox": {
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "sandbox" },
+      "vars": { "ENVIRONMENT": "sandbox", "MONDAY_WEBHOOK_JWT_REQUIRED": "true" },
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "d1_databases": [
