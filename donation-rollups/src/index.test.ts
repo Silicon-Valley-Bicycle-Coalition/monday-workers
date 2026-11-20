@@ -31,9 +31,11 @@ const SECRET = 'test-secret';
 function envFor(extra: Record<string, unknown>) {
   // The real D1 (migrations applied by test/apply-migrations.ts); a no-op queue so the route's
   // enqueue succeeds without a real Queue binding; the webhook secret every request below presents;
-  // writes `on` (a FLAGS stand-in — the local KV has no key, which reads as `off`).
+  // writes `on` (a FLAGS stand-in — the local KV has no key, which reads as `off`). The shipped
+  // wrangler.jsonc requires a signed JWT; these tests send unsigned deliveries, so they turn the
+  // requirement off (the JWT paths have their own tests in mondayJwt.test.ts and webhook/jwt.test.ts).
   return { ...env, RECOMPUTE_QUEUE: { send: async () => undefined }, MONDAY_WEBHOOK_SECRET: SECRET,
-    FLAGS: { get: async () => 'on' }, ...extra } as unknown as import('./types').Env;
+    FLAGS: { get: async () => 'on' }, MONDAY_WEBHOOK_JWT_REQUIRED: undefined, ...extra } as unknown as import('./types').Env;
 }
 
 function donationsWebhook(pulseId: number, secret: string | null = SECRET) {
@@ -85,6 +87,15 @@ describe('webhook secret (issue #27)', () => {
   it('rejects a wrong secret when one is configured', async () => {
     const res = await worker.fetch(donationsWebhook(910004, 'wrong'), envFor({ ENVIRONMENT: 'sandbox' }), ctx);
     expect(res.status).toBe(401);
+  });
+
+  it('with the shipped MONDAY_WEBHOOK_JWT_REQUIRED, rejects an unsigned delivery that has the right secret', async () => {
+    expect(env.MONDAY_WEBHOOK_JWT_REQUIRED).toBe('true');
+    const res = await worker.fetch(donationsWebhook(910009),
+      envFor({ ENVIRONMENT: 'sandbox', MONDAY_WEBHOOK_JWT_REQUIRED: env.MONDAY_WEBHOOK_JWT_REQUIRED }), ctx);
+    expect(res.status).toBe(401);
+    const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910009'`).first();
+    expect(row).toBeNull();
   });
 });
 
