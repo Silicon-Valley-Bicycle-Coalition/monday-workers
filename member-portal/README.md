@@ -234,7 +234,12 @@ In the sandbox (and `npm run dev:local`), a fixed set of `test-*@example.org` ad
 at once on `POST /`, with no magic link, rate limit or write-switch check, and reads dummy
 personas instead of Monday: one per membership state (Active Member, Active Lifetime, Lapsed,
 never joined), plus a renewal-window member, a shared household inbox and a Spanish speaker who
-just joined (the home page's new-member state). The
+just joined (the home page's new-member state). An organization rep, `test-orgrep@`, has a
+Current, Portal-access Affiliation to a test organization (`src/testAccounts/testOrgs.ts`: a
+donation and a sponsorship last year, an employee match, a gift this year), and that
+Affiliation's Work Email, `test-orgrep-work@`, signs in to the organization alone. Their grants
+come from `resolveOrgGrants`, answered by `withTestAccounts`, so they pass the same checks a real
+rep's do. The
 list lives in `src/testAccounts/personas.ts` (staff copy: `docs/uat/member-portal.md`); dates are
 relative to the request's clock.
 

@@ -32,6 +32,7 @@ import { activityDoorView, loadActivityDoor } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
 import { signInEmailHash } from './doors/emailLabels';
 import { findTestPersonasByEmail } from './testAccounts/personas';
+import { isTestOrgWorkEmail } from './testAccounts/testOrgs';
 import { discardingChangeQueue, discardingChangeStore, isTestSession } from './testAccounts/testAccountClient';
 import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
@@ -49,7 +50,7 @@ import {
   orgAcknowledgmentEnabled,
   donationHistoryEnabled,
 } from './config';
-import { grantFor, hasOrgAccess } from './orgs/grants';
+import { grantFor, hasOrgAccess, resolveOrgGrants } from './orgs/grants';
 import { loadOrgPage, loadOrgStatement } from './orgs/loadOrgData';
 import { orgNotFoundView, orgPageView, orgStatementView } from './orgs/orgViews';
 import { loadPledgeData } from './pledges/loadPledgeData';
@@ -201,7 +202,12 @@ export function createApp(deps: AppDeps) {
     const body = await c.req.parseBody();
     const email = typeof body.email === 'string' ? body.email : '';
     const personas = findTestPersonasByEmail(email, deps.now());
-    if (personas.length === 0) return null;
+    // The test organization's Work Email signs in to the organization alone, with no people.
+    if (personas.length === 0 && !isTestOrgWorkEmail(email)) return null;
+    // Grants come from the same resolver real sign-ins use, answered by withTestAccounts, so the
+    // test org rep gets exactly what a real rep with Portal access ticked would.
+    const matches = personas.map((p) => ({ id: p.id, name: p.name, preferredLanguage: p.preferredLanguage, matchedPersonal: !p.sharedInbox }));
+    const orgGrants = await resolveOrgGrants(email.trim().toLowerCase(), matches, { monday: deps.monday, config: deps.config });
     const sessionToken = generateToken();
     const expiresAt = new Date(deps.now().getTime() + deps.config.auth.sessionTtlHours * 3_600_000).toISOString();
     await deps.sessionStore.createSession({
@@ -211,11 +217,10 @@ export function createApp(deps: AppDeps) {
       // The address it signed in with, so the info door shows it (the household's shared inbox
       // under each person).
       emailHash: await signInEmailHash(email),
-      // Personas manage no organizations.
-      orgGrants: [],
+      orgGrants,
     });
     setSessionCookie(c, sessionToken, deps);
-    const lang = localeFromMondayLabel(personas[0]!.preferredLanguage) ?? locale;
+    const lang = (personas[0] && localeFromMondayLabel(personas[0].preferredLanguage)) ?? locale;
     const next = portalReturnPath(body.next);
     return c.redirect(next !== null ? applyLocaleToPath(next, lang) : `/${lang}/portal`, 303);
   }
