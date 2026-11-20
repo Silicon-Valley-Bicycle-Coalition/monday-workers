@@ -101,7 +101,7 @@ describe('convertTemplate', () => {
   });
   it('gives links a legible colour in dark mode and narrows padding on phones', () => {
     const { html } = convertTemplate('<p>x</p>', 't');
-    expect(html).toContain('.em-text a { color: #FFC700 !important; }');
+    expect(html).toContain('.em-text a { color: #FFC20E !important; }');
     expect(html).toMatch(/@media \(max-width: 480px\)[\s\S]*\.em-pad/);
     expect(html).toContain('lang="en"');
     expect(html).toContain('role="presentation"');

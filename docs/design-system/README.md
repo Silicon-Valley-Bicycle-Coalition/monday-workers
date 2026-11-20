@@ -39,7 +39,6 @@ The visual language of the Silicon Valley Bicycle Coalition across print, files,
 | `svbc-chrome` | #383838 | Website footer bar |
 | `svbc-ink` | #303030 | Body and heading text |
 | `svbc-white` | #FFFFFF | The logo's lettering; text on black, grey and charcoal |
-| `web-gold` | #FFC700 | Legacy web gold, left only in mailchimp-sync's ported templates: replace with `svbc-gold` |
 
 **Which gold.** `svbc-gold` is the gold people see: the logo, the sponsor packet's fields, the postcard, slide title bars, social posts, buttons. `svbc-gold-soft` is a quieter gold for letters and other documents built on the letterhead, where a full-strength field would shout. Don't mix the two in one piece, and never recolour the logo's gold to match either.
 
@@ -183,11 +182,11 @@ Two traps when editing: changing the palette makes Squarespace recompute the aut
 
 ## Workers status
 
-MR 478 (merged at `22f708e7`) moved the portal, calendar widget, the four email layouts and the Monday automation template onto the earlier web values: #FFC700 gold (now `web-gold`), a black header and `svbc-chrome` footer, `svbc-ink` text, Manrope and Poppins, 300px pills and #F4F4F3 email wraps.
+MR 478 (merged at `22f708e7`) moved the portal, calendar widget, the four email layouts and the Monday automation template onto the earlier web values: #FFC700 gold, a black header and `svbc-chrome` footer, `svbc-ink` text, Manrope and Poppins, 300px pills and #F4F4F3 email wraps.
 
 Issue #40 moved `member-portal` and `svbc-calendars` onto the brand: `svbc-gold` #FFC20E (pills, card glow, QR modules: 11.3:1 on the card face), `svbc-sand` for the portal's light ground and email wrap, and Nunito Sans self-hosted by `scripts/build-font-modules.mjs` as one variable woff2 per subset (the widget's latin file is 31 KB for every weight, against 38 KB for the four Manrope and Poppins files it replaces). The portal's letters keep `svbc-gold-soft`.
 
-Still on the earlier values: the email wraps in `bp-feedback-notify` and `report-digests` (#F4F4F3) and `mailchimp-sync`'s ported Salesforce templates (#FFC700 links, #F4F4F3 wrap). This system is versioned in `monday-workers` at `docs/design-system/`; the IT manual (`scripts/build-manual.mjs`) takes its colours from it and its fonts from the portal's, so it sets Nunito Sans.
+The email wraps in `bp-feedback-notify` and `report-digests` and `mailchimp-sync`'s ported Salesforce templates followed (sand wrap, #FFC20E links on dark), so no Worker uses #FFC700 or #F4F4F3 and the `web-gold` token is gone. The Mailchimp copies change when the templates are ported again (`port-salesforce-templates.mjs --apply`). This system is versioned in `monday-workers` at `docs/design-system/`; the IT manual (`scripts/build-manual.mjs`) takes its colours from it and its fonts from the portal's, so it sets Nunito Sans.
 
 ## Not synced
 
