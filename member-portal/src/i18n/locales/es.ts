@@ -111,7 +111,6 @@ export const es: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': 'Solicitar un cambio a tus datos',
   'changeRequest.formIntro': 'Envía el nuevo valor a continuación. El personal de SVBC revisa cada solicitud antes de aplicarla — verás la actualización una vez que la hayan procesado.',
-  'changeRequest.currentDetailsHeading': '{{name}} — datos actuales',
   'changeRequest.fieldAddress': 'Dirección',
   'changeRequest.fieldEmail': 'Correo electrónico',
   'changeRequest.fieldPhone': 'Teléfono',
@@ -128,7 +127,7 @@ export const es: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': 'Ya tenemos esta misma solicitud registrada — el personal la atenderá pronto. No es necesario enviarla de nuevo.',
   'changeRequest.invalidHeading': 'Algo necesita corregirse',
   'changeRequest.backToForm': 'Volver al formulario',
-  'changeRequest.prefsHeading': '{{name}} — preferencias de comunicación',
+  'changeRequest.prefsSectionHeading': 'Preferencias de comunicación',
   'changeRequest.prefsIntro': 'Elija cómo SVBC puede comunicarse con usted.',
   'changeRequest.prefEmailOptOut': 'Correo electrónico',
   'changeRequest.prefSmsOptOut': 'Mensajes de texto (SMS)',

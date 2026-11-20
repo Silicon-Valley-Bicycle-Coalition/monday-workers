@@ -111,7 +111,6 @@ export const ko: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': '정보 변경 요청',
   'changeRequest.formIntro': '아래에 새 값을 입력해 제출해 주세요. SVBC 직원이 모든 요청을 검토한 후 적용하며, 처리가 완료되면 변경 내용이 반영됩니다.',
-  'changeRequest.currentDetailsHeading': '{{name}}님 — 현재 정보',
   'changeRequest.fieldAddress': '주소',
   'changeRequest.fieldEmail': '이메일',
   'changeRequest.fieldPhone': '전화번호',
@@ -128,7 +127,7 @@ export const ko: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': '동일한 요청이 이미 접수되어 있습니다 — 직원이 곧 처리할 예정입니다. 다시 제출하실 필요는 없습니다.',
   'changeRequest.invalidHeading': '수정이 필요합니다',
   'changeRequest.backToForm': '양식으로 돌아가기',
-  'changeRequest.prefsHeading': '{{name}} — 연락 수신 설정',
+  'changeRequest.prefsSectionHeading': '연락 수신 설정',
   'changeRequest.prefsIntro': 'SVBC가 연락하는 방법을 선택하세요.',
   'changeRequest.prefEmailOptOut': '이메일',
   'changeRequest.prefSmsOptOut': '문자 메시지(SMS)',

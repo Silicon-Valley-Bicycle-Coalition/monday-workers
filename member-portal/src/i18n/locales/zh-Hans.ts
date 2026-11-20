@@ -111,7 +111,6 @@ export const zhHans: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': '申请变更您的信息',
   'changeRequest.formIntro': '请在下方提交新的信息。SVBC 工作人员会审核每一项申请后再予以应用 — 处理完成后您将看到更新。',
-  'changeRequest.currentDetailsHeading': '{{name}} — 当前信息',
   'changeRequest.fieldAddress': '地址',
   'changeRequest.fieldEmail': '电子邮箱',
   'changeRequest.fieldPhone': '电话',
@@ -128,7 +127,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': '我们已经收到过完全相同的申请，工作人员会尽快处理，无需重复提交。',
   'changeRequest.invalidHeading': '有信息需要修正',
   'changeRequest.backToForm': '返回表单',
-  'changeRequest.prefsHeading': '{{name}} — 通讯偏好',
+  'changeRequest.prefsSectionHeading': '联系偏好',
   'changeRequest.prefsIntro': '选择 SVBC 可以如何与您联系。',
   'changeRequest.prefEmailOptOut': '电子邮件',
   'changeRequest.prefSmsOptOut': '短信（SMS）',

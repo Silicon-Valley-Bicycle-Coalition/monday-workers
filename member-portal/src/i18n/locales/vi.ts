@@ -111,7 +111,6 @@ export const vi: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': 'Yêu cầu thay đổi thông tin của bạn',
   'changeRequest.formIntro': 'Vui lòng gửi giá trị mới bên dưới. Nhân viên SVBC sẽ xem xét mọi yêu cầu trước khi áp dụng — bạn sẽ thấy thông tin được cập nhật sau khi yêu cầu được xử lý.',
-  'changeRequest.currentDetailsHeading': '{{name}} — thông tin hiện tại',
   'changeRequest.fieldAddress': 'Địa chỉ',
   'changeRequest.fieldEmail': 'Email',
   'changeRequest.fieldPhone': 'Số điện thoại',
@@ -128,7 +127,7 @@ export const vi: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': 'Chúng tôi đã có đúng yêu cầu này trong hồ sơ — nhân viên sẽ sớm xử lý. Bạn không cần gửi lại.',
   'changeRequest.invalidHeading': 'Có nội dung cần chỉnh sửa',
   'changeRequest.backToForm': 'Quay lại biểu mẫu',
-  'changeRequest.prefsHeading': '{{name}} — tùy chọn liên lạc',
+  'changeRequest.prefsSectionHeading': 'Tùy chọn liên lạc',
   'changeRequest.prefsIntro': 'Chọn cách SVBC có thể liên lạc với quý vị.',
   'changeRequest.prefEmailOptOut': 'Email',
   'changeRequest.prefSmsOptOut': 'Tin nhắn (SMS)',

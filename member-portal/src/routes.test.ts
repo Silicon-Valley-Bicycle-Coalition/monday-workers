@@ -3827,8 +3827,9 @@ describe('doors', () => {
       expect(emails).toContain('jordan@example.org');
       // Jordan's own Household Email, once, under Jordan; nothing of Sam's.
       expect(emails.match(/family@example\.org/g)?.length).toBe(1);
-      expect(html).toContain('<h3>Jordan Lee</h3>');
-      expect(html).not.toContain('<h3>Sam Lee</h3>');
+      const emailSection = html.slice(html.indexOf('class="info-emails"'));
+      expect(emailSection).toContain('<h3>Jordan Lee</h3>');
+      expect(emailSection).not.toContain('<h3>Sam Lee</h3>');
       expect(html).not.toContain('sam@example.org');
     });
 

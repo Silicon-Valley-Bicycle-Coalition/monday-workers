@@ -23,14 +23,19 @@ export type EmployerFieldMode = 'off' | 'on' | 'preselected';
 
 // No email row: the info door's address list is the one place addresses show, under the
 // household privacy rule (src/doors/emailLabels.ts).
-function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode): string {
+// The section heading names what this is; a household's per-person heading is just the name.
+function personHeading(donor: DonorContactInfo, household: boolean): string {
+  return household ? `<h3>${escapeHtml(donor.name)}</h3>` : '';
+}
+
+function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode, household: boolean): string {
   const employerRow =
     employerField === 'off'
       ? ''
       : `<dt>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</dt><dd>${escapeHtml(donor.employer)}</dd>`;
   return `
     <section>
-      <h3>${escapeHtml(t(locale, 'changeRequest.currentDetailsHeading', { name: donor.name }))}</h3>
+      ${personHeading(donor, household)}
       <dl>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</dt><dd>${escapeHtml(donor.address)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</dt><dd>${escapeHtml(donor.phone)}</dd>
@@ -60,10 +65,10 @@ function prefRow(donorId: string, field: PrefField, optedOut: boolean, locale: L
   return `<tr><th scope="row" id="${headerId}">${escapeHtml(t(locale, copy.label))}</th>${choice('no', copy.no, !optedOut)}${choice('yes', copy.yes, optedOut)}</tr>`;
 }
 
-function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], locale: Locale): string {
+function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], locale: Locale, household: boolean): string {
   return `
     <section>
-      <h3>${escapeHtml(t(locale, 'changeRequest.prefsHeading', { name: donor.name }))}</h3>
+      ${personHeading(donor, household)}
       <form class="prefs-form" action="/${locale}/portal/change-request/preferences" method="post">
         <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
         <table class="prefs-table">
@@ -78,8 +83,9 @@ function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], 
 function preferencesSection(donors: DonorContactInfo[], prefFields: PrefField[], locale: Locale): string {
   if (prefFields.length === 0) return '';
   return `
-    <h2>${escapeHtml(t(locale, 'changeRequest.prefsIntro'))}</h2>
-    ${donors.map((d) => donorPreferencesForm(d, prefFields, locale)).join('')}
+    <h2>${escapeHtml(t(locale, 'changeRequest.prefsSectionHeading'))}</h2>
+    <p>${escapeHtml(t(locale, 'changeRequest.prefsIntro'))}</p>
+    ${donors.map((d) => donorPreferencesForm(d, prefFields, locale, donors.length > 1)).join('')}
   `;
 }
 
@@ -105,7 +111,7 @@ export function changeRequestFormView(
   const id = CHANGE_REQUEST_DIALOG_ID;
   return `
     <h2>${escapeHtml(t(locale, 'profile.detailsHeading'))}</h2>
-    ${donors.map((d) => donorCurrentValues(d, locale, employerField)).join('')}
+    ${donors.map((d) => donorCurrentValues(d, locale, employerField, donors.length > 1)).join('')}
     <p><a class="outline-button" href="/${locale}/portal/info?change=1" data-dialog-open="${id}">${escapeHtml(t(locale, 'profile.requestChange'))}</a></p>
     <dialog id="${id}" class="portal-dialog" aria-labelledby="${id}-title"${openForm ? ' open data-open-on-load' : ''}>
       <form method="dialog" class="dialog-close"><button type="submit" aria-label="${escapeHtml(t(locale, 'dialog.close'))}"><span aria-hidden="true">×</span></button></form>

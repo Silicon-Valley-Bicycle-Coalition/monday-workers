@@ -111,7 +111,6 @@ export const hi: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': 'अपनी जानकारी में बदलाव का अनुरोध करें',
   'changeRequest.formIntro': 'नीचे नई जानकारी दर्ज करें। SVBC स्टाफ़ इसे लागू करने से पहले हर अनुरोध की समीक्षा करता है — प्रोसेस होने के बाद आपको यह अपडेट दिखाई देगा।',
-  'changeRequest.currentDetailsHeading': '{{name}} — मौजूदा जानकारी',
   'changeRequest.fieldAddress': 'पता',
   'changeRequest.fieldEmail': 'ईमेल',
   'changeRequest.fieldPhone': 'फ़ोन नंबर',
@@ -128,7 +127,7 @@ export const hi: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': 'हमारे पास पहले से यही अनुरोध दर्ज है — स्टाफ़ जल्द ही इसे देखेगा। इसे दोबारा सबमिट करने की ज़रूरत नहीं है।',
   'changeRequest.invalidHeading': 'कुछ ठीक करने की ज़रूरत है',
   'changeRequest.backToForm': 'फ़ॉर्म पर वापस जाएँ',
-  'changeRequest.prefsHeading': '{{name}} — संचार प्राथमिकताएँ',
+  'changeRequest.prefsSectionHeading': 'संपर्क प्राथमिकताएं',
   'changeRequest.prefsIntro': 'चुनें कि SVBC आपसे कैसे संपर्क कर सकता है।',
   'changeRequest.prefEmailOptOut': 'ईमेल',
   'changeRequest.prefSmsOptOut': 'टेक्स्ट संदेश (SMS)',

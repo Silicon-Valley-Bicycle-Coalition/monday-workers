@@ -111,7 +111,6 @@ export const fil: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': 'Humiling ng pagbabago sa iyong impormasyon',
   'changeRequest.formIntro': 'Isumite ang bagong value sa ibaba. Sinusuri ng SVBC staff ang bawat request bago ito ilapat — makikita mo ang update kapag naproseso na nila ito.',
-  'changeRequest.currentDetailsHeading': '{{name}} — kasalukuyang impormasyon',
   'changeRequest.fieldAddress': 'Address',
   'changeRequest.fieldEmail': 'Email',
   'changeRequest.fieldPhone': 'Numero ng Telepono',
@@ -128,7 +127,7 @@ export const fil: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': 'Nasa records na namin ang eksaktong request na ito — aasikasuhin ito ng staff sa lalong madaling panahon. Hindi na kailangang isumite ulit.',
   'changeRequest.invalidHeading': 'May kailangang ayusin',
   'changeRequest.backToForm': 'Bumalik sa form',
-  'changeRequest.prefsHeading': '{{name}} — mga kagustuhan sa komunikasyon',
+  'changeRequest.prefsSectionHeading': 'Mga kagustuhan sa komunikasyon',
   'changeRequest.prefsIntro': 'Piliin kung paano maaaring makipag-ugnayan sa inyo ang SVBC.',
   'changeRequest.prefEmailOptOut': 'Email',
   'changeRequest.prefSmsOptOut': 'Text message (SMS)',

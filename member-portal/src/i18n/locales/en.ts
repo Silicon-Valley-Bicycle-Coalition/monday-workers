@@ -118,7 +118,6 @@ export const en = {
   // Change request
   'changeRequest.formHeading': 'Request a change to your details',
   'changeRequest.formIntro': "Submit the new value below. SVBC staff review every request before it's applied — you'll see the update once they've processed it.",
-  'changeRequest.currentDetailsHeading': '{{name}} — current details',
   'changeRequest.fieldAddress': 'Address',
   'changeRequest.fieldEmail': 'Email',
   'changeRequest.fieldPhone': 'Phone',
@@ -135,7 +134,7 @@ export const en = {
   'changeRequest.duplicateBody': 'We already have this exact request on file — staff will get to it soon. No need to submit it again.',
   'changeRequest.invalidHeading': 'Something needs fixing',
   'changeRequest.backToForm': 'Back to the form',
-  'changeRequest.prefsHeading': '{{name}} — communication preferences',
+  'changeRequest.prefsSectionHeading': 'Communication preferences',
   'changeRequest.prefsIntro': 'Choose how SVBC may contact you.',
   'changeRequest.prefEmailOptOut': 'Email',
   'changeRequest.prefSmsOptOut': 'Text messages (SMS)',

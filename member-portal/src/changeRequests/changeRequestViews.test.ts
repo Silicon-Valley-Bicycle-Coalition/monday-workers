@@ -137,6 +137,15 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(household).toContain('<select name="donorItemId" required>');
   });
 
+  it('heads sections by name only: no per-person heading for one person, just the name in a household', () => {
+    const single = changeRequestFormView([optedOutDonor], 'en', ['emailOptOut']);
+    expect(single).toContain(`<h2>${t('en', 'changeRequest.prefsSectionHeading')}</h2>`);
+    expect(single).not.toContain('<h3>');
+    const household = changeRequestFormView([optedOutDonor, { ...optedOutDonor, id: 'donor-2', name: 'Sam' }], 'en', ['emailOptOut']);
+    expect(household.match(/<h3>Sam<\/h3>/g)).toHaveLength(2);
+    expect(household).not.toContain('Sam — ');
+  });
+
   it('renders only the configured preference fields', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', ['doNotMail']);
     expect(html).toContain('name="doNotMail"');

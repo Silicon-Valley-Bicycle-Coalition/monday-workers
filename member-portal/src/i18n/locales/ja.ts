@@ -111,7 +111,6 @@ export const ja: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': '登録情報の変更をリクエスト',
   'changeRequest.formIntro': '以下に新しい情報を入力して送信してください。SVBCのスタッフがすべてのリクエストを確認したうえで反映します。反映され次第、更新内容が表示されます。',
-  'changeRequest.currentDetailsHeading': '{{name}} 様 — 現在の登録情報',
   'changeRequest.fieldAddress': '住所',
   'changeRequest.fieldEmail': 'メールアドレス',
   'changeRequest.fieldPhone': '電話番号',
@@ -128,7 +127,7 @@ export const ja: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': '同じ内容のリクエストはすでに登録されています。スタッフが対応いたしますので、再度送信いただく必要はありません。',
   'changeRequest.invalidHeading': '修正が必要な項目があります',
   'changeRequest.backToForm': 'フォームに戻る',
-  'changeRequest.prefsHeading': '{{name}} — 連絡方法の設定',
+  'changeRequest.prefsSectionHeading': '連絡方法の設定',
   'changeRequest.prefsIntro': 'SVBC からの連絡方法を選択してください。',
   'changeRequest.prefEmailOptOut': 'メール',
   'changeRequest.prefSmsOptOut': 'テキストメッセージ（SMS）',

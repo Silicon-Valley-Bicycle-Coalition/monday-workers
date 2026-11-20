@@ -111,7 +111,6 @@ export const zhHant: Record<TranslationKey, string> = {
   // Change request
   'changeRequest.formHeading': '申請變更您的資料',
   'changeRequest.formIntro': '請在下方提交新的資料。SVBC 工作人員會先審核每項申請才予以套用 — 處理完成後您即可看到更新。',
-  'changeRequest.currentDetailsHeading': '{{name}} — 目前資料',
   'changeRequest.fieldAddress': '地址',
   'changeRequest.fieldEmail': '電郵',
   'changeRequest.fieldPhone': '電話',
@@ -128,7 +127,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'changeRequest.duplicateBody': '我們已收到完全相同的申請，工作人員將盡快處理，無需再次提交。',
   'changeRequest.invalidHeading': '有資料需要修正',
   'changeRequest.backToForm': '返回表單',
-  'changeRequest.prefsHeading': '{{name}} — 通訊偏好',
+  'changeRequest.prefsSectionHeading': '聯絡偏好',
   'changeRequest.prefsIntro': '選擇 SVBC 可以如何與您聯絡。',
   'changeRequest.prefEmailOptOut': '電子郵件',
   'changeRequest.prefSmsOptOut': '簡訊（SMS）',
