@@ -80,7 +80,7 @@ const LETTER_STORE_MUTATORS = [
   'requeue',
 ] as const satisfies readonly (keyof LetterSendStore)[];
 
-const TOKEN_STORE_MUTATORS = ['createToken', 'consumeToken'] as const satisfies readonly (keyof MagicLinkTokenStore)[];
+const TOKEN_STORE_MUTATORS = ['createToken', 'consumeToken', 'consumeCode'] as const satisfies readonly (keyof MagicLinkTokenStore)[];
 
 export function dryRunLetterDeps(deps: ProcessLetterSendBatchDeps, ctx: SkipContext): ProcessLetterSendBatchDeps {
   const readOnly = readOnlyProxy(deps.store, LETTER_STORE_MUTATORS);
