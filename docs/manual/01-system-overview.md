@@ -38,6 +38,7 @@ of a dedicated integration user. No Worker holds a Monday token of its own.
 | [`eventbrite-sync`](workers/eventbrite-sync.md) | Ingest | Webhooks, hourly cron | Paid Eventbrite orders become Donations items; attendee feeds for classes |
 | [`benevity-import`](workers/benevity-import.md) | Ingest | Monday webhook, daily cron | A Benevity report staff upload to Monday becomes Donations items |
 | [`dtd-sync`](workers/dtd-sync.md) | Ingest | Hourly cron | Double the Donation matching-gift status in both directions |
+| [`zoom-phone-sync`](workers/zoom-phone-sync.md) | Ingest | Webhooks | Zoom Phone calls and texts become People timeline entries. **Ingest only, not deployed** |
 | [`mailchimp-sync`](workers/mailchimp-sync.md) | Ingest / serve | Webhooks, crons | Keeps Mailchimp's audience and Monday's People and consent columns in step |
 | [`donation-rollups`](workers/donation-rollups.md) | Keep current | Monday webhooks, crons | Lifetime and yearly giving, membership, tier and last gift on People and Organizations |
 | [`people-reclassification`](workers/people-reclassification.md) | Keep current | Daily cron, webhook | Moves people inactive for 7 years to People (Historical), and back |
