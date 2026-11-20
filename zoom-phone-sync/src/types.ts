@@ -1,10 +1,9 @@
 import type { MondayTokenSource } from './monday/graphql';
 import type { PhoneQueueMessage } from './db/events';
 
-// config/svbc.json (production) and config/sandbox.json, validated by src/config.ts. Ids that
-// don't exist yet are null: the Last Phone Contact column and the two custom activities (#51),
-// the Zoom account id and SMS tab URL (#50). Ingest needs only `zoom`; the consumer (#54) and the
-// nightly index (#53) will refuse to run on a null they need.
+// config/svbc.json (production) and config/sandbox.json, validated by src/config.ts. Values
+// that don't exist yet are null (the SMS tab URL, #50). Ingest needs only `zoom`, the nightly
+// index (#53) `people` and the region; the consumer (#54) will refuse to run on a null it needs.
 export interface ZoomPhoneSyncConfig {
   people: {
     boardId: number;
@@ -34,7 +33,7 @@ export interface ZoomPhoneSyncConfig {
 // binding types are declared here.
 export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   WRITE_QUEUE: Queue<PhoneQueueMessage>;
-  // The monday-auth broker's SyncToken entrypoint; the consumer (#54) is its first user.
+  // The monday-auth broker's SyncToken entrypoint: the nightly index reads People with it.
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   // The Zoom app's webhook secret token (`wrangler secret put ZOOM_WEBHOOK_SECRET`), used for both
