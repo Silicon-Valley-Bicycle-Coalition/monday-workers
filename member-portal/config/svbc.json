@@ -47,7 +47,9 @@
     "magicLinkTtlMinutes": 15,
     "letterLinkTtlHours": 168,
     "sessionTtlHours": 24,
-    "portalBaseUrl": "https://member.bikesiliconvalley.org"
+    "portalBaseUrl": "https://member.bikesiliconvalley.org",
+    "loginCodeEnabled": false,
+    "displayTimeZone": "America/Los_Angeles"
   },
   "rateLimit": {
     "emailCooldownSeconds": 60,

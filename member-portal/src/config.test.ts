@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import production from '../config/svbc.json';
+import sandbox from '../config/sandbox.json';
+import local from '../config/local.json';
 import {
   validateConfig,
   lettersEnabled,
@@ -56,7 +59,7 @@ const validConfig = {
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
-  auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
+  auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org', loginCodeEnabled: true, displayTimeZone: 'America/Los_Angeles' },
   rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
@@ -1092,5 +1095,29 @@ describe('changeRequests.employer', () => {
     const raw = withEmployer(null);
     delete raw.monday.columns.donorEmployer;
     expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorEmployer/);
+  });
+});
+
+describe('auth login code settings', () => {
+  it.each(['true', 1, null])('rejects a non-boolean auth.loginCodeEnabled = %s', (value) => {
+    const broken = { ...validConfig, auth: { ...validConfig.auth, loginCodeEnabled: value } };
+    expect(() => validateConfig(broken)).toThrow(/auth\.loginCodeEnabled/);
+  });
+
+  it.each(['Mars/Base', '', 5])('rejects an unknown auth.displayTimeZone = %s', (value) => {
+    const broken = { ...validConfig, auth: { ...validConfig.auth, displayTimeZone: value } };
+    expect(() => validateConfig(broken)).toThrow(/auth\.displayTimeZone/);
+  });
+
+  it('throws when the new auth keys are missing', () => {
+    const { loginCodeEnabled, displayTimeZone, ...rest } = validConfig.auth;
+    expect(() => validateConfig({ ...validConfig, auth: rest })).toThrow(/auth\.loginCodeEnabled/);
+  });
+
+  it('ships the login code off in production and on in sandbox and local', () => {
+    expect(production.auth.loginCodeEnabled).toBe(false);
+    expect(sandbox.auth.loginCodeEnabled).toBe(true);
+    expect(local.auth.loginCodeEnabled).toBe(true);
+    for (const cfg of [production, sandbox, local]) expect(cfg.auth.displayTimeZone).toBe('America/Los_Angeles');
   });
 });

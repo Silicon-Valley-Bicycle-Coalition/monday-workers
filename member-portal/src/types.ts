@@ -267,6 +267,11 @@ export interface Config {
     letterLinkTtlHours: number;
     sessionTtlHours: number;
     portalBaseUrl: string;
+    // Switch for the one-time code in the login email (and the code box on the sign-in page).
+    // Off hides both, leaving the plain magic link.
+    loginCodeEnabled: boolean;
+    // IANA zone the login email uses to print when the link and code expire.
+    displayTimeZone: string;
   };
   // Per-address login-email limits (issue GL#62), on top of the per-IP limiter. Only requests these
   // let through are recorded in login_attempts, so a denied request never extends a lockout.

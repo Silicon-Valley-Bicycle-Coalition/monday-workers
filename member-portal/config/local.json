@@ -46,7 +46,9 @@
     "magicLinkTtlMinutes": 15,
     "letterLinkTtlHours": 168,
     "sessionTtlHours": 24,
-    "portalBaseUrl": "http://localhost:8787"
+    "portalBaseUrl": "http://localhost:8787",
+    "loginCodeEnabled": true,
+    "displayTimeZone": "America/Los_Angeles"
   },
   "rateLimit": {
     "emailCooldownSeconds": 60,

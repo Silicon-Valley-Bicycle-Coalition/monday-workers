@@ -95,11 +95,26 @@ const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
 const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName', 'logoUrl'] as const;
-const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'letterLinkTtlHours', 'sessionTtlHours', 'portalBaseUrl'] as const;
+const REQUIRED_AUTH_KEYS = [
+  'magicLinkTtlMinutes',
+  'letterLinkTtlHours',
+  'sessionTtlHours',
+  'portalBaseUrl',
+  'loginCodeEnabled',
+  'displayTimeZone',
+] as const;
 // Upper bound on the letter email's login-link lifetime: long enough that a donor who opens the
 // January email days later still gets in (issue GL#31), short enough that a typo can't mint
 // month-long bearer credentials sitting in inboxes.
 const MAX_LETTER_LINK_TTL_HOURS = 168;
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
 const REQUIRED_RATE_LIMIT_KEYS = [
   'emailCooldownSeconds',
   'emailWindowSeconds',
@@ -216,6 +231,12 @@ export function validateConfig(raw: unknown): Config {
     letterLinkTtlHours > MAX_LETTER_LINK_TTL_HOURS
   ) {
     throw new Error(`config: "auth.letterLinkTtlHours" must be a number of hours in (0, ${MAX_LETTER_LINK_TTL_HOURS}]`);
+  }
+  if (typeof auth.loginCodeEnabled !== 'boolean') {
+    throw new Error('config: "auth.loginCodeEnabled" must be a boolean');
+  }
+  if (typeof auth.displayTimeZone !== 'string' || !isValidTimeZone(auth.displayTimeZone)) {
+    throw new Error('config: "auth.displayTimeZone" must be an IANA time zone name such as "America/Los_Angeles"');
   }
 
   const rateLimit = requireObject(cfg, 'rateLimit');
