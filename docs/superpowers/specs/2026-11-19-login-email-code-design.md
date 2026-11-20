@@ -22,6 +22,7 @@ Apple Mail.
   (`autocomplete="one-time-code"`).
 - Using either the code or the link uses up both.
 - The email says when the code and link expire, as a printed time.
+- The check-email page offers a **Send again** button once the email has had time to arrive.
 
 ## Non-goals
 
@@ -75,6 +76,23 @@ Apple Mail.
      `portalReturnPath`) and `lang`.
    - Copy (en; final wording is the builder's): "Enter the 6-digit code from the email, or use
      its link."
+   - **Resend** (added 2026-11-19 at David's request): below the code form, "Didn't get it? Check
+     your spam folder, or send it again." and a **Send again** button. It is a small form that
+     re-POSTs `/` with the same `email` (hidden field, the donor's own input echoed back,
+     escaped) and `next`, so it goes through the same rate limits, the same deferred send and the
+     same identical response. The repeat-request rule below keeps the browser's request id, so
+     the codes from both emails work.
+     - The button appears after `rateLimit.emailCooldownSeconds` (60 s), the point where a resend
+       would no longer be refused by the cooldown. No script: a CSS animation keeps it
+       `visibility: hidden` for that delay (`animation: <name> <delay>s steps(1, end)`, keyframe
+       `0% { visibility: hidden }`), so if animations are disabled it simply shows at once and
+       the server-side cooldown still applies. Hidden content isn't announced, so the help text
+       stays visible throughout.
+     - Because the page now holds the email address, the check-email response sets
+       `Cache-Control: no-store` (the existing `NO_STORE` constant).
+     - Not behind `loginCodeEnabled` (my call): it helps link-only donors too and changes nothing
+       about the email. A malformed address renders no resend form (nothing to resend); this
+       varies with the input's format only, never with whether it's on file.
 3. **`POST /auth/code`** (new; covered by the app-wide CSRF check, not exempt):
    - Read the cookie. Missing cookie, malformed code, unknown request, wrong code, expired, used,
      or attempts spent: **all** re-render the check-email page with one generic error ("That code
