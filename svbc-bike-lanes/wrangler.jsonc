@@ -1,0 +1,19 @@
+// Static-assets-only Worker: no script, Cloudflare serves _site/ (the Eleventy build) directly.
+// Moved from Cloudflare Pages (project svbc-bike-lanes) on the IT Requests item "Cloudflare
+// platform adoption backlog", part 2. Build first (`npm run build`), then `npm run deploy`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "svbc-bike-lanes",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-11-20",
+  // Staff-only behind Cloudflare Access (README "Access"). Access covers the custom domain only,
+  // so the site must not also answer on *.workers.dev or per-version preview URLs.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "lanes.bikesiliconvalley.org", "custom_domain": true }],
+  "assets": {
+    "directory": "./_site",
+    // Unknown paths get a plain 404. (Pages, with no 404.html, served index.html instead.)
+    "not_found_handling": "none"
+  }
+}

@@ -34,3 +34,6 @@ yarn-error.log*
 
 # Coverage
 coverage/
+
+# Wrangler local state
+.wrangler/

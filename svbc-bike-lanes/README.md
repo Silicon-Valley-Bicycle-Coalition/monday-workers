@@ -11,7 +11,7 @@ The site is **staff-only**: it's served at <https://lanes.bikesiliconvalley.org>
 - **Class IV supplemental data** from San Jose Open Data (MTC doesn't track Class IV)
 - **Historical tracking** to monitor progress over time
 - **CSV data exports** in miles and kilometers
-- **Weekly automated updates** via GitLab CI/CD
+- **Weekly automated updates** via GitHub Actions
 
 ## Data Sources
 
@@ -29,8 +29,8 @@ San José's own bikeway inventory replaces the MTC data inside San José city li
 ## Tech Stack
 
 - **Static Site Generator:** 11ty (Eleventy)
-- **Hosting:** Cloudflare Pages
-- **CI/CD:** GitLab CI/CD (weekly scheduled pipelines)
+- **Hosting:** Cloudflare Workers (static assets only)
+- **CI/CD:** GitHub Actions (weekly schedule)
 - **Styling:** CSS (no framework, SVBC branded)
 
 ## Bike Lane Class Types
@@ -53,58 +53,50 @@ npm run dev
 
 # Build for production
 npm run build
+
+# Unit tests (boundary clipping)
+npm test
+
+# Serve the build as the Worker would
+npx wrangler dev
 ```
 
 ## Deployment
 
-### GitLab + Cloudflare Pages Setup
+The site is a [static-assets-only Cloudflare Worker](https://developers.cloudflare.com/workers/static-assets/) named `svbc-bike-lanes` (`wrangler.jsonc`), on the custom domain `lanes.bikesiliconvalley.org`. It moved from Cloudflare Pages and its own GitLab repository into `monday-workers` in November 2026. `workers_dev` and `preview_urls` are off, so the custom domain is the only hostname that serves it.
 
-#### 1. Create Cloudflare Pages Project
+### GitHub Actions
 
-1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → Pages
-2. Click **Create a project** → **Connect to Git**
-3. Select your GitLab repository
-4. Configure build settings:
-   - **Build command:** `npm run build`
-   - **Build output directory:** `_site`
-   - **Root directory:** `/` (leave default)
-   - **Environment variables:** Add `CI=true` (required for history tracking)
+`.github/workflows/svbc-bike-lanes.yml` (at the repository root) builds and deploys the site:
 
-#### 2. Configure GitLab CI/CD
+| Trigger | Builds and deploys | Records a history snapshot |
+|---|---|---|
+| Weekly, Saturdays 06:47 UTC (Friday night Pacific) | Yes | Yes |
+| Push to `main` touching `svbc-bike-lanes/` | Yes | No |
+| Manual (Actions → svbc-bike-lanes → Run workflow) | Yes | Yes |
 
-The `.gitlab-ci.yml` is already configured with build, deploy, and history update stages. You just need to:
+The deploy uses `CLOUDFLARE_API_TOKEN`, a secret of the GitHub `svbc-bike-lanes` environment. Restrict that environment to the `main` branch, and mint the token with only the **Workers Editor** role scoped to the `svbc-bike-lanes` Worker and **Workers Routes: Write** on the `bikesiliconvalley.org` zone (creating the Worker needs Workers Admin, so the first deploy is by hand). Until the secret exists the workflow builds and records history but skips the deploy, with a notice in the run summary.
 
-1. **Add CI/CD Variables** (Settings → CI/CD → Variables):
-   - `CLOUDFLARE_API_TOKEN` - API token with Cloudflare Pages edit permissions
-   - `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
-   - `GITLAB_TOKEN` - Project Access Token with `write_repository` scope (for history commits)
+Don't also connect the Worker to Workers Builds: that would be a second deploy path, and it has no weekly schedule.
 
-2. **Create a Pipeline Schedule** (Build → Pipeline schedules):
-   - Click **New schedule**
-   - Description: "Weekly data update"
-   - Interval pattern: `47 22 * * 5`, timezone `America/Los_Angeles` (Fridays at 10:47 PM Pacific; the live schedule)
-   - Target branch: `main`
-   - Activate the schedule
+### Cutover from Pages (one time)
 
-#### Alternative: Cloudflare Pages Direct Integration
+Until this is done, the Pages project `svbc-bike-lanes` still serves the domain. The Pages project has two deploy paths, its GitLab Git integration and the old GitLab CI job, so disconnect both. Expect a few minutes of downtime between steps 3 and 4.
 
-For simpler setup without GitLab CI deployment:
+1. In GitLab, pause the "Weekly data update" pipeline schedule on `svbc-bike-lanes`, and archive the repository (it becomes the read-only record).
+2. In Cloudflare → Workers & Pages → `svbc-bike-lanes` (Pages) → Settings → Builds, disconnect the Git repository.
+3. In the Pages project → Custom domains, remove `lanes.bikesiliconvalley.org`. Then in DNS, delete the `lanes` CNAME to `svbc-bike-lanes.pages.dev`: a Worker Custom Domain can't be created over an existing CNAME.
+4. From this directory, signed in with `wrangler login`: `npm ci && npm run build && npm run deploy`. Creating the Worker needs Workers Admin, so this first deploy is by hand; it adds the custom domain and its DNS record.
+5. In Zero Trust → Access → Applications → **SVBC Bike Lanes**, remove the two `pages.dev` hostnames, leaving `lanes.bikesiliconvalley.org`. Check in a private window that the site redirects to the Google login.
+6. Create the GitHub `svbc-bike-lanes` environment (deployment branches: `main` only) with the `CLOUDFLARE_API_TOKEN` secret described above, then run the workflow by hand and check it deploys and creates the `svbc-bike-lanes-history` branch.
+7. Delete the Pages project, which takes the `pages.dev` URLs with it.
 
-1. Connect Cloudflare Pages directly to GitLab
-2. Set build command: `npm run build`
-3. Set output directory: `_site`
-4. Add environment variable: `CI=true`
+### Manual Deployment
 
-**Note:** With direct integration, you'll need to trigger rebuilds manually or use Cloudflare's Deploy Hooks for scheduled updates.
-
-#### Cloudflare Deploy Hooks (for scheduled rebuilds)
-
-1. In Cloudflare Pages project settings, create a **Deploy Hook**
-2. Use an external scheduler (cron job, GitHub Actions, etc.) to call the hook weekly:
-
-   ```bash
-   curl -X POST "https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/YOUR_HOOK_ID"
-   ```
+```bash
+npm run build
+npm run deploy
+```
 
 ### Access (staff-only)
 
@@ -115,12 +107,12 @@ The site sits behind [Cloudflare Access](https://developers.cloudflare.com/cloud
 | Zero Trust team domain | `bikesiliconvalley.cloudflareaccess.com` |
 | Identity provider | Google Workspace, apps domain `bikesiliconvalley.org` |
 | Access application | **SVBC Bike Lanes** (self-hosted) |
-| Hostnames covered | `lanes.bikesiliconvalley.org`, `svbc-bike-lanes.pages.dev`, `*.svbc-bike-lanes.pages.dev` |
+| Hostnames covered | `lanes.bikesiliconvalley.org` |
 | Login methods | Google Workspace only, instant auth |
 | Session duration | 24 hours (someone removed from Workspace loses access when their session expires) |
 | Policy | **Allow**, Include: Emails ending in `@bikesiliconvalley.org` |
 
-All three hostnames must be on the application. Pages serves every build on `svbc-bike-lanes.pages.dev` and on a per-deployment `<hash>.svbc-bike-lanes.pages.dev` URL as well as the custom domain. If only the custom domain is protected, anyone can open the site through the `pages.dev` URLs.
+The custom domain is the only hostname. If `workers_dev` or `preview_urls` were turned on, the site would also answer on `*.workers.dev` hostnames, and those would need to be on the application too.
 
 #### Recreating it (for example on a fork)
 
@@ -129,23 +121,12 @@ All three hostnames must be on the application. Pages serves every build on `svb
    - Authorized redirect URI: `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`
 2. **Identity provider.** In [Zero Trust](https://one.dash.cloudflare.com/) → Integrations → Identity providers → **Add** → **Google Workspace**, enter the client ID, the client secret, and your Workspace domain. Click **Test** before saving.
 3. **Access application.** In Zero Trust → Access → Applications → **Add an application** → **Self-hosted**:
-   - Add the custom domain, `<project>.pages.dev`, and `*.<project>.pages.dev` as public hostnames.
+   - Add the custom domain as the public hostname.
    - Under Login methods, allow only Google Workspace and turn on **Instant Auth** to skip the provider picker.
    - Add an **Allow** policy with Include → *Emails ending in* → `@<your-domain>`.
-4. **Check.** In a private window, each hostname should redirect to the Google login. From a shell, the `pages.dev` hostnames should return a `302` to `<team>.cloudflareaccess.com`. The custom domain gives curl a `403` bot challenge ("Just a moment...") from the zone's security settings before Access runs, so check it in a browser.
+4. **Check.** In a private window, the site should redirect to the Google login. Check in a browser: the zone's security settings give curl a `403` bot challenge ("Just a moment...") before Access runs.
 
-   ```bash
-   for h in svbc-bike-lanes.pages.dev <any-deploy-hash>.svbc-bike-lanes.pages.dev; do curl -sI "https://$h/" | grep -iE '^(HTTP|location)'; done
-   ```
-
-Access doesn't affect deploys. `wrangler pages deploy` uploads through the Cloudflare API using `CLOUDFLARE_API_TOKEN`, not through the protected hostnames, so the GitLab CI pipeline needs no Access service token.
-
-### Manual Deployment
-
-```bash
-npm run build
-npx wrangler pages deploy _site --project-name=svbc-bike-lanes
-```
+Access doesn't affect deploys. `wrangler deploy` uploads through the Cloudflare API using `CLOUDFLARE_API_TOKEN`, not through the protected hostname, so the workflow needs no Access service token.
 
 ## Maintenance
 
@@ -153,12 +134,12 @@ npx wrangler pages deploy _site --project-name=svbc-bike-lanes
 
 Data is fetched from the MTC API during each build. To update the site with fresh data:
 
-1. **Automated**: GitLab CI runs weekly via scheduled pipelines
-2. **Manual**: Push to main branch or trigger a pipeline in GitLab CI/CD
+1. **Automated**: the GitHub Actions workflow runs weekly
+2. **Manual**: merge a change to `main`, or run the workflow by hand
 
 ### Historical Data
 
-Historical snapshots are stored in `_data/history.json`. This file is automatically updated during CI builds when the `CI` environment variable is set. The history tracks:
+Historical snapshots live in `history.json` on the `svbc-bike-lanes-history` branch, which holds only that file: `main` needs a pull request, so the weekly run can't commit there. Each workflow run copies the branch's file over `_data/history.json` before building, and the build appends a snapshot when the `CI` environment variable is set. The copy of `_data/history.json` on `main` is only the seed used before the branch exists (it stops at the November 2026 move). To see current history locally, run `git show origin/svbc-bike-lanes-history:history.json > _data/history.json`. The history tracks:
 
 - Total miles by county
 - Breakdown by bike lane class
@@ -183,7 +164,7 @@ To add additional counties, modify `_data/bikelanes.js`:
 ## Directory Structure
 
 ```
-svbc_bike_lanes/
+svbc-bike-lanes/
 ├── _data/
 │   ├── bikelanes.js           # Fetches MTC data at build time
 │   ├── arcgis.js              # Paged ArcGIS REST queries
@@ -192,7 +173,7 @@ svbc_bike_lanes/
 │   ├── clipping.js            # Cuts segments at county/city lines
 │   ├── supplementalSources.js # Class IV data from city sources
 │   ├── csvExport.js           # CSV generation
-│   └── history.json           # Historical snapshots
+│   └── history.json           # Seed history (live copy: svbc-bike-lanes-history branch)
 ├── _includes/
 │   └── layouts/
 │       └── base.njk           # Base HTML template
@@ -202,7 +183,8 @@ svbc_bike_lanes/
 │   │   └── style.css          # SVBC-branded styles
 │   └── assets/
 │       └── svbc-logo.webp     # Logo file
-├── .gitlab-ci.yml             # GitLab CI/CD configuration
+├── test/                      # node:test unit tests (npm test)
+├── wrangler.jsonc             # Worker config: static assets, custom domain
 ├── .eleventy.js               # 11ty configuration
 ├── package.json
 └── README.md
