@@ -233,10 +233,12 @@ Current Affiliation to a test organization, and a test Work Email for it.
    matching gift. Both should be listed, along with its donations, grants, contracts, in-kind gifts
    and event tickets. No employee names should appear, and donation item names should not be shown.
 5. **Volunteering.** With fewer than 3 people having volunteered for the organization, the
-   volunteering section should be hidden. With 3 or more, it shows as a total only.
-6. **January email, dry run.** An engineer sets the write switch to `hold` and triggers the
-   letter run. Nothing should be sent; the log should show reps found and none emailed. (Under
-   `on`, each rep gets one statement email in the shared test inbox.)
+   volunteering section should be hidden. With 3 or more, it shows as a total only. The line counts people affiliated with the organization today, not
+   whoever was affiliated when they volunteered.
+6. **January email.** The letter run is skipped entirely under `hold` and `off` (it stops at the
+   write switch before reading Monday), so there is nothing to see in a dry run. An engineer sets
+   the switch to `on` in the sandbox and triggers the letter run; each rep gets one statement
+   email, and sandbox mail only reaches the sandbox sink.
 
 The acknowledgment section of the statement is switched off until the accountant approves its
 wording; don't report it missing. The nine non-English translations of the organization pages are

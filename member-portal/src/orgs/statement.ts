@@ -66,9 +66,11 @@ export function buildStatement(input: {
     gifts.map((gift) => ({ gift, description: gift.giftType })),
     input.taxLetter
   );
-  const hasDeductibleGifts = acknowledged.length + separate.length > 0;
+  // Matches the person letter: a DAF-only year is not a tax receipt, so only acknowledged gifts
+  // count as deductible; separate gifts are still listed when the acknowledgment is on.
+  const hasDeductibleGifts = acknowledged.length > 0;
   let acknowledgment: OrgStatement['acknowledgment'] = null;
-  if (input.acknowledgmentOn && hasDeductibleGifts) {
+  if (input.acknowledgmentOn && (hasDeductibleGifts || separate.length > 0)) {
     const ack = acknowledged.map((e) => e.gift);
     acknowledgment = {
       gifts: ack,

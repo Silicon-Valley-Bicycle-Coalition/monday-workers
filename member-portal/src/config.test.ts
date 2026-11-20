@@ -1199,12 +1199,15 @@ describe('organizations', () => {
     expect(validateConfig(orgRaw()).organizations.volunteerFloor).toBe(3);
   });
 
-  it('rejects a missing block, a non-boolean sign-off and a floor below 1', () => {
+  it('rejects a missing block, a non-boolean sign-off and a floor below 3', () => {
     const raw = orgRaw();
     delete raw.organizations;
     expect(() => validateConfig(raw)).toThrow(/organizations/);
     expect(() => validateConfig(orgRaw({ acknowledgmentSignedOff: 'yes' }))).toThrow(/acknowledgmentSignedOff/);
     expect(() => validateConfig(orgRaw({ volunteerFloor: 0 }))).toThrow(/volunteerFloor/);
+    expect(() => validateConfig(orgRaw({ volunteerFloor: 1 }))).toThrow(/volunteerFloor/);
+    expect(() => validateConfig(orgRaw({ volunteerFloor: 2 }))).toThrow(/volunteerFloor/);
+    expect(validateConfig(orgRaw({ volunteerFloor: 3 })).organizations.volunteerFloor).toBe(3);
     expect(() => validateConfig(orgRaw({ volunteerFloor: 2.5 }))).toThrow(/volunteerFloor/);
     expect(() => validateConfig(orgRaw({ workEmailColumn: '' }))).toThrow(/workEmailColumn/);
     expect(() => validateConfig(orgRaw({ addressColumns: 'text_addr' }))).toThrow(/addressColumns/);

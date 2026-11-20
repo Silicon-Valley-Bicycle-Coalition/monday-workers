@@ -235,6 +235,11 @@ export function homeView(data: HomeData, locale: Locale, renewUrl: string): stri
   if (data.people.length === 0 && data.orgs.length > 0) {
     return `<div class="home">${orgSection(data.orgs, locale)}</div>`;
   }
+  // Neither people nor organizations (e.g. the org gate was turned off mid-session): a short note
+  // instead of an empty layout; the shared header still carries sign-out.
+  if (data.people.length === 0) {
+    return `<div class="home"><p class="home-empty">${escapeHtml(t(locale, 'orgs.nothingToShow'))}</p></div>`;
+  }
   const names = data.people.map((e) => e.person.firstName).filter((n) => n !== '');
   const greeting =
     names.length === 0

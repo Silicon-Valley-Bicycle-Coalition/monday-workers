@@ -442,8 +442,8 @@ export function validateConfig(raw: unknown): Config {
   if (typeof organizations.acknowledgmentSignedOff !== 'boolean') {
     throw new Error('config: "organizations.acknowledgmentSignedOff" must be a boolean');
   }
-  if (!Number.isInteger(organizations.volunteerFloor) || (organizations.volunteerFloor as number) < 1) {
-    throw new Error('config: "organizations.volunteerFloor" must be an integer of at least 1');
+  if (!Number.isInteger(organizations.volunteerFloor) || (organizations.volunteerFloor as number) < 3) {
+    throw new Error('config: "organizations.volunteerFloor" must be an integer of at least 3 (the privacy floor)');
   }
 
   return cfg as unknown as Config;

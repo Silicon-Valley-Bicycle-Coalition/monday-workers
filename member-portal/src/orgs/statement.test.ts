@@ -73,6 +73,17 @@ describe('buildStatement', () => {
     expect(s.acknowledgment!.statement).toBe('PLAIN-STATEMENT');
   });
 
+  it('a DAF-only year has no deductible gifts but still lists the separate gifts', () => {
+    const gifts = [gift('3', '2026-01-01', '$9.00', 'Donor Advised Fund')];
+    const on = build({ gifts })!;
+    expect(on.hasDeductibleGifts).toBe(false);
+    expect(on.acknowledgment!.gifts).toEqual([]);
+    expect(on.acknowledgment!.separateGifts.map((g) => g.itemId)).toEqual(['3']);
+    const off = build({ gifts, acknowledgmentOn: false })!;
+    expect(off.hasDeductibleGifts).toBe(false);
+    expect(off.acknowledgment).toBeNull();
+  });
+
   it('has no acknowledgment when the switch is off or nothing survives', () => {
     const gifts = [gift('1', '2026-01-01', '$100.00', 'Donation')];
     expect(build({ gifts, acknowledgmentOn: false })!.acknowledgment).toBeNull();

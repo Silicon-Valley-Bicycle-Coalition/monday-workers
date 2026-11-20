@@ -84,6 +84,18 @@ describe('orgStatementView', () => {
     expect(orgStatementView({ ...statement, hasDeductibleGifts: false }, taxLetter, opts, 'en')).not.toContain(line);
   });
 
+  it('a DAF-only year shows no EIN with the switch on and no will-follow line with it off', () => {
+    const dafOnly: OrgStatement = {
+      ...statement, hasDeductibleGifts: false,
+      acknowledgment: { gifts: [], separateGifts: [gift('s', '2025-02-05', '$7.00', 'DAF')], total: '$0.00', statement: 'PLAIN' },
+    };
+    const on = orgStatementView(dafOnly, taxLetter, { ackOn: true, generatedOn: 'x' }, 'en');
+    expect(on).not.toContain('EIN:');
+    expect(on).toContain('Separate &lt;gifts&gt;.');
+    expect(orgStatementView(statement, taxLetter, { ackOn: true, generatedOn: 'x' }, 'en')).toContain('EIN:');
+    expect(orgStatementView(dafOnly, taxLetter, { ackOn: false, generatedOn: 'x' }, 'en')).not.toContain('will follow');
+  });
+
   it('translates the chrome but not the body', () => {
     const html = orgStatementView(statement, taxLetter, { ackOn: false, generatedOn: 'January 1, 2026' }, 'es');
     expect(html).toContain(t('es', 'orgs.print'));

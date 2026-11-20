@@ -893,8 +893,9 @@ the `donations` stanza, both required, each `"YYYY-MM-DD"` or `null`:
   Giving rollup, so it never exceeds the rows under it. `null` means no floor. SVBC:
   `"2026-01-01"`.
 * **`historyVisibleFromISO`** — the launch gate. Donation history on the giving door renders only once
-  the current UTC date reaches it; until then no portal page queries the Donations board for
-  history (the home page never does). `null` means never shown —
+  the current UTC date reaches it; until then no portal page shows or queries giving history
+  (the home page never does). Organization pages (v10) do read Donations to list their statement
+  years, but show no giving history before that date. `null` means never shown —
   the default for a fresh fork, and how this ships ahead of launch so the rest of the portal can
   be tested. Date-gated rather than a boolean so January needs no deploy. SVBC: `"2027-01-01"`,
   the first day of the first full calendar year after the clean start. `config/local.json` sets a
@@ -1000,7 +1001,15 @@ and can lag up to 24 h (the session's cached copy).
 contracts, in-kind gifts, event tickets, employee matching, and employee volunteering as an
 aggregate that is hidden when fewer than `volunteerFloor` (3) people contributed. No employee
 names appear, and Donations item names are not shown. Only the acknowledgment section counts
-deductible gifts.
+deductible gifts. The volunteering line counts people affiliated with the organization today
+(Current Affiliations), not whoever was affiliated when they volunteered.
+
+**Employee matching needs `monday.columns.donationMatchedBy`.** The org page and statement find an
+organization's employee matches through the Donations **Matched By** column. Sandbox has it
+(`board_relation_mm8hs607`); **production doesn't yet** (still `REPLACE_WITH_COLUMN_ID` in
+`config/svbc.json`), so there an organization's matches read as none, and an organization whose
+only activity is matching gets no statement or January email. Setting it alone does not turn on the
+person-side Double the Donation match lines, which still need all four DTD columns.
 
 **Config.** Each `config/*.json` has an `organizations` block:
 

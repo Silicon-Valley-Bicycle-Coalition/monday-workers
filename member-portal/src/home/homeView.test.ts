@@ -343,7 +343,7 @@ describe('homeView — organizations', () => {
       RENEW
     );
     expect(html).toContain('An organization you manage');
-    expect(html).toContain('Your 2026 year-end statement is ready');
+    expect(html).toContain('2026 statement ready');
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
     expect(html).not.toContain('<b>x</b>');
   });
@@ -360,6 +360,17 @@ describe('homeView — organizations', () => {
     expect(html).not.toContain('home-headline');
     expect(html).not.toContain('home-people');
     expect(html).not.toContain('aria-label="Your portal"');
+  });
+
+  it('a session with no people and no organizations shows a short note, not an empty layout', () => {
+    const html = homeView(
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, doors: [], orgs: [] },
+      'en',
+      RENEW
+    );
+    expect(html).toContain('nothing to show for this sign-in right now.');
+    expect(html).not.toContain('home-greeting');
+    expect(html).not.toContain('home-headline');
   });
 
   it('renders no section without organizations', () => {

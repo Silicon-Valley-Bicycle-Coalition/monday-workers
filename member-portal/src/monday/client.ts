@@ -1035,8 +1035,9 @@ export class HttpMondayClient implements MondayClient {
   }
 
   // ---- Organization reps (spec 2026-11-19-member-portal-organization-reps-design.md) ----
-  // GraphQL shapes here follow the ones this file already uses live. items(ids:) with `board { id }`
-  // was verified live 2026-11-19; linked_items { id board { id } } is not yet verified live.
+  // GraphQL shapes here follow the ones this file already uses live. items(ids:) with `board { id }`,
+  // linked_items { id board { id } } and the Work Email column filter were all verified live
+  // against the sandbox on 2026-11-19.
 
   // Null while the Portal access column is unconfigured: it is never requested and reads false.
   private portalAccessColumn(): string | null {
