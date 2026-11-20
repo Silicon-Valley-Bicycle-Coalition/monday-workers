@@ -537,7 +537,8 @@ Monday outage leaves the rest for the next hour; a failed member read plans noth
 write switch: `hold` skips, `off` dry-runs (one `Employer answers` skip line per answer, ids only;
 nothing sent or recorded). Logs carry hashed ids and counts only, never an address or an answer.
 
-**Turning it on** (`employerAnswers: null` in both configs, and the `EMPLOYER_ANSWERS` binding is in
+**Turning it on** (on in the sandbox since 2026-11-20: `EMPLOYER` field in the sandbox audience,
+migration `0008` applied; `employerAnswers: null` in production. The `EMPLOYER_ANSWERS` binding is in
 both `wrangler.jsonc` blocks):
 
 1. In the Mailchimp audience, add a text merge field **Employer** (tag `EMPLOYER`), not required, and
