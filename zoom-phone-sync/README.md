@@ -17,5 +17,6 @@ Shape, in brief:
 * Write switch `zoom-phone-sync:writes`, `sandbox` environment with its own Zoom app limited to a
   test line, Monday access through `monday-auth`'s `SyncToken`.
 
-Open before building: whether to log text content, telling staff, shared household numbers, which
-Zoom lines are included, and how many People have a phone number at all.
+Open before building: whether to log text content, telling staff, shared household numbers and
+which Zoom lines are included. Phone coverage was counted 2026-11-19: 59% of People, 70% of current
+members.

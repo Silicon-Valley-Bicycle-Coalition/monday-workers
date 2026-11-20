@@ -204,16 +204,32 @@ logged event: one create and at most one date write.
 2. **Staff awareness.** Staff should know their calls and texts with supporters are logged before
    this goes on. Who tells them, and does it need a line in the IT protocols?
 3. **Shared numbers.** A number on several People items (households): log on none (default), or on
-   each?
+   each? It affects 101 numbers on 214 items, about 4% of People with a phone (see Phone coverage).
 4. **Which lines.** Include only listed Zoom users (default: development and program staff), or
    every user on the account with an exclude list? Shared lines (main number, call queues) need a
    call either way: a supporter calling the main line is useful to log.
-5. **Phone coverage.** Before building, count People items with a Phone value. If coverage is low,
-   matching misses most calls and the case for building weakens.
+## Phone coverage (counted 2026-11-19)
+
+Production People board (18437909781), Phone column `phone_mm8n5szp`, read-only count, no numbers
+printed. The normalization is the one Matching describes (US default, extension dropped).
+
+| | Items | Share |
+|---|---|---|
+| People items | 8,410 | |
+| With a Phone value | 4,972 | 59% |
+| That normalize to E.164 | 4,953 | 59% |
+| Distinct numbers | 4,840 | |
+| Numbers on more than one item | 101 (on 214 items) | 4% of items with a phone |
+| Membership Expiry today or later | 1,496 | |
+| Of those, with a usable phone | 1,048 | 70% |
+
+Coverage is good enough to build: most current members match, and almost every stored number
+normalizes. Calls with people who aren't in People, or whose number isn't on file, stay unmatched;
+the 14-day rematch only helps when staff add the number afterwards.
 
 ## Before building
 
-- Answers to decisions 1–4 and the coverage count (5).
+- Answers to decisions 1–4.
 - A sandbox S2S app subscribed to the four events, and one real delivery of each captured (shape
   only, numbers redacted) as test fixtures. This confirms the SMS fields.
 - The two custom activities created in Monday (account-wide ids, as "Mailchimp email" was) and
