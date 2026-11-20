@@ -17,6 +17,9 @@
       "name": "Logos",
       "tile": "l",
       "order": [
+        "svbc-logo.svg",
+        "svbc-logo.png",
+        "svbc-logo-black.svg",
         "svbc-wordmark.svg",
         "svbc-wordmark-email.png",
         "svbc-icon.png"
@@ -39,6 +42,24 @@
           "blob": "38f270eca501a88587e86881af7ee2c6",
           "size": 13248,
           "type": "image/png"
+        },
+        "svbc-logo.svg": {
+          "name": "svbc-logo.svg",
+          "blob": "c9a97785faae89954cee490b23a5f495",
+          "size": 8834,
+          "type": "image/svg+xml"
+        },
+        "svbc-logo.png": {
+          "name": "svbc-logo.png",
+          "blob": "1dc3110f1c9316bd4d7004dee3b9f0d8",
+          "size": 56583,
+          "type": "image/png"
+        },
+        "svbc-logo-black.svg": {
+          "name": "svbc-logo-black.svg",
+          "blob": "98eee5771875a42470ee052b459c49fb",
+          "size": 8819,
+          "type": "image/svg+xml"
         }
       }
     }
@@ -50,8 +71,8 @@
   },
   "lastChange": {
     "by": "David W. Keith",
-    "at": "2026-11-14T00:00:00Z",
-    "via": "Claude Code · bikesiliconvalley.org + monday-workers@22f708e7",
-    "note": "Workers code migrated to the system in MR 478; migration table replaced with a status note"
+    "at": "2026-11-20T00:43:11.399Z",
+    "via": "Claude Code · Box: 2026 SVBC letterhead (file 1346312091954)",
+    "note": "The 2026 letterhead becomes the brand basis: svbc-gold #e8b85f, svbc-grey, svbc-grey-text, warm svbc-sand, Avenir stack, Print type group and section, grey-and-gold logo; #ffc700 kept as legacy web-gold"
   }
 }
