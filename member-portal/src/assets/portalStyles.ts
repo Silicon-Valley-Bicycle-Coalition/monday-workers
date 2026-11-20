@@ -283,7 +283,8 @@ export const PORTAL_CSS = `
 
   /* The portal frame (src/home/homeView.ts): the member card(s) with each person's totals, the
      status and its one gold button, then the tab bar and the active tab's panel. Phone first, the
-     card on top; from 768px the card sits left of the status. Tabs are links (no JavaScript), one
+     totals stacked under the card, from 640px to its right; the status (when there is one) under
+     both. Tabs are links (no JavaScript), one
      page each, with aria-current on the active one. */
   .home { display: flex; flex-direction: column; gap: 20px; }
   .home-header { display: flex; flex-direction: column; gap: 20px; }
@@ -381,14 +382,18 @@ export const PORTAL_CSS = `
     white-space: nowrap;
     border: 0;
   }
-  @media (min-width: 768px) {
-    main:has(> .home) { max-width: 960px; }
-    .home-header {
+  @media (min-width: 640px) {
+    .home-person {
       display: grid;
-      grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
-      column-gap: 40px;
+      grid-template-columns: minmax(0, 340px) minmax(200px, 300px);
+      column-gap: 16px;
       align-items: start;
     }
+    .home-person > :not(.member-card):not(.home-not-member):not(.member-stats) { grid-column: 1 / -1; }
+    .home-person .member-stats { margin: 0; }
+  }
+  @media (min-width: 768px) {
+    main:has(> .home) { max-width: 960px; }
     .home-headline { font-size: 36px; }
   }
 
