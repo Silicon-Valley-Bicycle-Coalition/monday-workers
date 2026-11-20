@@ -324,18 +324,19 @@ Run from this directory unless noted. Sandbox first, then production.
    and boards even though the request may hang with no logs; confirm it from `proposals` in D1.
 7. ~~Production: `writes off`, `npm run deploy`~~ done 2026-11-17 (version `971344ab`, migration
    `0002` applied first). The first dry run is 2026-11-18 at 11:00 UTC.
-8. **Gate (decided 2026-11-16): David reviews the dry run's `payers` summary** and marks the
-   foundations, donor-advised-fund sponsors and other non-employers. Put their ids in
-   `excludedPayers` in `config/svbc.json` with a note naming each, deploy, and wait for one more dry
-   run to confirm. No production `on` before this. In the same pass, read the
-   `emailDomainProposalDomains` line: add an `excludedDomains` entry for any domain that isn't an
-   employer (an ISP missing from `consumerDomains`, an alumni domain outside `.edu`) and a
-   `domainOverrides` entry for each ambiguous domain worth settling. A university only proposes
-   once it has an override (`.edu` is blocked).
-9. `node ../scripts/flags.mjs impact-attribution writes on --env production`.
+8. ~~Gate: David reviews the dry run's `payers` summary~~ done 2026-11-18 from the first production
+   dry run (25 matching-gift and 25 email-domain Drafts would have been made). `excludedPayers` now
+   holds Applied Materials, Intuitive, Intel, KLA and VMware Foundations and PlayStation Cares, and
+   `domainOverrides` settles 25 domains (`5afc37ce`). That config reached production on 2026-11-20
+   (version `c7d72f28`), after the first live run below, which therefore still proposed 10 Drafts
+   to those five foundations; staff retarget or delete them. To recheck the list later, set writes
+   `off` for a night and read the `payers` and `emailDomainProposalDomains` lines.
+9. ~~`node ../scripts/flags.mjs impact-attribution writes on --env production`~~ done 2026-11-18.
+   The first live run (2026-11-19 11:00 UTC) made 50 Drafts. Pause with `writes hold`: a held night
+   is skipped, with nothing to catch up.
 
-From the artifacts, about 133 pairs qualify (56 Current) before existing affiliations are removed;
-at 25 a night the backlog drains in about six nights.
+At up to 25 Drafts per job a night, the remaining backlog from history drains in a few nights; after
+that a Draft appears only when new evidence qualifies.
 
 ## Known limits
 
