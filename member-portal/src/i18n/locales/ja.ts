@@ -32,6 +32,8 @@ export const ja: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'コードをお持ちですか？こちらに入力してください',
   'checkEmail.codeSubmit': 'サインイン',
   'checkEmail.codeError': 'このコードは使用できませんでした。ご確認いただくか、新しいメールをリクエストしてください。',
+  'checkEmail.resendHelp': 'メールが届きませんか？迷惑メールフォルダをご確認いただくか、再送信してください。',
+  'checkEmail.resend': '再送信',
   'confirmLogin.heading': 'ポータルへ進む',
   'confirmLogin.body': '下のボタンを押してログインを完了してください。',
   'confirmLogin.submit': 'ポータルへ進む',
@@ -252,7 +254,7 @@ export const ja: Record<TranslationKey, string> = {
   'verify.notValid': 'この会員証は無効です。再発行されたか、すでに有効でなくなっている可能性があります。',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'SVBC寄付者ポータルへのログインコードとリンク',
+  'email.subject': '{{code}} はSVBCメンバーポータルのコードです',
   'email.loginButton': 'サインイン',
   'email.codeIntro': 'ログインコード:',
   'email.codeHint': 'ログインをリクエストしたページで入力するか、下のボタンをご利用ください。どちらも{{minutes}}分で有効期限が切れ、1回のみ使えます。',

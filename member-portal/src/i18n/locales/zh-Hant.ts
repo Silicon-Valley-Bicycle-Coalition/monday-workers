@@ -32,6 +32,8 @@ export const zhHant: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': '有驗證碼？請在此輸入',
   'checkEmail.codeSubmit': '登入',
   'checkEmail.codeError': '該驗證碼無效。請檢查後重試，或重新索取一封電郵。',
+  'checkEmail.resendHelp': '沒收到？請檢查垃圾郵件資料夾，或重新寄送。',
+  'checkEmail.resend': '重新寄送',
   'confirmLogin.heading': '繼續進入您的入口網站',
   'confirmLogin.body': '請點擊下方按鈕完成登入。',
   'confirmLogin.submit': '繼續進入您的入口網站',
@@ -252,7 +254,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'verify.notValid': '此卡片無效，可能已重新產生或已不再生效。',
 
   // Login email (src/email/resend.ts)
-  'email.subject': '您的 SVBC 捐款者入口網站登入碼和連結',
+  'email.subject': '{{code}} 是您的 SVBC 會員入口網站驗證碼',
   'email.loginButton': '登入',
   'email.codeIntro': '您的登入碼：',
   'email.codeHint': '請在您申請登入的頁面輸入此碼，或使用下方按鈕。兩者都將於 {{minutes}} 分鐘後失效，且只能使用一次。',

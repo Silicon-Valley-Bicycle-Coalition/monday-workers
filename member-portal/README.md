@@ -221,6 +221,16 @@ same batch and hashes the code too, so response time doesn't tell whether an add
 The IP limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic
 page.
 
+**AutoFill and Send again.** The email's subject leads with the code, and the last line of its
+text part (also the last paragraph of the HTML) is WebKit's origin-bound one-time-code form,
+`@member.bikesiliconvalley.org #123456` (the host comes from `auth.portalBaseUrl`), so Apple Mail
+and Safari offer the code above the keyboard on the check-email page without the donor switching
+apps. Seeing the code in a notification is harmless: it only works with the requesting browser's
+cookie. Whenever the typed address was well-formed (on file or not), the check-email page also
+offers **Send again**: a form that re-posts the address to `POST /`, held hidden by a CSS animation
+for `rateLimit.emailCooldownSeconds` (no script; with animations off it shows at once and the
+cooldown still applies). The page echoes the address, so it is served `no-store`.
+
 **Household Email.** Sign-in matches an address against a donor's Household Email as well as
 their own, so a shared household address signs in every person on it; the session covers all
 of them, labeled as above.

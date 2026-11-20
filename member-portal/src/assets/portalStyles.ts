@@ -412,6 +412,18 @@ export const PORTAL_CSS = `
     padding: 4px 6px;
   }
 
+  /* Check-email page: Send again stays hidden for the cooldown (inline animation-duration), then
+     shows. steps(1, end) holds the 0% frame for the whole run and fill-mode both keeps it hidden
+     before the run starts; with animations disabled the button is simply visible. */
+  .resend-reveal {
+    animation-name: resend-wait;
+    animation-timing-function: steps(1, end);
+    animation-fill-mode: both;
+  }
+  @keyframes resend-wait {
+    0% { visibility: hidden; }
+  }
+
   @media (max-width: 480px) {
     .site-header-inner, .site-footer-inner { padding-left: 20px; padding-right: 20px; }
     main { padding-left: 16px; padding-right: 16px; }

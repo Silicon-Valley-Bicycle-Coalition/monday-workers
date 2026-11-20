@@ -32,6 +32,8 @@ export const en = {
   'checkEmail.codeLabel': 'Got a code? Enter it here',
   'checkEmail.codeSubmit': 'Sign in',
   'checkEmail.codeError': 'That code didn\'t work. Check it, or ask for a new email.',
+  'checkEmail.resendHelp': "Didn't get it? Check your spam folder, or send it again.",
+  'checkEmail.resend': 'Send again',
 
   // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
   // scanners that prefetch links can't burn the single-use token (issue GL#31).
@@ -282,7 +284,7 @@ export const en = {
   'matchingGifts.searchFrameTitle': 'Employer matching-gift search',
 
   // Login email (src/email/cloudflareEmail.ts)
-  'email.subject': 'Your SVBC member portal sign-in code and link',
+  'email.subject': '{{code}} is your SVBC member portal sign-in code',
   'email.loginButton': 'Sign in',
   'email.codeIntro': 'Your sign-in code:',
   'email.codeHint': 'Type it on the page where you asked to sign in, or use the button below. Both expire in {{minutes}} minutes and work once.',
