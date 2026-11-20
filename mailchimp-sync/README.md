@@ -531,7 +531,9 @@ one row per key handed over, so an unchanged answer is sent once and a changed o
 Per run, up to `maxAnswersPerRun` unsent answers: match exactly one People item on
 `employerAnswers.emailColumns`, then call the RPC with the answer, today's date and context
 `Mailchimp profile`. impact-attribution's result is recorded and final, except `disabled` (its
-`employerAnswers` config is unset), which leaves every answer for a later run. No People item, or
+`employerAnswers` config is unset) and `invalid` (an impact-attribution build older than
+`source: 'mailchimp'`; logged as `employer-answer-invalid`), which stop the run and leave every
+answer for a later one. No People item, or
 several: recorded `unmatched` / `ambiguous` and looked up again a day later. A failed RPC or a
 Monday outage leaves the rest for the next hour; a failed member read plans nothing. Follows the
 write switch: `hold` skips, `off` dry-runs (one `Employer answers` skip line per answer, ids only;

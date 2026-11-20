@@ -1,7 +1,7 @@
 // The employer-answer hand-over's ledger (migration 0008). Rows are keyed on the answer's source id
 // (`<member hash>:<answer hash>`), never the address or the answer text.
 
-export type EmployerAnswerOutcome = 'recorded' | 'invalid' | 'non-answer' | 'closed' | 'unmatched' | 'ambiguous';
+export type EmployerAnswerOutcome = 'recorded' | 'non-answer' | 'closed' | 'unmatched' | 'ambiguous';
 
 const RECHECKED: readonly EmployerAnswerOutcome[] = ['unmatched', 'ambiguous'];
 

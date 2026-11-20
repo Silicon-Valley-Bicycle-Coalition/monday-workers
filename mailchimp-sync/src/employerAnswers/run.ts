@@ -20,8 +20,10 @@ export const ANSWER_CONTEXT = 'Mailchimp profile';
 export const RECHECK_UNMATCHED_MS = 24 * 3600_000;
 
 // impact-attribution's EmployerAnswers RPC (impact-attribution/src/answers/entrypoint.ts), restated
-// for this caller. `{ recorded: false }` is final except `disabled` (impact-attribution has no
-// employerAnswers config yet), which leaves the answer for a later run.
+// for this caller. `{ recorded: false }` for `non-answer` or `closed` is final. `disabled` (no
+// employerAnswers config yet) and `invalid` leave the answer for a later run and stop this one:
+// every input built here is valid for a build that knows `source: 'mailchimp'`, so `invalid` means
+// impact-attribution is an older build, and every further call would be refused the same way.
 export interface EmployerAnswerInput {
   source: typeof ANSWER_SOURCE;
   sourceId: string;
@@ -59,14 +61,14 @@ export interface EmployerAnswersDeps {
 }
 
 export interface EmployerAnswersSummary {
-  outcome: 'disabled' | 'skipped' | 'read-failed' | 'impact-disabled' | 'done';
+  outcome: 'disabled' | 'skipped' | 'read-failed' | 'impact-disabled' | 'impact-invalid' | 'done';
   mode: WriteMode;
   // Members with a non-blank answer.
   answers: number;
   // Answers not yet settled in the ledger.
   pending: number;
   recorded: number;
-  // impact-attribution declined (invalid, non-answer, closed): final.
+  // impact-attribution declined (non-answer, closed): final.
   refused: number;
   unmatched: number;
   ambiguous: number;
@@ -166,9 +168,12 @@ export async function runEmployerAnswers(gate: BatchSkipContext, deps: EmployerA
     if (result.recorded) {
       await deps.store.record(sourceId, 'recorded', personItemId, at);
       summary.recorded += 1;
-    } else if (result.reason === 'disabled') {
-      summary.outcome = 'impact-disabled';
+    } else if (result.reason === 'disabled' || result.reason === 'invalid') {
+      summary.outcome = result.reason === 'disabled' ? 'impact-disabled' : 'impact-invalid';
       summary.deferred += work.length - i;
+      if (result.reason === 'invalid') {
+        console.error(JSON.stringify({ worker: 'mailchimp-sync', event: 'employer-answer-invalid', environment: gate.environment, sourceId, hint: 'impact-attribution may predate source "mailchimp"; deploy it, then the next run retries' }));
+      }
       break;
     } else {
       await deps.store.record(sourceId, result.reason, personItemId, at);
