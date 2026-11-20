@@ -2,6 +2,7 @@ import type { MondayClient } from '../monday/client';
 import type { ChangeRequestStore } from '../db/changeRequests';
 import type { ChangeQueueMessage, DonationRecord } from '../types';
 import { findTestPersona, findTestPersonasByEmail, isTestDonorId } from './personas';
+import { TEST_ORG, TEST_ORG_AFFILIATION_ID, TEST_ORG_ID, isTestOrgWorkEmail, testOrgAffiliation, testOrgGifts, testOrgMatches, testPersonAffiliations } from './testOrgs';
 
 // Wraps the real Monday client so a test-account id (see personas.ts) reads its dummy persona and
 // every other id goes to Monday unchanged. Only ever wired in the sandbox and the local preview
@@ -12,12 +13,15 @@ function totalDonated(donations: DonationRecord[]): string {
   return (cents / 100).toFixed(2);
 }
 
-export function withTestAccounts(real: MondayClient, now: () => Date): MondayClient {
+// `currentStatusLabel`: the deployment's Affiliations "Current" label (changeRequests.employer), so
+// the test organization's Affiliation passes the same grant checks a real one does.
+export function withTestAccounts(real: MondayClient, now: () => Date, currentStatusLabel = 'Current'): MondayClient {
   const persona = (id: string) => findTestPersona(id, now());
+  const affiliation = () => testOrgAffiliation(currentStatusLabel);
   // Spread copies every method, so writes and cron-only reads (letter settings, the year-end
   // sweeps, volunteer hours, change-request items) stay the real client's: no test id reaches
-  // them. Personas have no affiliations or organizations, so the org reads below answer empty for
-  // a test id and pass every other id through.
+  // them. The org reads below answer the one test organization (testOrgs.ts) and its Affiliation,
+  // empty for any other test id, and pass every other id through.
   return {
     ...bindAll(real),
     async findDonorsByEmail(email) {
@@ -81,6 +85,8 @@ export function withTestAccounts(real: MondayClient, now: () => Date): MondayCli
       const realNames = realIds.length > 0 ? await real.getDonorNames(realIds) : [];
       const byId = new Map(realNames.map((n) => [n.id, n]));
       return donorItemIds.flatMap((id) => {
+        // The home page reads organization names through this call too.
+        if (id === TEST_ORG_ID) return [{ id, name: TEST_ORG.name }];
         if (isTestDonorId(id)) return [{ id, name: persona(id).name }];
         const found = byId.get(id);
         return found === undefined ? [] : [found];
@@ -93,24 +99,31 @@ export function withTestAccounts(real: MondayClient, now: () => Date): MondayCli
       return isTestDonorId(params.donorItemId) ? [] : real.getEventRegistrationsForDonor(params);
     },
     async getPersonAffiliations(params) {
-      return isTestDonorId(params.donorItemId) ? [] : real.getPersonAffiliations(params);
+      if (!isTestDonorId(params.donorItemId)) return real.getPersonAffiliations(params);
+      return testPersonAffiliations(params.donorItemId, currentStatusLabel);
     },
     async findAffiliationsByWorkEmail(email) {
+      if (isTestOrgWorkEmail(email)) return [affiliation()];
       return findTestPersonasByEmail(email, now()).length > 0 ? [] : real.findAffiliationsByWorkEmail(email);
     },
     async getAffiliation(affiliationItemId) {
+      if (affiliationItemId === TEST_ORG_AFFILIATION_ID) return affiliation();
       return isTestDonorId(affiliationItemId) ? null : real.getAffiliation(affiliationItemId);
     },
     async getOrganizationAffiliations(orgItemId) {
+      if (orgItemId === TEST_ORG_ID) return [affiliation()];
       return isTestDonorId(orgItemId) ? [] : real.getOrganizationAffiliations(orgItemId);
     },
     async getOrganization(orgItemId) {
+      if (orgItemId === TEST_ORG_ID) return TEST_ORG;
       return isTestDonorId(orgItemId) ? null : real.getOrganization(orgItemId);
     },
     async getOrganizationGifts(orgItemId) {
+      if (orgItemId === TEST_ORG_ID) return testOrgGifts(now());
       return isTestDonorId(orgItemId) ? [] : real.getOrganizationGifts(orgItemId);
     },
     async getOrganizationMatches(orgItemId) {
+      if (orgItemId === TEST_ORG_ID) return testOrgMatches(now());
       return isTestDonorId(orgItemId) ? [] : real.getOrganizationMatches(orgItemId);
     },
   };

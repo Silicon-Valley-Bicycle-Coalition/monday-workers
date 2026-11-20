@@ -5,7 +5,7 @@ import type { DonationRecord, VolunteerShift } from '../types';
 // as a reference when helping a member ("what does a lapsed member see?"). One persona per
 // membership state on the People board (Membership Status Active/Lapsed/blank × Tier
 // Member/Lifetime), plus a renewal-window member, a shared household inbox and a Spanish
-// speaker who joined recently (the home page's new-member state). The list for staff is in docs/uat/member-portal.md; keep the two in step.
+// speaker who joined recently (the home page's new-member state), and an organization rep (testOrgs.ts). The list for staff is in docs/uat/member-portal.md; keep the two in step.
 //
 // Dates are relative to the request's clock so "renews in two weeks" and "lapsed last year"
 // stay true however long after this was written someone looks.
@@ -203,6 +203,26 @@ export function testPersonas(now: Date): TestPersona[] {
       preferredLanguage: 'Spanish',
       employer: '',
       donations: [{ date: d(-20), amount: '50.00', description: 'Membership' }],
+      volunteerShifts: [],
+    },
+    {
+      // Represents the test organization in testOrgs.ts: signs in to their own pages plus a
+      // "You manage" link to the organization. test-orgrep-work@example.org (that Affiliation's
+      // Work Email, not a persona) signs in to the organization alone.
+      id: 'test-orgrep',
+      email: 'test-orgrep@example.org',
+      name: 'Morgan Orgrep (test)',
+      membershipStatus: 'Active',
+      membershipTier: 'Member',
+      membershipExpiry: d(200),
+      memberSince: d(-530),
+      memberType: 'Continuing',
+      sharedInbox: false,
+      address: '800 Test Pkwy, San José, CA 95110',
+      phone: '408-555-0109',
+      preferredLanguage: 'English',
+      employer: 'Example Bikes Inc. (test)',
+      donations: [{ date: d(-165), amount: '75.00', description: 'Membership' }],
       volunteerShifts: [],
     },
   ];

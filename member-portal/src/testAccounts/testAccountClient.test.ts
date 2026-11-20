@@ -66,7 +66,31 @@ describe('withTestAccounts', () => {
     expect(real.getDonorEmails).not.toHaveBeenCalled();
   });
 
-  it('gives test ids and addresses no affiliations or organizations', async () => {
+  it('answers the test organization, its Affiliation and its giving', async () => {
+    const real = spyClient();
+    const client = withTestAccounts(real, () => NOW, 'Current');
+    const employer = { affiliationsBoardId: 1, affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' }, currentStatusLabel: 'Current', personAffiliationsLink: 'pa' };
+    const aff = { id: 'test-aff-orgrep', personItemId: 'test-orgrep', organizationId: 'test-org', statusLabel: 'Current', portalAccess: true, workEmail: 'test-orgrep-work@example.org' };
+
+    expect(await client.getPersonAffiliations({ donorItemId: 'test-orgrep', employer })).toEqual([
+      { id: 'test-aff-orgrep', organizationId: 'test-org', organizationName: 'Example Bikes Inc. (test)', statusLabel: 'Current', primary: true, portalAccess: true },
+    ]);
+    expect(await client.findAffiliationsByWorkEmail('Test-Orgrep-Work@example.org')).toEqual([aff]);
+    expect(await client.getAffiliation('test-aff-orgrep')).toEqual(aff);
+    expect(await client.getOrganizationAffiliations('test-org')).toEqual([aff]);
+    expect((await client.getOrganization('test-org'))!.name).toBe('Example Bikes Inc. (test)');
+    expect((await client.getOrganizationGifts('test-org')).map((g) => g.giftType)).toEqual(['Donation', 'Sponsorship', 'Donation']);
+    expect((await client.getOrganizationGifts('test-org'))[0]!.date).toBe('2025-03-15');
+    expect(await client.getOrganizationMatches('test-org')).toHaveLength(1);
+    expect(await client.getDonorNames(['test-org'])).toEqual([{ id: 'test-org', name: 'Example Bikes Inc. (test)' }]);
+    await expect(withTestAccounts(real, () => NOW, 'Aktuell').getAffiliation('test-aff-orgrep')).resolves.toMatchObject({ statusLabel: 'Aktuell' });
+
+    for (const key of ['getPersonAffiliations', 'findAffiliationsByWorkEmail', 'getAffiliation', 'getOrganizationAffiliations', 'getOrganization', 'getOrganizationGifts', 'getOrganizationMatches'] as const) {
+      expect(real[key]).not.toHaveBeenCalled();
+    }
+  });
+
+  it('gives other test ids and addresses no affiliations or organizations', async () => {
     const real = spyClient();
     const client = withTestAccounts(real, () => NOW);
     const employer = { affiliationsBoardId: 1, affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' }, currentStatusLabel: 'Current', personAffiliationsLink: 'pa' };

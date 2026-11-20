@@ -4476,4 +4476,66 @@ describe('sandbox test accounts', () => {
     expect(html).toContain('<h3>Harper Household (test)</h3>');
     expect(html).toContain('<h3>Hayden Household (test)</h3>');
   });
+  describe('test organization rep', () => {
+    function orgTestDeps(): AppDeps {
+      const cfg = structuredClone(config);
+      cfg.monday.organizationsBoardId = 77;
+      cfg.changeRequests.employer = {
+        affiliationsBoardId: 555,
+        affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' },
+        currentStatusLabel: 'Current',
+        personAffiliationsLink: 'pa',
+      };
+      cfg.organizations.portalAccessColumn = 'check_portal';
+      cfg.organizations.workEmailColumn = 'email_work';
+      cfg.donations.historyVisibleFromISO = '2020-01-01';
+      return testDeps({ config: cfg });
+    }
+
+    async function signIn(app: ReturnType<typeof createApp>, email: string) {
+      const res = await postLogin(app, email);
+      expect(res.status).toBe(303);
+      return { Cookie: (res.headers.get('Set-Cookie') ?? '').split(';')[0]! };
+    }
+
+    it('signs the rep in to their own pages and the test organization, with a statement', async () => {
+      const deps = orgTestDeps();
+      const app = createApp(deps);
+      const headers = await signIn(app, 'test-orgrep@example.org');
+
+      const home = await (await app.request('/en/portal', { headers })).text();
+      expect(home).toContain('Morgan Orgrep (test)');
+      expect(home).toContain('Example Bikes Inc. (test)');
+      expect(home).toContain('/en/portal/org/test-org');
+
+      const org = await app.request('/en/portal/org/test-org', { headers });
+      expect(org.status).toBe(200);
+      const html = await org.text();
+      expect(html).toContain('Sponsorship');
+      expect(html).toContain('Employee match');
+      expect(html).toContain('href="/en/portal/org/test-org/statement/2025"');
+
+      expect((await app.request('/en/portal/org/test-org/statement/2025', { headers })).status).toBe(200);
+    });
+
+    it('signs the Work Email in to the organization alone', async () => {
+      const app = createApp(orgTestDeps());
+      const headers = await signIn(app, 'test-orgrep-work@example.org');
+      expect((await app.request('/en/portal/org/test-org', { headers })).status).toBe(200);
+      expect(await (await app.request('/en/portal', { headers })).text()).not.toContain('Morgan Orgrep (test)');
+    });
+
+    it('gives other test accounts no organization', async () => {
+      const app = createApp(orgTestDeps());
+      const headers = await signIn(app, 'test-active@example.org');
+      expect((await app.request('/en/portal/org/test-org', { headers })).status).toBe(404);
+    });
+
+    it('leaves the Work Email on the normal path when test accounts are off', async () => {
+      const deps = orgTestDeps();
+      const res = await postLogin(createApp({ ...deps, testAccounts: false }), 'test-orgrep-work@example.org');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Set-Cookie') ?? '').not.toContain('__Host-session=');
+    });
+  });
 });

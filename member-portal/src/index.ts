@@ -132,7 +132,7 @@ export default {
       const now = () => new Date();
 
       const app = createApp({
-        monday: testAccounts ? withTestAccounts(realMonday, now) : realMonday,
+        monday: testAccounts ? withTestAccounts(realMonday, now, config.changeRequests.employer?.currentStatusLabel) : realMonday,
         testAccounts,
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         sessionStore: new D1SessionStore(env.DB),

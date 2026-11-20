@@ -48,6 +48,8 @@ records, and nothing you submit as one of them is saved.
 | `test-donor@example.org` | Gave but never joined: "Not a member yet" and no membership card |
 | `test-household@example.org` | Two people sharing one inbox (one active, one lapsed); Your info shows that address under each |
 | `test-spanish@example.org` | Member who joined about three weeks ago and prefers Spanish: the new-member welcome, in Spanish |
+| `test-orgrep@example.org` | Member who can also see a business's giving: their own pages plus "You manage: Example Bikes Inc. (test)", with last year's statement |
+| `test-orgrep-work@example.org` | The same person's work address: the business's giving and statement only, none of their own pages |
 
 Dates move with today's date, so "ends in about two weeks" stays true. A request to change your
 details shows the normal confirmation, but nothing is sent to staff and you can repeat it. These
