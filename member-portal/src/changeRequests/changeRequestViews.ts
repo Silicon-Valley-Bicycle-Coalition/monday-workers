@@ -75,36 +75,54 @@ function preferencesSection(donors: DonorContactInfo[], prefFields: PrefField[],
   `;
 }
 
-// The info door's first section (src/doors/info.ts), which supplies the page heading, the
-// unavailable-records note and the way home.
-export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale, prefFields: PrefField[], employerField: EmployerFieldMode = 'off'): string {
+// The dialog's id; the "Request a change" link names it in data-dialog-open (portalTabs.ts).
+export const CHANGE_REQUEST_DIALOG_ID = 'change-request';
+
+// The Profile tab's first section (src/doors/info.ts, which supplies the tab heading and the
+// unavailable-records note): each person's details on file, a "Request a change" link, the
+// change-request form in a <dialog>, then communication preferences. The tab script opens the
+// dialog as a modal; with no script the link reloads the tab with ?change=1, which renders the
+// dialog open in place (openForm), as does an emailed ?field=employer.
+export function changeRequestFormView(
+  donors: DonorContactInfo[],
+  locale: Locale,
+  prefFields: PrefField[],
+  employerField: EmployerFieldMode = 'off',
+  openForm = false
+): string {
   const employerOption =
     employerField === 'off'
       ? ''
       : `<option value="employer"${employerField === 'preselected' ? ' selected' : ''}>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</option>`;
+  const id = CHANGE_REQUEST_DIALOG_ID;
   return `
-    <h2>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
-    <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
+    <h2>${escapeHtml(t(locale, 'profile.detailsHeading'))}</h2>
     ${donors.map((d) => donorCurrentValues(d, locale, employerField)).join('')}
-    <form action="/${locale}/portal/change-request" method="post">
-      <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
-        <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
-      </label>
-      <label>${escapeHtml(t(locale, 'changeRequest.whatToChange'))}
-        <select name="field" required>
-          <option value="address">${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</option>
-          <option value="email">${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</option>
-          <option value="phone">${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</option>
-          <option value="language">${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</option>
-          ${employerOption}
-        </select>
-      </label>
-      <label>${escapeHtml(t(locale, 'changeRequest.newValue'))}
-        <input type="text" name="newValue" maxlength="500" required />
-      </label>
-      <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
-    </form>
-    <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
+    <p><a class="outline-button" href="/${locale}/portal/info?change=1" data-dialog-open="${id}">${escapeHtml(t(locale, 'profile.requestChange'))}</a></p>
+    <dialog id="${id}" class="portal-dialog" aria-labelledby="${id}-title"${openForm ? ' open data-open-on-load' : ''}>
+      <form method="dialog" class="dialog-close"><button type="submit" aria-label="${escapeHtml(t(locale, 'dialog.close'))}"><span aria-hidden="true">×</span></button></form>
+      <h2 id="${id}-title">${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
+      <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
+      <form action="/${locale}/portal/change-request" method="post">
+        <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
+          <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
+        </label>
+        <label>${escapeHtml(t(locale, 'changeRequest.whatToChange'))}
+          <select name="field" required>
+            <option value="address">${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</option>
+            <option value="email">${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</option>
+            <option value="phone">${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</option>
+            <option value="language">${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</option>
+            ${employerOption}
+          </select>
+        </label>
+        <label>${escapeHtml(t(locale, 'changeRequest.newValue'))}
+          <input type="text" name="newValue" maxlength="500" required />
+        </label>
+        <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
+      </form>
+      <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
+    </dialog>
     ${preferencesSection(donors, prefFields, locale)}
   `;
 }

@@ -3972,6 +3972,13 @@ describe('doors', () => {
       expect(html.indexOf('class="portal-panel"')).toBeLessThan(html.indexOf('/regenerate"'));
     });
 
+    it('renders the change-request dialog open for ?change=1, the no-script path', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      const { app, cookie } = await signedIn({ monday });
+      expect(await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text()).not.toContain('data-open-on-load');
+      expect(await (await app.request('/en/portal/info?change=1', { headers: { Cookie: cookie } })).text()).toContain('data-open-on-load');
+    });
+
     it('lands on Profile after a regenerate, showing the new code', async () => {
       const monday = fakeMondayWithDonations();
       const cardTokenStore = inMemoryCardTokenStore();

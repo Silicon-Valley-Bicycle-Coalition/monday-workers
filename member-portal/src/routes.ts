@@ -834,7 +834,7 @@ export function createApp(deps: AppDeps) {
         const data = await infoLeg;
         // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
         if (data === null) return { panel: errorView('error.changeRequestLoadFailed', locale), status: 500 };
-        return { panel: infoDoorView(data, locale, cardCodeSection(home, locale)) };
+        return { panel: infoDoorView(data, locale, { cardCodes: cardCodeSection(home, locale), openForm: c.req.query('change') !== undefined }) };
       };
     })
   );

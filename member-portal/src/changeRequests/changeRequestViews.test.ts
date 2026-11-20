@@ -111,6 +111,20 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(row.indexOf(t('en', 'changeRequest.prefMailNo'))).toBeLessThan(row.indexOf(t('en', 'changeRequest.prefMailYes')));
   });
 
+  it('shows the details, then a Request a change link that opens the form in a closed dialog', () => {
+    const html = changeRequestFormView([optedOutDonor], 'en', []);
+    expect(html).toContain(t('en', 'profile.detailsHeading'));
+    expect(html).toContain('href="/en/portal/info?change=1" data-dialog-open="change-request"');
+    expect(html).toContain('<dialog id="change-request" class="portal-dialog" aria-labelledby="change-request-title">');
+    expect(html.indexOf('<dl>')).toBeLessThan(html.indexOf('<dialog'));
+    expect(html.indexOf('<dialog')).toBeLessThan(html.indexOf('action="/en/portal/change-request"'));
+    expect(html).toContain('<form method="dialog" class="dialog-close">');
+  });
+
+  it('renders the dialog open when asked (no-script ?change=1, or ?field=employer)', () => {
+    expect(changeRequestFormView([optedOutDonor], 'en', [], 'on', true)).toContain('aria-labelledby="change-request-title" open data-open-on-load>');
+  });
+
   it('renders only the configured preference fields', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', ['doNotMail']);
     expect(html).toContain('name="doNotMail"');

@@ -37,8 +37,15 @@ function data(overrides: Partial<InfoDoorData> = {}): InfoDoorData {
 }
 
 describe('infoDoorView', () => {
+  it('opens the change-request dialog for ?change=1 or a preselected employer field, and not otherwise', () => {
+    expect(infoDoorView(data(), 'en')).not.toContain('data-open-on-load');
+    expect(infoDoorView(data(), 'en', { openForm: true })).toContain('data-open-on-load');
+    const employer = data({ form: { donors: [contact], prefFields: [], employerField: 'preselected' } });
+    expect(infoDoorView(employer, 'en')).toContain('data-open-on-load');
+  });
+
   it('ends with the card code section it is given', () => {
-    const html = infoDoorView(data(), 'en', '<section id="card-codes"></section>');
+    const html = infoDoorView(data(), 'en', { cardCodes: '<section id="card-codes"></section>' });
     expect(html.indexOf(t('en', 'info.emailsHeading'))).toBeLessThan(html.indexOf('id="card-codes"'));
     expect(infoDoorView(data(), 'en')).not.toContain('card-codes');
   });

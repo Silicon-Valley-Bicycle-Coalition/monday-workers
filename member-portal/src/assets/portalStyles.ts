@@ -406,6 +406,26 @@ export const PORTAL_CSS = `
   .prefs-form button[type='submit'] {
     background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
   }
+  /* The change-request dialog (Profile tab). A modal sits centered over a dimmed page; with no
+     script the server renders it open in place, so a non-modal one stays in the flow. */
+  .portal-dialog {
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 20px 24px 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .portal-dialog:not(:modal) { position: static; margin: 16px 0; }
+  .portal-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+  .portal-dialog h2 { margin-top: 0; padding-right: 48px; }
+  .portal-dialog .dialog-close { float: right; margin: -8px -12px 0 0; }
+  main .portal-dialog .dialog-close button[type='submit'] {
+    background: transparent; border: none; color: var(--text); padding: 4px 12px; font-size: 28px; line-height: 1;
+  }
+  .portal-dialog label { display: block; margin: 0 0 12px; }
+  .portal-dialog select, .portal-dialog input[type='text'] { display: block; width: 100%; margin-top: 4px; }
   /* Communication preferences: one row per channel, its two choices in aligned columns. A plain
      row header (not the black table-head bar), and a real table layout so it fits instead of
      scrolling; the choice labels wrap on a phone. */

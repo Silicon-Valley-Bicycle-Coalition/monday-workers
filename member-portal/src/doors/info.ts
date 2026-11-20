@@ -139,10 +139,18 @@ function emailsSection(data: InfoDoorData, locale: Locale): string {
   return `<section class="info-emails">${heading}${body}</section>`;
 }
 
-export function infoDoorView(data: InfoDoorData, locale: Locale, cardCodes = ''): string {
+export interface InfoViewOptions {
+  // "Get a new code" for each card (cardCodeSection in card.ts), shown last.
+  cardCodes?: string;
+  // Render the change-request dialog already open: ?change=1 (the no-script path) or an emailed
+  // ?field=employer.
+  openForm?: boolean;
+}
+
+export function infoDoorView(data: InfoDoorData, locale: Locale, { cardCodes = '', openForm = false }: InfoViewOptions = {}): string {
   const form =
     data.form === null
       ? `<p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>`
-      : changeRequestFormView(data.form.donors, locale, data.form.prefFields, data.form.employerField);
+      : changeRequestFormView(data.form.donors, locale, data.form.prefFields, data.form.employerField, openForm || data.form.employerField === 'preselected');
   return tabPanel(t(locale, 'tabs.profile'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}${cardCodes}`);
 }

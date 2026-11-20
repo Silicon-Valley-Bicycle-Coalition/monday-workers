@@ -1,3 +1,10 @@
+// The portal's one script: dialogs, then tab switching.
+//
+// Dialogs: a link with data-dialog-open="<id>" opens that <dialog> as a modal instead of following
+// its href (the no-script fallback, which renders the dialog open in place). A dialog the server
+// rendered open (data-open-on-load) becomes a modal on load, and the query that opened it is
+// dropped from the address, so a reload doesn't reopen it. Clicking the backdrop closes a modal.
+//
 // Tab switching without moving the page. Each tab is still its own server-rendered page (a plain
 // link works with no script), but with this script a tab click fetches that page and swaps in its
 // panel and tab bar, so the window never scrolls. Anything unexpected (an error status, a
@@ -5,6 +12,36 @@
 // Served as a hashed, same-origin file (static.ts); no panel carries a script of its own, so
 // swapping panel HTML runs nothing. Plain ES5 so it parses in every browser the portal serves.
 export const PORTAL_TABS_JS = `(function () {
+  function plainClick(event) {
+    return event.button === 0 && !event.defaultPrevented && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (target && target.tagName === 'DIALOG' && target.open) {
+      var box = target.getBoundingClientRect();
+      var inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) target.close();
+      return;
+    }
+    var opener = target && target.closest && target.closest('[data-dialog-open]');
+    if (!opener || !plainClick(event)) return;
+    var dialog = document.getElementById(opener.getAttribute('data-dialog-open'));
+    if (!dialog || !dialog.showModal) return;
+    event.preventDefault();
+    if (dialog.open) dialog.close();
+    dialog.showModal();
+  });
+
+  var initial = document.querySelector('dialog[data-open-on-load]');
+  if (initial && initial.showModal) {
+    // showModal() throws on a dialog that's already open (non-modally).
+    initial.removeAttribute('open');
+    initial.showModal();
+    // The query that opened it has done its job; a reload or a shared link shouldn't reopen it.
+    if (location.search && history.replaceState) history.replaceState(history.state, '', location.pathname + location.hash);
+  }
+
   var nav = document.getElementById('tabs');
   var panel = document.querySelector('.portal-panel');
   if (!nav || !panel || !window.fetch || !window.DOMParser || !history.pushState) return;
@@ -56,8 +93,7 @@ export const PORTAL_TABS_JS = `(function () {
 
   nav.addEventListener('click', function (event) {
     var link = event.target.closest && event.target.closest('a.portal-tab');
-    if (!link || event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!link || !plainClick(event)) return;
     event.preventDefault();
     if (link.getAttribute('aria-current') === 'page') return;
     var current = nav.querySelector('[aria-current="page"]');
