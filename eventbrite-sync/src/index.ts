@@ -14,6 +14,7 @@ import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBat
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
 import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/sweep';
 import { checkPledgeCounts, logPledgeCounts } from './pledgeCounts/check';
+import { logSendLinkSummary, sweepSendLinks } from './sendLinks/sweep';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit, isVerifiedWebhook } from './rateLimit';
@@ -123,7 +124,8 @@ export default {
   },
 
   // Hourly (wrangler.jsonc triggers): the ended-event status sweep (src/endedEvents/sweep.ts), cheap
-  // when idle at one D1 read, and once a day the missed-order check (src/missedOrders/check.ts).
+  // when idle at one D1 read, and once a day the missed-order check (src/missedOrders/check.ts) and
+  // the send-link sweep (src/sendLinks/sweep.ts).
   scheduled(controller: ScheduledController, env: Env): Promise<void> {
     return runScheduled(controller, env);
   },
@@ -135,14 +137,15 @@ export async function runScheduled(
   env: Env,
   check: typeof checkMissedOrders = checkMissedOrders,
   sweep: typeof sweepEndedEvents = sweepEndedEvents,
-  pledgeCounts: typeof checkPledgeCounts = checkPledgeCounts
+  pledgeCounts: typeof checkPledgeCounts = checkPledgeCounts,
+  sendLinks: typeof sweepSendLinks = sweepSendLinks
 ): Promise<void> {
   const config = configFor(env);
   const now = new Date(controller.scheduledTime);
   // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them;
-  // `off` dry-runs the sweep (each queue send logged, none made) and runs the checks, which only read
-  // Eventbrite and the ledgers and log, so their dry run is the live run; `hold` or an unreadable
-  // switch skips them with one line.
+  // `off` dry-runs the sweeps (each queue send logged, none made; stale send links counted, none
+  // written) and runs the checks, which only read Eventbrite and the ledgers and log, so their dry
+  // run is the live run; `hold` or an unreadable switch skips them with one line.
   const gate = await skipContext(env);
   const disposition = runDisposition(gate.mode);
   const isCheck = isCheckHour(now);
@@ -165,6 +168,23 @@ export async function runScheduled(
       .then(logEndedEventSummary)
       .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`)),
   ];
+
+  const pageUrl = config.attendeeSync.classEmails.pageUrl;
+  const eventsBoard = config.monday.boards.events;
+  if (isCheck && pageUrl !== null && eventsBoard !== null) {
+    jobs.push(
+      sendLinks({
+        monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+        boardId: eventsBoard,
+        eventbriteIdColumn: config.attendeeSync.events.eventbriteIdColumn,
+        sendLinkColumn: config.attendeeSync.events.sendLinkColumn,
+        pageUrl,
+        dryRun: disposition !== 'run',
+      })
+        .then(logSendLinkSummary)
+        .catch((err) => console.error(`eventbrite-sync send links: sweep failed: ${errorMessage(err)}`))
+    );
+  }
 
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
   if (!isCheck) {
