@@ -8,9 +8,10 @@ import { upsertAnswer } from './store';
 // deterministic outcome returns `{ recorded: false, reason }`; only a transient failure (D1)
 // throws, so the caller can retry. Logs carry ids and the result, never the answer or context.
 
-// Who handed the answer over: an Eventbrite registration question (eventbrite-sync), or the
-// matching-gift company a donor picked on a Funraise one-time gift (funraise-sync, GitHub #6).
-export const ANSWER_SOURCES = ['eventbrite', 'funraise'] as const;
+// Who handed the answer over: an Eventbrite registration question (eventbrite-sync), the
+// matching-gift company a donor picked on a Funraise one-time gift (funraise-sync, GitHub #6), or the
+// Employer field a member filled in on their Mailchimp profile (mailchimp-sync, GitHub #7).
+export const ANSWER_SOURCES = ['eventbrite', 'funraise', 'mailchimp'] as const;
 export type AnswerSource = typeof ANSWER_SOURCES[number];
 
 export interface EmployerAnswerInput {
