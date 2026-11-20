@@ -1,7 +1,7 @@
 # Zoom Phone call and text log — design
 
-Date: 2026-11-19 · Status: **draft, decisions open** (see [Open decisions](#open-decisions)) ·
-Worker: `zoom-phone-sync` (new)
+Date: 2026-11-19 · Status: **design decided 2026-11-19 (see [Decisions](#decisions-2026-11-19-dwk)),
+not built** · Worker: `zoom-phone-sync` (new)
 
 ## Intent
 
@@ -34,8 +34,10 @@ The legacy `phone.*_call_log_completed` events were retired in May 2026
 (inbound/outbound), `connect_type` (internal/external), `result`, `start_time`, `talk_time`,
 and caller/callee `name`, `email`, `ext_number` and `did_number` (E.164). An SMS event carries
 `message_id`, `session_id`, `date_time`, `sender.phone_number`, `to_members[].phone_number`,
-`owner`, `message_type` and `message` (the text). **The SMS payload fields are from a summary of the
-reference, not read directly; confirm them against a real delivery in the sandbox before building.**
+`owner`, `message_type` and `message` (the text, which is a required field: Zoom offers no way to
+leave it out, so the Worker discards it at ingest). **The SMS payload fields are from a summary of
+the reference, not read directly; confirm them against a real delivery in the sandbox before
+building.**
 
 **Not subscribed, deliberately:** recordings, voicemail, transcripts and AI call summaries
 (`phone.recording_*`, `phone.voicemail_*`, `phone.recording_transcript_completed`). The Worker
@@ -63,8 +65,11 @@ The standard webhook shape (root `CLAUDE.md`, Architecture):
      enqueues.
 2. **Filter at ingest** (nothing past this point stores what's dropped):
    - Calls with `connect_type: internal` (staff to staff).
-   - Events whose staff party isn't an included Zoom user (config `users`, see decision 4).
+   - Events whose staff party is in config `zoom.excludeUsers`. It's empty in production: every
+     staff line is logged, including the main number and call queues (decision 4). The sandbox
+     sets `zoom.includeUsers` to its one test line instead.
    - Anything without an external phone number (blocked or anonymous callers).
+   - The SMS `message` field, always: no message text goes past ingest (decision 1).
 3. **D1 dedupe** on `call_element_id` / `message_id`, then **enqueue**. D1 status here means
    "ingested", as in every webhook Worker.
 4. **Queue consumer:** match, write the timeline entry, advance Last Phone Contact, mark `logged`.
@@ -78,9 +83,9 @@ People has one **Phone** column (production `phone_mm8n5szp`; the import filled 
 
 - **Phone index in D1**, rebuilt by a nightly cron: every People item's Phone, normalized to E.164
   (US default; drop extensions), → item id. About 8,000 items, one paged read a night.
-- The consumer normalizes the event's external number and looks it up. One item → log it. None →
-  `unmatched`. Several (a shared household number) → `ambiguous`, logged on none, counted
-  (decision 3).
+- The consumer normalizes the event's external number and looks it up. Every matching item gets
+  the entry and its Last Phone Contact, so a shared household number logs on each person (decision
+  3; 101 numbers on 214 items as of 2026-11-19). None → `unmatched`.
 - **Rematch:** after each nightly rebuild, `unmatched` rows younger than 14 days are tried again,
   so a call from someone staff add to People the next day still lands.
 - **Never creates a person.** Organizations' Phone is out of scope for v1 (see Alternatives).
@@ -97,9 +102,16 @@ paragraphs, escaped), title and summary capped at 255 characters, the create sen
 |---|---|---|---|
 | Call, answered | "Call with Jane Rider" | "Outbound · 12 min" | Staff member, direction, start time, length |
 | Call, missed | "Missed call to Jane Rider" | "Inbound · voicemail" or "Inbound · no answer" | Same, no voicemail content |
-| Text | "Text from Jane Rider" / "Text to …" | "Zoom Phone text" | Per decision 1: nothing, or the message text |
+| Text | "Text from Jane Rider" / "Text to …" | "On Ann Staff's line" | Staff line, direction, time, and an **Open in Zoom** link. No message text |
 
 Timestamp: the call's `start_time` or the text's `date_time`.
+
+**The Zoom link for texts** (decision 1) goes to the SMS tab of the Zoom web app (`zoom.smsUrl` in
+config; the exact URL is checked in the sandbox). Zoom has no documented link that opens one SMS
+conversation ([community thread](https://community.zoom.com/t5/Zoom-Phone-System/Zoom-Phone-Sms-deep-linking/m-p/168089)),
+so the entry names the staff line, and the reader finds the thread there by the person's number.
+Only that line's owner (and Zoom admins) can read it. A colleague sees that a text happened, when
+and on whose line, and asks the owner for the content.
 
 **Last Phone Contact** (🔒 Date on People): set to the entry's Pacific date for an answered call or a
 sent/received text, never moved backward (the `advanceDate` rule from the Journey send log). A
@@ -119,10 +131,15 @@ phone_events
   direction       TEXT
   result          TEXT              -- calls only
   talk_seconds    INTEGER
-  status          TEXT              -- pending | logged | unmatched | ambiguous | failed | dropped
-  people_item_id  TEXT
+  status          TEXT              -- pending | logged | unmatched | failed | dropped
   logged_at       TEXT
   attempts        INTEGER
+
+phone_event_items                   -- one row per People item an event is logged on
+  event_id        TEXT
+  item_id         TEXT
+  timeline_id     TEXT              -- set once Monday confirms the create
+  PRIMARY KEY (event_id, item_id)
 
 phone_index
   e164            TEXT
@@ -130,8 +147,10 @@ phone_index
   PRIMARY KEY (e164, item_id)
 ```
 
-- **No message text in D1, ever.** If decision 1 logs the text, it travels in the queue message
-  only (queue retention 14 days) and is written to Monday, never to D1 or logs.
+- **No message text anywhere.** Ingest drops `message` before D1, the queue or a log sees it, and
+  Monday never gets it.
+- **Per-item progress.** A shared number logs on several items; `phone_event_items` records each
+  confirmed create, so a retry after a partial failure writes only the items still missing one.
 - **Phone numbers in D1 are short-lived:** cleared on `logged`, and unmatched rows are deleted
   after 14 days, so D1 doesn't become a record of staff's personal calls.
 - **Logs are counts only.** `check-log-safety.mjs` covers email addresses; phone numbers aren't
@@ -153,7 +172,7 @@ the call-history and SMS APIs once their endpoints and scopes are confirmed.
 ## Sandbox
 
 There is one Zoom account, so the sandbox gets its **own** Server-to-Server app and webhook
-subscription, with `users` set to one test line. Production calls never reach the sandbox People
+subscription, with `zoom.includeUsers` set to one test line. Production calls never reach the sandbox People
 board, matching "sandbox is inbound only, no outbound data". `config/sandbox.json` and
 `config/svbc.json` follow `member-portal`'s split test (no shared board, column, activity or Zoom
 app id). `env.sandbox` needs explicit `routes: []` (it has none anyway, but the rule holds).
@@ -164,14 +183,18 @@ app id). `env.sandbox` needs explicit `routes: []` (it has none anyway, but the 
 {
   "people": { "boardId": 0, "phoneColumn": "phone_mm8n5szp", "lastPhoneContactColumn": "<date column id>" },
   "timeline": { "callActivityId": "<custom activity id>", "textActivityId": "<custom activity id>" },
-  "zoom": { "accountId": "<id>", "users": ["<zoom user id>", "…"] },
-  "logTextBody": false,
+  "zoom": {
+    "accountId": "<id>",
+    "includeUsers": null,
+    "excludeUsers": [],
+    "smsUrl": "<Zoom web app SMS tab URL>"
+  },
   "defaultRegion": "US",
   "unmatchedRetentionDays": 14
 }
 ```
 
-Secrets: `ZOOM_WEBHOOK_SECRET` (signature and URL validation). Monday access through the
+`includeUsers: null` means every user on the account. Secrets: `ZOOM_WEBHOOK_SECRET` (signature and URL validation). Monday access through the
 `monday-auth` broker's `SyncToken`. No Zoom REST calls in v1, so no Zoom client secret; the S2S
 app exists only to own the webhook subscription.
 
@@ -187,6 +210,8 @@ logged event: one create and at most one date write.
   send log gives: staff read that board as deliberate, significant touches, and the imported
   Activities board already hit its item limit (GL#92). A staff member who wants a call on record
   as a significant touch still logs it there by hand.
+- **Message text on the timeline.** More useful, but staff texts can be personal and every seat
+  with access to People could read them. Rejected (decision 1); the entry links to Zoom instead.
 - **One entry per text conversation per day** instead of per message. Tidier for long threads, but
   needs a daily batch and a different state model. Revisit if timelines get noisy.
 - **Organizations' Phone.** A call to a company's main line would land on the Organization.
@@ -196,18 +221,44 @@ logged event: one create and at most one date write.
 - **Polling** call history and SMS hourly instead of webhooks: no public endpoint and self-healing,
   but the endpoints weren't confirmed. Keep it as the reconcile path above.
 
-## Open decisions
+## Decisions (2026-11-19, dwk)
 
-1. **Text content.** Log only that a text happened (default), or include the message text? With
-   text, the timeline is far more useful, but staff texts can be personal and every Monday seat
-   can read People.
-2. **Staff awareness.** Staff should know their calls and texts with supporters are logged before
-   this goes on. Who tells them, and does it need a line in the IT protocols?
-3. **Shared numbers.** A number on several People items (households): log on none (default), or on
-   each? It affects 101 numbers on 214 items, about 4% of People with a phone (see Phone coverage).
-4. **Which lines.** Include only listed Zoom users (default: development and program staff), or
-   every user on the account with an exclude list? Shared lines (main number, call queues) need a
-   call either way: a supporter calling the main line is useful to log.
+1. **Texts: only that a text happened, with a link to Zoom for the content.** No message text in
+   Monday, D1, the queue or logs.
+2. **Staff notice: update the communication-logging protocol** (monday-migration
+   `protocols/monday/logging-emails.md`, and its Box copy) before writes go on. Draft below.
+3. **Shared numbers: log on each** People item that holds the number.
+4. **Lines: all staff.** Every Zoom Phone user, the main number and call queues included;
+   `excludeUsers` stays for exceptions.
+
+### Protocol text (decision 2)
+
+Replaces the protocol's "Calls and meetings" section. Publish it the day production writes go on,
+not before, so staff aren't told about logging that isn't happening yet.
+
+> ## Zoom Phone calls and texts
+>
+> Calls and texts on your Zoom Phone line with anyone on **People** are logged by themselves. Each
+> one shows on the person's item under **Emails & Activities**, and their **Last Phone Contact**
+> date moves. This covers every staff line, including the main number and call queues. Calls
+> between staff aren't logged.
+>
+> - **What's logged:** who called or texted whom, when, and how long a call lasted. Never what was
+>   said: no recordings, no voicemail, no message text. A text's entry names the line it was on and
+>   links to Zoom, where only that line's owner can read the conversation.
+> - **Who can see it:** everyone with access to People. Calls and texts with numbers that aren't on
+>   People aren't logged, so personal calls on your Zoom line stay out of Monday.
+> - **Matching:** Monday matches the number in the person's **Phone** column. If a call didn't show
+>   up, add the number to the person; a call up to 14 days old is then logged overnight.
+> - **Shared numbers:** a number on several people (a household) logs on each of them.
+>
+> ## Significant calls, and calls and meetings off Zoom Phone
+>
+> A call that matters to the relationship (a major-gift conversation, a sponsor's commitment) is
+> still worth an item on the **Activities (Logged)** board with your notes: set **Activity Type**
+> to **Call** or **Meeting**, set the date, and link the **Person**. Do the same for calls on your
+> own mobile and for meetings.
+
 ## Phone coverage (counted 2026-11-19)
 
 Production People board (18437909781), Phone column `phone_mm8n5szp`, read-only count, no numbers
@@ -229,8 +280,13 @@ the 14-day rematch only helps when staff add the number afterwards.
 
 ## Before building
 
-- Answers to decisions 1–4.
+- The Zoom web app's SMS tab URL for `zoom.smsUrl`, checked signed in as a staff line.
 - A sandbox S2S app subscribed to the four events, and one real delivery of each captured (shape
   only, numbers redacted) as test fixtures. This confirms the SMS fields.
 - The two custom activities created in Monday (account-wide ids, as "Mailchimp email" was) and
   Last Phone Contact added to both People boards.
+
+## At launch
+
+- Protocol text above merged into `protocols/monday/logging-emails.md` and the Box copy, and a
+  note to staff, the same day `zoom-phone-sync:writes` goes `on` in production.

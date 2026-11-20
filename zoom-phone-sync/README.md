@@ -1,6 +1,6 @@
 # zoom-phone-sync
 
-**Status: requirements only. The Worker isn't built yet, and its design has open decisions.**
+**Status: requirements only. The design is decided (2026-11-19); the Worker isn't built yet.**
 
 Logs Zoom Phone calls and texts between staff and supporters on each supporter's Monday People
 item: one Emails & Activities timeline entry per call or text, plus a 🔒 Last Phone Contact date.
@@ -17,6 +17,7 @@ Shape, in brief:
 * Write switch `zoom-phone-sync:writes`, `sandbox` environment with its own Zoom app limited to a
   test line, Monday access through `monday-auth`'s `SyncToken`.
 
-Open before building: whether to log text content, telling staff, shared household numbers and
-which Zoom lines are included. Phone coverage was counted 2026-11-19: 59% of People, 70% of current
-members.
+Decided 2026-11-19: texts are logged without their content, with a link to Zoom; a shared number
+logs on each person; every staff line is included; staff are told through the communication-logging
+protocol, updated the day production writes go on. Phone coverage, counted 2026-11-19: 59% of
+People, 70% of current members.
