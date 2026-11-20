@@ -254,11 +254,11 @@ after the URL secret (`src/mondayJwt.ts`, byte-identical in both: WebCrypto HMAC
 only). Every app request is signed with the same secret, so the token is also bound to its use:
 `accountId` (or `dat.account_id`) must equal config `monday.accountId` (26331880, the
 `bikesiliconvalley` account, which holds both the production and sandbox boards; read with
-`query { account { id } }`), `aud`, when present, must name the request's origin and path, and
-`exp`/`nbf`/`iat` are checked when present with 60 s skew, refusing a lifetime (`exp - iat`) or
-age over an hour. Monday's integration docs show `accountId`, `aud` (the endpoint URL), `iat` and
-a 300 s `exp`, but its webhook docs don't list the claims, so `exp` and `aud` stay optional until a
-live sandbox delivery shows them. A signing secret with no `monday.accountId` rejects everything.
+`query { account { id } }`), `aud` must name the request's origin and path, and `exp` must be
+present; `exp`/`nbf`/`iat` are checked with 60 s skew, refusing a lifetime (`exp - iat`) over an
+hour. A live sandbox delivery (2026-11-20, issue #3) carried `userId`, `accountId`, `aud` (the
+endpoint URL, no query), `iat`, `exp` = `iat` + 300 and `shortLivedToken`, a Monday API token,
+which is one more reason the token is never logged. A signing secret with no `monday.accountId` rejects everything.
 The subscription challenge skips the JWT:
 its echo has no side effect and the URL secret already gates it. Rollout is by config, so a
 deploy ahead of the secret drops nothing:
@@ -285,8 +285,8 @@ Operator path, per Worker and per environment (sandbox first):
    deliveries stay unsigned and the warning above keeps firing.
 4. Confirm on a live sandbox delivery that the warning stops and nothing is rejected
    (`wrangler tail --env sandbox`, look for `JWT`). A `wrong-audience` or `wrong-account`
-   rejection means Monday's webhook claims differ from its integration docs: fix the binding in
-   `src/mondayJwt.ts` before production. If deliveries always carry `exp`, make it required there.
+   rejection (or `no-expiry`) means Monday's webhook claims have changed from the ones above:
+   fix the binding in `src/mondayJwt.ts` before production.
 5. Then set `"MONDAY_WEBHOOK_JWT_REQUIRED": "true"` in that environment's `vars` in
    `wrangler.jsonc` and deploy. Keep `?secret=` as well: it gates the per-IP limiter exemption
    and costs nothing.
