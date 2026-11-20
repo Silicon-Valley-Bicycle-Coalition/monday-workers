@@ -297,9 +297,37 @@ describe('validateConfig: consent', () => {
     expect(validateConfig(raw).journeyLog).toBeNull();
     expect(validateConfig(raw).profileLinks).toBeNull();
     raw.journeyLog = { boardId: 1, emailColumns: ['e1', 'e2'], timelineActivityId: 'act', journeyIds: null, lastJourneyEmailColumn: 'd1', maxEntriesPerRun: 200 };
-    raw.profileLinks = { boardId: 1, emailColumn: 'e1', linkColumn: 'l1', maxWritesPerRun: 500 };
+    const profileLinks = { boardId: 1, emailColumn: 'e1', linkColumn: 'l1', maxWritesPerRun: 500 };
+    raw.profileLinks = profileLinks;
     expect(validateConfig(raw).journeyLog).toEqual(raw.journeyLog);
-    expect(validateConfig(raw).profileLinks).toEqual(raw.profileLinks);
+    expect(validateConfig(raw).profileLinks).toEqual({ ...profileLinks, preferences: null });
+  });
+
+  const PAGE = 'https://org.us9.list-manage.com/profile?u=f5051c378a338d4fba23caa04&id=abc123';
+
+  it('reads profileLinks.preferences', () => {
+    const raw = validRaw() as Record<string, unknown>;
+    const preferences = { column: 'p1', pageUrl: PAGE };
+    raw.profileLinks = { boardId: 1, emailColumn: 'e1', linkColumn: 'l1', maxWritesPerRun: 500, preferences };
+    expect(validateConfig(raw).profileLinks?.preferences).toEqual(preferences);
+  });
+
+  it("rejects a preferences page that isn't this audience's hosted profile page", () => {
+    const bad = [
+      { column: '', pageUrl: PAGE },
+      { column: 'p1', pageUrl: PAGE.replace('id=abc123', 'id=other') },          // another audience
+      { column: 'p1', pageUrl: PAGE.replace('/profile', '/subscribe') },
+      { column: 'p1', pageUrl: PAGE.replace('https:', 'http:') },
+      { column: 'p1', pageUrl: PAGE.replace('list-manage.com', 'example.com') },
+      { column: 'p1', pageUrl: PAGE.replace('u=f5051c378a338d4fba23caa04&', '') },
+      { column: 'p1', pageUrl: `${PAGE}&e=0647d7be1b` },                           // one person's page
+      { column: 'p1', pageUrl: 'not a url' },
+    ];
+    for (const preferences of bad) {
+      const raw = validRaw() as Record<string, unknown>;
+      raw.profileLinks = { boardId: 1, emailColumn: 'e1', linkColumn: 'l1', maxWritesPerRun: 500, preferences };
+      expect(() => validateConfig(raw), JSON.stringify(preferences)).toThrow(/profileLinks\.preferences/);
+    }
   });
 
   it('rejects a journeyLog or profileLinks missing what it needs', () => {

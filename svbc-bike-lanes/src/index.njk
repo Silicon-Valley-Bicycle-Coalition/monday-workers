@@ -1,0 +1,173 @@
+---
+layout: layouts/base.njk
+title: Home
+permalink: /
+---
+
+<h1>Silicon Valley Bicycle Coalition Bike Lanes</h1>
+
+<p>Tracking bicycle infrastructure in San Mateo and Santa Clara Counties.</p>
+
+<section class="summary">
+  <h2>Regional Total</h2>
+  <div class="stat-cards">
+    <div class="stat-card stat-card-large">
+      <span class="stat-value">{{ bikelanes.totals.miles | formatDistance('mi') | safe }}</span>
+      <span class="stat-label">miles of Bike Lanes</span>
+      <span class="stat-alt">({{ bikelanes.totals.miles | formatDistance('km') | safe }} kilometers)</span>
+    </div>
+  </div>
+  <h3>By Class</h3>
+  <div class="stat-cards stat-cards-grid">
+    {% for item in bikelanes.totals.byClass %}
+    <div class="stat-card">
+      <span class="stat-value">{{ item.miles | formatDistance('mi') | safe }}</span>
+      <span class="stat-label">{{ item.className }}{% if item.supplemental %}<span class="source-badge" title="Data from supplemental city sources">*</span>{% endif %}</span>
+      <span class="stat-alt">({{ item.miles | formatDistance('km') | safe }} km)</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>By City</h2>
+  <div class="section-controls">
+    <div class="unit-toggle" id="city-unit-toggle">
+      <button type="button" class="unit-btn active" data-unit="mi">MI</button>
+      <button type="button" class="unit-btn" data-unit="km">KM</button>
+    </div>
+  </div>
+  {% for countyName, county in bikelanes.counties %}
+  <h3>{{ countyName }} County</h3>
+  <table class="city-class-table">
+    <thead>
+      <tr>
+        <th>City</th>
+        <th>Class I <span class="unit-label">(mi)</span></th>
+        <th>Class II <span class="unit-label">(mi)</span></th>
+        <th>Class III <span class="unit-label">(mi)</span></th>
+        <th>Class IV <span class="unit-label">(mi)</span></th>
+        <th>Total <span class="unit-label">(mi)</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for city in county.byCity %}
+      <tr>
+        <td{% if city.name == "Unincorporated" %} class="city-unincorporated"{% endif %}>{{ city.name }}</td>
+        <td data-label="Class I">
+          <span class="unit-mi">{{ city | cityClassMiles(1) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(1) | safe }}</span>
+        </td>
+        <td data-label="Class II">
+          <span class="unit-mi">{{ city | cityClassMiles(2) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(2) | safe }}</span>
+        </td>
+        <td data-label="Class III">
+          <span class="unit-mi">{{ city | cityClassMiles(3) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(3) | safe }}</span>
+        </td>
+        <td data-label="Class IV">
+          <span class="unit-mi">{{ city | cityClassMiles(4) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(4) | safe }}</span>
+        </td>
+        <td data-label="Total">
+          <span class="unit-mi">{{ city.miles | formatDistance('mi') | safe }}</span>
+          <span class="unit-km hidden">{{ city.miles | formatDistance('km') | safe }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Historical Trends</h2>
+  {% if history.snapshots.length > 0 %}
+  <p>Tracking changes in bike infrastructure over time.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Total Miles</th>
+        <th>Total Kilometers</th>
+        <th>Change</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set reversedSnapshots = history.snapshots | reverse %}
+      {% for snapshot in reversedSnapshots %}
+      {% set prevIndex = loop.index %}
+      {% set prevSnapshot = reversedSnapshots[prevIndex] if prevIndex < reversedSnapshots.length else null %}
+      <tr>
+        <td>{{ snapshot.date | shortDate }}</td>
+        <td data-label="Total Miles">{{ snapshot.totals.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Total Kilometers">{{ snapshot.totals.miles | formatDistance('km') | safe }}</td>
+        {% set methodChanged = prevSnapshot and (snapshot.method or 1) != (prevSnapshot.method or 1) %}
+        <td data-label="Change" class="change {% if prevSnapshot and not methodChanged %}{% if snapshot.totals.miles > prevSnapshot.totals.miles %}positive{% elif snapshot.totals.miles < prevSnapshot.totals.miles %}negative{% endif %}{% endif %}">
+          {% if methodChanged %}
+            <a href="#method-change">Method changed</a>
+          {% elif prevSnapshot %}
+            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChangeWithUnit('mi') }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="no-data">No historical data available yet. Data will be collected during weekly builds.</p>
+  {% endif %}
+</section>
+
+<section class="methodology">
+  <h2>About This Data</h2>
+  <p>This tracker displays bike lane infrastructure data for San Mateo and Santa Clara Counties in the San Francisco Bay Area. Data is sourced from the <a href="https://opendata.mtc.ca.gov/datasets/regional-bike-facilities">MTC Regional Bike Facilities</a> dataset maintained by the Metropolitan Transportation Commission.</p>
+  <h3>Bike Lane Classifications</h3>
+  <ul>
+    <li><strong>Class I - Bike Path:</strong> Separate paved paths for bicycles and pedestrians, physically separated from motor vehicle traffic</li>
+    <li><strong>Class II - Bike Lane:</strong> Striped lanes on streets designated for bicycle use</li>
+    <li><strong>Class III - Bike Route:</strong> Shared roadways with signage indicating bicycle routes</li>
+    <li><strong>Class IV - Separated Bikeway:</strong> Protected bike lanes with physical separation from motor vehicle traffic (cycle tracks)</li>
+  </ul>
+  <h3>Data Sources</h3>
+  <p>The MTC regional dataset does not currently include Class IV separated bikeways. To provide complete data, Class IV facilities are supplemented from city-level open data sources:</p>
+  <ul>
+    {% for source in bikelanes.supplementalSources %}
+    <li><a href="{{ source.url }}">{{ source.name }}</a> — {{ source.coverage }} {{ source.dataType }}</li>
+    {% endfor %}
+  </ul>
+  <h3 id="method-change">Counting method change (November 2026)</h3>
+  <p>Earlier snapshots overstated MTC mileage and understated San José. MTC segments were selected with rectangular boxes around each county, and each whole segment was assigned by a single point, so bike facilities in San Francisco, Alameda, and Santa Cruz Counties were counted, mostly as unincorporated San Mateo County. Separately, the San José query stopped at the service's 2,000-record limit and missed 1,321 of the city's 3,321 bikeway records.</p>
+  <p>Each segment is now cut at county and city boundaries and counted only where it lies. All queries are paged. On the same data (November 2, 2026), the two methods compare as follows:</p>
+  <table>
+    <thead>
+      <tr><th></th><th>Previous method</th><th>Current method</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>MTC miles, both counties</td><td data-label="Previous method">1,255.8</td><td data-label="Current method">1,120.4</td></tr>
+      <tr><td>Less MTC miles inside San José</td><td data-label="Previous method">−257.8</td><td data-label="Current method">−249.9</td></tr>
+      <tr><td>San José (city data)</td><td data-label="Previous method">+327.9</td><td data-label="Current method">+576.5</td></tr>
+      <tr><td>Regional total</td><td data-label="Previous method">1,325.9</td><td data-label="Current method">1,447.0</td></tr>
+    </tbody>
+  </table>
+  <p>Snapshots taken before the change are kept as published. The history table shows the break as a method change, not as a change in miles, so compare totals only within one method.</p>
+  <p><small>Items marked with * indicate data from supplemental city sources. Data is refreshed weekly. Historical tracking began when this site was launched.</small></p>
+</section>
+
+<footer class="data-info">
+  <p><small>Last updated: {{ bikelanes.fetchedAt | readableDate }}</small></p>
+  <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
+  <div class="download-buttons">
+    <a href="/data/bike-lanes-mi.csv" download class="btn-download">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download CSV (MI)
+    </a>
+    <a href="/data/bike-lanes-km.csv" download class="btn-download">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download CSV (KM)
+    </a>
+  </div>
+</footer>

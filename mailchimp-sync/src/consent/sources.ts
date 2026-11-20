@@ -19,6 +19,9 @@ export interface MailchimpListOptions {
   // When given, filled with each address's member web_id (the id in Mailchimp's own profile URL),
   // archived members included, for the Mailchimp Profile link on People (src/profileLinks).
   webIds?: Map<string, number>;
+  // When given, filled with each non-archived member's unique_email_id (the `e` in Mailchimp's
+  // hosted preferences page URL), for the Email Preferences link on People (src/profileLinks).
+  uniqueEmailIds?: Map<string, string>;
   // When given, filled with the `field` merge field of each member whose address was confirmed
   // (subscribed or unsubscribed), blank values left out, for the employer-answer hand-over
   // (src/employerAnswers). A pending signup is unconfirmed and anyone can start one for any
@@ -28,7 +31,7 @@ export interface MailchimpListOptions {
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const EMPLOYER_STATUSES: ReadonlySet<string> = new Set(['subscribed', 'unsubscribed']);
-const FIELDS = 'total_items,members.email_address,members.status,members.web_id';
+const FIELDS = 'total_items,members.email_address,members.status,members.web_id,members.unique_email_id';
 
 /**
  * Every member of the audience, normalized address → status. Two passes: Mailchimp's member list
@@ -60,7 +63,7 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
     }
     const page = (await response.json()) as {
       total_items: number;
-      members: { email_address: string; status: string; web_id?: number; merge_fields?: Record<string, unknown> }[];
+      members: { email_address: string; status: string; web_id?: number; unique_email_id?: string; merge_fields?: Record<string, unknown> }[];
     };
     // Offset paging shifts when a member is archived or deleted mid-read, skipping one while the
     // final count can still match. A total that moves between pages is that shift: start over
@@ -73,6 +76,10 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
       const address = m.email_address.trim().toLowerCase();
       into.set(address, m.status);
       if (opts.webIds !== undefined && typeof m.web_id === 'number') opts.webIds.set(address, m.web_id);
+      // Archived members can't be emailed and have no preferences page to link to.
+      if (!archived && opts.uniqueEmailIds !== undefined && typeof m.unique_email_id === 'string' && m.unique_email_id !== '') {
+        opts.uniqueEmailIds.set(address, m.unique_email_id);
+      }
       if (opts.employers !== undefined && !archived && EMPLOYER_STATUSES.has(m.status)) {
         const value = m.merge_fields?.[opts.employers.field];
         if (typeof value === 'string' && value.trim() !== '') opts.employers.into.set(address, value);

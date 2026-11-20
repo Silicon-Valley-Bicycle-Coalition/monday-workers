@@ -52,6 +52,7 @@ of a dedicated integration user. No Worker holds a Monday token of its own.
 | [`sync-watchdog`](workers/sync-watchdog.md) | Safety net | Hourly cron | Slack alert when a cron stops, a write switch is wrong or a queue backs up |
 | [`monday-auth`](workers/monday-auth.md) | Platform | Service binding, cron | Monday OAuth token broker for every other Worker |
 | [`svbc-calendars`](workers/svbc-calendars.md) | Website | HTTP (public), cron | Events widget and committee and event `.ics` calendar feeds |
+| [`svbc-bike-lanes`](workers/svbc-bike-lanes.md) | Serve | HTTP (staff), weekly build | Staff-only tracker of bike lane miles by county, city and class |
 | [`quickbooks-sync`](workers/quickbooks-sync.md) | Ingest | Webhooks | QuickBooks invoices and customers. **Postponed indefinitely**, so its writes stay off. |
 | [`salesforce-import`](workers/salesforce-import.md) | One-time | Local CLI | The Salesforce → Monday migration pipeline, kept for reference and re-runs |
 | [`geo-filter`](workers/geo-filter.md) | Tool | Local CLI | Lists contacts near a point, zip code or corridor, on request |

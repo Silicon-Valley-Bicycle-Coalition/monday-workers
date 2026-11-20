@@ -6,6 +6,12 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "cd member-portal && npm run dev:local"],
       "port": 8787
+    },
+    {
+      "name": "svbc-bike-lanes",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd svbc-bike-lanes && npx wrangler dev --port 8790"],
+      "port": 8790
     }
   ]
 }

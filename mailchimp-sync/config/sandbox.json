@@ -134,7 +134,11 @@
     "boardId": 18437342592,
     "emailColumn": "email_mm8h4kkb",
     "linkColumn": "link_mm98rz6c",
-    "maxWritesPerRun": 500
+    "maxWritesPerRun": 500,
+    "preferences": {
+      "column": "link_mm99ntk0",
+      "pageUrl": "https://bikesiliconvalley.us9.list-manage.com/profile?u=f5051c378a338d4fba23caa04&id=dfe12eec72"
+    }
   },
   "stewardship": {
     "boardId": 18437342592,

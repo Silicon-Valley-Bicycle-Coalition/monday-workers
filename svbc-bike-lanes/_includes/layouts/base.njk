@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{{ site.description }}">
+  <title>{{ title }} | {{ site.title }}</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/" class="logo">
+        <img src="/assets/svbc-logo.webp" alt="Silicon Valley Bicycle Coalition" width="200" height="80">
+      </a>
+      <span class="site-title">Bike Lane Tracker</span>
+    </nav>
+  </header>
+
+  <main>
+    {{ content | safe }}
+  </main>
+
+  <script>
+    // Unit toggle functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggle = document.getElementById('city-unit-toggle');
+      if (!toggle) return;
+
+      toggle.addEventListener('click', function(e) {
+        const btn = e.target.closest('.unit-btn');
+        if (!btn || btn.classList.contains('active')) return;
+
+        const unit = btn.dataset.unit;
+
+        // Update active button
+        toggle.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update unit labels in table headers
+        document.querySelectorAll('.city-class-table .unit-label').forEach(label => {
+          label.textContent = '(' + unit + ')';
+        });
+
+        // Toggle visibility of unit values
+        document.querySelectorAll('.city-class-table .unit-mi').forEach(el => {
+          el.classList.toggle('hidden', unit === 'km');
+        });
+        document.querySelectorAll('.city-class-table .unit-km').forEach(el => {
+          el.classList.toggle('hidden', unit === 'mi');
+        });
+      });
+    });
+  </script>
+
+  <footer>
+    <p>Data sourced from <a href="https://opendata.mtc.ca.gov/datasets/regional-bike-facilities">MTC Regional Bike Facilities</a></p>
+    <p>&copy; {{ currentYear }} <a href="{{ site.url }}">Silicon Valley Bicycle Coalition</a></p>
+  </footer>
+</body>
+</html>
