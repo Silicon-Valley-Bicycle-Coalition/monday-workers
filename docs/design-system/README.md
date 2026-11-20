@@ -2,7 +2,7 @@
 
 The visual language of the Silicon Valley Bicycle Coalition across print, files, **bikesiliconvalley.org** and the Cloudflare Workers behind it: the **letterhead**, letters, slides and social posts, the donor **member portal**, the **branded emails** every Worker sends, the **Eventbrite calendar widget** embedded on the site, and the staff **member map**.
 
-**Brand basis** (decided 2026-11-19): the 2026 letterhead, read alongside what SVBC actually produces — the 2027 sponsor packet, the 2025 postcard, the master logo file, staff slide decks, the email signature and letters in Box (audited 2026-11-19). Two golds: `svbc-gold` (#FFC20E, the logo's own gold) for digital and full-colour pieces, `svbc-gold-soft` (#E8B85F) for letterhead-style documents. Both the black-and-gold and the grey-and-gold logo are allowed on light grounds. The website (Squarespace, read 2026-11-13) and the Workers (`monday-workers` at `main@22f708e7`) still use the earlier web values (#FFC700, Manrope and Poppins) and move over time. Layout, components and behaviour still come from the website and the Workers code.
+**Brand basis** (decided 2026-11-19): the 2026 letterhead, read alongside what SVBC actually produces — the 2027 sponsor packet, the 2025 postcard, the master logo file, staff slide decks, the email signature and letters in Box (audited 2026-11-19). Two golds: `svbc-gold` (#FFC20E, the logo's own gold) for digital and full-colour pieces, `svbc-gold-soft` (#E8B85F) for letterhead-style documents. Both the black-and-gold and the grey-and-gold logo are allowed on light grounds. The website moved to these values on 2026-11-19 (`svbc-gold`, `svbc-sand`, Nunito Sans; see Website below). The Workers (`monday-workers` at `main@22f708e7`) still use the earlier web values (#FFC700, Manrope and Poppins) and move over time (issue #40). Layout, components and behaviour still come from the website and the Workers code.
 
 > **This folder** is the source of a Claude Design System artifact, kept here so it's versioned
 > with the code. `tokens.json` holds every value; `components/*/preview.html` are fragments the
@@ -39,7 +39,7 @@ The visual language of the Silicon Valley Bicycle Coalition across print, files,
 | `svbc-chrome` | #383838 | Website footer bar |
 | `svbc-ink` | #303030 | Body and heading text |
 | `svbc-white` | #FFFFFF | The logo's lettering; text on black, grey and charcoal |
-| `web-gold` | #FFC700 | Legacy web gold, still in the website and Workers: replace with `svbc-gold` |
+| `web-gold` | #FFC700 | Legacy web gold, still in the Workers (the website moved off it 2026-11-19): replace with `svbc-gold` |
 
 **Which gold.** `svbc-gold` is the gold people see: the logo, the sponsor packet's fields, the postcard, slide title bars, social posts, buttons. `svbc-gold-soft` is a quieter gold for letters and other documents built on the letterhead, where a full-strength field would shout. Don't mix the two in one piece, and never recolour the logo's gold to match either.
 
@@ -65,7 +65,8 @@ Rules:
 - **Designed collateral** (Canva): the 2027 sponsor packet uses **Garet** (Bold for headings, uppercase in black bars; Book and Regular for body) with **Squad** Bold Italic for stamps and taglines; the 2025 postcard uses Squad throughout. Social templates use **League Spartan** Bold. These are the designer's working fonts; keep them in Canva pieces, and use the Avenir stack everywhere else.
 - **Print** (letterhead): 11pt letter body; 12pt gold tagline (regular weight in the 2026 file); 9pt right-aligned contact and board block in `svbc-grey-text`, uppercase section labels; 8pt italic 501(c)(3) line. Internal documents add a 14pt title.
 - **Slides** (16:9): cover title 54–60pt bold; slide title 32–36pt bold; body 24–28pt with bold run-in leads ("Places:", "People:", "Mission:"); secondary 20pt; footer and slide number 9–12pt `svbc-grey-text`; a big-statement or Q&A slide 96–116pt bold on gold.
-- **Web, current** (`web-heading`, `web-body`): the website and Workers still load **Manrope 500** for headings (tight tracking −0.02em; h1 59.2px, h2 41.92px, h3 33.28px, h4 24.64px at desktop width) and **Poppins** for everything else (21.76px/1.5 lead paragraphs, 16px/1.5 lists, nav and buttons, 14.56px footer; weights 400, 600, 700). They move to the Avenir stack as each surface is updated; the sizes stay.
+- **Website** (Squarespace, since 2026-11-19): **Nunito Sans** everywhere — headings (500, −0.02em), paragraphs, all three button styles, miscellaneous text and the header Donate button. Squarespace has no Avenir, so the site uses the brand stack's web face directly. Sizes are unchanged: h1 59.2px, h2 41.92px, h3 33.28px, h4 24.64px at desktop width; 21.76px/1.5 lead paragraphs, 16px/1.5 lists, nav and buttons, 14.56px footer.
+- **Workers, current** (`web-heading`, `web-body`): the portal, calendar widget and emails still load **Manrope 500** for headings and **Poppins** for everything else, at the website's sizes. They move to the Avenir stack (self-hosted Nunito Sans) in issue #40.
 
 In Workers, self-host web fonts: `scripts/build-font-modules.mjs` embeds subset woff2 files with `font-display: swap` (see `member-portal/src/assets/static.ts`); never link Google Fonts from a Worker page. Moving a Worker to the brand stack means self-hosting Nunito Sans the same way (Avenir can't be embedded). The previews here load fonts with a Google Fonts `@import` in `components/bundle.css` for convenience. Emails keep the system stack as their fallback: most clients ignore web fonts.
 
@@ -160,6 +161,23 @@ From the 2027 sponsor packet and 2025 postcard:
 ## Components
 
 Static renditions (plain HTML + `components/bundle.css`): Chrome (SiteHeader, SiteFooter), Actions (Button), Forms (TextInput), Navigation (Tabs), Data (DataTable), Membership (MemberCard), Email (EmailLayout), Calendar widget (EventCard) and Decoration (RoadDivider). They render with the brand tokens (`svbc-gold` #FFC20E and the Avenir stack); the live Workers still show #FFC700, Manrope and Poppins.
+
+## Website (Squarespace)
+
+bikesiliconvalley.org follows the system since 2026-11-19. Site Styles map to tokens:
+
+| Squarespace | Token | Value |
+| --- | --- | --- |
+| Palette: Light | `svbc-white` | #FFFFFF |
+| Palette: Light accent | `svbc-sand` | #F0EBE8 |
+| Palette: Accent | `svbc-gold` | #FFC20E |
+| Palette: Dark accent | `svbc-chrome` | #383838 |
+| Palette: Dark | `svbc-ink` | #303030 |
+| Theme "Bright 1" section background (header, black bands) | `svbc-black` | #000000, set as a custom colour |
+| Fonts: headings, paragraphs, buttons, miscellaneous | heading / body | Nunito Sans |
+| Fonts › Assign Styles › Header Button (custom) | body | Nunito Sans, 400, 1rem |
+
+Two traps when editing: changing the palette makes Squarespace recompute the auto-generated section themes, which turned "Bright 1" (the black header) charcoal until its background was set back to custom #000000; and the header's Donate button takes its font from its own Assign Styles entry, not from Fonts › Buttons. A custom-code comment ("/* GLOBAL SIDENAV … */") renders as visible text at the foot of every page; it needs wrapping in `<style>` tags.
 
 ## Workers status
 
