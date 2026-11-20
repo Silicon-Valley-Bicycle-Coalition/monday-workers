@@ -31,6 +31,12 @@ export const fil: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Tingnan ang iyong email',
   'checkEmail.body': 'Pakitingnan ang iyong email: kung nasa records namin ang address na iyon, paparating na ang isang login link. Malapit na itong mag-expire at isang beses lang magagamit.',
+  'checkEmail.codeLabel': '6-digit na code',
+  'checkEmail.codeSubmit': 'Mag-log in',
+  'checkEmail.codeHelp': 'Ilagay ang 6-digit na code mula sa email, o gamitin ang link nito.',
+  'checkEmail.codeError': 'Hindi gumana ang code na iyon o nag-expire na. Tingnan muli ang email, o gamitin ang link nito.',
+  'checkEmail.resendHelp': 'Hindi mo ba natanggap? Tingnan ang iyong spam folder, o ipadala itong muli.',
+  'checkEmail.resend': 'Ipadala muli',
   'confirmLogin.heading': 'Magpatuloy sa iyong portal',
   'confirmLogin.body': 'Gamitin ang button sa ibaba para tapusin ang pag-log in.',
   'confirmLogin.submit': 'Magpatuloy sa iyong portal',

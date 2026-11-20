@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { PORTAL_CSS } from './assets/portalStyles';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { formatUsdText } from './money';
 import { formatShortDate } from './dates';
@@ -138,6 +139,64 @@ describe('checkEmailView', () => {
   it('renders actual translated copy for a non-English locale, not just structure', () => {
     const html = checkEmailView('es');
     expect(html).toContain(t('es', 'checkEmail.heading'));
+  });
+});
+
+describe('checkEmailView code form and resend', () => {
+  const plain = checkEmailView('en');
+
+  it('with empty options renders exactly the plain page', () => {
+    expect(checkEmailView('en', {})).toBe(plain);
+    expect(plain).not.toContain('<form');
+  });
+
+  it('renders the code form with autofill attributes and a labelled input', () => {
+    const html = checkEmailView('en', { codeForm: { next: null, error: false } });
+    expect(html).toContain('<form method="post" action="/auth/code">');
+    const input = /<input[^>]*name="code"[^>]*>/.exec(html)?.[0] ?? '';
+    for (const attr of ['autocomplete="one-time-code"', 'inputmode="numeric"', 'pattern="[0-9]{6}"', 'maxlength="6"', 'required']) {
+      expect(input).toContain(attr);
+    }
+    const id = /id="([^"]+)"/.exec(input)?.[1] ?? '';
+    expect(id).not.toBe('');
+    expect(html).toContain(`<label for="${id}">6-digit code</label>`);
+    expect(html).toContain('name="lang" value="en"');
+    expect(html).not.toContain('name="next"');
+    expect(html).not.toContain('role="alert"');
+    expect(html).toContain('Enter the 6-digit code from the email, or use its link.');
+    expect(html).toContain('>Log in</button>');
+  });
+
+  it('escapes next and shows the error with role=alert', () => {
+    const html = checkEmailView('en', { codeForm: { next: '/a?b="<x>', error: true } });
+    expect(html).toContain('name="next" value="/a?b=&quot;&lt;x&gt;"');
+    expect(html).toMatch(/role="alert"[^>]*>[^<]*That code didn&#39;t work or has expired/);
+  });
+
+  it('renders the resend form, hidden by CSS for the delay, with the help text always visible', () => {
+    const html = checkEmailView('en', { resend: { email: 'a"<b@x.org', next: '/p', delaySeconds: 60 } });
+    expect(html).toContain('Didn&#39;t get it? Check your spam folder, or send it again.');
+    expect(html).toContain('<form method="post" action="/">');
+    expect(html).toContain('name="email" value="a&quot;&lt;b@x.org"');
+    expect(html).not.toContain('a"<b@x.org');
+    expect(html).toContain('name="next" value="/p"');
+    expect(html).toContain('name="lang" value="en"');
+    expect(html).toMatch(/style="[^"]*animation-duration: 60s[^"]*"[\s\S]*>Send again<\/button>/);
+    expect(PORTAL_CSS).toContain('0% { visibility: hidden }');
+    expect(PORTAL_CSS).toContain('steps(1, end)');
+  });
+
+  it('omits next from the resend form when null', () => {
+    const html = checkEmailView('en', { resend: { email: 'a@x.org', next: null, delaySeconds: 30 } });
+    expect(html).not.toContain('name="next"');
+  });
+
+  it('puts the escaped email in the code form too when resend is given', () => {
+    const html = checkEmailView('en', { codeForm: { next: null, error: true }, resend: { email: 'a"<b@x.org', next: null, delaySeconds: 60 } });
+    const codeForm = html.slice(html.indexOf('action="/auth/code"'), html.indexOf('</form>'));
+    expect(codeForm).toContain('name="email" value="a&quot;&lt;b@x.org"');
+    const noResend = checkEmailView('en', { codeForm: { next: null, error: false } });
+    expect(noResend).not.toContain('name="email"');
   });
 });
 

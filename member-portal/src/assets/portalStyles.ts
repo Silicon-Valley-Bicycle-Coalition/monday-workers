@@ -173,6 +173,17 @@ export const PORTAL_CSS = `
     background: var(--surface);
     color: var(--text);
   }
+  /* Check-email page: the code input sits under its label, and the resend button stays hidden for
+     the cooldown (the inline animation-duration) with no script; with animations disabled it just
+     shows. steps(1, end) holds the 0% value until the very end, then the 100% keyframe applies. */
+  form label { display: block; margin-bottom: 4px; }
+  input[name='code'] { font-size: 20px; letter-spacing: 0.3em; max-width: 12em; }
+  .form-error { color: var(--error, #b00020); }
+  .resend-reveal { animation: resend-reveal 1s steps(1, end) both; }
+  @keyframes resend-reveal {
+    0% { visibility: hidden }
+    100% { visibility: visible }
+  }
   /* Buttons with real padding/borders (vs. the tiny default inline button) need breathing room
      when a wrapped line lands right above the next list item — e.g. the portal's per-language
      "make this my language" buttons, one per <li>. */

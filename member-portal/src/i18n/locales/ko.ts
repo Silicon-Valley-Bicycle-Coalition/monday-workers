@@ -31,6 +31,12 @@ export const ko: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': '이메일을 확인해 주세요',
   'checkEmail.body': '이메일을 확인해 주세요. 등록된 주소인 경우 로그인 링크가 곧 도착합니다. 이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
+  'checkEmail.codeLabel': '6자리 코드',
+  'checkEmail.codeSubmit': '로그인',
+  'checkEmail.codeHelp': '이메일에 있는 6자리 코드를 입력하거나 이메일의 링크를 사용하세요.',
+  'checkEmail.codeError': '코드가 올바르지 않거나 만료되었습니다. 이메일을 다시 확인하거나 이메일의 링크를 사용하세요.',
+  'checkEmail.resendHelp': '받지 못하셨나요? 스팸 메일함을 확인하시거나 다시 보내세요.',
+  'checkEmail.resend': '다시 보내기',
   'confirmLogin.heading': '포털로 계속하기',
   'confirmLogin.body': '아래 버튼을 눌러 로그인을 완료해 주세요.',
   'confirmLogin.submit': '포털로 계속하기',

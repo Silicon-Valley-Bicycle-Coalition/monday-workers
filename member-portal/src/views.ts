@@ -154,11 +154,46 @@ export function loginFormView(locale: Locale, next: string | null = null): strin
   `;
 }
 
-export function checkEmailView(locale: Locale): string {
-  return `
+export interface CheckEmailOptions {
+  codeForm?: { next: string | null; error: boolean };
+  // `email` rides in the code form too, so a failed code check can re-render this resend form.
+  resend?: { email: string; next: string | null; delaySeconds: number };
+}
+
+// With no options, today's page. `codeForm` adds the one-time-code form (Apple AutoFill fills the
+// input); `resend` adds a "Send again" button that CSS alone reveals after `delaySeconds` (the
+// resend-reveal animation in portalStyles.ts; no script, and with animations off it shows at once).
+export function checkEmailView(locale: Locale, options: CheckEmailOptions = {}): string {
+  const { codeForm, resend } = options;
+  const hidden = (name: string, value: string) => `\n      <input type="hidden" name="${name}" value="${escapeHtml(value)}" />`;
+  const nextField = (next: string | null) => (next === null ? '' : hidden('next', next));
+  let html = `
     <h1>${escapeHtml(t(locale, 'checkEmail.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>
   `;
+  if (codeForm) {
+    const error = codeForm.error ? `\n    <p class="form-error" role="alert">${escapeHtml(t(locale, 'checkEmail.codeError'))}</p>` : '';
+    const emailField = resend ? hidden('email', resend.email) : '';
+    html += `${error}
+    <p>${escapeHtml(t(locale, 'checkEmail.codeHelp'))}</p>
+    <form method="post" action="/auth/code">
+      <label for="login-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
+      <input type="text" id="login-code" name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />${hidden('lang', locale)}${nextField(codeForm.next)}${emailField}
+      <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>
+    </form>
+  `;
+  }
+  if (resend) {
+    html += `
+    <p>${escapeHtml(t(locale, 'checkEmail.resendHelp'))}</p>
+    <div class="resend-reveal" style="animation-duration: ${Math.max(0, Math.floor(resend.delaySeconds))}s">
+      <form method="post" action="/">${hidden('email', resend.email)}${nextField(resend.next)}${hidden('lang', locale)}
+        <button type="submit">${escapeHtml(t(locale, 'checkEmail.resend'))}</button>
+      </form>
+    </div>
+  `;
+  }
+  return html;
 }
 
 // GET /auth/callback's body (issue GL#31): a plain button that POSTs the magic-link token back,

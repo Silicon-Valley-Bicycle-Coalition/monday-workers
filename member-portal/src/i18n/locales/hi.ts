@@ -31,6 +31,12 @@ export const hi: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'अपना ईमेल जाँचें',
   'checkEmail.body': 'कृपया अपना ईमेल जाँचें: यदि वह पता हमारे रिकॉर्ड में है, तो एक लॉगिन लिंक आपकी ओर आ रहा है। यह जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+  'checkEmail.codeLabel': '6 अंकों का कोड',
+  'checkEmail.codeSubmit': 'लॉग इन करें',
+  'checkEmail.codeHelp': 'ईमेल में दिया गया 6 अंकों का कोड दर्ज करें, या उसके लिंक का उपयोग करें।',
+  'checkEmail.codeError': 'वह कोड काम नहीं किया या उसकी समय सीमा समाप्त हो गई है। ईमेल दोबारा देखें, या उसके लिंक का उपयोग करें।',
+  'checkEmail.resendHelp': 'नहीं मिला? अपना स्पैम फ़ोल्डर देखें, या इसे दोबारा भेजें।',
+  'checkEmail.resend': 'फिर से भेजें',
   'confirmLogin.heading': 'अपने पोर्टल पर जारी रखें',
   'confirmLogin.body': 'लॉगिन पूरा करने के लिए नीचे दिए गए बटन का उपयोग करें।',
   'confirmLogin.submit': 'अपने पोर्टल पर जारी रखें',
