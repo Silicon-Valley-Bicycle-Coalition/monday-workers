@@ -75,7 +75,7 @@ The site is a [static-assets-only Cloudflare Worker](https://developers.cloudfla
 | Push to `main` touching `svbc-bike-lanes/` | Yes | No |
 | Manual (Actions → svbc-bike-lanes → Run workflow) | Yes | Yes |
 
-The deploy uses `CLOUDFLARE_API_TOKEN`, a secret of the GitHub `svbc-bike-lanes` environment. Restrict that environment to the `main` branch, and mint the token with only the **Workers Editor** role scoped to the `svbc-bike-lanes` Worker and **Workers Routes: Write** on the `bikesiliconvalley.org` zone (creating the Worker needs Workers Admin, so the first deploy is by hand). Until the secret exists the workflow builds and records history but skips the deploy, with a notice in the run summary.
+The deploy uses `CLOUDFLARE_API_TOKEN`, a secret of the GitHub `svbc-bike-lanes` environment. Restrict that environment to the `main` branch, and mint it as an account API token with two policies: **Workers → Specified Workers → `svbc-bike-lanes`** with the **Editor** role (the dashboard lists it as "Individual Workers Editor"), and **Zone → `bikesiliconvalley.org` → Workers Routes: Write** (custom domains don't support per-Worker roles yet). Don't start from the dashboard's "Edit Cloudflare Workers" template, which adds account-wide grants including log access to every Worker. Creating the Worker needs Workers Admin, so the first deploy is by hand. Until the secret exists the workflow builds and records history but skips the deploy, with a notice in the run summary.
 
 Don't also connect the Worker to Workers Builds: that would be a second deploy path, and it has no weekly schedule.
 
@@ -89,7 +89,7 @@ The move ran in this order; a fork moving off Pages can follow it.
 4. First deploy by hand, signed in with `wrangler login` (creating the Worker needs Workers Admin): `npm ci && npm run build && npm run deploy`. It attached the custom domain and its DNS record.
 5. Deleted the Pages project, which took the `pages.dev` URLs with it.
 6. Only then removed the `pages.dev` hostnames from the **SVBC Bike Lanes** Access application. Doing this before step 5 would leave `svbc-bike-lanes.pages.dev` public.
-7. Left: create the GitHub `svbc-bike-lanes` environment's `CLOUDFLARE_API_TOKEN` (the environment exists, restricted to `main`), then run the workflow by hand to check it deploys and creates the `svbc-bike-lanes-history` branch.
+7. Added the GitHub `svbc-bike-lanes` environment's `CLOUDFLARE_API_TOKEN` and ran the workflow by hand: it deployed and created the `svbc-bike-lanes-history` branch.
 
 ### Manual Deployment
 
