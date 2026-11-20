@@ -56,10 +56,25 @@ export interface MondayColumns {
 // on the Donors board (see PREF_FIELD_COLUMNS in config.ts) and doubles as a ChangeRequestField.
 export type PrefField = 'emailOptOut' | 'smsOptOut' | 'doNotMail';
 
+// The printed letterhead's sidebar band (SVBC Letter 2026 template in Box), set beside every tax
+// letter and organization statement. Each array is one line per entry. The board changes, so it
+// lives here rather than in code; update it when the Box template changes.
+export interface LetterheadConfig {
+  // Website, street, city and phone, top of the band.
+  contactLines: string[];
+  boardOfDirectors: string[];
+  executiveDirector: string;
+  // Gold mission tagline, centered at the foot of the first page.
+  tagline: string[];
+  // Italic 501(c)(3) line, foot of the band.
+  nonprofitLines: string[];
+}
+
 export interface TaxLetterConfig {
   orgLegalName: string;
   ein: string;
-  // The registered/501(c)(3) address — this is what's printed on donor giving letters.
+  // The registered/501(c)(3) address. Printed in the letterhead band only when `letterhead` is
+  // absent (a fork without its own letterhead); otherwise the band's contactLines stand in.
   officeAddress: string;
   // Where donors mail checks/correspondence — distinct from officeAddress, not currently
   // rendered anywhere (no consumer yet), but kept alongside it so the two addresses don't drift
@@ -77,6 +92,7 @@ export interface TaxLetterConfig {
   excludedGiftTypes: string[];
   separateGiftTypes: string[];
   separateGiftsStatement: string;
+  letterhead?: LetterheadConfig;
 }
 
 export interface ChangeRequestColumns {

@@ -172,6 +172,47 @@ describe('letterView', () => {
   });
 });
 
+describe('letterhead', () => {
+  const withLetterhead: TaxLetterConfig = {
+    ...taxLetter,
+    letterhead: {
+      contactLines: ['bikesiliconvalley.org', '95 South Market Street'],
+      boardOfDirectors: ['Liên Hoa Johnson', 'Kay <b>Cheng</b>'],
+      executiveDirector: 'Alex Example',
+      tagline: ['Building healthier communities', 'by bicycling'],
+      nonprofitLines: ['SVBC is a 501(c)(3)', 'non-profit organization'],
+    },
+  };
+
+  it('sets the band beside the letter: logo, contact, board, executive director, 501(c)(3) line', () => {
+    const html = letterView(letter, withLetterhead, 'August 24, 2026', 'en');
+    expect(html).toMatch(/<img class="letterhead-logo" src="\/assets\/letterhead-logo\.[0-9a-f]{16}\.svg"/);
+    expect(html).toContain('bikesiliconvalley.org<br>95 South Market Street');
+    expect(html).toContain('Board of Directors');
+    expect(html).toContain('Liên Hoa Johnson<br>Kay &lt;b&gt;Cheng&lt;/b&gt;');
+    expect(html).toContain('Executive Director</p>\n          <p>Alex Example</p>');
+    expect(html).toContain('SVBC is a 501(c)(3)<br>non-profit organization');
+    expect(html).toContain('<p class="letter-tagline">Building healthier communities<br>by bicycling</p>');
+    // The band follows the letter onto every printed page, numbered after the first.
+    expect(html).toContain('<div class="letterhead-band" aria-hidden="true"></div>');
+    expect(html).toContain('content: "Silicon Valley Bicycle Coalition · page " counter(page)');
+    expect(html).toContain('@page :first');
+  });
+
+  it('falls back to the logo and office address without a letterhead block', () => {
+    const html = letterView(letter, taxLetter, 'August 24, 2026', 'en');
+    expect(html).toContain('<p class="letterhead-contact">123 Example St, San Jose, CA 95112</p>');
+    expect(html).not.toContain('Board of Directors');
+    expect(html).not.toContain('<p class="letter-tagline">');
+  });
+
+  it('keeps the org name out of CSS-breaking characters in the page footer', () => {
+    const html = letterView(letter, { ...taxLetter, orgLegalName: 'A "B" </style> \\ C' }, 'August 24, 2026', 'en');
+    const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+    expect(style).toContain('content: "A \\22 B\\22  \\3c /style\\3e  \\5c  C · page " counter(page)');
+  });
+});
+
 describe('lettersUnavailableView', () => {
   it('says letters are not available yet', () => {
     expect(lettersUnavailableView('en')).toContain('not available yet');
