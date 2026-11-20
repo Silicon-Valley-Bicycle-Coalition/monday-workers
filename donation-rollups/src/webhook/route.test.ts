@@ -265,6 +265,13 @@ describe('Affiliations webhooks', () => {
     await post(app, { event: { type: 'create_pulse', pulseId: 41, boardId: 555 } });
     expect(send).toHaveBeenCalledOnce();
   });
+  it('enqueues for a deleted or restored item, which name it as itemId', async () => {
+    for (const type of ['delete_pulse', 'restore_pulse']) {
+      const { app, send } = affApp();
+      await post(app, { event: { type, itemId: 41, boardId: 555 } });
+      expect(send).toHaveBeenCalledWith({ kind: 'affiliation', donationItemId: '41', donationBoardId: '555' }, { delaySeconds: WEBHOOK_DELAY_SECONDS });
+    }
+  });
   it('ignores any other column, including the attributed totals this Worker writes to the same board', async () => {
     const { app, send } = affApp();
     const res = await post(app, { event: { type: 'update_column_value', pulseId: 41, boardId: 555, columnId: 'n_ag' } });

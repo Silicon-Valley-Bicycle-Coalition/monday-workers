@@ -397,32 +397,59 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
 // Reads Monday fresh every time, so a retry or a duplicate delivery lands on the same answer and
 // the write is skipped once the column already matches. A re-pointed Person keeps the old person's
 // Employer Name as it was, the same as a Former affiliation (affiliations/employer.ts).
+//
+// A deleted affiliation's Person link reads back empty, so its person comes from D1: the
+// affiliations table (written here and by the Organizational Giving recompute), else the owner its
+// last pending row recorded. Deleting someone's last affiliation clears Employer Name; deleting one
+// of several re-derives it from the rest, and Former-only leftovers keep it, as above.
 async function processAffiliation(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
   const { donationItemId: affiliationItemId } = message;
-  const { mondayClient, pendingStore, config } = deps;
+  const { mondayClient, pendingStore, affiliationsStore, config } = deps;
   const affiliations = config.affiliations;
   const sync = affiliations?.employerSync;
   let owner: { ownerItemId: string; ownerBoard: string } | undefined;
   if (affiliations && sync) {
     const summary = await mondayClient.getAffiliationSummary(affiliationItemId, affiliations.columns.personLink);
-    const columns = summary?.personBoardId ? sync.ownerColumnsByBoard[summary.personBoardId] : undefined;
+    const deleted = summary === null || summary.state === 'deleted';
+    let person: { itemId: string; boardId: string } | null = null;
     if (summary?.personItemId && summary.personBoardId) {
+      person = { itemId: summary.personItemId, boardId: summary.personBoardId };
+      if (!deleted) {
+        await affiliationsStore.upsert({ affiliationItemId, personItemId: person.itemId, personBoardId: person.boardId,
+          name: summary.name }, (deps.now ?? new Date()).toISOString());
+      }
+    } else if (deleted) {
+      person = await rememberedPerson(deps, affiliationItemId);
+      if (person === null) console.warn(`donation-rollups consumer: deleted affiliation "${affiliationItemId}" has no remembered person — Employer Name not re-derived`);
+    }
+    const columns = person ? sync.ownerColumnsByBoard[person.boardId] : undefined;
+    if (person) {
       if (columns === undefined) {
-        console.warn(`donation-rollups consumer: no employerSync entry for board "${summary.personBoardId}" — Employer Name for "${summary.personItemId}" not written`);
+        console.warn(`donation-rollups consumer: no employerSync entry for board "${person.boardId}" — Employer Name for "${person.itemId}" not written`);
       } else {
-        owner = { ownerItemId: summary.personItemId, ownerBoard: summary.personBoardId };
-        const state = await mondayClient.getPersonEmployerState(summary.personItemId, columns);
+        owner = { ownerItemId: person.itemId, ownerBoard: person.boardId };
+        const state = await mondayClient.getPersonEmployerState(person.itemId, columns);
         if (state !== null) {
           const ids = [...new Set([...state.affiliationItemIds, affiliationItemId])];
-          const employerName = employerNameFor(await mondayClient.getEmployerAffiliations(ids, sync.columns), affiliationItemId, sync.currentStatusLabel);
+          // getEmployerAffiliations leaves out items not active, so a deleted one is already gone here.
+          const remaining = await mondayClient.getEmployerAffiliations(ids, sync.columns);
+          let employerName = employerNameFor(remaining, affiliationItemId, sync.currentStatusLabel);
+          if (employerName === null && deleted && remaining.length === 0) employerName = '';
           if (employerName !== null && employerName !== state.employerName) {
-            await mondayClient.changeColumnValues(Number(summary.personBoardId), summary.personItemId, { [columns.employerName]: employerName });
+            await mondayClient.changeColumnValues(Number(person.boardId), person.itemId, { [columns.employerName]: employerName });
           }
         }
       }
     }
   }
   await pendingStore.updateStatus(affiliationItemId, 'written', { ...owner, writtenAt: new Date().toISOString() });
+}
+
+async function rememberedPerson(deps: ProcessBatchDeps, affiliationItemId: string): Promise<{ itemId: string; boardId: string } | null> {
+  const row = await deps.affiliationsStore.get(affiliationItemId);
+  if (row) return { itemId: row.personItemId, boardId: row.personBoardId };
+  const pending = await deps.pendingStore.getPending(affiliationItemId);
+  return pending?.ownerItemId && pending.ownerBoard ? { itemId: pending.ownerItemId, boardId: pending.ownerBoard } : null;
 }
 
 // An owner D1 remembers (a former owner, an owner-keyed message) may have been deleted on Monday
