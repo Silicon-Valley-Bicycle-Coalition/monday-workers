@@ -1799,7 +1799,9 @@ describe('/:locale/portal/info — employer', () => {
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
     const html = await (await app.request('/en/portal/info?field=employer', { headers: { Cookie: cookie } })).text();
-    expect(html).toContain('<option value="employer" selected>');
+    // The first person's dialog opens with Employer focused.
+    expect(html).toContain('open data-open-on-load>');
+    expect(html).toMatch(/<input name="employer"[^>]* autofocus \/>/);
   });
 
   it('ignores any other ?field value', async () => {
@@ -1807,8 +1809,9 @@ describe('/:locale/portal/info — employer', () => {
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
     const html = await (await app.request('/en/portal/info?field=%22%3E%3Cscript%3E', { headers: { Cookie: cookie } })).text();
-    expect(html).toContain('<option value="employer">');
-    expect(html).not.toContain('value="employer" selected');
+    expect(html).toContain('<input name="employer"');
+    expect(html).not.toContain('autofocus');
+    expect(html).not.toContain('data-open-on-load');
     expect(html).not.toContain('"><script>');
   });
 
@@ -1820,7 +1823,7 @@ describe('/:locale/portal/info — employer', () => {
       const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
       await app.request('/en/portal/change-request', {
         method: 'POST',
-        body: new URLSearchParams({ donorItemId: 'donor-1', field: 'employer', newValue: 'Google' }),
+        body: new URLSearchParams({ donorItemId: 'donor-1', employer: 'Google' }),
         headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
       });
       expect(changeQueue.send.mock.calls.length > 0).toBe(expectSent);
@@ -1866,7 +1869,7 @@ describe('POST /:locale/portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender, changeQueue }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await postForm(app, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(app, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('review');
@@ -1890,7 +1893,7 @@ describe('POST /:locale/portal/change-request', () => {
     const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
     const limitedApp = createApp({ ...permissive, ipLimiter });
 
-    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(429);
   });
 
@@ -1913,7 +1916,7 @@ describe('POST /:locale/portal/change-request', () => {
     };
     const limitedApp = createApp({ ...permissive, ipLimiter });
 
-    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(429);
   });
 });
@@ -3078,6 +3081,30 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     );
   });
 
+  it('answers the live-save script in JSON, and a stale session still as a page', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const post = (cookieHeader: string, fields: Record<string, string>) =>
+      app.request('/en/portal/change-request/preferences', {
+        method: 'POST',
+        body: new URLSearchParams(fields),
+        headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Cookie: cookieHeader },
+      });
+
+    const saved = await post(cookie, { donorItemId: 'donor-1', emailOptOut: 'yes', smsOptOut: 'no', doNotMail: 'yes' });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ kind: 'submitted' });
+    const invalid = await post(cookie, { donorItemId: 'someone-else', emailOptOut: 'yes' });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ kind: 'invalid' });
+    // No session: the sign-in redirect, which the script answers by submitting the form for real.
+    const stale = await post('', { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(stale.headers.get('Content-Type') ?? '').not.toContain('application/json');
+  });
+
   it('reports no changes when the submitted state matches Monday', async () => {
     const monday = fakeMondayWithPrefs();
     const emailSender = prefsEmailSender();
@@ -3164,7 +3191,7 @@ describe('CSRF', () => {
   const ROUTES: [string, Record<string, string>][] = [
     ['/', { email: 'donor@example.org' }],
     ['/logout', {}],
-    ['/en/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/en/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/en/portal/change-request/preferences', { donorItemId: 'donor-1' }],
     ['/en/portal/card/donor-1/regenerate', {}],
   ];
@@ -3256,10 +3283,10 @@ describe('CSRF', () => {
   // routes take a wildcard :locale — so locale "webhooks" (or its percent-encoded form, which
   // Hono decodes before both the check and routing) skipped CSRF on real state-changing routes.
   describe.each([
-    ['/webhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/webhooks/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/webhooks/portal/change-request/preferences', { donorItemId: 'donor-1' }],
     ['/webhooks/portal/card/donor-1/regenerate', {}],
-    ['/%77ebhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/%77ebhooks/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/%77ebhooks/portal/card/donor-1/regenerate', {}],
     ['/webhooks/monday/letters/extra', {}],
     ['/Webhooks/monday/letters', {}],
@@ -3486,7 +3513,7 @@ describe('write switch', () => {
 
     const res = await createApp(deps).request('/en/portal/change-request', {
       method: 'POST',
-      body: new URLSearchParams({ donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }),
+      body: new URLSearchParams({ donorItemId: 'donor-1', address: '2 New Ave' }),
       headers: { ...FORM, Cookie: cookie },
     });
 
@@ -4485,7 +4512,7 @@ describe('sandbox test accounts', () => {
 
     const res = await app.request('/en/portal/change-request', {
       method: 'POST',
-      body: new URLSearchParams({ donorItemId: 'test-active', field: 'address', newValue: '2 New Ave' }),
+      body: new URLSearchParams({ donorItemId: 'test-active', address: '2 New Ave' }),
       headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
     });
     expect(res.status).toBe(200);

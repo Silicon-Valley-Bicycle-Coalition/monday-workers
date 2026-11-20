@@ -142,15 +142,25 @@ function emailsSection(data: InfoDoorData, locale: Locale): string {
 export interface InfoViewOptions {
   // "Get a new code" for each card (cardCodeSection in card.ts), shown last.
   cardCodes?: string;
-  // Render the change-request dialog already open: ?change=1 (the no-script path) or an emailed
-  // ?field=employer.
-  openForm?: boolean;
+  // ?change=<donor id>: render that person's change-request dialog already open (the no-script
+  // path; any other value opens the first person's). An emailed ?field=employer opens the first.
+  change?: string | null;
 }
 
-export function infoDoorView(data: InfoDoorData, locale: Locale, { cardCodes = '', openForm = false }: InfoViewOptions = {}): string {
-  const form =
-    data.form === null
-      ? `<p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>`
-      : changeRequestFormView(data.form.donors, locale, data.form.prefFields, data.form.employerField, openForm || data.form.employerField === 'preselected');
+export function infoDoorView(data: InfoDoorData, locale: Locale, { cardCodes = '', change = null }: InfoViewOptions = {}): string {
+  let form = `<p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>`;
+  if (data.form !== null) {
+    const ids = data.form.donors.map((d) => d.id);
+    const openFor =
+      change !== null ? (ids.includes(change) ? change : (ids[0] ?? null)) : data.form.employerField === 'preselected' ? (ids[0] ?? null) : null;
+    // Prefill only a person's own Personal Email, and only when this tab already shows it.
+    const emailPrefill = Object.fromEntries(
+      data.people.flatMap((p) => {
+        const personal = p.emails?.find((e) => e.kind === 'personal');
+        return personal === undefined ? [] : [[p.id, personal.address]];
+      })
+    );
+    form = changeRequestFormView(data.form.donors, locale, data.form.prefFields, { employerField: data.form.employerField, openFor, emailPrefill });
+  }
   return tabPanel(t(locale, 'tabs.profile'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}${cardCodes}`);
 }

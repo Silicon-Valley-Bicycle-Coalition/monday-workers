@@ -175,7 +175,7 @@ export const PORTAL_CSS = `
     color: var(--svbc-gold);
     border-color: var(--svbc-gold);
   }
-  input[type='email'], input[type='text'], select {
+  input[type='email'], input[type='text'], input[type='tel'], select {
     font-size: 14px;
     padding: 8px;
     border: 1px solid var(--border);
@@ -441,7 +441,15 @@ export const PORTAL_CSS = `
     background: transparent; border: none; color: var(--text); padding: 4px 12px; font-size: 28px; line-height: 1;
   }
   .portal-dialog label { display: block; margin: 0 0 12px; }
-  .portal-dialog select, .portal-dialog input[type='text'] { display: block; width: 100%; margin-top: 4px; }
+  /* The contact form: a changed field gets a gold edge and tint plus a "Changed" mark in its
+     label, so the cue isn't colour alone. */
+  .contact-form-person { font-weight: 600; margin: -4px 0 8px; }
+  .contact-field { padding: 6px 8px; margin: 0 -8px 8px; border-left: 4px solid transparent; border-radius: 6px; }
+  .contact-field-label { display: block; }
+  .changed-mark { display: none; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 8px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--svbc-gold); color: var(--svbc-black); }
+  .contact-field.field-changed { border-left-color: var(--svbc-gold); background: color-mix(in srgb, var(--svbc-gold) 14%, transparent); }
+  .contact-field.field-changed .changed-mark { display: inline-block; }
+  .portal-dialog select, .portal-dialog input:is([type='text'], [type='email'], [type='tel']) { display: block; width: 100%; margin-top: 4px; }
   /* Communication preferences: one row per channel, its two choices in aligned columns. A plain
      row header (not the black table-head bar), and a real table layout so it fits instead of
      scrolling; the choice labels wrap on a phone. */
@@ -449,6 +457,15 @@ export const PORTAL_CSS = `
   .prefs-table th { background: none; color: var(--text); font-weight: 600; width: 40%; vertical-align: top; border-bottom: 1px solid var(--table-border); }
   .prefs-table td { vertical-align: top; }
   .prefs-table tbody tr:nth-child(even) td { background: none; }
+  /* Live save (portalTabs.ts): html.js hides the button; each row's last cell shows a spinning bike
+     wheel while it saves, then a check. Reduced motion: the wheel holds still. */
+  html.js .prefs-form button[type='submit'] { display: none; }
+  .pref-status { width: 6.5em; white-space: nowrap; font-size: 13px; color: var(--text-muted); }
+  .pref-status svg { width: 20px; height: 20px; vertical-align: -5px; margin-right: 4px; }
+  .pref-wheel { animation: pref-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+  @keyframes pref-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .pref-wheel { animation: none; } }
+  .pref-saved { color: var(--text); }
   .prefs-table label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
   .info-emails { margin-top: 32px; }
   .email-list { list-style: none; padding: 0; margin: 0 0 16px; }

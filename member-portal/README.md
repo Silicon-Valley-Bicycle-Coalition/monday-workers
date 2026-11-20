@@ -117,9 +117,12 @@ a phone they wrap as pills. A small script (`src/assets/portalTabs.ts`, served a
 same-origin asset) fetches the clicked tab's page and swaps in its panel and tab bar, so the page
 never scrolls on a tab click; Back and Forward work the same way. Without the script, or on any
 unexpected response, the link loads normally and its `#tabs` fragment lands on the tab bar. The
-same script opens Profile's "Request a change" form as a modal `<dialog>`; without it the link
-reloads Profile with `?change=1`, which renders the dialog open in place (as `?field=employer`
-does too). Design history: the card-first home with "doors"
+same script opens Profile's "Request a change" form as a modal `<dialog>` and highlights each
+field changed from its prefilled value; without it the link reloads Profile with `?change=<id>`,
+which renders that person's dialog open in place (as `?field=employer` does for the first
+person, with Employer focused). It also saves communication preferences as they change (a JSON
+post, a spinning bike wheel, then a check), falling back to a normal form post on anything but
+a JSON success. Design history: the card-first home with "doors"
 (`docs/superpowers/specs/2026-11-18-member-portal-home-design.md`) became this tabbed layout on
 2026-11-19.
 
@@ -150,7 +153,7 @@ household each tab groups by person.
 | Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, tax letters (`#tax-letters`, while letters are enabled), Funraise links, pledges, matching gifts | always | `/portal/letters` |
 | Events | `/:locale/portal/events` | registrations (upcoming, past), Get involved meeting and event links | events configured, or a non-volunteer Get involved link | `/portal/activity` |
 | Volunteering | `/:locale/portal/volunteering` | completed shifts, volunteer Get involved links | volunteer history configured, or a volunteer link | |
-| Profile | `/:locale/portal/info` | details on file with a "Request a change" button (the change-request form, in a dialog), communication preferences, email addresses, "Get a new code" per card (a regenerate lands back here) | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
+| Profile | `/:locale/portal/info` | details on file with a "Request a change" button per person (the whole contact form in a dialog, prefilled, changed fields highlighted, one change request filed per changed field), communication preferences (saved as each choice changes), email addresses, "Get a new code" per card (a regenerate lands back here) | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
 
 A hidden tab's path redirects to Benefits. A session with no people (an organization rep only)
 sees Benefits with just its organizations; every other tab sends it there.

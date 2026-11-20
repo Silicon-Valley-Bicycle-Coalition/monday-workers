@@ -59,10 +59,11 @@ import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } f
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersSection, lettersUnavailableView } from './letters/letterViews';
-import { submitChangeRequest } from './changeRequests/submitChangeRequest';
+import type { ChangeRequestField } from './db/changeRequests';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
-import { changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { changeRequestsUnavailableView, contactChangesResultView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { CONTACT_FIELDS, submitContactChanges } from './changeRequests/submitContactChanges';
 import { buildCardData } from './card/loadCardData';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
@@ -832,7 +833,7 @@ export function createApp(deps: AppDeps) {
         const data = await infoLeg;
         // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
         if (data === null) return { panel: errorView('error.changeRequestLoadFailed', locale), status: 500 };
-        return { panel: infoDoorView(data, locale, { cardCodes: cardCodeSection(home, locale), openForm: c.req.query('change') !== undefined }) };
+        return { panel: infoDoorView(data, locale, { cardCodes: cardCodeSection(home, locale), change: c.req.query('change') ?? null }) };
       };
     })
   );
@@ -869,21 +870,26 @@ export function createApp(deps: AppDeps) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
     }
 
+    // The whole contact form: one value per field (src/changeRequests/submitContactChanges.ts
+    // files a request for each one that differs from Monday).
     const body = await c.req.parseBody();
-    const input = {
-      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
-      field: typeof body.field === 'string' ? body.field : '',
-      newValue: typeof body.newValue === 'string' ? body.newValue : '',
-    };
-
-    const result = await submitChangeRequest(donorItemIds, input, {
-      monday: deps.monday,
-      ...changeSinks(donorItemIds, mode),
-      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
-      now: deps.now,
-      employerEnabled: employerAnswerEnabled(deps.config),
-    });
-    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale, { authenticated: true }));
+    const values: Partial<Record<ChangeRequestField, string>> = {};
+    for (const { field } of CONTACT_FIELDS) {
+      const value = body[field];
+      if (typeof value === 'string') values[field] = value;
+    }
+    const result = await submitContactChanges(
+      donorItemIds,
+      { donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '', values },
+      {
+        monday: deps.monday,
+        ...changeSinks(donorItemIds, mode),
+        dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+        now: deps.now,
+        employerEnabled: employerAnswerEnabled(deps.config),
+      }
+    );
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), contactChangesResultView(result, locale), locale, { authenticated: true }));
   });
 
   app.post('/:locale/portal/change-request/preferences', async (c) => {
@@ -932,6 +938,13 @@ export function createApp(deps: AppDeps) {
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
+    // The Profile tab's script saves each change as it's made and asks for JSON. Only the result
+    // comes back that way: every earlier exit (feature off, write switch, rate limit, expired
+    // session) stays a page, which the script treats as "submit the form for real" so the member
+    // sees it.
+    if ((c.req.header('Accept') ?? '').includes('application/json')) {
+      return c.json({ kind: result.kind }, result.kind === 'invalid' ? 400 : 200);
+    }
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), preferencesResultView(result, locale), locale, { authenticated: true }));
   });
 

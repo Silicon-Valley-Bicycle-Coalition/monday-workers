@@ -6,6 +6,15 @@
 // dropped from the address, so a reload doesn't reopen it. Clicking the backdrop closes a modal,
 // unless something in it has been typed or changed (a stray click shouldn't lose it).
 //
+// Communication preferences save as they change: a radio change posts its form with
+// Accept: application/json, the row's status cell spins a bike wheel ("Saving…") and then shows a
+// check ("Saved"). Changes queue per form, so each post carries the latest choices. Anything but
+// a JSON success (an expired session, the write switch, a rate limit) submits the form for real,
+// so the member sees that page. html.js hides the forms' buttons.
+//
+// Contact form: a field whose value differs from what was prefilled gets .field-changed, which
+// highlights it and shows its "Changed" mark.
+//
 // Tooltips: an .email-label button shows its tip on hover or keyboard focus (CSS); a tap or click
 // toggles it, for touch and for Safari (which doesn't focus a clicked button); Escape hides any
 // showing tip without moving focus or the pointer (WCAG 1.4.13).
@@ -19,6 +28,51 @@
 // focus stays on the tab bar and a screen reader wouldn't otherwise hear the panel change.
 // Plain ES5 so it parses in every browser the portal serves.
 export const PORTAL_TABS_JS = `(function () {
+  document.documentElement.className += ' js';
+  var WHEEL =
+    '<svg class="pref-wheel" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor">' +
+    '<circle cx="12" cy="12" r="10.5" stroke-width="2"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>' +
+    '<path d="M12 1.5v21M1.5 12h21M4.6 4.6l14.8 14.8M19.4 4.6L4.6 19.4" stroke-width="1"/></svg>';
+  var CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+  function showStatus(cell, icon, text, className) {
+    cell.innerHTML = icon;
+    var label = document.createElement('span');
+    label.textContent = text;
+    cell.appendChild(label);
+    cell.className = 'pref-status' + (className ? ' ' + className : '');
+  }
+
+  document.addEventListener('change', function (event) {
+    var radio = event.target;
+    if (!radio || radio.type !== 'radio' || !window.fetch || !window.FormData) return;
+    var form = radio.closest && radio.closest('form.prefs-form');
+    var table = form && form.querySelector('.prefs-table');
+    var cell = table && radio.closest('tr').querySelector('.pref-status');
+    if (!cell) return;
+    showStatus(cell, WHEEL, table.getAttribute('data-saving'), '');
+    form.portalSave = (form.portalSave || Promise.resolve())
+      .then(function () {
+        return fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      })
+      .then(function (res) {
+        var type = res.headers.get('Content-Type') || '';
+        if (!res.ok || type.indexOf('application/json') < 0) throw new Error('not saved');
+        return res.json();
+      })
+      .then(function () {
+        var radios = form.querySelectorAll('input[type=radio]');
+        for (var i = 0; i < radios.length; i++) radios[i].defaultChecked = radios[i].checked;
+        showStatus(cell, CHECK, table.getAttribute('data-saved'), 'pref-saved');
+        setTimeout(function () {
+          if (cell.className.indexOf('pref-saved') >= 0) cell.innerHTML = '';
+        }, 4000);
+      })
+      .catch(function () {
+        form.submit();
+      });
+  });
+
   function plainClick(event) {
     return event.button === 0 && !event.defaultPrevented && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   }
@@ -69,6 +123,16 @@ export const PORTAL_TABS_JS = `(function () {
     if (dialog.open) dialog.close();
     dialog.showModal();
   });
+
+  // The contact form marks each field whose value differs from what the page prefilled.
+  function markChanged(event) {
+    var field = event.target;
+    var wrap = field && field.closest && field.closest('.contact-field');
+    if (!wrap || !('defaultValue' in field)) return;
+    wrap.classList.toggle('field-changed', field.value.trim() !== field.defaultValue.trim());
+  }
+  document.addEventListener('input', markChanged);
+  document.addEventListener('change', markChanged);
 
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' && event.key !== 'Esc') return;
