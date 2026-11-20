@@ -509,8 +509,9 @@ an affiliation on its own). Answers given to the member portal's Employer field 
 affiliation directly; this one is weaker, since nothing prompts a member to update it.
 
 **How (`src/employerAnswers`, on the consent cron, after the profile links).** The consent sync's
-member read also collects the `employerAnswers.mergeField` value of every non-archived member, so no
-audience webhook is needed (production has none). Each non-blank answer is keyed
+member read also collects the `employerAnswers.mergeField` value of every subscribed or unsubscribed
+member, so no audience webhook is needed (production has none). Pending signups are left out: they
+are unconfirmed, and anyone can start one for any address with any answer. Each non-blank answer is keyed
 `<member hash>:<hash of the normalized answer>`; D1 `employer_answers_sent` (migration `0008`) holds
 one row per key handed over, so an unchanged answer is sent once and a changed one is sent again.
 Per run, up to `maxAnswersPerRun` unsent answers: match exactly one People item on
