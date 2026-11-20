@@ -1,4 +1,4 @@
-// The info door: the change-request form and communication preferences (formerly
+// The Profile tab: the change-request form and communication preferences (formerly
 // /portal/change-request), then the member's email addresses with a text label each. Which
 // addresses show follows the privacy rule in emailLabels.ts.
 import type { AppDeps } from '../routes';
@@ -10,7 +10,7 @@ import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { errorText } from '../logSafe';
 import { escapeHtml, someRecordsUnavailableNote } from '../views';
-import { doorPage } from './layout';
+import { tabPanel } from './layout';
 import { signInEmailHash, visibleEmails, type EmailLabel, type ShownEmail } from './emailLabels';
 
 export interface InfoDoorPerson {
@@ -143,5 +143,5 @@ export function infoDoorView(data: InfoDoorData, locale: Locale): string {
     data.form === null
       ? `<p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>`
       : changeRequestFormView(data.form.donors, locale, data.form.prefFields, data.form.employerField);
-  return doorPage(t(locale, 'home.doorInfo'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}`, locale);
+  return tabPanel(t(locale, 'tabs.profile'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${form}${emailsSection(data, locale)}`);
 }

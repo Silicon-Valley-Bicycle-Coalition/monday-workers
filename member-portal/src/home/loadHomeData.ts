@@ -1,39 +1,59 @@
-// The home page's slim loader: membership fields per person (no donations), one card token per
-// member, the discount list for its shop count, and from Jan 1 to home.taxLetterUntil whether last
-// year's tax letter exists. No events, volunteer shifts or donation history: those are door reads.
+// The portal header's loader, shared by every tab: membership fields per person, each person's
+// totals for the member card (total given, hours volunteered), one card token per member, the
+// discount list, and from Jan 1 to home.taxLetterUntil whether last year's tax letter exists.
+// Tabs reuse what it read (`portal`): Benefits shows its discount list, Your giving its donations,
+// Volunteering its shifts, so a tab never reads the same Monday data twice.
 import type { AppDeps } from '../routes';
-import type { MemberPortalData } from '../types';
+import type { PortalView } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { cardFor } from '../doors/card';
 import { loadLetterData } from '../letters/loadLetterData';
+import { loadPortalData } from '../portal/loadPortalData';
 import { statementExists } from '../orgs/loadOrgData';
-import { cardEnabled, eventsEnabled, lettersEnabled, orgAccessEnabled, volunteerHistoryEnabled } from '../config';
+import { parseAmount } from '../amounts';
+import {
+  cardEnabled,
+  donationHistoryEnabled,
+  eventsEnabled,
+  lettersEnabled,
+  orgAccessEnabled,
+  volunteerHistoryEnabled,
+} from '../config';
 import type { OrgGrant } from '../orgs/grants';
 import type { Locale } from '../i18n/locales';
-import { t } from '../i18n/t';
 import { errorText } from '../logSafe';
 import { membershipEnded, pageState, personState, todayInLosAngeles } from './homeState';
 import type { HomePerson, LetterSummary, PageState, PersonState } from './homeState';
 
-export interface DoorLink {
-  key: 'card' | 'giving' | 'letters' | 'activity' | 'info';
+export type TabKey = 'benefits' | 'giving' | 'events' | 'volunteering' | 'profile';
+
+export interface TabLink {
+  key: TabKey;
   href: string;
-  // Already translated.
-  hint: string;
+}
+
+export interface PersonStats {
+  // The donor's total as the giving tab shows it; null while the history gate is closed or the
+  // amount doesn't parse.
+  totalDonated: string | null;
+  // null while volunteer history is off or its read failed.
+  volunteerHours: number | null;
 }
 
 export interface HomeData {
   // In record (session) order; a person whose read failed is left out and counted below.
   // `ended`: the card greys out and reads "Ended MM/YYYY" (membershipEnded), whatever the page state.
-  people: { person: HomePerson; state: PersonState; card: PortalCard | null; ended: boolean }[];
+  people: { person: HomePerson; state: PersonState; card: PortalCard | null; ended: boolean; stats: PersonStats }[];
   // null when the discount read failed.
   discountCount: number | null;
   page: PageState;
   unavailableCount: number;
-  doors: DoorLink[];
+  tabs: TabLink[];
   // The organizations the session manages ("You manage"), in grant order. `name` is null when the
   // name read failed. `statementReadyYear` is last year while its statement is ready, else null.
   orgs: { orgItemId: string; name: string | null; statementReadyYear: number | null }[];
+  // What the header read, for the tabs to reuse.
+  portal: PortalView;
 }
 
 type HomeDeps = Pick<AppDeps, 'monday' | 'config' | 'now' | 'cardTokenStore'>;
@@ -76,55 +96,50 @@ async function loadOrgs(orgGrants: OrgGrant[], deps: HomeDeps): Promise<HomeData
   return orgGrants.map((g, i) => ({ orgItemId: g.orgItemId, name: names.get(g.orgItemId) ?? null, statementReadyYear: readyYears[i]! }));
 }
 
+const EMPTY_PORTAL: PortalView = { donors: [], unavailableDonorCount: 0, discounts: null, volunteerHistory: null, donationHistoryEnabled: false };
+
 export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, locale: Locale, orgGrants: OrgGrant[] = []): Promise<HomeData> {
   const now = deps.now();
   const today = todayInLosAngeles(now);
   const cfg = deps.config.home;
   const lastYear = Number(today.slice(0, 4)) - 1;
-  // Same rule as the letters page: the letter exists once the sign-off gate is open.
+  // Same rule as the letters list: the letter exists once the sign-off gate is open.
   const letterWindow = today.slice(5) <= cfg.taxLetterUntil && lettersEnabled(deps.config);
 
   const orgsLeg = loadOrgs(orgGrants, deps);
 
-  const discountLeg = deps.monday.getDiscountOrganizations().then(
-    (list) => list.length,
-    (err: unknown) => {
-      console.error(`member-portal home discount count failed: ${errorText(err)}`);
-      return null;
-    }
+  // A failed letter costs that person the tax-letter state, nothing else.
+  const lettersLeg: Promise<(LetterSummary | null)[]> = Promise.all(
+    donorItemIds.map((id) =>
+      letterWindow
+        ? loadLetterData(id, lastYear, deps.monday, deps.config.taxLetter, now).then(
+            (l) => (l === null ? null : { year: l.year, giftCount: l.gifts.length, totalFormatted: l.totalFormatted }),
+            (err: unknown) => {
+              console.error(`member-portal home letter read failed for donor "${id}": ${errorText(err)}`);
+              return null;
+            }
+          )
+        : Promise.resolve(null)
+    )
   );
 
-  // Each person's membership read and (in the window) letter read run side by side. A failed
-  // letter costs that person the tax-letter state, nothing else.
-  const legs = donorItemIds.map((id) => {
-    const donor = deps.monday.getMemberPortalData(id, { includeDonations: false });
-    const letter: Promise<LetterSummary | null> = letterWindow
-      ? loadLetterData(id, lastYear, deps.monday, deps.config.taxLetter, now).then(
-          (l) => (l === null ? null : { year: l.year, giftCount: l.gifts.length, totalFormatted: l.totalFormatted }),
-          (err: unknown) => {
-            console.error(`member-portal home letter read failed for donor "${id}": ${errorText(err)}`);
-            return null;
-          }
-        )
-      : Promise.resolve(null);
-    return Promise.all([donor, letter]);
-  });
-  const results = await Promise.allSettled(legs);
-
-  const loaded: { donor: MemberPortalData; letter: LetterSummary | null }[] = [];
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      loaded.push({ donor: result.value[0], letter: result.value[1] });
-    } else {
-      console.error(`member-portal home load failed for donor "${donorItemIds[index]}": ${errorText(result.reason)}`);
-    }
-  });
-  // Nothing to show at all: the route's error page, as the dashboard did.
-  if (loaded.length === 0 && results.length > 0) throw (results[0] as PromiseRejectedResult).reason;
+  // Membership, donations (behind the history gate), volunteer shifts and the discount list.
+  // Throws only when no one loads (the route's error page). A work-only session reads nothing.
+  const portal =
+    donorItemIds.length === 0
+      ? EMPTY_PORTAL
+      : await loadPortalData(
+          donorItemIds,
+          deps.monday,
+          { enabled: volunteerHistoryEnabled(deps.config), completedStatuses: deps.config.volunteerHistory.completedStatuses },
+          donationHistoryEnabled(deps.config, now)
+        );
+  const letters = await lettersLeg;
+  const letterFor = new Map(donorItemIds.map((id, i) => [id, letters[i] ?? null]));
 
   const withCards = cardEnabled(deps.config);
   const people = await Promise.all(
-    loaded.map(async ({ donor, letter }) => {
+    portal.donors.map(async (donor) => {
       const person: HomePerson = {
         id: donor.id,
         firstName: firstNameOf(donor.name),
@@ -133,60 +148,50 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
         until: donor.membershipExpiry,
         since: donor.memberSince ?? '',
         memberType: donor.memberType ?? '',
-        letter,
+        letter: letterFor.get(donor.id) ?? null,
       };
       const state = personState(person, today, cfg);
       // Someone who was never a member gets a "Not a member yet" panel, so no card token. Nor does
       // anyone with a blank Membership Status: the card would show a member number with no status.
       const noCard = (state.kind === 'renew' && state.reason === 'never') || donor.membershipStatus.trim() === '';
       const card = withCards && !noCard ? await cardFor(donor, deps) : null;
-      return { person, state, card, ended: membershipEnded(person, today) };
+      const stats: PersonStats = {
+        totalDonated: portal.donationHistoryEnabled && parseAmount(donor.totalDonated) !== null ? donor.totalDonated : null,
+        volunteerHours: portal.volunteerHistory?.[donor.id]?.totalHours ?? null,
+      };
+      return { person, state, card, ended: membershipEnded(person, today), stats };
     })
   );
 
-  const discountCount = await discountLeg;
-  const page = pageState(people);
   const orgs = await orgsLeg;
   return {
     people,
-    discountCount,
-    page,
-    unavailableCount: results.length - loaded.length,
-    // A session with no people has no doors: its page is the organizations alone.
-    doors: people.length === 0 ? [] : doorLinks(people, discountCount, Number(today.slice(0, 4)), deps, locale),
+    discountCount: portal.discounts === null ? null : portal.discounts.length,
+    page: pageState(people),
+    unavailableCount: portal.unavailableDonorCount ?? 0,
+    // A session with no people has no tabs: its page is the organizations alone.
+    tabs: people.length === 0 ? [] : tabLinks(deps, locale),
     orgs,
+    portal,
   };
 }
 
-function doorLinks(people: HomeData['people'], discountCount: number | null, year: number, deps: HomeDeps, locale: Locale): DoorLink[] {
+// Benefits, Your giving and Profile always have something (the discount list, matching gifts, the
+// change form); Events and Volunteering only when their feature or a Get involved link is set.
+function tabLinks(deps: HomeDeps, locale: Locale): TabLink[] {
   const config = deps.config;
-  const href = (path: string) => `/${locale}/portal/${path}`;
-  const doors: DoorLink[] = [];
-
-  // The discount list and the card: the list has no gate, so this door is always there.
-  const cardHint =
-    discountCount === null
-      ? t(locale, 'home.doorHintCardNoCount')
-      : t(locale, pluralKey(locale, discountCount, 'home.doorHintCardOne', 'home.doorHintCard'), { count: String(discountCount) });
-  doors.push({ key: 'card', href: href('card'), hint: cardHint });
-
-  // Matching gifts always renders, so giving always has something.
-  doors.push({ key: 'giving', href: href('giving'), hint: t(locale, 'home.doorHintGiving') });
-
-  if (lettersEnabled(config)) {
-    const ready = people.filter((e) => e.person.letter !== null);
-    const hint =
-      ready.length === 0
-        ? t(locale, 'home.doorHintLettersLater', { year: String(year) })
-        : t(locale, ready.length === 1 ? 'home.doorHintLettersReady' : 'home.doorHintLettersReadyMany', { year: String(ready[0]!.person.letter!.year) });
-    doors.push({ key: 'letters', href: href('letters'), hint });
+  const href = (path: string) => `/${locale}/portal${path}`;
+  const links = config.getInvolved.links;
+  const tabs: TabLink[] = [
+    { key: 'benefits', href: href('') },
+    { key: 'giving', href: href('/giving') },
+  ];
+  if (eventsEnabled(config) || links.some((l) => l.category !== 'volunteer')) {
+    tabs.push({ key: 'events', href: href('/events') });
   }
-
-  if (eventsEnabled(config) || volunteerHistoryEnabled(config) || config.getInvolved.links.length > 0) {
-    doors.push({ key: 'activity', href: href('activity'), hint: t(locale, 'home.doorHintActivity') });
+  if (volunteerHistoryEnabled(config) || links.some((l) => l.category === 'volunteer')) {
+    tabs.push({ key: 'volunteering', href: href('/volunteering') });
   }
-
-  // Every record has email addresses and a language, so this door always has content.
-  doors.push({ key: 'info', href: href('info'), hint: t(locale, 'home.doorHintInfo') });
-  return doors;
+  tabs.push({ key: 'profile', href: href('/info') });
+  return tabs;
 }

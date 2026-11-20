@@ -39,7 +39,7 @@ function data(overrides: Partial<InfoDoorData> = {}): InfoDoorData {
 describe('infoDoorView', () => {
   it('frames the change form and preferences, then the address list, under the door title', () => {
     const html = infoDoorView(data(), 'en');
-    expect(html).toContain(`<h1>${escapeHtml(t('en', 'home.doorInfo'))}</h1>`);
+    expect(html).toContain(`<h1 class="visually-hidden">${escapeHtml(t('en', 'tabs.profile'))}</h1>`);
     expect(html).toContain('1 Old St');
     expect(html).toContain('action="/en/portal/change-request/preferences"');
     expect(html.indexOf('action="/en/portal/change-request"')).toBeLessThan(html.indexOf('class="email-list"'));

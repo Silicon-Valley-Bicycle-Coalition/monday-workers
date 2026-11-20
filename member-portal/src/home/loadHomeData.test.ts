@@ -19,9 +19,13 @@ function donor(id: string, overrides: Partial<MemberPortalData> = {}): MemberPor
   };
 }
 
-// Only what the home loader may touch; everything else throws, so a read the home page must
-// never make (events, volunteer shifts) fails the test.
-function fakeMonday(donors: Record<string, MemberPortalData | Error>, discounts: unknown = [{ name: 'A' }, { name: 'B' }]) {
+// Only what the header loader may touch; everything else throws, so a read the header must never
+// make (events) fails the test.
+function fakeMonday(
+  donors: Record<string, MemberPortalData | Error>,
+  discounts: unknown = [{ name: 'A' }, { name: 'B' }],
+  shifts: Record<string, { date: string; hours: string; job: string; status: string }[]> = {}
+) {
   const forbidden = () => {
     throw new Error('the home page must not read this');
   };
@@ -35,7 +39,7 @@ function fakeMonday(donors: Record<string, MemberPortalData | Error>, discounts:
       if (discounts instanceof Error) throw discounts;
       return discounts;
     }),
-    getVolunteerShiftsForDonor: vi.fn(forbidden),
+    getVolunteerShiftsForDonor: vi.fn(async (id: string) => shifts[id] ?? []),
     getEventRegistrationsForDonor: vi.fn(forbidden),
   } as unknown as MondayClient & {
     getMemberPortalData: ReturnType<typeof vi.fn>;
@@ -76,6 +80,8 @@ const baseConfig = {
   getInvolved: { links: [] },
   funraise: { manageRecurringUrl: '', renewMembershipUrl: '' },
   home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
+  donations: { historyVisibleFromISO: null },
+  volunteerHistory: { completedStatuses: ['Completed'] },
 } as unknown as Config;
 
 function deps(monday: MondayClient, now = '2027-01-10T18:00:00Z', config: Config = baseConfig) {
@@ -95,7 +101,7 @@ function withGifts(d: MemberPortalData): MemberPortalData {
 }
 
 describe('loadHomeData', () => {
-  it('reads each person without donations, plus the discount list once for the shop count', async () => {
+  it('reads each person without donations while the history gate is closed, plus the discount list once', async () => {
     const monday = fakeMonday({ j: donor('j'), s: donor('s') });
     const data = await loadHomeData(['j', 's'], deps(monday, '2026-08-22T18:00:00Z'), 'en');
 
@@ -109,11 +115,47 @@ describe('loadHomeData', () => {
     expect(data.unavailableCount).toBe(0);
   });
 
-  it('never loads events or volunteer shifts', async () => {
+  it('reads volunteer shifts for the totals, never events', async () => {
     const monday = fakeMonday({ j: donor('j') });
-    await loadHomeData(['j'], deps(monday), 'en');
-    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+    const data = await loadHomeData(['j'], deps(monday), 'en');
+    expect(monday.getVolunteerShiftsForDonor).toHaveBeenCalledWith('j');
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+    expect(data.portal.volunteerHistory).toEqual({ j: { shifts: [], totalHours: 0 } });
+  });
+
+  it("gives each person's card their completed volunteer hours and, behind the history gate, their total given", async () => {
+    const config = structuredClone(baseConfig);
+    config.donations.historyVisibleFromISO = '2020-01-01';
+    const monday = fakeMonday({ j: donor('j', { totalDonated: '$1,250.00' }), s: donor('s', { totalDonated: '' }) }, undefined, {
+      j: [
+        { date: '2026-03-01', hours: '2.5', job: 'Valet', status: 'Completed' },
+        { date: '2026-04-01', hours: '4', job: 'Valet', status: 'No-show' },
+      ],
+    });
+    const data = await loadHomeData(['j', 's'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
+    expect(monday.getMemberPortalData).toHaveBeenCalledWith('j', { includeDonations: true });
+    expect(data.people[0]!.stats).toEqual({ totalDonated: '$1,250.00', volunteerHours: 2.5 });
+    // A total that doesn't parse is left off the card rather than shown as $0.00.
+    expect(data.people[1]!.stats).toEqual({ totalDonated: null, volunteerHours: 0 });
+    expect(data.portal.donationHistoryEnabled).toBe(true);
+  });
+
+  it('shows no total given while the history gate is closed, and no hours with volunteer history off', async () => {
+    const config = structuredClone(baseConfig);
+    config.monday.volunteersBoardId = null;
+    const monday = fakeMonday({ j: donor('j', { totalDonated: '$1,250.00' }) });
+    const data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
+    expect(data.people[0]!.stats).toEqual({ totalDonated: null, volunteerHours: null });
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('keeps the totals off, not the page, when the volunteer read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = fakeMonday({ j: donor('j') });
+    monday.getVolunteerShiftsForDonor.mockRejectedValue(new Error('monday: HTTP 500'));
+    const data = await loadHomeData(['j'], deps(monday), 'en');
+    expect(data.people[0]!.stats.volunteerHours).toBeNull();
+    vi.restoreAllMocks();
   });
 
   it("loads last year's letter in the window, when letters are enabled", async () => {
@@ -197,39 +239,38 @@ describe('loadHomeData', () => {
     expect(data.people[1]!.ended).toBe(false);
   });
 
-  it('lists the five doors in order', async () => {
+  it('lists the five tabs in order', async () => {
     const monday = fakeMonday({ j: donor('j') });
     const data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z'), 'en');
-    expect(data.doors.map((d) => d.key)).toEqual(['card', 'giving', 'letters', 'activity', 'info']);
-    expect(data.doors.map((d) => d.href)).toEqual([
-      '/en/portal/card',
-      '/en/portal/giving',
-      '/en/portal/letters',
-      '/en/portal/activity',
-      '/en/portal/info',
+    expect(data.tabs).toEqual([
+      { key: 'benefits', href: '/en/portal' },
+      { key: 'giving', href: '/en/portal/giving' },
+      { key: 'events', href: '/en/portal/events' },
+      { key: 'volunteering', href: '/en/portal/volunteering' },
+      { key: 'profile', href: '/en/portal/info' },
     ]);
-    expect(data.doors[0]!.hint).toBe('2 shops · keep it on your phone');
-    expect(data.doors[2]!.hint).toBe('2026 ready in January');
   });
 
-  it('leaves out a door whose features are all gated off', async () => {
+  it('leaves out Events and Volunteering when their features and links are off', async () => {
     const config = structuredClone(baseConfig);
-    config.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
     config.eventRegistrations.boardId = null;
     config.monday.volunteersBoardId = null;
     const monday = fakeMonday({ j: donor('j') });
     const data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
-    expect(data.doors.map((d) => d.key)).toEqual(['card', 'giving', 'info']);
+    expect(data.tabs.map((d) => d.key)).toEqual(['benefits', 'giving', 'profile']);
   });
 
-  it("says the letters door's letter is ready in the window", async () => {
-    const j = donor('j');
-    const monday = fakeMonday({ j });
-    monday.getMemberPortalData.mockImplementation(async (_id: string, options?: { includeDonations?: boolean }) =>
-      options?.includeDonations === false ? j : withGifts(j)
-    );
-    const data = await loadHomeData(['j'], deps(monday), 'en');
-    expect(data.doors.find((d) => d.key === 'letters')!.hint).toBe('Your 2026 letter is ready');
+  it('keeps Events for a meeting link and Volunteering for a volunteer link, features off', async () => {
+    const config = structuredClone(baseConfig);
+    config.eventRegistrations.boardId = null;
+    config.monday.volunteersBoardId = null;
+    const monday = fakeMonday({ j: donor('j') });
+    config.getInvolved.links = [{ category: 'civic', url: 'https://x.example', label: 'BPAC' }];
+    let data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
+    expect(data.tabs.map((d) => d.key)).toEqual(['benefits', 'giving', 'events', 'profile']);
+    config.getInvolved.links = [{ category: 'volunteer', url: 'https://x.example' }];
+    data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
+    expect(data.tabs.map((d) => d.key)).toEqual(['benefits', 'giving', 'volunteering', 'profile']);
   });
 });
 
@@ -315,12 +356,12 @@ describe('loadHomeData organizations', () => {
     expect(monday.getDonorNames).not.toHaveBeenCalled();
   });
 
-  it('loads a session with no people: no person reads, no doors', async () => {
+  it('loads a session with no people: no person reads, no tabs', async () => {
     const monday = withNames(fakeMonday({}), async () => [{ id: 'o1', name: 'Acme' }]);
     const data = await loadHomeData([], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants.slice(0, 1));
     expect(monday.getMemberPortalData).not.toHaveBeenCalled();
     expect(data.people).toEqual([]);
-    expect(data.doors).toEqual([]);
+    expect(data.tabs).toEqual([]);
     expect(data.orgs).toHaveLength(1);
   });
 });

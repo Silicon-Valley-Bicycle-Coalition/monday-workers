@@ -24,11 +24,11 @@ import { verifyCode } from './auth/verifyCode';
 import type { CodeFailureStore } from './db/codeFailures';
 import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
-import { loadHomeData } from './home/loadHomeData';
-import { homeView } from './home/homeView';
-import { cardDoorView, loadCardDoor } from './doors/card';
-import { givingDoorView, loadGivingDoor } from './doors/giving';
-import { activityDoorView, loadActivityDoor } from './doors/activity';
+import { loadHomeData, type HomeData, type TabKey } from './home/loadHomeData';
+import { TAB_TITLES, portalView } from './home/homeView';
+import { benefitsTabView } from './doors/card';
+import { givingTabData, givingTabView } from './doors/giving';
+import { eventsTabView, loadEventsTab, volunteeringTabView } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
 import { signInEmailHash } from './doors/emailLabels';
 import { findTestPersonasByEmail } from './testAccounts/personas';
@@ -58,7 +58,7 @@ import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
-import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
+import { letterView, lettersSection, lettersUnavailableView } from './letters/letterViews';
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
@@ -623,83 +623,87 @@ export function createApp(deps: AppDeps) {
   // instead of 404ing.
   app.get('/portal', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
 
-  // The card-first home page: status, one next step, card(s), doors. Loads only membership fields,
-  // card tokens, the discount count and (Jan 1 to home.taxLetterUntil) last year's letter; each
-  // door loads its own section.
-  app.get('/:locale/portal', async (c) => {
+  // The portal's tabs. Every tab shares one frame (src/home/homeView.ts): status, the member
+  // card(s) with each person's totals, then the tab bar. loadHomeData reads membership, donations
+  // (behind the history gate), volunteer shifts, the discount list, card tokens and (Jan 1 to
+  // home.taxLetterUntil) last year's letter; Benefits, Your giving and Volunteering render from that
+  // read, Events and Profile add their own. `prepare` runs once the session is known, so a tab's
+  // own read starts alongside the header's; it must not reject (each tab's loader degrades).
+  // A person whose read fails is left out with a note; with no one loaded the header's read
+  // throws to onError's error page.
+  const portalTab = async (
+    c: Context,
+    active: TabKey,
+    prepare: (session: SessionInfo, locale: Locale) => (home: HomeData) => Promise<{ panel: string; status?: 500 }>
+  ) => {
     const locale = resolvePathLocale(c);
     const session = await getSessionInfo(c, deps);
-    if (session === null) {
-      return signInRedirect(c);
-    }
-
-    const data = await loadHomeData(session.donorItemIds, deps, locale, session.orgGrants);
+    if (session === null) return signInRedirect(c);
+    // A work-only session has only the organizations, which Benefits shows.
+    if (active !== 'benefits' && noPeople(session.donorItemIds)) return c.redirect(`/${locale}/portal`);
+    const render = prepare(session, locale);
+    const home = await loadHomeData(session.donorItemIds, deps, locale, session.orgGrants);
     c.header('Cache-Control', NO_STORE);
+    // A tab its feature config hides (Events, Volunteering) falls back to Benefits.
+    if (active !== 'benefits' && !home.tabs.some((tab) => tab.key === active)) return c.redirect(`/${locale}/portal`);
+    const { panel, status } = await render(home);
     // Any gift renews a membership, so the general donate page stands in until the Funraise
     // renewal link is configured.
     const renewUrl = funraiseLinks(deps.config).renewMembershipUrl ?? ORG_DONATE_URL;
-    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), homeView(data, locale, renewUrl), locale, { authenticated: true }));
-  });
+    const title = active === 'benefits' ? t(locale, 'title.portal') : t(locale, TAB_TITLES[active]);
+    return c.html(page(title + ' — ' + t(locale, 'site.title'), portalView(home, active, panel, locale, renewUrl), locale, { authenticated: true }), status ?? 200);
+  };
 
-  // The doors (src/doors/): each loads only its own section. A person whose read fails is left out
-  // with a note; with no one loaded the read throws to onError's error page, as home does.
-  app.get('/:locale/portal/card', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
-    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
-    const data = await loadCardDoor(donorItemIds, deps);
-    c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'home.doorCard') + ' — ' + t(locale, 'site.title'), cardDoorView(data, locale), locale, { authenticated: true }));
-  });
+  app.get('/:locale/portal', (c) => portalTab(c, 'benefits', (_session, locale) => async (home) => ({ panel: benefitsTabView(home, locale) })));
 
-  app.get('/:locale/portal/giving', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
-    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
-    const data = await loadGivingDoor(donorItemIds, deps, locale);
-    c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'home.doorGiving') + ' — ' + t(locale, 'site.title'), givingDoorView(data, locale), locale, { authenticated: true }));
-  });
+  app.get('/:locale/portal/giving', (c) =>
+    portalTab(c, 'giving', (session, locale) => {
+      // A failed list costs the letters section its lists (a note instead), not the tab.
+      const lettersLeg = lettersEnabled(deps.config)
+        ? listLetterYears(session.donorItemIds, deps.monday, deps.config.taxLetter, deps.now()).catch((err: unknown) => {
+            console.error(`member-portal letters list failed: ${errorText(err)}`);
+            return null;
+          })
+        : Promise.resolve(undefined);
+      return async (home) => {
+        const listings = await lettersLeg;
+        const letters = listings === undefined ? '' : lettersSection(listings, locale);
+        return { panel: givingTabView(givingTabData(home.portal, deps.config, locale), letters, locale) };
+      };
+    })
+  );
 
-  app.get('/:locale/portal/activity', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
-    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
-    const data = await loadActivityDoor(donorItemIds, deps);
-    c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'home.doorActivity') + ' — ' + t(locale, 'site.title'), activityDoorView(data, locale), locale, { authenticated: true }));
-  });
+  app.get('/:locale/portal/events', (c) =>
+    portalTab(c, 'events', (session, locale) => {
+      const eventsLeg = loadEventsTab(session.donorItemIds, deps);
+      return async (home) => {
+        const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
+        const household = people.length + home.unavailableCount > 1;
+        return { panel: eventsTabView(people, household, await eventsLeg, deps.config.getInvolved.links, locale) };
+      };
+    })
+  );
+
+  app.get('/:locale/portal/volunteering', (c) =>
+    portalTab(c, 'volunteering', (_session, locale) => async (home) => {
+      const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
+      const household = people.length + home.unavailableCount > 1;
+      return { panel: volunteeringTabView(people, household, home.portal.volunteerHistory, deps.config.getInvolved.links, locale) };
+    })
+  );
+
+  // Retired paths: the card door is now Benefits, the activity door Events and Volunteering, the
+  // letters door a section of Your giving.
+  app.get('/:locale/portal/card', (c) => c.redirect(`/${resolvePathLocale(c)}/portal`));
+  app.get('/:locale/portal/activity', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/events`));
 
   // Back-compat: same reasoning as the bare /portal redirect above.
-  app.get('/portal/letters', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/letters`));
+  app.get('/portal/letters', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/giving#tax-letters`));
   app.get('/portal/letters/:donorItemId/:year', (c) =>
     c.redirect(`/${DEFAULT_LOCALE}/portal/letters/${c.req.param('donorItemId')}/${c.req.param('year')}`)
   );
 
-  app.get('/:locale/portal/letters', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return signInRedirect(c);
-    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
-
-    c.header('Cache-Control', NO_STORE);
-    if (!lettersEnabled(deps.config)) {
-      return c.html(page(t(locale, 'home.doorLetters') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
-    }
-    let listings;
-    try {
-      listings = await listLetterYears(donorItemIds, deps.monday, deps.config.taxLetter, deps.now());
-    } catch (err) {
-      // A Monday read failure here would otherwise fall through to the global onError, whose
-      // generic "please try logging in again" copy is misleading — this isn't an auth problem.
-      console.error(`member-portal letters list failed: ${errorText(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale, { authenticated: true }), 500);
-    }
-    return c.html(page(t(locale, 'home.doorLetters') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
-  });
+  app.get('/:locale/portal/letters', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/giving#tax-letters`));
 
   app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
     const locale = resolvePathLocale(c);
@@ -819,8 +823,7 @@ export function createApp(deps: AppDeps) {
   });
 
   // The events page became the activity door. Signed in or not: the door handles sign-in.
-  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/activity`));
-  app.get('/:locale/portal/events', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/activity`));
+  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/events`));
 
   // The change-request page became the info door; an old link or emailed ?field=employer keeps its query.
   app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/info${new URL(c.req.url).search}`));
@@ -828,21 +831,21 @@ export function createApp(deps: AppDeps) {
 
   // Needs the session's sign-in address, not just its ids: which email addresses show depends on
   // it (src/doors/emailLabels.ts).
-  app.get('/:locale/portal/info', async (c) => {
-    const locale = resolvePathLocale(c);
-    const session = await getSessionInfo(c, deps);
-    if (session === null) return signInRedirect(c);
-    if (noPeople(session.donorItemIds)) return c.redirect(`/${locale}/portal`);
-
-    c.header('Cache-Control', NO_STORE);
-    const employerField = !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on';
-    const data = await loadInfoDoor(session, deps, employerField);
-    if (data === null) {
-      // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.changeRequestLoadFailed', locale), locale, { authenticated: true }), 500);
-    }
-    return c.html(page(t(locale, 'home.doorInfo') + ' — ' + t(locale, 'site.title'), infoDoorView(data, locale), locale, { authenticated: true }));
-  });
+  app.get('/:locale/portal/info', (c) =>
+    portalTab(c, 'profile', (session, locale) => {
+      const employerField = !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on';
+      const infoLeg = loadInfoDoor(session, deps, employerField).catch((err: unknown) => {
+        console.error(`member-portal info load failed: ${errorText(err)}`);
+        return null;
+      });
+      return async () => {
+        const data = await infoLeg;
+        // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
+        if (data === null) return { panel: errorView('error.changeRequestLoadFailed', locale), status: 500 };
+        return { panel: infoDoorView(data, locale) };
+      };
+    })
+  );
 
   app.post('/:locale/portal/change-request', async (c) => {
     const locale = resolvePathLocale(c);
@@ -1010,10 +1013,10 @@ export function createApp(deps: AppDeps) {
     return c.html(matchingGiftsSearchDocument(deps.config.matchingGifts.doubleTheDonationPublicKey as string, locale));
   });
 
-  // The old per-card page: a stale link or bookmark lands on the card door, which shows every card
+  // The old per-card page: a stale link or bookmark lands on Benefits, whose header shows every card
   // the session covers, instead of 404ing.
-  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/card`));
-  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/card`));
+  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
+  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal`));
 
   // No bare-POST redirect for /regenerate — same reasoning as the change-request POST above: the
   // form action is always rendered locale-prefixed already, so there is no unprefixed submitter.
@@ -1024,9 +1027,9 @@ export function createApp(deps: AppDeps) {
     if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     // The regenerate button only renders while cardEnabled() is true, so a POST arriving with it
-    // false is a stale form or a replay: back to the card door rather than a full error page.
+    // false is a stale form or a replay: back to Benefits rather than a full error page.
     if (!cardEnabled(deps.config)) {
-      return c.redirect(`/${locale}/portal/card`);
+      return c.redirect(`/${locale}/portal`);
     }
 
     const donorItemId = c.req.param('donorItemId');
@@ -1066,9 +1069,9 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // Back to the card door, which picks up the freshly regenerated token on render
+    // Back to Benefits, whose header card picks up the freshly regenerated token on render
     // (getOrCreateCardToken reads whatever is currently active).
-    return c.redirect(`/${locale}/portal/card`);
+    return c.redirect(`/${locale}/portal`);
   });
 
   // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR

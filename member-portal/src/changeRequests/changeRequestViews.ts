@@ -109,7 +109,7 @@ export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale
 
 // Every result page leads back to the info door, where the form lives.
 function backToInfo(locale: Locale): string {
-  return `<p><a href="/${locale}/portal/info"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'home.doorInfo'))}</a></p>`;
+  return `<p><a href="/${locale}/portal/info"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'tabs.profile'))}</a></p>`;
 }
 
 // Maps the diff-based preferences result onto the existing result copy where it fits: any fresh
