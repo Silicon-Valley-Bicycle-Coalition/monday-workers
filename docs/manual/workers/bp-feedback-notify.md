@@ -57,9 +57,9 @@ Worker uses `production.json`, not `svbc.json`.
 `Sent to Organizer`, and `Send Failed`. Writing `Sent to Organizer` doesn't re-fire the automation,
 which triggers only on `Ready to Send`.
 
-**Missing label:** as of 2026-11-19 the production column has `Not Yet`, `Sent to Organizer` and
-`Ready to Send`, but no `Send Failed`. Monday rejects an unknown label and the Worker only logs the
-rejection, so a failed send stays invisible on the board until a board owner adds the label.
+All four labels exist on the production column (`Send Failed` added 2026-11-19). Don't rename or
+delete them: Monday rejects an unknown label and the Worker only logs the rejection, so a failed send
+would stay invisible on the board.
 
 The sandbox config points at board `18431960612`, "BP Request Form (sandbox)", which has been
 deleted (as has the later copy, `18435720706`). The sandbox Worker has no board to read until a new
