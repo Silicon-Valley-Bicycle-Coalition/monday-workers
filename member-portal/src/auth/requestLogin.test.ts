@@ -3,6 +3,9 @@ import { requestLogin } from './requestLogin';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
+import { hashLoginCode } from './loginCode';
+import { emailHash } from '../db/loginAttempts';
+import { sha256Hex } from '../crypto/hash';
 
 function fakeMonday(matches: { id: string; name: string; preferredLanguage: string }[]): MondayClient {
   return {
@@ -39,6 +42,7 @@ function fakeEmailSender(): EmailSender {
 const baseDeps = {
   portalBaseUrl: 'https://portal.example.org',
   magicLinkTtlMinutes: 15,
+  displayTimeZone: 'America/Los_Angeles',
   now: () => new Date('2026-08-22T00:00:00.000Z'),
 };
 
@@ -111,5 +115,48 @@ describe('requestLogin', () => {
     const emailCall = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(emailCall.loginUrl).toContain('lang=en');
     expect(emailCall.locale).toBe('en');
+  });
+
+  describe('with a request id', () => {
+    const requestId = 'a'.repeat(64);
+
+    it('stores the code hashes and emails the code', async () => {
+      const monday = fakeMonday([{ id: 'donor-1', name: 'Jane', preferredLanguage: 'Spanish' }]);
+      const tokenStore = fakeTokenStore();
+      const emailSender = fakeEmailSender();
+
+      await requestLogin('Jane@Example.org', 'en', { monday, tokenStore, emailSender, ...baseDeps }, null, requestId);
+
+      const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const sent = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(sent.loginCode.code).toMatch(/^[0-9]{6}$/);
+      expect(sent.loginCode.expiresAt).toBe(row.expiresAt);
+      expect(sent.loginCode.timeZone).toBe('America/Los_Angeles');
+      expect(sent.loginCode.domain).toBe('portal.example.org');
+      expect(row.requestHash).toBe(await sha256Hex(requestId));
+      expect(row.codeHash).toBe(await hashLoginCode(requestId, sent.loginCode.code));
+      expect(row.emailHash).toBe(await emailHash('Jane@Example.org'));
+      expect(row.locale).toBe(sent.locale);
+      expect(row.createdAt).toBe('2026-08-22T00:00:00.000Z');
+    });
+
+    it('does nothing when no donor matches', async () => {
+      const tokenStore = fakeTokenStore();
+      const emailSender = fakeEmailSender();
+      await requestLogin('nobody@example.org', 'en', { monday: fakeMonday([]), tokenStore, emailSender, ...baseDeps }, null, requestId);
+      expect(tokenStore.createToken).not.toHaveBeenCalled();
+      expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  it('stores no code fields and sends no code without a request id', async () => {
+    const tokenStore = fakeTokenStore();
+    const emailSender = fakeEmailSender();
+    await requestLogin('a@example.org', 'en', { monday: fakeMonday([{ id: 'd', name: 'J', preferredLanguage: '' }]), tokenStore, emailSender, ...baseDeps });
+    const row = (tokenStore.createToken as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(row).not.toHaveProperty('requestHash');
+    expect(row).not.toHaveProperty('codeHash');
+    expect(row).not.toHaveProperty('createdAt');
+    expect((emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]).not.toHaveProperty('loginCode');
   });
 });

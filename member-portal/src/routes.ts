@@ -413,6 +413,7 @@ export function createApp(deps: AppDeps) {
             emailSender: deps.emailSender,
             portalBaseUrl: deps.config.auth.portalBaseUrl,
             magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
+            displayTimeZone: deps.config.auth.displayTimeZone,
             now: deps.now,
           }, next).catch((err) => {
             // Same enumeration-guard rule as below: a failure here must never surface as a

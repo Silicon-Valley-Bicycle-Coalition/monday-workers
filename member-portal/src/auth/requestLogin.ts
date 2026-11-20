@@ -3,6 +3,8 @@ import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken } from '../crypto/token';
+import { generateLoginCode, hashLoginCode } from './loginCode';
+import { emailHash } from '../db/loginAttempts';
 import { magicLinkUrl } from './magicLinkUrl';
 import { localeFromMondayLabel, type Locale } from '../i18n/locales';
 
@@ -12,11 +14,12 @@ export interface RequestLoginDeps {
   emailSender: EmailSender;
   portalBaseUrl: string;
   magicLinkTtlMinutes: number;
+  displayTimeZone: string;
   now: () => Date;
 }
 
 // `next`: the portal page the donor was headed to (routes.ts validates it), carried in the link.
-export async function requestLogin(email: string, localeHint: Locale, deps: RequestLoginDeps, next: string | null = null): Promise<void> {
+export async function requestLogin(email: string, localeHint: Locale, deps: RequestLoginDeps, next: string | null = null, requestId: string | null = null): Promise<void> {
   const matches = await deps.monday.findDonorsByEmail(email);
   if (matches.length === 0) {
     return;
@@ -33,12 +36,31 @@ export async function requestLogin(email: string, localeHint: Locale, deps: Requ
   const now = deps.now();
   const expiresAt = new Date(now.getTime() + deps.magicLinkTtlMinutes * 60_000).toISOString();
 
+  // With a request id the link also carries a one-time code bound to that browser; the row stores
+  // only hashes of it.
+  const code = requestId === null ? null : generateLoginCode();
   await deps.tokenStore.createToken({
     tokenHash,
     donorItemIds: matches.map((match) => match.id),
     expiresAt,
+    ...(requestId !== null && code !== null
+      ? {
+          requestHash: await sha256Hex(requestId),
+          codeHash: await hashLoginCode(requestId, code),
+          locale,
+          emailHash: await emailHash(email),
+          createdAt: now.toISOString(),
+        }
+      : {}),
   });
 
   const loginUrl = magicLinkUrl(deps.portalBaseUrl, rawToken, locale, next);
-  await deps.emailSender.sendLoginEmail({ to: email, loginUrl, locale });
+  await deps.emailSender.sendLoginEmail({
+    to: email,
+    loginUrl,
+    locale,
+    ...(code !== null
+      ? { loginCode: { code, expiresAt, timeZone: deps.displayTimeZone, domain: new URL(deps.portalBaseUrl).host } }
+      : {}),
+  });
 }
