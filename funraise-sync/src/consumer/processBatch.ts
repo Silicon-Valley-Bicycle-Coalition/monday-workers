@@ -15,6 +15,7 @@ import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 import { OutageBreaker } from '../monday/outage';
+import { recordEmployerAnswer, type EmployerAnswerSink } from './employerAnswer';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -38,6 +39,9 @@ export interface ProcessBatchDeps {
   // side"); optional so a fork without the subscriptions poller still runs, minus the link.
   subscriptionStore?: SubscriptionStore;
   funraiseClient?: FunraiseClient;
+  // impact-attribution's EmployerAnswers RPC (GitHub #6); null or absent when the binding isn't
+  // there, which switches the hand-over off like employerAnswers.enabled false.
+  employerAnswers?: EmployerAnswerSink | null;
 }
 
 // The Funraise transaction field the Donations board's Date column is mapped from
@@ -177,6 +181,10 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   // milliseconds and Monday's date column wants { date: 'YYYY-MM-DD' }. Replace the mapped
   // value with the normalized one, or drop the column rather than write a raw number.
   const transactionDate = entityType === 'transaction' ? toISODate(getPath(rawPayload, TRANSACTION_DATE_FIELD)) : null;
+
+  // The matching-gift company on a one-time gift, as a proposed employer for staff to confirm.
+  // Best effort and idempotent, so it runs once the donor is known, ahead of whichever write below.
+  if (donorItemId) await recordEmployerAnswer(rawPayload, entityId, donorItemId, transactionDate, deps);
   const dateColumn = deps.config.funraiseSync.columnMap[TRANSACTION_DATE_FIELD];
   if (entityType === 'transaction' && dateColumn) {
     if (transactionDate !== null) columnValues[dateColumn] = { date: transactionDate };

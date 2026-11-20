@@ -294,6 +294,29 @@ calendar day of `donationDate` ([GL#25](https://gitlab.com/silicon-valley-bicycl
 columns, disagreeing with the local-date CloseDates `salesforce-import` migrated. Recurring
 Gifts' Next Payment goes through the same function.
 
+## Matching-gift company as a proposed employer ([#6](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/6))
+
+A one-time gift whose payload carries `companyMatch.companyName` (the donor used the form's
+matching-gift company search; about 1 in 50 gifts) is handed to impact-attribution's
+`EmployerAnswers` RPC as `source: 'funraise'`, keyed by the transaction id, with the matched People
+item, the gift's date and the context `Funraise transaction <id>`. impact-attribution resolves it to
+an Organization and, only if the donor has no **Current** Affiliation, proposes a **Draft** for staff
+to confirm (its README, "Employer answers in the matching-gift job"). Installments are left out:
+their company goes to Recurring Gifts → Match Employer.
+
+* **Switch:** `employerAnswers.enabled` in `config/*.json`, shipped `false` in both environments.
+  Removing the `EMPLOYER_ANSWERS` service binding (`wrangler.jsonc`, both environments) also turns
+  it off.
+* **Best effort:** it runs once the donor is matched, before the Donations write. A thrown RPC is
+  logged and swallowed, so it never fails or delays a donation; a redelivery sends it again, and
+  impact-attribution's upsert on `(source, transaction id)` absorbs the repeat.
+* **Write switch:** under `off` the hand-over is a `Employer answers` skip line (ids only); under
+  `hold` the message waits like any other.
+* **Logs** carry the transaction id and the result only, never the company name or email.
+
+Funraise custom form answers (the old employer question) don't arrive by webhook or API; that is
+steps 1 and 3 of #6, waiting on Funraise.
+
 ## Acknowledgment / receipting
 
 **Decided (private planning repo, `migration-plan.md` Decisions Needed, 2026-08-24, Option 2):**

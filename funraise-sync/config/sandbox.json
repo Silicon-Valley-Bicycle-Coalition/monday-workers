@@ -69,5 +69,6 @@
     "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },
     "funraiseLinkBase": "https://platform.funraise.io/transaction/",
     "maxPagesPerRun": 20
-  }
+  },
+  "employerAnswers": { "enabled": false }
 }

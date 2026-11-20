@@ -36,6 +36,13 @@ describe('evidenceComment', () => {
     );
   });
 
+  it('names a Funraise answer by its source', () => {
+    const funraise: AnswerRow = { ...a('Acme', '2026-11-18', 'Funraise transaction 4321'), source: 'funraise' };
+    expect(evidenceComment('Acme', [], [funraise])).toBe(
+      'Proposed from the matching-gift company on a Funraise gift: "Acme" (Funraise transaction 4321, 2026-11-18)',
+    );
+  });
+
   it('puts match lines before answer lines when mixed', () => {
     expect(evidenceComment('Acme', [m('2026-05-01', 50000)], [a('Acme', '2027-01-20')])).toBe(
       'Proposed from 1 matching gifts by Acme:\n2026-05-01 $500.00\nProposed from an Eventbrite answer: "Acme" (Pledge to Ride 2027, 2027-01-20)',

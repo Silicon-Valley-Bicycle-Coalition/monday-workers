@@ -2,7 +2,8 @@
 // of the consumer's and the poller's deps. The business logic runs unchanged against them, so a
 // dry run validates, matches and builds every mutation exactly as a live run would; only the last
 // step — the Monday write or the D1 bookkeeping that records it — is swapped out here.
-import { DEFAULT_PII_KEYS, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
+import { DEFAULT_PII_KEYS, logSkip, readOnlyProxy, recordingProxy, type SkipContext } from './flags';
+import type { EmployerAnswerSink } from './consumer/employerAnswer';
 import type { EventStore } from './db/events';
 import type { SubscriptionStore } from './db/subscriptions';
 import type { MondayClient, MondayItem } from './monday/client';
@@ -85,9 +86,25 @@ export function dryRunSubscriptionStore(store: SubscriptionStore, { advanceCurso
   });
 }
 
+/**
+ * The EmployerAnswers RPC under a dry run: each hand-over is a skip line under `Employer answers`
+ * with ids only (never the company name or context), resolving `{ recorded: true }`, the outcome a
+ * live call would most likely have. Same shape as eventbrite-sync's.
+ */
+export function dryRunEmployerAnswers(sink: EmployerAnswerSink | null | undefined, ctx: SkipContext): EmployerAnswerSink | null {
+  if (sink === null || sink === undefined) return null;
+  return {
+    recordEmployerAnswer: async ({ source, sourceId, personItemId }) => {
+      logSkip(ctx, 'Employer answers', 'recordEmployerAnswer', [{ source, sourceId, personItemId }]);
+      return { recorded: true };
+    },
+  };
+}
+
 export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext): ProcessBatchDeps {
   return {
     ...deps,
+    employerAnswers: dryRunEmployerAnswers(deps.employerAnswers, ctx),
     eventStore: dryRunEventStore(deps.eventStore),
     mondayClient: dryRunMondayClient(deps.mondayClient, deps.config.monday.boards, ctx),
     subscriptionStore: deps.subscriptionStore && dryRunSubscriptionStore(deps.subscriptionStore, { advanceCursor: false }),

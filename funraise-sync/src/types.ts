@@ -1,5 +1,6 @@
 import type { MondayTokenSource } from './monday/graphql';
 import type { FunraiseQueueMessage } from './consumer/processBatch';
+import type { EmployerAnswerSink } from './consumer/employerAnswer';
 
 // Funraise fires one webhook per organization and only for transactions (help.funraise.io
 // "Webhooks"; decided 2026-09-18, docs/superpowers/specs/2026-09-18-funraise-subscriptions-
@@ -116,19 +117,26 @@ export interface FunraiseSyncConfig {
     doNotMigrateFields: string[];
   };
   subscriptionsPoll: SubscriptionsPollConfig;
+  // The matching-gift company on one-time gifts, handed to impact-attribution's EmployerAnswers
+  // RPC (GitHub #6). Off unless `enabled` and the EMPLOYER_ANSWERS binding is present.
+  employerAnswers: { enabled: boolean };
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets and narrowed queue message and binding types are declared here. MONDAY_AUTH is
-// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
-export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
+// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape;
+// EMPLOYER_ANSWERS likewise, as impact-attribution's EmployerAnswers RPC.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH' | 'EMPLOYER_ANSWERS'> {
   WRITE_QUEUE: Queue<FunraiseQueueMessage>;
   // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
   // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
   // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
+  // impact-attribution's EmployerAnswers entrypoint (wrangler.jsonc services). Optional: removing
+  // the binding switches the hand-over off.
+  EMPLOYER_ANSWERS?: EmployerAnswerSink;
   // Shared secret required as `?secret=...` on the registered Funraise webhook URL
   // (`wrangler secret put FUNRAISE_WEBHOOK_SECRET`). Optional in the type because
   // secrets aren't declared in wrangler.jsonc — the webhook route fails closed

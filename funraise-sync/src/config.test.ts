@@ -57,6 +57,7 @@ const validConfig = {
     funraiseLinkBase: 'https://platform.funraise.io/transaction/',
     maxPagesPerRun: 1,
   },
+  employerAnswers: { enabled: false },
 };
 
 function withFunraiseSync(patch: Record<string, unknown>) {
@@ -257,5 +258,20 @@ describe('validateConfig subscriptionsPoll', () => {
       expect(() => validateConfig(withPoll({ maxPagesPerRun: bad }))).toThrow(/maxPagesPerRun/);
     }
     expect(() => validateConfig(withPoll({ maxPagesPerRun: 1 }))).not.toThrow();
+  });
+});
+
+describe('validateConfig employerAnswers', () => {
+  it('requires employerAnswers.enabled to be a boolean', () => {
+    const { employerAnswers: _omit, ...missing } = validConfig;
+    expect(() => validateConfig(missing)).toThrow(/employerAnswers\.enabled/);
+    expect(() => validateConfig({ ...validConfig, employerAnswers: { enabled: 'yes' } })).toThrow(/employerAnswers\.enabled/);
+    expect(validateConfig({ ...validConfig, employerAnswers: { enabled: true } }).employerAnswers).toEqual({ enabled: true });
+  });
+
+  it('ships switched off in both environments', async () => {
+    const [svbc, sandbox] = await Promise.all([import('../config/svbc.json'), import('../config/sandbox.json')]);
+    expect(validateConfig(svbc.default).employerAnswers).toEqual({ enabled: false });
+    expect(validateConfig(sandbox.default).employerAnswers).toEqual({ enabled: false });
   });
 });

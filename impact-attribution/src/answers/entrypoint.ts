@@ -8,8 +8,13 @@ import { upsertAnswer } from './store';
 // deterministic outcome returns `{ recorded: false, reason }`; only a transient failure (D1)
 // throws, so the caller can retry. Logs carry ids and the result, never the answer or context.
 
+// Who handed the answer over: an Eventbrite registration question (eventbrite-sync), or the
+// matching-gift company a donor picked on a Funraise one-time gift (funraise-sync, GitHub #6).
+export const ANSWER_SOURCES = ['eventbrite', 'funraise'] as const;
+export type AnswerSource = typeof ANSWER_SOURCES[number];
+
 export interface EmployerAnswerInput {
-  source: 'eventbrite';
+  source: AnswerSource;
   sourceId: string;
   personItemId: string;
   answer: string;
@@ -35,7 +40,7 @@ function isCalendarDate(s: string): boolean {
 
 function isValid(input: EmployerAnswerInput): boolean {
   return typeof input === 'object' && input !== null
-    && input.source === 'eventbrite'
+    && (ANSWER_SOURCES as readonly unknown[]).includes(input.source)
     && typeof input.sourceId === 'string' && input.sourceId.trim() !== ''
     && typeof input.personItemId === 'string' && /^\d+$/.test(input.personItemId)
     && typeof input.answer === 'string'

@@ -128,8 +128,14 @@ proposes, so one place creates Drafts, with one ledger, one cap and one exclusio
 weaker than a donor's own portal answer, so one becomes a **Draft** for staff to confirm, never an
 affiliation that counts on its own. Spec: "Proposing it" in the design above.
 
+`funraise-sync` hands over a second source ([#6](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/6)):
+the matching-gift company (`companyMatch.companyName`) a donor picked on a Funraise one-time gift,
+as `source: 'funraise'`, `sourceId` the transaction id. It is weaker still (often a spouse's or a
+past employer), so it only fills a gap: a resolved Funraise answer is `skipped` when the person
+already has a **Current** Affiliation with any organization. Eventbrite answers have no such rule.
+
 **The RPC.** `EmployerAnswers` (`src/answers/entrypoint.ts`) has one method, `recordEmployerAnswer({
-source: 'eventbrite', sourceId, personItemId, answer, answeredAt, context })`. It returns `{ recorded:
+source: 'eventbrite' | 'funraise', sourceId, personItemId, answer, answeredAt, context })`. It returns `{ recorded:
 true }`, or `{ recorded: false, reason }` for anything that will never pass (`disabled`: no
 `employerAnswers` config; `invalid`; `non-answer`: blank or on the `ignore` list; `closed`: the row was
 already decided). It throws only on a transient failure (D1), so the caller retries. The answer and
@@ -147,7 +153,7 @@ Monday comments; it is never logged.
 |---|---|
 | `pending` | waiting: unresolved name, or over the cap |
 | `proposed` | a Draft was created from it |
-| `skipped` | a skip rule applied (excluded payer, existing Affiliation, `proposals` ledger, missing person or organization item); not retried |
+| `skipped` | a skip rule applied (excluded payer, existing Affiliation, `proposals` ledger, missing person or organization item; for a Funraise answer, a Current Affiliation with anyone); not retried |
 | `expired` | answered more than `maxAgeDays` (365) ago |
 | `superseded` | the same person gave a later, different answer |
 
@@ -174,7 +180,8 @@ Monday comments; it is never logged.
    (Current first, then latest evidence) and one `maxProposalsPerRun`; leftovers stay `pending`.
 6. A created Draft is recorded in `proposals` (`evidence` `matches`; `sources` is `matches`, `answers` or `both`; `match_count`
    0 for an answer-only Draft), its answers become `proposed`, and the comment gets a line per answer:
-   `Proposed from an Eventbrite answer: "<answer>" (<event>, <date>)`, after any match lines.
+   `Proposed from an Eventbrite answer: "<answer>" (<event>, <date>)`, after any match lines
+   (a Funraise answer reads `Proposed from the matching-gift company on a Funraise gift: …`).
 
 If the answer step itself throws (D1, the Organizations lookup), the run logs
 `impact-attribution: answer step failed: <error class>: <message>` (never answer text) and carries on

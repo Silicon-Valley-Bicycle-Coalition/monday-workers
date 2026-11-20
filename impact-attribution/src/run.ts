@@ -94,8 +94,8 @@ export async function runProposals(deps: RunDeps, mode: 'on' | 'off'): Promise<R
     matchesRead: read.stored.length + read.rejectedIds.length, upserted, deleted, qualifying: qualifying.length,
     skipped: { ...skipped, missingItem }, proposed: 0, failed: 0, deferred: eligible.length - checked,
     answers: {
-      pending: answers.resolved + answers.unresolved - skippedAnswers.length, expired: answers.expired, superseded: answers.superseded,
-      resolved: answers.resolved, unresolved: answers.unresolved, skipped: skippedAnswers.length, proposed: 0,
+      pending: answers.resolved + answers.unresolved - answers.skipped - skippedAnswers.length, expired: answers.expired, superseded: answers.superseded,
+      resolved: answers.resolved, unresolved: answers.unresolved, skipped: answers.skipped + skippedAnswers.length, proposed: 0,
     },
   };
 
@@ -158,7 +158,7 @@ async function markAnswers(deps: RunDeps, answers: { row: AnswerRow; orgItemId: 
   await setAnswerStates(deps.db, answers.map(({ row, orgItemId }) => ({ source: row.source, sourceId: row.sourceId, state, orgItemId })), deps.now);
 }
 
-const NO_ANSWERS: ResolvedAnswers = { candidates: [], expired: 0, superseded: 0, resolved: 0, unresolved: 0 };
+const NO_ANSWERS: ResolvedAnswers = { candidates: [], expired: 0, superseded: 0, resolved: 0, unresolved: 0, skipped: 0 };
 
 // A failing answer step (D1, the Organizations lookup) must not cost the night's match proposals:
 // log the error class and message (never answer text) and carry on with no answer candidates.
@@ -172,7 +172,8 @@ async function answerStep(deps: RunDeps): Promise<ResolvedAnswers> {
   }
 }
 
-interface ResolvedAnswers { candidates: Candidate[]; expired: number; superseded: number; resolved: number; unresolved: number }
+// `skipped`: resolved answers closed before candidate selection (ONLY_WITHOUT_CURRENT).
+interface ResolvedAnswers { candidates: Candidate[]; expired: number; superseded: number; resolved: number; unresolved: number; skipped: number }
 
 // Design "Proposing it" steps 1–4: expire and supersede pending answers (also against each
 // person's latest proposed answer), then resolve each live one
@@ -198,10 +199,33 @@ async function resolveAnswers(deps: RunDeps): Promise<ResolvedAnswers> {
     const pick = pickOrganization(row.answer, organizations);
     if (pick.kind === 'one') resolved.push({ row, orgItemId: pick.organization.id });
   }
+  const { kept, heldByCurrent } = await dropHeldByCurrent(deps, resolved);
+  await markAnswers(deps, heldByCurrent, 'skipped');
   return {
-    candidates: answerCandidates(resolved), expired: expired.length, superseded: superseded.length,
-    resolved: resolved.length, unresolved: live.length - resolved.length,
+    candidates: answerCandidates(kept), expired: expired.length, superseded: superseded.length,
+    resolved: resolved.length, unresolved: live.length - resolved.length, skipped: heldByCurrent.length,
   };
+}
+
+// Sources whose answer only fills a gap: skipped when the person already has a Current
+// Affiliation with any organization. A Funraise matching-gift company (GitHub #6) is picked from a
+// search box on the donation form, often for a spouse's or a past employer, so it shouldn't
+// propose a second Current employer the way a direct "where do you work" answer can.
+const ONLY_WITHOUT_CURRENT: ReadonlySet<string> = new Set(['funraise']);
+
+// The Affiliations board is read only when such an answer resolved, which is rare.
+async function dropHeldByCurrent(
+  deps: RunDeps, resolved: { row: AnswerRow; orgItemId: string }[],
+): Promise<{ kept: { row: AnswerRow; orgItemId: string }[]; heldByCurrent: { row: AnswerRow; orgItemId: string }[] }> {
+  if (!resolved.some((r) => ONLY_WITHOUT_CURRENT.has(r.row.source))) return { kept: resolved, heldByCurrent: [] };
+  const { affiliations, emailDomains } = deps.config;
+  const current = new Set((await deps.monday.listAffiliations(affiliations, emailDomains.affiliationWorkEmail))
+    .filter((a) => a.status === affiliations.labels.current)
+    .flatMap((a) => a.personIds));
+  const kept: { row: AnswerRow; orgItemId: string }[] = [];
+  const heldByCurrent: { row: AnswerRow; orgItemId: string }[] = [];
+  for (const r of resolved) (ONLY_WITHOUT_CURRENT.has(r.row.source) && current.has(r.row.personItemId) ? heldByCurrent : kept).push(r);
+  return { kept, heldByCurrent };
 }
 
 // Every organization that would get a Draft if there were no per-run cap, for the review that
