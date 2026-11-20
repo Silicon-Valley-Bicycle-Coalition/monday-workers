@@ -1,18 +1,22 @@
-// The card-first home page: where each person stands, the one thing worth doing next (at most one
-// gold button), their card(s), and the doors. State comes from homeState.ts; this only renders.
+// The portal frame every tab shares: where each person stands and the one thing worth doing next
+// (at most one gold button), each person's member card with their totals, then the tab bar and the
+// active tab's panel. State comes from homeState.ts; this only renders. No JavaScript: each tab is
+// its own page, linked from the bar with aria-current on the active one.
 import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { escapeHtml, someRecordsUnavailableNote } from '../views';
+import { formatUsdText } from '../money';
+import { PORTAL_TABS_JS_ASSET } from '../assets/static';
 import { endedMonth, memberCardWidget } from '../doors/card';
 import type { PersonState } from './homeState';
-import { pluralKey, type DoorLink, type HomeData } from './loadHomeData';
+import { pluralKey, type HomeData, type PersonStats, type TabKey, type TabLink } from './loadHomeData';
 
-const DOOR_TITLES: Record<DoorLink['key'], TranslationKey> = {
-  card: 'home.doorCard',
+export const TAB_TITLES: Record<TabKey, TranslationKey> = {
+  benefits: 'tabs.benefits',
   giving: 'home.doorGiving',
-  letters: 'home.doorLetters',
-  activity: 'home.doorActivity',
-  info: 'home.doorInfo',
+  events: 'events.tabLabel',
+  volunteering: 'tabs.volunteering',
+  profile: 'tabs.profile',
 };
 
 interface Action {
@@ -89,8 +93,8 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
   const household = data.people.length + data.unavailableCount > 1;
   const holders = data.people.filter((e) => data.page.personIds.includes(e.person.id));
   const first = holders[0];
-  const lettersHref = `/${locale}/portal/letters`;
-  const cardHref = `/${locale}/portal/card`;
+  const lettersHref = lettersLink(locale);
+  const cardHref = discountsLink(locale);
 
   if (first === undefined || data.page.kind === 'default') {
     // Name the card(s) only when one shows (a card token can fail, or the card feature be off).
@@ -165,6 +169,10 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
   };
 }
 
+// Tax letters live on the giving tab; discounts on Benefits.
+export const lettersLink = (locale: Locale): string => `/${locale}/portal/giving#tax-letters`;
+export const discountsLink = (locale: Locale): string => `/${locale}/portal#discounts`;
+
 function link(action: Action, className: string): string {
   const rel = action.external ? ' rel="noopener noreferrer"' : '';
   return `<a class="${className}" href="${escapeHtml(action.href)}"${rel}>${escapeHtml(action.text)}</a>`;
@@ -175,11 +183,11 @@ function link(action: Action, className: string): string {
 function personAction(state: PersonState, locale: Locale, renewUrl: string): Action | null {
   switch (state.kind) {
     case 'taxLetter':
-      return { href: `/${locale}/portal/letters`, text: t(locale, 'home.cardTaxLetterLink'), external: false };
+      return { href: lettersLink(locale), text: t(locale, 'home.cardTaxLetterLink'), external: false };
     case 'renew':
       return { href: renewUrl, text: t(locale, state.reason === 'never' ? 'home.cardJoinLink' : 'home.cardRenewLink'), external: true };
     case 'newMember':
-      return { href: `/${locale}/portal/card`, text: t(locale, 'home.cardDiscountsLink'), external: false };
+      return { href: discountsLink(locale), text: t(locale, 'home.cardDiscountsLink'), external: false };
     default:
       return null;
   }
@@ -192,28 +200,46 @@ function personBlock(entry: HomeData['people'][number], data: HomeData, locale: 
   if (never) {
     body = `<div class="home-not-member"><p class="home-not-member-name">${escapeHtml(person.firstName)}</p><p>${escapeHtml(t(locale, 'home.notMember'))}</p></div>`;
   } else if (card !== null) {
-    body = memberCardWidget(card, locale, { regenerate: false, lapsed: ended ? { ended: endedMonth(person.until) } : null });
+    body = memberCardWidget(card, locale, { lapsed: ended ? { ended: endedMonth(person.until) } : null });
   }
   const action = state.kind === data.page.kind ? null : personAction(state, locale, renewUrl);
   const actionHtml = action === null ? '' : `<p>${link(action, 'home-person-action')}</p>`;
-  return `<div class="home-person">${body}${actionHtml}</div>`;
+  return `<div class="home-person">${body}${statsList(entry.stats, person.since, locale)}${actionHtml}</div>`;
 }
 
-// The hidden ": " keeps a screen reader from running the title into the hint.
-function doorList(doors: DoorLink[], locale: Locale): string {
-  if (doors.length === 0) return '';
-  const items = doors
-    .map(
-      (door) =>
-        `<a class="home-door" href="${escapeHtml(door.href)}"><span class="home-door-title">${escapeHtml(t(locale, DOOR_TITLES[door.key]))}<span class="visually-hidden">: </span></span><span class="home-door-hint">${escapeHtml(door.hint)}</span></a>`
-    )
+// The member's totals beside their card. A total that isn't available (history gate closed,
+// volunteer history off or failed, no Member Since) is left out rather than shown as zero.
+function statsList(stats: PersonStats, since: string, locale: Locale): string {
+  const rows: [TranslationKey, string][] = [];
+  if (stats.totalDonated !== null) rows.push(['stats.totalGiven', formatUsdText(stats.totalDonated)]);
+  if (stats.volunteerHours !== null) rows.push(['stats.hoursVolunteered', new Intl.NumberFormat(locale).format(stats.volunteerHours)]);
+  const sinceYear = /^\d{4}-\d{2}-\d{2}$/.test(since.trim()) ? since.trim().slice(0, 4) : null;
+  if (sinceYear !== null) rows.push(['stats.memberSince', sinceYear]);
+  if (rows.length === 0) return '';
+  const items = rows
+    .map(([label, value]) => `<div class="member-stat"><dt>${escapeHtml(t(locale, label))}</dt><dd>${escapeHtml(value)}</dd></div>`)
     .join('');
-  return `<nav class="home-doors" aria-label="${escapeHtml(t(locale, 'home.doorsLabel'))}">${items}</nav>`;
+  return `<dl class="member-stats">${items}</dl>`;
+}
+
+const TABS_ID = 'tabs';
+
+function tabBar(tabs: TabLink[], active: TabKey, locale: Locale): string {
+  if (tabs.length === 0) return '';
+  const items = tabs
+    .map((tab) => {
+      const current = tab.key === active ? ' aria-current="page"' : '';
+      // Each tab is its own page. portalTabs.ts swaps the panel in place so the page never moves;
+      // without it, the fragment at least lands the next page on the tab bar.
+      return `<a class="portal-tab" href="${escapeHtml(`${tab.href}#${TABS_ID}`)}"${current}>${escapeHtml(t(locale, TAB_TITLES[tab.key]))}</a>`;
+    })
+    .join('');
+  return `<nav class="portal-tabs" id="${TABS_ID}" aria-label="${escapeHtml(t(locale, 'home.doorsLabel'))}">${items}</nav><script src="${PORTAL_TABS_JS_ASSET.path}" defer></script>`;
 }
 
 // "You manage": one plain link per organization, no gold button. The hidden ": " keeps a screen
 // reader from running the name into the statement line.
-function orgSection(orgs: HomeData['orgs'], locale: Locale): string {
+export function orgSection(orgs: HomeData['orgs'], locale: Locale): string {
   if (orgs.length === 0) return '';
   const rows = orgs
     .map((org) => {
@@ -230,8 +256,9 @@ function orgSection(orgs: HomeData['orgs'], locale: Locale): string {
   return `<section class="home-orgs" aria-labelledby="home-orgs-title"><h2 id="home-orgs-title" class="home-orgs-title">${escapeHtml(t(locale, 'orgs.sectionTitle'))}</h2><div class="home-doors">${rows}</div></section>`;
 }
 
-export function homeView(data: HomeData, locale: Locale, renewUrl: string): string {
-  // Work-only session: no greeting, headline, cards or doors, just the organizations.
+// `panel` is the active tab's content, rendered by that tab's own view (src/doors/).
+export function portalView(data: HomeData, active: TabKey, panel: string, locale: Locale, renewUrl: string): string {
+  // Work-only session: no greeting, headline, cards or tabs, just the organizations.
   if (data.people.length === 0 && data.orgs.length > 0) {
     return `<div class="home">${orgSection(data.orgs, locale)}</div>`;
   }
@@ -248,19 +275,21 @@ export function homeView(data: HomeData, locale: Locale, renewUrl: string): stri
   const status = statusBlock(data, locale, renewUrl);
   return `
     <div class="home">
-      <div class="home-status">
-        <p class="home-greeting">${escapeHtml(greeting)}</p>
-        <h1 class="home-headline">${escapeHtml(status.headline)}</h1>
-        ${status.sub === null ? '' : `<p class="home-sub">${escapeHtml(status.sub)}</p>`}
-        ${status.button === null ? '' : link(status.button, 'cta-button home-action')}
-        ${status.note === null ? '' : `<p class="home-note">${escapeHtml(status.note)}</p>`}
-      </div>
-      <div class="home-people">
-        ${data.people.map((entry) => personBlock(entry, data, locale, renewUrl)).join('')}
+      <div class="home-header">
+        <div class="home-people">
+          ${data.people.map((entry) => personBlock(entry, data, locale, renewUrl)).join('')}
+        </div>
+        <div class="home-status">
+          <p class="home-greeting">${escapeHtml(greeting)}</p>
+          <p class="home-headline">${escapeHtml(status.headline)}</p>
+          ${status.sub === null ? '' : `<p class="home-sub">${escapeHtml(status.sub)}</p>`}
+          ${status.button === null ? '' : link(status.button, 'cta-button home-action')}
+          ${status.note === null ? '' : `<p class="home-note">${escapeHtml(status.note)}</p>`}
+        </div>
       </div>
       ${data.unavailableCount > 0 ? `<div class="home-unavailable">${someRecordsUnavailableNote(data.unavailableCount, locale)}</div>` : ''}
-      ${doorList(data.doors, locale)}
-      ${orgSection(data.orgs, locale)}
+      ${tabBar(data.tabs, active, locale)}
+      <div class="portal-panel">${panel}</div>
     </div>
   `;
 }

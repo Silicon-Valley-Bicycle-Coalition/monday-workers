@@ -1,17 +1,16 @@
-// The giving door: each person's donation history and total (behind the history date gate), the
-// impact their giving supported, then the Funraise links, pledges and matching gifts.
-import type { AppDeps } from '../routes';
-import type { DonationRecord, DonorImpact, FunraiseLinkUrls, MemberPortalData } from '../types';
-import { donationHistoryEnabled, funraiseLinks, pledgesEnabled } from '../config';
-import { loadPortalData } from '../portal/loadPortalData';
+// The Your giving tab: each person's donation history and total (behind the history date gate),
+// the impact their giving supported, their tax letters, then the Funraise links, pledges and
+// matching gifts.
+import type { Config, DonationRecord, DonorImpact, FunraiseLinkUrls, MemberPortalData, PortalView } from '../types';
+import { funraiseLinks, pledgesEnabled } from '../config';
 import { selectImpact } from '../impact/impact';
 import type { Locale } from '../i18n/locales';
 import { t } from '../i18n/t';
 import { formatUsdText } from '../money';
 import { formatShortDate } from '../dates';
 import { parseAmount } from '../amounts';
-import { ORG_DONATE_URL, escapeHtml, someRecordsUnavailableNote } from '../views';
-import { doorPage, emptyState, personGroup } from './layout';
+import { ORG_DONATE_URL, escapeHtml } from '../views';
+import { emptyState, personGroup, tabPanel } from './layout';
 
 export interface GivingDoorData {
   // In session order; a person whose read failed is left out and counted below.
@@ -28,32 +27,26 @@ export interface GivingDoorData {
   pledges: boolean;
 }
 
-type GivingDeps = Pick<AppDeps, 'monday' | 'config' | 'now'>;
-
-export async function loadGivingDoor(donorItemIds: string[], deps: GivingDeps, locale: Locale): Promise<GivingDoorData> {
-  const historyEnabled = donationHistoryEnabled(deps.config, deps.now());
-  // Throws only when no one loads (the route's error page).
-  const data = await loadPortalData(donorItemIds, deps.monday, undefined, historyEnabled, { discounts: false });
-
-  // "Your giving supported …" (v8): per donor, from the gifts already loaded, so it follows the
-  // same date gate and costs no extra Monday read. Gated here rather than on an empty donations
-  // list, so a hidden history never leaks a "you gave in <year>".
+// From the header's read (src/home/loadHomeData.ts): no Monday reads of its own. "Your giving
+// supported …" (v8) is per donor, from the gifts already loaded, so it follows the same date gate.
+// Gated on the history flag rather than an empty donations list, so a hidden history never leaks
+// a "you gave in <year>".
+export function givingTabData(portal: PortalView, config: Config, locale: Locale): GivingDoorData {
   const impact: Record<string, DonorImpact> = {};
-  if (data.donationHistoryEnabled) {
-    for (const donor of data.donors) {
-      const selected = selectImpact(donor.donations, deps.config.impact, locale);
+  if (portal.donationHistoryEnabled) {
+    for (const donor of portal.donors) {
+      const selected = selectImpact(donor.donations, config.impact, locale);
       if (selected !== null) impact[donor.id] = selected;
     }
   }
-
   return {
-    donors: data.donors,
-    unavailableCount: data.unavailableDonorCount ?? 0,
-    donationHistoryEnabled: data.donationHistoryEnabled,
-    historyVisibleFromISO: deps.config.donations.historyVisibleFromISO,
+    donors: portal.donors,
+    unavailableCount: portal.unavailableDonorCount ?? 0,
+    donationHistoryEnabled: portal.donationHistoryEnabled,
+    historyVisibleFromISO: config.donations.historyVisibleFromISO,
     impact,
-    funraise: funraiseLinks(deps.config),
-    pledges: pledgesEnabled(deps.config),
+    funraise: funraiseLinks(config),
+    pledges: pledgesEnabled(config),
   };
 }
 
@@ -166,9 +159,10 @@ function historyFromNote(data: GivingDoorData, locale: Locale): string {
   return `<p class="door-note">${escapeHtml(t(locale, 'door.givingHistoryFrom', { date }))}</p>`;
 }
 
-export function givingDoorView(data: GivingDoorData, locale: Locale): string {
+// `letters` is the tax-letters section (src/letters/letterViews.ts), '' when letters are off.
+export function givingTabView(data: GivingDoorData, letters: string, locale: Locale): string {
   const household = data.donors.length + data.unavailableCount > 1;
-  // Under a person's name (h2) on a household page; directly under the door title otherwise.
+  // Under a person's name (h2) on a household page; directly under the tab otherwise.
   const heading = household ? 'h3' : 'h2';
   const firstEmpty = data.donationHistoryEnabled ? data.donors.find((donor) => !hasDonations(donor)) : undefined;
   const groups = data.donors
@@ -181,9 +175,8 @@ export function givingDoorView(data: GivingDoorData, locale: Locale): string {
       return body === '' ? '' : personGroup(donor.name, body, household);
     })
     .join('');
-  return doorPage(
+  return tabPanel(
     t(locale, 'home.doorGiving'),
-    `${someRecordsUnavailableNote(data.unavailableCount, locale)}${historyFromNote(data, locale)}${groups}${funraiseSection(data.funraise, locale)}${moreLinks(data.pledges, locale)}`,
-    locale
+    `${historyFromNote(data, locale)}${groups}${letters}${funraiseSection(data.funraise, locale)}${moreLinks(data.pledges, locale)}`
   );
 }

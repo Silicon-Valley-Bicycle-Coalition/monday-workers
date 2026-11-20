@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { t } from '../i18n/t';
-import { lettersListView, letterView, lettersUnavailableView } from './letterViews';
+import { lettersSection, letterView, lettersUnavailableView } from './letterViews';
 import type { LetterData } from './loadLetterData';
 import type { TaxLetterConfig } from '../types';
 
@@ -26,38 +26,43 @@ const letter: LetterData = {
   statement: 'No goods or services were provided.',
 };
 
-describe('lettersListView', () => {
+describe('lettersSection', () => {
   it('links each donor-year pair to its letter route', () => {
-    const html = lettersListView([{ donorId: 'donor-1', donorName: 'Jane', years: [2025, 2024] }], 'en');
+    const html = lettersSection([{ donorId: 'donor-1', donorName: 'Jane', years: [2025, 2024] }], 'en');
     expect(html).toContain('/portal/letters/donor-1/2025');
     expect(html).toContain('/portal/letters/donor-1/2024');
   });
 
   it('shows an explicit empty state for a donor with no completed-year gifts', () => {
-    const html = lettersListView([{ donorId: 'donor-2', donorName: 'Sam', years: [] }], 'en');
+    const html = lettersSection([{ donorId: 'donor-2', donorName: 'Sam', years: [] }], 'en');
     expect(html).toContain('No letters are available yet');
   });
 
   it('locale-prefixes its year links', () => {
-    const html = lettersListView([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'vi');
+    const html = lettersSection([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'vi');
     expect(html).toContain('/vi/portal/letters/d1/2025');
-    expect(html).toContain('href="/vi/portal"'); // the door's "‹ Home" link
   });
 
-  it('renders inside the door frame, naming each person only for a household', () => {
-    const one = lettersListView([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'en');
-    expect(one).toContain('class="door"');
-    expect(one).toContain(`<h1>${t('en', 'home.doorLetters')}</h1>`);
-    expect(one).not.toContain('<h2>Jane</h2>');
-    const two = lettersListView(
+  it('is the #tax-letters section of the giving tab, naming each person only for a household', () => {
+    const one = lettersSection([{ donorId: 'd1', donorName: 'Jane', years: [2025] }], 'en');
+    expect(one).toContain('<section id="tax-letters">');
+    expect(one).toContain(`<h2>${t('en', 'home.doorLetters')}</h2>`);
+    expect(one).not.toContain('<h3>Jane</h3>');
+    const two = lettersSection(
       [
         { donorId: 'd1', donorName: 'Jane', years: [2025] },
         { donorId: 'd2', donorName: 'Sam', years: [] },
       ],
       'en'
     );
-    expect(two).toContain('<h2>Jane</h2>');
-    expect(two).toContain('<h2>Sam</h2>');
+    expect(two).toContain('<h3>Jane</h3>');
+    expect(two).toContain('<h3>Sam</h3>');
+  });
+
+  it('shows a note instead of the lists when the read failed', () => {
+    const html = lettersSection(null, 'en');
+    expect(html).toContain(t('en', 'error.lettersLoadFailed'));
+    expect(html).not.toContain('/portal/letters/');
   });
 });
 

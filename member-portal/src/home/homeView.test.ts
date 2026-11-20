@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { homeView } from './homeView';
-import type { HomeData, DoorLink } from './loadHomeData';
+import { orgSection, portalView } from './homeView';
+import type { HomeData, PersonStats, TabLink } from './loadHomeData';
 import type { HomePerson, PersonState } from './homeState';
 import { membershipEnded, pageState } from './homeState';
 import type { PortalCard } from '../card/loadCardData';
@@ -19,25 +19,36 @@ function card(id: string, name: string): PortalCard {
   };
 }
 
-const DOORS: DoorLink[] = [
-  { key: 'card', href: '/en/portal/card', hint: '14 shops · keep it on your phone' },
-  { key: 'giving', href: '/en/portal/giving', hint: 'History, recurring gifts, employer match' },
-  { key: 'letters', href: '/en/portal/letters', hint: '2027 ready in January' },
-  { key: 'activity', href: '/en/portal/activity', hint: 'Your sign-ups and hours' },
-  { key: 'info', href: '/en/portal/info', hint: 'Address, language, what we send' },
+const TABS: TabLink[] = [
+  { key: 'benefits', href: '/en/portal' },
+  { key: 'giving', href: '/en/portal/giving' },
+  { key: 'events', href: '/en/portal/events' },
+  { key: 'volunteering', href: '/en/portal/volunteering' },
+  { key: 'profile', href: '/en/portal/info' },
 ];
+
+const NO_STATS: PersonStats = { totalDonated: null, volunteerHours: null };
+
+// The Benefits tab with an empty panel: these tests are about the frame.
+const homeView = (d: HomeData, locale: Parameters<typeof portalView>[3], renewUrl: string) => portalView(d, 'benefits', '<p>panel</p>', locale, renewUrl);
 
 // The loader's "today" for these fixtures.
 const TODAY = '2027-01-10';
 
-function data(entries: { person: HomePerson; state: PersonState; card?: PortalCard | null }[], overrides: Partial<HomeData> = {}): HomeData {
+const EMPTY_PORTAL: HomeData['portal'] = { donors: [], discounts: null, volunteerHistory: null, donationHistoryEnabled: false };
+
+function data(
+  entries: { person: HomePerson; state: PersonState; card?: PortalCard | null; stats?: PersonStats }[],
+  overrides: Partial<HomeData> = {}
+): HomeData {
   const people = entries.map((e) => ({
     person: e.person,
     state: e.state,
     card: e.card === undefined ? card(e.person.id, `${e.person.firstName} Rivera`) : e.card,
     ended: membershipEnded(e.person, TODAY),
+    stats: e.stats ?? NO_STATS,
   }));
-  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, doors: DOORS, orgs: [], ...overrides };
+  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, tabs: TABS, orgs: [], portal: EMPTY_PORTAL, ...overrides };
 }
 
 const goldCount = (html: string) => (html.match(/class="cta-button/g) ?? []).length;
@@ -53,7 +64,7 @@ describe('homeView — one person', () => {
     expect(html).toContain('Your 2026 tax letter is ready.');
     expect(html).toContain('3 gifts · $250.00 in 2026');
     expect(goldCount(html)).toBe(1);
-    expect(goldHref(html)).toBe('/en/portal/letters');
+    expect(goldHref(html)).toBe('/en/portal/giving#tax-letters');
     expect(goldText(html)).toBe('Get your tax letter');
   });
 
@@ -66,7 +77,7 @@ describe('homeView — one person', () => {
     expect(html).not.toContain('0 gifts');
     expect(html).not.toContain('$0.00');
     expect(html).not.toContain('class="home-sub"');
-    expect(goldHref(html)).toBe('/en/portal/letters');
+    expect(goldHref(html)).toBe('/en/portal/giving#tax-letters');
   });
 
   it('renewal due: headline with the date and a gold renew button', () => {
@@ -116,7 +127,7 @@ describe('homeView — one person', () => {
     expect(html).toContain("You're a member.".replace("'", '&#39;'));
     expect(html).toContain('Show your card at 14 local bike shops for member discounts.');
     expect(goldCount(html)).toBe(1);
-    expect(goldHref(html)).toBe('/en/portal/card');
+    expect(goldHref(html)).toBe('/en/portal#discounts');
   });
 
   it('new member without a shop count leaves the number out', () => {
@@ -180,7 +191,7 @@ describe('homeView — household', () => {
       RENEW
     );
     expect(goldText(html)).toBe('Get your tax letters');
-    expect(goldHref(html)).toBe('/en/portal/letters');
+    expect(goldHref(html)).toBe('/en/portal/giving#tax-letters');
     expect(html).not.toContain('3 gifts');
   });
 
@@ -272,7 +283,7 @@ describe('homeView — household', () => {
 
   it('default: a household says "Your member cards", with one record missing too', () => {
     const html = homeView(data([{ person: jordan, state: { kind: 'default' } }], { unavailableCount: 1 }), 'en', RENEW);
-    expect(html).toContain(`<h1 class="home-headline">${t('en', 'home.defaultHeadlineMany')}</h1>`);
+    expect(html).toContain(`<p class="home-headline">${t('en', 'home.defaultHeadlineMany')}</p>`);
   });
 
   it('default with no card to show: no "member card" headline', () => {
@@ -284,7 +295,7 @@ describe('homeView — household', () => {
       'en',
       RENEW
     );
-    expect(html).toContain(`<h1 class="home-headline">${t('en', 'home.defaultHeadlineNoCard')}</h1>`);
+    expect(html).toContain(`<p class="home-headline">${t('en', 'home.defaultHeadlineNoCard')}</p>`);
     expect(html).not.toContain('member card');
   });
 
@@ -294,23 +305,65 @@ describe('homeView — household', () => {
   });
 });
 
-describe('homeView — doors', () => {
-  it('renders each door in order with its title and hint', () => {
+describe('portalView — member card and tabs', () => {
+  it('puts the member card first, then the status, then the tab bar and the panel', () => {
     const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
-    const hrefs = [...html.matchAll(/<a class="home-door" href="([^"]+)"/g)].map((m) => m[1]);
-    expect(hrefs).toEqual(DOORS.map((d) => d.href));
-    expect(html).toContain('Card &amp; discounts');
-    expect(html).toContain('14 shops · keep it on your phone');
+    const order = ['class="member-card"', 'home-headline', 'class="portal-tabs"', '<p>panel</p>'].map((s) => html.indexOf(s));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it("separates each door's title from its hint for screen readers", () => {
-    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
-    expect(html).toContain('<span class="home-door-title">Card &amp; discounts<span class="visually-hidden">: </span></span><span class="home-door-hint">');
+  it('renders each tab in order and marks only the active one', () => {
+    const html = portalView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'giving', '', 'en', RENEW);
+    const hrefs = [...html.matchAll(/<a class="portal-tab" href="([^"]+)"/g)].map((m) => m[1]);
+    // Each link lands on the tab bar, so switching tabs doesn't jump to the top of the page.
+    expect(hrefs).toEqual(TABS.map((d) => `${d.href}#tabs`));
+    expect(html).toContain('<nav class="portal-tabs" id="tabs"');
+    expect(html).toContain('<a class="portal-tab" href="/en/portal/giving#tabs" aria-current="page">Your giving</a>');
+    expect(html.match(/aria-current/g)).toHaveLength(1);
+    for (const label of ['Benefits', 'Your giving', 'Events', 'Volunteering', 'Profile']) expect(html).toContain(`>${label}</a>`);
+    expect(html).toContain('aria-label="Your portal">');
   });
 
-  it('renders only the doors it is given', () => {
-    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }], { doors: DOORS.filter((d) => d.key !== 'letters') }), 'en', RENEW);
-    expect(html).not.toContain('/en/portal/letters');
+  it('loads the tab-switch script with the tab bar, and not for a work-only session', () => {
+    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
+    expect(html).toMatch(/<script src="\/assets\/tabs\.[0-9a-f]{16}\.js" defer><\/script>/);
+    const orgOnly = homeView(data([], { orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }], tabs: [] }), 'en', RENEW);
+    expect(orgOnly).not.toContain('<script');
+  });
+
+  it('renders only the tabs it is given', () => {
+    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }], { tabs: TABS.filter((d) => d.key !== 'events') }), 'en', RENEW);
+    expect(html).not.toContain('/en/portal/events');
+  });
+
+  it("shows each person's totals under their card, leaving out any that aren't available", () => {
+    const html = homeView(
+      data([
+        { person: person('j', 'Jordan', { since: '2019-04-02' }), state: { kind: 'default' }, stats: { totalDonated: '1250', volunteerHours: 12.5 } },
+        { person: person('s', 'Sam'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 0 } },
+      ]),
+      'en',
+      RENEW
+    );
+    const sam = html.indexOf('Sam Rivera');
+    const jordan = html.slice(0, sam);
+    expect(jordan).toContain('<dt>Total given</dt><dd>$1,250.00</dd>');
+    expect(jordan).toContain('<dt>Hours volunteered</dt><dd>12.5</dd>');
+    expect(jordan).toContain('<dt>Member since</dt><dd>2019</dd>');
+    const samPart = html.slice(sam);
+    expect(samPart).toContain('<dt>Hours volunteered</dt><dd>0</dd>');
+    expect(samPart).not.toContain('Total given');
+    expect(samPart).not.toContain('Member since');
+  });
+
+  it('shows no totals list when none is available', () => {
+    expect(homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW)).not.toContain('member-stats');
+  });
+
+  it('formats hours for the locale', () => {
+    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 1234.5 } }]), 'es', RENEW);
+    expect(html).toContain(`<dd>${new Intl.NumberFormat('es').format(1234.5)}</dd>`);
   });
 });
 
@@ -321,26 +374,27 @@ function escapeAmp(url: string): string {
 describe('homeView — organizations', () => {
   const jordan = { person: person('j', 'Jordan'), state: { kind: 'default' } as PersonState };
 
-  it('puts "You manage" below the doors, one plain link per organization, no gold button', () => {
+  it('leaves "You manage" to the Benefits panel, not the frame', () => {
     const html = homeView(data([jordan], { orgs: [{ orgItemId: 'o1', name: 'Acme & Sons', statementReadyYear: null }] }), 'en', RENEW);
+    expect(html).not.toContain('You manage');
+  });
+
+  it('orgSection: one plain link per organization, no gold button', () => {
+    const html = orgSection([{ orgItemId: 'o1', name: 'Acme & Sons', statementReadyYear: null }], 'en');
     expect(html).toContain('You manage');
     expect(html).toContain('href="/en/portal/org/o1"');
     expect(html).toContain('Acme &amp; Sons');
-    expect(html.indexOf('home-doors')).toBeLessThan(html.indexOf('You manage'));
     expect(html).not.toContain('year-end statement');
     expect(goldCount(html)).toBe(0);
   });
 
   it('shows the unnamed copy when the name is missing, and the ready line when a year is set', () => {
-    const html = homeView(
-      data([jordan], {
-        orgs: [
-          { orgItemId: 'o1', name: null, statementReadyYear: 2026 },
-          { orgItemId: 'o2', name: '<b>x</b>', statementReadyYear: null },
-        ],
-      }),
-      'en',
-      RENEW
+    const html = orgSection(
+      [
+        { orgItemId: 'o1', name: null, statementReadyYear: 2026 },
+        { orgItemId: 'o2', name: '<b>x</b>', statementReadyYear: null },
+      ],
+      'en'
     );
     expect(html).toContain('An organization you manage');
     expect(html).toContain('2026 statement ready');
@@ -348,9 +402,9 @@ describe('homeView — organizations', () => {
     expect(html).not.toContain('<b>x</b>');
   });
 
-  it('a session with no people shows only the section: no greeting, cards or doors', () => {
+  it('a session with no people shows only the section: no greeting, cards or tabs', () => {
     const html = homeView(
-      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, doors: [], orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }] },
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }], portal: EMPTY_PORTAL },
       'en',
       RENEW
     );
@@ -364,7 +418,7 @@ describe('homeView — organizations', () => {
 
   it('a session with no people and no organizations shows a short note, not an empty layout', () => {
     const html = homeView(
-      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, doors: [], orgs: [] },
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [], portal: EMPTY_PORTAL },
       'en',
       RENEW
     );

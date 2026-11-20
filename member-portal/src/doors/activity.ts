@@ -1,63 +1,38 @@
-// The rides, events & volunteering door: each person's event registrations (upcoming, then past)
-// and volunteer history, then the Get involved links every member sees. Each section degrades on
-// its own: a failed or unconfigured read hides that section, not the page.
+// The Events and Volunteering tabs: each person's event registrations (upcoming, then past) or
+// volunteer history, then the Get involved links every member sees. Each section degrades on its
+// own: a failed or unconfigured read hides that section, not the page.
 import type { AppDeps } from '../routes';
 import type { DonorVolunteerHistory, EventRegistrationRecord, GetInvolvedCategory, GetInvolvedLink } from '../types';
-import { eventsEnabled, volunteerHistoryEnabled } from '../config';
-import { loadPortalData } from '../portal/loadPortalData';
+import { eventsEnabled } from '../config';
 import { loadEventRegistrations, type EventRegistrationListing } from '../events/loadEventRegistrations';
 import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { errorText } from '../logSafe';
-import { escapeHtml, someRecordsUnavailableNote } from '../views';
-import { doorPage, emptyState, personGroup } from './layout';
+import { escapeHtml } from '../views';
+import { emptyState, personGroup, tabPanel } from './layout';
 
 const VOLUNTEER_CTA_URL = 'https://bikesiliconvalley.org/get-involved/volunteer';
 const EVENTS_CTA_URL = 'https://bikesiliconvalley.org/events';
 
-export interface ActivityDoorData {
-  // In session order; a person whose read failed is left out and counted below.
-  people: { id: string; name: string }[];
-  unavailableCount: number;
-  // Keyed by donor id. null when the feature is off or its read failed: no section at all.
-  events: Record<string, EventRegistrationListing> | null;
-  volunteer: Record<string, DonorVolunteerHistory> | null;
-  getInvolved: GetInvolvedLink[];
+// The people the tabs group by, from the header's read: a person whose read failed is left out.
+export interface TabPerson {
+  id: string;
+  name: string;
 }
 
-type ActivityDeps = Pick<AppDeps, 'monday' | 'config' | 'now'>;
+type EventsDeps = Pick<AppDeps, 'monday' | 'config' | 'now'>;
 
-export async function loadActivityDoor(donorItemIds: string[], deps: ActivityDeps): Promise<ActivityDoorData> {
-  // Started first and awaited after (GL#99): independent of the people read, with the catch
-  // attached up front so a rejection is never unhandled when that read throws.
-  const eventsLeg: Promise<Record<string, EventRegistrationListing> | null> = eventsEnabled(deps.config)
-    ? loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now()).then(
-        (listings) => Object.fromEntries(listings.map((listing) => [listing.donorId, listing])),
-        (err: unknown) => {
-          console.error(`member-portal activity events load failed: ${errorText(err)}`);
-          return null;
-        }
-      )
-    : Promise.resolve(null);
-
-  // Names (for household grouping) and volunteer history, which degrades to null on its own.
-  // Throws only when no one loads (the route's error page).
-  const data = await loadPortalData(
-    donorItemIds,
-    deps.monday,
-    { enabled: volunteerHistoryEnabled(deps.config), completedStatuses: deps.config.volunteerHistory.completedStatuses },
-    false,
-    { discounts: false }
-  );
-  const events = await eventsLeg;
-
-  return {
-    people: data.donors.map((donor) => ({ id: donor.id, name: donor.name })),
-    unavailableCount: data.unavailableDonorCount ?? 0,
-    events,
-    volunteer: data.volunteerHistory,
-    getInvolved: deps.config.getInvolved.links,
-  };
+// The Events tab's one read of its own. null when the feature is off or the read failed: no
+// registrations section at all, just Get involved.
+export async function loadEventsTab(donorItemIds: string[], deps: EventsDeps): Promise<Record<string, EventRegistrationListing> | null> {
+  if (!eventsEnabled(deps.config)) return null;
+  try {
+    const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
+    return Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
+  } catch (err) {
+    console.error(`member-portal events load failed: ${errorText(err)}`);
+    return null;
+  }
 }
 
 function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): string {
@@ -139,8 +114,8 @@ const GET_INVOLVED_GROUPS: { category: GetInvolvedCategory; heading: Translation
 
 // Public meeting, event, and volunteer links from config's getInvolved.links — the same for
 // every member. A category with no links is skipped; no links at all omits the section.
-function getInvolvedSection(links: GetInvolvedLink[], locale: Locale): string {
-  const groups = GET_INVOLVED_GROUPS.map(({ category, heading, fallbackLink }) => {
+function getInvolvedSection(links: GetInvolvedLink[], locale: Locale, categories: GetInvolvedCategory[]): string {
+  const groups = GET_INVOLVED_GROUPS.filter((g) => categories.includes(g.category)).map(({ category, heading, fallbackLink }) => {
     const rows = links
       .filter((link) => link.category === category)
       .map((link) => {
@@ -158,25 +133,44 @@ function getInvolvedSection(links: GetInvolvedLink[], locale: Locale): string {
   return `
     <section>
       <h2>${escapeHtml(t(locale, 'portal.getInvolvedHeading'))}</h2>
-      <p>${escapeHtml(t(locale, 'portal.getInvolvedIntro'))}</p>
+      ${categories.includes('civic') ? `<p>${escapeHtml(t(locale, 'portal.getInvolvedIntro'))}</p>` : ''}
       ${groups}
     </section>
   `;
 }
 
-export function activityDoorView(data: ActivityDoorData, locale: Locale): string {
-  const household = data.people.length + data.unavailableCount > 1;
-  const groups = data.people
+export function eventsTabView(
+  people: TabPerson[],
+  household: boolean,
+  events: Record<string, EventRegistrationListing> | null,
+  links: GetInvolvedLink[],
+  locale: Locale
+): string {
+  const groups = people
     .map((person) => {
-      const listing = data.events?.[person.id];
-      const history = data.volunteer?.[person.id];
-      const events = listing ? `<h3>${escapeHtml(t(locale, 'events.tabLabel'))}</h3>${eventsPanel(listing, locale)}` : '';
-      const volunteer = history ? `<h3>${escapeHtml(t(locale, 'portal.volunteerHeading'))}</h3>${volunteerPanel(history, locale)}` : '';
-      const body = `${events}${volunteer}`;
-      return body === '' ? '' : personGroup(person.name, body, household);
+      const listing = events?.[person.id];
+      return listing ? personGroup(person.name, eventsPanel(listing, locale), household) : '';
     })
     .join('');
-  const getInvolved = getInvolvedSection(data.getInvolved, locale);
+  const getInvolved = getInvolvedSection(links, locale, ['civic', 'transit', 'events']);
   const empty = groups === '' && getInvolved === '' ? `<p>${escapeHtml(t(locale, 'door.activityEmpty'))}</p>` : '';
-  return doorPage(t(locale, 'home.doorActivity'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${groups}${getInvolved}${empty}`, locale);
+  return tabPanel(t(locale, 'events.tabLabel'), `${groups}${getInvolved}${empty}`);
+}
+
+export function volunteeringTabView(
+  people: TabPerson[],
+  household: boolean,
+  volunteer: Record<string, DonorVolunteerHistory> | null,
+  links: GetInvolvedLink[],
+  locale: Locale
+): string {
+  const groups = people
+    .map((person) => {
+      const history = volunteer?.[person.id];
+      return history ? personGroup(person.name, volunteerPanel(history, locale), household) : '';
+    })
+    .join('');
+  const getInvolved = getInvolvedSection(links, locale, ['volunteer']);
+  const empty = groups === '' && getInvolved === '' ? `<p>${escapeHtml(t(locale, 'door.activityEmpty'))}</p>` : '';
+  return tabPanel(t(locale, 'tabs.volunteering'), `${groups}${getInvolved}${empty}`);
 }

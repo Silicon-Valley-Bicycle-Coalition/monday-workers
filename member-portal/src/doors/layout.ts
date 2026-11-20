@@ -1,5 +1,6 @@
-// The frame every door page shares: a way back home, the door's title, then its content, grouped
-// under each person's name for a household.
+// The frames portal pages share: a tab's panel, or a stand-alone page (an organization, a letter
+// that isn't available) with a way back home. Content groups under each person's name for a
+// household.
 import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { escapeHtml } from '../views';
@@ -9,6 +10,17 @@ export function doorPage(title: string, body: string, locale: Locale): string {
     <div class="door">
       <p class="door-back"><a href="/${locale}/portal"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'door.home'))}</a></p>
       <h1>${escapeHtml(title)}</h1>
+      ${body}
+    </div>
+  `;
+}
+
+// A tab's panel inside the portal frame (src/home/homeView.ts). The tab bar already names the
+// page, so its h1 is for assistive tech only.
+export function tabPanel(title: string, body: string): string {
+  return `
+    <div class="door">
+      <h1 class="visually-hidden">${escapeHtml(title)}</h1>
       ${body}
     </div>
   `;

@@ -417,8 +417,35 @@ describe('POST /', () => {
       headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
-    expect(await matchingRes.text()).toBe(await nonMatchingRes.text());
+    // The page echoes the typed address into its Send again form; apart from that, identical.
+    const matchingHtml = (await matchingRes.text()).replaceAll('donor@example.org', 'ADDRESS');
+    const nonMatchingHtml = (await nonMatchingRes.text()).replaceAll('nobody@example.org', 'ADDRESS');
+    expect(matchingHtml).toBe(nonMatchingHtml);
     expect(matchingRes.status).toBe(nonMatchingRes.status);
+    expect(matchingRes.headers.get('Cache-Control')).toBe(nonMatchingRes.headers.get('Cache-Control'));
+  });
+
+  it('offers Send again with the typed address, after the cooldown, and is never cached', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'Someone@Example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const html = await res.text();
+    expect(html).toContain('name="email" value="someone@example.org"');
+    expect(html).toContain('animation-duration: 60s');
+    expect(res.headers.get('Cache-Control')).toContain('no-store');
+  });
+
+  it('offers no Send again for a malformed address', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'not-an-address' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    expect(await res.text()).not.toContain('resend-reveal');
   });
 });
 
@@ -1083,7 +1110,10 @@ describe('sign in with the emailed code', () => {
     const matching = await requestSignIn(app, 'donor@example.org');
     const other = await requestSignIn(app, 'nobody@example.org');
 
-    expect(await matching.text()).toBe(await other.text());
+    // Identical apart from the typed address echoed into the Send again form.
+    expect((await matching.text()).replaceAll('donor@example.org', 'ADDRESS')).toBe(
+      (await other.text()).replaceAll('nobody@example.org', 'ADDRESS')
+    );
     for (const res of [matching, other]) {
       const header = res.headers.get('set-cookie') ?? '';
       expect(header).toMatch(/__Host-login-request=[^;]+/);
@@ -1428,7 +1458,10 @@ describe('POST / email validation', () => {
     });
 
     expect(malformedRes.status).toBe(nonMatchingRes.status);
-    expect(await malformedRes.text()).toBe(await nonMatchingRes.text());
+    // The only difference: a malformed address gets no Send again (there's nothing to resend).
+    // That varies with the input's format, never with whether an address is on file.
+    const withoutResend = (html: string) => html.replace(/\n    <p>[^<]*<\/p>\n    <form action="\/" method="post">[\s\S]*?<\/form>/, '').replace(/\n      <input type="hidden" name="email" value="[^"]*" \/>/, '');
+    expect(await malformedRes.text()).toBe(withoutResend(await nonMatchingRes.text()));
     expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
   });
 
@@ -1550,69 +1583,67 @@ async function loginAndGetCookie(
 }
 
 describe('GET /:locale/portal/letters', () => {
-  it('redirects to sign-in, returning here after, without a session', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/letters');
+  it('redirects to the tax letters section of the giving tab', async () => {
+    const res = await createApp(makeDeps()).request('/vi/portal/letters');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/?next=%2Fen%2Fportal%2Fletters');
+    expect(res.headers.get('location')).toBe('/vi/portal/giving#tax-letters');
   });
+});
 
-  it('lists a completed year for the logged-in donor with no-store caching', async () => {
+describe('GET /:locale/portal/giving — tax letters', () => {
+  async function signedIn(cfg = config) {
     const monday = fakeMondayWithDonations();
     const emailSender = {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),
       sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined),
     };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const app = createApp(makeDeps({ monday, emailSender, config: cfg }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    return { app, cookie, monday };
+  }
 
-    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
+  it('lists a completed year for the logged-in donor with no-store caching', async () => {
+    const { app, cookie } = await signedIn();
+    const res = await app.request('/en/portal/giving', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
+    expect(html).toContain('<section id="tax-letters">');
     expect(html).toContain('/en/portal/letters/donor-1/2025');
-    expect(html).toContain('<title>Tax letters — SVBC Member Portal</title>');
+    expect(html).toContain('<title>Your giving — SVBC Member Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
-  it('shows the unavailable state while letter language is placeholder', async () => {
+  it('leaves the section out while letter language is placeholder', async () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.taxLetter.plainStatement = 'REPLACE_AFTER_SIGNOFF';
-    const monday = fakeMondayWithDonations();
-    const emailSender = {
-      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined),
-    };
-    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
-    expect(await res.text()).toContain('not available yet');
+    const { app, cookie } = await signedIn(gatedConfig);
+    const html = await (await app.request('/en/portal/giving', { headers: { Cookie: cookie } })).text();
+    expect(html).not.toContain('id="tax-letters"');
   });
 
-  // Minor fold-in: a Monday read failure here previously fell through to the global onError,
-  // whose "please try logging in again" copy is wrong for a data-fetch problem, not an auth one.
-  it('shows a friendly, letters-specific error page when the Monday lookup throws', async () => {
-    const monday = fakeMondayWithDonations();
-    const emailSender = {
-      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
-      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined),
-    };
-    const app = createApp(makeDeps({ monday, emailSender }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
-
-    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(500);
+  // The header's read (includeDonations given) still works; only the letters list's fails.
+  it('shows a letters-specific note, not an error page, when only the letters read throws', async () => {
+    const { app, cookie, monday } = await signedIn();
+    const original = (monday.getMemberPortalData as ReturnType<typeof vi.fn>).getMockImplementation() as (
+      id: string,
+      options?: { includeDonations?: boolean }
+    ) => Promise<unknown>;
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockImplementation(async (id: string, options?: { includeDonations?: boolean }) => {
+      if (options === undefined) throw new Error('monday: HTTP 500');
+      return original(id, options);
+    });
+    const res = await app.request('/en/portal/giving', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
     expect(await res.text()).toContain('We could not load your letters right now');
   });
 });
 
 describe('GET /portal/letters (bare, no locale)', () => {
-  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+  it('redirects to the default-locale giving tab instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/letters', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/letters');
+    expect(res.headers.get('location')).toBe('/en/portal/giving#tax-letters');
   });
 });
 
@@ -1722,7 +1753,7 @@ describe('GET /:locale/portal/info', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('1 Old St');
-    expect(html).toContain('<title>Your info &amp; emails — SVBC Member Portal</title>');
+    expect(html).toContain('<title>Profile — SVBC Member Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
@@ -2084,9 +2115,9 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     expect(secondToken).toBe(firstToken);
   });
 
-  // Donation history and impact live on the giving door; the home page never shows them, even once
-  // the history date gate has opened, and reads each person without donations.
-  it('never shows donation history or impact on the home page, gate open or not', async () => {
+  // Donation history and impact live on the giving tab; Benefits shows only the total on the card,
+  // once the history date gate has opened.
+  it('shows the total given on the card but never the history or impact on Benefits', async () => {
     const monday = fakeMondayWithDonations(); // one gift, dated 2025-03-14
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const openConfig = structuredClone(config);
@@ -2098,9 +2129,10 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
 
     expect(html).toContain('Donor donor-1');
-    expect(html).not.toContain('$40.00');
+    expect(html).toContain('<dt>Total given</dt><dd>$40.00</dd>');
+    expect(html).not.toContain('<tfoot>');
     expect(html).not.toContain('Taught bike safety to 4,200 students');
-    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
+    expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: true });
   });
 
   it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {
@@ -2192,14 +2224,14 @@ describe('GET /portal/card/:donorItemId (old standalone card page)', () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/card/donor-1', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/card');
+    expect(res.headers.get('location')).toBe('/en/portal');
   });
 
   it('redirects the locale-prefixed form to that locale\'s card door instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/es/portal/card/donor-1', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/es/portal/card');
+    expect(res.headers.get('location')).toBe('/es/portal');
   });
 });
 
@@ -2242,7 +2274,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal/card');
+    expect(regenRes.headers.get('location')).toBe('/en/portal');
 
     // The pre-existing token must still work — regenerate did not revoke or mint anything.
     const stillWorksRes = await app.request(`/verify/${existingToken}`);
@@ -2261,7 +2293,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal/card');
+    expect(regenRes.headers.get('location')).toBe('/en/portal');
 
     const oldVerifyRes = await app.request(`/verify/${oldToken}`, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
@@ -2308,7 +2340,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/card');
+    expect(res.headers.get('location')).toBe('/en/portal');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -2844,13 +2876,14 @@ describe('GET /:locale/portal volunteer history gate', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).not.toContain(t('en', 'portal.volunteerHeading'));
+    expect(body).not.toContain(t('en', 'stats.hoursVolunteered'));
+    expect(body).not.toContain('href="/en/portal/volunteering"');
     expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 
-  // Volunteer history moved to the activity door (Task 4): the home page doesn't read it even when
-  // the feature is on, but links the door.
-  it('never queries the Volunteers board from the home page, and links the activity door once configured', async () => {
+  // Once configured, the header reads it for the card's hours and links the Volunteering tab; the
+  // shifts themselves show only on that tab.
+  it('puts completed hours on the card and links the Volunteering tab once configured', async () => {
     const monday = mondayWithShifts();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const volunteerColumns = {
@@ -2869,8 +2902,23 @@ describe('GET /:locale/portal volunteer history gate', () => {
 
     expect(res.status).toBe(200);
     expect(body).not.toContain('Bike Valet');
-    expect(body).toContain('href="/en/portal/activity"');
-    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+    expect(body).toContain('<dt>Hours volunteered</dt><dd>3.5</dd>');
+    expect(body).toContain('href="/en/portal/volunteering#tabs"');
+
+    const tab = await (await app.request('/en/portal/volunteering', { headers: { cookie } })).text();
+    expect(tab).toContain('Bike Valet');
+    expect(tab).not.toContain('Ride Marshal');
+    expect(tab).toContain('aria-current="page">Volunteering</a>');
+  });
+
+  it('sends the Volunteering tab to Benefits while the feature and its links are off', async () => {
+    const monday = mondayWithShifts();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const res = await app.request('/en/portal/volunteering', { headers: { cookie } });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal');
   });
 });
 
@@ -2895,8 +2943,8 @@ describe('GET /:locale/portal — events tab', () => {
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
-  // Event registrations moved to the activity door (Task 4).
-  it('never queries the events board from the home page, and links the activity door once configured', async () => {
+  // Event registrations show only on the Events tab.
+  it('never queries the events board from Benefits, and links the Events tab once configured', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
@@ -2906,46 +2954,47 @@ describe('GET /:locale/portal — events tab', () => {
     const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(body).toContain('href="/en/portal/activity"');
+    expect(body).toContain('href="/en/portal/events#tabs"');
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
   });
 
-  it('logs and omits just the Events tab (not the whole dashboard) when the Monday lookup throws', async () => {
+  it('logs and omits just the registrations (not the whole page) when the Monday lookup throws', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal', { headers: { cookie } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await app.request('/en/portal/events', { headers: { cookie } });
     const body = await res.text();
+    vi.restoreAllMocks();
 
     expect(res.status).toBe(200);
-    expect(body).not.toContain('>' + t('en', 'events.tabLabel') + '<');
-    expect(body).toContain('Donor donor-1'); // rest of the dashboard still renders
+    expect(body).not.toContain(t('en', 'events.upcomingHeading'));
+    expect(body).toContain('Donor donor-1'); // the header still renders
   });
 });
 
-// The events page became the activity door (Task 4); its tests live in the 'doors' block below.
-describe('GET /:locale/portal/events', () => {
-  it('redirects to the activity door, signed in or not', async () => {
-    const res = await createApp(makeDeps()).request('/es/portal/events', { redirect: 'manual' });
+describe('GET /:locale/portal/activity (retired)', () => {
+  it('redirects to the Events tab, signed in or not', async () => {
+    const res = await createApp(makeDeps()).request('/es/portal/activity', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/es/portal/activity');
+    expect(res.headers.get('location')).toBe('/es/portal/events');
   });
 });
 
 describe('GET /portal/events (bare, no locale)', () => {
-  it('redirects to the default-locale activity door instead of 404ing', async () => {
+  it('redirects to the default-locale Events tab instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/events', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/activity');
+    expect(res.headers.get('location')).toBe('/en/portal/events');
   });
 });
 
-describe('portal home doors', () => {
-  it('leaves the activity door out while events, volunteering and Get involved are all off', async () => {
+describe('portal tabs', () => {
+  it('leaves Events and Volunteering out while events, volunteering and Get involved are all off', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = {
       sendLoginEmail: vi.fn().mockResolvedValue(undefined),
@@ -2955,8 +3004,13 @@ describe('portal home doors', () => {
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
     const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
-    expect(html).not.toContain('/en/portal/activity');
-    expect(html).toContain('href="/en/portal/letters"');
+    expect(html).not.toContain('/en/portal/events');
+    expect(html).not.toContain('/en/portal/volunteering');
+    expect(html).toContain('href="/en/portal/giving#tabs"');
+    expect(html).toContain('href="/en/portal/info#tabs"');
+    const events = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(events.status).toBe(302);
+    expect(events.headers.get('location')).toBe('/en/portal');
   });
 });
 
@@ -3602,7 +3656,7 @@ describe('write switch', () => {
 });
 
 describe('GET /:locale/portal — home page', () => {
-  it('renders the home page: greeting, card and doors', async () => {
+  it('renders Benefits: card, greeting and tab bar', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
@@ -3614,8 +3668,9 @@ describe('GET /:locale/portal — home page', () => {
     const html = await res.text();
     expect(html).toContain('Hi Donor');
     expect(html).toContain('class="member-card"');
-    expect(html).toContain('<a class="home-door" href="/en/portal/card"');
-    expect(html).toContain('<a class="home-door" href="/en/portal/info"');
+    expect(html).toContain('<a class="portal-tab" href="/en/portal#tabs" aria-current="page">Benefits</a>');
+    expect(html).toContain('<a class="portal-tab" href="/en/portal/info#tabs">Profile</a>');
+    expect(html).toContain('<title>Your Member Portal — SVBC Member Portal</title>');
     expect(html).not.toContain('class="tabs"');
     expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
     expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
@@ -3696,28 +3751,47 @@ describe('doors', () => {
     return { app, cookie };
   }
 
-  it.each(['card', 'giving', 'activity', 'info', 'letters'])('signed out, GET /en/portal/%s returns to it after sign-in', async (door) => {
+  it.each(['giving', 'events', 'volunteering', 'info'])('signed out, GET /en/portal/%s returns to it after sign-in', async (door) => {
     const res = await createApp(makeDeps()).request(`/en/portal/${door}`, { redirect: 'manual' });
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe(`/?next=%2Fen%2Fportal%2F${door}`);
   });
 
-  it('redirects an old card link to the card door', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/card/123', { redirect: 'manual' });
+  it.each([
+    ['/en/portal/card', '/en/portal'],
+    ['/en/portal/card/123', '/en/portal'],
+    ['/en/portal/activity', '/en/portal/events'],
+    ['/en/portal/letters', '/en/portal/giving#tax-letters'],
+  ])('redirects the retired %s to %s, signed in or not', async (from, to) => {
+    const res = await createApp(makeDeps()).request(from, { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/card');
+    expect(res.headers.get('location')).toBe(to);
   });
 
-  it('shows no old dashboard tabs on the home page or any door, every feature on', async () => {
+  it('redirects an old card link to Benefits', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/card/123', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+
+  it('renders every tab, no-store, with the card on top and the right tab marked, every feature on', async () => {
     const monday = fakeMondayWithDonations();
     const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
-    for (const path of ['/en/portal', '/en/portal/card', '/en/portal/giving', '/en/portal/activity', '/en/portal/letters']) {
-      const res = await app.request(path, { headers: { Cookie: cookie } });
+    const tabs = [
+      ['/en/portal', 'Benefits'],
+      ['/en/portal/giving', 'Your giving'],
+      ['/en/portal/events', 'Events'],
+      ['/en/portal/volunteering', 'Volunteering'],
+      ['/en/portal/info', 'Profile'],
+    ];
+    for (const [path, label] of tabs) {
+      const res = await app.request(path!, { headers: { Cookie: cookie } });
       expect(res.status, path).toBe(200);
       expect(res.headers.get('cache-control'), path).toBe('private, no-store, max-age=0');
       const html = await res.text();
+      expect(html, path).toContain(`href="${path}#tabs" aria-current="page">${label}</a>`);
+      expect(html.indexOf('class="member-card"'), path).toBeLessThan(html.indexOf('class="portal-tabs"'));
       expect(html, path).not.toContain('type="radio"');
-      expect(html, path).not.toContain('class="tabs"');
     }
   });
 
@@ -3750,8 +3824,8 @@ describe('doors', () => {
       expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
       const html = await res.text();
-      expect(html).toContain(`<title>${escapeHtml(t('en', 'home.doorInfo'))} — ${t('en', 'site.title')}</title>`);
-      expect(html).toContain('‹ </span>Home</a>');
+      expect(html).toContain(`<title>${escapeHtml(t('en', 'tabs.profile'))} — ${t('en', 'site.title')}</title>`);
+      expect(html).toContain('aria-current="page">Profile</a>');
       expect(html).toContain('action="/en/portal/change-request"');
       const form = html.indexOf('action="/en/portal/change-request"');
       const list = html.indexOf('class="email-list"');
@@ -3879,32 +3953,21 @@ describe('doors', () => {
     });
   });
 
-  describe('GET /:locale/portal/letters', () => {
-    it('renders the letters list in the door frame', async () => {
-      const { app, cookie } = await signedIn({ monday: fakeMondayWithDonations() });
-      const html = await (await app.request('/en/portal/letters', { headers: { Cookie: cookie } })).text();
-      expect(html).toContain('class="door"');
-      expect(html).toContain('‹ </span>Home</a>');
-      expect(html).toContain(`<h1>${escapeHtml(t('en', 'home.doorLetters'))}</h1>`);
-      expect(html).toContain('/en/portal/letters/donor-1/2025');
-    });
-  });
-
-  describe('GET /:locale/portal/card', () => {
-    it("shows the person's card with its QR and regenerate form, then the discount list", async () => {
+  describe('GET /:locale/portal (Benefits)', () => {
+    it('shows the card with its QR in the header, then the discount list and the regenerate form', async () => {
       const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
       (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
       const { app, cookie } = await signedIn({ monday });
 
-      const res = await app.request('/es/portal/card', { headers: { Cookie: cookie } });
+      const res = await app.request('/es/portal', { headers: { Cookie: cookie } });
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain(`<title>${escapeHtml(t('es', 'home.doorCard'))} — ${t('es', 'site.title')}</title>`);
-      expect(html).toContain('href="/es/portal"');
+      expect(html).toContain(`<title>${escapeHtml(t('es', 'title.portal'))} — ${t('es', 'site.title')}</title>`);
       expect(html).toContain('class="member-card"');
       expect(html).toContain('class="member-card-qr"');
       expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
+      expect(html.indexOf('class="member-card"')).toBeLessThan(html.indexOf('<li>Local Bikes'));
       expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });
     });
 
@@ -3913,38 +3976,39 @@ describe('doors', () => {
       (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
       const { app, cookie } = await signedIn({ monday });
 
-      const res = await app.request('/en/portal/card', { headers: { Cookie: cookie } });
+      const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain('class="member-card"');
       expect(html).not.toContain(t('en', 'portal.discountsHeading'));
     });
 
-    it('hides the cards while the card feature is off, keeping the discount list', async () => {
+    it('hides the cards and regenerate form while the card feature is off, keeping the discount list', async () => {
       const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
       (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
       const gated = structuredClone(config);
       gated.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
       const { app, cookie } = await signedIn({ monday, config: gated });
 
-      const html = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+      const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
       expect(html).not.toContain('class="member-card"');
+      expect(html).not.toContain('/regenerate"');
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
     });
 
-    it('lands on the card door after a regenerate, showing the new code', async () => {
+    it('lands on Benefits after a regenerate, showing the new code', async () => {
       const monday = fakeMondayWithDonations();
       const cardTokenStore = inMemoryCardTokenStore();
       const { app, cookie } = await signedIn({ monday, cardTokenStore });
-      await app.request('/en/portal/card', { headers: { Cookie: cookie } });
+      await app.request('/en/portal', { headers: { Cookie: cookie } });
       const oldToken = await cardTokenStore.getActiveToken('donor-1');
 
       const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie }, redirect: 'manual' });
       expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('/en/portal/card');
+      expect(res.headers.get('location')).toBe('/en/portal');
       const newToken = await cardTokenStore.getActiveToken('donor-1');
       expect(newToken).not.toBe(oldToken);
-      const html = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
+      const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('class="member-card"');
       expect(await cardTokenStore.getActiveToken('donor-1')).toBe(newToken);
     });
@@ -3965,8 +4029,9 @@ describe('doors', () => {
       expect(html).toContain('href="https://example.funraise.org/account"');
       expect(html).toContain('href="/en/portal/pledges"');
       expect(html).toContain('href="/en/portal/matching-gifts"');
-      expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: true });
-      expect(monday.getDiscountOrganizations).not.toHaveBeenCalled();
+      expect(html).toContain('<section id="tax-letters">');
+      // One read serves the header's total and the tab's table.
+      expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: true });
     });
 
     it('hides donation history and impact until donations.historyVisibleFromISO, then shows them', async () => {
@@ -4011,7 +4076,7 @@ describe('doors', () => {
     });
   });
 
-  describe('GET /:locale/portal/activity', () => {
+  describe('GET /:locale/portal/events and /volunteering', () => {
     function mondayWithActivity(): MondayClient {
       const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
       (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
@@ -4026,37 +4091,46 @@ describe('doors', () => {
       return monday;
     }
 
-    it('shows upcoming and past registrations, completed volunteer shifts and Get involved links', async () => {
+    it('Events shows upcoming and past registrations and the meeting links, not volunteer shifts', async () => {
       const monday = mondayWithActivity();
       const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
 
-      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
+      const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain(t('en', 'events.upcomingHeading'));
       expect(html).toContain('Fall Gala');
       expect(html).toContain(t('en', 'events.pastHeading'));
       expect(html).toContain('Spring Ride');
+      expect(html).not.toContain('Bike Valet');
+      expect(html).toContain('href="https://sj.example/bpac"');
+      // The query is scoped to the session's donor item, never a client-supplied id.
+      expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 }));
+    });
+
+    it('Volunteering shows completed shifts and their total, not registrations', async () => {
+      const monday = mondayWithActivity();
+      const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
+
+      const html = await (await app.request('/en/portal/volunteering', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('Bike Valet');
       expect(html).toContain('Total volunteer hours: 3.5');
       // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
       expect(html).not.toContain('Ride Marshal');
-      expect(html).toContain('href="https://sj.example/bpac"');
-      // The query is scoped to the session's donor item, never a client-supplied id.
-      expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 }));
-      expect(monday.getDiscountOrganizations).not.toHaveBeenCalled();
+      expect(html).not.toContain('Fall Gala');
+      expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
     });
 
-    it('still renders volunteer history and Get involved when the events read fails', async () => {
+    it('Events still renders Get involved when the events read fails', async () => {
       const monday = mondayWithActivity();
       (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
       const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
-
-      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+      vi.restoreAllMocks();
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).not.toContain('Fall Gala');
-      expect(html).toContain('Bike Valet');
       expect(html).toContain('href="https://sj.example/bpac"');
     });
 
@@ -4064,9 +4138,8 @@ describe('doors', () => {
       const monday = mondayWithActivity();
       const { app, cookie } = await signedIn({ monday });
 
-      const res = await app.request('/en/portal/activity', { headers: { Cookie: cookie } });
-      expect(res.status).toBe(200);
-      expect(await res.text()).toContain(t('en', 'door.activityEmpty'));
+      await app.request('/en/portal', { headers: { Cookie: cookie } });
+      expect((await app.request('/en/portal/events', { headers: { Cookie: cookie } })).status).toBe(302);
       expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
       expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
     });
@@ -4150,7 +4223,7 @@ describe('organizations on the home page', () => {
     expect(monday.getDonorNames).not.toHaveBeenCalled();
   });
 
-  it.each(['card', 'giving', 'activity', 'letters', 'letters/donor-1/2026', 'info', 'pledges', 'matching-gifts'])(
+  it.each(['giving', 'events', 'volunteering', 'letters/donor-1/2026', 'info', 'pledges', 'matching-gifts'])(
     'sends a session with no people from /en/portal/%s to home',
     async (path) => {
       const { app, headers } = await withSession([], [grant]);
@@ -4443,17 +4516,14 @@ describe('sandbox test accounts', () => {
     return res.text();
   }
 
-  it('gives a donor with no membership on file no membership card, on home or the card door', async () => {
+  it('gives a donor with no membership on file no membership card or regenerate form', async () => {
     const app = createApp(testDeps());
     const home = await homeOf(app, 'test-donor@example.org');
     expect(home).toContain('Hi Dana');
     expect(home).toContain(t('en', 'home.notMember'));
     expect(home).not.toContain('class="member-card"');
 
-    const cookie = await signInAs(app, 'test-donor@example.org');
-    const door = await (await app.request('/en/portal/card', { headers: { Cookie: cookie } })).text();
-    expect(door).toContain(t('en', 'home.notMember'));
-    expect(door).not.toContain('class="member-card"');
+    expect(home).not.toContain('/regenerate"');
 
     expect(await homeOf(app, 'test-active@example.org')).toContain('class="member-card"');
   });

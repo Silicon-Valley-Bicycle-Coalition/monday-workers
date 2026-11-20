@@ -149,8 +149,9 @@ Pre-encryption snapshots (`monday-backup/2`) need `--allow-plaintext-snapshot` i
 object it creates to `restore-ledger.jsonl`. It cannot restore original ids, authorship,
 automations, owners, or label colors. Follow [`RESTORE.md`](../../../monday-backup/RESTORE.md).
 
-**To verify:** the restore mutations have not been run against a live account, and the
-end-to-end restore rehearsal into the sandbox is outstanding (`RESTORE.md`, "Restore rehearsal").
+**Restore is unrehearsed.** Its mutations have never run against a live account; `RESTORE.md`'s
+rehearsal log is empty as of 2026-11-19. Do the sandbox rehearsal ("Restore rehearsal") before
+relying on it.
 
 ## Changing it
 

@@ -5,6 +5,9 @@ export interface EmailLayoutParams {
   bodyHtml: string;
   bodyText: string;
   logoUrl: string;
+  // Appended after the footer as the text part's very last line. The login email puts its
+  // domain-bound "@host #code" line here: Apple AutoFill expects it last.
+  lastTextLine?: string;
 }
 
 export interface RenderedEmail {
@@ -58,7 +61,8 @@ Silicon Valley Bicycle Coalition · <a href="https://bikesiliconvalley.org" styl
 </body>
 </html>`;
 
-  const text = `${params.bodyText}\n\n--\n${FOOTER_TEXT}`;
+  const footed = `${params.bodyText}\n\n--\n${FOOTER_TEXT}`;
+  const text = params.lastTextLine === undefined ? footed : `${footed}\n\n${params.lastTextLine}`;
 
   return { html, text };
 }

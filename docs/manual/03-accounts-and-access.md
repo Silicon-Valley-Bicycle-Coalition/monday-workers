@@ -88,9 +88,9 @@ Rules:
 
 - **Never create or use a personal API token for an integration user.** It would be unscoped and
   never expire. Operator scripts use the operator's own personal admin token, in
-  `MONDAY_API_TOKEN` in the shell or the `.env.*` files. **To verify:** at least one
-  operator's `.env.production` has held an integration user's personal token. If one still
-  does, regenerate that token as the integration user (which invalidates it) and switch the
+  `MONDAY_API_TOKEN` in the shell or the `.env.*` files. As of 2026-11-19 the operator
+  `.env.production` file still held the **SVBC Integration** user's personal token (an account
+  admin). Regenerate that token as the integration user (which invalidates it) and switch the
   file to your own.
 - **Integration users' email.** Monday emails a user each time they're subscribed to a board.
   Turn off email notifications in the integration user's profile, or filter that subject in its
@@ -106,13 +106,13 @@ Rules:
 
 | Service | Used by | Credentials (Worker secret names) | Issued where | Sandbox |
 |---|---|---|---|---|
-| Funraise | `funraise-sync` | `FUNRAISE_WEBHOOK_SECRET` (our URL secret), `FUNRAISE_API_KEY` | Funraise admin → integrations / webhooks (**To verify** menu path) | Same Funraise account, separate webhook to the sandbox Worker |
+| Funraise | `funraise-sync` | `FUNRAISE_WEBHOOK_SECRET` (our URL secret), `FUNRAISE_API_KEY` | Funraise: profile icon → Settings → Webhooks (signing secret under the ⋯ menu); API keys under Settings → API keys | Funraise allows one webhook per account. It points at production, so the sandbox Worker gets no live deliveries; replay by hand |
 | Eventbrite | `eventbrite-sync`, `svbc-calendars` | `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` (URL secret); `svbc-calendars`: `EVENTBRITE_TOKEN` | Eventbrite → Account settings → Developer links → API keys | Same organization, separate webhook |
 | Mailchimp | `mailchimp-sync` | `MAILCHIMP_API_KEY`, `MAILCHIMP_WEBHOOK_SECRET`, `MONDAY_WEBHOOK_SECRET` | Mailchimp → Profile → Extras → API keys | Separate "SVBC Sandbox" audience; the sandbox key may write only there |
-| Double the Donation | `dtd-sync` | `DTD_PRIVATE_KEY` | DTD dashboard (**To verify** menu path) | **To verify** whether DTD offers a test key |
+| Double the Donation | `dtd-sync` | `DTD_PRIVATE_KEY` | 360MatchPro portal → Settings → API Keys (admins only) | None: DTD issues test keys only to integration partners |
 | Benevity | `benevity-import` | `BENEVITY_WEBHOOK_SECRET` (URL secret for the Monday webhook) | No API. Staff download the report from the Benevity Causes portal and upload it to Monday. | n/a |
 | Google Workspace | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `BACKUP_ENCRYPTION_KEY` | Google Cloud console → IAM → Service accounts → Keys. The account is a **Contributor** member of the backup Shared Drive. | Separate Drive folder (not yet configured) |
-| Slack | `monday-auth`, `monday-backup`, `mailchimp-sync`, `svbc-calendars`, `sync-watchdog`; Workers Issues | `SLACK_WEBHOOK_URL` (an incoming webhook into the private staff channel) | Slack app → Incoming Webhooks (**To verify** which Slack app owns them) | Mostly unset; sandbox Workers don't alert |
+| Slack | `monday-auth`, `monday-backup`, `mailchimp-sync`, `svbc-calendars`, `sync-watchdog`; Workers Issues | `SLACK_WEBHOOK_URL` (an incoming webhook into the private staff channel) | api.slack.com/apps → the app → Incoming Webhooks (app collaborators only). Which app owns each URL is recorded in the private appendix | Mostly unset; sandbox Workers don't alert |
 | Intuit QuickBooks | `quickbooks-sync` (postponed) | `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`, `QB_TOKEN_ENCRYPTION_KEY` | Intuit Developer portal | Intuit sandbox company |
 | Box | Nobody in code | — | — | — |
 

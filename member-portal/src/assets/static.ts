@@ -2,6 +2,7 @@ import { EMBEDDED_FONTS } from './fontData';
 import { SVBC_LETTERHEAD_LOGO_SVG } from './letterheadLogo';
 import { SVBC_LOGO_SVG } from './logo';
 import { PORTAL_CSS } from './portalStyles';
+import { PORTAL_TABS_JS } from './portalTabs';
 
 // Content-addressed static assets (GL#99). The stylesheet (~12 KB) and the logo SVG (~19 KB, twice
 // on the dashboard) used to be inlined into every page, and every page is `no-store`, so each
@@ -69,8 +70,12 @@ export const FONT_FACE_CSS = FONTS.map((f) => f.rule).join('\n');
 export const PORTAL_CSS_ASSET = asset('portal', 'css', 'text/css; charset=utf-8', `${FONT_FACE_CSS}\n${PORTAL_CSS}`);
 export const LOGO_SVG_ASSET = asset('logo', 'svg', 'image/svg+xml', SVBC_LOGO_SVG);
 export const LETTERHEAD_LOGO_SVG_ASSET = asset('letterhead-logo', 'svg', 'image/svg+xml', SVBC_LETTERHEAD_LOGO_SVG);
+// Same-origin <script src>, which DEFAULT_CSP allows (it sets no script-src).
+export const PORTAL_TABS_JS_ASSET = asset('tabs', 'js', 'text/javascript; charset=utf-8', PORTAL_TABS_JS);
 
-const BY_PATH = new Map([PORTAL_CSS_ASSET, LOGO_SVG_ASSET, LETTERHEAD_LOGO_SVG_ASSET, ...FONT_ASSETS].map((a) => [a.path, a] as const));
+const BY_PATH = new Map(
+  [PORTAL_CSS_ASSET, LOGO_SVG_ASSET, LETTERHEAD_LOGO_SVG_ASSET, PORTAL_TABS_JS_ASSET, ...FONT_ASSETS].map((a) => [a.path, a] as const)
+);
 
 // Exact path match only: an old hash (a page cached from before a deploy) or a guessed name gets
 // a 404 rather than different bytes under an immutable header.

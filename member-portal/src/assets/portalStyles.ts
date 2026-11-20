@@ -281,15 +281,18 @@ export const PORTAL_CSS = `
     cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
   }
 
-  /* Card-first home page (src/home/homeView.ts). Phone first: status, card(s), then the doors as a
-     list. From 768px the status sits left of the card(s) and the doors become a row of tiles. */
+  /* The portal frame (src/home/homeView.ts): the member card(s) with each person's totals, the
+     status and its one gold button, then the tab bar and the active tab's panel. Phone first, the
+     card on top; from 768px the card sits left of the status. Tabs are links (no JavaScript), one
+     page each, with aria-current on the active one. */
   .home { display: flex; flex-direction: column; gap: 20px; }
+  .home-header { display: flex; flex-direction: column; gap: 20px; }
   .home-greeting { margin: 0; color: var(--text-muted); }
-  .home-headline { font-size: 28px; margin: 2px 0 4px; }
+  .home-headline { font-family: var(--font-heading); font-weight: 700; font-size: 28px; line-height: 1.15; margin: 2px 0 4px; }
   .home-sub { margin: 0 0 14px; color: var(--text-muted); }
   .home-note { margin: 10px 0 0; font-size: 14px; color: var(--text-muted); }
   .home-action { margin-top: 0; }
-  .home-people { display: flex; flex-direction: column; gap: 12px; }
+  .home-people { display: flex; flex-direction: column; gap: 16px; }
   .home-person .member-card { margin: 0; }
   .home-person p { margin: 6px 0 0; }
   .member-card-lapsed { opacity: 0.55; filter: grayscale(1); }
@@ -302,6 +305,48 @@ export const PORTAL_CSS = `
   }
   .home-not-member p { margin: 0; }
   .home-not-member-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; }
+  .member-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
+    max-width: 340px;
+    margin: 10px 0 0;
+  }
+  .member-stat { padding: 8px 10px; border: 1px solid var(--table-border); border-radius: 10px; background: var(--surface); }
+  .member-stat dt { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .member-stat dd { margin: 2px 0 0; font-family: var(--font-heading); font-size: 20px; font-weight: 700; }
+  .portal-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--text);
+    /* A little room above the bar when a tab link lands on #tabs. */
+    scroll-margin-top: 12px;
+  }
+  .portal-tab {
+    flex: 0 0 auto;
+    padding: 10px 16px;
+    border: 1px solid var(--table-border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: var(--row-stripe);
+    color: var(--text);
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .portal-tab:hover { text-decoration: underline; }
+  .portal-tab[aria-current='page'] { background: var(--svbc-black); color: var(--svbc-gold); border-color: var(--svbc-black); }
+  .portal-tab:focus-visible { outline: 2px solid var(--svbc-gold); outline-offset: -2px; }
+  /* Five folder tabs don't fit a phone: there they wrap as pills, so every tab (the active one
+     included) stays in view. */
+  @media (max-width: 599px) {
+    .portal-tabs { flex-wrap: wrap; gap: 8px; border-bottom: none; }
+    .portal-tab { border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 8px 14px; }
+  }
+  .portal-panel { padding-top: 4px; }
+  .portal-panel[aria-busy='true'] { opacity: 0.6; transition: opacity 0.15s 0.1s; }
+  .card-code-name { font-weight: 600; margin-right: 8px; }
   .home-doors { display: flex; flex-direction: column; }
   .home-door {
     display: flex;
@@ -337,31 +382,16 @@ export const PORTAL_CSS = `
   }
   @media (min-width: 768px) {
     main:has(> .home) { max-width: 960px; }
-    .home {
+    .home-header {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+      grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
       column-gap: 40px;
-      row-gap: 28px;
       align-items: start;
     }
-    .home-headline { font-size: 40px; }
-    .home-unavailable, .home-doors, .home-orgs { grid-column: 1 / -1; }
-    .home-orgs-title { margin-top: 0; }
-    .home-doors {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-    }
-    .home-door, .home-door:last-child {
-      padding: 16px;
-      border: 1px solid var(--table-border);
-      border-radius: 16px;
-      background: var(--surface);
-    }
-    .home-door::after { content: none; }
+    .home-headline { font-size: 36px; }
   }
 
-  /* Door pages (src/doors/): a way home, the title, then one section per person. */
+  /* Tab panels and stand-alone pages (src/doors/): one section per person. */
   .door-back { margin: 0 0 4px; }
   .door-back a { color: var(--text-muted); text-decoration: none; }
   .door-back a:hover { text-decoration: underline; }
@@ -412,6 +442,18 @@ export const PORTAL_CSS = `
     padding: 4px 6px;
   }
 
+  /* Check-email page: Send again stays hidden for the cooldown (inline animation-duration), then
+     shows. steps(1, end) holds the 0% frame for the whole run and fill-mode both keeps it hidden
+     before the run starts; with animations disabled the button is simply visible. */
+  .resend-reveal {
+    animation-name: resend-wait;
+    animation-timing-function: steps(1, end);
+    animation-fill-mode: both;
+  }
+  @keyframes resend-wait {
+    0% { visibility: hidden; }
+  }
+
   @media (max-width: 480px) {
     .site-header-inner, .site-footer-inner { padding-left: 20px; padding-right: 20px; }
     main { padding-left: 16px; padding-right: 16px; }
@@ -424,6 +466,6 @@ export const PORTAL_CSS = `
   }
   @media print {
     .site-header, .site-footer { display: none; }
-    .door-back, .home-doors { display: none; }
+    .door-back, .portal-tabs, .member-card-regenerate { display: none; }
   }
 `;
