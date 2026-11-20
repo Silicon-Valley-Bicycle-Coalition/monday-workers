@@ -5,6 +5,7 @@ import production from '../config/svbc.json';
 import { validateConfig } from './config';
 import { setAnswerStates, upsertAnswer } from './answers/store';
 import { normalizeEmployerName, type OrganizationCandidate } from './employerName';
+import type { AffiliationRecord } from './emailDomains/domains';
 import type { ImpactMondayClient } from './monday/client';
 import { pairKey, type MatchRow } from './rule';
 import { runProposals } from './run';
@@ -28,6 +29,8 @@ class FakeClient implements ImpactMondayClient {
   failUpdate = false;
   orgs: OrganizationCandidate[] = [];
   orgLookups: { boardId: string; names: string[] }[] = [];
+  affiliations: AffiliationRecord[] = [];
+  affiliationReads = 0;
   private next = 1;
 
   async findOrganizationsByNames(boardId: string, names: string[]): Promise<OrganizationCandidate[]> {
@@ -49,10 +52,11 @@ class FakeClient implements ImpactMondayClient {
     if (this.failUpdate) throw new Error('monday API: update failed');
     this.updates.push({ itemId, body });
   }
-  // The email-domain job's reads (GL#124); never called by this job.
+  // The email-domain job's reads (GL#124); only the Affiliations read is used here, for answers
+  // that are skipped when the person already has a Current employer.
   async listPeople(): Promise<never> { throw new Error('not this job'); }
   async listOrganizations(): Promise<never> { throw new Error('not this job'); }
-  async listAffiliations(): Promise<never> { throw new Error('not this job'); }
+  async listAffiliations(): Promise<AffiliationRecord[]> { this.affiliationReads++; return this.affiliations; }
 }
 
 function clientWith(matches: MatchRow[]): FakeClient {
@@ -65,9 +69,9 @@ function clientWith(matches: MatchRow[]): FakeClient {
 const deps = (monday: FakeClient, cfg = config) => ({ monday, db: env.DB, config: cfg, environment: 'production' as const, today: TODAY, now: NOW });
 const proposalRows = async () => (await env.DB.prepare('SELECT person_item_id, org_item_id, affiliation_item_id, proposed_status, match_count FROM proposals ORDER BY person_item_id').all()).results;
 
-const answer = (sourceId: string, personItemId: string, text: string, answeredAt = '2026-11-01', context = 'Bike Fest') =>
+const answer = (sourceId: string, personItemId: string, text: string, answeredAt = '2026-11-01', context = 'Bike Fest', source = 'eventbrite') =>
   upsertAnswer(env.DB, {
-    source: 'eventbrite', sourceId, personItemId, answer: text, answerNormalized: normalizeEmployerName(text), answeredAt, context, receivedAt: NOW,
+    source, sourceId, personItemId, answer: text, answerNormalized: normalizeEmployerName(text), answeredAt, context, receivedAt: NOW,
   });
 interface AnswerDbRow { source_id: string; state: string; org_item_id: string | null; last_tried_at: string | null }
 const answerRows = async (): Promise<Record<string, AnswerDbRow>> => Object.fromEntries(
@@ -302,6 +306,31 @@ describe('runProposals: employer answers', () => {
     expect([rows.ax!.state, rows.ae!.state, rows.ap!.state]).toEqual(['skipped', 'skipped', 'skipped']);
     expect(summary.answers).toEqual({ ...ZERO_ANSWERS, resolved: 3, skipped: 3 });
     expect(summary.skipped).toMatchObject({ excluded: 1, existing: 1, proposed: 1 });
+  });
+
+  const affiliation = (personId: string, orgId: string, status: string): AffiliationRecord =>
+    ({ itemId: `af-${personId}-${orgId}`, personIds: [personId], organizationIds: [orgId], status, workEmail: null });
+
+  it('skips a Funraise answer when the person already has a Current employer, and proposes one when they do not', async () => {
+    await answer('f1', 'p1', 'Google', '2026-11-01', 'Funraise transaction f1', 'funraise');
+    await answer('f2', 'p2', 'Google', '2026-11-01', 'Funraise transaction f2', 'funraise');
+    const monday = withOrgs([{ id: 'o5', name: 'Google, LLC' }]);
+    monday.affiliations = [affiliation('p1', 'o1', config.affiliations.labels.current), affiliation('p2', 'o2', config.affiliations.labels.former)];
+    const summary = await runProposals(deps(monday), 'on');
+    expect(monday.drafts).toEqual([{ name: 'Sam Roe @ Google, LLC', personItemId: 'p2', orgItemId: 'o5', proposedStatus: 'Current' }]);
+    expect(monday.updates[0]!.body).toBe('Proposed from the matching-gift company on a Funraise gift: "Google" (Funraise transaction f2, 2026-11-01)');
+    const rows = await answerRows();
+    expect([rows.f1!.state, rows.f2!.state]).toEqual(['skipped', 'proposed']);
+    expect(summary.answers).toEqual({ ...ZERO_ANSWERS, resolved: 2, skipped: 1, proposed: 1 });
+  });
+
+  it('does not read Affiliations for Eventbrite answers, which may propose a new Current employer', async () => {
+    await answer('a1', 'p1', 'Google');
+    const monday = withOrgs([{ id: 'o5', name: 'Google, LLC' }]);
+    monday.affiliations = [affiliation('p1', 'o1', config.affiliations.labels.current)];
+    await runProposals(deps(monday), 'on');
+    expect(monday.affiliationReads).toBe(0);
+    expect(monday.drafts.map((d) => [d.personItemId, d.orgItemId])).toEqual([['p1', 'o5']]);
   });
 
   it('marks skipped an answer whose person item is gone, without using a capped slot', async () => {

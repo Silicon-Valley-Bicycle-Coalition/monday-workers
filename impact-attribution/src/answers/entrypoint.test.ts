@@ -33,6 +33,13 @@ describe('handleRecord', () => {
     expect(await handleRecord(env, config, input(over), NOW)).toEqual({ recorded: false, reason: 'invalid' });
   });
 
+  it('accepts a Funraise answer, keyed apart from an Eventbrite one with the same sourceId', async () => {
+    expect(await handleRecord(env, config, input(), NOW)).toEqual({ recorded: true });
+    expect(await handleRecord(env, config, input({ source: 'funraise', answer: 'Apple Inc.', context: 'Funraise transaction a1' }), NOW)).toEqual({ recorded: true });
+    const rows = await env.DB.prepare('SELECT source, answer_normalized FROM employer_answers ORDER BY source').all();
+    expect(rows.results).toEqual([{ source: 'eventbrite', answer_normalized: 'google' }, { source: 'funraise', answer_normalized: 'apple' }]);
+  });
+
   it('treats ignore-list and empty-normalising answers as non-answers', async () => {
     expect(await handleRecord(env, config, input({ answer: '  N/A ' }), NOW)).toEqual({ recorded: false, reason: 'non-answer' });
     expect(await handleRecord(env, config, input({ answer: ' none' }), NOW)).toEqual({ recorded: false, reason: 'non-answer' });
