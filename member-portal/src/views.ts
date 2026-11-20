@@ -176,7 +176,7 @@ export function checkEmailView(locale: Locale, options: CheckEmailOptions = {}):
     const emailField = resend ? hidden('email', resend.email) : '';
     html += `${error}
     <p>${escapeHtml(t(locale, 'checkEmail.codeHelp'))}</p>
-    <form method="post" action="/auth/code">
+    <form class="code-form" method="post" action="/auth/code">
       <label for="login-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
       <input type="text" id="login-code" name="code" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />${hidden('lang', locale)}${nextField(codeForm.next)}${emailField}
       <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>

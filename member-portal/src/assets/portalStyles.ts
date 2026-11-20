@@ -23,6 +23,7 @@ export const PORTAL_CSS = `
        fixed in both themes — header/footer bars, the member card, and table headers are
        deliberately always-dark brand chrome, not page background. */
     --bg: var(--svbc-white);
+    --error: #b91c1c; /* design-system error token */
     --text: var(--svbc-ink);
     --surface: var(--svbc-white);
     --border: #ccc;
@@ -35,6 +36,7 @@ export const PORTAL_CSS = `
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1c1b1b;
+      --error: #f87171; /* lightened for dark: 6.2:1 on --bg */
       --text: #ececec;
       --surface: #2a2828;
       --border: #4d4a4a;
@@ -176,9 +178,9 @@ export const PORTAL_CSS = `
   /* Check-email page: the code input sits under its label, and the resend button stays hidden for
      the cooldown (the inline animation-duration) with no script; with animations disabled it just
      shows. steps(1, end) holds the 0% value until the very end, then the 100% keyframe applies. */
-  form label { display: block; margin-bottom: 4px; }
-  input[name='code'] { font-size: 20px; letter-spacing: 0.3em; max-width: 12em; }
-  .form-error { color: var(--error, #b00020); }
+  form.code-form label { display: block; margin-bottom: 4px; }
+  form.code-form input[name='code'] { font-size: 20px; letter-spacing: 0.3em; max-width: 12em; }
+  .form-error { color: var(--error); }
   .resend-reveal { animation: resend-reveal 1s steps(1, end) both; }
   @keyframes resend-reveal {
     0% { visibility: hidden }

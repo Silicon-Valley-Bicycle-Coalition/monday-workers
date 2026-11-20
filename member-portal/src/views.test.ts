@@ -152,7 +152,7 @@ describe('checkEmailView code form and resend', () => {
 
   it('renders the code form with autofill attributes and a labelled input', () => {
     const html = checkEmailView('en', { codeForm: { next: null, error: false } });
-    expect(html).toContain('<form method="post" action="/auth/code">');
+    expect(html).toContain('<form class="code-form" method="post" action="/auth/code">');
     const input = /<input[^>]*name="code"[^>]*>/.exec(html)?.[0] ?? '';
     for (const attr of ['autocomplete="one-time-code"', 'inputmode="numeric"', 'pattern="[0-9]{6}"', 'maxlength="6"', 'required']) {
       expect(input).toContain(attr);
@@ -184,6 +184,15 @@ describe('checkEmailView code form and resend', () => {
     expect(html).toMatch(/style="[^"]*animation-duration: 60s[^"]*"[\s\S]*>Send again<\/button>/);
     expect(PORTAL_CSS).toContain('0% { visibility: hidden }');
     expect(PORTAL_CSS).toContain('steps(1, end)');
+  });
+
+  it('scopes every new check-email CSS rule to its own classes, so other forms are unaffected', () => {
+    const block = PORTAL_CSS.slice(PORTAL_CSS.indexOf('Check-email page'), PORTAL_CSS.indexOf('Buttons with real padding'));
+    const selectors = [...block.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/^\s*([^{}\n@%][^{}\n]*)\{/gm)].map((m) => m[1]!.trim());
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const sel of selectors) expect(sel).toMatch(/^(form\.code-form|\.form-error|\.resend-reveal|@keyframes resend-reveal|0%|100%)/);
+    expect(PORTAL_CSS).not.toContain('var(--error,');
+    expect(PORTAL_CSS).toContain('--error: #b91c1c');
   });
 
   it('omits next from the resend form when null', () => {
