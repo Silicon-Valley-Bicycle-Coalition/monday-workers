@@ -1,0 +1,12 @@
+{
+  "people": { "boardId": 18437909781, "phoneColumn": "phone_mm8n5szp", "lastPhoneContactColumn": null },
+  "timeline": { "callActivityId": null, "textActivityId": null },
+  "zoom": {
+    "accountId": null,
+    "includeUsers": null,
+    "excludeUsers": [],
+    "smsUrl": null
+  },
+  "defaultRegion": "US",
+  "unmatchedRetentionDays": 14
+}

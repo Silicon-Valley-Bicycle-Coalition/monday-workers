@@ -116,7 +116,9 @@
       "people-reclassification/wrangler.jsonc",
       "quickbooks-sync/wrangler.jsonc",
       "report-digests/wrangler.jsonc",
-      "svbc-calendars/wrangler.jsonc"
+      "svbc-calendars/wrangler.jsonc",
+      "zoom-phone-sync/wrangler.jsonc"
     ]
-  }
+  },
+  { "dir": "zoom-phone-sync" }
 ]

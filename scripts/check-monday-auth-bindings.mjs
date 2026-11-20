@@ -38,6 +38,7 @@ export const EXPECTED = {
   'report-digests': 'ReadOnlyToken',
   'member-map': 'ReadOnlyToken',
   'nearby-search': 'SyncToken',
+  'zoom-phone-sync': 'SyncToken',
 };
 
 // Each Worker's Wrangler config file, keyed like EXPECTED.

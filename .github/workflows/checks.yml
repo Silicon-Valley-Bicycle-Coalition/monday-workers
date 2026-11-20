@@ -31,7 +31,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           status=0
-          for copy in benevity-import/src/monday/graphql.ts contact-roles/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts impact-attribution/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+          for copy in benevity-import/src/monday/graphql.ts contact-roles/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts dtd-sync/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts impact-attribution/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts zoom-phone-sync/src/monday/graphql.ts; do
             cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
           done
           # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
@@ -46,7 +46,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           status=0
-          roster="benevity-import/src/monday/outage.ts donation-rollups/src/monday/outage.ts eventbrite-sync/src/monday/outage.ts mailchimp-sync/src/monday/outage.ts nearby-search/src/monday/outage.ts quickbooks-sync/src/monday/outage.ts"
+          roster="benevity-import/src/monday/outage.ts donation-rollups/src/monday/outage.ts eventbrite-sync/src/monday/outage.ts mailchimp-sync/src/monday/outage.ts nearby-search/src/monday/outage.ts quickbooks-sync/src/monday/outage.ts zoom-phone-sync/src/monday/outage.ts"
           for copy in $roster; do
             cmp funraise-sync/src/monday/outage.ts "$copy" || { echo "$copy differs from funraise-sync/src/monday/outage.ts"; status=1; }
           done

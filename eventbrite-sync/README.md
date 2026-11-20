@@ -612,9 +612,9 @@ sent to for that kind.
 
 Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 3,000 pledges a year.
 Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
-**Status:** live in both environments, with no event configured in production yet. Production's board is
-18439165954 (created 2026-11-09, private, backed up); `pledge.events` is empty, so for now the block only
-arms the unconfigured-pledge alarm below. The sandbox board is 18439574443, rehearsed 2026-11-09 with three
+**Status:** live in both environments. Production's board is 18439165954 (created 2026-11-09, private,
+backed up); `pledge.events` holds the 2026 event (1977741403778), configured 2026-11-20 for its backfill
+(IT Requests item 13527993339). The 2025 backfill hasn't run. The sandbox board is 18439574443, rehearsed 2026-11-09 with three
 real 2026 attendees (complete, placeholder, canceled). The 2027 pledge is due to publish 2027-01-15.
 
 An attendee of an event in `pledge.events` goes to the private **Pledge to Ride** board **instead of**
