@@ -71,8 +71,8 @@
   },
   "lastChange": {
     "by": "David W. Keith",
-    "at": "2026-11-20T04:23:04.617Z",
-    "via": "Claude Code · bikesiliconvalley.org Site Styles",
-    "note": "Website moved to svbc-gold, svbc-sand and Nunito Sans (2026-11-19): new Website (Squarespace) section mapping Site Styles to tokens; web-gold, svbc-sand, cal-accent notes and meta.website updated"
+    "at": "2026-11-20T05:00:00.000Z",
+    "via": "Claude Code · issue #40",
+    "note": "member-portal and the calendar widget moved to svbc-gold, svbc-sand and self-hosted Nunito Sans: Workers status rewritten, web-heading/web-body replaced by one web family (Nunito Sans), web-gold left only in mailchimp-sync templates"
   }
 }

@@ -48,9 +48,10 @@ function cssString(text: string): string {
 }
 
 // The letter's fixed light "paper" styling, shared with the organization statement. Colours and
-// type are the letterhead's (docs/design-system: svbc-gold, svbc-sand, svbc-grey-text, the Avenir
-// stack), not the portal's older web gold. Avenir isn't self-hosted (no licence to serve it), so
-// machines without it fall back to Nunito Sans, then the system sans.
+// type are the letterhead's (docs/design-system: svbc-gold-soft, svbc-sand, svbc-grey-text, the
+// Avenir stack), not the portal's svbc-gold. Avenir isn't self-hosted (no licence to serve it), so
+// machines without it fall back to Nunito Sans (self-hosted with the portal stylesheet), then the
+// system sans.
 //
 // On screen the band is a sidebar beside the letter (a header above it on a narrow screen).
 //

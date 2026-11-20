@@ -81,9 +81,9 @@ describe("self-hosted widget fonts (#123)", () => {
   it("GET /widget declares @font-face rules for its own /fonts/ files and loads nothing from Google", async () => {
     const html = await (await call(req("/widget"))).text();
     expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
-    for (const face of ["Manrope\"; font-style: normal; font-weight: 500", "Poppins\"; font-style: normal; font-weight: 400", "Poppins\"; font-style: normal; font-weight: 600", "Poppins\"; font-style: normal; font-weight: 700"]) {
-      expect(html).toContain(`font-family: "${face}`);
-    }
+    expect(html).toContain('font-family: "Nunito Sans"; font-style: normal; font-weight: 200 1000;');
+    expect(html).toMatch(/url\(\/fonts\/nunito-sans-latin-wght-normal-v5\.woff2\)/);
+    expect(html).not.toMatch(/Manrope|Poppins/);
   });
 
   it("serves every font the widget names as immutable woff2, without touching the rate limiter", async () => {

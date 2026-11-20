@@ -11,7 +11,7 @@ import { secureHeaders } from 'hono/secure-headers';
 //   base-uri 'none'        — an injected <base> can't re-point relative form actions/links.
 //   object-src 'none'      — no plugins.
 //   form-action 'self'     — every form posts (and redirects) same-origin.
-//   font-src 'self'        — Manrope and Poppins are served from /assets/ (GL#123); no page loads
+//   font-src 'self'        — Nunito Sans (and Poppins Devanagari) are served from /assets/ (GL#123); no page loads
 //                            a font from anywhere else, Google Fonts included.
 export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'; font-src 'self'";
 

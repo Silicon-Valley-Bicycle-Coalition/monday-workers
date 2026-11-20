@@ -1,9 +1,9 @@
 import qrcode from 'qrcode-generator';
 
 // Brand gold on the membership card's own dark card-face color, so the QR reads as part of the
-// card rather than a pasted-in black-on-white sticker. #FFC700 on #171415 is ~11:1 luminance
+// card rather than a pasted-in black-on-white sticker. #FFC20E (svbc-gold) on #171415 is 11.3:1 luminance
 // contrast (WCAG AAA is 7:1), well within what phone cameras scan reliably.
-const QR_MODULE_COLOR = '#FFC700';
+const QR_MODULE_COLOR = '#FFC20E';
 const QR_BACKGROUND_COLOR = '#171415';
 
 export function generateQrSvg(text: string): string {

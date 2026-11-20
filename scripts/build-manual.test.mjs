@@ -99,11 +99,11 @@ describe('findChrome', () => {
 describe('fontFaceCss', () => {
   it('emits one woff2 @font-face per font with its unicode-range', () => {
     const css = fontFaceCss([
-      { family: 'Manrope', weight: 500, subset: 'latin', unicodeRange: 'U+0000-00FF', woff2Base64: 'AAAA' },
-      { family: 'Poppins', weight: 700, subset: 'latin', unicodeRange: 'U+0100', woff2Base64: 'BBBB' },
+      { family: 'Nunito Sans', weight: '200 1000', style: 'italic', subset: 'latin', unicodeRange: 'U+0000-00FF', woff2Base64: 'AAAA' },
+      { family: 'Poppins', weight: '700', style: 'normal', subset: 'devanagari', unicodeRange: 'U+0100', woff2Base64: 'BBBB' },
     ]);
     assert.equal(css.match(/@font-face/g).length, 2);
-    assert.match(css, /font-family: 'Manrope'/);
+    assert.match(css, /font-family: 'Nunito Sans';\n  font-style: italic;\n  font-weight: 200 1000;/);
     assert.match(css, /url\(data:font\/woff2;base64,AAAA\) format\('woff2'\)/);
     assert.match(css, /unicode-range: U\+0000-00FF/);
     assert.match(css, /font-weight: 700/);

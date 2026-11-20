@@ -47,18 +47,18 @@ function decodeBase64(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-// Manrope and Poppins, self-hosted (GL#123) so no page sends a donor's IP address to Google. One
-// file per family, weight and subset; the browser fetches a subset only when the page uses a
-// character in its unicode-range, as it did from Google Fonts. Hashed on the base64 text, which
-// changes exactly when the bytes do.
+// Nunito Sans (variable: one file per subset and style covers every weight) and Poppins's
+// Devanagari for Hindi, self-hosted (GL#123) so no page sends a donor's IP address to Google. The
+// browser fetches a file only when the page uses a character in its unicode-range in that face.
+// Hashed on the base64 text, which changes exactly when the bytes do.
 const FONTS = EMBEDDED_FONTS.map((f) => {
   const asset: StaticAsset = {
-    path: `/assets/${f.family.toLowerCase()}-${f.subset}-${f.weight}.${contentHash(f.woff2Base64)}.woff2`,
+    path: `/assets/${f.id}.${contentHash(f.woff2Base64)}.woff2`,
     contentType: 'font/woff2',
     body: decodeBase64(f.woff2Base64),
   };
   const rule =
-    `@font-face { font-family: '${f.family}'; font-style: normal; font-weight: ${f.weight}; font-display: swap; ` +
+    `@font-face { font-family: '${f.family}'; font-style: ${f.style}; font-weight: ${f.weight}; font-display: swap; ` +
     `src: url(${asset.path}) format('woff2'); unicode-range: ${f.unicodeRange}; }`;
   return { asset, rule };
 });

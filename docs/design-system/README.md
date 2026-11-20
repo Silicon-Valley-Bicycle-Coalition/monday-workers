@@ -39,7 +39,7 @@ The visual language of the Silicon Valley Bicycle Coalition across print, files,
 | `svbc-chrome` | #383838 | Website footer bar |
 | `svbc-ink` | #303030 | Body and heading text |
 | `svbc-white` | #FFFFFF | The logo's lettering; text on black, grey and charcoal |
-| `web-gold` | #FFC700 | Legacy web gold, still in the Workers (the website moved off it 2026-11-19): replace with `svbc-gold` |
+| `web-gold` | #FFC700 | Legacy web gold, left only in mailchimp-sync's ported templates: replace with `svbc-gold` |
 
 **Which gold.** `svbc-gold` is the gold people see: the logo, the sponsor packet's fields, the postcard, slide title bars, social posts, buttons. `svbc-gold-soft` is a quieter gold for letters and other documents built on the letterhead, where a full-strength field would shout. Don't mix the two in one piece, and never recolour the logo's gold to match either.
 
@@ -66,7 +66,7 @@ Rules:
 - **Print** (letterhead): 11pt letter body; 12pt gold tagline (regular weight in the 2026 file); 9pt right-aligned contact and board block in `svbc-grey-text`, uppercase section labels; 8pt italic 501(c)(3) line. Internal documents add a 14pt title.
 - **Slides** (16:9): cover title 54–60pt bold; slide title 32–36pt bold; body 24–28pt with bold run-in leads ("Places:", "People:", "Mission:"); secondary 20pt; footer and slide number 9–12pt `svbc-grey-text`; a big-statement or Q&A slide 96–116pt bold on gold.
 - **Website** (Squarespace, since 2026-11-19): **Nunito Sans** everywhere — headings (500, −0.02em), paragraphs, all three button styles, miscellaneous text and the header Donate button. Squarespace has no Avenir, so the site uses the brand stack's web face directly. Sizes are unchanged: h1 59.2px, h2 41.92px, h3 33.28px, h4 24.64px at desktop width; 21.76px/1.5 lead paragraphs, 16px/1.5 lists, nav and buttons, 14.56px footer.
-- **Workers, current** (`web-heading`, `web-body`): the portal, calendar widget and emails still load **Manrope 500** for headings and **Poppins** for everything else, at the website's sizes. They move to the Avenir stack (self-hosted Nunito Sans) in issue #40.
+- **Workers** (since issue #40): the portal sets the Avenir stack (`heading`, `body`) with self-hosted **Nunito Sans** as the web face, plus Poppins's Devanagari for Hindi, which Nunito Sans lacks. The calendar widget sets **Nunito Sans** first (`web`), as the website around it does. Both keep the website's sizes. Emails keep the system stack.
 
 In Workers, self-host web fonts: `scripts/build-font-modules.mjs` embeds subset woff2 files with `font-display: swap` (see `member-portal/src/assets/static.ts`); never link Google Fonts from a Worker page. Moving a Worker to the brand stack means self-hosting Nunito Sans the same way (Avenir can't be embedded). The previews here load fonts with a Google Fonts `@import` in `components/bundle.css` for convenience. Emails keep the system stack as their fallback: most clients ignore web fonts.
 
@@ -162,7 +162,7 @@ From the 2027 sponsor packet and 2025 postcard:
 
 ## Components
 
-Static renditions (plain HTML + `components/bundle.css`): Chrome (SiteHeader, SiteFooter), Actions (Button), Forms (TextInput), Navigation (Tabs), Data (DataTable), Membership (MemberCard), Email (EmailLayout), Calendar widget (EventCard) and Decoration (RoadDivider). They render with the brand tokens (`svbc-gold` #FFC20E and the Avenir stack); the live Workers still show #FFC700, Manrope and Poppins.
+Static renditions (plain HTML + `components/bundle.css`): Chrome (SiteHeader, SiteFooter), Actions (Button), Forms (TextInput), Navigation (Tabs), Data (DataTable), Membership (MemberCard), Email (EmailLayout), Calendar widget (EventCard) and Decoration (RoadDivider). They render with the brand tokens (`svbc-gold` #FFC20E and the Avenir stack), as the portal and calendar widget now do.
 
 ## Website (Squarespace)
 
@@ -183,7 +183,11 @@ Two traps when editing: changing the palette makes Squarespace recompute the aut
 
 ## Workers status
 
-MR 478 (merged at `22f708e7`) moved the portal, calendar widget, the four email layouts and the Monday automation template onto the earlier web values: #FFC700 gold (now `web-gold`), a black header and `svbc-chrome` footer, `svbc-ink` text, Manrope and Poppins, 300px pills and #F4F4F3 email wraps. The next migration swaps `web-gold` for `svbc-gold` (a small shift), #F4F4F3 for `svbc-sand` and Manrope/Poppins for the Avenir stack (self-hosting Nunito Sans). This system is versioned in `monday-workers` at `docs/design-system/`; the IT manual (`scripts/build-manual.mjs`) takes its colours from it.
+MR 478 (merged at `22f708e7`) moved the portal, calendar widget, the four email layouts and the Monday automation template onto the earlier web values: #FFC700 gold (now `web-gold`), a black header and `svbc-chrome` footer, `svbc-ink` text, Manrope and Poppins, 300px pills and #F4F4F3 email wraps.
+
+Issue #40 moved `member-portal` and `svbc-calendars` onto the brand: `svbc-gold` #FFC20E (pills, card glow, QR modules: 11.3:1 on the card face), `svbc-sand` for the portal's light ground and email wrap, and Nunito Sans self-hosted by `scripts/build-font-modules.mjs` as one variable woff2 per subset (the widget's latin file is 31 KB for every weight, against 38 KB for the four Manrope and Poppins files it replaces). The portal's letters keep `svbc-gold-soft`.
+
+Still on the earlier values: the email wraps in `bp-feedback-notify` and `report-digests` (#F4F4F3) and `mailchimp-sync`'s ported Salesforce templates (#FFC700 links, #F4F4F3 wrap). This system is versioned in `monday-workers` at `docs/design-system/`; the IT manual (`scripts/build-manual.mjs`) takes its colours from it and its fonts from the portal's, so it sets Nunito Sans.
 
 ## Not synced
 
