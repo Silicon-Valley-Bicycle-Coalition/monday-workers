@@ -10,6 +10,14 @@ function donorOption(donor: DonorContactInfo): string {
   return `<option value="${escapeHtml(donor.id)}">${escapeHtml(donor.name)}</option>`;
 }
 
+// "Whose record" only for a household; one person's form carries their id as a hidden field.
+function whoseRecord(donors: DonorContactInfo[], locale: Locale): string {
+  if (donors.length === 1) return `<input type="hidden" name="donorItemId" value="${escapeHtml(donors[0]!.id)}" />`;
+  return `<label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
+          <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
+        </label>`;
+}
+
 // 'off': no Employer field; 'on': offered; 'preselected': offered and chosen (?field=employer).
 export type EmployerFieldMode = 'off' | 'on' | 'preselected';
 
@@ -104,9 +112,7 @@ export function changeRequestFormView(
       <h2 id="${id}-title">${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
       <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
       <form action="/${locale}/portal/change-request" method="post">
-        <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
-          <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
-        </label>
+        ${whoseRecord(donors, locale)}
         <label>${escapeHtml(t(locale, 'changeRequest.whatToChange'))}
           <select name="field" required>
             <option value="address">${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</option>
@@ -132,12 +138,16 @@ function backToInfo(locale: Locale): string {
   return `<p><a href="/${locale}/portal/info"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'tabs.profile'))}</a></p>`;
 }
 
-// Maps the diff-based preferences result onto the existing result copy where it fits: any fresh
-// submission reads as "submitted", all-duplicates as "already submitted"; only the
-// nothing-changed case needs copy of its own.
+// Preferences aren't reviewed by staff, so a save (fresh or a repeat of one already on file)
+// gets its own "received" copy rather than the change request's "staff will review"; an invalid
+// one reuses the change request's error page.
 export function preferencesResultView(result: PreferencesResult, locale: Locale): string {
   if (result.kind === 'submitted') {
-    return changeRequestResultView({ kind: result.submitted > 0 ? 'submitted' : 'duplicate' }, locale);
+    return `
+    <h1>${escapeHtml(t(locale, 'changeRequest.prefsReceivedHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'changeRequest.prefsReceivedBody'))}</p>
+    ${backToInfo(locale)}
+  `;
   }
   if (result.kind === 'invalid') {
     return changeRequestResultView(result, locale);

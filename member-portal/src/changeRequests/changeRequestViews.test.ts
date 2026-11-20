@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequestViews';
 import { t } from '../i18n/t';
+import { escapeHtml } from '../views';
 
 const sampleDonor = { id: 'donor-1', name: 'Jane <b>Example</b>', email: 'jane@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '', employer: '', emailOptOut: false, smsOptOut: false, doNotMail: false };
 const donors = [
@@ -125,6 +126,17 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(changeRequestFormView([optedOutDonor], 'en', [], 'on', true)).toContain('aria-labelledby="change-request-title" open data-open-on-load>');
   });
 
+  it('asks whose record only for a household; one person posts their id as a hidden field', () => {
+    const single = changeRequestFormView([optedOutDonor], 'en', []);
+    expect(single).not.toContain(t('en', 'changeRequest.whoseRecord'));
+    expect(single).not.toContain('<select name="donorItemId"');
+    const changeForm = single.slice(single.indexOf('action="/en/portal/change-request"'));
+    expect(changeForm).toContain('<input type="hidden" name="donorItemId" value="donor-1" />');
+    const household = changeRequestFormView([optedOutDonor, { ...optedOutDonor, id: 'donor-2', name: 'Sam' }], 'en', []);
+    expect(household).toContain(t('en', 'changeRequest.whoseRecord'));
+    expect(household).toContain('<select name="donorItemId" required>');
+  });
+
   it('renders only the configured preference fields', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', ['doNotMail']);
     expect(html).toContain('name="doNotMail"');
@@ -151,14 +163,15 @@ describe('changeRequestFormView — communication preferences section', () => {
 });
 
 describe('preferencesResultView', () => {
-  it('confirms submitted preference changes', () => {
-    const html = preferencesResultView({ kind: 'submitted', submitted: 2, duplicates: 0 }, 'en');
-    expect(html).toContain(t('en', 'changeRequest.submittedHeading'));
-  });
-
-  it('reports all-duplicates as already submitted', () => {
-    const html = preferencesResultView({ kind: 'submitted', submitted: 0, duplicates: 1 }, 'en');
-    expect(html).toContain(t('en', 'changeRequest.duplicateHeading'));
+  it.each([
+    ['a fresh save', { submitted: 2, duplicates: 0 }],
+    ['a repeat of one already on file', { submitted: 0, duplicates: 1 }],
+  ])('confirms %s as received, with no staff-review wording', (_label, counts) => {
+    const html = preferencesResultView({ kind: 'submitted', ...counts }, 'en');
+    expect(html).toContain(t('en', 'changeRequest.prefsReceivedHeading'));
+    expect(html).toContain(escapeHtml(t('en', 'changeRequest.prefsReceivedBody')));
+    expect(html).not.toContain(escapeHtml(t('en', 'changeRequest.submittedBody')));
+    expect(html).toContain('href="/en/portal/info"');
   });
 
   it('tells the donor when nothing changed', () => {

@@ -3069,7 +3069,9 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('review');
+    const html = await res.text();
+    expect(html).toContain(t('en', 'changeRequest.prefsReceivedHeading'));
+    expect(html).not.toContain('review');
     expect(changeQueue.send).toHaveBeenCalledOnce();
     expect(changeStore.createRequest).toHaveBeenCalledWith(
       expect.objectContaining({ field: 'emailOptOut', newValue: 'Opted out of email' })
