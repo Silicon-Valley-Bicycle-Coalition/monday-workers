@@ -110,11 +110,11 @@ const LABEL: Record<EmailLabel, { key: TranslationKey; hint: TranslationKey; cla
   bounced: { key: 'info.labelBounced', hint: 'info.hintBounced', className: 'bounced' },
 };
 
-// The label explains itself in a tooltip: shown on hover, and on focus (the pill takes Tab or a
-// tap), and read as the pill's description by a screen reader. CSS only.
+// The label explains itself in a tooltip: shown on hover, keyboard focus or a tap, closed with
+// Escape (portalTabs.ts), and read as the button's description by a screen reader.
 function emailRow(email: ShownEmail, locale: Locale, tipId: string): string {
   const label = LABEL[email.label];
-  return `<li><span class="email-address">${escapeHtml(email.address)}</span> <span class="email-kind">${escapeHtml(t(locale, KIND_KEY[email.kind]))}</span> <span class="email-label email-label-${label.className}" tabindex="0" aria-describedby="${tipId}">${escapeHtml(t(locale, label.key))}<span class="email-tip" role="tooltip" id="${tipId}">${escapeHtml(t(locale, label.hint))}</span></span></li>`;
+  return `<li><span class="email-address">${escapeHtml(email.address)}</span> <span class="email-kind">${escapeHtml(t(locale, KIND_KEY[email.kind]))}</span> <button type="button" class="email-label email-label-${label.className}" aria-describedby="${tipId}">${escapeHtml(t(locale, label.key))}<span class="email-tip" role="tooltip" id="${tipId}">${escapeHtml(t(locale, label.hint))}</span></button></li>`;
 }
 
 function emailsSection(data: InfoDoorData, locale: Locale): string {

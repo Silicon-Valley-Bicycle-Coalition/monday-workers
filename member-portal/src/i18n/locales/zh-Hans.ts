@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const zhHans: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 捐赠者门户',
+  'a11y.skipToContent': '跳到主要内容',
   'languagePicker.label': '语言',
   'nav.donate': '捐赠',
 
@@ -205,6 +206,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'stats.eventsAttended': '参加的活动',
   'stats.memberSince': '入会年份',
   'card.newCodeIntro': '如果他人持有您会员卡代码的副本，请获取新代码，旧代码将失效。',
+  'profile.detailsHeading': '您的信息',
   'profile.requestChange': '申请更改',
   'dialog.close': '关闭',
   'orgs.sectionTitle': '您管理的组织',

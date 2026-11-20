@@ -56,6 +56,10 @@ describe('memberCardWidget', () => {
     expect(html).not.toContain('<form');
   });
 
+  it("marks the card's logo decorative: the site header already names the organization", () => {
+    expect(memberCardWidget(card('donor-1', 'Jane Donor'), 'en')).toMatch(/<div class="member-card-logo"><img [^>]*alt="" \/>/);
+  });
+
   it('greys out a lapsed card and shows when it ended', () => {
     const html = memberCardWidget(card('donor-1', 'Jane Donor'), 'en', { lapsed: { ended: '10/2026' } });
     expect(html).toContain('member-card member-card-lapsed');

@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const ja: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC寄付者ポータル',
+  'a11y.skipToContent': '本文へスキップ',
   'languagePicker.label': '言語',
   'nav.donate': '寄付する',
 
@@ -205,6 +206,7 @@ export const ja: Record<TranslationKey, string> = {
   'stats.eventsAttended': '参加したイベント',
   'stats.memberSince': '入会年',
   'card.newCodeIntro': 'カードのコードを他の人が持っている場合は、新しいコードを発行すると古いコードは使えなくなります。',
+  'profile.detailsHeading': '登録情報',
   'profile.requestChange': '変更をリクエスト',
   'dialog.close': '閉じる',
   'orgs.sectionTitle': '管理している組織',

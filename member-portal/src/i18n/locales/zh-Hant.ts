@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const zhHant: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 捐款者入口網站',
+  'a11y.skipToContent': '跳到主要內容',
   'languagePicker.label': '語言',
   'nav.donate': '捐款',
 
@@ -205,6 +206,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'stats.eventsAttended': '參加的活動',
   'stats.memberSince': '入會年份',
   'card.newCodeIntro': '如果他人持有您會員卡代碼的副本，請取得新代碼，舊代碼將失效。',
+  'profile.detailsHeading': '您的資料',
   'profile.requestChange': '申請變更',
   'dialog.close': '關閉',
   'orgs.sectionTitle': '您管理的組織',

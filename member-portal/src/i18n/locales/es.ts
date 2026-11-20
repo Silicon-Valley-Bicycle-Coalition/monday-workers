@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const es: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Portal de Donantes de SVBC',
+  'a11y.skipToContent': 'Saltar al contenido',
   'languagePicker.label': 'Idioma',
   'nav.donate': 'Donar',
 
@@ -205,6 +206,7 @@ export const es: Record<TranslationKey, string> = {
   'stats.eventsAttended': 'Eventos asistidos',
   'stats.memberSince': 'Miembro desde',
   'card.newCodeIntro': 'Si alguien más tiene una copia del código de tu tarjeta, genera uno nuevo y el anterior dejará de funcionar.',
+  'profile.detailsHeading': 'Tus datos',
   'profile.requestChange': 'Solicitar un cambio',
   'dialog.close': 'Cerrar',
   'orgs.sectionTitle': 'Tú administras',

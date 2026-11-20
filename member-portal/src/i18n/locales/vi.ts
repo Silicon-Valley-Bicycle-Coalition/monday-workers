@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const vi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Cổng thông tin Nhà tài trợ SVBC',
+  'a11y.skipToContent': 'Chuyển đến nội dung',
   'languagePicker.label': 'Ngôn ngữ',
   'nav.donate': 'Quyên góp',
 
@@ -205,6 +206,7 @@ export const vi: Record<TranslationKey, string> = {
   'stats.eventsAttended': 'Sự kiện đã tham dự',
   'stats.memberSince': 'Thành viên từ',
   'card.newCodeIntro': 'Nếu người khác có bản sao mã thẻ của bạn, hãy tạo mã mới và mã cũ sẽ ngừng hoạt động.',
+  'profile.detailsHeading': 'Thông tin của bạn',
   'profile.requestChange': 'Yêu cầu thay đổi',
   'dialog.close': 'Đóng',
   'orgs.sectionTitle': 'Bạn quản lý',

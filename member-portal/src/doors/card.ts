@@ -34,7 +34,7 @@ export function memberCardWidget(card: PortalCard, locale: Locale, options: Memb
   return `
     <div class="member-card${lapsed === null ? '' : ' member-card-lapsed'}">
       <div class="member-card-top">
-        <div class="member-card-logo">${logoImg()}</div>
+        <div class="member-card-logo">${logoImg(undefined, true)}</div>
         <div class="member-card-qr" role="img" aria-label="${escapeHtml(t(locale, 'card.qrAlt'))}">${qrSvg}</div>
       </div>
       <div class="member-card-name">${escapeHtml(data.donorName)}</div>

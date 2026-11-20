@@ -63,8 +63,8 @@ describe('infoDoorView', () => {
     expect(html).toContain('jane@example.org');
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindPersonal')}</span>`);
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindHousehold')}</span>`);
-    expect(html).toContain(`<span class="email-label email-label-verified" tabindex="0" aria-describedby="email-tip-0">${t('en', 'info.labelVerified')}<span class="email-tip" role="tooltip" id="email-tip-0">${escapeHtml(t('en', 'info.hintVerified'))}</span></span>`);
-    expect(html).toContain(`<span class="email-label email-label-bounced" tabindex="0" aria-describedby="email-tip-1">${t('en', 'info.labelBounced')}<span class="email-tip" role="tooltip" id="email-tip-1">`);
+    expect(html).toContain(`<button type="button" class="email-label email-label-verified" aria-describedby="email-tip-0">${t('en', 'info.labelVerified')}<span class="email-tip" role="tooltip" id="email-tip-0">${escapeHtml(t('en', 'info.hintVerified'))}</span></button>`);
+    expect(html).toContain(`<button type="button" class="email-label email-label-bounced" aria-describedby="email-tip-1">${t('en', 'info.labelBounced')}<span class="email-tip" role="tooltip" id="email-tip-1">`);
     expect(html).toContain(escapeHtml(t('en', 'info.hintBounced')));
     // The hints replaced the paragraph that explained every label at once.
     expect(html).not.toContain('email-legend');

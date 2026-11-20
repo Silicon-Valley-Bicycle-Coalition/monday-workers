@@ -325,7 +325,7 @@ describe('portalView — member card and tabs', () => {
     expect(html).not.toContain('/en/portal/events');
   });
 
-  it("shows each person's totals under their card, leaving out any that aren't available", () => {
+  it("shows each person's totals under their card, leaving out any that aren't available or are zero", () => {
     const html = homeView(
       data([
         { person: person('j', 'Jordan', { since: '2019-04-02' }), state: { kind: 'default' }, stats: { totalDonated: '1250', volunteerHours: 12.5, eventsAttended: 3 } },
@@ -341,7 +341,8 @@ describe('portalView — member card and tabs', () => {
     expect(jordan).toContain('<dt>Events attended</dt><dd>3</dd>');
     expect(jordan).toContain('<dt>Member since</dt><dd>2019</dd>');
     const samPart = html.slice(sam);
-    expect(samPart).toContain('<dt>Hours volunteered</dt><dd>0</dd>');
+    // A zero is left off too: it reads as a score, not an invitation.
+    expect(samPart).not.toContain('Hours volunteered');
     expect(samPart).not.toContain('Total given');
     expect(samPart).not.toContain('Events attended');
     expect(samPart).not.toContain('Member since');

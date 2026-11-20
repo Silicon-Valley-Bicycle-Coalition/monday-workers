@@ -3936,6 +3936,9 @@ describe('doors', () => {
       expect(html).toContain('class="member-card"');
       expect(html).toContain('class="member-card-qr"');
       expect(html).not.toContain('/regenerate"');
+      // A skip link leads to main, which takes focus.
+      expect(html).toContain(`<a class="skip-link" href="#main">${t('es', 'a11y.skipToContent')}</a>`);
+      expect(html).toContain('<main id="main" tabindex="-1">');
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
       expect(html.indexOf('class="member-card"')).toBeLessThan(html.indexOf('<li>Local Bikes'));
       expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });

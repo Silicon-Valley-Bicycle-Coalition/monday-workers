@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const fil: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC Member Portal',
+  'a11y.skipToContent': 'Lumaktaw sa nilalaman',
   'languagePicker.label': 'Wika',
   'nav.donate': 'Mag-donate',
 
@@ -205,6 +206,7 @@ export const fil: Record<TranslationKey, string> = {
   'stats.eventsAttended': 'Mga event na dinaluhan',
   'stats.memberSince': 'Miyembro mula',
   'card.newCodeIntro': 'Kung may ibang may kopya ng code ng iyong card, kumuha ng bago at hindi na gagana ang luma.',
+  'profile.detailsHeading': 'Ang iyong mga detalye',
   'profile.requestChange': 'Humiling ng pagbabago',
   'dialog.close': 'Isara',
   'orgs.sectionTitle': 'Pinamamahalaan mo',

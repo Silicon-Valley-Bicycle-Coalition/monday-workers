@@ -24,7 +24,7 @@ The visual language of the Silicon Valley Bicycle Coalition across **bikesilicon
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `svbc-gold` | #FFC700 | Primary pill buttons, nav and footer links on dark, full-bleed section bands, focus ring |
+| `svbc-gold` | #FFC700 | Primary pill buttons, nav and footer links on dark, full-bleed section bands, focus ring on dark surfaces |
 | `svbc-black` | #000000 | Header bar, table headers, active tab, email header band, text on gold |
 | `svbc-chrome` | #383838 | Footer bar |
 | `svbc-ink` | #303030 | Body and heading text |
@@ -74,7 +74,7 @@ Portal UI sizes stay small and functional (14–16px controls, 13px footer in co
 
 ## Accessibility and behaviour
 
-- Focus: 2px `svbc-gold` outline, 2px offset (map: 3px `map-accent`).
+- Focus: 2px outline, 2px offset, on every focusable element: `svbc-ink` on a light page (gold on white is 1.6:1, under the 3:1 a focus indicator needs), `svbc-gold` on dark surfaces (dark theme, header, footer). Map: 3px `map-accent`.
 - Almost no JavaScript in the portal: forms post to the server. Its tabs (Benefits, Your giving, Events, Volunteering, Profile) are links, one page each, styled like the Tabs component with `aria-current="page"` on the active one, and wrap as pills on a phone. One small script (`member-portal/src/assets/portalTabs.ts`) swaps a tab's panel in place so a tab click never moves the page, and opens Profile's change-request form as a modal `<dialog>`; without it the links still work and the dialog renders open in place. The radio-input Tabs component stays here for any surface that needs in-page tabs.
 - Labels are words, never colour alone (the info door's email labels are outlined text pills; Bounced is bold).
 - Print hides header and footer and each door's "‹ Home" link.

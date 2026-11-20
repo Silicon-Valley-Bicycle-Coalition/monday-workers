@@ -29,6 +29,8 @@ export const PORTAL_CSS = `
     --border: #ccc;
     --table-border: #eee;
     --row-stripe: #fafafa;
+    /* Focus ring: ink on the light page (gold on white is 1.6:1), gold on dark surfaces. */
+    --focus-ring: var(--svbc-ink);
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -40,6 +42,7 @@ export const PORTAL_CSS = `
       --border: #4d4a4a;
       --table-border: #3a3838;
       --row-stripe: #242222;
+      --focus-ring: var(--svbc-gold);
     }
   }
   * { box-sizing: border-box; }
@@ -151,10 +154,19 @@ export const PORTAL_CSS = `
     color: var(--svbc-black);
     font-weight: 400;
   }
-  button:focus-visible, a:focus-visible {
-    outline: 2px solid var(--svbc-gold);
+  /* Every focusable element (links, buttons, inputs, radios, the email-label buttons) gets the
+     same ring; the black header and footer keep the brand gold. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
+  .site-header :focus-visible, .site-footer :focus-visible { outline-color: var(--svbc-gold); }
+  .skip-link {
+    position: absolute; left: 16px; top: -100px; z-index: 100;
+    padding: 10px 16px; border-radius: var(--radius-pill);
+    background: var(--svbc-gold); color: var(--svbc-black); font-weight: 600; text-decoration: none;
+  }
+  .skip-link:focus { top: 12px; outline-color: var(--svbc-white); }
   .site-header .logout-form button {
     display: inline-flex;
     align-items: center;
@@ -221,9 +233,10 @@ export const PORTAL_CSS = `
   .door-empty { padding: 8px 0; }
   .cta-button { margin-top: 4px; }
 
-  /* Wallet-style membership card, on the home page and the card door (src/doors/card.ts).
-     Fixed max-width with aspect-ratio (not a fixed height)
-     so it scales down cleanly on narrow viewports instead of overflowing. */
+  /* Wallet-style membership card, in the portal header (src/doors/card.ts). Fixed max-width with
+     aspect-ratio (not a fixed height) so it scales down on narrow viewports; with overflow left
+     visible the ratio is a minimum, so at 320px (or 400% zoom) the card grows taller rather than
+     clipping its bottom row. The gold glow is a background layer for the same reason. */
   .member-card {
     position: relative;
     width: 100%;
@@ -232,20 +245,15 @@ export const PORTAL_CSS = `
     margin: 12px 0;
     border-radius: 16px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15);
-    overflow: hidden;
     color: var(--svbc-white);
-    background: linear-gradient(135deg, #2b2628 0%, var(--svbc-black) 55%, #171415 100%);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255,199,0,0.10), transparent 60%),
+      linear-gradient(135deg, #2b2628 0%, var(--svbc-black) 55%, #171415 100%);
     padding: 18px 22px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     box-sizing: border-box;
-  }
-  .member-card::after {
-    content: '';
-    position: absolute; top: -60%; left: -20%; width: 140%; height: 140%;
-    background: radial-gradient(circle at 30% 20%, rgba(255,199,0,0.10), transparent 55%);
-    pointer-events: none;
   }
   .member-card-top { display: flex; align-items: flex-start; justify-content: space-between; }
   /* height:53px (not the header's 100px) keeps the badge's rendered footprint the same as
@@ -263,8 +271,8 @@ export const PORTAL_CSS = `
   .member-card-qr svg { display: block; width: 77px; height: 77px; }
   .member-card-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
   .member-card-meta {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 11px; color: #cfcfcf; gap: 10px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end;
+    font-size: 11px; color: #cfcfcf; gap: 6px 10px; margin-top: 10px;
   }
   .member-card-meta .label { text-transform: uppercase; letter-spacing: 0.06em; }
   .member-card-meta .value { display: block; color: var(--svbc-white); font-size: 13px; margin-top: 2px; }
@@ -276,9 +284,9 @@ export const PORTAL_CSS = `
   .member-card-regenerate { margin: 6px 0 0; }
   /* Selects button[type=submit], not just button, to out-specificity the main button[type=submit]
      gold-fill rule above — same fix as .site-header .logout-form button. */
+  /* The outline pill (like Request a change): full contrast and a full-size target. */
   .member-card-regenerate button[type='submit'] {
-    background: none; border: none; color: #888; font-size: 12px; text-decoration: underline;
-    cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
+    background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
   }
 
   /* The portal frame (src/home/homeView.ts): the member card(s) with each person's totals, the
@@ -295,7 +303,9 @@ export const PORTAL_CSS = `
   .home-people { display: flex; flex-direction: column; gap: 16px; }
   .home-person .member-card { margin: 0; }
   .home-person p { margin: 6px 0 0; }
-  .member-card-lapsed { opacity: 0.55; filter: grayscale(1); }
+  /* A lapsed card greys its background, not its text: dimming the whole card dropped the small
+     labels below 4.5:1. #555 keeps #cfcfcf labels at 4.7:1. */
+  .member-card-lapsed { filter: grayscale(1); background: linear-gradient(135deg, #555 0%, #444 100%); }
   .home-not-member {
     max-width: 340px;
     padding: 18px 22px;
@@ -339,7 +349,7 @@ export const PORTAL_CSS = `
   }
   .portal-tab:hover { text-decoration: underline; }
   .portal-tab[aria-current='page'] { background: var(--svbc-black); color: var(--svbc-gold); border-color: var(--svbc-black); }
-  .portal-tab:focus-visible { outline: 2px solid var(--svbc-gold); outline-offset: -2px; }
+  .portal-tab:focus-visible { outline-offset: 2px; }
   /* Five folder tabs don't fit a phone: there they wrap as pills, so every tab (the active one
      included) stays in view. */
   @media (max-width: 599px) {
@@ -445,7 +455,7 @@ export const PORTAL_CSS = `
   .email-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--table-border); }
   .email-address { overflow-wrap: anywhere; margin-right: auto; }
   .email-kind { font-size: 14px; color: var(--text-muted); }
-  .email-label { font-size: 13px; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); }
+  .email-label { font: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--text); }
   .email-label-bounced { font-weight: 700; border-color: var(--text); }
   /* A label's tooltip (src/doors/info.ts): hidden until the pill is hovered or focused, then a small
      card under it, right-aligned since the pill ends the row. */
@@ -457,7 +467,7 @@ export const PORTAL_CSS = `
     background: var(--svbc-black); color: var(--svbc-white);
     font-size: 13px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal;
   }
-  .email-label:hover .email-tip, .email-label:focus .email-tip { display: block; }
+  .email-label:is(:hover, :focus-visible, .tip-open):not(.tip-dismissed) .email-tip { display: block; }
 
   .site-footer {
     background: var(--svbc-chrome);

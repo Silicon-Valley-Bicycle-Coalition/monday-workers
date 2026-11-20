@@ -114,6 +114,7 @@ describe('changeRequestFormView — communication preferences section', () => {
 
   it('shows the details with no section heading, then a Request a change link that opens the form in a closed dialog', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', []);
+    expect(html).toContain(`<h2 class="visually-hidden">${t('en', 'profile.detailsHeading')}</h2>`);
     expect(html).toContain('href="/en/portal/info?change=1" data-dialog-open="change-request"');
     expect(html).toContain('<dialog id="change-request" class="portal-dialog" aria-labelledby="change-request-title">');
     expect(html.indexOf('<dl>')).toBeLessThan(html.indexOf('<dialog'));

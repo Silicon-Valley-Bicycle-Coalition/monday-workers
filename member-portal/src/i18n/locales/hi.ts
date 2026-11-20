@@ -3,6 +3,7 @@ import type { TranslationKey } from '../t';
 export const hi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC डोनर पोर्टल',
+  'a11y.skipToContent': 'सामग्री पर जाएं',
   'languagePicker.label': 'भाषा',
   'nav.donate': 'दान करें',
 
@@ -205,6 +206,7 @@ export const hi: Record<TranslationKey, string> = {
   'stats.eventsAttended': 'शामिल हुए इवेंट',
   'stats.memberSince': 'सदस्य कब से',
   'card.newCodeIntro': 'अगर किसी और के पास आपके कार्ड के कोड की कॉपी है, तो नया कोड लें और पुराना कोड काम करना बंद कर देगा।',
+  'profile.detailsHeading': 'आपका विवरण',
   'profile.requestChange': 'बदलाव का अनुरोध करें',
   'dialog.close': 'बंद करें',
   'orgs.sectionTitle': 'आप प्रबंधित करते हैं',

@@ -1,6 +1,7 @@
 export const en = {
   // Site-wide
   'site.title': 'SVBC Member Portal',
+  'a11y.skipToContent': 'Skip to content',
   'languagePicker.label': 'Language',
   'nav.donate': 'Donate',
 
@@ -212,6 +213,7 @@ export const en = {
   'stats.eventsAttended': 'Events attended',
   'stats.memberSince': 'Member since',
   'card.newCodeIntro': "If someone else has a copy of your card's code, get a new one and the old code stops working.",
+  'profile.detailsHeading': 'Your details',
   'profile.requestChange': 'Request a change',
   'dialog.close': 'Close',
   'orgs.sectionTitle': 'You manage',

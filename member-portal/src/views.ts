@@ -27,9 +27,12 @@ export function escapeHtml(value: string): string {
 // than inlined into every no-store page. width/height mirror the SVG's own, so the browser has
 // the intrinsic aspect ratio before the file loads and CSS can set only a height. The org name
 // is a proper noun, so the alt text isn't translated.
-export function logoImg(className?: string): string {
+// `decorative`: alt="" where the organization is already named nearby (the member card sits under
+// the site header's logo), so a screen reader doesn't read the name twice.
+export function logoImg(className?: string, decorative = false): string {
   const cls = className ? ` class="${className}"` : '';
-  return `<img${cls} src="${LOGO_SVG_ASSET.path}" width="235" height="90" alt="Silicon Valley Bicycle Coalition" />`;
+  const alt = decorative ? '' : 'Silicon Valley Bicycle Coalition';
+  return `<img${cls} src="${LOGO_SVG_ASSET.path}" width="235" height="90" alt="${alt}" />`;
 }
 
 function siteHeader(locale: Locale, authenticated: boolean): string {
@@ -108,8 +111,9 @@ export function page(
     <link rel="stylesheet" href="${PORTAL_CSS_ASSET.path}" />
   </head>
   <body>
+    <a class="skip-link" href="#main">${escapeHtml(t(locale, 'a11y.skipToContent'))}</a>
     ${siteHeader(locale, options.authenticated ?? false)}
-    <main>${body}</main>
+    <main id="main" tabindex="-1">${body}</main>
     ${siteFooter(locale, options.languagePicker ?? true)}
   </body>
 </html>`;
