@@ -149,8 +149,9 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
-**Visual design:** `docs/design-system/` (brand basis: the 2026 letterhead; the website and Workers
-still use the older `web-gold` #FFC700 and Manrope/Poppins until migrated). Take colours, type,
+**Visual design:** `docs/design-system/` (brand basis: the 2026 letterhead and SVBC's print; `svbc-gold`
+#FFC20E for screens, `svbc-gold-soft` for letterhead documents; Workers still use `web-gold` #FFC700 and
+Manrope/Poppins until migrated). Take colours, type,
 spacing and component patterns for any Worker page or email from its `tokens.json` and README,
 not from older Worker code. Fonts are self-hosted (`scripts/build-font-modules.mjs`); never link
 Google Fonts from a Worker page.
