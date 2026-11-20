@@ -16,6 +16,10 @@ export interface ContactChangesInput {
   donorItemId: string;
   // The submitted value per field; a field absent from the form is absent here.
   values: Partial<Record<ChangeRequestField, string>>;
+  // The email the form was prefilled with ('' when it showed none). Email is diffed against this,
+  // never against Monday: the form leaves a household member's address out (src/doors/info.ts),
+  // and diffing a typed guess against the real one would answer "no changes" on a match.
+  emailWas?: string;
 }
 
 export type ContactChangesResult =
@@ -25,8 +29,9 @@ export type ContactChangesResult =
 
 // The whole-form counterpart of submitChangeRequest: diffs every submitted field against the
 // donor's current Monday values and files one change request per field that differs, through the
-// same staff-review path. A field left blank is no change (a change request can't clear a value),
-// which also covers an email address the form didn't prefill (src/doors/info.ts).
+// same staff-review path. A field left blank is no change (a change request can't clear a value).
+// The other fields are already on the Profile tab for everyone in the session, so diffing them
+// against Monday reveals nothing; email is diffed against emailWas instead.
 export async function submitContactChanges(
   sessionDonorIds: string[],
   input: ContactChangesInput,
@@ -47,7 +52,8 @@ export async function submitContactChanges(
     if (field === 'employer' && deps.employerEnabled !== true) continue;
     const desired = input.values[field]?.trim() ?? '';
     if (desired === '') continue;
-    if (desired !== String(contact[current] ?? '').trim()) changes.push({ field, newValue: desired });
+    const was = field === 'email' ? (input.emailWas ?? '') : String(contact[current] ?? '');
+    if (desired !== was.trim()) changes.push({ field, newValue: desired });
   }
   if (changes.length === 0) return { kind: 'noChanges' };
 

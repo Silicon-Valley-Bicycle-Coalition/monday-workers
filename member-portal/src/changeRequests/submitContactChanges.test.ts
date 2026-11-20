@@ -41,6 +41,7 @@ function makeDeps(store = fakeStore(), employerEnabled = false) {
 }
 
 const unchanged = { address: '1 Old St', email: 'jane@example.org', phone: '555-0100', language: 'English' };
+const shown = { emailWas: 'jane@example.org' };
 const fields = (store: ChangeRequestStore) =>
   (store.createRequest as ReturnType<typeof vi.fn>).mock.calls.map(([row]) => [row.field, row.newValue]);
 
@@ -49,7 +50,7 @@ describe('submitContactChanges', () => {
     const store = fakeStore();
     const result = await submitContactChanges(
       ['donor-1'],
-      { donorItemId: 'donor-1', values: { ...unchanged, phone: ' 555-0199 ', address: '2 New Ave', language: ' English ' } },
+      { donorItemId: 'donor-1', values: { ...unchanged, phone: ' 555-0199 ', address: '2 New Ave', language: ' English ' }, ...shown },
       makeDeps(store)
     );
     expect(result).toEqual({ kind: 'submitted', submitted: 2, duplicates: 0 });
@@ -61,8 +62,8 @@ describe('submitContactChanges', () => {
 
   it('reports noChanges when every field matches, and treats a blank field as no change', async () => {
     const store = fakeStore();
-    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: unchanged }, makeDeps(store))).toEqual({ kind: 'noChanges' });
-    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, email: '', phone: '  ' } }, makeDeps(store))).toEqual({
+    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: unchanged, ...shown }, makeDeps(store))).toEqual({ kind: 'noChanges' });
+    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, email: '', phone: '  ' }, ...shown }, makeDeps(store))).toEqual({
       kind: 'noChanges',
     });
     expect(store.createRequest).not.toHaveBeenCalled();
@@ -70,9 +71,9 @@ describe('submitContactChanges', () => {
 
   it('files Employer only while the employer answer is on', async () => {
     const off = fakeStore();
-    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, employer: 'Google' } }, makeDeps(off))).toEqual({ kind: 'noChanges' });
+    expect(await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, employer: 'Google' }, ...shown }, makeDeps(off))).toEqual({ kind: 'noChanges' });
     const on = fakeStore();
-    await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, employer: 'Google' } }, makeDeps(on, true));
+    await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, employer: 'Google' }, ...shown }, makeDeps(on, true));
     expect(fields(on)).toEqual([['employer', 'Google']]);
   });
 
@@ -85,7 +86,15 @@ describe('submitContactChanges', () => {
 
   it('counts a repeat of a recent request as a duplicate', async () => {
     const store = fakeStore({ findRecentByDedupeHash: vi.fn().mockResolvedValue({ id: 7, status: 'written' }) as ChangeRequestStore['findRecentByDedupeHash'] });
-    const result = await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, address: '2 New Ave' } }, makeDeps(store));
+    const result = await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged, address: '2 New Ave' }, ...shown }, makeDeps(store));
     expect(result).toEqual({ kind: 'submitted', submitted: 0, duplicates: 1 });
+  });
+
+  it("never diffs email against Monday: a correct guess at an address the form didn't show still files, so it reveals nothing", async () => {
+    const store = fakeStore();
+    // The form showed no email (emailWas ''); the guess matches Monday's exactly.
+    const result = await submitContactChanges(['donor-1'], { donorItemId: 'donor-1', values: { ...unchanged }, emailWas: '' }, makeDeps(store));
+    expect(result).toEqual({ kind: 'submitted', submitted: 1, duplicates: 0 });
+    expect(fields(store)).toEqual([['email', 'jane@example.org']]);
   });
 });

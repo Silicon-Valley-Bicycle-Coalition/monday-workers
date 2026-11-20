@@ -880,7 +880,11 @@ export function createApp(deps: AppDeps) {
     }
     const result = await submitContactChanges(
       donorItemIds,
-      { donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '', values },
+      {
+        donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+        values,
+        emailWas: typeof body.emailWas === 'string' ? body.emailWas : '',
+      },
       {
         monday: deps.monday,
         ...changeSinks(donorItemIds, mode),

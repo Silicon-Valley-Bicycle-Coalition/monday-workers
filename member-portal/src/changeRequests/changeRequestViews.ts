@@ -121,6 +121,7 @@ function personContact(donor: DonorContactInfo, index: number, household: boolea
       <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
       <form class="contact-form" action="/${locale}/portal/change-request" method="post">
         <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
+        <input type="hidden" name="emailWas" value="${escapeHtml(options.emailPrefill?.[donor.id] ?? '')}" />
         ${contactField('address', 'changeRequest.fieldAddress', donor.address, locale, 'type="text" autocomplete="street-address"')}
         ${contactField('email', 'changeRequest.fieldEmail', options.emailPrefill?.[donor.id] ?? '', locale, 'type="email" autocomplete="email"')}
         ${contactField('phone', 'changeRequest.fieldPhone', donor.phone, locale, 'type="tel" autocomplete="tel"')}
