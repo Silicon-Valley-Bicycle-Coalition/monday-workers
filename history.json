@@ -1,0 +1,1019 @@
+{
+  "snapshots": [
+    {
+      "date": "2026-01-09",
+      "fetchedAt": "2026-01-09T21:36:09.133Z",
+      "totals": {
+        "miles": 1432.74,
+        "segments": 3109,
+        "byClass": [
+          {
+            "class": 1,
+            "className": "Class I - Bike Path",
+            "miles": 229.1,
+            "segments": 465
+          },
+          {
+            "class": 2,
+            "className": "Class II - Bike Lane",
+            "miles": 764.2,
+            "segments": 1777
+          },
+          {
+            "class": 3,
+            "className": "Class III - Bike Route",
+            "miles": 439.44,
+            "segments": 867
+          }
+        ]
+      },
+      "counties": {
+        "San Mateo": {
+          "fips": "06081",
+          "totalMiles": 658.71,
+          "totalSegments": 1329,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 126.79,
+              "segments": 245
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 225.18,
+              "segments": 467
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 306.74,
+              "segments": 617
+            }
+          ]
+        },
+        "Santa Clara": {
+          "fips": "06085",
+          "totalMiles": 774.03,
+          "totalSegments": 1780,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 102.31,
+              "segments": 220
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 539.02,
+              "segments": 1310
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 132.7,
+              "segments": 250
+            }
+          ]
+        }
+      }
+    },
+    {
+      "date": "2026-11-20",
+      "fetchedAt": "2026-11-20T17:49:39.059Z",
+      "method": 2,
+      "totals": {
+        "miles": 1446.98,
+        "segments": 2465,
+        "byClass": [
+          {
+            "class": 1,
+            "className": "Class I - Bike Path",
+            "miles": 204.94,
+            "segments": 327
+          },
+          {
+            "class": 2,
+            "className": "Class II - Bike Lane",
+            "miles": 712.6,
+            "segments": 1420
+          },
+          {
+            "class": 3,
+            "className": "Class III - Bike Route",
+            "miles": 434.2,
+            "segments": 718
+          },
+          {
+            "class": 4,
+            "className": "Class IV - Separated Bikeway",
+            "miles": 95.23,
+            "segments": 0,
+            "source": "San Jose Open Data",
+            "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways",
+            "supplemental": true
+          }
+        ]
+      },
+      "counties": {
+        "San Mateo": {
+          "fips": "06081",
+          "totalMiles": 406.08,
+          "totalSegments": 768,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 75.57,
+              "segments": 122
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 91.79,
+              "segments": 152
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 238.72,
+              "segments": 494
+            }
+          ],
+          "byCity": [
+            {
+              "name": "Redwood City",
+              "miles": 57.27,
+              "segments": 125,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 10.77,
+                  "segments": 8
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 7.67,
+                  "segments": 15
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 38.84,
+                  "segments": 102
+                }
+              ]
+            },
+            {
+              "name": "South San Francisco",
+              "miles": 49.29,
+              "segments": 117,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 5.9,
+                  "segments": 3
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 8.4,
+                  "segments": 13
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 34.99,
+                  "segments": 101
+                }
+              ]
+            },
+            {
+              "name": "San Mateo",
+              "miles": 42.48,
+              "segments": 81,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 7.76,
+                  "segments": 12
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 12.8,
+                  "segments": 27
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 21.92,
+                  "segments": 42
+                }
+              ]
+            },
+            {
+              "name": "Daly City",
+              "miles": 38.23,
+              "segments": 74,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 2.37,
+                  "segments": 10
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 14.88,
+                  "segments": 22
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 20.98,
+                  "segments": 42
+                }
+              ]
+            },
+            {
+              "name": "Unincorporated",
+              "miles": 36.97,
+              "segments": 37,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 10.78,
+                  "segments": 10
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 12.46,
+                  "segments": 16
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 13.73,
+                  "segments": 11
+                }
+              ]
+            },
+            {
+              "name": "Foster City",
+              "miles": 36.49,
+              "segments": 104,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 11.21,
+                  "segments": 13
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 2,
+                  "segments": 2
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 23.29,
+                  "segments": 89
+                }
+              ]
+            },
+            {
+              "name": "Menlo Park",
+              "miles": 27.33,
+              "segments": 39,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 7.78,
+                  "segments": 10
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 14.68,
+                  "segments": 23
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 4.87,
+                  "segments": 6
+                }
+              ]
+            },
+            {
+              "name": "San Carlos",
+              "miles": 21.88,
+              "segments": 45,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.81,
+                  "segments": 0
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 5.67,
+                  "segments": 16
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 15.39,
+                  "segments": 29
+                }
+              ]
+            },
+            {
+              "name": "Belmont",
+              "miles": 16.24,
+              "segments": 35,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.9,
+                  "segments": 4
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 15.34,
+                  "segments": 31
+                }
+              ]
+            },
+            {
+              "name": "East Palo Alto",
+              "miles": 16.03,
+              "segments": 41,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 2.02,
+                  "segments": 12
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 7.13,
+                  "segments": 14
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 6.87,
+                  "segments": 15
+                }
+              ]
+            },
+            {
+              "name": "Burlingame",
+              "miles": 14.46,
+              "segments": 32,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 5.74,
+                  "segments": 27
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 8.72,
+                  "segments": 5
+                }
+              ]
+            },
+            {
+              "name": "Pacifica",
+              "miles": 9.66,
+              "segments": 10,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 1.82,
+                  "segments": 3
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 0,
+                  "segments": 0
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 7.83,
+                  "segments": 7
+                }
+              ]
+            },
+            {
+              "name": "San Bruno",
+              "miles": 6.4,
+              "segments": 4,
+              "byClass": [
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 6.4,
+                  "segments": 4
+                }
+              ]
+            },
+            {
+              "name": "Millbrae",
+              "miles": 5.87,
+              "segments": 3,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 2.15,
+                  "segments": 3
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 3.72,
+                  "segments": 0
+                }
+              ]
+            },
+            {
+              "name": "Colma",
+              "miles": 5.8,
+              "segments": 5,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.73,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 5.07,
+                  "segments": 4
+                }
+              ]
+            },
+            {
+              "name": "Brisbane",
+              "miles": 5.21,
+              "segments": 6,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 1.6,
+                  "segments": 3
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 1.46,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 2.15,
+                  "segments": 2
+                }
+              ]
+            },
+            {
+              "name": "Woodside",
+              "miles": 4.98,
+              "segments": 2,
+              "byClass": [
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 2,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 2.98,
+                  "segments": 1
+                }
+              ]
+            },
+            {
+              "name": "Atherton",
+              "miles": 4.89,
+              "segments": 2,
+              "byClass": [
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 1.05,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 3.84,
+                  "segments": 1
+                }
+              ]
+            },
+            {
+              "name": "Half Moon Bay",
+              "miles": 4.81,
+              "segments": 5,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 3.23,
+                  "segments": 3
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 1.58,
+                  "segments": 2
+                }
+              ]
+            },
+            {
+              "name": "Hillsborough",
+              "miles": 1.79,
+              "segments": 1,
+              "byClass": [
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 1.58,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 0.21,
+                  "segments": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Santa Clara": {
+          "fips": "06085",
+          "totalMiles": 1040.9,
+          "totalSegments": 1697,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 129.37,
+              "segments": 228
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 620.81,
+              "segments": 2753
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 195.48,
+              "segments": 758
+            },
+            {
+              "class": 4,
+              "className": "Class IV - Separated Bikeway",
+              "miles": 95.23,
+              "segments": 500,
+              "supplemental": true
+            }
+          ],
+          "byCity": [
+            {
+              "name": "San Jose",
+              "miles": 576.47,
+              "segments": 3117,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 63.85,
+                  "segments": 69,
+                  "source": "San Jose Open Data",
+                  "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways",
+                  "supplemental": true
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 308.07,
+                  "segments": 1989,
+                  "source": "San Jose Open Data",
+                  "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways",
+                  "supplemental": true
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 109.31,
+                  "segments": 559,
+                  "source": "San Jose Open Data",
+                  "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways",
+                  "supplemental": true
+                },
+                {
+                  "class": 4,
+                  "className": "Class IV - Separated Bikeway",
+                  "miles": 95.23,
+                  "segments": 500,
+                  "source": "San Jose Open Data",
+                  "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways",
+                  "supplemental": true
+                }
+              ]
+            },
+            {
+              "name": "Gilroy",
+              "miles": 60.51,
+              "segments": 155,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 8.09,
+                  "segments": 11
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 40.96,
+                  "segments": 105
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 11.45,
+                  "segments": 39
+                }
+              ]
+            },
+            {
+              "name": "Mountain View",
+              "miles": 59.75,
+              "segments": 143,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 10.73,
+                  "segments": 20
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 39.88,
+                  "segments": 101
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 9.15,
+                  "segments": 22
+                }
+              ]
+            },
+            {
+              "name": "Palo Alto",
+              "miles": 59.49,
+              "segments": 187,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 8.74,
+                  "segments": 57
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 43.37,
+                  "segments": 119
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 7.39,
+                  "segments": 11
+                }
+              ]
+            },
+            {
+              "name": "Sunnyvale",
+              "miles": 47.29,
+              "segments": 112,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 4.98,
+                  "segments": 10
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 29.02,
+                  "segments": 67
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 13.28,
+                  "segments": 35
+                }
+              ]
+            },
+            {
+              "name": "Unincorporated",
+              "miles": 40.62,
+              "segments": 82,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 18.25,
+                  "segments": 22
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 16.94,
+                  "segments": 41
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 5.43,
+                  "segments": 19
+                }
+              ]
+            },
+            {
+              "name": "Milpitas",
+              "miles": 36.95,
+              "segments": 80,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.89,
+                  "segments": 7
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 23.8,
+                  "segments": 48
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 12.26,
+                  "segments": 25
+                }
+              ]
+            },
+            {
+              "name": "Santa Clara",
+              "miles": 34.06,
+              "segments": 76,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 1.7,
+                  "segments": 6
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 30.48,
+                  "segments": 67
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 1.88,
+                  "segments": 3
+                }
+              ]
+            },
+            {
+              "name": "Cupertino",
+              "miles": 30.68,
+              "segments": 97,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.09,
+                  "segments": 1
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 30.59,
+                  "segments": 96
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 0,
+                  "segments": 0
+                }
+              ]
+            },
+            {
+              "name": "Saratoga",
+              "miles": 29.01,
+              "segments": 55,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.37,
+                  "segments": 1
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 15.2,
+                  "segments": 30
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 13.44,
+                  "segments": 24
+                }
+              ]
+            },
+            {
+              "name": "Los Altos",
+              "miles": 22.99,
+              "segments": 37,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.34,
+                  "segments": 1
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 12.09,
+                  "segments": 17
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 10.56,
+                  "segments": 19
+                }
+              ]
+            },
+            {
+              "name": "Morgan Hill",
+              "miles": 19.59,
+              "segments": 50,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 0.79,
+                  "segments": 1
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 18.8,
+                  "segments": 49
+                }
+              ]
+            },
+            {
+              "name": "Campbell",
+              "miles": 11.63,
+              "segments": 22,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 6.27,
+                  "segments": 18
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 5.36,
+                  "segments": 4
+                }
+              ]
+            },
+            {
+              "name": "Los Gatos",
+              "miles": 10.23,
+              "segments": 23,
+              "byClass": [
+                {
+                  "class": 1,
+                  "className": "Class I - Bike Path",
+                  "miles": 4.27,
+                  "segments": 4
+                },
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 5.68,
+                  "segments": 19
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 0.28,
+                  "segments": 0
+                }
+              ]
+            },
+            {
+              "name": "Monte Sereno",
+              "miles": 1.57,
+              "segments": 3,
+              "byClass": [
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 0.56,
+                  "segments": 1
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 1.02,
+                  "segments": 2
+                }
+              ]
+            },
+            {
+              "name": "Los Altos Hills",
+              "miles": 0.05,
+              "segments": 0,
+              "byClass": [
+                {
+                  "class": 2,
+                  "className": "Class II - Bike Lane",
+                  "miles": 0,
+                  "segments": 0
+                },
+                {
+                  "class": 3,
+                  "className": "Class III - Bike Route",
+                  "miles": 0.04,
+                  "segments": 0
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
