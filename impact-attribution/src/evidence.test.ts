@@ -43,6 +43,13 @@ describe('evidenceComment', () => {
     );
   });
 
+  it('names a Mailchimp profile answer by its source', () => {
+    const mailchimp: AnswerRow = { ...a('Acme', '2026-11-20', 'Mailchimp profile'), source: 'mailchimp' };
+    expect(evidenceComment('Acme', [], [mailchimp])).toBe(
+      'Proposed from the Employer field on their Mailchimp profile: "Acme" (Mailchimp profile, 2026-11-20)',
+    );
+  });
+
   it('puts match lines before answer lines when mixed', () => {
     expect(evidenceComment('Acme', [m('2026-05-01', 50000)], [a('Acme', '2027-01-20')])).toBe(
       'Proposed from 1 matching gifts by Acme:\n2026-05-01 $500.00\nProposed from an Eventbrite answer: "Acme" (Pledge to Ride 2027, 2027-01-20)',

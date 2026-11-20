@@ -13,6 +13,7 @@ const CONFIG: Config = {
   journeyLog: null,
   profileLinks: null,
   stewardship: null,
+  employerAnswers: null,
 };
 
 function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {

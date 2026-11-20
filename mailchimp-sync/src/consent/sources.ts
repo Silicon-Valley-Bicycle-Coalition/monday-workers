@@ -22,9 +22,15 @@ export interface MailchimpListOptions {
   // When given, filled with each non-archived member's unique_email_id (the `e` in Mailchimp's
   // hosted preferences page URL), for the Email Preferences link on People (src/profileLinks).
   uniqueEmailIds?: Map<string, string>;
+  // When given, filled with the `field` merge field of each member whose address was confirmed
+  // (subscribed or unsubscribed), blank values left out, for the employer-answer hand-over
+  // (src/employerAnswers). A pending signup is unconfirmed and anyone can start one for any
+  // address; cleaned, transactional and archived members are left out too.
+  employers?: { field: string; into: Map<string, string> };
 }
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const EMPLOYER_STATUSES: ReadonlySet<string> = new Set(['subscribed', 'unsubscribed']);
 const FIELDS = 'total_items,members.email_address,members.status,members.web_id,members.unique_email_id';
 
 /**
@@ -45,7 +51,8 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
   let total: number | null = null;
   let read = 0;
   do {
-    const params = new URLSearchParams({ count: String(pageSize), offset: String(offset), fields: FIELDS });
+    const fields = opts.employers === undefined ? FIELDS : `${FIELDS},members.merge_fields.${opts.employers.field}`;
+    const params = new URLSearchParams({ count: String(pageSize), offset: String(offset), fields });
     if (archived) params.set('status', 'archived');
     const response = await opts.fetchFn(`${opts.apiBaseUrl}/lists/${opts.audienceId}/members?${params}`, {
       headers: { Authorization: auth },
@@ -54,7 +61,10 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
     if (!response.ok) {
       throw new Error(`mailchimp list members${archived ? ' (archived)' : ''}: HTTP ${response.status} at offset ${offset}`);
     }
-    const page = (await response.json()) as { total_items: number; members: { email_address: string; status: string; web_id?: number; unique_email_id?: string }[] };
+    const page = (await response.json()) as {
+      total_items: number;
+      members: { email_address: string; status: string; web_id?: number; unique_email_id?: string; merge_fields?: Record<string, unknown> }[];
+    };
     // Offset paging shifts when a member is archived or deleted mid-read, skipping one while the
     // final count can still match. A total that moves between pages is that shift: start over
     // next hour rather than plan on a read with a member missing.
@@ -69,6 +79,10 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
       // Archived members can't be emailed and have no preferences page to link to.
       if (!archived && opts.uniqueEmailIds !== undefined && typeof m.unique_email_id === 'string' && m.unique_email_id !== '') {
         opts.uniqueEmailIds.set(address, m.unique_email_id);
+      }
+      if (opts.employers !== undefined && !archived && EMPLOYER_STATUSES.has(m.status)) {
+        const value = m.merge_fields?.[opts.employers.field];
+        if (typeof value === 'string' && value.trim() !== '') opts.employers.into.set(address, value);
       }
     }
     read += page.members.length;

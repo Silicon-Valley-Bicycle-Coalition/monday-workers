@@ -29,6 +29,8 @@ import { listJourneyEmails, readAddress, readSendTime, readSentTo } from './jour
 import { D1JourneySendStore } from './db/journeySends';
 import { adminBaseUrl, createProfileLinksMonday, runProfileLinks } from './profileLinks/run';
 import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
+import { createEmployerPeople, runEmployerAnswers } from './employerAnswers/run';
+import { D1EmployerAnswerStore } from './employerAnswers/store';
 import { isMondayOutage } from './monday/outage';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import { environmentOf } from './environment';
@@ -146,7 +148,8 @@ export default {
   // A failed run is logged, not thrown, so Workers Issues shows the error line.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const config = configFor(env);
-    // Three crons (wrangler.jsonc): the hourly consent sync (with the Mailchimp Profile links),
+    // Three crons (wrangler.jsonc): the hourly consent sync (with the Mailchimp Profile links and
+    // the employer-answer hand-over),
     // the hourly Journey send log, and the daily one that keeps the renewal-due tag and runs the
     // Campaigns reconcile. Any other cron string, or none, runs the daily work, as the one cron
     // did before.
@@ -155,11 +158,13 @@ export default {
       // Same tuning as HttpMondayClient's: a few in-process retries; the next hour does the rest.
       const transport = new MondayGraphQL(config.monday.apiUrl, tokenProviderFor(env), { maxAttempts: 3, requestTimeoutMs: 20_000 });
       const request = <T>(query: string, variables: Record<string, unknown>) => transport.request<T>(query, variables);
-      // One member read for both steps: consent statuses, and each member's web_id and
-      // unique_email_id for the Mailchimp Profile and Email Preferences links. A failed read fails
-      // both, so neither plans on a partial audience.
+      // One member read for every step: consent statuses, each member's web_id and unique_email_id
+      // for the Mailchimp Profile and Email Preferences links, and the Employer field when the
+      // hand-over is configured. A failed read fails them all, so none plans on a partial audience.
       const webIds = new Map<string, number>();
       const uniqueEmailIds = new Map<string, string>();
+      const employers = new Map<string, string>();
+      const employerSettings = config.employerAnswers;
       let memberRead: Promise<Map<string, string>> | undefined;
       const readStatuses = () => (memberRead ??= readMailchimpStatuses({
         fetchFn: fetch.bind(globalThis),
@@ -168,6 +173,7 @@ export default {
         audienceId: config.mailchimp.audienceId,
         webIds,
         uniqueEmailIds,
+        ...(employerSettings === null ? {} : { employers: { field: employerSettings.mergeField, into: employers } }),
       }));
       try {
         const gate = await skipContext(env);
@@ -192,6 +198,20 @@ export default {
         });
       } catch (err) {
         console.error(`mailchimp-sync profile-links: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+      }
+      // Last, with what is left; answers it doesn't reach wait for the next hour.
+      try {
+        await runEmployerAnswers(await skipContext(env), {
+          settings: employerSettings,
+          sink: env.EMPLOYER_ANSWERS ?? null,
+          readAnswers: () => readStatuses().then(() => employers),
+          people: createEmployerPeople(request),
+          store: new D1EmployerAnswerStore(env.DB),
+          isOutage: isMondayOutage,
+          deadline: started + 14 * 60_000,
+        });
+      } catch (err) {
+        console.error(`mailchimp-sync employer-answers: run failed: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
       }
       return;
     }

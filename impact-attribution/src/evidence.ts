@@ -18,6 +18,7 @@ const escapeHtml = (s: string): string =>
 const SOURCE_PHRASES: Record<string, string> = {
   eventbrite: 'an Eventbrite answer',
   funraise: 'the matching-gift company on a Funraise gift',
+  mailchimp: 'the Employer field on their Mailchimp profile',
 };
 const sourcePhrase = (source: string): string => SOURCE_PHRASES[source] ?? `a ${source} answer`;
 

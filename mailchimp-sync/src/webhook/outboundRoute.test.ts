@@ -15,6 +15,7 @@ const CONFIG: Config = {
   journeyLog: null,
   profileLinks: null,
   stewardship: null,
+  employerAnswers: null,
 };
 
 const SECRET = 'test-webhook-secret';

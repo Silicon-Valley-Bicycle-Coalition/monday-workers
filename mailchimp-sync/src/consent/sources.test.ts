@@ -63,6 +63,24 @@ describe('readMailchimpStatuses', () => {
     expect(decodeURIComponent(urls[0]!)).toContain('members.unique_email_id');
   });
 
+  it('fills employers with the merge field of confirmed members only: blank, unconfirmed and archived left out', async () => {
+    const { fetchFn, urls } = mailchimpFetch({
+      default: [
+        { email_address: 'Pat@Example.org', status: 'subscribed', merge_fields: { EMPLOYER: 'Acme Corp' } },
+        { email_address: 'blank@x.org', status: 'subscribed', merge_fields: { EMPLOYER: '  ' } },
+        { email_address: 'none@x.org', status: 'unsubscribed' },
+        { email_address: 'left@x.org', status: 'unsubscribed', merge_fields: { EMPLOYER: 'Initech' } },
+        { email_address: 'forged@x.org', status: 'pending', merge_fields: { EMPLOYER: 'Evil Corp' } },
+        { email_address: 'bounced@x.org', status: 'cleaned', merge_fields: { EMPLOYER: 'Gone Co' } },
+      ] as never,
+      archived: [{ email_address: 'c@x.org', status: 'archived', merge_fields: { EMPLOYER: 'Old Co' } } as never],
+    });
+    const employers = new Map<string, string>();
+    await readMailchimpStatuses({ ...opts(fetchFn), employers: { field: 'EMPLOYER', into: employers } });
+    expect([...employers]).toEqual([['pat@example.org', 'Acme Corp'], ['left@x.org', 'Initech']]);
+    for (const url of urls) expect(decodeURIComponent(url)).toContain(',members.merge_fields.EMPLOYER');
+  });
+
   it('pages by offset until total_items', async () => {
     const members = ['a', 'b', 'c'].map((n) => ({ email_address: `${n}@x.org`, status: 'subscribed' }));
     const { fetchFn, urls } = mailchimpFetch({ default: members, archived: [] });

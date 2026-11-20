@@ -50,7 +50,7 @@ the Worker's own writes come back as events.
 
 | Schedule | Job |
 |---|---|
-| `5 * * * *` (hourly) | **Consent sync:** sets Personal, Household and Work Email Consent to Mailchimp's status (Subscribed, Unsubscribed, Cleaned, Not in Mailchimp). Then **Mailchimp Profile links**, when configured |
+| `5 * * * *` (hourly) | **Consent sync:** sets Personal, Household and Work Email Consent to Mailchimp's status (Subscribed, Unsubscribed, Cleaned, Not in Mailchimp). Then the **Mailchimp Profile and Email Preferences links** (on in production), and the **Employer field** on Mailchimp profiles handed to impact-attribution as proposed employers (off in production until `employerAnswers` is set) |
 | `20 * * * *` (hourly) | **Journey send log:** logs Customer Journey sends as timeline entries on People. Off in production (`journeyLog: null`) |
 | `0 15 * * *` (daily) | `renewal-due` tag (Member Until within 28 days, Pacific time), Campaigns board reconcile (skips itself with no board), and stewardship labels when configured |
 

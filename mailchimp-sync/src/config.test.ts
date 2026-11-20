@@ -342,6 +342,24 @@ describe('validateConfig: consent', () => {
     expect(() => validateConfig(raw)).toThrow(/profileLinks/);
   });
 
+  it('reads employerAnswers, off when absent or null', () => {
+    const raw = validRaw() as Record<string, unknown>;
+    expect(validateConfig(raw).employerAnswers).toBeNull();
+    raw.employerAnswers = null;
+    expect(validateConfig(raw).employerAnswers).toBeNull();
+    raw.employerAnswers = { mergeField: 'EMPLOYER', boardId: 1, emailColumns: ['e1', 'e2'], maxAnswersPerRun: 50 };
+    expect(validateConfig(raw).employerAnswers).toEqual(raw.employerAnswers);
+  });
+
+  it('rejects an employerAnswers missing what it needs', () => {
+    const base = { mergeField: 'EMPLOYER', boardId: 1, emailColumns: ['e1'], maxAnswersPerRun: 50 };
+    for (const bad of [{ mergeField: 'employer' }, { mergeField: 'EMPLOYERNAME1' }, { mergeField: '' }, { boardId: '1' }, { emailColumns: [] }, { maxAnswersPerRun: 0 }]) {
+      const raw = validRaw() as Record<string, unknown>;
+      raw.employerAnswers = { ...base, ...bad };
+      expect(() => validateConfig(raw)).toThrow(/employerAnswers/);
+    }
+  });
+
   const stewardship = () => ({
     boardId: 1,
     columns: {

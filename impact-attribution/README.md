@@ -134,8 +134,14 @@ as `source: 'funraise'`, `sourceId` the transaction id. It is weaker still (ofte
 past employer), so it only fills a gap: a resolved Funraise answer is `skipped` when the person
 already has a **Current** Affiliation with any organization. Eventbrite answers have no such rule.
 
+`mailchimp-sync` hands over a third ([#7](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/7)):
+the optional Employer field a member fills in on their Mailchimp profile (the preference center), as
+`source: 'mailchimp'`, `sourceId` `<member hash>:<answer hash>` (a changed answer is a new row; the
+ids carry no text), context `Mailchimp profile`. Like an Eventbrite answer it is the person's own
+statement, so it has no Current-affiliation rule.
+
 **The RPC.** `EmployerAnswers` (`src/answers/entrypoint.ts`) has one method, `recordEmployerAnswer({
-source: 'eventbrite' | 'funraise', sourceId, personItemId, answer, answeredAt, context })`. It returns `{ recorded:
+source: 'eventbrite' | 'funraise' | 'mailchimp', sourceId, personItemId, answer, answeredAt, context })`. It returns `{ recorded:
 true }`, or `{ recorded: false, reason }` for anything that will never pass (`disabled`: no
 `employerAnswers` config; `invalid`; `non-answer`: blank or on the `ignore` list; `closed`: the row was
 already decided). It throws only on a transient failure (D1), so the caller retries. The answer and

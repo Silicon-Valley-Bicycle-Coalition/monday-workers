@@ -99,7 +99,13 @@
   // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
   // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
   // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
-  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // EMPLOYER_ANSWERS: impact-attribution's EmployerAnswers RPC (GitHub #7), which the Employer field
+  // on members' Mailchimp profiles is handed to. Off until config employerAnswers is set; removing
+  // the binding switches it off too.
+  "services": [
+    { "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" },
+    { "binding": "EMPLOYER_ANSWERS", "service": "svbc-impact-attribution", "entrypoint": "EmployerAnswers" }
+  ],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-mailchimp-sync-sandbox
   // against the CRM Sandbox People board and the *sandbox* Mailchimp audience named in
@@ -168,8 +174,12 @@
         "enabled": true,
         "issues": { "enabled": true }
       },
-      // The sandbox broker, consented as Sandbox Integration.
-      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
+      // The sandbox broker, consented as Sandbox Integration, and the sandbox impact-attribution's
+      // EmployerAnswers RPC (GitHub #7).
+      "services": [
+        { "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" },
+        { "binding": "EMPLOYER_ANSWERS", "service": "svbc-impact-attribution-sandbox", "entrypoint": "EmployerAnswers" }
+      ]
     }
   }
 }
