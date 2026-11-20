@@ -39,6 +39,13 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
    `do-not-solicit` tag. Then set **DNS Reason Status** to **Confirmed**: the contact is
    **unsubscribed** in Mailchimp. Unchecking the box later removes the tag but does not
    re-subscribe them; that is deliberate.
+4a. **Member portal email preference.** Sign in to the sandbox member portal as a person whose
+   Personal Email is in the SVBC Sandbox audience. On **Profile → Communication preferences**,
+   set Email to **Opted out**: within a minute the contact is **unsubscribed** in Mailchimp, and
+   within the hour that person's **Personal Email Consent** reads Unsubscribed. Set it back to
+   **Subscribed**: Mailchimp emails that address a confirm link, and the contact shows
+   **pending** until the link is clicked. Texts (SMS) and postal mail change the person's **SMS
+   Opt-Out** and **Do Not Mail** checkboxes on People instead.
 5. **Mailchimp to Monday.** In Mailchimp, change the contact's interests (the groups on their
    profile) or unsubscribe them. Back on People, the person's **Mailchimp Campaigns** column
    should update to list the groups they are now in.

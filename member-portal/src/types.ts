@@ -22,7 +22,6 @@ export interface MondayColumns {
   // Optional: the People board's Household Email, a second address that also signs a donor in.
   // Absent or the placeholder, sign-in matches Personal Email only.
   donorHouseholdEmail: string;
-  donorEmailOptOut: string;
   donorSmsOptOut: string;
   donorDoNotMail: string;
   volunteerDonorLink: string;
@@ -482,6 +481,10 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
+  // member-portal-writer only: mailchimp-sync's PreferenceSync entrypoint (wrangler.writer.jsonc
+  // services), which sets a member's email preference in Mailchimp. Typed as the RPC it stands in
+  // for, like MONDAY_AUTH.
+  MAILCHIMP_PREFS?: import('./changeRequests/applyPreference').EmailPreferenceSink;
   EMAIL: SendEmail;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
   LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;

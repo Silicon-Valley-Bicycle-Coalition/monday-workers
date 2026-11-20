@@ -37,6 +37,10 @@ export interface ChangeRequestStore {
   findRecentByDedupeHash(dedupeHash: string, sinceISO: string): Promise<RecentDedupeMatch | null>;
   getRequest(id: number): Promise<ChangeRequestRow | null>;
   markWritten(id: number, writtenAtISO: string): Promise<void>;
+  // Whether a later request (a higher id) exists for the same donor and field. The writer applies
+  // a preference only while it's the member's latest, so out-of-order queue delivery can't let an
+  // older choice land last.
+  hasNewerRequest(row: { id: number; donorItemId: string; field: string }): Promise<boolean>;
   // Retention purge: rows carry donor PII (donor_name, old_value, new_value) with no purpose
   // once written to Monday, so 'written' rows past the retention window are deleted outright
   // rather than field-scrubbed. 'queued' rows are never touched — they may still be pending
@@ -111,6 +115,14 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
       status: row.status,
       createdAt: row.created_at,
     };
+  }
+
+  async hasNewerRequest(row: { id: number; donorItemId: string; field: string }): Promise<boolean> {
+    const found = await this.db
+      .prepare(`SELECT 1 FROM change_requests WHERE donor_item_id = ?1 AND field = ?2 AND id > ?3 LIMIT 1`)
+      .bind(row.donorItemId, row.field, row.id)
+      .first();
+    return found !== null;
   }
 
   async markWritten(id: number, writtenAtISO: string): Promise<void> {

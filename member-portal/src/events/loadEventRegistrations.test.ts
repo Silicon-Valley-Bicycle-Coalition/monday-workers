@@ -27,6 +27,7 @@ function fakeMonday(registrationsByDonor: Record<string, EventRegistrationRecord
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn(),
     getVolunteerShiftsForDonor: vi.fn(),
     getPledgesForDonor: vi.fn().mockResolvedValue([]),

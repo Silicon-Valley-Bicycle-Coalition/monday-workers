@@ -26,9 +26,9 @@ import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
 import { loadHomeData, type HomeData, type TabKey } from './home/loadHomeData';
 import { TAB_TITLES, portalView } from './home/homeView';
-import { benefitsTabView } from './doors/card';
+import { benefitsTabView, cardCodeSection } from './doors/card';
 import { givingTabData, givingTabView } from './doors/giving';
-import { eventsTabView, loadEventsTab, volunteeringTabView } from './doors/activity';
+import { eventsTabView, volunteeringTabView } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
 import { signInEmailHash } from './doors/emailLabels';
 import { findTestPersonasByEmail } from './testAccounts/personas';
@@ -59,10 +59,11 @@ import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } f
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersSection, lettersUnavailableView } from './letters/letterViews';
-import { submitChangeRequest } from './changeRequests/submitChangeRequest';
+import type { ChangeRequestField } from './db/changeRequests';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
-import { changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { changeRequestsUnavailableView, contactChangesResultView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { CONTACT_FIELDS, submitContactChanges } from './changeRequests/submitContactChanges';
 import { buildCardData } from './card/loadCardData';
 import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
@@ -674,13 +675,11 @@ export function createApp(deps: AppDeps) {
   );
 
   app.get('/:locale/portal/events', (c) =>
-    portalTab(c, 'events', (session, locale) => {
-      const eventsLeg = loadEventsTab(session.donorItemIds, deps);
-      return async (home) => {
-        const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
-        const household = people.length + home.unavailableCount > 1;
-        return { panel: eventsTabView(people, household, await eventsLeg, deps.config.getInvolved.links, locale) };
-      };
+    portalTab(c, 'events', (_session, locale) => async (home) => {
+      const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
+      const household = people.length + home.unavailableCount > 1;
+      // The header already read the registrations (for Events attended).
+      return { panel: eventsTabView(people, household, home.events, deps.config.getInvolved.links, locale) };
     })
   );
 
@@ -838,11 +837,11 @@ export function createApp(deps: AppDeps) {
         console.error(`member-portal info load failed: ${errorText(err)}`);
         return null;
       });
-      return async () => {
+      return async (home) => {
         const data = await infoLeg;
         // No one's record loaded: this route's own copy, not the global onError's login-flavored one.
         if (data === null) return { panel: errorView('error.changeRequestLoadFailed', locale), status: 500 };
-        return { panel: infoDoorView(data, locale) };
+        return { panel: infoDoorView(data, locale, { cardCodes: cardCodeSection(home, locale), change: c.req.query('change') ?? null }) };
       };
     })
   );
@@ -879,21 +878,30 @@ export function createApp(deps: AppDeps) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
     }
 
+    // The whole contact form: one value per field (src/changeRequests/submitContactChanges.ts
+    // files a request for each one that differs from Monday).
     const body = await c.req.parseBody();
-    const input = {
-      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
-      field: typeof body.field === 'string' ? body.field : '',
-      newValue: typeof body.newValue === 'string' ? body.newValue : '',
-    };
-
-    const result = await submitChangeRequest(donorItemIds, input, {
-      monday: deps.monday,
-      ...changeSinks(donorItemIds, mode),
-      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
-      now: deps.now,
-      employerEnabled: employerAnswerEnabled(deps.config),
-    });
-    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale, { authenticated: true }));
+    const values: Partial<Record<ChangeRequestField, string>> = {};
+    for (const { field } of CONTACT_FIELDS) {
+      const value = body[field];
+      if (typeof value === 'string') values[field] = value;
+    }
+    const result = await submitContactChanges(
+      donorItemIds,
+      {
+        donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+        values,
+        emailWas: typeof body.emailWas === 'string' ? body.emailWas : '',
+      },
+      {
+        monday: deps.monday,
+        ...changeSinks(donorItemIds, mode),
+        dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+        now: deps.now,
+        employerEnabled: employerAnswerEnabled(deps.config),
+      }
+    );
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), contactChangesResultView(result, locale), locale, { authenticated: true }));
   });
 
   app.post('/:locale/portal/change-request/preferences', async (c) => {
@@ -942,6 +950,13 @@ export function createApp(deps: AppDeps) {
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
+    // The Profile tab's script saves each change as it's made and asks for JSON. Only the result
+    // comes back that way: every earlier exit (feature off, write switch, rate limit, expired
+    // session) stays a page, which the script treats as "submit the form for real" so the member
+    // sees it.
+    if ((c.req.header('Accept') ?? '').includes('application/json')) {
+      return c.json({ kind: result.kind }, result.kind === 'invalid' ? 400 : 200);
+    }
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), preferencesResultView(result, locale), locale, { authenticated: true }));
   });
 
@@ -1069,9 +1084,9 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // Back to Benefits, whose header card picks up the freshly regenerated token on render
-    // (getOrCreateCardToken reads whatever is currently active).
-    return c.redirect(`/${locale}/portal`);
+    // Back to Profile, where the button lives; the header card picks up the freshly regenerated
+    // token on render (getOrCreateCardToken reads whatever is currently active).
+    return c.redirect(`/${locale}/portal/info`);
   });
 
   // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR

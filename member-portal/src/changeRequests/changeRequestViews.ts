@@ -2,27 +2,30 @@ import { escapeHtml } from '../views';
 import type { DonorContactInfo, PrefField } from '../types';
 import type { SubmitResult } from './submitChangeRequest';
 import type { PreferencesResult } from './submitPreferences';
+import type { ContactChangesResult } from './submitContactChanges';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 import type { TranslationKey } from '../i18n/t';
-
-function donorOption(donor: DonorContactInfo): string {
-  return `<option value="${escapeHtml(donor.id)}">${escapeHtml(donor.name)}</option>`;
-}
 
 // 'off': no Employer field; 'on': offered; 'preselected': offered and chosen (?field=employer).
 export type EmployerFieldMode = 'off' | 'on' | 'preselected';
 
 // No email row: the info door's address list is the one place addresses show, under the
 // household privacy rule (src/doors/emailLabels.ts).
-function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode): string {
+
+// The section heading names what this is; a household's per-person heading is just the name.
+function personHeading(donor: DonorContactInfo, household: boolean): string {
+  return household ? `<h3>${escapeHtml(donor.name)}</h3>` : '';
+}
+
+function donorCurrentValues(donor: DonorContactInfo, locale: Locale, employerField: EmployerFieldMode, household: boolean): string {
   const employerRow =
     employerField === 'off'
       ? ''
       : `<dt>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</dt><dd>${escapeHtml(donor.employer)}</dd>`;
   return `
     <section>
-      <h3>${escapeHtml(t(locale, 'changeRequest.currentDetailsHeading', { name: donor.name }))}</h3>
+      ${personHeading(donor, household)}
       <dl>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</dt><dd>${escapeHtml(donor.address)}</dd>
         <dt>${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</dt><dd>${escapeHtml(donor.phone)}</dd>
@@ -41,24 +44,30 @@ const PREF_COPY: Record<PrefField, { label: TranslationKey; yes: TranslationKey;
   doNotMail: { label: 'changeRequest.prefDoNotMail', yes: 'changeRequest.prefMailYes', no: 'changeRequest.prefMailNo' },
 };
 
-function prefRadioPair(field: PrefField, optedOut: boolean, locale: Locale): string {
+// One table row per preference: the channel as the row header, then its two choices, the receiving
+// one first, so every row's choices line up in the same two columns. Each radio is described by
+// its row header, so tabbing between them still names the channel.
+function prefRow(donorId: string, field: PrefField, optedOut: boolean, locale: Locale): string {
   const copy = PREF_COPY[field];
-  return `
-    <fieldset>
-      <legend>${escapeHtml(t(locale, copy.label))}</legend>
-      <label><input type="radio" name="${field}" value="yes"${optedOut ? ' checked' : ''} /> ${escapeHtml(t(locale, copy.yes))}</label>
-      <label><input type="radio" name="${field}" value="no"${optedOut ? '' : ' checked'} /> ${escapeHtml(t(locale, copy.no))}</label>
-    </fieldset>
-  `;
+  const headerId = escapeHtml(`pref-${donorId}-${field}`);
+  const choice = (value: 'yes' | 'no', key: TranslationKey, checked: boolean) =>
+    `<td><label><input type="radio" name="${field}" value="${value}" aria-describedby="${headerId}"${checked ? ' checked' : ''} /> ${escapeHtml(t(locale, key))}</label></td>`;
+  // The last cell is where the tab script shows the spinning wheel while that row saves, then a
+  // check; it's a polite live region so a screen reader hears "Saving…" and "Saved".
+  return `<tr><th scope="row" id="${headerId}">${escapeHtml(t(locale, copy.label))}</th>${choice('no', copy.no, !optedOut)}${choice('yes', copy.yes, optedOut)}<td class="pref-status" aria-live="polite"></td></tr>`;
 }
 
-function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], locale: Locale): string {
+// With the tab script each change saves as it's made (no button); without it, the form posts.
+function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], locale: Locale, household: boolean): string {
   return `
     <section>
-      <h3>${escapeHtml(t(locale, 'changeRequest.prefsHeading', { name: donor.name }))}</h3>
+      ${personHeading(donor, household)}
       <form class="prefs-form" action="/${locale}/portal/change-request/preferences" method="post">
         <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
-        ${prefFields.map((field) => prefRadioPair(field, donor[field] === true, locale)).join('')}
+        <table class="prefs-table" data-saving="${escapeHtml(t(locale, 'changeRequest.prefsSaving'))}" data-saved="${escapeHtml(t(locale, 'changeRequest.prefsSaved'))}">
+          <tbody>${prefFields.map((field) => prefRow(donor.id, field, donor[field] === true, locale)).join('')}</tbody>
+        </table>
+        ${prefFields.includes('emailOptOut') ? `<p class="prefs-note">${escapeHtml(t(locale, 'changeRequest.prefEmailConfirmNote'))}</p>` : ''}
         <button type="submit">${escapeHtml(t(locale, 'changeRequest.prefsSubmit'))}</button>
       </form>
     </section>
@@ -68,42 +77,86 @@ function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], 
 function preferencesSection(donors: DonorContactInfo[], prefFields: PrefField[], locale: Locale): string {
   if (prefFields.length === 0) return '';
   return `
-    <h2>${escapeHtml(t(locale, 'changeRequest.prefsIntro'))}</h2>
-    ${donors.map((d) => donorPreferencesForm(d, prefFields, locale)).join('')}
+    <h2>${escapeHtml(t(locale, 'changeRequest.prefsSectionHeading'))}</h2>
+    <p>${escapeHtml(t(locale, 'changeRequest.prefsIntro'))}</p>
+    ${donors.map((d) => donorPreferencesForm(d, prefFields, locale, donors.length > 1)).join('')}
   `;
 }
 
-// The info door's first section (src/doors/info.ts), which supplies the page heading, the
-// unavailable-records note and the way home.
-export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale, prefFields: PrefField[], employerField: EmployerFieldMode = 'off'): string {
-  const employerOption =
+// One field of the contact form: its label, a "Changed" mark the tab script shows once the value
+// differs from what was prefilled (with the highlight, so the cue isn't colour alone), the input.
+function contactField(name: string, label: TranslationKey, value: string, locale: Locale, attrs: string): string {
+  return `<label class="contact-field">
+          <span class="contact-field-label">${escapeHtml(t(locale, label))} <span class="changed-mark">${escapeHtml(t(locale, 'changeRequest.changedMark'))}</span></span>
+          <input name="${name}" value="${escapeHtml(value)}" maxlength="500" ${attrs} />
+        </label>`;
+}
+
+export interface ContactFormOptions {
+  employerField?: EmployerFieldMode;
+  // The donor whose dialog renders already open: ?change=<id> (the no-script path; any other
+  // value opens the first person's), or the first person for an emailed ?field=employer.
+  openFor?: string | null;
+  // The email address to prefill per donor id: only one the session may already see on this tab
+  // (src/doors/info.ts). Anyone else's field starts empty, and an empty field is no change.
+  emailPrefill?: Record<string, string>;
+}
+
+// Each person's details on file, then their "Request a change" link and dialog: the whole contact
+// form, prefilled, posting every field (submitContactChanges files one request per changed field).
+function personContact(donor: DonorContactInfo, index: number, household: boolean, locale: Locale, options: ContactFormOptions): string {
+  const employerField = options.employerField ?? 'off';
+  const id = `change-request-${index}`;
+  const open = options.openFor === donor.id;
+  const employer =
     employerField === 'off'
       ? ''
-      : `<option value="employer"${employerField === 'preselected' ? ' selected' : ''}>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</option>`;
+      : contactField('employer', 'changeRequest.fieldEmployer', donor.employer, locale, `type="text" autocomplete="organization"${open && employerField === 'preselected' ? ' autofocus' : ''}`);
   return `
-    <h2>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
-    <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
-    ${donors.map((d) => donorCurrentValues(d, locale, employerField)).join('')}
-    <form action="/${locale}/portal/change-request" method="post">
-      <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
-        <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
-      </label>
-      <label>${escapeHtml(t(locale, 'changeRequest.whatToChange'))}
-        <select name="field" required>
-          <option value="address">${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</option>
-          <option value="email">${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</option>
-          <option value="phone">${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</option>
-          <option value="language">${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</option>
-          ${employerOption}
-        </select>
-      </label>
-      <label>${escapeHtml(t(locale, 'changeRequest.newValue'))}
-        <input type="text" name="newValue" maxlength="500" required />
-      </label>
-      <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
-    </form>
-    <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
+    ${donorCurrentValues(donor, locale, employerField, household)}
+    <p><a class="outline-button" href="/${locale}/portal/info?change=${encodeURIComponent(donor.id)}" data-dialog-open="${id}">${escapeHtml(t(locale, 'profile.requestChange'))}</a></p>
+    <dialog id="${id}" class="portal-dialog" aria-labelledby="${id}-title"${open ? ' open data-open-on-load' : ''}>
+      <form method="dialog" class="dialog-close"><button type="submit" aria-label="${escapeHtml(t(locale, 'dialog.close'))}"><span aria-hidden="true">×</span></button></form>
+      <h2 id="${id}-title">${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h2>
+      ${household ? `<p class="contact-form-person">${escapeHtml(donor.name)}</p>` : ''}
+      <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
+      <form class="contact-form" action="/${locale}/portal/change-request" method="post">
+        <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
+        <input type="hidden" name="emailWas" value="${escapeHtml(options.emailPrefill?.[donor.id] ?? '')}" />
+        ${contactField('address', 'changeRequest.fieldAddress', donor.address, locale, 'type="text" autocomplete="street-address"')}
+        ${contactField('email', 'changeRequest.fieldEmail', options.emailPrefill?.[donor.id] ?? '', locale, 'type="email" autocomplete="email"')}
+        ${contactField('phone', 'changeRequest.fieldPhone', donor.phone, locale, 'type="tel" autocomplete="tel"')}
+        ${contactField('language', 'changeRequest.fieldLanguage', donor.preferredLanguage, locale, 'type="text"')}
+        ${employer}
+        <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
+      </form>
+      <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
+    </dialog>`;
+}
+
+// The Profile tab's first section (src/doors/info.ts, which supplies the tab heading and the
+// unavailable-records note): each person's details with a "Request a change" link and dialog, then
+// communication preferences. The tab script opens a dialog as a modal; with no script the link
+// reloads the tab with ?change=<id>, which renders that dialog open in place.
+export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale, prefFields: PrefField[], options: ContactFormOptions = {}): string {
+  const household = donors.length > 1;
+  // The heading is for screen-reader navigation only; on screen the details lead the tab.
+  return `
+    <h2 class="visually-hidden">${escapeHtml(t(locale, 'profile.detailsHeading'))}</h2>
+    ${donors.map((d, i) => personContact(d, i, household, locale, options)).join('')}
     ${preferencesSection(donors, prefFields, locale)}
+  `;
+}
+
+// Maps the whole-form result onto the change request's result copy: any fresh request reads as
+// "submitted", all repeats as "already submitted", nothing changed gets its own note.
+export function contactChangesResultView(result: ContactChangesResult, locale: Locale): string {
+  if (result.kind === 'submitted') return changeRequestResultView({ kind: result.submitted > 0 ? 'submitted' : 'duplicate' }, locale);
+  if (result.kind === 'invalid') return changeRequestResultView(result, locale);
+  return `
+    <h1>${escapeHtml(t(locale, 'changeRequest.prefsNoChangesHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'changeRequest.noChangesBody'))}</p>
+    ${backToInfo(locale)}
   `;
 }
 
@@ -112,12 +165,16 @@ function backToInfo(locale: Locale): string {
   return `<p><a href="/${locale}/portal/info"><span aria-hidden="true">‹ </span>${escapeHtml(t(locale, 'tabs.profile'))}</a></p>`;
 }
 
-// Maps the diff-based preferences result onto the existing result copy where it fits: any fresh
-// submission reads as "submitted", all-duplicates as "already submitted"; only the
-// nothing-changed case needs copy of its own.
+// Preferences aren't reviewed by staff, so a save (fresh or a repeat of one already on file)
+// gets its own "received" copy rather than the change request's "staff will review"; an invalid
+// one reuses the change request's error page.
 export function preferencesResultView(result: PreferencesResult, locale: Locale): string {
   if (result.kind === 'submitted') {
-    return changeRequestResultView({ kind: result.submitted > 0 ? 'submitted' : 'duplicate' }, locale);
+    return `
+    <h1>${escapeHtml(t(locale, 'changeRequest.prefsReceivedHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'changeRequest.prefsReceivedBody'))}</p>
+    ${backToInfo(locale)}
+  `;
   }
   if (result.kind === 'invalid') {
     return changeRequestResultView(result, locale);

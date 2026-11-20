@@ -1,15 +1,177 @@
+// The portal's one script: dialogs, then tab switching.
+//
+// Dialogs: a link with data-dialog-open="<id>" opens that <dialog> as a modal instead of following
+// its href (the no-script fallback, which renders the dialog open in place). A dialog the server
+// rendered open (data-open-on-load) becomes a modal on load, and the query that opened it is
+// dropped from the address, so a reload doesn't reopen it. Clicking the backdrop closes a modal,
+// unless something in it has been typed or changed (a stray click shouldn't lose it).
+//
+// Communication preferences save as they change: a radio change posts its form with
+// Accept: application/json, the row's status cell spins a bike wheel ("Saving…") and then shows a
+// check ("Saved"). Changes queue per form, so each post carries the latest choices. Anything but
+// a JSON success (an expired session, the write switch, a rate limit) submits the form for real,
+// so the member sees that page. html.js hides the forms' buttons.
+//
+// Contact form: a field whose value differs from what was prefilled gets .field-changed, which
+// highlights it and shows its "Changed" mark.
+//
+// Tooltips: an .email-label button shows its tip on hover or keyboard focus (CSS); a tap or click
+// toggles it, for touch and for Safari (which doesn't focus a clicked button); Escape hides any
+// showing tip without moving focus or the pointer (WCAG 1.4.13).
+//
 // Tab switching without moving the page. Each tab is still its own server-rendered page (a plain
 // link works with no script), but with this script a tab click fetches that page and swaps in its
 // panel and tab bar, so the window never scrolls. Anything unexpected (an error status, a
 // redirect such as an expired session, a page without a panel) falls back to following the link.
 // Served as a hashed, same-origin file (static.ts); no panel carries a script of its own, so
-// swapping panel HTML runs nothing. Plain ES5 so it parses in every browser the portal serves.
+// swapping panel HTML runs nothing. After a swap a polite live region names the new tab, since
+// focus stays on the tab bar and a screen reader wouldn't otherwise hear the panel change.
+// Plain ES5 so it parses in every browser the portal serves.
 export const PORTAL_TABS_JS = `(function () {
+  document.documentElement.className += ' js';
+  var WHEEL =
+    '<svg class="pref-wheel" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor">' +
+    '<circle cx="12" cy="12" r="10.5" stroke-width="2"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>' +
+    '<path d="M12 1.5v21M1.5 12h21M4.6 4.6l14.8 14.8M19.4 4.6L4.6 19.4" stroke-width="1"/></svg>';
+  var CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+  function showStatus(cell, icon, text, className) {
+    cell.innerHTML = icon;
+    var label = document.createElement('span');
+    label.textContent = text;
+    cell.appendChild(label);
+    cell.className = 'pref-status' + (className ? ' ' + className : '');
+  }
+
+  document.addEventListener('change', function (event) {
+    var radio = event.target;
+    if (!radio || radio.type !== 'radio' || !window.fetch || !window.FormData) return;
+    var form = radio.closest && radio.closest('form.prefs-form');
+    var table = form && form.querySelector('.prefs-table');
+    var cell = table && radio.closest('tr').querySelector('.pref-status');
+    if (!cell) return;
+    showStatus(cell, WHEEL, table.getAttribute('data-saving'), '');
+    form.portalSave = (form.portalSave || Promise.resolve())
+      .then(function () {
+        return fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      })
+      .then(function (res) {
+        var type = res.headers.get('Content-Type') || '';
+        if (!res.ok || type.indexOf('application/json') < 0) throw new Error('not saved');
+        return res.json();
+      })
+      .then(function () {
+        var radios = form.querySelectorAll('input[type=radio]');
+        for (var i = 0; i < radios.length; i++) radios[i].defaultChecked = radios[i].checked;
+        showStatus(cell, CHECK, table.getAttribute('data-saved'), 'pref-saved');
+        setTimeout(function () {
+          if (cell.className.indexOf('pref-saved') >= 0) cell.innerHTML = '';
+        }, 4000);
+      })
+      .catch(function () {
+        form.submit();
+      });
+  });
+
+  function plainClick(event) {
+    return event.button === 0 && !event.defaultPrevented && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
+  }
+
+  // Any field changed from what the page rendered.
+  function edited(dialog) {
+    var fields = dialog.querySelectorAll('input, select, textarea');
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      if (f.type === 'hidden' || f.type === 'submit') continue;
+      if (f.tagName === 'SELECT') {
+        // With no option marked selected, a single select shows its first.
+        var initialIndex = 0;
+        for (var j = 0; j < f.options.length; j++) if (f.options[j].defaultSelected) initialIndex = j;
+        if (f.selectedIndex !== initialIndex) return true;
+      } else if (f.type === 'radio' || f.type === 'checkbox') {
+        if (f.checked !== f.defaultChecked) return true;
+      } else if (f.value !== f.defaultValue) return true;
+    }
+    return false;
+  }
+
+  function closeTips(except) {
+    var open = document.querySelectorAll('.email-label.tip-open');
+    for (var i = 0; i < open.length; i++) if (open[i] !== except) open[i].classList.remove('tip-open');
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    var tipButton = target && target.closest && target.closest('.email-label');
+    closeTips(tipButton);
+    if (tipButton) {
+      tipButton.classList.remove('tip-dismissed');
+      tipButton.classList.toggle('tip-open');
+      return;
+    }
+    if (target && target.tagName === 'DIALOG' && target.open) {
+      var box = target.getBoundingClientRect();
+      var inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside && !edited(target)) target.close();
+      return;
+    }
+    var opener = target && target.closest && target.closest('[data-dialog-open]');
+    if (!opener || !plainClick(event)) return;
+    var dialog = document.getElementById(opener.getAttribute('data-dialog-open'));
+    if (!dialog || !dialog.showModal) return;
+    event.preventDefault();
+    if (dialog.open) dialog.close();
+    dialog.showModal();
+  });
+
+  // The contact form marks each field whose value differs from what the page prefilled.
+  function markChanged(event) {
+    var field = event.target;
+    var wrap = field && field.closest && field.closest('.contact-field');
+    if (!wrap || !('defaultValue' in field)) return;
+    wrap.classList.toggle('field-changed', field.value.trim() !== field.defaultValue.trim());
+  }
+  document.addEventListener('input', markChanged);
+  document.addEventListener('change', markChanged);
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    var showing = document.querySelectorAll('.email-label.tip-open, .email-label:hover, .email-label:focus');
+    for (var i = 0; i < showing.length; i++) {
+      showing[i].classList.remove('tip-open');
+      showing[i].classList.add('tip-dismissed');
+    }
+  });
+  // A dismissed tip comes back the next time the label is pointed at or focused.
+  function undismiss(event) {
+    var label = event.target && event.target.closest && event.target.closest('.email-label');
+    if (!label) return;
+    var to = event.relatedTarget;
+    if (to && label.contains(to)) return;
+    label.classList.remove('tip-dismissed');
+    if (event.type === 'focusout') label.classList.remove('tip-open');
+  }
+  document.addEventListener('mouseout', undismiss);
+  document.addEventListener('focusout', undismiss);
+
+  var initial = document.querySelector('dialog[data-open-on-load]');
+  if (initial && initial.showModal) {
+    // showModal() throws on a dialog that's already open (non-modally).
+    initial.removeAttribute('open');
+    initial.showModal();
+    // The query that opened it has done its job; a reload or a shared link shouldn't reopen it.
+    if (location.search && history.replaceState) history.replaceState(history.state, '', location.pathname + location.hash);
+  }
+
   var nav = document.getElementById('tabs');
   var panel = document.querySelector('.portal-panel');
   if (!nav || !panel || !window.fetch || !window.DOMParser || !history.pushState) return;
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   var pending = null;
+  var status = document.createElement('p');
+  status.className = 'visually-hidden';
+  status.setAttribute('aria-live', 'polite');
+  document.body.appendChild(status);
 
   function pathOf(url) {
     var u = new URL(url, location.href);
@@ -45,6 +207,8 @@ export const PORTAL_TABS_JS = `(function () {
         document.title = doc.title;
         if (push) history.pushState({ portalTab: true }, '', url);
         panel.removeAttribute('aria-busy');
+        var heading = panel.querySelector('h1');
+        if (heading) status.textContent = heading.textContent;
         holdScroll(y);
         var active = nav.querySelector('[aria-current="page"]');
         if (active && push) active.focus({ preventScroll: true });
@@ -56,8 +220,7 @@ export const PORTAL_TABS_JS = `(function () {
 
   nav.addEventListener('click', function (event) {
     var link = event.target.closest && event.target.closest('a.portal-tab');
-    if (!link || event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!link || !plainClick(event)) return;
     event.preventDefault();
     if (link.getAttribute('aria-current') === 'page') return;
     var current = nav.querySelector('[aria-current="page"]');

@@ -47,7 +47,6 @@ const validConfig = {
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
       donorHouseholdEmail: 'household_email_col',
-      donorEmailOptOut: 'check_email_opt',
       donorSmsOptOut: 'check_sms_opt',
       donorDoNotMail: 'check_no_mail',
       volunteerDonorLink: 'vol_link_col',
@@ -930,7 +929,7 @@ describe('letterCron config section', () => {
 });
 
 describe('communication preference columns', () => {
-  const PREF_COLUMNS = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'] as const;
+  const PREF_COLUMNS = ['donorEmailConsent', 'donorSmsOptOut', 'donorDoNotMail'] as const;
 
   for (const column of PREF_COLUMNS) {
     it(`rejects config missing ${column} entirely`, () => {
@@ -1003,7 +1002,7 @@ describe('configuredPrefFields', () => {
 
   it('returns [] while every preference column is a placeholder', () => {
     const cfg = structuredClone(validConfig);
-    cfg.monday.columns.donorEmailOptOut = 'REPLACE_WITH_COLUMN_ID';
+    cfg.monday.columns.donorEmailConsent = 'REPLACE_WITH_COLUMN_ID';
     cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
     cfg.monday.columns.donorDoNotMail = 'REPLACE_WITH_COLUMN_ID';
     expect(configuredPrefFields(validateConfig(cfg))).toEqual([]);

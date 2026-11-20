@@ -54,7 +54,10 @@ function isChangeRequestField(value: string): value is ChangeRequestField {
 
 export async function submitChangeRequest(
   sessionDonorIds: string[],
-  input: { donorItemId: string; field: string; newValue: string },
+  // `supersedes`: submitPreferences files a preference switched back while an earlier request is
+  // still pending. It skips the dedupe (an identical older request is exactly what it overrides)
+  // and records the pending value as the old one, so staff read "Opted out → Subscribed".
+  input: { donorItemId: string; field: string; newValue: string; supersedes?: { oldValue: string } },
   deps: SubmitDeps
 ): Promise<SubmitResult> {
   // The donorItemId selects among the session's own donor items — never widens them.
@@ -75,7 +78,7 @@ export async function submitChangeRequest(
   const now = deps.now();
   const dedupeHash = await sha256Hex(`${input.donorItemId}|${input.field}|${newValue}`);
   const sinceISO = new Date(now.getTime() - deps.dedupeWindowHours * 3600 * 1000).toISOString();
-  const recentMatch = await deps.store.findRecentByDedupeHash(dedupeHash, sinceISO);
+  const recentMatch = input.supersedes === undefined ? await deps.store.findRecentByDedupeHash(dedupeHash, sinceISO) : null;
   if (recentMatch !== null) {
     // A 'queued' match means an earlier submission's row was written but its queue.send either
     // never ran or threw — the row is stranded with no message in flight. Re-send it now so the
@@ -89,7 +92,9 @@ export async function submitChangeRequest(
 
   const contact = await deps.monday.getDonorContactInfo(input.donorItemId);
   let oldValue: string;
-  if (isPrefField(input.field)) {
+  if (input.supersedes !== undefined) {
+    oldValue = input.supersedes.oldValue;
+  } else if (isPrefField(input.field)) {
     const current = contact[input.field];
     if (current === null) {
       // The backing Donors-board checkbox column isn't configured, so there's no state to change.

@@ -88,17 +88,19 @@ const MATCH_COLUMNS: (keyof MondayColumns)[] = [
 // the communication-preferences feature, which is gated per column (configuredPrefFields), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
 // V2_DONOR_COLUMNS.
-const COMM_PREF_COLUMNS: (keyof MondayColumns)[] = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'];
+const COMM_PREF_COLUMNS: (keyof MondayColumns)[] = ['donorEmailConsent', 'donorSmsOptOut', 'donorDoNotMail'];
 
 // EMPLOYER_COLUMN only matters to the donor employer answer, gated by employerAnswerEnabled.
 // Presence only, not placeholder-freedom — same treatment as COMM_PREF_COLUMNS.
 const EMPLOYER_COLUMN: (keyof MondayColumns)[] = ['donorEmployer'];
 const EMPLOYER_AFFILIATION_COLUMNS = ['personLink', 'organizationLink', 'status', 'primary'] as const;
 
-// Which Donors-board checkbox column backs each preference field. Also fixes the order the
-// preferences render in on the change-request form.
+// Which People-board column backs each preference field: SMS Opt-Out and Do Not Mail are
+// checkboxes the writer sets; email is the Personal Email Consent status mailchimp-sync keeps at
+// Mailchimp's status (the writer changes Mailchimp, not this column). Also fixes the order the
+// preferences render in on the Profile tab.
 export const PREF_FIELD_COLUMNS: Record<PrefField, keyof MondayColumns> = {
-  emailOptOut: 'donorEmailOptOut',
+  emailOptOut: 'donorEmailConsent',
   smsOptOut: 'donorSmsOptOut',
   doNotMail: 'donorDoNotMail',
 };
@@ -554,7 +556,7 @@ export function changeRequestsEnabled(config: Config): boolean {
 }
 
 // Unlike the all-or-nothing changeRequestsEnabled gate, preferences gate per column: an operator
-// can configure just the Email Opt-Out checkbox and ship that alone.
+// can configure just one of them and ship that alone.
 export function configuredPrefFields(config: Config): PrefField[] {
   return (Object.keys(PREF_FIELD_COLUMNS) as PrefField[]).filter((field) => {
     const columnId = config.monday.columns[PREF_FIELD_COLUMNS[field]];

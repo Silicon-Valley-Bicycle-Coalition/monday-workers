@@ -49,8 +49,11 @@ Four independent flows — see the design doc for full sequence diagrams:
    in the audience (they never opted in) is recorded as `skipped` and left out; the write is a
    `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
    cleaned contact stays that way. People join the audience only through Mailchimp's own
-   signup forms or the cutover consent import. **One exception, one-way:** a reviewed Do Not
-   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below. **An Email
+   signup forms, the cutover consent import, or a member's own opt-in on the member portal
+   (always pending, so Mailchimp's confirm email decides — see
+   [Member portal preferences](#member-portal-preferences)). **Exceptions:** a reviewed Do Not
+   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below — and so does a
+   member's own opt-out on the portal. **An Email
    change moves the contact:** when staff change a Donor's Email column, the old address's
    contact is renamed to the new one, so its consent and history follow the person — see
    [Address changes made on Monday](#address-changes-made-on-monday).
@@ -229,13 +232,37 @@ Two steps, so a mis-clicked checkbox can't silently lose a subscriber:
 
 Deliberate limits:
 * **Never resubscribes.** Unchecking the box, or moving the status off Confirmed, removes the
-  tag but leaves the unsubscribe in place; only the person can opt back in, through Mailchimp.
+  tag but leaves the unsubscribe in place; only the person can opt back in, through Mailchimp
+  (or the member portal, which asks Mailchimp to email them a confirm link).
 * **Personal Email only.** The Household Email may be shared by other people in the household,
   so it is never unsubscribed on one person's flag (it isn't synced at all yet — see below).
 * **People and People (Historical) only.** Organizations carry the same columns but aren't
   watched: they stay a call list, not an email audience. A reviewed Do Not Solicit on Historical
   unsubscribes the address even if a People item holds it too.
 * **Nothing flows back.** An unsubscribe that starts in Mailchimp doesn't check Do Not Solicit.
+
+## Member portal preferences
+
+The member portal's Profile tab lets a member turn email off or back on. Its writer
+(member-portal-writer) calls this Worker's **`PreferenceSync`** entrypoint over a service binding
+(`MAILCHIMP_PREFS`), `setEmailPreference(email, optedOut, requestId)`, so the Mailchimp key stays
+here. The member portal README's "Communication preferences" has the whole flow.
+
+* **Opt-out → `unsubscribeMember`**, the same call Do Not Solicit uses: an already-unsubscribed,
+  cleaned or unknown address needs no write.
+* **Opt back in → `requestResubscribe`**: a `PUT` setting the address to `pending` (and
+  `status_if_new: pending`), so Mailchimp emails a confirm link and only the member's click
+  subscribes them. Nothing is written for an address that's already subscribed or pending, or
+  cleaned. The one place this Worker can add a contact, and only ever as pending.
+* **Personal Email only**, chosen by the writer; the Household Email may be shared.
+* **Write switch:** `on` writes; `off` dry-runs (a skip line, `portal-preference:<request id>`);
+  `hold`/`unknown` throws, and the writer's queue retries.
+* **Nothing is written to Monday here.** The hourly consent run carries the new status to the
+  Personal Email Consent column, which the portal reads. A pending address stays Unsubscribed
+  there (or Not in Mailchimp) until it's confirmed.
+
+Deploy this Worker before member-portal-writer, which can't bind an entrypoint that isn't
+deployed yet. Code: `src/preferences/emailPreference.ts`, the class at the end of `src/index.ts`.
 
 ## People (Historical)
 

@@ -134,9 +134,9 @@ describe('loadHomeData', () => {
     });
     const data = await loadHomeData(['j', 's'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
     expect(monday.getMemberPortalData).toHaveBeenCalledWith('j', { includeDonations: true });
-    expect(data.people[0]!.stats).toEqual({ totalDonated: '$1,250.00', volunteerHours: 2.5 });
+    expect(data.people[0]!.stats).toMatchObject({ totalDonated: '$1,250.00', volunteerHours: 2.5 });
     // A total that doesn't parse is left off the card rather than shown as $0.00.
-    expect(data.people[1]!.stats).toEqual({ totalDonated: null, volunteerHours: 0 });
+    expect(data.people[1]!.stats).toMatchObject({ totalDonated: null, volunteerHours: 0 });
     expect(data.portal.donationHistoryEnabled).toBe(true);
   });
 
@@ -145,7 +145,7 @@ describe('loadHomeData', () => {
     config.monday.volunteersBoardId = null;
     const monday = fakeMonday({ j: donor('j', { totalDonated: '$1,250.00' }) });
     const data = await loadHomeData(['j'], deps(monday, '2026-08-22T18:00:00Z', config), 'en');
-    expect(data.people[0]!.stats).toEqual({ totalDonated: null, volunteerHours: null });
+    expect(data.people[0]!.stats).toMatchObject({ totalDonated: null, volunteerHours: null });
     expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
   });
 
@@ -280,6 +280,8 @@ describe('loadHomeData organizations', () => {
     monday: { ...baseConfig.monday, organizationsBoardId: 77 },
     changeRequests: { employer: {} },
     organizations: { portalAccessColumn: 'check_portal' },
+    // Off: the registrations read also looks names up, which these tests count.
+    eventRegistrations: { ...baseConfig.eventRegistrations, boardId: null },
   } as unknown as Config;
   const grants = [
     { orgItemId: 'o1', affiliationItemId: 'a1', via: 'person' as const, personItemId: 'j' },

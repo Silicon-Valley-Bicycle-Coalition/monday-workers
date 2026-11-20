@@ -20,7 +20,6 @@ const columns: MondayColumns = {
   membershipExpiry: 'expiry_col',
   preferredLanguage: 'lang_col',
   donorHouseholdEmail: 'household_col',
-  donorEmailOptOut: 'check_email_opt',
   donorSmsOptOut: 'check_sms_opt',
   donorDoNotMail: 'check_no_mail',
   volunteerDonorLink: 'vol_link_col',
@@ -1100,6 +1099,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
             id: 'donor-1',
             name: 'Jane Example',
             column_values: [
+              { id: 'email_consent_col', text: 'Subscribed' },
               { id: 'email_col', text: 'jane@example.org' },
               { id: 'addr_col', text: '1 Old St' },
               { id: 'phone_col', text: '555-0100' },
@@ -1138,6 +1138,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
             id: 'donor-1',
             name: 'Jane Example',
             column_values: [
+              { id: 'email_consent_col', text: 'Subscribed' },
               { id: 'email_col', text: 'jane@example.org' },
               { id: 'addr_col', text: '1 Old St' },
               { id: 'phone_col', text: '555-0100' },
@@ -1164,7 +1165,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
     });
   });
 
-  it('reads communication preference checkboxes off the donor item (Monday checkbox text: "v" = checked)', async () => {
+  it('reads SMS and postal checkboxes ("v" = checked) and email from the consent status (anything but Subscribed = opted out)', async () => {
     const client = makeClient({
       data: {
         items: [
@@ -1175,7 +1176,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
               { id: 'email_col', text: 'jane@example.org' },
               { id: 'addr_col', text: '1 Old St' },
               { id: 'phone_col', text: '555-0100' },
-              { id: 'check_email_opt', text: 'v' },
+              { id: 'email_consent_col', text: 'Unsubscribed' },
               { id: 'check_sms_opt', text: '' },
               { id: 'check_no_mail', text: 'v' },
             ],
@@ -1191,7 +1192,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
     expect(info.doNotMail).toBe(true);
   });
 
-  it('treats a configured preference column absent from the response as unchecked', async () => {
+  it('treats a configured preference column absent from the response as unchecked (and a blank email consent as not subscribed)', async () => {
     const client = makeClient({
       data: {
         items: [
@@ -1206,7 +1207,8 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
 
     const info = await client.getDonorContactInfo('donor-1');
 
-    expect(info.emailOptOut).toBe(false);
+    // Only a Subscribed consent gets email; a blank one (not yet synced from Mailchimp) doesn't.
+    expect(info.emailOptOut).toBe(true);
     expect(info.smsOptOut).toBe(false);
     expect(info.doNotMail).toBe(false);
   });
@@ -1233,7 +1235,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
     });
     const placeholderPrefColumns: MondayColumns = {
       ...columns,
-      donorEmailOptOut: 'REPLACE_WITH_COLUMN_ID',
+      donorEmailConsent: 'REPLACE_WITH_COLUMN_ID',
       donorSmsOptOut: 'REPLACE_WITH_COLUMN_ID',
       donorDoNotMail: 'REPLACE_WITH_COLUMN_ID',
     };
@@ -1261,6 +1263,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
                 id: 'donor-1',
                 name: 'Jane Example',
                 column_values: [
+                  { id: 'email_consent_col', text: 'Subscribed' },
                   { id: 'email_col', text: 'jane@example.org' },
                   { id: 'addr_col', text: '1 Old St' },
                   { id: 'phone_col', text: '555-0100' },

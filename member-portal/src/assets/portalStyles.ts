@@ -29,6 +29,8 @@ export const PORTAL_CSS = `
     --border: #ccc;
     --table-border: #eee;
     --row-stripe: #fafafa;
+    /* Focus ring: ink on the light page (gold on white is 1.6:1), gold on dark surfaces. */
+    --focus-ring: var(--svbc-ink);
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
@@ -40,6 +42,7 @@ export const PORTAL_CSS = `
       --border: #4d4a4a;
       --table-border: #3a3838;
       --row-stripe: #242222;
+      --focus-ring: var(--svbc-gold);
     }
   }
   * { box-sizing: border-box; }
@@ -151,10 +154,19 @@ export const PORTAL_CSS = `
     color: var(--svbc-black);
     font-weight: 400;
   }
-  button:focus-visible, a:focus-visible {
-    outline: 2px solid var(--svbc-gold);
+  /* Every focusable element (links, buttons, inputs, radios, the email-label buttons) gets the
+     same ring; the black header and footer keep the brand gold. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
+  .site-header :focus-visible, .site-footer :focus-visible { outline-color: var(--svbc-gold); }
+  .skip-link {
+    position: absolute; left: 16px; top: -100px; z-index: 100;
+    padding: 10px 16px; border-radius: var(--radius-pill);
+    background: var(--svbc-gold); color: var(--svbc-black); font-weight: 600; text-decoration: none;
+  }
+  .skip-link:focus { top: 12px; outline-color: var(--svbc-white); }
   .site-header .logout-form button {
     display: inline-flex;
     align-items: center;
@@ -163,8 +175,9 @@ export const PORTAL_CSS = `
     color: var(--svbc-gold);
     border-color: var(--svbc-gold);
   }
-  input[type='email'], input[type='text'], select {
-    font-size: 14px;
+  /* 16px: anything smaller and iOS zooms the page when the field takes focus. */
+  input[type='email'], input[type='text'], input[type='tel'], select {
+    font-size: 16px;
     padding: 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -221,9 +234,10 @@ export const PORTAL_CSS = `
   .door-empty { padding: 8px 0; }
   .cta-button { margin-top: 4px; }
 
-  /* Wallet-style membership card, on the home page and the card door (src/doors/card.ts).
-     Fixed max-width with aspect-ratio (not a fixed height)
-     so it scales down cleanly on narrow viewports instead of overflowing. */
+  /* Wallet-style membership card, in the portal header (src/doors/card.ts). Fixed max-width with
+     aspect-ratio (not a fixed height) so it scales down on narrow viewports; with overflow left
+     visible the ratio is a minimum, so at 320px (or 400% zoom) the card grows taller rather than
+     clipping its bottom row. The gold glow is a background layer for the same reason. */
   .member-card {
     position: relative;
     width: 100%;
@@ -232,20 +246,15 @@ export const PORTAL_CSS = `
     margin: 12px 0;
     border-radius: 16px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15);
-    overflow: hidden;
     color: var(--svbc-white);
-    background: linear-gradient(135deg, #2b2628 0%, var(--svbc-black) 55%, #171415 100%);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255,199,0,0.10), transparent 60%),
+      linear-gradient(135deg, #2b2628 0%, var(--svbc-black) 55%, #171415 100%);
     padding: 18px 22px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     box-sizing: border-box;
-  }
-  .member-card::after {
-    content: '';
-    position: absolute; top: -60%; left: -20%; width: 140%; height: 140%;
-    background: radial-gradient(circle at 30% 20%, rgba(255,199,0,0.10), transparent 55%);
-    pointer-events: none;
   }
   .member-card-top { display: flex; align-items: flex-start; justify-content: space-between; }
   /* height:53px (not the header's 100px) keeps the badge's rendered footprint the same as
@@ -263,8 +272,8 @@ export const PORTAL_CSS = `
   .member-card-qr svg { display: block; width: 77px; height: 77px; }
   .member-card-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
   .member-card-meta {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 11px; color: #cfcfcf; gap: 10px;
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end;
+    font-size: 11px; color: #cfcfcf; gap: 6px 10px; margin-top: 10px;
   }
   .member-card-meta .label { text-transform: uppercase; letter-spacing: 0.06em; }
   .member-card-meta .value { display: block; color: var(--svbc-white); font-size: 13px; margin-top: 2px; }
@@ -276,18 +285,18 @@ export const PORTAL_CSS = `
   .member-card-regenerate { margin: 6px 0 0; }
   /* Selects button[type=submit], not just button, to out-specificity the main button[type=submit]
      gold-fill rule above — same fix as .site-header .logout-form button. */
+  /* The outline pill (like Request a change): full contrast and a full-size target. */
   .member-card-regenerate button[type='submit'] {
-    background: none; border: none; color: #888; font-size: 12px; text-decoration: underline;
-    cursor: pointer; padding: 4px 0; font-weight: normal; border-radius: 0;
+    background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
   }
 
   /* The portal frame (src/home/homeView.ts): the member card(s) with each person's totals, the
      status and its one gold button, then the tab bar and the active tab's panel. Phone first, the
-     card on top; from 768px the card sits left of the status. Tabs are links (no JavaScript), one
+     totals stacked under the card, from 640px to its right; the status (when there is one) under
+     both. Tabs are links (no JavaScript), one
      page each, with aria-current on the active one. */
   .home { display: flex; flex-direction: column; gap: 20px; }
   .home-header { display: flex; flex-direction: column; gap: 20px; }
-  .home-greeting { margin: 0; color: var(--text-muted); }
   .home-headline { font-family: var(--font-heading); font-weight: 700; font-size: 28px; line-height: 1.15; margin: 2px 0 4px; }
   .home-sub { margin: 0 0 14px; color: var(--text-muted); }
   .home-note { margin: 10px 0 0; font-size: 14px; color: var(--text-muted); }
@@ -295,7 +304,9 @@ export const PORTAL_CSS = `
   .home-people { display: flex; flex-direction: column; gap: 16px; }
   .home-person .member-card { margin: 0; }
   .home-person p { margin: 6px 0 0; }
-  .member-card-lapsed { opacity: 0.55; filter: grayscale(1); }
+  /* A lapsed card greys its background, not its text: dimming the whole card dropped the small
+     labels below 4.5:1. #555 keeps #cfcfcf labels at 4.7:1. */
+  .member-card-lapsed { filter: grayscale(1); background: linear-gradient(135deg, #555 0%, #444 100%); }
   .home-not-member {
     max-width: 340px;
     padding: 18px 22px;
@@ -312,6 +323,8 @@ export const PORTAL_CSS = `
     max-width: 340px;
     margin: 10px 0 0;
   }
+  /* Four totals don't fit one row beside a 340px card: an even 2 x 2 instead of 3 + 1. */
+  .member-stats:has(> :nth-child(4)) { grid-template-columns: repeat(2, 1fr); }
   .member-stat { padding: 8px 10px; border: 1px solid var(--table-border); border-radius: 10px; background: var(--surface); }
   .member-stat dt { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .member-stat dd { margin: 2px 0 0; font-family: var(--font-heading); font-size: 20px; font-weight: 700; }
@@ -337,7 +350,7 @@ export const PORTAL_CSS = `
   }
   .portal-tab:hover { text-decoration: underline; }
   .portal-tab[aria-current='page'] { background: var(--svbc-black); color: var(--svbc-gold); border-color: var(--svbc-black); }
-  .portal-tab:focus-visible { outline: 2px solid var(--svbc-gold); outline-offset: -2px; }
+  .portal-tab:focus-visible { outline-offset: 2px; }
   /* Five folder tabs don't fit a phone: there they wrap as pills, so every tab (the active one
      included) stays in view. */
   @media (max-width: 599px) {
@@ -380,14 +393,18 @@ export const PORTAL_CSS = `
     white-space: nowrap;
     border: 0;
   }
-  @media (min-width: 768px) {
-    main:has(> .home) { max-width: 960px; }
-    .home-header {
+  @media (min-width: 640px) {
+    .home-person {
       display: grid;
-      grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
-      column-gap: 40px;
+      grid-template-columns: minmax(0, 340px) minmax(200px, 300px);
+      column-gap: 16px;
       align-items: start;
     }
+    .home-person > :not(.member-card):not(.home-not-member):not(.member-stats) { grid-column: 1 / -1; }
+    .home-person .member-stats { margin: 0; }
+  }
+  @media (min-width: 768px) {
+    main:has(> .home) { max-width: 960px; }
     .home-headline { font-size: 36px; }
   }
 
@@ -406,14 +423,79 @@ export const PORTAL_CSS = `
   .prefs-form button[type='submit'] {
     background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
   }
+  /* The change-request dialog (Profile tab). A modal sits centered over a dimmed page; with no
+     script the server renders it open in place, so a non-modal one stays in the flow. */
+  .portal-dialog {
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 20px 24px 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .portal-dialog:not(:modal) { position: static; margin: 16px 0; }
+  .portal-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+  .portal-dialog h2 { margin-top: 0; padding-right: 48px; }
+  .portal-dialog .dialog-close { float: right; margin: -8px -12px 0 0; }
+  main .portal-dialog .dialog-close button[type='submit'] {
+    background: transparent; border: none; color: var(--text); padding: 4px 12px; font-size: 28px; line-height: 1;
+  }
+  .portal-dialog label { display: block; margin: 0 0 12px; }
+  /* The contact form: a changed field gets a gold edge and tint plus a "Changed" mark in its
+     label, so the cue isn't colour alone. */
+  .contact-form-person { font-weight: 600; margin: -4px 0 8px; }
+  .contact-field { padding: 6px 8px; margin: 0 -8px 8px; border-left: 4px solid transparent; border-radius: 6px; }
+  .contact-field-label { display: block; }
+  .changed-mark { display: none; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 8px; margin-left: 6px; border-radius: var(--radius-pill); background: var(--svbc-gold); color: var(--svbc-black); }
+  .contact-field.field-changed { border-left-color: var(--svbc-gold); background: color-mix(in srgb, var(--svbc-gold) 14%, transparent); }
+  .contact-field.field-changed .changed-mark { display: inline-block; }
+  .portal-dialog select, .portal-dialog input:is([type='text'], [type='email'], [type='tel']) { display: block; width: 100%; margin-top: 4px; }
+  /* Communication preferences: one row per channel, its two choices in aligned columns. A plain
+     row header (not the black table-head bar), and a real table layout so it fits instead of
+     scrolling; the choice labels wrap on a phone. */
+  .prefs-table { display: table; table-layout: fixed; margin: 0 0 16px; }
+  .prefs-table th { background: none; color: var(--text); font-weight: 600; width: 40%; vertical-align: top; border-bottom: 1px solid var(--table-border); }
+  .prefs-table td { vertical-align: top; }
+  .prefs-table tbody tr:nth-child(even) td { background: none; }
+  /* On a phone four columns don't fit (the choices overlapped): each row stacks, the channel on
+     its own line, its two choices side by side under it, the save status under those. */
+  @media (max-width: 599px) {
+    .prefs-table, .prefs-table tbody { display: block; }
+    .prefs-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--table-border); }
+    .prefs-table th, .prefs-table td { width: auto; padding: 0; border: 0; background: none; }
+    .prefs-table th, .prefs-table .pref-status { grid-column: 1 / -1; }
+    .prefs-table .pref-status:empty { display: none; }
+  }
+  /* Live save (portalTabs.ts): html.js hides the button; each row's last cell shows a spinning bike
+     wheel while it saves, then a check. Reduced motion: the wheel holds still. */
+  .prefs-note { margin: -8px 0 16px; font-size: 14px; color: var(--text-muted); }
+  html.js .prefs-form button[type='submit'] { display: none; }
+  .pref-status { width: 6.5em; white-space: nowrap; font-size: 13px; color: var(--text-muted); }
+  .pref-status svg { width: 20px; height: 20px; vertical-align: -5px; margin-right: 4px; }
+  .pref-wheel { animation: pref-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+  @keyframes pref-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .pref-wheel { animation: none; } }
+  .pref-saved { color: var(--text); }
+  .prefs-table label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
   .info-emails { margin-top: 32px; }
   .email-list { list-style: none; padding: 0; margin: 0 0 16px; }
   .email-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--table-border); }
   .email-address { overflow-wrap: anywhere; margin-right: auto; }
   .email-kind { font-size: 14px; color: var(--text-muted); }
-  .email-label { font-size: 13px; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); }
+  .email-label { font: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: transparent; color: var(--text); }
   .email-label-bounced { font-weight: 700; border-color: var(--text); }
-  .email-legend { font-size: 14px; color: var(--text-muted); }
+  /* A label's tooltip (src/doors/info.ts): hidden until the pill is hovered or focused, then a small
+     card under it, right-aligned since the pill ends the row. */
+  .email-label { position: relative; cursor: help; }
+  .email-tip {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 10;
+    width: max-content; max-width: min(280px, calc(100vw - 32px));
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--svbc-black); color: var(--svbc-white);
+    font-size: 13px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal;
+  }
+  .email-label:is(:hover, :focus-visible, .tip-open):not(.tip-dismissed) .email-tip { display: block; }
 
   .site-footer {
     background: var(--svbc-chrome);

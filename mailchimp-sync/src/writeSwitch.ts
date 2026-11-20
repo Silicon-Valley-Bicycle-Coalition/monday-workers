@@ -4,7 +4,7 @@
 // only the last step — the Mailchimp or Monday write, or the D1 bookkeeping that records it — is
 // swapped out here. The dead-letter consumers and their Slack alert are not gated (DLQs stay live).
 import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
-import type { InterestsReader, MailchimpClient, ManagedTags, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
+import type { InterestsReader, MailchimpClient, ManagedTags, RenameMemberResult, ResubscribeResult, UnsubscribeResult } from './mailchimp/client';
 import type { MondayClient } from './monday/client';
 import type { CampaignItemRow, CampaignItemsStore } from './db/campaignItems';
 import type { DnsUnsubscribeLog } from './db/dnsUnsubscribes';
@@ -22,11 +22,12 @@ export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
 const MAILCHIMP_SINK = 'Mailchimp';
 const MONDAY_SINK = 'Monday';
 
-function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpClient {
+export function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpClient {
   const recording = recordingProxy(client, MAILCHIMP_SINK, {
     updateMember: () => 'updated',
     renameMember: (): RenameMemberResult => 'renamed',
     unsubscribeMember: (): UnsubscribeResult => 'unsubscribed',
+    requestResubscribe: (): ResubscribeResult => 'pending',
   }, ctx);
   // updateMember's managed tags can be a reader the live client calls after its PATCH (GL#97). The
   // placeholder never PATCHes, so resolve it here: the skip line then names the tags the write

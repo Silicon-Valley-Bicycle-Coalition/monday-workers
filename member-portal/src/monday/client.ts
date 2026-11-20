@@ -111,6 +111,14 @@ function checkboxState(item: MondayItem, columnId: string): boolean | null {
   return columnText(item, columnId) !== '';
 }
 
+// Email opt-out, read from the Personal Email Consent status column that mailchimp-sync keeps at
+// the address's Mailchimp status (Mailchimp is the consent system of record). Only Subscribed
+// gets email; Unsubscribed, Cleaned, Not in Mailchimp or a blank all read as opted out.
+function emailConsentOptOut(item: MondayItem, columnId: string): boolean | null {
+  if (columnId === 'REPLACE_WITH_COLUMN_ID') return null;
+  return columnText(item, columnId) !== 'Subscribed';
+}
+
 // An Affiliations-board item as organization reps use it (spec 2026-11-19-member-portal-organization-reps-design.md).
 export interface OrgAffiliation {
   id: string;
@@ -171,6 +179,7 @@ export interface MondayClient {
   getPersonAffiliations(params: { donorItemId: string; employer: EmployerAnswerConfig }): Promise<AffiliationRecord[]>;
   createAffiliation(params: { employer: EmployerAnswerConfig; itemName: string; donorItemId: string; organizationItemId: string }): Promise<void>;
   // makeCurrent false leaves Status alone; primary false clears the checkbox.
+  setDonorCheckbox(params: { itemId: string; columnId: string; checked: boolean }): Promise<void>;
   updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void>;
   createChangeRequestItem(params: {
     boardId: number;
@@ -675,7 +684,7 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.donorEmployer !== 'REPLACE_WITH_COLUMN_ID') {
       columnIds.push(this.columns.donorEmployer);
     }
-    const prefColumnIds = [this.columns.donorEmailOptOut, this.columns.donorSmsOptOut, this.columns.donorDoNotMail];
+    const prefColumnIds = [this.columns.donorEmailConsent, this.columns.donorSmsOptOut, this.columns.donorDoNotMail];
     for (const prefColumnId of prefColumnIds) {
       if (prefColumnId !== 'REPLACE_WITH_COLUMN_ID') {
         columnIds.push(prefColumnId);
@@ -706,7 +715,7 @@ export class HttpMondayClient implements MondayClient {
       phone: columnText(item, this.columns.donorPhone),
       preferredLanguage: columnText(item, this.columns.preferredLanguage),
       employer: this.columns.donorEmployer === 'REPLACE_WITH_COLUMN_ID' ? '' : columnText(item, this.columns.donorEmployer),
-      emailOptOut: checkboxState(item, this.columns.donorEmailOptOut),
+      emailOptOut: emailConsentOptOut(item, this.columns.donorEmailConsent),
       smsOptOut: checkboxState(item, this.columns.donorSmsOptOut),
       doNotMail: checkboxState(item, this.columns.donorDoNotMail),
     };
@@ -903,6 +912,21 @@ export class HttpMondayClient implements MondayClient {
       { boardId: affiliationsBoardId, itemName: params.itemName, columnValues: JSON.stringify(columnValues) },
       { idempotent: false },
     );
+  }
+
+  // A People-board checkbox the member set on the portal (SMS Opt-Out, Do Not Mail), written by
+  // member-portal-writer. A null value clears a checkbox column.
+  async setDonorCheckbox(params: { itemId: string; columnId: string; checked: boolean }): Promise<void> {
+    const mutation = `
+      mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) { id }
+      }
+    `;
+    await this.request<{ change_multiple_column_values: { id: string } }>(mutation, {
+      boardId: this.donorsBoardId,
+      itemId: Number(params.itemId),
+      columnValues: JSON.stringify({ [params.columnId]: params.checked ? { checked: 'true' } : null }),
+    });
   }
 
   async updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void> {

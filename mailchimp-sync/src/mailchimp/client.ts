@@ -48,6 +48,10 @@ export interface MailchimpMemberInterests {
 export type UpdateMemberResult = 'updated' | 'not-in-audience';
 export type RenameMemberResult = 'renamed' | 'target-exists' | 'not-in-audience';
 export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
+// requestResubscribe: 'pending' when Mailchimp is now emailing a confirm link (an unsubscribed or
+// archived member, or an address new to the audience); no write for one already subscribed or
+// already waiting on a confirm link, or a cleaned address (Mailchimp won't mail it).
+export type ResubscribeResult = 'pending' | 'already-subscribed' | 'already-pending' | 'cleaned';
 // The managed tag set, or a reader for it that updateMember calls only once the PATCH has found
 // the member, so a caller that needs the member's current tags to build it pays for that read
 // only on a member that exists (GL#97).
@@ -82,6 +86,14 @@ export interface MailchimpClient {
    * 'not-in-audience' (no write) for an address Mailchimp doesn't hold.
    */
   unsubscribeMember(email: string): Promise<UnsubscribeResult>;
+  /**
+   * A member asking to get email again (the member portal, through PreferenceSync): sets the
+   * address to 'pending', so Mailchimp emails a confirm link and subscribes them only once they
+   * click it — Mailchimp's own rule for re-subscribing someone who unsubscribed, and double opt-in
+   * for an address it doesn't hold yet. The one path here that creates a contact, and only ever
+   * as pending.
+   */
+  requestResubscribe(email: string): Promise<ResubscribeResult>;
   /**
    * The names of the tags currently on a member (up to 1000), [] for an address not in the
    * audience. Read (through updateMember's managed-tags reader) so the Nearby tags it should
@@ -225,6 +237,28 @@ export class HttpMailchimpClient implements MailchimpClient {
     });
     if (response.ok) return 'unsubscribed';
     throw await httpError('unsubscribeMember', response);
+  }
+
+  async requestResubscribe(email: string): Promise<ResubscribeResult> {
+    const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}`;
+    const lookup = await this.request(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    if (lookup.ok) {
+      const { status } = (await lookup.json()) as { status: string };
+      if (status === 'subscribed') return 'already-subscribed';
+      if (status === 'pending') return 'already-pending';
+      if (status === 'cleaned') return 'cleaned';
+    } else if (lookup.status !== 404) {
+      throw await httpError('requestResubscribe lookup', lookup);
+    }
+    // PUT, not PATCH: it also creates a member Mailchimp doesn't hold (404 above), and only ever
+    // as pending. No merge fields: the next outbound sync fills those once they've confirmed.
+    const response = await this.request(`${memberUrl}${SKIP_MERGE_VALIDATION}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+      body: JSON.stringify({ email_address: email.trim(), status: 'pending', status_if_new: 'pending' }),
+    });
+    if (response.ok) return 'pending';
+    throw await httpError('requestResubscribe', response);
   }
 
   async getMemberTagNames(email: string): Promise<string[]> {

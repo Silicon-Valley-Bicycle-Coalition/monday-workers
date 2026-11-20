@@ -276,6 +276,11 @@ export class FakeMondayClient implements MondayClient {
     console.log(`[fakeMondayClient] would create affiliation: donor ${params.donorItemId} -> organization ${params.organizationItemId}`);
   }
 
+  readonly checkboxWrites: { itemId: string; columnId: string; checked: boolean }[] = [];
+  async setDonorCheckbox(params: { itemId: string; columnId: string; checked: boolean }): Promise<void> {
+    this.checkboxWrites.push(params);
+  }
+
   async updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void> {
     console.log(`[fakeMondayClient] would update affiliation ${params.itemId}: makeCurrent=${params.makeCurrent} primary=${params.primary}`);
   }

@@ -7,11 +7,16 @@ import { logDebug, messageDisposition } from '../flags';
 import { dryRunChangeDeps, type BatchSkipContext } from '../writeSwitch';
 import { errorText } from '../logSafe';
 import { applyEmployerAnswer } from './applyEmployer';
+import { applyPreference, type EmailPreferenceSink } from './applyPreference';
+import { isPrefField } from './submitChangeRequest';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
   monday: MondayClient;
   config: Config;
+  // mailchimp-sync's PreferenceSync (the writer's MAILCHIMP_PREFS binding); required only for an
+  // email preference.
+  emailPreferences?: EmailPreferenceSink;
 }
 
 // The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
@@ -115,9 +120,15 @@ async function processOne(requestId: number, deps: ProcessChangeBatchDeps): Prom
     return;
   }
 
-  // An employer answer is applied before it's logged; the log item is the last write, so finding
-  // it above means the whole request is done. Other fields are logged for staff to apply by hand.
-  const logged = row.field === 'employer' ? await applyEmployerAnswer(row, deps) : { fieldLabel, newValue: row.newValue };
+  // An employer answer or a communication preference is applied before it's logged; the log item
+  // is the last write, so finding it above means the whole request is done. Contact details are
+  // logged for staff to apply by hand.
+  const logged =
+    row.field === 'employer'
+      ? await applyEmployerAnswer(row, deps)
+      : isPrefField(row.field)
+        ? await applyPreference(row, deps)
+        : { fieldLabel, newValue: row.newValue };
 
   await deps.monday.createChangeRequestItem({
     boardId,

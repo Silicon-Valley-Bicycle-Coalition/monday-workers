@@ -37,6 +37,25 @@ function data(overrides: Partial<InfoDoorData> = {}): InfoDoorData {
 }
 
 describe('infoDoorView', () => {
+  it("opens a change-request dialog for ?change=<id> (the first person's for any other value) or a preselected employer field", () => {
+    expect(infoDoorView(data(), 'en')).not.toContain('data-open-on-load');
+    expect(infoDoorView(data(), 'en', { change: 'donor-1' })).toContain('data-open-on-load');
+    expect(infoDoorView(data(), 'en', { change: '1' })).toContain('data-open-on-load');
+    const employer = data({ form: { donors: [contact], prefFields: [], employerField: 'preselected' } });
+    expect(infoDoorView(employer, 'en')).toContain('data-open-on-load');
+  });
+
+  it("prefills the change form's email with the person's own Personal Email shown on the tab", () => {
+    expect(infoDoorView(data(), 'en')).toContain('<input name="email" value="jane@example.org"');
+    expect(infoDoorView(data({ emailsHidden: true, people: [{ ...jane, emails: [] }] }), 'en')).toContain('<input name="email" value=""');
+  });
+
+  it('ends with the card code section it is given', () => {
+    const html = infoDoorView(data(), 'en', { cardCodes: '<section id="card-codes"></section>' });
+    expect(html.indexOf(t('en', 'info.emailsHeading'))).toBeLessThan(html.indexOf('id="card-codes"'));
+    expect(infoDoorView(data(), 'en')).not.toContain('card-codes');
+  });
+
   it('frames the change form and preferences, then the address list, under the door title', () => {
     const html = infoDoorView(data(), 'en');
     expect(html).toContain(`<h1 class="visually-hidden">${escapeHtml(t('en', 'tabs.profile'))}</h1>`);
@@ -50,8 +69,11 @@ describe('infoDoorView', () => {
     expect(html).toContain('jane@example.org');
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindPersonal')}</span>`);
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindHousehold')}</span>`);
-    expect(html).toContain(`<span class="email-label email-label-verified">${t('en', 'info.labelVerified')}</span>`);
-    expect(html).toContain(`<span class="email-label email-label-bounced">${t('en', 'info.labelBounced')}</span>`);
+    expect(html).toContain(`<button type="button" class="email-label email-label-verified" aria-describedby="email-tip-0">${t('en', 'info.labelVerified')}<span class="email-tip" role="tooltip" id="email-tip-0">${escapeHtml(t('en', 'info.hintVerified'))}</span></button>`);
+    expect(html).toContain(`<button type="button" class="email-label email-label-bounced" aria-describedby="email-tip-1">${t('en', 'info.labelBounced')}<span class="email-tip" role="tooltip" id="email-tip-1">`);
+    expect(html).toContain(escapeHtml(t('en', 'info.hintBounced')));
+    // The hints replaced the paragraph that explained every label at once.
+    expect(html).not.toContain('email-legend');
   });
 
   it("leaves the current-details list without anyone's email: the address list is the one place addresses show", () => {

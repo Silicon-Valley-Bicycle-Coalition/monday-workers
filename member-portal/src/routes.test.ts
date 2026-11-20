@@ -146,6 +146,7 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
     findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    hasNewerRequest: vi.fn().mockResolvedValue(false),
     purgeWrittenBefore: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
@@ -203,6 +204,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -262,6 +264,7 @@ function fakeMondayWithDonations(): MondayClient {
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -1540,6 +1543,7 @@ describe('POST / error handling', () => {
       getPersonAffiliations: vi.fn().mockResolvedValue([]),
       createAffiliation: vi.fn(),
       updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
       createChangeRequestItem: vi.fn(),
       getDonorNames: vi.fn().mockResolvedValue([]),
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -1832,7 +1836,9 @@ describe('/:locale/portal/info — employer', () => {
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
     const html = await (await app.request('/en/portal/info?field=employer', { headers: { Cookie: cookie } })).text();
-    expect(html).toContain('<option value="employer" selected>');
+    // The first person's dialog opens with Employer focused.
+    expect(html).toContain('open data-open-on-load>');
+    expect(html).toMatch(/<input name="employer"[^>]* autofocus \/>/);
   });
 
   it('ignores any other ?field value', async () => {
@@ -1840,8 +1846,9 @@ describe('/:locale/portal/info — employer', () => {
     const app = createApp(makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, config: employerConfig() }));
     const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
     const html = await (await app.request('/en/portal/info?field=%22%3E%3Cscript%3E', { headers: { Cookie: cookie } })).text();
-    expect(html).toContain('<option value="employer">');
-    expect(html).not.toContain('value="employer" selected');
+    expect(html).toContain('<input name="employer"');
+    expect(html).not.toContain('autofocus');
+    expect(html).not.toContain('data-open-on-load');
     expect(html).not.toContain('"><script>');
   });
 
@@ -1853,7 +1860,7 @@ describe('/:locale/portal/info — employer', () => {
       const cookie = await loginAndGetCookie(app, sender, 'donor@example.org');
       await app.request('/en/portal/change-request', {
         method: 'POST',
-        body: new URLSearchParams({ donorItemId: 'donor-1', field: 'employer', newValue: 'Google' }),
+        body: new URLSearchParams({ donorItemId: 'donor-1', employer: 'Google' }),
         headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
       });
       expect(changeQueue.send.mock.calls.length > 0).toBe(expectSent);
@@ -1899,7 +1906,7 @@ describe('POST /:locale/portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender, changeQueue }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await postForm(app, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(app, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('review');
@@ -1923,7 +1930,7 @@ describe('POST /:locale/portal/change-request', () => {
     const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
     const limitedApp = createApp({ ...permissive, ipLimiter });
 
-    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(429);
   });
 
@@ -1946,7 +1953,7 @@ describe('POST /:locale/portal/change-request', () => {
     };
     const limitedApp = createApp({ ...permissive, ipLimiter });
 
-    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', address: '2 New Ave' });
     expect(res.status).toBe(429);
   });
 });
@@ -2148,7 +2155,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
+    expect(html).toContain('class="portal-tabs"'); // the rest of the home page still renders
   });
 
   it('logs and omits just the card widget (not the whole dashboard) when getActiveToken throws', async () => {
@@ -2174,7 +2181,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
+    expect(html).toContain('class="portal-tabs"'); // the rest of the home page still renders
   });
 
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
@@ -2293,7 +2300,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal');
+    expect(regenRes.headers.get('location')).toBe('/en/portal/info');
 
     const oldVerifyRes = await app.request(`/verify/${oldToken}`, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
@@ -2340,7 +2347,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/en/portal/info');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -2851,7 +2858,7 @@ describe('locale sweep', () => {
     expect(body).toContain(`<html lang="${locale}">`);
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
-    expect(body).toContain(escapeHtml(t(locale, 'home.defaultHeadline')));
+    expect(body).toContain(escapeHtml(t(locale, 'tabs.benefits')));
   });
 });
 
@@ -2944,7 +2951,7 @@ describe('GET /:locale/portal — events tab', () => {
   });
 
   // Event registrations show only on the Events tab.
-  it('never queries the events board from Benefits, and links the Events tab once configured', async () => {
+  it('reads registrations once in the header (for Events attended), and links the Events tab once configured', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
@@ -2955,7 +2962,7 @@ describe('GET /:locale/portal — events tab', () => {
 
     expect(res.status).toBe(200);
     expect(body).toContain('href="/en/portal/events#tabs"');
-    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+    expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledTimes(1);
   });
 
   it('logs and omits just the registrations (not the whole page) when the Monday lookup throws', async () => {
@@ -3038,7 +3045,7 @@ function fakeMondayWithPrefs(): MondayClient {
 function prefsConfig(): Config {
   const cfg = structuredClone(config);
   cfg.monday.columns = {
-    donorEmailOptOut: 'check_email_opt',
+    donorEmailConsent: 'email_consent_col',
     donorSmsOptOut: 'check_sms_opt',
     donorDoNotMail: 'check_no_mail',
   } as never;
@@ -3064,6 +3071,21 @@ describe('GET /:locale/portal/info — communication preferences section', () =>
     expect(html).toContain('action="/en/portal/change-request/preferences"');
     expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
     expect(html).toMatch(/name="doNotMail" value="yes"[^>]* checked/);
+  });
+
+  it("shows a member's pending choice, not Monday's yet-to-catch-up value", async () => {
+    const monday = fakeMondayWithPrefs(); // Monday: email subscribed, SMS subscribed, do not mail
+    const emailSender = prefsEmailSender();
+    const pendingSms = await sha256Hex('donor-1|smsOptOut|Opted out of SMS');
+    const changeStore = fakeChangeStore({
+      findRecentByDedupeHash: vi.fn(async (hash: string) => (hash === pendingSms ? { id: 5, status: 'written' as const } : null)),
+    });
+    const app = createApp(makeDeps({ monday, emailSender, changeStore, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+    expect(html).toMatch(/name="smsOptOut" value="yes"[^>]* checked/);
+    expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
   });
 
   it('omits the preferences section while the columns are unconfigured', async () => {
@@ -3102,11 +3124,37 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('review');
+    const html = await res.text();
+    expect(html).toContain(t('en', 'changeRequest.prefsReceivedHeading'));
+    expect(html).not.toContain('review');
     expect(changeQueue.send).toHaveBeenCalledOnce();
     expect(changeStore.createRequest).toHaveBeenCalledWith(
       expect.objectContaining({ field: 'emailOptOut', newValue: 'Opted out of email' })
     );
+  });
+
+  it('answers the live-save script in JSON, and a stale session still as a page', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const post = (cookieHeader: string, fields: Record<string, string>) =>
+      app.request('/en/portal/change-request/preferences', {
+        method: 'POST',
+        body: new URLSearchParams(fields),
+        headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Cookie: cookieHeader },
+      });
+
+    const saved = await post(cookie, { donorItemId: 'donor-1', emailOptOut: 'yes', smsOptOut: 'no', doNotMail: 'yes' });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ kind: 'submitted' });
+    const invalid = await post(cookie, { donorItemId: 'someone-else', emailOptOut: 'yes' });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ kind: 'invalid' });
+    // No session: the sign-in redirect, which the script answers by submitting the form for real.
+    const stale = await post('', { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(stale.headers.get('Content-Type') ?? '').not.toContain('application/json');
   });
 
   it('reports no changes when the submitted state matches Monday', async () => {
@@ -3195,7 +3243,7 @@ describe('CSRF', () => {
   const ROUTES: [string, Record<string, string>][] = [
     ['/', { email: 'donor@example.org' }],
     ['/logout', {}],
-    ['/en/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/en/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/en/portal/change-request/preferences', { donorItemId: 'donor-1' }],
     ['/en/portal/card/donor-1/regenerate', {}],
   ];
@@ -3287,10 +3335,10 @@ describe('CSRF', () => {
   // routes take a wildcard :locale — so locale "webhooks" (or its percent-encoded form, which
   // Hono decodes before both the check and routing) skipped CSRF on real state-changing routes.
   describe.each([
-    ['/webhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/webhooks/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/webhooks/portal/change-request/preferences', { donorItemId: 'donor-1' }],
     ['/webhooks/portal/card/donor-1/regenerate', {}],
-    ['/%77ebhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/%77ebhooks/portal/change-request', { donorItemId: 'donor-1', address: '2 New Ave' }],
     ['/%77ebhooks/portal/card/donor-1/regenerate', {}],
     ['/webhooks/monday/letters/extra', {}],
     ['/Webhooks/monday/letters', {}],
@@ -3517,7 +3565,7 @@ describe('write switch', () => {
 
     const res = await createApp(deps).request('/en/portal/change-request', {
       method: 'POST',
-      body: new URLSearchParams({ donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }),
+      body: new URLSearchParams({ donorItemId: 'donor-1', address: '2 New Ave' }),
       headers: { ...FORM, Cookie: cookie },
     });
 
@@ -3666,7 +3714,7 @@ describe('GET /:locale/portal — home page', () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('Hi Donor');
+    expect(html).not.toContain('Hi Donor');
     expect(html).toContain('class="member-card"');
     expect(html).toContain('<a class="portal-tab" href="/en/portal#tabs" aria-current="page">Benefits</a>');
     expect(html).toContain('<a class="portal-tab" href="/en/portal/info#tabs">Profile</a>');
@@ -3708,7 +3756,7 @@ describe('GET /:locale/portal — home page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
-    expect(html).toContain('Hi Jane');
+    expect(html).toContain('Jane');
     expect(html).not.toContain('Joe');
     // Still a household: the viewer may be Joe, so the button can't promise to renew Jane.
     expect(html).toContain('Jane&#39;s membership ended Jul 31, 2026.');
@@ -3858,8 +3906,9 @@ describe('doors', () => {
       expect(emails).toContain('jordan@example.org');
       // Jordan's own Household Email, once, under Jordan; nothing of Sam's.
       expect(emails.match(/family@example\.org/g)?.length).toBe(1);
-      expect(html).toContain('<h3>Jordan Lee</h3>');
-      expect(html).not.toContain('<h3>Sam Lee</h3>');
+      const emailSection = html.slice(html.indexOf('class="info-emails"'));
+      expect(emailSection).toContain('<h3>Jordan Lee</h3>');
+      expect(emailSection).not.toContain('<h3>Sam Lee</h3>');
       expect(html).not.toContain('sam@example.org');
     });
 
@@ -3954,7 +4003,7 @@ describe('doors', () => {
   });
 
   describe('GET /:locale/portal (Benefits)', () => {
-    it('shows the card with its QR in the header, then the discount list and the regenerate form', async () => {
+    it('shows the card with its QR in the header, then the discount list, and no regenerate form', async () => {
       const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
       (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]);
       const { app, cookie } = await signedIn({ monday });
@@ -3965,7 +4014,10 @@ describe('doors', () => {
       expect(html).toContain(`<title>${escapeHtml(t('es', 'title.portal'))} — ${t('es', 'site.title')}</title>`);
       expect(html).toContain('class="member-card"');
       expect(html).toContain('class="member-card-qr"');
-      expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+      expect(html).not.toContain('/regenerate"');
+      // A skip link leads to main, which takes focus.
+      expect(html).toContain(`<a class="skip-link" href="#main">${t('es', 'a11y.skipToContent')}</a>`);
+      expect(html).toContain('<main id="main" tabindex="-1">');
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
       expect(html.indexOf('class="member-card"')).toBeLessThan(html.indexOf('<li>Local Bikes'));
       expect(monday.getMemberPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });
@@ -3996,7 +4048,23 @@ describe('doors', () => {
       expect(html).toContain('<li>Local Bikes: 10% off</li>');
     });
 
-    it('lands on Benefits after a regenerate, showing the new code', async () => {
+    it('puts the regenerate form on Profile, after the email addresses', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      const { app, cookie } = await signedIn({ monday });
+      const html = await (await app.request('/es/portal/info', { headers: { Cookie: cookie } })).text();
+      expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+      expect(html).toContain(t('es', 'card.newCodeIntro'));
+      expect(html.indexOf('class="portal-panel"')).toBeLessThan(html.indexOf('/regenerate"'));
+    });
+
+    it('renders the change-request dialog open for ?change=1, the no-script path', async () => {
+      const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+      const { app, cookie } = await signedIn({ monday });
+      expect(await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text()).not.toContain('data-open-on-load');
+      expect(await (await app.request('/en/portal/info?change=1', { headers: { Cookie: cookie } })).text()).toContain('data-open-on-load');
+    });
+
+    it('lands on Profile after a regenerate, showing the new code', async () => {
       const monday = fakeMondayWithDonations();
       const cardTokenStore = inMemoryCardTokenStore();
       const { app, cookie } = await signedIn({ monday, cardTokenStore });
@@ -4005,10 +4073,10 @@ describe('doors', () => {
 
       const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie }, redirect: 'manual' });
       expect(res.status).toBe(302);
-      expect(res.headers.get('location')).toBe('/en/portal');
+      expect(res.headers.get('location')).toBe('/en/portal/info');
       const newToken = await cardTokenStore.getActiveToken('donor-1');
       expect(newToken).not.toBe(oldToken);
-      const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+      const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('class="member-card"');
       expect(await cardTokenStore.getActiveToken('donor-1')).toBe(newToken);
     });
@@ -4108,17 +4176,18 @@ describe('doors', () => {
       expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 }));
     });
 
-    it('Volunteering shows completed shifts and their total, not registrations', async () => {
+    it('Volunteering shows completed shifts (no total line), not registrations', async () => {
       const monday = mondayWithActivity();
       const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
 
       const html = await (await app.request('/en/portal/volunteering', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('Bike Valet');
-      expect(html).toContain('Total volunteer hours: 3.5');
+      expect(html).not.toContain('Total volunteer hours');
       // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
       expect(html).not.toContain('Ride Marshal');
       expect(html).not.toContain('Fall Gala');
-      expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+      // The header reads registrations once, for Events attended; the tab doesn't show them.
+      expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledTimes(1);
     });
 
     it('Events still renders Get involved when the events read fails', async () => {
@@ -4495,7 +4564,7 @@ describe('sandbox test accounts', () => {
 
     const res = await app.request('/en/portal/change-request', {
       method: 'POST',
-      body: new URLSearchParams({ donorItemId: 'test-active', field: 'address', newValue: '2 New Ave' }),
+      body: new URLSearchParams({ donorItemId: 'test-active', address: '2 New Ave' }),
       headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
     });
     expect(res.status).toBe(200);
@@ -4519,7 +4588,7 @@ describe('sandbox test accounts', () => {
   it('gives a donor with no membership on file no membership card or regenerate form', async () => {
     const app = createApp(testDeps());
     const home = await homeOf(app, 'test-donor@example.org');
-    expect(home).toContain('Hi Dana');
+    expect(home).toContain('Dana');
     expect(home).toContain(t('en', 'home.notMember'));
     expect(home).not.toContain('class="member-card"');
 

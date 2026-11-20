@@ -38,7 +38,7 @@ export default {
 
     await consumeChangeQueueBatch(
       [...batch.messages],
-      { store: new D1ChangeRequestStore(env.DB), monday, config },
+      { store: new D1ChangeRequestStore(env.DB), monday, config, emailPreferences: env.MAILCHIMP_PREFS },
       await readGate(env)
     );
   },

@@ -39,7 +39,12 @@
   },
   // Monday access: the monday-auth broker's SyncToken entrypoint (write scope).
   // src/monday/graphql.ts tokenProviderFor prefers this binding over a MONDAY_API_TOKEN secret.
-  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // MAILCHIMP_PREFS: mailchimp-sync's PreferenceSync entrypoint, which sets a member's email
+  // preference in Mailchimp (src/changeRequests/applyPreference.ts). Deploy mailchimp-sync first.
+  "services": [
+    { "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" },
+    { "binding": "MAILCHIMP_PREFS", "service": "svbc-mailchimp-sync", "entrypoint": "PreferenceSync" }
+  ],
   "observability": {
     "enabled": true,
     "issues": { "enabled": true }
@@ -73,8 +78,12 @@
           }
         ]
       },
-      // The sandbox broker, consented as Sandbox Integration.
-      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }],
+      // The sandbox broker, consented as Sandbox Integration, and the sandbox mailchimp-sync (its
+      // own "SVBC Sandbox" audience).
+      "services": [
+        { "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" },
+        { "binding": "MAILCHIMP_PREFS", "service": "svbc-mailchimp-sync-sandbox", "entrypoint": "PreferenceSync" }
+      ],
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }

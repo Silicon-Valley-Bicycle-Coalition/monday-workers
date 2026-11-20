@@ -6,8 +6,8 @@
 Volunteers ids from the Donors & Contacts workspace, 18201685), and the Change Requests and
 letter boards (`changeRequests`, `letterCron`) are filled too. `svbc-member-portal` and
 `svbc-member-portal-writer` are deployed in production (checked 2026-11-19). Still placeholders in
-`config/svbc.json`, each a feature gate rather than a deploy blocker: `preferredLanguage`, the
-email/SMS opt-out columns, `eventRegistrations`, `pledges`, `taxLetter.benefitStatement` and
+`config/svbc.json`, each a feature gate rather than a deploy blocker: `preferredLanguage`,
+`eventRegistrations`, `pledges`, `taxLetter.benefitStatement` and
 `funraise.renewMembershipUrl`. Code-complete through v8 (the
 sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
@@ -111,20 +111,28 @@ Nothing is written back to Monday at any point.
 ## Portal layout: member card and tabs
 
 Every signed-in page shares one frame (`src/home/homeView.ts`): each person's member card with
-their totals (Total given, Hours volunteered, Member since), the status line with at most one gold
-button, then a tab bar. Tabs are links, one page each, with `aria-current` on the active one; on
+their totals (Total given, Hours volunteered, Events attended, Member since), a status line with
+at most one gold button when there's something to act on (a tax letter, a renewal, a new member's
+welcome; none in the default state), then a tab bar. Tabs are links, one page each, with `aria-current` on the active one; on
 a phone they wrap as pills. A small script (`src/assets/portalTabs.ts`, served as a hashed
 same-origin asset) fetches the clicked tab's page and swaps in its panel and tab bar, so the page
 never scrolls on a tab click; Back and Forward work the same way. Without the script, or on any
-unexpected response, the link loads normally and its `#tabs` fragment lands on the tab bar. Design history: the card-first home with "doors"
+unexpected response, the link loads normally and its `#tabs` fragment lands on the tab bar. The
+same script opens Profile's "Request a change" form as a modal `<dialog>` and highlights each
+field changed from its prefilled value; without it the link reloads Profile with `?change=<id>`,
+which renders that person's dialog open in place (as `?field=employer` does for the first
+person, with Employer focused). It also saves communication preferences as they change (a JSON
+post, a spinning bike wheel, then a check), falling back to a normal form post on anything but
+a JSON success. Design history: the card-first home with "doors"
 (`docs/superpowers/specs/2026-11-18-member-portal-home-design.md`) became this tabbed layout on
 2026-11-19.
 
 The frame's loader (`src/home/loadHomeData.ts`) runs on every tab and reads membership, donations
 (only once `historyVisibleFromISO` has passed, so Total given stays hidden until then), completed
-volunteer shifts (when volunteer history is configured), the discount list, card tokens and, from
-Jan 1 to `home.taxLetterUntil`, last year's letter. Benefits, Your giving and Volunteering render
-from that read; Events and Profile add their own. A total that isn't available is left off the
+volunteer shifts (when volunteer history is configured), event registrations (when events are
+configured; Events attended counts past ones marked attended), the discount list, card tokens and,
+from Jan 1 to `home.taxLetterUntil`, last year's letter. Benefits, Your giving, Events and
+Volunteering render from that read; Your giving (letters) and Profile add their own. A total that isn't available is left off the
 card rather than shown as zero.
 
 **States** (`src/home/homeState.ts`, a pure resolver; highest first). Each person gets one; the
@@ -142,11 +150,11 @@ household each tab groups by person.
 
 | Tab | Path | Shows | Shown when | Old paths that land here |
 |---|---|---|---|---|
-| Benefits | `/:locale/portal` | discount list, "Regenerate card" per card, organizations the session manages | always | `/portal/card`, `/portal/card/:id` |
+| Benefits | `/:locale/portal` | discount list, organizations the session manages | always | `/portal/card`, `/portal/card/:id` |
 | Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, tax letters (`#tax-letters`, while letters are enabled), Funraise links, pledges, matching gifts | always | `/portal/letters` |
 | Events | `/:locale/portal/events` | registrations (upcoming, past), Get involved meeting and event links | events configured, or a non-volunteer Get involved link | `/portal/activity` |
-| Volunteering | `/:locale/portal/volunteering` | completed shifts and total, volunteer Get involved links | volunteer history configured, or a volunteer link | |
-| Profile | `/:locale/portal/info` | change-request form, communication preferences, email addresses | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
+| Volunteering | `/:locale/portal/volunteering` | completed shifts, volunteer Get involved links | volunteer history configured, or a volunteer link | |
+| Profile | `/:locale/portal/info` | details on file with a "Request a change" button per person (the whole contact form in a dialog, prefilled, changed fields highlighted, one change request filed per changed field), communication preferences (saved as each choice changes), email addresses, "Get a new code" per card (a regenerate lands back here) | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
 
 A hidden tab's path redirects to Benefits. A session with no people (an organization rep only)
 sees Benefits with just its organizations; every other tab sends it there.
@@ -523,36 +531,53 @@ Operator setup, in addition to v1/v2 steps:
 ## v2.2 — Communication preferences
 
 From [IT Requests #12893526579](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893526579).
-A "Communication preferences" section on Profile (formerly the change-request page) lets a donor set three
-preferences — **Email Opt-Out**, **SMS Opt-Out**, and **Do Not Mail** — flowing through the same
-staff-review write path as the free-text change requests (the portal still never writes donor
-records; staff apply approved changes by hand). The form shows the current state read live from
-the Donors board and submits a diff: only preferences that actually changed become change
-requests, with fixed staff-facing values ("Opted out of email" / "Subscribed to email", "Opted
-out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail") rather than free text.
+A "Communication preferences" section on Profile lets a member set three preferences: **email**,
+**text messages (SMS)** and **postal mail**. Each choice saves as it's made (a JSON post, a
+spinning bike wheel, then "Saved"; without script the form's button posts). Since 2026-11-19
+they're **applied automatically, with no staff step**:
 
-Two compliance notes baked into the design:
+| Preference | Shown from | Applied by member-portal-writer to |
+|---|---|---|
+| Email | People → **Personal Email Consent** (`donorEmailConsent`), which mailchimp-sync keeps at the address's Mailchimp status hourly; only Subscribed reads as receiving email | **Mailchimp**, through mailchimp-sync's `PreferenceSync` entrypoint (service binding `MAILCHIMP_PREFS`): opting out unsubscribes the **Personal Email**; opting back in sets it to pending, so Mailchimp emails a confirm link and only the member's click subscribes them. The Household Email is never touched (it may be shared). |
+| SMS | People → **SMS Opt-Out** checkbox (`donorSmsOptOut`; created 2026-11-19) | That checkbox, so staff texting through the Zoom integration see it on the person. |
+| Postal mail | People → **Do Not Mail** checkbox (`donorDoNotMail`) | That checkbox. |
 
-* **The staff-review path is deliberate, not a shortcut.** Mailchimp is SVBC's real system of
-  record for email consent (see the private planning repo's Mailchimp reconciliation item), so
-  the portal must not flip opt-out flags directly; a queued request staff reconcile by hand is
-  also comfortably within CAN-SPAM's 10-business-day window for honoring opt-outs.
-* **Email Opt-Out maps to the compliance-critical `HasOptedOutOfEmail` migration column**
-  (`docs/03-monday-migration-mapping.md`, private planning repo). Do Not Mail maps to Salesforce's
-  `Do_Not_Mail__c`. SMS Opt-Out is net-new — Salesforce has no per-contact SMS consent field — so
-  its column starts empty for every donor.
+Every change is still a `change_requests` row and a Change Requests item, as the audit trail:
+the writer applies it first, then logs it with the result in the Field ("SMS Opt-Out (applied)",
+"Email Opt-Out (Mailchimp: unsubscribed)", "… (no Personal Email)"), the same pattern as the
+employer answer. Values are the fixed staff-facing strings ("Opted out of email" / "Subscribed to
+email", "Opted out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail").
+`src/changeRequests/applyPreference.ts`.
 
-**Gated per column on `monday.columns.donorEmailOptOut` / `donorSmsOptOut` / `donorDoNotMail`:**
-each preference appears on the form only once its Donors-board **checkbox** column id is filled in
-(same treatment as `preferredLanguage`), so staff can roll out one preference at a time. With none
-configured, the section is absent entirely. The change-request board/queue prerequisites are the
-v2 setup above — no new board, queue, migration, or secret.
+**Ordering.** The submit diffs against the member's *effective* state: their newest request for
+that preference still inside `dedupeWindowHours`, else Monday, and Profile shows that same state
+(Mailchimp's side reaches Personal Email Consent only on the next hourly run). A switch-back is
+filed as its own request recording what it overrides, skipping the dedupe so a third switch files
+too. The writer applies a request only while it's the newest for that donor and field
+(`hasNewerRequest`); an older one is logged as "(superseded)", so out-of-order queue delivery
+can't let an older choice land last.
 
-Operator setup, in addition to the v2 steps: add up to three checkbox columns (Email Opt-Out,
-SMS Opt-Out, Do Not Mail) to the Donors board and fill in their ids in `config/svbc.json`. At
-migration cutover, Email Opt-Out and Do Not Mail carry over from Salesforce per the mapping doc;
-verify consent state against Mailchimp before trusting migrated opt-out flags (compliance item in
-`docs/09-integrations-and-addons.md`).
+**Write switches.** The writer's own switch (`member-portal:writes`) gates the checkbox writes and
+the call to mailchimp-sync (`off` dry-runs both). mailchimp-sync's switch
+(`mailchimp-sync:writes`) gates the Mailchimp change itself: `off` dry-runs, `hold`/`unknown`
+throws and the writer's queue retries.
+
+Compliance notes:
+
+* **Mailchimp stays the email consent system of record.** The portal changes Mailchimp, never a
+  Monday email flag; Monday follows Mailchimp. An opt-out reaches Mailchimp within moments of the
+  queue, well inside CAN-SPAM's 10-business-day window. An opt-back-in is Mailchimp's double
+  opt-in (pending, then the member's own confirm click), its rule for re-subscribing someone who
+  unsubscribed; the same path adds an address Mailchimp doesn't hold yet, only ever as pending.
+* **SMS Opt-Out is net-new**: Salesforce had no per-contact SMS consent field, so it starts empty.
+  It isn't marked 🔒 (`scripts/mark-read-only-columns.mjs`): staff also set it, and Do Not Mail,
+  when a person asks by phone or replies STOP.
+
+**Gated per column:** each preference appears only once its column id is filled in, so one can
+ship at a time; with none, the section is absent. Email also needs the writer's `MAILCHIMP_PREFS`
+binding (`wrangler.writer.jsonc`). Deploy order: mailchimp-sync (it exports `PreferenceSync`),
+then member-portal-writer, then the portal.
+
 ## v2.3 — Automatic January letter emails, staff-controlled from a Monday board
 
 The scheduled follow-on to v2.1 (IT Requests item 12893503099): once a year, every donor with
@@ -628,9 +653,9 @@ Operator setup, in addition to v1/v2/v2.1 steps:
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (a widget per donor in the header of every portal tab, with "Regenerate card" on
-Benefits, `GET /:locale/portal`, where the old `/:locale/portal/card` and `/card/:donorItemId`
-pages now redirect) — name, member number, tier, status, expiry — with a
+live card (a widget per donor in the header of every portal tab, with "Get a new code" on
+Profile, `GET /:locale/portal/info`; the old `/:locale/portal/card` and `/card/:donorItemId`
+pages now redirect to Benefits) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"

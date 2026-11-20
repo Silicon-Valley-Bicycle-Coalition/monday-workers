@@ -1,4 +1,5 @@
 import { backToPortalLink, escapeHtml } from '../views';
+import { formatShortDate } from '../dates';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 import type { DonorPledges, PledgeWithProgress } from './loadPledgeData';
@@ -12,7 +13,7 @@ function pledgeRow(pledge: PledgeWithProgress): string {
       <td>${escapeHtml(pledge.fulfilled)}</td>
       <td>${escapeHtml(progress)}</td>
       <td>${escapeHtml(pledge.status)}</td>
-      <td>${escapeHtml(pledge.dueDate)}</td>
+      <td>${escapeHtml(formatShortDate(pledge.dueDate))}</td>
     </tr>
   `;
 }

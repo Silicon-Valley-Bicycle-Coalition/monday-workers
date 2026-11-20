@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { setEmailPreference, type EmailPreferenceResult } from './preferences/emailPreference';
+import { dryRunMailchimp } from './writeSwitch';
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, queueBaseName } from './environment';
@@ -243,3 +246,19 @@ export default {
     }
   },
 };
+
+// The member portal's writer sets a member's email preference here (service binding, entrypoint
+// "PreferenceSync"), so the Mailchimp key and its error handling stay in this Worker. Gated by
+// this Worker's own write switch: `off` dry-runs, `hold`/`unknown` throw and the writer's queue
+// retries. See src/preferences/emailPreference.ts and the README's "Member portal preferences".
+export class PreferenceSync extends WorkerEntrypoint<Env> {
+  async setEmailPreference(email: string, optedOut: boolean, requestId: string): Promise<EmailPreferenceResult> {
+    const config = configFor(this.env);
+    const ctx = await skipContext(this.env);
+    const live = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, this.env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
+    const mailchimp = ctx.mode === 'on' ? live : dryRunMailchimp(live, { ...ctx, deliveryId: `portal-preference:${requestId}` });
+    const result = await setEmailPreference(email, optedOut, { mode: ctx.mode, mailchimp });
+    console.log(`mailchimp-sync portal preference ${requestId}: ${optedOut ? 'opt-out' : 'opt-in'} -> ${result}${ctx.mode === 'on' ? '' : ` (${ctx.mode})`}`);
+    return result;
+  }
+}

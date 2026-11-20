@@ -158,6 +158,7 @@ export const discardingChangeStore: ChangeRequestStore = {
   findRecentByDedupeHash: async () => null,
   getRequest: async () => null,
   markWritten: async () => {},
+  hasNewerRequest: async () => false,
   purgeWrittenBefore: async () => 0,
 };
 

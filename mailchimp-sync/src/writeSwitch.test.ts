@@ -61,7 +61,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
 function fakeMailchimp(overrides: Partial<MailchimpClient> = {}): MailchimpClient {
   return {
     updateMember: vi.fn().mockResolvedValue('updated'),
-    renameMember: vi.fn(), unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
+    renameMember: vi.fn(), unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'), requestResubscribe: vi.fn(),
     getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { int1: true } }),
     getMemberTagNames: vi.fn().mockResolvedValue([]),
     listInterests: vi.fn().mockResolvedValue([]),

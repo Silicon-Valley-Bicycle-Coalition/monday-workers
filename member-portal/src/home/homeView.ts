@@ -86,7 +86,8 @@ function renewHeadline(state: Extract<PersonState, { kind: 'renew' }>, name: str
   return name === null ? t(locale, 'home.renewLapsedHeadlineNoDate') : t(locale, 'home.renewLapsedHeadlineNamedNoDate', { name });
 }
 
-function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBlock {
+// null in the default state: with nothing to act on, the header is just the cards and stats.
+function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBlock | null {
   // The session covers everyone, loaded or not: with one record missing, the viewer may be the
   // person who failed to load, so the copy still names whose state it is and the renew button
   // still can't promise whose membership a gift renews.
@@ -96,12 +97,7 @@ function statusBlock(data: HomeData, locale: Locale, renewUrl: string): StatusBl
   const lettersHref = lettersLink(locale);
   const cardHref = discountsLink(locale);
 
-  if (first === undefined || data.page.kind === 'default') {
-    // Name the card(s) only when one shows (a card token can fail, or the card feature be off).
-    const cardShown = data.people.some((e) => e.card !== null);
-    const key = !cardShown ? 'home.defaultHeadlineNoCard' : household ? 'home.defaultHeadlineMany' : 'home.defaultHeadline';
-    return { headline: t(locale, key), sub: null, button: null, note: null };
-  }
+  if (first === undefined || data.page.kind === 'default') return null;
 
   if (first.state.kind === 'taxLetter') {
     const letter = first.state.letter;
@@ -208,11 +204,14 @@ function personBlock(entry: HomeData['people'][number], data: HomeData, locale: 
 }
 
 // The member's totals beside their card. A total that isn't available (history gate closed,
-// volunteer history off or failed, no Member Since) is left out rather than shown as zero.
+// volunteer history or events off or failed, no Member Since) is left out rather than shown as zero,
+// and so is a zero.
 function statsList(stats: PersonStats, since: string, locale: Locale): string {
   const rows: [TranslationKey, string][] = [];
   if (stats.totalDonated !== null) rows.push(['stats.totalGiven', formatUsdText(stats.totalDonated)]);
-  if (stats.volunteerHours !== null) rows.push(['stats.hoursVolunteered', new Intl.NumberFormat(locale).format(stats.volunteerHours)]);
+  // A zero reads as a score, not an invitation; the Events and Volunteering tabs do the inviting.
+  if (stats.volunteerHours) rows.push(['stats.hoursVolunteered', new Intl.NumberFormat(locale).format(stats.volunteerHours)]);
+  if (stats.eventsAttended) rows.push(['stats.eventsAttended', new Intl.NumberFormat(locale).format(stats.eventsAttended)]);
   const sinceYear = /^\d{4}-\d{2}-\d{2}$/.test(since.trim()) ? since.trim().slice(0, 4) : null;
   if (sinceYear !== null) rows.push(['stats.memberSince', sinceYear]);
   if (rows.length === 0) return '';
@@ -258,7 +257,7 @@ export function orgSection(orgs: HomeData['orgs'], locale: Locale): string {
 
 // `panel` is the active tab's content, rendered by that tab's own view (src/doors/).
 export function portalView(data: HomeData, active: TabKey, panel: string, locale: Locale, renewUrl: string): string {
-  // Work-only session: no greeting, headline, cards or tabs, just the organizations.
+  // Work-only session: no headline, cards or tabs, just the organizations.
   if (data.people.length === 0 && data.orgs.length > 0) {
     return `<div class="home">${orgSection(data.orgs, locale)}</div>`;
   }
@@ -267,25 +266,23 @@ export function portalView(data: HomeData, active: TabKey, panel: string, locale
   if (data.people.length === 0) {
     return `<div class="home"><p class="home-empty">${escapeHtml(t(locale, 'orgs.nothingToShow'))}</p></div>`;
   }
-  const names = data.people.map((e) => e.person.firstName).filter((n) => n !== '');
-  const greeting =
-    names.length === 0
-      ? t(locale, 'home.greetingNoName')
-      : t(locale, data.page.kind === 'newMember' ? 'home.greetingWelcome' : 'home.greeting', { names: joinNames(names, locale) });
   const status = statusBlock(data, locale, renewUrl);
+  const statusHtml =
+    status === null
+      ? ''
+      : `<div class="home-status">
+          <p class="home-headline">${escapeHtml(status.headline)}</p>
+          ${status.sub === null ? '' : `<p class="home-sub">${escapeHtml(status.sub)}</p>`}
+          ${status.button === null ? '' : link(status.button, 'cta-button home-action')}
+          ${status.note === null ? '' : `<p class="home-note">${escapeHtml(status.note)}</p>`}
+        </div>`;
   return `
     <div class="home">
       <div class="home-header">
         <div class="home-people">
           ${data.people.map((entry) => personBlock(entry, data, locale, renewUrl)).join('')}
         </div>
-        <div class="home-status">
-          <p class="home-greeting">${escapeHtml(greeting)}</p>
-          <p class="home-headline">${escapeHtml(status.headline)}</p>
-          ${status.sub === null ? '' : `<p class="home-sub">${escapeHtml(status.sub)}</p>`}
-          ${status.button === null ? '' : link(status.button, 'cta-button home-action')}
-          ${status.note === null ? '' : `<p class="home-note">${escapeHtml(status.note)}</p>`}
-        </div>
+        ${statusHtml}
       </div>
       ${data.unavailableCount > 0 ? `<div class="home-unavailable">${someRecordsUnavailableNote(data.unavailableCount, locale)}</div>` : ''}
       ${tabBar(data.tabs, active, locale)}

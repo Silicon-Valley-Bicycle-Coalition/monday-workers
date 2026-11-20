@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequestViews';
 import { t } from '../i18n/t';
+import { escapeHtml } from '../views';
 
 const sampleDonor = { id: 'donor-1', name: 'Jane <b>Example</b>', email: 'jane@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '', employer: '', emailOptOut: false, smsOptOut: false, doNotMail: false };
 const donors = [
@@ -17,17 +18,17 @@ describe('changeRequestFormView', () => {
     expect(html).toContain('&lt;b&gt;Example&lt;/b&gt;');
   });
 
-  it('posts back to the locale-prefixed change-request route with the three expected fields', () => {
+  it('posts back to the locale-prefixed change-request route with every contact field', () => {
     const html = changeRequestFormView(donors, 'en', []);
     expect(html).toContain('action="/en/portal/change-request"');
     expect(html).toContain('name="donorItemId"');
-    expect(html).toContain('name="field"');
-    expect(html).toContain('name="newValue"');
+    for (const name of ['address', 'email', 'phone', 'language']) expect(html).toContain(`<input name="${name}"`);
   });
 
-  it('the field select includes a Preferred Language option, localized', () => {
+  it('labels Preferred Language in the requested locale', () => {
     const html = changeRequestFormView([sampleDonor], 'vi', []);
-    expect(html).toContain('value="language"');
+    expect(html).toContain(t('vi', 'changeRequest.fieldLanguage'));
+    expect(html).toContain('<input name="language"');
   });
 
   it('renders actual translated copy for the requested locale, not just structure', () => {
@@ -101,6 +102,68 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(html).toMatch(/name="smsOptOut" value="no"[^>]* checked/);
   });
 
+  it('notes the confirm email only when the email preference is shown', () => {
+    expect(changeRequestFormView([optedOutDonor], 'es', ['emailOptOut'])).toContain(`<p class="prefs-note">${escapeHtml(t('es', 'changeRequest.prefEmailConfirmNote'))}</p>`);
+    expect(changeRequestFormView([optedOutDonor], 'en', ['doNotMail'])).not.toContain('prefs-note');
+  });
+
+  it('gives each preference row a live status cell and the table its Saving/Saved copy', () => {
+    const html = changeRequestFormView([optedOutDonor], 'es', ['emailOptOut']);
+    expect(html).toContain(`data-saving="${t('es', 'changeRequest.prefsSaving')}" data-saved="${t('es', 'changeRequest.prefsSaved')}"`);
+    expect(html).toContain('<td class="pref-status" aria-live="polite"></td></tr>');
+  });
+
+  it('lays the preferences out as a table: channel row header, receive choice, then opt-out choice', () => {
+    const html = changeRequestFormView([optedOutDonor], 'en', ['emailOptOut', 'doNotMail']);
+    expect(html).toContain('<table class="prefs-table" data-saving=');
+    expect(html).not.toContain('<fieldset');
+    expect(html).toContain(`<th scope="row" id="pref-donor-1-emailOptOut">${t('en', 'changeRequest.prefEmailOptOut')}</th>`);
+    expect(html).toContain('name="emailOptOut" value="no" aria-describedby="pref-donor-1-emailOptOut"');
+    const row = html.slice(html.indexOf('id="pref-donor-1-doNotMail"'));
+    expect(row.indexOf(t('en', 'changeRequest.prefMailNo'))).toBeLessThan(row.indexOf(t('en', 'changeRequest.prefMailYes')));
+  });
+
+  it('shows the details, then a Request a change link that opens a closed dialog holding the whole prefilled form', () => {
+    const html = changeRequestFormView([{ ...optedOutDonor, address: '1 Old <St>', phone: '555-0100', preferredLanguage: 'English' }], 'en', [], { emailPrefill: { 'donor-1': 'jane@example.org' } });
+    expect(html).toContain(`<h2 class="visually-hidden">${t('en', 'profile.detailsHeading')}</h2>`);
+    expect(html).toContain('href="/en/portal/info?change=donor-1" data-dialog-open="change-request-0"');
+    expect(html).toContain('<dialog id="change-request-0" class="portal-dialog" aria-labelledby="change-request-0-title">');
+    expect(html.indexOf('<dl>')).toBeLessThan(html.indexOf('<dialog'));
+    const form = html.slice(html.indexOf('class="contact-form"'));
+    expect(form).toContain('<input type="hidden" name="donorItemId" value="donor-1" />');
+    expect(form).toContain('<input name="address" value="1 Old &lt;St&gt;" maxlength="500" type="text" autocomplete="street-address" />');
+    expect(form).toContain('<input name="email" value="jane@example.org" maxlength="500" type="email" autocomplete="email" />');
+    expect(form).toContain('<input name="phone" value="555-0100"');
+    expect(form).toContain('<input name="language" value="English"');
+    expect(form).toContain(`<span class="changed-mark">${t('en', 'changeRequest.changedMark')}</span>`);
+    expect(form).not.toContain('name="field"');
+    expect(form).not.toContain('name="employer"');
+  });
+
+  it('leaves the email empty for anyone the tab does not already show an address for', () => {
+    const html = changeRequestFormView([optedOutDonor], 'en', []);
+    expect(html).toContain('<input name="email" value="" maxlength="500" type="email"');
+  });
+
+  it("gives each person of a household their own link, dialog and form, named in the dialog, and opens only the one asked for", () => {
+    const html = changeRequestFormView([optedOutDonor, { ...optedOutDonor, id: 'donor-2', name: 'Sam' }], 'en', [], { openFor: 'donor-2' });
+    expect(html).toContain('data-dialog-open="change-request-0"');
+    expect(html).toContain('data-dialog-open="change-request-1"');
+    expect(html).toContain('<input type="hidden" name="donorItemId" value="donor-2" />');
+    expect(html).toContain('<p class="contact-form-person">Sam</p>');
+    expect(html).toContain('aria-labelledby="change-request-1-title" open data-open-on-load>');
+    expect(html).not.toContain('aria-labelledby="change-request-0-title" open');
+  });
+
+  it('heads sections by name only: no per-person heading for one person, just the name in a household', () => {
+    const single = changeRequestFormView([optedOutDonor], 'en', ['emailOptOut']);
+    expect(single).toContain(`<h2>${t('en', 'changeRequest.prefsSectionHeading')}</h2>`);
+    expect(single).not.toContain('<h3>');
+    const household = changeRequestFormView([optedOutDonor, { ...optedOutDonor, id: 'donor-2', name: 'Sam' }], 'en', ['emailOptOut']);
+    expect(household.match(/<h3>Sam<\/h3>/g)).toHaveLength(2);
+    expect(household).not.toContain('Sam — ');
+  });
+
   it('renders only the configured preference fields', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', ['doNotMail']);
     expect(html).toContain('name="doNotMail"');
@@ -127,14 +190,15 @@ describe('changeRequestFormView — communication preferences section', () => {
 });
 
 describe('preferencesResultView', () => {
-  it('confirms submitted preference changes', () => {
-    const html = preferencesResultView({ kind: 'submitted', submitted: 2, duplicates: 0 }, 'en');
-    expect(html).toContain(t('en', 'changeRequest.submittedHeading'));
-  });
-
-  it('reports all-duplicates as already submitted', () => {
-    const html = preferencesResultView({ kind: 'submitted', submitted: 0, duplicates: 1 }, 'en');
-    expect(html).toContain(t('en', 'changeRequest.duplicateHeading'));
+  it.each([
+    ['a fresh save', { submitted: 2, duplicates: 0 }],
+    ['a repeat of one already on file', { submitted: 0, duplicates: 1 }],
+  ])('confirms %s as received, with no staff-review wording', (_label, counts) => {
+    const html = preferencesResultView({ kind: 'submitted', ...counts }, 'en');
+    expect(html).toContain(t('en', 'changeRequest.prefsReceivedHeading'));
+    expect(html).toContain(escapeHtml(t('en', 'changeRequest.prefsReceivedBody')));
+    expect(html).not.toContain(escapeHtml(t('en', 'changeRequest.submittedBody')));
+    expect(html).toContain('href="/en/portal/info"');
   });
 
   it('tells the donor when nothing changed', () => {
@@ -152,19 +216,19 @@ describe('preferencesResultView', () => {
 describe('changeRequestFormView — employer', () => {
   const donor = { ...sampleDonor, employer: 'Acme <Corp>' };
 
-  it('offers Employer and shows the current one when enabled', () => {
-    const html = changeRequestFormView([donor], 'en', [], 'on');
-    expect(html).toContain('<option value="employer">Employer</option>');
+  it('offers Employer, prefilled, and shows the current one when enabled', () => {
+    const html = changeRequestFormView([donor], 'en', [], { employerField: 'on' });
+    expect(html).toContain('<input name="employer" value="Acme &lt;Corp&gt;" maxlength="500" type="text" autocomplete="organization" />');
     expect(html).toContain('<dt>Employer</dt><dd>Acme &lt;Corp&gt;</dd>');
   });
 
-  it('preselects Employer', () => {
-    expect(changeRequestFormView([donor], 'en', [], 'preselected')).toContain('<option value="employer" selected>Employer</option>');
+  it('focuses Employer in the open dialog when preselected', () => {
+    expect(changeRequestFormView([donor], 'en', [], { employerField: 'preselected', openFor: donor.id })).toContain('autocomplete="organization" autofocus />');
   });
 
   it('shows neither while off', () => {
     const html = changeRequestFormView([donor], 'en', []);
-    expect(html).not.toContain('value="employer"');
+    expect(html).not.toContain('name="employer"');
     expect(html).not.toContain('<dt>Employer</dt>');
   });
 });

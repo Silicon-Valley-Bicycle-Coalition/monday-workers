@@ -9,6 +9,7 @@ function fakeStore(purgedCount: number): ChangeRequestStore {
     findRecentByDedupeHash: vi.fn(),
     getRequest: vi.fn(),
     markWritten: vi.fn(),
+    hasNewerRequest: vi.fn().mockResolvedValue(false),
     purgeWrittenBefore: vi.fn().mockResolvedValue(purgedCount),
   };
 }
