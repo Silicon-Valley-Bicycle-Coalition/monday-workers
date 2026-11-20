@@ -92,6 +92,20 @@ describe('runEmployerAnswers', () => {
     expect(disabled.store.rows.size).toBe(0);
   });
 
+  it('treats invalid as an older impact-attribution: records nothing, stops, and retries next run', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const two = async () => new Map([['pat@x.org', 'A'], ['pat2@x.org', 'B']]);
+    const d = deps({ readAnswers: two, sink: sink(async () => ({ recorded: false, reason: 'invalid' })) });
+    (d.people.findItemIds as ReturnType<typeof vi.fn>).mockResolvedValue(['7001']);
+    expect(await runEmployerAnswers(gate('on'), d)).toMatchObject({ outcome: 'impact-invalid', refused: 0, deferred: 2 });
+    expect(d.sink!.recordEmployerAnswer).toHaveBeenCalledTimes(1);
+    expect(d.store.rows.size).toBe(0);
+    expect(error.mock.calls.some(([line]) => String(line).includes('employer-answer-invalid'))).toBe(true);
+
+    d.sink = sink();
+    expect(await runEmployerAnswers(gate('on'), d)).toMatchObject({ outcome: 'done', pending: 2, recorded: 2 });
+  });
+
   it('records no or several People items, and looks again only after a day', async () => {
     const d = deps({ readAnswers: async () => new Map([['nobody@x.org', 'Acme'], ['two@x.org', 'Acme']]) });
     expect(await runEmployerAnswers(gate('on'), d)).toMatchObject({ unmatched: 1, ambiguous: 1, recorded: 0 });
