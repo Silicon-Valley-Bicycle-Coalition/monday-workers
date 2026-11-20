@@ -97,9 +97,10 @@ Employer, and DTD's company names wouldn't match Benevity's.
 `dtd.publicKey` in config is not a secret; browsers receive it, and `member-portal`'s employer-search
 widget uses the same one. No Monday secret: access comes from the broker.
 
-**To verify:** that the DTD private key has been rotated before first deploy. The README says the
-earlier key was exposed and must be rotated. **To verify:** with DTD that custom API access on
-SVBC's Standard plan is supported (DTD's docs label it Enterprise-only).
+**Before the first deploy** (the Worker isn't deployed in either environment as of 2026-11-19):
+rotate the DTD private key, which was exposed on 2026-11-03, and get DTD to confirm in writing that
+SVBC's plan allows API access. DTD's docs say "Custom API Implementation is only available for
+Double the Donation Enterprise clients," and SVBC is on Standard.
 
 ## Write switch
 
