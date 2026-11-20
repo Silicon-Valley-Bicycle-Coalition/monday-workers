@@ -317,4 +317,37 @@ describe('CloudflareEmailSender', () => {
       expect(message.replyTo).toBe('contactus@bikesiliconvalley.org');
     });
   });
+  describe('sendOrgStatementReadyEmail', () => {
+    const params = { to: 'rep@acme.org', orgName: 'Acme & Co', year: 2026, loginUrl: 'https://portal.example.org/auth/callback?lang=en#token=abc', locale: 'en' as const };
+
+    it("sends the localized subject naming the organization and year, with the sign-in link", async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL, 'office@example.org');
+
+      await sender.sendOrgStatementReadyEmail(params);
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.to).toBe('rep@acme.org');
+      expect(message.replyTo).toBe('office@example.org');
+      expect(message.subject).toBe("🚴 Acme & Co's 2026 year-end statement is ready");
+      expect(message.html).toContain(params.loginUrl);
+      expect(message.text).toContain(params.loginUrl);
+      expect(message.text).toContain(t('en', 'orgs.emailBody', { org: 'Acme & Co', year: '2026' }));
+      // The organization's name is escaped in the HTML part.
+      expect(message.html).toContain('Acme &amp; Co');
+      expect(message.html).not.toContain('Acme & Co');
+      expect(message.html).toContain(LOGO_URL);
+    });
+
+    it('follows the locale', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
+
+      await sender.sendOrgStatementReadyEmail({ ...params, locale: 'es' });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.subject).toBe(`🚴 ${t('es', 'orgs.emailSubject', { org: 'Acme & Co', year: '2026' })}`);
+      expect(message.html).toContain(t('es', 'orgs.emailLink'));
+    });
+  });
 });

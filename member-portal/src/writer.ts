@@ -1,7 +1,7 @@
 import { queueBaseName } from './environment';
 import { configFor } from './configFor';
 import { D1ChangeRequestStore } from './db/changeRequests';
-import { HttpMondayClient } from './monday/client';
+import { HttpMondayClient, orgReadConfig } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import { consumeChangeQueueBatch } from './changeRequests/processBatch';
 import { readGate } from './writeSwitch';
@@ -31,7 +31,9 @@ export default {
       config.monday.organizationsBoardId ?? 0,
       config.donations,
       null,
-      config.monday.volunteersBoardId
+      config.monday.volunteersBoardId,
+      undefined,
+      orgReadConfig(config)
     );
 
     await consumeChangeQueueBatch(

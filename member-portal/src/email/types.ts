@@ -28,7 +28,19 @@ export interface SendLetterReadyEmailParams {
   employerUrl?: string;
 }
 
+// The January email to an organization rep (src/orgs/processOrgStatementSend.ts). Built-in i18n
+// copy only: the Letter Settings templates are written to a donor about their own letter.
+export interface SendOrgStatementReadyEmailParams {
+  to: string;
+  orgName: string;
+  year: number;
+  // The sign-in link, landing on the organization's statement for the year.
+  loginUrl: string;
+  locale: Locale;
+}
+
 export interface EmailSender {
   sendLoginEmail(params: SendLoginEmailParams): Promise<void>;
   sendLetterReadyEmail(params: SendLetterReadyEmailParams): Promise<void>;
+  sendOrgStatementReadyEmail(params: SendOrgStatementReadyEmailParams): Promise<void>;
 }

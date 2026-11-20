@@ -10,10 +10,11 @@ describe('D1SessionStore', () => {
       donorItemIds: ['donor-1', 'donor-2'],
       expiresAt: '2026-08-23T00:00:00.000Z',
       emailHash: 'h1',
+      orgGrants: [],
     });
 
     const result = await store.getSession('session-1', '2026-08-22T12:00:00.000Z');
-    expect(result).toEqual({ donorItemIds: ['donor-1', 'donor-2'], emailHash: 'h1' });
+    expect(result).toEqual({ donorItemIds: ['donor-1', 'donor-2'], emailHash: 'h1', orgGrants: [] });
   });
 
   it('returns null once the session has expired', async () => {
@@ -23,6 +24,7 @@ describe('D1SessionStore', () => {
       donorItemIds: ['donor-3'],
       expiresAt: '2026-08-22T00:00:00.000Z',
       emailHash: null,
+      orgGrants: [],
     });
 
     expect(await store.getSession('session-2', '2026-08-23T00:00:00.000Z')).toBeNull();
@@ -40,6 +42,7 @@ describe('D1SessionStore', () => {
       donorItemIds: ['donor-4'],
       expiresAt: '2026-08-23T00:00:00.000Z',
       emailHash: null,
+      orgGrants: [],
     });
 
     await store.deleteSession('session-4');
@@ -49,8 +52,8 @@ describe('D1SessionStore', () => {
 
   it('returns emailHash null for a session created with null', async () => {
     const store = new D1SessionStore(env.DB);
-    await store.createSession({ sessionHash: 'session-5', donorItemIds: ['d'], expiresAt: '2026-08-23T00:00:00.000Z', emailHash: null });
-    expect(await store.getSession('session-5', '2026-08-22T12:00:00.000Z')).toEqual({ donorItemIds: ['d'], emailHash: null });
+    await store.createSession({ sessionHash: 'session-5', donorItemIds: ['d'], expiresAt: '2026-08-23T00:00:00.000Z', emailHash: null, orgGrants: [] });
+    expect(await store.getSession('session-5', '2026-08-22T12:00:00.000Z')).toEqual({ donorItemIds: ['d'], emailHash: null, orgGrants: [] });
   });
 
   it('returns emailHash null for a row written before migration 0008 set the column', async () => {
@@ -58,6 +61,16 @@ describe('D1SessionStore', () => {
       .bind('session-6', JSON.stringify(['d']), '2026-08-23T00:00:00.000Z')
       .run();
     const store = new D1SessionStore(env.DB);
-    expect(await store.getSession('session-6', '2026-08-22T12:00:00.000Z')).toEqual({ donorItemIds: ['d'], emailHash: null });
+    expect(await store.getSession('session-6', '2026-08-22T12:00:00.000Z')).toEqual({ donorItemIds: ['d'], emailHash: null, orgGrants: [] });
+  });
+
+  it('round-trips org grants and reads a NULL column as none', async () => {
+    const store = new D1SessionStore(env.DB);
+    const orgGrants = [{ orgItemId: 'o1', affiliationItemId: 'a1', via: 'workEmail' as const, personItemId: 'p1' }];
+    await store.createSession({ sessionHash: 'session-og', donorItemIds: [], expiresAt: '2026-08-23T00:00:00.000Z', emailHash: null, orgGrants });
+    expect((await store.getSession('session-og', '2026-08-22T00:00:00.000Z'))!.orgGrants).toEqual(orgGrants);
+
+    await env.DB.prepare(`INSERT INTO sessions (session_hash, donor_item_ids, expires_at) VALUES ('session-old', '[]', '2026-08-23T00:00:00.000Z')`).run();
+    expect((await store.getSession('session-old', '2026-08-22T00:00:00.000Z'))!.orgGrants).toEqual([]);
   });
 });

@@ -8,6 +8,8 @@ export interface AffiliationRecord {
   organizationName: string | null;
   statusLabel: string | null;
   primary: boolean;
+  // The Affiliations "Portal access" checkbox; false when that column is unconfigured.
+  portalAccess: boolean;
 }
 
 export type AffiliationPlan =

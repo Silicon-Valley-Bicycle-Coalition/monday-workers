@@ -200,6 +200,50 @@ To check how it treats different gifts, look at a letter for a person who has, i
 A person with only Donor Advised Fund gifts that year should get a letter with just that table,
 and no total. A person with only those other types should have no letter for that year.
 
+## Give a rep portal access
+
+Some people act for an organization (a sponsor, an employer) and should see what that
+organization has given. To let someone in:
+
+1. In Monday, open the person's **Current** Affiliation (the one linking them to the
+   organization) and tick **Portal access**.
+2. They sign in at the portal with their Personal Email, or with that Affiliation's **Work
+   Email**. A Work Email opens only that organization, nothing personal.
+3. To end access, untick **Portal access** or mark the Affiliation **Former**. It stops on the
+   next organization page they open. The organization may still be listed on their home page for
+   up to 24 hours, but opening it shows "not found".
+
+In January, each rep also gets an email that a statement for last year is ready. If a rep didn't
+get one (for example, you added their Work Email after the system had already skipped them for
+having no email), ask an engineer to reset that row; the next daily run will send it.
+
+## Organization reps (sandbox)
+
+Run these in the sandbox, with the test accounts from your list. Ask for a test person with a
+Current Affiliation to a test organization, and a test Work Email for it.
+
+1. **Grant.** Tick **Portal access** on that person's Current Affiliation (sandbox Affiliations
+   board). Sign in with their Personal Email. You should see the organization on the home page, and
+   opening it shows its page and a statement for each year with activity.
+2. **Work Email.** Sign in with the Affiliation's Work Email. The home page should list only that
+   organization, with no personal giving, card or letters.
+3. **Revoke.** Untick **Portal access** (or mark the Affiliation Former), then reload the
+   organization page. You should get "not found". The home list may still show it for up to 24 hours.
+4. **Statement.** Open the statement for an organization that has a Sponsorship and an employee
+   matching gift. Both should be listed, along with its donations, grants, contracts, in-kind gifts
+   and event tickets. No employee names should appear, and donation item names should not be shown.
+5. **Volunteering.** With fewer than 3 people having volunteered for the organization, the
+   volunteering section should be hidden. With 3 or more, it shows as a total only. The line counts people affiliated with the organization today, not
+   whoever was affiliated when they volunteered.
+6. **January email.** The letter run is skipped entirely under `hold` and `off` (it stops at the
+   write switch before reading Monday), so there is nothing to see in a dry run. An engineer sets
+   the switch to `on` in the sandbox and triggers the letter run; each rep gets one statement
+   email, and sandbox mail only reaches the sandbox sink.
+
+The acknowledgment section of the statement is switched off until the accountant approves its
+wording; don't report it missing. The nine non-English translations of the organization pages are
+drafts, so wording problems there are expected until a native speaker checks them.
+
 ## If something seems stuck
 
 - **No email after a couple of minutes?** Wait about 15 minutes and try again. The system limits

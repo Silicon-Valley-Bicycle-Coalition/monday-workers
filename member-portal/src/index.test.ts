@@ -6,6 +6,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import type { LetterSendStore } from './db/letterSends';
+import type { OrgStatementSendStore } from './db/orgStatementSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
@@ -67,6 +68,13 @@ const config: Config = {
   matchingGifts: { doubleTheDonationPublicKey: null },
   impact: { statementsByYear: {} },
   home: { newMemberDays: 60, renewalWarningDays: 30, taxLetterUntil: '04-15' },
+  organizations: {
+    portalAccessColumn: 'REPLACE_WITH_COLUMN_ID',
+    workEmailColumn: 'REPLACE_WITH_COLUMN_ID',
+    addressColumns: ['REPLACE_WITH_COLUMN_ID'],
+    acknowledgmentSignedOff: false,
+    volunteerFloor: 3,
+  },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -106,6 +114,21 @@ function fakeLetterStore(): LetterSendStore {
   };
 }
 
+// Resolves null like fakeLetterStore: the org consumer's "no row" path, retried.
+function fakeOrgStore(): OrgStatementSendStore {
+  return {
+    listKeysForYear: vi.fn(),
+    createQueued: vi.fn(),
+    findByKey: vi.fn(),
+    getById: vi.fn().mockResolvedValue(null),
+    claimForSending: vi.fn(),
+    releaseClaim: vi.fn(),
+    markSent: vi.fn(),
+    markSkipped: vi.fn(),
+    requeue: vi.fn(),
+  };
+}
+
 function fakeMonday(): MondayClient {
   return {
     findDonorsByEmail: vi.fn(),
@@ -124,7 +147,7 @@ function fakeTokenStore(): MagicLinkTokenStore {
 }
 
 function fakeEmailSender(): EmailSender {
-  return { sendLoginEmail: vi.fn(), sendLetterReadyEmail: vi.fn() };
+  return { sendLoginEmail: vi.fn(), sendLetterReadyEmail: vi.fn(), sendOrgStatementReadyEmail: vi.fn() };
 }
 
 describe('scaffold', () => {
@@ -162,6 +185,7 @@ describe('worker entry point', () => {
 describe('routeQueueBatch', () => {
   const deps = (mode: WriteMode = 'on') => ({
     letterStore: fakeLetterStore(),
+    orgStore: fakeOrgStore(),
     monday: fakeMonday(),
     tokenStore: fakeTokenStore(),
     emailSender: fakeEmailSender(),
@@ -180,6 +204,17 @@ describe('routeQueueBatch', () => {
     // No row for id 1 (fakeLetterStore resolves null) — surfaced via retry, not a silent ack.
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it("routes an org statement message (kind 'org') to the org statement store", async () => {
+    const d = deps();
+    const message = makeMessage<LetterSendQueueMessage>({ sendId: 3, kind: 'org' });
+
+    await routeQueueBatch(fakeBatch<LetterSendQueueMessage>('member-portal-letter-emails', [message]), d);
+
+    expect(d.orgStore.getById).toHaveBeenCalledWith(3);
+    expect(d.letterStore.getById).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
   });
 
   it('throws for an unrecognized queue name, invoking no store', async () => {
@@ -226,6 +261,7 @@ describe('routeQueueBatch (write switch)', () => {
 
     await routeQueueBatch(fakeBatch('member-portal-letter-emails', [message]) as MessageBatch<LetterSendQueueMessage>, {
       letterStore,
+      orgStore: fakeOrgStore(),
       monday: fakeMonday(),
       tokenStore: fakeTokenStore(),
       emailSender: fakeEmailSender(),

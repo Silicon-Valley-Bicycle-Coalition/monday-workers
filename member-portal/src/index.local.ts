@@ -14,6 +14,7 @@ import { ConsoleEmailSender } from './email/devEmail';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { processLetterSendBatch } from './letters/processLetterSendBatch';
 import { D1LetterSendStore } from './db/letterSends';
+import { D1OrgStatementSendStore } from './db/orgStatementSends';
 import type { ChangeQueueMessage, LetterSendQueueMessage } from './types';
 import { MEMBER_PORTAL_PII_KEYS, WORKER, type BatchSkipContext } from './writeSwitch';
 
@@ -85,6 +86,7 @@ export default {
     if (batch.queue === 'member-portal-letter-emails-local') {
       await processLetterSendBatch([...(batch as MessageBatch<LetterSendQueueMessage>).messages], {
         store: new D1LetterSendStore(env.DB),
+        orgStore: new D1OrgStatementSendStore(env.DB),
         monday,
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         emailSender: new ConsoleEmailSender(),

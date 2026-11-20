@@ -164,8 +164,8 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     const matches = await client.findDonorsByEmail('shared@example.org');
 
     expect(matches).toEqual([
-      { id: '1', name: 'Jane', preferredLanguage: '' },
-      { id: '2', name: 'Jane Also', preferredLanguage: '' },
+      { id: '1', name: 'Jane', preferredLanguage: '', matchedPersonal: true },
+      { id: '2', name: 'Jane Also', preferredLanguage: '', matchedPersonal: true },
     ]);
   });
 
@@ -208,7 +208,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
 
     const matches = await client.findDonorsByEmail('jane@example.org');
 
-    expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: 'Spanish' }]);
+    expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: 'Spanish', matchedPersonal: true }]);
   });
 
   it('omits the placeholder preferredLanguage column id from the outgoing query (and returns "")', async () => {
@@ -230,7 +230,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
 
     expect(captured).not.toBeNull();
     expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
-    expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+    expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '', matchedPersonal: true }]);
   });
 
   describe('Household Email', () => {
@@ -261,7 +261,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         { id: '1', name: 'Jane', column_values: [{ id: 'household_col', text: '  Family@Example.org ', value: null }] },
       ]);
       const matches = await make(columns, fetchMock).findDonorsByEmail('family@example.org');
-      expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+      expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '', matchedPersonal: false }]);
     });
 
     it('drops an item matching neither column exactly (Monday fuzzy hit)', async () => {
@@ -1821,7 +1821,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
   });
 });
 
-describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
+describe('HttpMondayClient.listYearActivity (personIds)', () => {
   it('collects unique donor ids from the year’s donations across pages', async () => {
     const pages = [
       {
@@ -1836,7 +1836,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-03-01' },
                       { id: 'donation_status_col', text: 'Received' },
-                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
                   {
@@ -1844,7 +1844,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-11-12' },
                       { id: 'donation_status_col', text: 'Received' },
-                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
                 ],
@@ -1863,7 +1863,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                 column_values: [
                   { id: 'date_col', text: '2026-06-30' },
                   { id: 'donation_status_col', text: 'Received' },
-                  { id: 'link_col', text: 'Sam', linked_item_ids: ['88'] },
+                  { id: 'link_col', text: 'Sam', linked_item_ids: ['88'], linked_items: [{ id: '88', board: { id: '999' } }] },
                 ],
               },
             ],
@@ -1879,7 +1879,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     }));
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77', '88']);
+    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77', '88']);
   });
 
   it('skips gifts dated before historyStartISO so a mid-year floor never earns a letter for the earlier part', async () => {
@@ -1888,7 +1888,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       column_values: [
         { id: 'date_col', text: date },
         { id: 'donation_status_col', text: 'Received' },
-        { id: 'link_col', text: 'x', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'x', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     const fetchMock = vi.fn().mockResolvedValue({
@@ -1901,7 +1901,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     const flooredCfg = { countableStatuses, historyStartISO: '2026-06-01' };
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, flooredCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['88']);
+    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['88']);
   });
 
   it('skips gifts of an excluded Gift Type, so they never earn a letter on their own', async () => {
@@ -1911,7 +1911,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
         { id: 'date_col', text: '2026-03-01' },
         { id: 'desc_col', text: giftType },
         { id: 'donation_status_col', text: 'Received' },
-        { id: 'link_col', text: 'x', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'x', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     let query = '';
@@ -1941,7 +1941,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, ['Event Ticket'])).toEqual(['88', '99']);
+    expect((await client.listYearActivity(2026, ['Event Ticket'])).personIds).toEqual(['88', '99']);
     expect(query).toContain('desc_col');
   });
 
@@ -1966,7 +1966,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                       column_values: [
                         { id: 'date_col', text: '2026-03-01' },
                         { id: 'donation_status_col', text: 'Received' },
-                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                       ],
                     },
                   ],
@@ -1979,7 +1979,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77']);
+    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77']);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1996,7 +1996,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                   column_values: [
                     { id: 'date_col', text: '2025-12-31' },
                     { id: 'donation_status_col', text: 'Received' },
-                    { id: 'link_col', text: 'Old', linked_item_ids: ['66'] },
+                    { id: 'link_col', text: 'Old', linked_item_ids: ['66'], linked_items: [{ id: '66', board: { id: '999' } }] },
                   ],
                 },
                 {
@@ -2004,7 +2004,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                   column_values: [
                     { id: 'date_col', text: '2026-01-01' },
                     { id: 'donation_status_col', text: 'Received' },
-                    { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                    { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                   ],
                 },
               ],
@@ -2014,7 +2014,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       },
     });
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77']);
+    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77']);
   });
 
   it('skips donations with non-countable statuses so donors with only Failed/Pending gifts get no letter', async () => {
@@ -2023,7 +2023,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       column_values: [
         { id: 'date_col', text: '2026-04-01' },
         { id: 'donation_status_col', text: status },
-        { id: 'link_col', text: 'Donor', linked_item_ids: [donorId] },
+        { id: 'link_col', text: 'Donor', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
     const client = makeClient({
@@ -2044,7 +2044,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       },
     });
 
-    expect(await client.listDonorIdsWithDonationsInYear(2026, [])).toEqual(['77', '99']);
+    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77', '99']);
   });
 
   it('requests the donation status column in the sweep query', async () => {
@@ -2059,7 +2059,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listDonorIdsWithDonationsInYear(2026, []);
+    await client.listYearActivity(2026, []);
 
     expect(captured!.query).toContain('donation_status_col');
   });
@@ -2076,7 +2076,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listDonorIdsWithDonationsInYear(2026, []);
+    await client.listYearActivity(2026, []);
 
     expect(captured).not.toBeNull();
     expect(captured!.variables.from).toBe('2026-01-01');
@@ -2309,8 +2309,8 @@ describe('HttpMondayClient.getPersonAffiliations', () => {
     const affiliations = await client.getPersonAffiliations({ donorItemId: '10', employer: employerCfg });
 
     expect(affiliations).toEqual([
-      { id: '21', organizationId: '501', organizationName: 'Acme', statusLabel: 'Current', primary: true },
-      { id: '22', organizationId: null, organizationName: null, statusLabel: null, primary: false },
+      { id: '21', organizationId: '501', organizationName: 'Acme', statusLabel: 'Current', primary: true, portalAccess: false },
+      { id: '22', organizationId: null, organizationName: null, statusLabel: null, primary: false, portalAccess: false },
     ]);
     expect(bodies[0]!.variables).toEqual({ itemId: 10 });
     expect(bodies[0]!.query).toContain('people_affs');
@@ -2468,5 +2468,359 @@ describe('HttpMondayClient.getDonorEmails', () => {
   it('throws when the donor item does not exist', async () => {
     const { client } = capturing([]);
     await expect(client.getDonorEmails('missing')).rejects.toThrow('not found');
+  });
+});
+
+// ---- Organization reps: Affiliations and organization reads (Task 3) ----
+
+const orgReadCfg = {
+  organizations: {
+    portalAccessColumn: 'portal_col',
+    workEmailColumn: 'work_email_col',
+    addressColumns: ['street_col', 'city_col', 'zip_col'],
+    acknowledgmentSignedOff: false,
+    volunteerFloor: 3,
+  },
+  employer: {
+    affiliationsBoardId: 555,
+    affiliationColumns: { personLink: 'aff_person', organizationLink: 'aff_org', status: 'aff_status', primary: 'aff_primary' },
+    currentStatusLabel: 'Current',
+    personAffiliationsLink: 'people_aff',
+  },
+  volunteerCompletedStatuses: ['Completed'],
+};
+
+// Every request's body is recorded; responses come back in order (the last repeats).
+function orgClient(
+  bodies: unknown[],
+  overrides: { columns?: Partial<MondayColumns>; orgs?: typeof orgReadCfg; donationsCfg?: { countableStatuses: string[]; historyStartISO: string | null } } = {},
+) {
+  const sent: { query: string; variables: Record<string, unknown> }[] = [];
+  let i = 0;
+  const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+    const body = bodies[Math.min(i++, bodies.length - 1)];
+    return { ok: true, status: 200, json: async () => body };
+  });
+  const client = new HttpMondayClient(
+    'https://api.monday.com/v2',
+    'token',
+    { ...columns, ...overrides.columns },
+    999,
+    1,
+    2,
+    overrides.donationsCfg ?? donationsCfg,
+    null,
+    3,
+    fetchMock,
+    overrides.orgs ?? orgReadCfg,
+  );
+  return { client, sent, fetchMock };
+}
+
+const page = (items: unknown[], cursor: string | null = null) => ({ data: { boards: [{ items_page: { cursor, items } }] } });
+
+describe('findDonorsByEmail matchedPersonal', () => {
+  it('is true only when the Personal Email, not the Household Email, equals the address', async () => {
+    const hh = (address: string) => ({ id: 'household_col', text: address, value: JSON.stringify({ email: address, text: address }) });
+    const { client } = orgClient([
+      page([
+        { id: '1', name: 'Personal', column_values: [emailValue('a@example.org'), hh('other@example.org')] },
+        { id: '2', name: 'Household', column_values: [emailValue('other@example.org'), hh('a@example.org')] },
+      ]),
+    ]);
+
+    const matches = await client.findDonorsByEmail('a@example.org');
+
+    expect(matches.map((m) => [m.id, m.matchedPersonal])).toEqual([['1', true], ['2', false]]);
+  });
+});
+
+function affItem(id: string, over: { work?: string; state?: string; person?: string; org?: string; status?: string; portal?: boolean } = {}) {
+  return {
+    id,
+    name: `Aff ${id}`,
+    state: over.state ?? 'active',
+    column_values: [
+      { id: 'aff_person', text: 'P', linked_item_ids: over.person === undefined ? ['p1'] : [over.person] },
+      { id: 'aff_org', text: 'O', linked_item_ids: over.org === undefined ? ['o1'] : [over.org] },
+      { id: 'aff_status', text: over.status ?? 'Current' },
+      { id: 'portal_col', text: over.portal ? 'v' : '' },
+      { id: 'work_email_col', text: over.work ?? '', value: JSON.stringify({ email: over.work ?? '', text: over.work ?? '' }) },
+    ],
+  };
+}
+
+describe('HttpMondayClient.findAffiliationsByWorkEmail', () => {
+  it('keeps only affiliations whose Work Email equals the address after trim and lowercase', async () => {
+    const { client, sent } = orgClient([
+      page([affItem('1', { work: ' Rep@Acme.org ', portal: true }), affItem('2', { work: 'someone-else@acme.org' })]),
+    ]);
+
+    const result = await client.findAffiliationsByWorkEmail('rep@acme.org');
+
+    expect(result).toEqual([
+      { id: '1', personItemId: 'p1', organizationId: 'o1', statusLabel: 'Current', portalAccess: true, workEmail: ' Rep@Acme.org ' },
+    ]);
+    expect(sent[0]!.variables.boardId).toBe(555);
+    expect(sent[0]!.query).toContain('work_email_col');
+  });
+
+  it('returns [] without a Monday call when the Work Email column is the placeholder', async () => {
+    const orgs = { ...orgReadCfg, organizations: { ...orgReadCfg.organizations, workEmailColumn: 'REPLACE_WITH_COLUMN_ID' } };
+    const { client, fetchMock } = orgClient([page([])], { orgs });
+    expect(await client.findAffiliationsByWorkEmail('rep@acme.org')).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('HttpMondayClient.getAffiliation', () => {
+  // items(ids:) answers for any board, so the read asks for the item's board.
+  const onBoard = (item: ReturnType<typeof affItem>, boardId: string | number = 555) => ({ ...item, board: { id: String(boardId) } });
+
+  it('returns the affiliation when active on the Affiliations board', async () => {
+    const { client, sent } = orgClient([{ data: { items: [onBoard(affItem('7', { work: 'r@acme.org', status: 'Former' }))] } }]);
+    const aff = await client.getAffiliation('7');
+    expect(aff).toMatchObject({ id: '7', statusLabel: 'Former', workEmail: 'r@acme.org', portalAccess: false });
+    expect(sent[0]!.query).toContain('board { id }');
+  });
+
+  it('returns null for an item on another board', async () => {
+    const { client } = orgClient([{ data: { items: [onBoard(affItem('7', { portal: true }), 999)] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
+  });
+
+  it('returns null for an item without a board', async () => {
+    const { client } = orgClient([{ data: { items: [affItem('7', { portal: true })] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
+  });
+
+  it('returns null for an archived item', async () => {
+    const { client } = orgClient([{ data: { items: [onBoard(affItem('7', { state: 'archived' }))] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
+  });
+
+  it('returns null for a missing item', async () => {
+    const { client } = orgClient([{ data: { items: [] } }]);
+    expect(await client.getAffiliation('7')).toBeNull();
+  });
+});
+
+describe('HttpMondayClient.getOrganizationAffiliations', () => {
+  it('reads the Affiliations board filtered on the Organization link', async () => {
+    const { client, sent } = orgClient([page([affItem('1', { portal: true }), affItem('2', { state: 'archived' })])]);
+    const result = await client.getOrganizationAffiliations('501');
+    expect(result.map((a) => a.id)).toEqual(['1']);
+    expect(sent[0]!.query).toContain('aff_org');
+    expect(sent[0]!.variables).toMatchObject({ boardId: 555, donorItemId: 501 });
+  });
+});
+
+describe('HttpMondayClient.getOrganization', () => {
+  const orgItem = (over: Record<string, unknown> = {}) => ({
+    id: 'o1',
+    name: 'Acme',
+    state: 'active',
+    board: { id: '2' },
+    column_values: [
+      { id: 'street_col', text: '123 Main St' },
+      { id: 'city_col', text: 'San Jose' },
+      { id: 'zip_col', text: '95113' },
+    ],
+    ...over,
+  });
+
+  it('returns the name and the address columns joined', async () => {
+    const { client } = orgClient([{ data: { items: [orgItem()] } }]);
+    expect(await client.getOrganization('o1')).toEqual({ id: 'o1', name: 'Acme', address: '123 Main St, San Jose, 95113' });
+  });
+
+  it('skips empty address parts', async () => {
+    const { client } = orgClient([
+      { data: { items: [orgItem({ column_values: [{ id: 'street_col', text: '' }, { id: 'city_col', text: 'San Jose' }, { id: 'zip_col', text: '' }] })] } },
+    ]);
+    expect((await client.getOrganization('o1'))!.address).toBe('San Jose');
+  });
+
+  it('returns null for an item on the People board', async () => {
+    const { client } = orgClient([{ data: { items: [orgItem({ board: { id: '999' } })] } }]);
+    expect(await client.getOrganization('o1')).toBeNull();
+  });
+
+  it('returns null for an archived organization', async () => {
+    const { client } = orgClient([{ data: { items: [orgItem({ state: 'archived' })] } }]);
+    expect(await client.getOrganization('o1')).toBeNull();
+  });
+
+  it('returns address "" and requests no address columns when the list is empty', async () => {
+    const orgs = { ...orgReadCfg, organizations: { ...orgReadCfg.organizations, addressColumns: [] } };
+    const { client, sent } = orgClient([{ data: { items: [orgItem({ column_values: [] })] } }], { orgs });
+    expect((await client.getOrganization('o1'))!.address).toBe('');
+    expect(sent[0]!.query).not.toContain('street_col');
+  });
+
+  it('returns address "" and never names the placeholder when any address column is the placeholder', async () => {
+    const orgs = { ...orgReadCfg, organizations: { ...orgReadCfg.organizations, addressColumns: ['street_col', 'REPLACE_WITH_COLUMN_ID'] } };
+    const { client, sent } = orgClient([{ data: { items: [orgItem({ column_values: [] })] } }], { orgs });
+    expect((await client.getOrganization('o1'))!.address).toBe('');
+    expect(sent[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(sent[0]!.query).not.toContain('street_col');
+  });
+});
+
+describe('HttpMondayClient organization gifts and matches', () => {
+  const giftItem = (id: string, status: string, date: string, giftType = 'Sponsorship') => ({
+    id,
+    name: `Gift ${id}`,
+    column_values: [
+      { id: 'amount_col', text: '$500.00' },
+      { id: 'date_col', text: date },
+      { id: 'desc_col', text: giftType },
+      { id: 'donation_status_col', text: status },
+    ],
+  });
+
+  it('getOrganizationGifts keeps countable statuses on or after the history floor', async () => {
+    const floored = { countableStatuses, historyStartISO: '2026-01-01' };
+    const { client, sent } = orgClient(
+      [page([giftItem('1', 'Received', '2026-03-01'), giftItem('2', 'Failed', '2026-03-02'), giftItem('3', 'Received', '2025-12-31')])],
+      { donationsCfg: floored },
+    );
+    const gifts = await client.getOrganizationGifts('501');
+    expect(gifts).toEqual([{ itemId: '1', date: '2026-03-01', amount: '$500.00', giftType: 'Sponsorship' }]);
+    expect(sent[0]!.query).toContain('link_col');
+    expect(sent[0]!.variables).toMatchObject({ boardId: 1, donorItemId: 501 });
+  });
+
+  it('getOrganizationMatches filters on the Matched By column', async () => {
+    const { client, sent } = orgClient([page([giftItem('1', 'Received', '2026-03-01', 'Matching Donation')])], {
+      columns: { donationMatchedBy: 'matched_by_col' },
+    });
+    const matches = await client.getOrganizationMatches('o1');
+    expect(matches.map((m) => m.itemId)).toEqual(['1']);
+    expect(sent[0]!.query).toContain('column_id: "matched_by_col"');
+  });
+
+  it('getOrganizationMatches returns [] with no Monday call when Matched By is the placeholder', async () => {
+    const { client, fetchMock } = orgClient([page([])]);
+    expect(await client.getOrganizationMatches('o1')).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('HttpMondayClient.listYearActivity', () => {
+  const linkedItem = (id: string, giftType: string, link: { id: string; board: string }[], matchedBy: string[] = []) => ({
+    id,
+    column_values: [
+      { id: 'date_col', text: '2026-03-01' },
+      { id: 'donation_status_col', text: 'Received' },
+      { id: 'desc_col', text: giftType },
+      {
+        id: 'link_col',
+        text: 'x',
+        linked_item_ids: link.map((l) => l.id),
+        linked_items: link.map((l) => ({ id: l.id, board: { id: l.board } })),
+      },
+      { id: 'matched_by_col', text: 'm', linked_item_ids: matchedBy },
+    ],
+  });
+
+  it('splits Donor links by board and keeps excluded gift types out of personIds only', async () => {
+    const { client, sent } = orgClient(
+      [
+        page([
+          linkedItem('1', 'Donation', [{ id: '77', board: '999' }]),
+          linkedItem('2', 'Sponsorship', [{ id: '501', board: '2' }]),
+          linkedItem('3', 'Sponsorship', [{ id: '88', board: '999' }]),
+          linkedItem('4', 'Matching Donation', [{ id: '77', board: '999' }], ['502']),
+          linkedItem('5', 'Donation', [{ id: '503', board: '2' }]),
+        ]),
+      ],
+      { columns: { donationMatchedBy: 'matched_by_col' } },
+    );
+
+    const result = await client.listYearActivity(2026, ['Sponsorship']);
+
+    expect(result.personIds.sort()).toEqual(['77']);
+    expect(result.organizationIds.sort()).toEqual(['501', '502', '503']);
+    expect(sent[0]!.query).toContain('board { id }');
+    expect(sent[0]!.query).toContain('matched_by_col');
+  });
+
+  it('counts an id with no board info, or on a third board, as neither a person nor an organization', async () => {
+    const orphan = linkedItem('1', 'Donation', [{ id: '77', board: '999' }]);
+    // 66 appears in linked_item_ids only (deleted/inaccessible); 55 sits on a third board.
+    const link = orphan.column_values.find((c) => c.id === 'link_col')!;
+    link.linked_item_ids = ['77', '66', '55'];
+    (link as { linked_items: unknown }).linked_items = [
+      { id: '77', board: { id: '999' } },
+      { id: '55', board: { id: '4242' } },
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { client } = orgClient([page([orphan])]);
+
+    const result = await client.listYearActivity(2026, []);
+
+    expect(result).toEqual({ personIds: ['77'], organizationIds: [] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('does not request Matched By when it is the placeholder', async () => {
+    const { client, sent } = orgClient([page([linkedItem('1', 'Donation', [{ id: '77', board: '999' }])])]);
+    await client.listYearActivity(2026, []);
+    expect(sent[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+  });
+});
+
+describe('HttpMondayClient.getCompletedVolunteerHoursInYear', () => {
+  const shift = (id: string, person: string, hours: string, status: string, date = '2026-04-01') => ({
+    id,
+    column_values: [
+      { id: 'vol_link_col', text: 'x', linked_item_ids: [person] },
+      { id: 'vol_hours_col', text: hours },
+      { id: 'vol_date_col', text: date },
+      { id: 'vol_status_col', text: status },
+    ],
+  });
+
+  it('sums completed hours per person across the Volunteers board', async () => {
+    const { client, sent } = orgClient([
+      page([shift('1', 'p1', '2.5', 'Completed'), shift('2', 'p1', '1', 'Completed'), shift('3', 'p2', '4', 'No show'), shift('4', 'p3', '3', 'Completed', '2025-12-31')]),
+    ]);
+    const hours = await client.getCompletedVolunteerHoursInYear(2026);
+    expect([...hours]).toEqual([['p1', 3.5]]);
+    expect(sent[0]!.variables).toMatchObject({ boardId: 3 });
+  });
+});
+
+describe('Portal access column placeholder', () => {
+  it('never sends REPLACE_WITH_COLUMN_ID and reports portalAccess false', async () => {
+    const orgs = { ...orgReadCfg, organizations: { ...orgReadCfg.organizations, portalAccessColumn: 'REPLACE_WITH_COLUMN_ID' } };
+    const item = affItem('1', { work: 'r@acme.org', portal: true });
+    item.column_values = item.column_values.filter((c) => c.id !== 'portal_col');
+    const { client, sent } = orgClient(
+      [
+        page([item]),
+        { data: { items: [{ ...item, board: { id: '555' } }] } },
+        page([item]),
+        { data: { items: [{ id: 'p1', name: 'P', state: 'active', column_values: [{ id: 'people_aff', text: '', linked_item_ids: ['1'] }] }] } },
+        { data: { items: [item] } },
+      ],
+      { orgs },
+    );
+
+    const [byEmail, one, listed] = [
+      await client.findAffiliationsByWorkEmail('r@acme.org'),
+      await client.getAffiliation('1'),
+      await client.getOrganizationAffiliations('501'),
+    ];
+    const personAff = await client.getPersonAffiliations({ donorItemId: 'p1', employer: orgs.employer });
+
+    expect(byEmail[0]!.portalAccess).toBe(false);
+    expect(one!.portalAccess).toBe(false);
+    expect(listed[0]!.portalAccess).toBe(false);
+    expect(personAff[0]!.portalAccess).toBe(false);
+    for (const body of sent) expect(body.query).not.toContain('REPLACE_WITH_COLUMN_ID');
   });
 });

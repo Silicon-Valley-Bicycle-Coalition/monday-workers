@@ -1,4 +1,4 @@
-import type { MondayClient } from './client';
+import type { MondayClient, OrgAffiliation, OrgGift } from './client';
 import type { AffiliationRecord } from '../changeRequests/employer';
 import type { OrganizationCandidate } from '../changeRequests/employerName';
 import type {
@@ -143,12 +143,21 @@ function findDonor(donorItemId: string): FakeDonor {
   return donor;
 }
 
+// In-memory organization data for the local preview. Empty by default: tests and previews that
+// exercise organization reps fill the maps in (keyed by item id; gifts and matches by org id).
 export class FakeMondayClient implements MondayClient {
+  affiliations = new Map<string, OrgAffiliation>();
+  organizations = new Map<string, { id: string; name: string; address: string }>();
+  orgGifts = new Map<string, OrgGift[]>();
+  orgMatches = new Map<string, OrgGift[]>();
+  volunteerHours = new Map<string, number>();
+
   async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
     return DONORS.filter((d) => d.email.toLowerCase() === email.toLowerCase()).map((d) => ({
       id: d.id,
       name: d.name,
       preferredLanguage: d.preferredLanguage,
+      matchedPersonal: true,
     }));
   }
 
@@ -228,8 +237,8 @@ export class FakeMondayClient implements MondayClient {
     return null;
   }
 
-  async listDonorIdsWithDonationsInYear(_year: number, _excludedGiftTypes: string[]): Promise<string[]> {
-    return [];
+  async listYearActivity(_year: number, _excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }> {
+    return { personIds: [], organizationIds: [] };
   }
 
   async findChangeRequestItem(_params: { boardId: number; itemName: string }): Promise<string | null> {
@@ -269,5 +278,34 @@ export class FakeMondayClient implements MondayClient {
 
   async updateAffiliation(params: { employer: EmployerAnswerConfig; itemId: string; makeCurrent: boolean; primary: boolean }): Promise<void> {
     console.log(`[fakeMondayClient] would update affiliation ${params.itemId}: makeCurrent=${params.makeCurrent} primary=${params.primary}`);
+  }
+
+  async findAffiliationsByWorkEmail(email: string): Promise<OrgAffiliation[]> {
+    const wanted = email.trim().toLowerCase();
+    return [...this.affiliations.values()].filter((a) => a.workEmail.trim().toLowerCase() === wanted);
+  }
+
+  async getAffiliation(affiliationItemId: string): Promise<OrgAffiliation | null> {
+    return this.affiliations.get(affiliationItemId) ?? null;
+  }
+
+  async getOrganizationAffiliations(orgItemId: string): Promise<OrgAffiliation[]> {
+    return [...this.affiliations.values()].filter((a) => a.organizationId === orgItemId);
+  }
+
+  async getOrganization(orgItemId: string): Promise<{ id: string; name: string; address: string } | null> {
+    return this.organizations.get(orgItemId) ?? null;
+  }
+
+  async getOrganizationGifts(orgItemId: string): Promise<OrgGift[]> {
+    return this.orgGifts.get(orgItemId) ?? [];
+  }
+
+  async getOrganizationMatches(orgItemId: string): Promise<OrgGift[]> {
+    return this.orgMatches.get(orgItemId) ?? [];
+  }
+
+  async getCompletedVolunteerHoursInYear(_year: number): Promise<Map<string, number>> {
+    return new Map(this.volunteerHours);
   }
 }

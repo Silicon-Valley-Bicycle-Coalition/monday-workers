@@ -1,5 +1,6 @@
 import type {
   ChangeRequestColumns,
+  Config,
   DiscountOrganization,
   DonationRecord,
   DonationsConfig,
@@ -8,6 +9,7 @@ import type {
   DonorMatch,
   EmployerAnswerConfig,
   MemberPortalData,
+  OrganizationsConfig,
   EventRegistrationColumns,
   EventRegistrationRecord,
   LetterCronColumns,
@@ -44,13 +46,14 @@ interface MondayColumnValue {
   value?: string | null; // raw JSON; requested only where noted
   checked?: boolean; // CheckboxValue fragment
   linked_item_ids?: string[]; // BoardRelationValue fragment
-  linked_items?: { name: string }[]; // BoardRelationValue fragment, only where noted
+  linked_items?: { name: string; id?: string; board?: { id: string } }[]; // BoardRelationValue fragment, only where noted
 }
 
 interface MondayItem {
   id: string;
   name: string;
   state?: string; // requested only where noted (active / archived / deleted)
+  board?: { id: string }; // requested only where noted
   column_values?: MondayColumnValue[];
 }
 
@@ -108,6 +111,42 @@ function checkboxState(item: MondayItem, columnId: string): boolean | null {
   return columnText(item, columnId) !== '';
 }
 
+// An Affiliations-board item as organization reps use it (spec 2026-11-19-member-portal-organization-reps-design.md).
+export interface OrgAffiliation {
+  id: string;
+  personItemId: string | null;
+  organizationId: string | null;
+  statusLabel: string | null;
+  portalAccess: boolean;
+  workEmail: string; // '' when unset or the column is unconfigured
+}
+
+// A Donations-board gift as an organization sees it. giftType is the Gift Type column
+// (donationDescription). The item's own name is deliberately not read: it can carry a person's name.
+export interface OrgGift {
+  itemId: string;
+  date: string;
+  amount: string;
+  giftType: string;
+}
+
+// What the organization reads need beyond the board and column ids every client carries.
+export interface OrgReadConfig {
+  organizations: OrganizationsConfig;
+  // The Affiliations board and its columns; null makes the affiliation reads throw a config error.
+  employer: EmployerAnswerConfig | null;
+  // volunteerHistory.completedStatuses; empty means every status counts.
+  volunteerCompletedStatuses: string[];
+}
+
+export function orgReadConfig(config: Config): OrgReadConfig {
+  return {
+    organizations: config.organizations,
+    employer: config.changeRequests.employer ?? null,
+    volunteerCompletedStatuses: config.volunteerHistory.completedStatuses,
+  };
+}
+
 export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
   // includeDonations false skips the Donations-board read entirely (donations: [], totalDonated:
@@ -154,7 +193,23 @@ export interface MondayClient {
     columns: LetterCronColumns;
     settingsItemName: string;
   }): Promise<LetterSettings | null>;
-  listDonorIdsWithDonationsInYear(year: number, excludedGiftTypes: string[]): Promise<string[]>;
+  // Exact, case-insensitive match on the Affiliations Work Email column; [] while it is unconfigured.
+  findAffiliationsByWorkEmail(email: string): Promise<OrgAffiliation[]>;
+  // null when the item is missing or not active.
+  getAffiliation(affiliationItemId: string): Promise<OrgAffiliation | null>;
+  // Active Affiliations whose Organization link is orgItemId.
+  getOrganizationAffiliations(orgItemId: string): Promise<OrgAffiliation[]>;
+  // null unless the item is active AND on the Organizations board.
+  getOrganization(orgItemId: string): Promise<{ id: string; name: string; address: string } | null>;
+  // Donations with Donor = the organization, under the same countable-status and history-floor rules as a donor's.
+  getOrganizationGifts(orgItemId: string): Promise<OrgGift[]>;
+  // Donations with Matched By = the organization; [] while Matched By is unconfigured.
+  getOrganizationMatches(orgItemId: string): Promise<OrgGift[]>;
+  // personItemId -> completed volunteer hours in the year, from one Volunteers-board sweep.
+  getCompletedVolunteerHoursInYear(year: number): Promise<Map<string, number>>;
+  // One sweep of the year's countable gifts, split by the board of the linked Donor: people (minus
+  // excludedGiftTypes, the tax-letter rule) and organizations (any gift type, plus Matched By).
+  listYearActivity(year: number, excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }>;
 }
 
 export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'historyStartISO'>;
@@ -183,7 +238,10 @@ export class HttpMondayClient implements MondayClient {
     private volunteersBoardId: number | null = null,
     // Tests inject a fetch mock. Absent, the transport looks up the global fetch per call, which
     // also avoids Cloudflare's "Illegal invocation" when native fetch is called as a method.
-    fetchFn?: typeof fetch
+    fetchFn?: typeof fetch,
+    // Organization-rep reads (affiliations, organizations, volunteer hours). Absent, the portal
+    // access and Work Email columns read as unconfigured and the affiliation reads throw.
+    private orgs: OrgReadConfig | null = null
   ) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, {
       maxAttempts: MAX_ATTEMPTS,
@@ -255,6 +313,7 @@ export class HttpMondayClient implements MondayClient {
         id: item.id,
         name: item.name,
         preferredLanguage: columnText(item, this.columns.preferredLanguage),
+        matchedPersonal: columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted,
       }));
   }
 
@@ -792,13 +851,14 @@ export class HttpMondayClient implements MondayClient {
     if (affiliationIds.length === 0) return [];
 
     const { organizationLink, status, primary } = employer.affiliationColumns;
+    const portalColumn = this.portalAccessColumn();
     const query = `
       query ($itemIds: [ID!]) {
         items(ids: $itemIds, limit: 100) {
           id
           name
           state
-          column_values(ids: ${JSON.stringify([organizationLink, status, primary])}) {
+          column_values(ids: ${JSON.stringify([organizationLink, status, primary, ...(portalColumn !== null ? [portalColumn] : [])])}) {
             id text ... on BoardRelationValue { linked_item_ids linked_items { name } }
           }
         }
@@ -814,6 +874,7 @@ export class HttpMondayClient implements MondayClient {
         organizationName: org?.linked_items?.[0]?.name ?? null,
         statusLabel: statusText === '' ? null : statusText,
         primary: columnText(item, primary) !== '',
+        portalAccess: portalColumn !== null && columnText(item, portalColumn) !== '',
       };
     });
   }
@@ -973,27 +1034,198 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  async listDonorIdsWithDonationsInYear(year: number, excludedGiftTypes: string[]): Promise<string[]> {
-    // Backs the January letter cron: one ids-only sweep of the Donations board bounded to the
-    // target year, instead of a getMemberPortalData call per Donors-board item. The date-column
-    // `between` rules shape (with the CheckboxValue/BoardRelationValue fragments this file
-    // uses) was verified live on 2026-08-25 against the sandbox Donations board (18427756119) —
-    // unlike the other rules-shape NOTEs in this file, this one is confirmed working. The
-    // client-side year check below stays as a correctness backstop regardless.
-    const columnIds = JSON.stringify([
-      this.columns.donationDate,
-      this.columns.donationDonorLink,
-      this.columns.donationStatus,
-      this.columns.donationDescription,
-    ]);
-    const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
+  // ---- Organization reps (spec 2026-11-19-member-portal-organization-reps-design.md) ----
+  // GraphQL shapes here follow the ones this file already uses live. items(ids:) with `board { id }`,
+  // linked_items { id board { id } } and the Work Email column filter were all verified live
+  // against the sandbox on 2026-11-19.
+
+  // Null while the Portal access column is unconfigured: it is never requested and reads false.
+  private portalAccessColumn(): string | null {
+    const id = this.orgs?.organizations.portalAccessColumn;
+    return id !== undefined && id !== 'REPLACE_WITH_COLUMN_ID' ? id : null;
+  }
+
+  private workEmailColumn(): string | null {
+    const id = this.orgs?.organizations.workEmailColumn;
+    return id !== undefined && id !== 'REPLACE_WITH_COLUMN_ID' ? id : null;
+  }
+
+  private affiliationsConfig(): EmployerAnswerConfig {
+    const employer = this.orgs?.employer ?? null;
+    if (employer === null) {
+      throw new Error('monday: organization affiliations are not configured (changeRequests.employer) — gate calls with orgAccessEnabled(config)');
+    }
+    return employer;
+  }
+
+  private affiliationColumnIds(): string[] {
+    const { personLink, organizationLink, status } = this.affiliationsConfig().affiliationColumns;
+    const ids = [personLink, organizationLink, status];
+    const portal = this.portalAccessColumn();
+    const workEmail = this.workEmailColumn();
+    if (portal !== null) ids.push(portal);
+    if (workEmail !== null) ids.push(workEmail);
+    return ids;
+  }
+
+  private toOrgAffiliation(item: MondayItem): OrgAffiliation {
+    const { personLink, organizationLink, status } = this.affiliationsConfig().affiliationColumns;
+    const portal = this.portalAccessColumn();
+    const workEmail = this.workEmailColumn();
+    const linked = (columnId: string) => (item.column_values ?? []).find((c) => c.id === columnId)?.linked_item_ids?.[0] ?? null;
+    const statusText = columnText(item, status);
+    return {
+      id: item.id,
+      personItemId: linked(personLink),
+      organizationId: linked(organizationLink),
+      statusLabel: statusText === '' ? null : statusText,
+      portalAccess: portal !== null && columnText(item, portal) !== '',
+      workEmail: workEmail !== null ? columnEmail(item, workEmail) : '',
+    };
+  }
+
+  async findAffiliationsByWorkEmail(email: string): Promise<OrgAffiliation[]> {
+    const workEmail = this.workEmailColumn();
+    if (workEmail === null) return [];
+    const employer = this.affiliationsConfig();
+    // As findDonorsByEmail: the address is attacker-controlled, so it travels as a CompareValue
+    // variable, and Monday's filter is re-checked exactly below.
+    const query = `
+      query ($boardId: ID!, $email: CompareValue) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 25,
+            query_params: {
+              rules: [{ column_id: "${workEmail}", compare_value: [$email], operator: any_of }]
+            }
+          ) {
+            items { id state column_values(ids: ${JSON.stringify(this.affiliationColumnIds())}) { id text value ... on BoardRelationValue { linked_item_ids } } }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
+      boardId: employer.affiliationsBoardId,
+      email,
+    });
+    const wanted = email.trim().toLowerCase();
+    return (data.boards[0]?.items_page.items ?? [])
+      .filter((item) => item.state === undefined || item.state === 'active')
+      .map((item) => this.toOrgAffiliation(item))
+      .filter((aff) => aff.workEmail.trim().toLowerCase() === wanted);
+  }
+
+  async getAffiliation(affiliationItemId: string): Promise<OrgAffiliation | null> {
+    const employer = this.affiliationsConfig();
+    const query = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          state
+          board { id }
+          column_values(ids: ${JSON.stringify(this.affiliationColumnIds())}) { id text value ... on BoardRelationValue { linked_item_ids } }
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemId: Number(affiliationItemId) });
+    const item = data.items[0];
+    // items(ids:) returns archived and deleted items too, and items on any board: an id from
+    // another board must never read as an Affiliation (the live organization access check).
+    if (!item || item.state !== 'active' || String(item.board?.id) !== String(employer.affiliationsBoardId)) return null;
+    return this.toOrgAffiliation(item);
+  }
+
+  async getOrganizationAffiliations(orgItemId: string): Promise<OrgAffiliation[]> {
+    const employer = this.affiliationsConfig();
+    // items_page lists only active items, so archived Affiliations never come back (as with
+    // every other fetchItemsLinkedToDonor read); the state filter is a backstop where it is present.
+    const items = await this.fetchItemsLinkedToDonor(
+      employer.affiliationsBoardId,
+      employer.affiliationColumns.organizationLink,
+      orgItemId,
+      this.affiliationColumnIds(),
+      false,
+      true
+    );
+    return items.filter((item) => item.state === undefined || item.state === 'active').map((item) => this.toOrgAffiliation(item));
+  }
+
+  async getOrganization(orgItemId: string): Promise<{ id: string; name: string; address: string } | null> {
+    // An empty list, or any placeholder in it, means no address line: nothing is requested.
+    const addressColumns = this.orgs?.organizations.addressColumns ?? [];
+    const addressOn = addressColumns.length > 0 && addressColumns.every((id) => id !== 'REPLACE_WITH_COLUMN_ID');
+    const columnSelection = addressOn ? `column_values(ids: ${JSON.stringify(addressColumns)}) { id text }` : '';
+    const query = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          name
+          state
+          board { id }
+          ${columnSelection}
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemId: Number(orgItemId) });
+    const item = data.items[0];
+    // items(ids:) answers for any item on any board, archived or not: a person's item id must
+    // never resolve as an organization.
+    if (!item || item.state !== 'active' || String(item.board?.id) !== String(this.organizationsBoardId)) return null;
+    const address = addressOn
+      ? addressColumns
+          .map((id) => columnText(item, id).trim())
+          .filter((part) => part !== '')
+          .join(', ')
+      : '';
+    return { id: item.id, name: item.name, address };
+  }
+
+  // Donations linked to an organization through `linkColumnId`, under getDonationsForDonor's
+  // countable-status and history-floor rules.
+  private async getLinkedGifts(orgItemId: string, linkColumnId: string): Promise<OrgGift[]> {
+    const items = await this.fetchItemsLinkedToDonor(
+      this.donationsBoardId,
+      linkColumnId,
+      orgItemId,
+      [this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription, this.columns.donationStatus],
+      true
+    );
+    const countable = new Set(this.donations.countableStatuses);
+    const floor = this.donations.historyStartISO;
+    return items
+      .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
+      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor)
+      .map((item) => ({
+        itemId: item.id,
+        date: columnText(item, this.columns.donationDate),
+        amount: columnText(item, this.columns.donationAmount),
+        giftType: columnText(item, this.columns.donationDescription),
+      }));
+  }
+
+  async getOrganizationGifts(orgItemId: string): Promise<OrgGift[]> {
+    return this.getLinkedGifts(orgItemId, this.columns.donationDonorLink);
+  }
+
+  async getOrganizationMatches(orgItemId: string): Promise<OrgGift[]> {
+    // Gated on Matched By alone, not the four-column match-line set.
+    if (this.columns.donationMatchedBy === 'REPLACE_WITH_COLUMN_ID') return [];
+    return this.getLinkedGifts(orgItemId, this.columns.donationMatchedBy);
+  }
+
+  // Every item on `boardId` dated within `year`, across pages. `columnValuesSelection` is the
+  // `column_values(...) { ... }` part of the item selection. The date-column `between` rules shape
+  // was verified live on 2026-08-25 against the sandbox Donations board (18427756119); callers
+  // keep a client-side year check as a correctness backstop regardless.
+  private async sweepYear(boardId: number, dateColumnId: string, year: number, columnValuesSelection: string): Promise<MondayItem[]> {
+    const itemFields = `items { id ${columnValuesSelection} }`;
     const firstPageQuery = `
       query ($boardId: ID!, $from: String!, $to: String!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
             query_params: {
-              rules: [{ column_id: "${this.columns.donationDate}", compare_value: [$from, $to], operator: between }]
+              rules: [{ column_id: "${dateColumnId}", compare_value: [$from, $to], operator: between }]
             }
           ) {
             cursor
@@ -1004,15 +1236,72 @@ export class HttpMondayClient implements MondayClient {
     `;
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId: this.donationsBoardId, from: `${year}-01-01`, to: `${year}-12-31` });
+    }>(firstPageQuery, { boardId, from: `${year}-01-01`, to: `${year}-12-31` });
     const firstPage = firstData.boards[0]?.items_page;
-    const allItems = [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, itemFields))];
+    return [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, itemFields))];
+  }
 
-    const donorIds = new Set<string>();
+  async getCompletedVolunteerHoursInYear(year: number): Promise<Map<string, number>> {
+    const volunteerColumns = [
+      this.columns.volunteerDonorLink,
+      this.columns.volunteerHours,
+      this.columns.volunteerDate,
+      this.columns.volunteerStatus,
+    ];
+    if (this.volunteersBoardId === null || volunteerColumns.some((id) => id === 'REPLACE_WITH_COLUMN_ID')) {
+      throw new Error('monday: volunteer hours are not configured (monday.volunteersBoardId and every monday.columns.volunteer* id must be set)');
+    }
+    const items = await this.sweepYear(
+      this.volunteersBoardId,
+      this.columns.volunteerDate,
+      year,
+      `column_values(ids: ${JSON.stringify(volunteerColumns)}) { id text ... on BoardRelationValue { linked_item_ids } }`
+    );
+    // An empty completedStatuses means every status counts, as for the donor's own history.
+    const completed = this.orgs?.volunteerCompletedStatuses ?? [];
+    const hours = new Map<string, number>();
+    for (const item of items) {
+      if (!columnText(item, this.columns.volunteerDate).startsWith(`${year}-`)) continue;
+      if (completed.length > 0 && !completed.includes(columnText(item, this.columns.volunteerStatus))) continue;
+      const shiftHours = parseAmountOrNull(columnText(item, this.columns.volunteerHours));
+      if (shiftHours === null) continue;
+      const link = (item.column_values ?? []).find((c) => c.id === this.columns.volunteerDonorLink);
+      for (const personId of link?.linked_item_ids ?? []) {
+        hours.set(personId, (hours.get(personId) ?? 0) + shiftHours);
+      }
+    }
+    return hours;
+  }
+
+  async listYearActivity(year: number, excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }> {
+    // Backs the January letter cron: one sweep of the Donations board bounded to the target year,
+    // instead of a getMemberPortalData call per Donors-board item. The Donor link also reads each
+    // linked item's board, so organizations (which the letter run must not treat as people) split
+    // off from donors. Only Donors-board ids count as people.
+    const matchedBy = this.columns.donationMatchedBy !== 'REPLACE_WITH_COLUMN_ID' ? this.columns.donationMatchedBy : null;
+    const columnIds = [
+      this.columns.donationDate,
+      this.columns.donationDonorLink,
+      this.columns.donationStatus,
+      this.columns.donationDescription,
+      ...(matchedBy !== null ? [matchedBy] : []),
+    ];
+    const allItems = await this.sweepYear(
+      this.donationsBoardId,
+      this.columns.donationDate,
+      year,
+      `column_values(ids: ${JSON.stringify(columnIds)}) { id text ... on BoardRelationValue { linked_item_ids linked_items { id board { id } } } }`
+    );
+
+    const personIds = new Set<string>();
+    const organizationIds = new Set<string>();
     // Same status filter as getDonationsForDonor: a donor whose only gifts in the year are
     // Failed/Pending must not be swept into the letter run.
     const countable = new Set(this.donations.countableStatuses);
     const floor = this.donations.historyStartISO;
+    const orgBoardId = String(this.organizationsBoardId);
+    const donorsBoardId = String(this.donorsBoardId);
+    let dropped = 0;
     for (const item of allItems) {
       const date = columnText(item, this.columns.donationDate);
       if (!date.startsWith(`${year}-`)) continue;
@@ -1020,13 +1309,28 @@ export class HttpMondayClient implements MondayClient {
       // the donor's own letter page would omit.
       if (floor !== null && date < floor) continue;
       if (!countable.has(columnText(item, this.columns.donationStatus))) continue;
-      // Same Gift Type rule as loadLetterData (donationDescription is the Gift Type column).
-      if (giftTypeIn(excludedGiftTypes, columnText(item, this.columns.donationDescription))) continue;
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
-      for (const donorId of link?.linked_item_ids ?? []) {
-        donorIds.add(donorId);
+      // Same Gift Type rule as loadLetterData (donationDescription is the Gift Type column), for
+      // people only: an organization's excluded-type gift (a sponsorship) still counts as activity.
+      const excluded = giftTypeIn(excludedGiftTypes, columnText(item, this.columns.donationDescription));
+      // Classified by the linked item's own board, from linked_items (a link whose item is
+      // deleted or inaccessible has an id but no board entry). Only the Donors board counts as
+      // people, so an organization id can never enter the person letter run; anything else
+      // (no board info, Historical People, other boards) is dropped.
+      for (const linked of link?.linked_items ?? []) {
+        const boardId = linked.board?.id === undefined ? null : String(linked.board.id);
+        if (linked.id === undefined || boardId === null) dropped++;
+        else if (boardId === orgBoardId) organizationIds.add(linked.id);
+        else if (boardId === donorsBoardId) {
+          if (!excluded) personIds.add(linked.id);
+        } else dropped++;
+      }
+      if (matchedBy !== null) {
+        const matched = (item.column_values ?? []).find((c) => c.id === matchedBy);
+        for (const orgId of matched?.linked_item_ids ?? []) organizationIds.add(orgId);
       }
     }
-    return [...donorIds];
+    if (dropped > 0) console.warn(`member-portal year sweep skipped ${dropped} linked donor(s) not on the Donors or Organizations board`);
+    return { personIds: [...personIds], organizationIds: [...organizationIds] };
   }
 }

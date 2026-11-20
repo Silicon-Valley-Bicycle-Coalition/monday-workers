@@ -1,3 +1,5 @@
+import type { OrgGrant } from '../orgs/grants';
+
 export interface NewMagicLinkToken {
   tokenHash: string;
   donorItemIds: string[];
@@ -6,11 +8,13 @@ export interface NewMagicLinkToken {
   requestHash?: string;
   codeHash?: string;
   emailHash?: string;
+  orgGrants?: OrgGrant[];
 }
 
 export interface ConsumedToken {
   donorItemIds: string[];
   emailHash: string | null;
+  orgGrants: OrgGrant[];
 }
 
 export interface CodeAttempt {
@@ -42,10 +46,15 @@ export interface MagicLinkTokenStore {
 interface ConsumedRow {
   donor_item_ids: string;
   email_hash: string | null;
+  org_grants: string | null;
 }
 
 function toConsumed(row: ConsumedRow): ConsumedToken {
-  return { donorItemIds: JSON.parse(row.donor_item_ids) as string[], emailHash: row.email_hash };
+  return {
+    donorItemIds: JSON.parse(row.donor_item_ids) as string[],
+    emailHash: row.email_hash,
+    orgGrants: row.org_grants === null ? [] : (JSON.parse(row.org_grants) as OrgGrant[]),
+  };
 }
 
 export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
@@ -54,8 +63,8 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
   async createToken(params: NewMagicLinkToken): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO magic_link_tokens (token_hash, donor_item_ids, expires_at, request_hash, code_hash, email_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+        `INSERT INTO magic_link_tokens (token_hash, donor_item_ids, expires_at, request_hash, code_hash, email_hash, org_grants)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
       )
       .bind(
         params.tokenHash,
@@ -63,7 +72,8 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
         params.expiresAt,
         params.requestHash ?? null,
         params.codeHash ?? null,
-        params.emailHash ?? null
+        params.emailHash ?? null,
+        params.orgGrants === undefined ? null : JSON.stringify(params.orgGrants)
       )
       .run();
   }
@@ -82,7 +92,7 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
     }
 
     const row = await this.db
-      .prepare(`SELECT donor_item_ids, email_hash FROM magic_link_tokens WHERE token_hash = ?1`)
+      .prepare(`SELECT donor_item_ids, email_hash, org_grants FROM magic_link_tokens WHERE token_hash = ?1`)
       .bind(tokenHash)
       .first<ConsumedRow>();
 
@@ -128,7 +138,7 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
       .prepare(
         `UPDATE magic_link_tokens SET used_at = ?2
          WHERE request_hash = ?1 AND used_at IS NULL AND expires_at > ?2
-         RETURNING donor_item_ids, email_hash`
+         RETURNING donor_item_ids, email_hash, org_grants`
       )
       .bind(requestHash, nowISO)
       .first<ConsumedRow>();

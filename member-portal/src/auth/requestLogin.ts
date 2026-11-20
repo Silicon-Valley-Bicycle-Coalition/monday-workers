@@ -1,4 +1,7 @@
 import type { MondayClient } from '../monday/client';
+import type { Config } from '../types';
+import { resolveOrgGrants, type OrgGrant } from '../orgs/grants';
+import { errorText } from '../logSafe';
 import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
@@ -9,6 +12,7 @@ import { localeFromMondayLabel, type Locale } from '../i18n/locales';
 
 export interface RequestLoginDeps {
   monday: MondayClient;
+  config: Config;
   tokenStore: MagicLinkTokenStore;
   emailSender: EmailSender;
   portalBaseUrl: string;
@@ -19,15 +23,25 @@ export interface RequestLoginDeps {
 // `next`: the portal page the donor was headed to (routes.ts validates it), carried in the link.
 export async function requestLogin(email: string, localeHint: Locale, requestId: string, deps: RequestLoginDeps, next: string | null = null): Promise<void> {
   const matches = await deps.monday.findDonorsByEmail(email);
-  if (matches.length === 0) {
+  // Organizations the address may act for (orgs/grants.ts). resolveOrgGrants guards its own reads;
+  // this catch is the backstop so a person always signs in for their own records.
+  let orgGrants: OrgGrant[] = [];
+  try {
+    orgGrants = await resolveOrgGrants(email, matches, { monday: deps.monday, config: deps.config });
+  } catch (err) {
+    console.error(`member-portal org grants failed at sign-in: ${errorText(err)}`);
+  }
+  // Nothing matched: no email. The route answers the same either way (enumeration guard).
+  if (matches.length === 0 && orgGrants.length === 0) {
     return;
   }
 
   // First match's stored preference wins when a shared email matches multiple donor records with
   // different languages on file — a documented default (spec), not expected to come up often.
   // localeFromMondayLabel returns null for '' (unset) and for any value that isn't one of the
-  // Monday dropdown's own options, so both cases fall through to localeHint identically.
-  const locale: Locale = localeFromMondayLabel(matches[0]!.preferredLanguage) ?? localeHint;
+  // Monday dropdown's own options, so both cases fall through to localeHint identically. A Work
+  // Email sign-in has no people, so it takes localeHint (the rep's person isn't read for this).
+  const locale: Locale = (matches[0] ? localeFromMondayLabel(matches[0].preferredLanguage) : null) ?? localeHint;
 
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
@@ -40,6 +54,7 @@ export async function requestLogin(email: string, localeHint: Locale, requestId:
   await deps.tokenStore.createToken({
     tokenHash,
     donorItemIds: matches.map((match) => match.id),
+    orgGrants,
     expiresAt,
     requestHash: await sha256Hex(requestId),
     codeHash: await sha256Hex(`${requestId}:${code}`),

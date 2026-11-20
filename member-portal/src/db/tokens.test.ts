@@ -12,7 +12,7 @@ describe('D1MagicLinkTokenStore', () => {
     });
 
     const first = await store.consumeToken('hash-1', '2026-08-22T00:30:00.000Z');
-    expect(first).toEqual({ donorItemIds: ['donor-1', 'donor-2'], emailHash: null });
+    expect(first).toEqual({ donorItemIds: ['donor-1', 'donor-2'], emailHash: null, orgGrants: [] });
 
     const second = await store.consumeToken('hash-1', '2026-08-22T00:31:00.000Z');
     expect(second).toBeNull();
@@ -53,7 +53,7 @@ describe('D1MagicLinkTokenStore', () => {
   it('returns the email hash stored with a token', async () => {
     const store = new D1MagicLinkTokenStore(env.DB);
     await codeRow(store, 'tok-eh', 'req-eh');
-    expect(await store.consumeToken('tok-eh', NOW)).toEqual({ donorItemIds: ['donor-1'], emailHash: 'email-tok-eh' });
+    expect(await store.consumeToken('tok-eh', NOW)).toEqual({ donorItemIds: ['donor-1'], emailHash: 'email-tok-eh', orgGrants: [] });
   });
 
   // The per-address failure budget each takeCodeAttempt call below is given: wide unless a test
@@ -169,7 +169,7 @@ describe('D1MagicLinkTokenStore', () => {
   it('claimByRequest claims once, and then consumeToken on the same row is null', async () => {
     const store = new D1MagicLinkTokenStore(env.DB);
     await codeRow(store, 'tok-claim', 'req-claim');
-    expect(await store.claimByRequest('req-claim', NOW)).toEqual({ donorItemIds: ['donor-1'], emailHash: 'email-tok-claim' });
+    expect(await store.claimByRequest('req-claim', NOW)).toEqual({ donorItemIds: ['donor-1'], emailHash: 'email-tok-claim', orgGrants: [] });
     expect(await store.claimByRequest('req-claim', NOW)).toBeNull();
     expect(await store.consumeToken('tok-claim', NOW)).toBeNull();
   });
@@ -194,5 +194,18 @@ describe('D1MagicLinkTokenStore', () => {
     expect((await store.takeCodeAttempt('req-sep-a', NOW, 5, BUDGET))?.codeHash).toBe('code-tok-sep-a');
     expect((await store.claimByRequest('req-sep-b', NOW))?.emailHash).toBe('email-tok-sep-b');
     expect(await store.claimByRequest('req-sep-a', NOW)).not.toBeNull();
+  });
+
+  it('carries org grants through consumeToken and claimByRequest, and reads NULL as none', async () => {
+    const store = new D1MagicLinkTokenStore(env.DB);
+    const orgGrants = [{ orgItemId: 'o1', affiliationItemId: 'a1', via: 'person' as const, personItemId: null }];
+    await store.createToken({ tokenHash: 'og-1', donorItemIds: [], expiresAt: '2026-08-22T01:00:00.000Z', orgGrants });
+    expect((await store.consumeToken('og-1', '2026-08-22T00:30:00.000Z'))!.orgGrants).toEqual(orgGrants);
+
+    await store.createToken({ tokenHash: 'og-2', donorItemIds: [], expiresAt: '2026-08-22T01:00:00.000Z', requestHash: 'og-req', orgGrants });
+    expect((await store.claimByRequest('og-req', '2026-08-22T00:30:00.000Z'))!.orgGrants).toEqual(orgGrants);
+
+    await store.createToken({ tokenHash: 'og-3', donorItemIds: [], expiresAt: '2026-08-22T01:00:00.000Z' });
+    expect((await store.consumeToken('og-3', '2026-08-22T00:30:00.000Z'))!.orgGrants).toEqual([]);
   });
 });

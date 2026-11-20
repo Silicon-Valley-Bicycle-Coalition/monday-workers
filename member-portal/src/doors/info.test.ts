@@ -111,7 +111,7 @@ describe('loadInfoDoor', () => {
     const verifiedEmailStore = { recordVerified: vi.fn(), verifiedFor: vi.fn(async () => new Set<string>()) };
     const config = { changeRequests: { boardId: null } };
     const result = await loadInfoDoor(
-      { donorItemIds: ['donor-1'], emailHash: null },
+      { donorItemIds: ['donor-1'], emailHash: null, orgGrants: [] },
       { monday, verifiedEmailStore, config } as never,
       'off'
     );

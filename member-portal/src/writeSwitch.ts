@@ -25,6 +25,7 @@ import type { ProcessChangeBatchDeps } from './changeRequests/processBatch';
 import type { ProcessLetterSendBatchDeps } from './letters/processLetterSendBatch';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
+import type { OrgStatementSendStore } from './db/orgStatementSends';
 import type { MagicLinkTokenStore } from './db/tokens';
 
 export const WORKER = 'member-portal';
@@ -82,19 +83,36 @@ const LETTER_STORE_MUTATORS = [
 
 const TOKEN_STORE_MUTATORS = ['createToken', 'consumeToken', 'takeCodeAttempt', 'claimByRequest'] as const satisfies readonly (keyof MagicLinkTokenStore)[];
 
+const ORG_STATEMENT_STORE_MUTATORS = [
+  'createQueued',
+  'claimForSending',
+  'releaseClaim',
+  'markSent',
+  'markSkipped',
+  'requeue',
+] as const satisfies readonly (keyof OrgStatementSendStore)[];
+
+// The claim is dropped like every other write, but it must report success so the dry run reaches
+// the email and records it (a dropped claim resolving undefined reads as "a concurrent delivery won").
+function claimingReadOnly<T extends object>(store: T, mutators: readonly (keyof T)[]): T {
+  return new Proxy(readOnlyProxy(store, mutators), {
+    get: (target, prop, receiver) => (prop === 'claimForSending' ? async () => true : Reflect.get(target, prop, receiver)),
+  });
+}
+
 export function dryRunLetterDeps(deps: ProcessLetterSendBatchDeps, ctx: SkipContext): ProcessLetterSendBatchDeps {
-  const readOnly = readOnlyProxy(deps.store, LETTER_STORE_MUTATORS);
   return {
     ...deps,
-    // The claim is dropped like every other write, but it must report success so the dry run
-    // reaches the email and records it (a dropped claim resolving undefined reads as "a
-    // concurrent delivery won").
-    store: new Proxy(readOnly, {
-      get: (target, prop, receiver) => (prop === 'claimForSending' ? async () => true : Reflect.get(target, prop, receiver)),
-    }),
+    store: claimingReadOnly(deps.store, LETTER_STORE_MUTATORS),
+    orgStore: claimingReadOnly(deps.orgStore, ORG_STATEMENT_STORE_MUTATORS),
     // No live magic link is minted for an email that is never sent.
     tokenStore: readOnlyProxy(deps.tokenStore, TOKEN_STORE_MUTATORS),
-    emailSender: recordingProxy(deps.emailSender, EMAIL_SINK, { sendLetterReadyEmail: undefined, sendLoginEmail: undefined }, ctx),
+    emailSender: recordingProxy(
+      deps.emailSender,
+      EMAIL_SINK,
+      { sendLetterReadyEmail: undefined, sendLoginEmail: undefined, sendOrgStatementReadyEmail: undefined },
+      ctx
+    ),
     monday: recordingProxy(deps.monday, MONDAY_SINK, { createChangeRequestItem: undefined }, ctx),
   };
 }

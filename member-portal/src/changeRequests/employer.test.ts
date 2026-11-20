@@ -7,6 +7,7 @@ const aff = (over: Partial<AffiliationRecord> & { id: string }): AffiliationReco
   organizationName: null,
   statusLabel: 'Current',
   primary: false,
+  portalAccess: false,
   ...over,
 });
 

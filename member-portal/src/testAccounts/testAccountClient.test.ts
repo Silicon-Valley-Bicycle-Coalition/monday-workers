@@ -45,9 +45,10 @@ describe('withTestAccounts', () => {
     const client = withTestAccounts(real, () => NOW);
 
     expect(await client.findDonorsByEmail('TEST-HOUSEHOLD@example.org')).toEqual([
-      { id: 'test-household-a', name: 'Harper Household (test)', preferredLanguage: 'English' },
-      { id: 'test-household-b', name: 'Hayden Household (test)', preferredLanguage: 'English' },
+      { id: 'test-household-a', name: 'Harper Household (test)', preferredLanguage: 'English', matchedPersonal: false },
+      { id: 'test-household-b', name: 'Hayden Household (test)', preferredLanguage: 'English', matchedPersonal: false },
     ]);
+    expect((await client.findDonorsByEmail('test-active@example.org'))[0]!.matchedPersonal).toBe(true);
     const data = await client.getMemberPortalData('test-active');
     expect(data.name).toBe('Alex Active (test)');
     expect(data.totalDonated).toBe('560.00');
@@ -63,6 +64,24 @@ describe('withTestAccounts', () => {
     expect(real.getMemberPortalData).not.toHaveBeenCalled();
     expect(real.getDonorContactInfo).not.toHaveBeenCalled();
     expect(real.getDonorEmails).not.toHaveBeenCalled();
+  });
+
+  it('gives test ids and addresses no affiliations or organizations', async () => {
+    const real = spyClient();
+    const client = withTestAccounts(real, () => NOW);
+    const employer = { affiliationsBoardId: 1, affiliationColumns: { personLink: 'p', organizationLink: 'o', status: 's', primary: 'x' }, currentStatusLabel: 'Current', personAffiliationsLink: 'pa' };
+
+    expect(await client.getPersonAffiliations({ donorItemId: 'test-active', employer })).toEqual([]);
+    expect(await client.findAffiliationsByWorkEmail('test-active@example.org')).toEqual([]);
+    expect(await client.getAffiliation('test-active')).toBeNull();
+    expect(await client.getOrganizationAffiliations('test-active')).toEqual([]);
+    expect(await client.getOrganization('test-active')).toBeNull();
+    expect(await client.getOrganizationGifts('test-active')).toEqual([]);
+    expect(await client.getOrganizationMatches('test-active')).toEqual([]);
+
+    for (const key of ['getPersonAffiliations', 'findAffiliationsByWorkEmail', 'getAffiliation', 'getOrganizationAffiliations', 'getOrganization', 'getOrganizationGifts', 'getOrganizationMatches'] as const) {
+      expect(real[key]).not.toHaveBeenCalled();
+    }
   });
 
   it('passes every other id and address to the real client', async () => {

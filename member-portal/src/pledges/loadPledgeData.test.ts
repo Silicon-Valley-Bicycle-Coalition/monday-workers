@@ -21,7 +21,14 @@ function fakeMonday(names: { id: string; name: string }[], pledgesById: Record<s
     getPledgesForDonor: vi.fn().mockImplementation((id: string) => Promise.resolve(pledgesById[id] ?? [])),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     getLetterSettings: vi.fn(),
-    listDonorIdsWithDonationsInYear: vi.fn(),
+    listYearActivity: vi.fn(),
+    findAffiliationsByWorkEmail: vi.fn().mockResolvedValue([]),
+    getAffiliation: vi.fn().mockResolvedValue(null),
+    getOrganizationAffiliations: vi.fn().mockResolvedValue([]),
+    getOrganization: vi.fn().mockResolvedValue(null),
+    getOrganizationGifts: vi.fn().mockResolvedValue([]),
+    getOrganizationMatches: vi.fn().mockResolvedValue([]),
+    getCompletedVolunteerHoursInYear: vi.fn().mockResolvedValue(new Map()),
   };
 }
 

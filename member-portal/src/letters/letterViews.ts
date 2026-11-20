@@ -26,6 +26,29 @@ export function lettersListView(listings: LetterYearListing[], locale: Locale): 
   return doorPage(t(locale, 'home.doorLetters'), `<p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>${sections}`, locale);
 }
 
+// The letter's fixed light "paper" styling, shared with the organization statement.
+export const LETTER_CSS = `
+      /* Fixed light "paper" look regardless of dark mode — this is a document a donor may keep
+         for tax purposes (see the English-only body note above for the same reasoning). */
+      .letter {
+        font-family: Georgia, 'Times New Roman', serif;
+        max-width: 42rem;
+        margin: 0 auto;
+        line-height: 1.5;
+        background: var(--svbc-white);
+        color: var(--svbc-black);
+        padding: 1.5rem 2rem;
+      }
+      .letter table { border-collapse: collapse; width: 100%; }
+      .letter th, .letter td { text-align: left; padding: 0.25rem 1rem 0.25rem 0; border-bottom: 1px solid #ccc; }
+      .letter tr { page-break-inside: avoid; }
+      .letter .total { font-weight: bold; }
+      @page { size: letter; margin: 1in; }
+      @media print {
+        .no-print { display: none; }
+      }
+`;
+
 // The letter's own body — greeting, gift table, acknowledgment statement, signature — stays
 // English (spec non-goal: it's an official document a donor may keep for tax purposes). Only the
 // surrounding chrome (nav links, print button) and a new disclaimer note are translated.
@@ -57,27 +80,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
   const einLine = hasContributions ? `<br>\n        EIN: ${escapeHtml(taxLetter.ein)}` : '';
 
   return `
-    <style>
-      /* Fixed light "paper" look regardless of dark mode — this is a document a donor may keep
-         for tax purposes (see the English-only body note above for the same reasoning). */
-      .letter {
-        font-family: Georgia, 'Times New Roman', serif;
-        max-width: 42rem;
-        margin: 0 auto;
-        line-height: 1.5;
-        background: var(--svbc-white);
-        color: var(--svbc-black);
-        padding: 1.5rem 2rem;
-      }
-      .letter table { border-collapse: collapse; width: 100%; }
-      .letter th, .letter td { text-align: left; padding: 0.25rem 1rem 0.25rem 0; border-bottom: 1px solid #ccc; }
-      .letter tr { page-break-inside: avoid; }
-      .letter .total { font-weight: bold; }
-      @page { size: letter; margin: 1in; }
-      @media print {
-        .no-print { display: none; }
-      }
-    </style>
+    <style>${LETTER_CSS}</style>
     <nav class="no-print">
       <a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'letters.backToLetters'))}</a>
       <button type="button" onclick="window.print()">${escapeHtml(t(locale, 'letters.print'))}</button>

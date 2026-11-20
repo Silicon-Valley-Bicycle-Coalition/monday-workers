@@ -308,12 +308,31 @@ export interface Config {
   matchingGifts: MatchingGiftsConfig;
   impact: ImpactConfig;
   home: HomeConfig;
+  organizations: OrganizationsConfig;
+}
+
+// Organization reps (spec 2026-11-19-member-portal-organization-reps-design.md). Column ids are
+// "REPLACE_WITH_COLUMN_ID" until they exist, which keeps the feature off (orgAccessEnabled).
+export interface OrganizationsConfig {
+  // Affiliations checkbox "Portal access": staff tick it to let that affiliation's person see the org.
+  portalAccessColumn: string;
+  // Affiliations "Work Email": the second sign-in address.
+  workEmailColumn: string;
+  // Organizations street, city and zip columns, in that order. Empty or any placeholder entry = no address line.
+  addressColumns: string[];
+  // The acknowledgment letter wording and EIN are approved; gates orgAcknowledgmentEnabled.
+  acknowledgmentSignedOff: boolean;
+  // Employee volunteering shows only as an aggregate of at least this many people.
+  volunteerFloor: number;
 }
 
 export interface DonorMatch {
   id: string;
   name: string;
   preferredLanguage: string;
+  // The address equals the Personal Email (not only the Household Email). Organization sign-in
+  // uses it to tell a person's own address from one shared with a household.
+  matchedPersonal: boolean;
 }
 
 export interface DonationRecord {
@@ -426,9 +445,13 @@ export interface ChangeQueueMessage extends WriteStamp {
   requestId: number;
 }
 
-// See the comment on ChangeQueueMessage above — same import-cycle avoidance.
+// See the comment on ChangeQueueMessage above — same import-cycle avoidance. One queue carries
+// both January emails: `kind: 'org'` is an org_statement_sends id (an organization rep's
+// statement email), absent is a letter_sends id (a person's tax letter), which every message
+// enqueued before organization statements existed is.
 export interface LetterSendQueueMessage extends WriteStamp {
   sendId: number;
+  kind?: 'org';
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env

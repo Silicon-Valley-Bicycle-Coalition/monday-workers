@@ -1,8 +1,10 @@
 import type { MondayClient } from '../monday/client';
 import type { LetterSendStore } from '../db/letterSends';
+import type { OrgStatementSendStore } from '../db/orgStatementSends';
 import type { Config, LetterSendQueueMessage } from '../types';
-import { lettersEnabled, letterCronConfigured } from '../config';
+import { lettersEnabled, letterCronConfigured, orgAccessEnabled } from '../config';
 import { triggerLetterSend } from './triggerLetterSend';
+import { runOrgStatementPass, type OrgStatementPassResult } from '../orgs/runOrgStatementPass';
 import { runDisposition, type WriteMode } from '../flags';
 import { stampedQueue } from '../writeSwitch';
 
@@ -11,6 +13,7 @@ export type RunLetterCronResult =
       kind: 'skipped';
       reason:
         | 'unconfigured'
+        // Neither pass can run: the tax letter isn't signed off and organization access is off.
         | 'letters-not-signed-off'
         | 'no-settings'
         | 'auto-send-off'
@@ -27,16 +30,20 @@ export type RunLetterCronResult =
   | {
       kind: 'ran';
       year: number;
+      // The person pass's counts: all zero while the tax letter isn't signed off.
       eligible: number; // unique donors with a donation dated in `year`
       alreadyHandled: number; // dropped by the letter_sends dedupe pre-check, zero Monday calls
       triggered: number; // sends queued this run
       failed: number; // trigger threw — retried naturally on the next daily run
       deferred: number; // beyond maxTriggersPerRun — picked up by the next daily run
+      // The organization pass's counts, present when it ran (orgAccessEnabled).
+      orgs?: OrgStatementPassResult;
     };
 
 export interface RunLetterCronDeps {
   monday: MondayClient;
   letterStore: LetterSendStore;
+  orgStore: OrgStatementSendStore;
   queue: { send(message: LetterSendQueueMessage): Promise<void> };
   config: Config;
   now: () => Date;
@@ -51,6 +58,8 @@ export interface RunLetterCronDeps {
 // need no deploy. Rerunning daily is deliberate — the letter_sends UNIQUE(donor, year) dedupe
 // makes completed donors free, so each run only advances the not-yet-handled remainder
 // (self-healing for transient failures and for gifts entered after the first run).
+// After the person pass comes the organization pass (src/orgs/runOrgStatementPass.ts): the same
+// gates except the tax letter's signoff, and what the person pass left of maxTriggersPerRun.
 export async function runLetterCron(deps: RunLetterCronDeps): Promise<RunLetterCronResult> {
   // `dry-run` and `skip` both mean "don't run": no Monday read, no letter_sends row, no message.
   if (runDisposition(deps.mode) !== 'run') {
@@ -72,7 +81,11 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   if (!letterCronConfigured(config) || config.letterCron.boardId === null || config.monday.donationsBoardId === null) {
     return { kind: 'skipped', reason: 'unconfigured' };
   }
-  if (!lettersEnabled(config)) {
+  // The person pass needs the tax letter signed off; the organization pass doesn't (the
+  // statement's acknowledgment has its own switch). Skip only when neither can run.
+  const peopleOn = lettersEnabled(config);
+  const orgsOn = orgAccessEnabled(config);
+  if (!peopleOn && !orgsOn) {
     return { kind: 'skipped', reason: 'letters-not-signed-off' };
   }
 
@@ -80,7 +93,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   // the first day of the year *following* the target year, every gift the sweep could find is
   // below the floor, so there is nothing to mail. (SVBC: a 2026-01-01 floor means the January
   // 2026 run, which would target 2025, does nothing.) A floor inside the target year falls
-  // through — listDonorIdsWithDonationsInYear applies it per gift.
+  // through — listYearActivity applies it per gift.
   const targetYear = deps.now().getUTCFullYear() - 1;
   const floor = config.donations.historyStartISO;
   if (floor !== null && floor >= `${targetYear + 1}-01-01`) {
@@ -105,8 +118,9 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   }
 
   const year = targetYear;
-  const eligibleDonorIds = await deps.monday.listDonorIdsWithDonationsInYear(year, config.taxLetter.excludedGiftTypes);
-  const handled = await deps.letterStore.listDonorItemIdsForYear(year);
+  const activity = await deps.monday.listYearActivity(year, config.taxLetter.excludedGiftTypes);
+  const eligibleDonorIds = peopleOn ? activity.personIds : [];
+  const handled = peopleOn ? await deps.letterStore.listDonorItemIdsForYear(year) : new Set<string>();
   const pending = eligibleDonorIds.filter((id) => !handled.has(id));
   const batch = pending.slice(0, config.letterCron.maxTriggersPerRun);
 
@@ -138,6 +152,15 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
     }
   }
 
+  const orgs = orgsOn
+    ? await runOrgStatementPass(
+        { monday: deps.monday, store: deps.orgStore, queue: deps.queue, config, now: deps.now, mode: deps.mode },
+        year,
+        activity.organizationIds,
+        config.letterCron.maxTriggersPerRun - batch.length
+      )
+    : undefined;
+
   return {
     kind: 'ran',
     year,
@@ -146,5 +169,6 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
     triggered,
     failed,
     deferred: pending.length - batch.length,
+    ...(orgs ? { orgs } : {}),
   };
 }

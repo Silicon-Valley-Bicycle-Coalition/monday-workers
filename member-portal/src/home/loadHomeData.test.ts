@@ -232,3 +232,95 @@ describe('loadHomeData', () => {
     expect(data.doors.find((d) => d.key === 'letters')!.hint).toBe('Your 2026 letter is ready');
   });
 });
+
+describe('loadHomeData organizations', () => {
+  const orgConfig = {
+    ...baseConfig,
+    monday: { ...baseConfig.monday, organizationsBoardId: 77 },
+    changeRequests: { employer: {} },
+    organizations: { portalAccessColumn: 'check_portal' },
+  } as unknown as Config;
+  const grants = [
+    { orgItemId: 'o1', affiliationItemId: 'a1', via: 'person' as const, personItemId: 'j' },
+    { orgItemId: 'o2', affiliationItemId: 'a2', via: 'workEmail' as const, personItemId: null },
+  ];
+  const withNames = (monday: MondayClient, impl: () => Promise<{ id: string; name: string }[]>) =>
+    Object.assign(monday, { getDonorNames: vi.fn(impl) }) as MondayClient & { getDonorNames: ReturnType<typeof vi.fn> };
+
+  it('reads the names in one call and keeps grant order', async () => {
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => [
+      { id: 'o2', name: 'Bike Shop' },
+      { id: 'o1', name: 'Acme' },
+    ]);
+    const data = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants);
+    expect(monday.getDonorNames).toHaveBeenCalledTimes(1);
+    expect(monday.getDonorNames).toHaveBeenCalledWith(['o1', 'o2']);
+    expect(data.orgs).toEqual([
+      { orgItemId: 'o1', name: 'Acme', statementReadyYear: null },
+      { orgItemId: 'o2', name: 'Bike Shop', statementReadyYear: null },
+    ]);
+  });
+
+  it("marks last year's statement ready in the window, per organization", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => [
+      { id: 'o1', name: 'Acme' },
+      { id: 'o2', name: 'Bike Shop' },
+    ]);
+    Object.assign(monday, {
+      getOrganizationGifts: vi.fn(async (id: string) => {
+        if (id === 'o2') throw new Error('monday down');
+        return [{ itemId: 'g', date: '2026-05-01', amount: '$5.00', giftType: 'Donation', description: 'x' }];
+      }),
+      getOrganizationMatches: vi.fn(async () => []),
+    });
+    const extra = { getOrganizationAffiliations: vi.fn(), getCompletedVolunteerHoursInYear: vi.fn() };
+    Object.assign(monday, extra);
+    const full = { ...orgConfig, organizations: { ...orgConfig.organizations, volunteerFloor: 3, acknowledgmentSignedOff: false } } as unknown as Config;
+    const inWindow = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', full), 'en', grants);
+    expect(inWindow.orgs.map((o) => o.statementReadyYear)).toEqual([2026, null]);
+    expect(extra.getOrganizationAffiliations).not.toHaveBeenCalled();
+    expect(extra.getCompletedVolunteerHoursInYear).not.toHaveBeenCalled();
+    const after = await loadHomeData(['j'], deps(monday, '2027-06-10T18:00:00Z', full), 'en', grants);
+    expect(after.orgs.map((o) => o.statementReadyYear)).toEqual([null, null]);
+    vi.restoreAllMocks();
+  });
+
+  it('reports the year when last year has only a match', async () => {
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => [{ id: 'o1', name: 'Acme' }]);
+    Object.assign(monday, {
+      getOrganizationGifts: vi.fn(async () => []),
+      getOrganizationMatches: vi.fn(async () => [{ itemId: 'm', date: '2026-05-01', amount: '$5.00', giftType: '', description: 'x' }]),
+    });
+    const data = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants.slice(0, 1));
+    expect(data.orgs[0]!.statementReadyYear).toBe(2026);
+  });
+
+  it('leaves names null when the read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => {
+      throw new Error('monday down');
+    });
+    const data = await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants);
+    expect(data.orgs.map((o) => o.name)).toEqual([null, null]);
+    expect(data.people).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+
+  it('reads no names with the gate off or no grants', async () => {
+    const monday = withNames(fakeMonday({ j: donor('j') }), async () => []);
+    const gateOff = { ...orgConfig, organizations: { portalAccessColumn: 'REPLACE_WITH_COLUMN_ID' } } as unknown as Config;
+    expect((await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', gateOff), 'en', grants)).orgs).toEqual([]);
+    expect((await loadHomeData(['j'], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en')).orgs).toEqual([]);
+    expect(monday.getDonorNames).not.toHaveBeenCalled();
+  });
+
+  it('loads a session with no people: no person reads, no doors', async () => {
+    const monday = withNames(fakeMonday({}), async () => [{ id: 'o1', name: 'Acme' }]);
+    const data = await loadHomeData([], deps(monday, '2027-01-10T18:00:00Z', orgConfig), 'en', grants.slice(0, 1));
+    expect(monday.getMemberPortalData).not.toHaveBeenCalled();
+    expect(data.people).toEqual([]);
+    expect(data.doors).toEqual([]);
+    expect(data.orgs).toHaveLength(1);
+  });
+});

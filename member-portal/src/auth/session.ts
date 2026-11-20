@@ -26,11 +26,17 @@ export async function startSession(consumed: ConsumedToken, deps: StartSessionDe
     donorItemIds: consumed.donorItemIds,
     expiresAt,
     emailHash: consumed.emailHash,
+    orgGrants: consumed.orgGrants,
   });
 
   if (consumed.emailHash !== null) {
+    // A work-email grant proves the address for the Affiliation's person too.
+    const verifiedIds = new Set(consumed.donorItemIds);
+    for (const grant of consumed.orgGrants) {
+      if (grant.via === 'workEmail' && grant.personItemId !== null) verifiedIds.add(grant.personItemId);
+    }
     try {
-      await deps.verifiedEmailStore.recordVerified(consumed.emailHash, consumed.donorItemIds, now.toISOString());
+      await deps.verifiedEmailStore.recordVerified(consumed.emailHash, [...verifiedIds], now.toISOString());
     } catch (err) {
       // The donor is signed in; a missed verified-address record must not undo that.
       console.error(`member-portal verified-address record failed: ${errorText(err)}`);

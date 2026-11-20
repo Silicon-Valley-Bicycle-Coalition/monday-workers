@@ -20,6 +20,7 @@ const REQUIRED_TOP_LEVEL = [
   'impact',
   'letterCron',
   'home',
+  'organizations',
 ] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
@@ -426,6 +427,25 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "home.taxLetterUntil" must be a real MM-DD calendar date');
   }
 
+  const organizations = requireObject(cfg, 'organizations');
+  requireKeys(organizations, 'organizations', ['portalAccessColumn', 'workEmailColumn', 'addressColumns', 'acknowledgmentSignedOff', 'volunteerFloor']);
+  for (const key of ['portalAccessColumn', 'workEmailColumn'] as const) {
+    const value = organizations[key];
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new Error(`config: "organizations.${key}" must be a Monday column id string (or the placeholder "${PLACEHOLDER_COLUMN_VALUE}")`);
+    }
+  }
+  const addressColumns = organizations.addressColumns;
+  if (!Array.isArray(addressColumns) || !addressColumns.every((c) => typeof c === 'string' && c.length > 0)) {
+    throw new Error('config: "organizations.addressColumns" must be a list of Monday column id strings (placeholders allowed)');
+  }
+  if (typeof organizations.acknowledgmentSignedOff !== 'boolean') {
+    throw new Error('config: "organizations.acknowledgmentSignedOff" must be a boolean');
+  }
+  if (!Number.isInteger(organizations.volunteerFloor) || (organizations.volunteerFloor as number) < 3) {
+    throw new Error('config: "organizations.volunteerFloor" must be an integer of at least 3 (the privacy floor)');
+  }
+
   return cfg as unknown as Config;
 }
 
@@ -591,4 +611,26 @@ export function signedOffEin(config: Config): string | null {
 export function matchingGiftsSearchEnabled(config: Config): boolean {
   const key = config.matchingGifts.doubleTheDonationPublicKey;
   return key !== null && key.length > 0;
+}
+
+const orgColumnSet = (value: string): boolean => value !== PLACEHOLDER_COLUMN_VALUE;
+
+// Organization reps see their org only with a real Portal access column, the employer block
+// (its Affiliations board and links) and an Organizations board.
+export function orgAccessEnabled(config: Config): boolean {
+  return (
+    orgColumnSet(config.organizations.portalAccessColumn) &&
+    (config.changeRequests.employer ?? null) !== null &&
+    config.monday.organizationsBoardId !== null
+  );
+}
+
+// Signing in with an Affiliations Work Email needs the org access gate and a real Work Email column.
+export function workEmailSignInEnabled(config: Config): boolean {
+  return orgAccessEnabled(config) && orgColumnSet(config.organizations.workEmailColumn);
+}
+
+// The organization acknowledgment letter additionally needs sign-off and a signed-off EIN.
+export function orgAcknowledgmentEnabled(config: Config): boolean {
+  return orgAccessEnabled(config) && config.organizations.acknowledgmentSignedOff && signedOffEin(config) !== null;
 }

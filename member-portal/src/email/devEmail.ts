@@ -1,4 +1,4 @@
-import type { EmailSender, SendLetterReadyEmailParams, SendLoginEmailParams } from './types';
+import type { EmailSender, SendLetterReadyEmailParams, SendLoginEmailParams, SendOrgStatementReadyEmailParams } from './types';
 
 // Local-preview-only EmailSender (see src/index.local.ts) — prints the link instead of sending
 // mail, since local dev has no Cloudflare Email Sending domain onboarded. Copy the printed URL
@@ -14,5 +14,10 @@ export class ConsoleEmailSender implements EmailSender {
     console.log(
       `\n[dev email] "Your ${params.year} letter is ready" for ${params.donorName} <${params.to}>:\n  ${params.loginUrl}\n`
     );
+  }
+
+  async sendOrgStatementReadyEmail(params: SendOrgStatementReadyEmailParams): Promise<void> {
+    // log-safety: allow — local-only (index.local.ts), never deployed; printing the address and link is the point.
+    console.log(`\n[dev email] "${params.orgName}'s ${params.year} statement is ready" for <${params.to}>:\n  ${params.loginUrl}\n`);
   }
 }

@@ -893,8 +893,9 @@ the `donations` stanza, both required, each `"YYYY-MM-DD"` or `null`:
   Giving rollup, so it never exceeds the rows under it. `null` means no floor. SVBC:
   `"2026-01-01"`.
 * **`historyVisibleFromISO`** — the launch gate. Donation history on the giving door renders only once
-  the current UTC date reaches it; until then no portal page queries the Donations board for
-  history (the home page never does). `null` means never shown —
+  the current UTC date reaches it; until then no portal page shows or queries giving history
+  (the home page never does). Organization pages (v10) do read Donations to list their statement
+  years, but show no giving history before that date. `null` means never shown —
   the default for a fresh fork, and how this ships ahead of launch so the rest of the portal can
   be tested. Date-gated rather than a boolean so January needs no deploy. SVBC: `"2027-01-01"`,
   the first day of the first full calendar year after the clean start. `config/local.json` sets a
@@ -977,6 +978,99 @@ door doesn't load a donor's address, so it isn't filtered by city. It costs no M
 
 **Upgrading an existing deployment (forks included):** config validation requires the
 `getInvolved` stanza to exist. `"getInvolved": { "links": [] }` keeps the section off.
+
+## v10 — Organization reps
+
+A person who acts for an organization (a sponsor's contact, an employer's giving lead) can sign in
+and see that organization's page and year-end statement. Spec:
+`../docs/superpowers/specs/2026-11-19-member-portal-organization-reps-design.md`. Code: `src/orgs/*`
+(`grants.ts` resolves access, `loadOrgData.ts` and `statement.ts` build the page and statement,
+`orgViews.ts` renders them, `runOrgStatementPass.ts` and `processOrgStatementSend.ts` are the
+January email), `src/db/orgStatementSends.ts`.
+
+**Access.** Staff tick **Portal access** on a person's Current Affiliation. The rep then signs in
+with the person's Personal Email (every organization they hold a granting Affiliation for opens)
+or with that Affiliation's Work Email (only that one organization opens, and the home page lists
+just it, with no personal records). A shared Household Email never carries Affiliations. Grants are
+resolved at sign-in, stored as `org_grants` JSON on `magic_link_tokens` and `sessions` (NULL = none),
+and re-checked live on every organization page: untick the box or mark the Affiliation Former and
+the next organization page load is a not-found. The home list is built from the session's grants
+and can lag up to 24 h (the session's cached copy).
+
+**What the statement shows.** Everything the organization gave: donations, sponsorships, grants,
+contracts, in-kind gifts, event tickets, employee matching, and employee volunteering as an
+aggregate that is hidden when fewer than `volunteerFloor` (3) people contributed. No employee
+names appear, and Donations item names are not shown. Only the acknowledgment section counts
+deductible gifts. The volunteering line counts people affiliated with the organization today
+(Current Affiliations), not whoever was affiliated when they volunteered.
+
+**Employee matching needs `monday.columns.donationMatchedBy`.** The org page and statement find an
+organization's employee matches through the Donations **Matched By** column. Sandbox has it
+(`board_relation_mm8hs607`); **production doesn't yet** (still `REPLACE_WITH_COLUMN_ID` in
+`config/svbc.json`), so there an organization's matches read as none, and an organization whose
+only activity is matching gets no statement or January email. Setting it alone does not turn on the
+person-side Double the Donation match lines, which still need all four DTD columns.
+
+**Config.** Each `config/*.json` has an `organizations` block:
+
+| Key | Meaning |
+|---|---|
+| `portalAccessColumn` | The Affiliations board's **Portal access** checkbox id. `REPLACE_WITH_COLUMN_ID` keeps the whole feature off. |
+| `workEmailColumn` | The Affiliations **Work Email** column id. Unset: Work Email sign-in is off. |
+| `addressColumns` | Organizations board address columns for the statement heading. |
+| `acknowledgmentSignedOff` | Accountant sign-off switch for the acknowledgment wording (below). |
+| `volunteerFloor` | Minimum distinct volunteers before volunteering is shown (3). |
+
+Gates in `src/config.ts`: `orgAccessEnabled` (a real Portal access column, the
+`changeRequests.employer` block, and an Organizations board id) turns on grants, pages and the
+January pass; `workEmailSignInEnabled` adds a real Work Email column; `orgAcknowledgmentEnabled`
+adds `acknowledgmentSignedOff: true` and a signed-off EIN. The Portal access checkbox exists on both
+Affiliations boards: sandbox `boolean_mm986pxt` (configured in `config/sandbox.json`, so the
+feature is **on in the sandbox**), production `boolean_mm9859qh` (created, **not yet in
+`config/svbc.json`**, so production is off until it is pasted in).
+
+**Migration `0009_organization_reps.sql`** adds `org_grants` to `magic_link_tokens` and `sessions`
+and creates `org_statement_sends`. Apply it to the sandbox and production D1 databases **before**
+deploying code that reads it (`getSession` selects the new column), as for 0007/0008:
+
+```sh
+npx wrangler d1 migrations apply svbc-member-portal-sandbox --remote --env sandbox
+npx wrangler d1 migrations apply svbc-member-portal --remote
+```
+
+**Acknowledgment switch.** The organization acknowledgment section (the only part that counts
+deductible gifts) stays off while `organizations.acknowledgmentSignedOff` is `false`, which is its
+state in both configs until the accountant signs off the wording. Flip it to `true` (with the EIN
+signed off in `taxLetter`) and redeploy. Statements and everything else work without it.
+
+**January organization pass.** The daily letter cron (`runLetterCron`) runs
+`runOrgStatementPass` after the person pass whenever `orgAccessEnabled`, even if the tax letter
+isn't signed off. For each organization with activity in the prior year it reads the Affiliations
+and queues one statement email per Current, Portal-access rep (to the Work Email when set, else the
+person's Personal Email). It shares `letterCron.maxTriggersPerRun` with the person pass (what that
+pass leaves over); the rest wait for the next day. `org_statement_sends` has a unique index on
+`(org_item_id, affiliation_item_id, year)`, so a rerun never sends twice and a rep added later gets
+theirs on the next run. The write switch applies as for letters: nothing sends under `hold`,
+`unknown` or `off`. The consumer re-checks access at send time and marks the row `skipped` (config
+gate off, access removed, no statement, or no email on file); it claims `queued` → `sending`
+before emailing, as letters do.
+
+**Retrying a row.** The cron treats any existing row as handled, so neither a `skipped` nor a
+stuck `sending` row is retried by it. Find the row, then delete it: the next daily run queues a
+fresh one (or, for a row stuck in `sending` where the rep got no email, the same fix). Check first
+that the rep's email did not go out.
+
+```sh
+npx wrangler d1 execute svbc-member-portal --remote --command \
+  "SELECT id, org_item_id, affiliation_item_id, year, status, sent_at FROM org_statement_sends WHERE status IN ('skipped','sending')"
+# e.g. staff added a Work Email after a "no email on file" skip. Delete by id; add --env sandbox / the sandbox database name for the sandbox.
+npx wrangler d1 execute svbc-member-portal --remote --command "DELETE FROM org_statement_sends WHERE id = <id>"
+```
+
+**Translations.** The nine non-English locales' organization strings are drafts and need a native
+speaker's check before real organizations see them.
+
+Staff steps are in [`docs/uat/member-portal.md`](../docs/uat/member-portal.md#give-a-rep-portal-access).
 
 ## Deploying: the write switch
 

@@ -15,12 +15,17 @@ function totalDonated(donations: DonationRecord[]): string {
 export function withTestAccounts(real: MondayClient, now: () => Date): MondayClient {
   const persona = (id: string) => findTestPersona(id, now());
   // Spread copies every method, so writes and cron-only reads (letter settings, the year-end
-  // sweep, change-request items, affiliations) stay the real client's: no test id reaches them.
+  // sweeps, volunteer hours, change-request items) stay the real client's: no test id reaches
+  // them. Personas have no affiliations or organizations, so the org reads below answer empty for
+  // a test id and pass every other id through.
   return {
     ...bindAll(real),
     async findDonorsByEmail(email) {
       const matches = findTestPersonasByEmail(email, now());
-      if (matches.length > 0) return matches.map((p) => ({ id: p.id, name: p.name, preferredLanguage: p.preferredLanguage }));
+      // The sign-in address sits in Personal Email except for the shared-inbox household.
+      if (matches.length > 0) {
+        return matches.map((p) => ({ id: p.id, name: p.name, preferredLanguage: p.preferredLanguage, matchedPersonal: !p.sharedInbox }));
+      }
       return real.findDonorsByEmail(email);
     },
     async getMemberPortalData(donorItemId, options = {}) {
@@ -86,6 +91,27 @@ export function withTestAccounts(real: MondayClient, now: () => Date): MondayCli
     },
     async getEventRegistrationsForDonor(params) {
       return isTestDonorId(params.donorItemId) ? [] : real.getEventRegistrationsForDonor(params);
+    },
+    async getPersonAffiliations(params) {
+      return isTestDonorId(params.donorItemId) ? [] : real.getPersonAffiliations(params);
+    },
+    async findAffiliationsByWorkEmail(email) {
+      return findTestPersonasByEmail(email, now()).length > 0 ? [] : real.findAffiliationsByWorkEmail(email);
+    },
+    async getAffiliation(affiliationItemId) {
+      return isTestDonorId(affiliationItemId) ? null : real.getAffiliation(affiliationItemId);
+    },
+    async getOrganizationAffiliations(orgItemId) {
+      return isTestDonorId(orgItemId) ? [] : real.getOrganizationAffiliations(orgItemId);
+    },
+    async getOrganization(orgItemId) {
+      return isTestDonorId(orgItemId) ? null : real.getOrganization(orgItemId);
+    },
+    async getOrganizationGifts(orgItemId) {
+      return isTestDonorId(orgItemId) ? [] : real.getOrganizationGifts(orgItemId);
+    },
+    async getOrganizationMatches(orgItemId) {
+      return isTestDonorId(orgItemId) ? [] : real.getOrganizationMatches(orgItemId);
     },
   };
 }

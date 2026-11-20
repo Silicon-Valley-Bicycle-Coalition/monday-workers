@@ -10,12 +10,13 @@ import { D1CodeFailureStore } from './db/codeFailures';
 import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
-import { HttpMondayClient } from './monday/client';
+import { HttpMondayClient, orgReadConfig } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
 import { discountOrganizationsCache, withCachedDiscounts } from './monday/discountCache';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
 import { D1LetterSendStore } from './db/letterSends';
+import { D1OrgStatementSendStore, type OrgStatementSendStore } from './db/orgStatementSends';
 import { consumeLetterSendBatch } from './letters/processLetterSendBatch';
 import { runLetterCron } from './letters/runLetterCron';
 import type { Env, LetterSendQueueMessage, Config } from './types';
@@ -44,6 +45,7 @@ export function emailBindingFor(env: Env): SendEmail {
 
 export interface QueueRouterDeps {
   letterStore: LetterSendStore;
+  orgStore: OrgStatementSendStore;
   monday: MondayClient;
   tokenStore: MagicLinkTokenStore;
   emailSender: EmailSender;
@@ -56,7 +58,8 @@ export interface QueueRouterDeps {
 // Extracted from queue() below so the routing decision can be exercised directly in tests with
 // faked-out deps, instead of only through the real entrypoint (which always runs validateConfig
 // against the real, placeholder-laden config/svbc.json and would throw before any routing logic
-// ran). The portal consumes only the letter-emails queue: change requests are written to Monday
+// ran). The portal consumes only the letter-emails queue (person letters and, as `kind: 'org'`,
+// organization statements — consumeLetterSendBatch tells them apart): change requests are written to Monday
 // by member-portal-writer (src/writer.ts), so the portal holds no Monday write credential. A
 // change-requests batch reaching here is a misconfiguration and throws like any unknown queue.
 export async function routeQueueBatch(
@@ -70,6 +73,7 @@ export async function routeQueueBatch(
       [...batch.messages],
       {
         store: deps.letterStore,
+        orgStore: deps.orgStore,
         monday: deps.monday,
         tokenStore: deps.tokenStore,
         emailSender: deps.emailSender,
@@ -118,7 +122,9 @@ export default {
           pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
           // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
           // null board id rather than querying a sentinel.
-          config.monday.volunteersBoardId
+          config.monday.volunteersBoardId,
+          undefined,
+          orgReadConfig(config)
         ),
         discountOrganizationsCache,
         `${config.monday.apiUrl}#${organizationsBoardId}`
@@ -172,11 +178,14 @@ export default {
       null,
       // Same treatment as pledges above: no queue consumer reads volunteer history, and
       // getVolunteerShiftsForDonor throws its own config error on a null board id.
-      config.monday.volunteersBoardId
+      config.monday.volunteersBoardId,
+      undefined,
+      orgReadConfig(config)
     );
 
     await routeQueueBatch(batch, {
       letterStore: new D1LetterSendStore(env.DB),
+      orgStore: new D1OrgStatementSendStore(env.DB),
       monday,
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       emailSender: new CloudflareEmailSender(
@@ -236,8 +245,9 @@ export default {
     }
 
     // Automatic January letter emails — gated entirely inside runLetterCron (the write switch on,
-    // letterCron config filled in, taxLetter signed off, and the Letter Settings board's Auto-send
-    // checkbox + start date), so on most days this is one cheap settings read and a no-op. The
+    // letterCron config filled in, taxLetter signed off for people and organization access on for
+    // organization reps, and the Letter Settings board's Auto-send checkbox + start date), so on
+    // most days this is one cheap settings read and a no-op. The
     // purges above are operational and run whatever the switch says.
     const gate = await readGate(env);
     const cronResult = await runLetterCron({
@@ -248,9 +258,14 @@ export default {
         config.monday.donorsBoardId ?? 0,
         config.monday.donationsBoardId ?? 0,
         config.monday.organizationsBoardId ?? 0,
-        config.donations
+        config.donations,
+        null,
+        config.monday.volunteersBoardId,
+        undefined,
+        orgReadConfig(config)
       ),
       letterStore: new D1LetterSendStore(env.DB),
+      orgStore: new D1OrgStatementSendStore(env.DB),
       queue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
       config,
       now: () => new Date(),
@@ -266,6 +281,14 @@ export default {
           `${cronResult.alreadyHandled} already handled, ${cronResult.triggered} queued, ` +
           `${cronResult.failed} failed, ${cronResult.deferred} deferred to tomorrow's run`
       );
+      const orgs = cronResult.orgs;
+      if (orgs) {
+        console.log(
+          `member-portal letter cron: year ${cronResult.year} organization statements — ${orgs.eligibleReps} reps, ` +
+            `${orgs.alreadyHandled} already handled, ${orgs.triggered} queued, ${orgs.failed} failed, ` +
+            `${orgs.deferred} deferred to tomorrow's run`
+        );
+      }
     }
   },
 };

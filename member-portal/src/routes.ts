@@ -45,7 +45,13 @@ import {
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
+  orgAccessEnabled,
+  orgAcknowledgmentEnabled,
+  donationHistoryEnabled,
 } from './config';
+import { grantFor, hasOrgAccess } from './orgs/grants';
+import { loadOrgPage, loadOrgStatement } from './orgs/loadOrgData';
+import { orgNotFoundView, orgPageView, orgStatementView } from './orgs/orgViews';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsSearchDocument, matchingGiftsView, SEARCH_DOCUMENT_CSP } from './matchingGifts/matchingGiftViews';
@@ -133,6 +139,11 @@ async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] |
   return (await getSessionInfo(c, deps))?.donorItemIds ?? null;
 }
 
+// A session without people (a Work Email sign-in that grants only organizations) has no card,
+// giving history, letters or info of its own: each person page sends it home, which lists its
+// organizations.
+const noPeople = (donorItemIds: string[]): boolean => donorItemIds.length === 0;
+
 // Signs the browser in (link or code alike) and drops the request cookie: once either half of a
 // sign-in request has been used, the row it pointed at is claimed and the cookie unlocks nothing.
 function setSessionCookie(c: Context, sessionToken: string, deps: AppDeps): void {
@@ -200,6 +211,8 @@ export function createApp(deps: AppDeps) {
       // The address it signed in with, so the info door shows it (the household's shared inbox
       // under each person).
       emailHash: await signInEmailHash(email),
+      // Personas manage no organizations.
+      orgGrants: [],
     });
     setSessionCookie(c, sessionToken, deps);
     const lang = localeFromMondayLabel(personas[0]!.preferredLanguage) ?? locale;
@@ -429,6 +442,7 @@ export function createApp(deps: AppDeps) {
           // response returns immediately regardless of match state.
           const work = requestLogin(email, locale, requestId, {
             monday: deps.monday,
+            config: deps.config,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
             portalBaseUrl: deps.config.auth.portalBaseUrl,
@@ -601,12 +615,12 @@ export function createApp(deps: AppDeps) {
   // door loads its own section.
   app.get('/:locale/portal', async (c) => {
     const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) {
+    const session = await getSessionInfo(c, deps);
+    if (session === null) {
       return signInRedirect(c);
     }
 
-    const data = await loadHomeData(donorItemIds, deps, locale);
+    const data = await loadHomeData(session.donorItemIds, deps, locale, session.orgGrants);
     c.header('Cache-Control', NO_STORE);
     // Any gift renews a membership, so the general donate page stands in until the Funraise
     // renewal link is configured.
@@ -620,6 +634,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
     const data = await loadCardDoor(donorItemIds, deps);
     c.header('Cache-Control', NO_STORE);
     return c.html(page(t(locale, 'home.doorCard') + ' — ' + t(locale, 'site.title'), cardDoorView(data, locale), locale, { authenticated: true }));
@@ -629,6 +644,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
     const data = await loadGivingDoor(donorItemIds, deps, locale);
     c.header('Cache-Control', NO_STORE);
     return c.html(page(t(locale, 'home.doorGiving') + ' — ' + t(locale, 'site.title'), givingDoorView(data, locale), locale, { authenticated: true }));
@@ -638,6 +654,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
     const data = await loadActivityDoor(donorItemIds, deps);
     c.header('Cache-Control', NO_STORE);
     return c.html(page(t(locale, 'home.doorActivity') + ' — ' + t(locale, 'site.title'), activityDoorView(data, locale), locale, { authenticated: true }));
@@ -653,6 +670,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -674,6 +692,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -714,6 +733,78 @@ export function createApp(deps: AppDeps) {
     return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale, { authenticated: true }));
   });
 
+  // Organization pages. The order is the access guard: session, gate, the session's own grant for
+  // this id, a live re-read of the granting Affiliation, and only then any organization or
+  // donation read. Every refusal is the same 404 (status, body and headers), so a response never
+  // says whether an id exists or why it was refused.
+  async function orgAccess(c: Context, locale: Locale, orgItemId: string): Promise<'ok' | Response> {
+    const session = await getSessionInfo(c, deps);
+    if (session === null) return signInRedirect(c);
+    c.header('Cache-Control', NO_STORE);
+    const refuse = () =>
+      c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), orgNotFoundView(locale), locale, { authenticated: true }), 404);
+    if (!orgAccessEnabled(deps.config)) return refuse();
+    const grant = grantFor(session.orgGrants, orgItemId);
+    if (grant === null) return refuse();
+    if (!(await hasOrgAccess(grant, session.emailHash, deps))) return refuse();
+    return 'ok';
+  }
+
+  const orgNotFound = (c: Context, locale: Locale) =>
+    c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), orgNotFoundView(locale), locale, { authenticated: true }), 404);
+
+  const orgLoadFailed = (c: Context, locale: Locale, err: unknown) => {
+    console.error(`member-portal organization load failed: ${errorText(err)}`);
+    return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.orgLoadFailed', locale), locale, { authenticated: true }), 500);
+  };
+
+  app.get('/:locale/portal/org/:orgItemId', async (c) => {
+    const locale = resolvePathLocale(c);
+    const orgItemId = c.req.param('orgItemId');
+    const access = await orgAccess(c, locale, orgItemId);
+    if (access !== 'ok') return access;
+
+    let data;
+    try {
+      data = await loadOrgPage(orgItemId, deps);
+    } catch (err) {
+      return orgLoadFailed(c, locale, err);
+    }
+    if (data === null) return orgNotFound(c, locale);
+    const view = orgPageView(
+      {
+        ...data,
+        showGiving: donationHistoryEnabled(deps.config, deps.now()),
+        historyVisibleFromISO: deps.config.donations.historyVisibleFromISO,
+      },
+      locale
+    );
+    return c.html(page(data.org.name + ' — ' + t(locale, 'site.title'), view, locale, { authenticated: true }));
+  });
+
+  app.get('/:locale/portal/org/:orgItemId/statement/:year', async (c) => {
+    const locale = resolvePathLocale(c);
+    const orgItemId = c.req.param('orgItemId');
+    const access = await orgAccess(c, locale, orgItemId);
+    if (access !== 'ok') return access;
+
+    const yearParam = c.req.param('year');
+    if (!/^\d{4}$/.test(yearParam)) return orgNotFound(c, locale);
+    let statement;
+    try {
+      statement = await loadOrgStatement(orgItemId, Number(yearParam), deps);
+    } catch (err) {
+      return orgLoadFailed(c, locale, err);
+    }
+    if (statement === null) return orgNotFound(c, locale);
+
+    const generatedOn = deps.now().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+    // Printed or saved as a PDF, so the title identifies the statement on its own.
+    const title = `SVBC ${statement.year} Year-End Statement — ${statement.org.name}`;
+    const view = orgStatementView(statement, deps.config.taxLetter, { ackOn: orgAcknowledgmentEnabled(deps.config), generatedOn }, locale);
+    return c.html(page(title, view, locale, { authenticated: true }));
+  });
+
   // The events page became the activity door. Signed in or not: the door handles sign-in.
   app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/activity`));
   app.get('/:locale/portal/events', (c) => c.redirect(`/${resolvePathLocale(c)}/portal/activity`));
@@ -728,6 +819,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const session = await getSessionInfo(c, deps);
     if (session === null) return signInRedirect(c);
+    if (noPeople(session.donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     c.header('Cache-Control', NO_STORE);
     const employerField = !employerAnswerEnabled(deps.config) ? 'off' : c.req.query('field') === 'employer' ? 'preselected' : 'on';
@@ -844,6 +936,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     c.header('Cache-Control', NO_STORE);
     if (!pledgesEnabled(deps.config)) {
@@ -873,6 +966,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     c.header('Cache-Control', NO_STORE);
     // This page keeps the app-wide baseline CSP: it runs no third-party JS itself. The DTD widget
@@ -914,6 +1008,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return signInRedirect(c);
+    if (noPeople(donorItemIds)) return c.redirect(`/${locale}/portal`);
 
     // The regenerate button only renders while cardEnabled() is true, so a POST arriving with it
     // false is a stale form or a replay: back to the card door rather than a full error page.
