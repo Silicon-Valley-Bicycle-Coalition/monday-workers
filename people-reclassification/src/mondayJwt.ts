@@ -9,19 +9,20 @@
 // A valid signature alone isn't enough: every app webhook and integration call is signed with the
 // same secret, so the token is also bound to this use.
 // - Account: `accountId` (or `dat.account_id`) must equal config `monday.accountId`. Required.
-// - Audience: Monday's integration docs set `aud` to the endpoint URL. Its webhook payload isn't
-//   documented, so `aud` is checked only when present: origin and path must match the request's
-//   (the query, which holds the URL secret, is ignored).
-// - Time: exp, nbf and iat are checked when present, with CLOCK_SKEW_SECONDS of leeway. Monday's
-//   documented example is a 300 s token, but its webhook docs don't promise an exp, so exp stays
-//   optional; a token with exp - iat over MAX_LIFETIME_SECONDS, or issued more than that long ago,
-//   is refused.
+// - Audience: `aud` is required and must name the request's origin and path (the query, which
+//   holds the URL secret, is ignored).
+// - Time: `exp` is required; nbf and iat are checked when present; all with CLOCK_SKEW_SECONDS of
+//   leeway. A token with exp - iat over MAX_LIFETIME_SECONDS is refused (with exp required, that
+//   also bounds how long ago it was issued).
+// What Monday actually sends on a webhook delivery (a live sandbox delivery, 2026-11-20, issue #3):
+// userId, accountId, aud (the endpoint URL, no query), iat, exp = iat + 300, and shortLivedToken (a
+// Monday API token: one more reason the token is never logged). No iss, no dat.
 // The signature check is WebCrypto's HMAC verify, which compares in constant time. Only HS256 is
 // accepted (no "none", no algorithm chosen by the token). The token is never logged.
 
 export type JwtFailure =
   | 'missing' | 'malformed' | 'unsupported-alg' | 'bad-signature'
-  | 'expired' | 'not-yet-valid' | 'lifetime-too-long' | 'wrong-account' | 'wrong-audience';
+  | 'expired' | 'no-expiry' | 'not-yet-valid' | 'lifetime-too-long' | 'wrong-account' | 'wrong-audience';
 export type JwtCheck = { ok: true; claims: Record<string, unknown> } | { ok: false; reason: JwtFailure };
 
 export const CLOCK_SKEW_SECONDS = 60;
@@ -97,14 +98,14 @@ export async function verifyMondayJwt(authorization: string | undefined, signing
     if (claims[name] !== undefined && typeof claims[name] !== 'number') return { ok: false, reason: 'malformed' };
   }
   const { exp, nbf, iat } = claims as { exp?: number; nbf?: number; iat?: number };
-  if (exp !== undefined && nowSeconds > exp + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' };
+  if (exp === undefined) return { ok: false, reason: 'no-expiry' };
+  if (nowSeconds > exp + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' };
   if (nbf !== undefined && nowSeconds + CLOCK_SKEW_SECONDS < nbf) return { ok: false, reason: 'not-yet-valid' };
   if (iat !== undefined && nowSeconds + CLOCK_SKEW_SECONDS < iat) return { ok: false, reason: 'not-yet-valid' };
-  if (exp !== undefined && iat !== undefined && exp - iat > MAX_LIFETIME_SECONDS) return { ok: false, reason: 'lifetime-too-long' };
-  if (iat !== undefined && nowSeconds - iat > MAX_LIFETIME_SECONDS + CLOCK_SKEW_SECONDS) return { ok: false, reason: 'expired' };
+  if (iat !== undefined && exp - iat > MAX_LIFETIME_SECONDS) return { ok: false, reason: 'lifetime-too-long' };
 
   if (claimedAccountId(claims) !== binding.accountId) return { ok: false, reason: 'wrong-account' };
-  if (claims.aud !== undefined && !(typeof claims.aud === 'string' && sameEndpoint(claims.aud, binding.requestUrl))) {
+  if (!(typeof claims.aud === 'string' && sameEndpoint(claims.aud, binding.requestUrl))) {
     return { ok: false, reason: 'wrong-audience' };
   }
   return { ok: true, claims };

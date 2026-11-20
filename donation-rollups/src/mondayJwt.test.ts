@@ -16,7 +16,9 @@ async function sign(claims: Record<string, unknown>, opts: { secret?: string; he
   return `${input}.${b64url(sig)}`;
 }
 
-const claims = (over: Record<string, unknown> = {}) => ({ accountId: 26331880, iat: NOW - 5, exp: NOW + 60, ...over });
+const AUD = 'https://worker.example/webhooks/monday/x';
+// The shape of a real Monday webhook token (see the header of mondayJwt.ts), minus shortLivedToken.
+const claims = (over: Record<string, unknown> = {}) => ({ userId: 1, accountId: 26331880, aud: AUD, iat: NOW - 5, exp: NOW + 60, ...over });
 
 describe('verifyMondayJwt', () => {
   it('accepts a valid HS256 token, bare or as a Bearer credential', async () => {
@@ -25,19 +27,22 @@ describe('verifyMondayJwt', () => {
     expect((await verifyMondayJwt(`Bearer ${token}`, SECRET, BIND, NOW)).ok).toBe(true);
   });
 
-  it('accepts a token with no exp or iat (both checked only when present)', async () => {
-    expect((await verifyMondayJwt(await sign({ accountId: 26331880 }), SECRET, BIND, NOW)).ok).toBe(true);
+  it('requires exp; iat is checked only when present', async () => {
+    expect(await verifyMondayJwt(await sign({ accountId: 26331880, aud: AUD }), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'no-expiry' });
+    expect(await verifyMondayJwt(await sign(claims({ exp: undefined })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'no-expiry' });
+    expect((await verifyMondayJwt(await sign(claims({ iat: undefined })), SECRET, BIND, NOW)).ok).toBe(true);
   });
 
   it('binds the token to the configured account: accountId or dat.account_id, number or string', async () => {
     expect((await verifyMondayJwt(await sign(claims({ accountId: '26331880' })), SECRET, BIND, NOW)).ok).toBe(true);
-    expect((await verifyMondayJwt(await sign({ dat: { account_id: 26331880 }, exp: NOW + 60 }), SECRET, BIND, NOW)).ok).toBe(true);
+    expect((await verifyMondayJwt(await sign({ dat: { account_id: 26331880 }, aud: AUD, exp: NOW + 60 }), SECRET, BIND, NOW)).ok).toBe(true);
     expect(await verifyMondayJwt(await sign(claims({ accountId: 12345 })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'wrong-account' });
-    expect(await verifyMondayJwt(await sign({ exp: NOW + 60 }), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'wrong-account' });
+    expect(await verifyMondayJwt(await sign(claims({ accountId: undefined })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'wrong-account' });
     expect(await verifyMondayJwt(await sign(claims({ accountId: null })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'wrong-account' });
   });
 
-  it('checks aud when present: same origin and path as the request, query ignored', async () => {
+  it('requires aud naming the request: same origin and path, query ignored', async () => {
+    expect(await verifyMondayJwt(await sign(claims({ aud: undefined })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'wrong-audience' });
     expect((await verifyMondayJwt(await sign(claims({ aud: 'https://worker.example/webhooks/monday/x' })), SECRET, BIND, NOW)).ok).toBe(true);
     expect((await verifyMondayJwt(await sign(claims({ aud: 'https://worker.example/webhooks/monday/x?secret=other' })), SECRET, BIND, NOW)).ok).toBe(true);
     for (const aud of ['https://worker.example/webhooks/monday/other', 'https://evil.example/webhooks/monday/x', 'not a url', 42]) {
@@ -45,9 +50,9 @@ describe('verifyMondayJwt', () => {
     }
   });
 
-  it('rejects an over-long lifetime, or a token issued too long ago', async () => {
+  it('rejects an over-long lifetime, including an old iat with a fresh exp', async () => {
     expect(await verifyMondayJwt(await sign(claims({ iat: NOW - 5, exp: NOW + 86_400 })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'lifetime-too-long' });
-    expect(await verifyMondayJwt(await sign({ accountId: 26331880, iat: NOW - 2 * 3600 }), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'expired' });
+    expect(await verifyMondayJwt(await sign(claims({ iat: NOW - 2 * 3600, exp: NOW + 60 })), SECRET, BIND, NOW)).toEqual({ ok: false, reason: 'lifetime-too-long' });
     expect((await verifyMondayJwt(await sign(claims({ iat: NOW - 5, exp: NOW + 295 })), SECRET, BIND, NOW)).ok).toBe(true);
   });
 
