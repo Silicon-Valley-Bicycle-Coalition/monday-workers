@@ -41,15 +41,15 @@ const PREF_COPY: Record<PrefField, { label: TranslationKey; yes: TranslationKey;
   doNotMail: { label: 'changeRequest.prefDoNotMail', yes: 'changeRequest.prefMailYes', no: 'changeRequest.prefMailNo' },
 };
 
-function prefRadioPair(field: PrefField, optedOut: boolean, locale: Locale): string {
+// One table row per preference: the channel as the row header, then its two choices, the receiving
+// one first, so every row's choices line up in the same two columns. Each radio is described by
+// its row header, so tabbing between them still names the channel.
+function prefRow(donorId: string, field: PrefField, optedOut: boolean, locale: Locale): string {
   const copy = PREF_COPY[field];
-  return `
-    <fieldset>
-      <legend>${escapeHtml(t(locale, copy.label))}</legend>
-      <label><input type="radio" name="${field}" value="yes"${optedOut ? ' checked' : ''} /> ${escapeHtml(t(locale, copy.yes))}</label>
-      <label><input type="radio" name="${field}" value="no"${optedOut ? '' : ' checked'} /> ${escapeHtml(t(locale, copy.no))}</label>
-    </fieldset>
-  `;
+  const headerId = escapeHtml(`pref-${donorId}-${field}`);
+  const choice = (value: 'yes' | 'no', key: TranslationKey, checked: boolean) =>
+    `<td><label><input type="radio" name="${field}" value="${value}" aria-describedby="${headerId}"${checked ? ' checked' : ''} /> ${escapeHtml(t(locale, key))}</label></td>`;
+  return `<tr><th scope="row" id="${headerId}">${escapeHtml(t(locale, copy.label))}</th>${choice('no', copy.no, !optedOut)}${choice('yes', copy.yes, optedOut)}</tr>`;
 }
 
 function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], locale: Locale): string {
@@ -58,7 +58,9 @@ function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], 
       <h3>${escapeHtml(t(locale, 'changeRequest.prefsHeading', { name: donor.name }))}</h3>
       <form class="prefs-form" action="/${locale}/portal/change-request/preferences" method="post">
         <input type="hidden" name="donorItemId" value="${escapeHtml(donor.id)}" />
-        ${prefFields.map((field) => prefRadioPair(field, donor[field] === true, locale)).join('')}
+        <table class="prefs-table">
+          <tbody>${prefFields.map((field) => prefRow(donor.id, field, donor[field] === true, locale)).join('')}</tbody>
+        </table>
         <button type="submit">${escapeHtml(t(locale, 'changeRequest.prefsSubmit'))}</button>
       </form>
     </section>

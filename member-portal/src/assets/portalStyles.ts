@@ -406,6 +406,14 @@ export const PORTAL_CSS = `
   .prefs-form button[type='submit'] {
     background: transparent; border-color: var(--text); color: var(--text); font-weight: 600;
   }
+  /* Communication preferences: one row per channel, its two choices in aligned columns. A plain
+     row header (not the black table-head bar), and a real table layout so it fits instead of
+     scrolling; the choice labels wrap on a phone. */
+  .prefs-table { display: table; table-layout: fixed; margin: 0 0 16px; }
+  .prefs-table th { background: none; color: var(--text); font-weight: 600; width: 40%; vertical-align: top; border-bottom: 1px solid var(--table-border); }
+  .prefs-table td { vertical-align: top; }
+  .prefs-table tbody tr:nth-child(even) td { background: none; }
+  .prefs-table label { display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
   .info-emails { margin-top: 32px; }
   .email-list { list-style: none; padding: 0; margin: 0 0 16px; }
   .email-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--table-border); }

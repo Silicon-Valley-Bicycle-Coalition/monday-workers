@@ -101,6 +101,16 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(html).toMatch(/name="smsOptOut" value="no"[^>]* checked/);
   });
 
+  it('lays the preferences out as a table: channel row header, receive choice, then opt-out choice', () => {
+    const html = changeRequestFormView([optedOutDonor], 'en', ['emailOptOut', 'doNotMail']);
+    expect(html).toContain('<table class="prefs-table">');
+    expect(html).not.toContain('<fieldset');
+    expect(html).toContain(`<th scope="row" id="pref-donor-1-emailOptOut">${t('en', 'changeRequest.prefEmailOptOut')}</th>`);
+    expect(html).toContain('name="emailOptOut" value="no" aria-describedby="pref-donor-1-emailOptOut"');
+    const row = html.slice(html.indexOf('id="pref-donor-1-doNotMail"'));
+    expect(row.indexOf(t('en', 'changeRequest.prefMailNo'))).toBeLessThan(row.indexOf(t('en', 'changeRequest.prefMailYes')));
+  });
+
   it('renders only the configured preference fields', () => {
     const html = changeRequestFormView([optedOutDonor], 'en', ['doNotMail']);
     expect(html).toContain('name="doNotMail"');
