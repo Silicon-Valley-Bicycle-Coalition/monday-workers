@@ -172,7 +172,9 @@ Sequence's 7 AM–5 PM Pacific window.
 **Not exercised live:** the Held path (no event in the window had zero check-ins; covered by unit
 tests) and a real Eventbrite webhook delivery (deliveries were posted directly).
 
-## Pledge to Ride: try it (sandbox, once the board exists there)
+## Pledge to Ride: try it
+
+Production's board holds 2025 and 2026 (backfilled 2026-11-20); the sandbox board is empty until a rehearsal replays some.
 
 The board holds real pledges replayed from 2026, so treat it as private.
 
