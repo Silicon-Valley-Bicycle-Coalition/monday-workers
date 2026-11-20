@@ -21,6 +21,7 @@ const CONFIG: Config = {
   journeyLog: null,
   profileLinks: null,
   stewardship: null,
+  employerAnswers: null,
 };
 
 function fakeMessage(email: string, attempts = 1): { body: InboundSyncMessage; attempts: number; ack: () => void; retry: () => void } {

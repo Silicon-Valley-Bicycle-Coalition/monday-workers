@@ -1,4 +1,4 @@
-import type { Config, ConsentConfig, JourneyInterestsConfig, JourneyLogConfig, ProfileLinksConfig, RenewalDueConfig, StewardshipConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, ConsentConfig, EmployerAnswersConfig, JourneyInterestsConfig, JourneyLogConfig, ProfileLinksConfig, RenewalDueConfig, StewardshipConfig, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue', 'consent'] as const;
 
@@ -181,6 +181,22 @@ function profileLinksConfig(value: unknown): ProfileLinksConfig | null {
   return { boardId: obj.boardId, emailColumn: obj.emailColumn, linkColumn: obj.linkColumn, maxWritesPerRun: obj.maxWritesPerRun };
 }
 
+// Optional: absent or null turns the employer-answer hand-over off.
+function employerAnswersConfig(value: unknown): EmployerAnswersConfig | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'employerAnswers');
+  // Mailchimp merge tags are at most 10 characters, upper-case letters, digits and underscores.
+  if (typeof obj.mergeField !== 'string' || !/^[A-Z0-9_]{1,10}$/.test(obj.mergeField)) {
+    throw new Error('config: "employerAnswers.mergeField" must be a merge tag (e.g. EMPLOYER)');
+  }
+  if (typeof obj.boardId !== 'number') throw new Error('config: "employerAnswers.boardId" must be a number');
+  if (!Array.isArray(obj.emailColumns) || obj.emailColumns.length === 0 || !obj.emailColumns.every(nonEmptyString)) {
+    throw new Error('config: "employerAnswers.emailColumns" must be a non-empty array of column ids');
+  }
+  if (!positiveInt(obj.maxAnswersPerRun)) throw new Error('config: "employerAnswers.maxAnswersPerRun" must be a positive integer');
+  return { mergeField: obj.mergeField, boardId: obj.boardId, emailColumns: obj.emailColumns as string[], maxAnswersPerRun: obj.maxAnswersPerRun };
+}
+
 const STEWARDSHIP_COLUMNS = ['email', 'label', 'membershipStatus', 'membershipTier', 'memberType', 'memberSince', 'memberUntil', 'hasActiveRecurringGift', 'doNotSolicit'] as const;
 const STEWARDSHIP_LABELS = ['welcomeDayAfter', 'welcome3Weeks', 'renewal3Weeks', 'renewal1Week', 'renewalDayOf'] as const;
 
@@ -300,5 +316,6 @@ export function validateConfig(raw: unknown): Config {
     journeyLog: journeyLogConfig(cfg.journeyLog),
     profileLinks: profileLinksConfig(cfg.profileLinks),
     stewardship: stewardshipConfig(cfg.stewardship),
+    employerAnswers: employerAnswersConfig(cfg.employerAnswers),
   };
 }

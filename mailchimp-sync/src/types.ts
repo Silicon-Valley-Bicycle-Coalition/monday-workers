@@ -1,5 +1,6 @@
 import type { MondayTokenSource } from './monday/graphql';
 import type { WriteStamp } from './flags';
+import type { EmployerAnswerSink } from './employerAnswers/run';
 
 export interface MailchimpMergeFieldsConfig {
   memberSince: string;
@@ -126,6 +127,21 @@ export interface Config {
   profileLinks: ProfileLinksConfig | null;
   // The daily stewardship labels (src/stewardship): null turns them off.
   stewardship: StewardshipConfig | null;
+  // The hourly employer-answer hand-over (src/employerAnswers): null turns it off.
+  employerAnswers: EmployerAnswersConfig | null;
+}
+
+// The optional Employer field on members' Mailchimp profiles, handed to impact-attribution as a
+// proposed employer for staff to confirm (GitHub #7). Runs on the hourly consent cron.
+export interface EmployerAnswersConfig {
+  // The text merge field holding the answer (e.g. EMPLOYER), shown on the update-profile form.
+  mergeField: string;
+  // The People board, and its address columns a member's address is matched against; exactly one
+  // item must hold it.
+  boardId: number;
+  emailColumns: string[];
+  // Answers handed over per run at most; the rest wait for the next hour.
+  maxAnswersPerRun: number;
 }
 
 // Every Customer Journey email sent becomes a timeline entry on the recipient's People item
@@ -218,6 +234,9 @@ export interface Env {
   FLAGS?: KVNamespace;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
+  // impact-attribution's EmployerAnswers entrypoint (wrangler.jsonc services). Optional: removing
+  // the binding switches the employer-answer hand-over off.
+  EMPLOYER_ANSWERS?: EmployerAnswerSink;
 }
 
 export interface OutboundSyncMessage extends WriteStamp {

@@ -19,6 +19,9 @@ export interface MailchimpListOptions {
   // When given, filled with each address's member web_id (the id in Mailchimp's own profile URL),
   // archived members included, for the Mailchimp Profile link on People (src/profileLinks).
   webIds?: Map<string, number>;
+  // When given, filled with each non-archived member's value of the `field` merge field, blank
+  // values left out, for the employer-answer hand-over (src/employerAnswers).
+  employers?: { field: string; into: Map<string, string> };
 }
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -42,7 +45,8 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
   let total: number | null = null;
   let read = 0;
   do {
-    const params = new URLSearchParams({ count: String(pageSize), offset: String(offset), fields: FIELDS });
+    const fields = opts.employers === undefined ? FIELDS : `${FIELDS},members.merge_fields.${opts.employers.field}`;
+    const params = new URLSearchParams({ count: String(pageSize), offset: String(offset), fields });
     if (archived) params.set('status', 'archived');
     const response = await opts.fetchFn(`${opts.apiBaseUrl}/lists/${opts.audienceId}/members?${params}`, {
       headers: { Authorization: auth },
@@ -51,7 +55,10 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
     if (!response.ok) {
       throw new Error(`mailchimp list members${archived ? ' (archived)' : ''}: HTTP ${response.status} at offset ${offset}`);
     }
-    const page = (await response.json()) as { total_items: number; members: { email_address: string; status: string; web_id?: number }[] };
+    const page = (await response.json()) as {
+      total_items: number;
+      members: { email_address: string; status: string; web_id?: number; merge_fields?: Record<string, unknown> }[];
+    };
     // Offset paging shifts when a member is archived or deleted mid-read, skipping one while the
     // final count can still match. A total that moves between pages is that shift: start over
     // next hour rather than plan on a read with a member missing.
@@ -63,6 +70,10 @@ async function readPass(opts: MailchimpListOptions, archived: boolean, into: Map
       const address = m.email_address.trim().toLowerCase();
       into.set(address, m.status);
       if (opts.webIds !== undefined && typeof m.web_id === 'number') opts.webIds.set(address, m.web_id);
+      if (opts.employers !== undefined && !archived) {
+        const value = m.merge_fields?.[opts.employers.field];
+        if (typeof value === 'string' && value.trim() !== '') opts.employers.into.set(address, value);
+      }
     }
     read += page.members.length;
     if (page.members.length === 0) break;

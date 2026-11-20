@@ -26,6 +26,7 @@ const CONFIG: Config = {
   journeyLog: null,
   profileLinks: null,
   stewardship: null,
+  employerAnswers: null,
 };
 
 function fakeDnsLog(alreadyLogged: string[] = []): DnsUnsubscribeLog {

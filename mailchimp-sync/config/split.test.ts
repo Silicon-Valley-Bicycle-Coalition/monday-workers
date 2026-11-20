@@ -94,6 +94,24 @@ describe('config split: Monday ids', () => {
   });
 });
 
+describe('config split: employer answers', () => {
+  // Shipped off in both (GitHub #7); a sandbox board must never be production's People.
+  it('the sandbox never reads production People for employer answers', () => {
+    const prod = validateConfig(production);
+    const sand = validateConfig(sandbox);
+    if (sand.employerAnswers !== null) {
+      expect(sand.employerAnswers.boardId).not.toBe(prod.monday.donorsBoardId);
+      if (prod.employerAnswers !== null) expect(sand.employerAnswers.boardId).not.toBe(prod.employerAnswers.boardId);
+    }
+  });
+
+  it('the sandbox and production bind their own impact-attribution', () => {
+    const binding = (services: unknown) => (services as { binding: string; service: string }[]).find((s) => s.binding === 'EMPLOYER_ANSWERS')?.service;
+    expect(binding(wrangler.services)).toBe('svbc-impact-attribution');
+    expect(binding(sandboxEnv.services)).toBe('svbc-impact-attribution-sandbox');
+  });
+});
+
 describe('config split: consent boards', () => {
   it('the two configs never share a consent board id', () => {
     const prodIds = production.consent.boards.map((b) => b.boardId);

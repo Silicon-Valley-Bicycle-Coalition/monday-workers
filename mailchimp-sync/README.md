@@ -84,6 +84,10 @@ Four independent flows — see the design doc for full sequence diagrams:
    Customer Journey email sent becomes a timeline entry on the recipient's People item, and each
    People item links to its Mailchimp contact — see [Journey send log](#journey-send-log).
 
+6. **Employer answers (hourly, with consent):** the Employer field on a member's Mailchimp profile is
+   handed to `impact-attribution` as a proposed employer for staff to confirm — see
+   [Employer answers from Mailchimp profiles](#employer-answers-from-mailchimp-profiles).
+
 **Retries.** A failed queue message is retried with exponential backoff — 1 minute doubling to an
 hour (`retryDelaySeconds` in `src/flags.ts`), up to the queue's 100 retries (about four days) —
 before landing in its `-dlq` dead-letter queue. When Mailchimp
@@ -494,6 +498,46 @@ link is cleared when the address leaves the audience, and nothing is planned on 
    by hand with `npx wrangler dev --remote --env sandbox --test-scheduled`, then
    `curl 'http://localhost:8787/__scheduled?cron=20+*+*+*+*'` (or `5+*+*+*+*`). Verified this way
    on 2026-11-19 — see the spec's Verification.
+
+## Employer answers from Mailchimp profiles
+
+[#7](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/7): an optional
+**Employer** field on the member's Mailchimp profile (the update-profile form the preference-center
+link opens). What a member types there goes to `impact-attribution`'s `EmployerAnswers` RPC as
+`source: 'mailchimp'`, which proposes a **Draft** affiliation for staff to confirm (it never becomes
+an affiliation on its own). Answers given to the member portal's Employer field still become an
+affiliation directly; this one is weaker, since nothing prompts a member to update it.
+
+**How (`src/employerAnswers`, on the consent cron, after the profile links).** The consent sync's
+member read also collects the `employerAnswers.mergeField` value of every non-archived member, so no
+audience webhook is needed (production has none). Each non-blank answer is keyed
+`<member hash>:<hash of the normalized answer>`; D1 `employer_answers_sent` (migration `0008`) holds
+one row per key handed over, so an unchanged answer is sent once and a changed one is sent again.
+Per run, up to `maxAnswersPerRun` unsent answers: match exactly one People item on
+`employerAnswers.emailColumns`, then call the RPC with the answer, today's date and context
+`Mailchimp profile`. impact-attribution's result is recorded and final, except `disabled` (its
+`employerAnswers` config is unset), which leaves every answer for a later run. No People item, or
+several: recorded `unmatched` / `ambiguous` and looked up again a day later. A failed RPC or a
+Monday outage leaves the rest for the next hour; a failed member read plans nothing. Follows the
+write switch: `hold` skips, `off` dry-runs (one `Employer answers` skip line per answer, ids only;
+nothing sent or recorded). Logs carry hashed ids and counts only, never an address or an answer.
+
+**Turning it on** (`employerAnswers: null` in both configs, and the `EMPLOYER_ANSWERS` binding is in
+both `wrangler.jsonc` blocks):
+
+1. In the Mailchimp audience, add a text merge field **Employer** (tag `EMPLOYER`), not required, and
+   show it on the update-profile form (Signup forms → Form builder → Update profile form). Optionally
+   add a line saying why SVBC asks (matching gifts).
+2. `impact-attribution` deployed with `source: 'mailchimp'` and its `employerAnswers` config set
+   (see its README); otherwise every call returns `disabled` and nothing is recorded here.
+3. Apply migration `0008` (`npx wrangler d1 migrations apply <db> --remote [--env sandbox]`).
+4. Fill the config, e.g. production:
+   ```json
+   "employerAnswers": { "mergeField": "EMPLOYER", "boardId": 18437909781,
+     "emailColumns": ["email_mm8nx6qg", "email_mm8n2wzk"], "maxAnswersPerRun": 100 }
+   ```
+   Deploy, then check the next `employer-answers-run` log line. Sandbox crons are off; run the
+   consent cron by hand as in the Journey send log's step 5 (`5+*+*+*+*`).
 
 ## Resetting for new board ids
 
