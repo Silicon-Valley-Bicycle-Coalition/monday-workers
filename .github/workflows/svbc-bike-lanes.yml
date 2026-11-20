@@ -1,0 +1,103 @@
+# Builds svbc-bike-lanes (lanes.bikesiliconvalley.org) and deploys it to production. The site's
+# data is fetched from the MTC, San José, CA Open Data and Census ArcGIS services at build time,
+# so the weekly schedule is what keeps it current, not code changes.
+#
+# History: each scheduled (or manual) run appends a snapshot to _data/history.json and commits
+# it to the `svbc-bike-lanes-history` branch, which holds only that file. `main` needs a PR, so
+# the history can't be committed there; every build starts from the branch's copy, and the copy
+# on main is only the seed used when the branch doesn't exist yet.
+#
+# Deploy: gated on the CLOUDFLARE_API_TOKEN secret of the `svbc-bike-lanes` GitHub environment
+# (restrict it to `main`), so the workflow stays inert until that secret exists. Mint the token
+# with only Workers Editor scoped to the svbc-bike-lanes Worker and Workers Routes:
+# Write on the bikesiliconvalley.org zone (the custom domain). See svbc-bike-lanes/README.md "Deployment".
+name: svbc-bike-lanes
+
+on:
+  schedule:
+    # Saturdays 06:47 UTC: Friday 10:47 PM Pacific in winter, 11:47 PM in summer (the GitLab
+    # schedule this replaces ran Fridays 10:47 PM Pacific).
+    - cron: '47 6 * * 6'
+  push:
+    branches: [main]
+    paths:
+      - 'svbc-bike-lanes/**'
+      - '.github/workflows/svbc-bike-lanes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: svbc-bike-lanes
+  cancel-in-progress: false
+
+env:
+  HISTORY_BRANCH: svbc-bike-lanes-history
+  HISTORY_FILE: svbc-bike-lanes/_data/history.json
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment: svbc-bike-lanes
+    permissions:
+      contents: write # pushes the history branch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23'
+          cache: npm
+          cache-dependency-path: svbc-bike-lanes/package-lock.json
+
+      - name: Load history from the history branch
+        id: history
+        run: |
+          if git fetch --depth=1 origin "refs/heads/$HISTORY_BRANCH"; then
+            git show FETCH_HEAD:history.json > "$HISTORY_FILE"
+            echo "parent=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No $HISTORY_BRANCH branch yet; starting from the copy on main."
+          fi
+
+      - working-directory: svbc-bike-lanes
+        run: npm ci
+      - working-directory: svbc-bike-lanes
+        run: npm test
+      # CI=true (set by Actions) makes the build append today's snapshot to history.json.
+      - working-directory: svbc-bike-lanes
+        run: npm run build
+
+      - name: Skip the deploy when no token is configured
+        id: gate
+        env:
+          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: ${{ steps.gate.outputs.skip != 'true' }}
+        working-directory: svbc-bike-lanes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+
+      # Pushes deploys don't record a snapshot, so the history keeps one point a week.
+      - name: Commit the snapshot to the history branch
+        if: ${{ github.event_name != 'push' }}
+        env:
+          PARENT: ${{ steps.history.outputs.parent }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          blob=$(git hash-object -w "$HISTORY_FILE")
+          tree=$(printf '100644 blob %s\thistory.json\n' "$blob" | git mktree)
+          if [ -n "$PARENT" ] && [ "$tree" = "$(git rev-parse "$PARENT^{tree}")" ]; then
+            echo "History unchanged."
+            exit 0
+          fi
+          commit=$(git commit-tree "$tree" ${PARENT:+-p "$PARENT"} -m "chore(svbc-bike-lanes): history snapshot $(date -u +%F)")
+          git push origin "$commit:refs/heads/$HISTORY_BRANCH"

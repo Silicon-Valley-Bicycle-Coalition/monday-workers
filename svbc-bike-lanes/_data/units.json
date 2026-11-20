@@ -1,0 +1,14 @@
+[
+  {
+    "code": "mi",
+    "label": "Miles",
+    "shortLabel": "mi",
+    "path": "/"
+  },
+  {
+    "code": "km",
+    "label": "Kilometers",
+    "shortLabel": "km",
+    "path": "/km/"
+  }
+]

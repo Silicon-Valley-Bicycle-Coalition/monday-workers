@@ -1,0 +1,781 @@
+/* SVBC Bike Lanes Tracker - Branded Styles */
+/* Silicon Valley Bicycle Coalition Brand Colors */
+
+:root {
+  /* SVBC Brand Colors */
+  --svbc-yellow: #F5B800;
+  --svbc-yellow-dark: #D9A300;
+  --svbc-yellow-light: #FFF3CC;
+  --svbc-black: #1a1a1a;
+  --svbc-charcoal: #2d2d2d;
+
+  /* Semantic Colors */
+  --color-primary: var(--svbc-yellow);
+  --color-primary-dark: var(--svbc-yellow-dark);
+  --color-text: var(--svbc-black);
+  --color-text-light: #444;
+  --color-muted: #666;
+  --color-bg: #fff;
+  --color-bg-alt: #f8f9fa;
+  --color-border: #e9ecef;
+
+  /* Status Colors */
+  --color-positive: #28a745;
+  --color-negative: #dc3545;
+
+  /* Layout */
+  --max-width: 1200px;
+  --header-height: 70px;
+}
+
+/* Reset & Base */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Links */
+a {
+  color: var(--svbc-charcoal);
+  text-decoration: underline;
+  text-decoration-color: var(--svbc-yellow);
+  text-underline-offset: 3px;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--svbc-yellow-dark);
+}
+
+/* Header */
+header {
+  background: var(--svbc-black);
+  color: white;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+header nav {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+header .logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: white;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+header .logo:hover {
+  color: var(--svbc-yellow);
+}
+
+header .logo img {
+  height: 45px;
+  width: auto;
+}
+
+header .site-title {
+  color: var(--svbc-yellow);
+  font-size: 1rem;
+  font-weight: 600;
+  border-left: 2px solid var(--svbc-yellow);
+  padding-left: 0.75rem;
+  flex: 1;
+}
+
+/* Hidden utility class */
+.hidden {
+  display: none !important;
+}
+
+/* Section controls (e.g., unit toggle above tables) */
+.section-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+/* Unit label in table headers */
+.unit-label {
+  font-weight: normal;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+/* Unit Toggle */
+.unit-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--svbc-charcoal);
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.unit-btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #999;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.unit-btn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.unit-btn.active {
+  color: var(--svbc-black);
+  background: var(--svbc-yellow);
+}
+
+.unit-btn.active:hover {
+  background: var(--svbc-yellow-dark);
+}
+
+/* Main Content */
+main {
+  flex: 1;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  width: 100%;
+}
+
+/* Typography */
+h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--svbc-black);
+}
+
+h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--svbc-charcoal);
+  padding-bottom: 0.5rem;
+  border-bottom: 3px solid var(--svbc-yellow);
+}
+
+h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+  margin-top: 1.5rem;
+  color: var(--svbc-charcoal);
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+ul {
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Sections */
+section {
+  margin-bottom: 3rem;
+}
+
+/* Stat Cards */
+.summary {
+  background: linear-gradient(135deg, var(--svbc-black) 0%, var(--svbc-charcoal) 100%);
+  padding: 2rem;
+  border-radius: 12px;
+  margin-bottom: 3rem;
+}
+
+.summary h2 {
+  color: white;
+  border-bottom-color: var(--svbc-yellow);
+}
+
+.summary h3 {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.stat-cards-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.stat-cards-grid .stat-card {
+  padding: 1rem;
+}
+
+.stat-cards-grid .stat-value {
+  font-size: 1.75rem;
+}
+
+.stat-cards-grid .stat-label {
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.stat-cards-grid .stat-alt {
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.5rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  border-left: 4px solid var(--svbc-yellow);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card-large {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem 3rem;
+}
+
+.stat-card-large .stat-value {
+  font-size: 3.5rem;
+}
+
+.stat-card-large .stat-label {
+  font-size: 1rem;
+}
+
+.stat-alt {
+  display: block;
+  font-size: 1.1rem;
+  color: var(--color-muted);
+  margin-top: 0.5rem;
+}
+
+.stat-value {
+  display: block;
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: var(--svbc-black);
+  line-height: 1.2;
+}
+
+.stat-label {
+  display: block;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Decimal styling - de-emphasized tenths */
+.decimal {
+  color: var(--color-muted);
+  font-size: 0.75em;
+  vertical-align: baseline;
+}
+
+/* Tables - Desktop */
+.table-container {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  background: white;
+}
+
+th, td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+th {
+  background: var(--svbc-black);
+  color: white;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.5px;
+}
+
+th:first-child {
+  border-radius: 8px 0 0 0;
+}
+
+th:last-child {
+  border-radius: 0 8px 0 0;
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+tbody tr:hover {
+  background: var(--svbc-yellow-light);
+}
+
+tbody tr:nth-child(even) {
+  background: var(--color-bg-alt);
+}
+
+tbody tr:nth-child(even):hover {
+  background: var(--svbc-yellow-light);
+}
+
+/* Numeric columns alignment and fixed widths */
+td:nth-child(2),
+td:nth-child(3),
+td:nth-child(4),
+td:nth-child(5),
+td:nth-child(6),
+th:nth-child(2),
+th:nth-child(3),
+th:nth-child(4),
+th:nth-child(5),
+th:nth-child(6) {
+  text-align: right;
+  width: 90px;
+  min-width: 90px;
+}
+
+/* City-class table with narrower columns */
+.city-class-table td:nth-child(n+2),
+.city-class-table th:nth-child(n+2) {
+  width: 75px;
+  min-width: 75px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+/* Unincorporated areas - muted styling */
+.city-unincorporated {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* Change indicators */
+.change {
+  font-weight: 600;
+}
+
+.change.positive {
+  color: var(--color-positive);
+}
+
+.change.negative {
+  color: var(--color-negative);
+}
+
+/* Footer */
+footer {
+  background: var(--svbc-black);
+  color: #ccc;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+footer a {
+  color: var(--svbc-yellow);
+  text-decoration: none;
+}
+
+footer a:hover {
+  text-decoration: underline;
+}
+
+footer p {
+  margin-bottom: 0.5rem;
+}
+
+footer p:last-child {
+  margin-bottom: 0;
+}
+
+/* Methodology section */
+.methodology {
+  background: var(--color-bg-alt);
+  padding: 1.5rem 2rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+}
+
+.methodology h2 {
+  border-bottom-color: var(--color-muted);
+}
+
+.methodology h3 {
+  font-size: 1.1rem;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-light);
+}
+
+.methodology ul {
+  margin-left: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.methodology li {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+
+/* Data info section (above main footer) */
+.data-info {
+  margin-top: 3rem;
+  padding: 1.5rem;
+  background: var(--color-bg-alt);
+  border-radius: 8px;
+  border-left: 4px solid var(--svbc-yellow);
+  color: var(--color-muted);
+}
+
+.data-info p {
+  margin-bottom: 0.25rem;
+}
+
+.data-info p:last-child {
+  margin-bottom: 0;
+}
+
+/* Download buttons */
+.download-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  background: var(--svbc-yellow);
+  color: var(--svbc-black) !important;
+  text-decoration: none !important;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.btn-download:hover {
+  background: var(--svbc-yellow-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 184, 0, 0.3);
+}
+
+.btn-download svg {
+  flex-shrink: 0;
+}
+
+/* No data message */
+.no-data {
+  color: var(--color-muted);
+  font-style: italic;
+  padding: 2rem;
+  text-align: center;
+  background: var(--color-bg-alt);
+  border-radius: 8px;
+}
+
+/* Source badge for supplemental data */
+.source-badge {
+  display: inline-block;
+  color: var(--svbc-yellow-dark);
+  font-weight: bold;
+  margin-left: 0.25rem;
+  cursor: help;
+}
+
+/* ==========================================
+   RESPONSIVE DESIGN
+   ========================================== */
+
+/* Tablet - 992px and below */
+@media (max-width: 992px) {
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+  }
+
+  .stat-card-large .stat-value {
+    font-size: 3rem;
+  }
+
+  th, td {
+    padding: 0.75rem;
+  }
+}
+
+/* Large mobile / Small tablet - 768px and below */
+@media (max-width: 768px) {
+  header .site-title {
+    display: none;
+  }
+
+  .unit-toggle {
+    margin-left: auto;
+  }
+
+  .summary {
+    padding: 1.5rem;
+  }
+
+  .stat-cards {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .stat-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .stat-card-large {
+    padding: 1.5rem 2rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
+
+  .stat-card-large .stat-value {
+    font-size: 2.5rem;
+  }
+}
+
+/* Mobile - 576px and below: Tables become cards */
+@media (max-width: 576px) {
+  main {
+    padding: 1rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+  }
+
+  section {
+    margin-bottom: 2rem;
+  }
+
+  /* Stat cards stack */
+  .stat-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Transform tables to card layout */
+  table, thead, tbody, th, td, tr {
+    display: block;
+  }
+
+  thead {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  tbody tr {
+    margin-bottom: 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    background: white;
+  }
+
+  tbody tr:nth-child(even) {
+    background: white;
+  }
+
+  tbody tr:hover {
+    background: var(--svbc-yellow-light);
+  }
+
+  td {
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    position: relative;
+    padding: 0.75rem 0.75rem 0.75rem 50%;
+    text-align: right;
+    min-height: 44px;
+  }
+
+  td:last-child {
+    border-bottom: none;
+  }
+
+  td::before {
+    position: absolute;
+    left: 0.75rem;
+    width: 45%;
+    padding-right: 10px;
+    white-space: nowrap;
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-muted);
+    content: attr(data-label);
+  }
+
+  /* First cell (usually name) styling */
+  td:first-child {
+    background: var(--svbc-black);
+    color: white;
+    font-weight: 600;
+    text-align: center;
+    padding: 0.75rem;
+    border-radius: 8px 8px 0 0;
+  }
+
+  td:first-child::before {
+    display: none;
+  }
+
+  /* Data info */
+  .data-info {
+    padding: 1rem;
+  }
+
+  /* Header adjustments */
+  header {
+    padding: 0.5rem 1rem;
+  }
+
+  header .logo img {
+    height: 35px;
+  }
+
+  /* Footer */
+  footer {
+    padding: 1rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* Extra small mobile - 375px and below */
+@media (max-width: 375px) {
+  main {
+    padding: 0.75rem;
+  }
+
+  .summary {
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  .stat-card {
+    padding: 0.75rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  td {
+    padding: 0.5rem 0.5rem 0.5rem 45%;
+  }
+
+  td::before {
+    left: 0.5rem;
+  }
+}
+
+/* Print styles */
+@media print {
+  header, footer {
+    background: white !important;
+    color: black !important;
+  }
+
+  .summary {
+    background: white !important;
+    border: 2px solid var(--svbc-black);
+  }
+
+  .stat-card {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+
+  a {
+    color: black;
+    text-decoration: none;
+  }
+
+  a::after {
+    content: " (" attr(href) ")";
+    font-size: 0.8em;
+    color: #666;
+  }
+}

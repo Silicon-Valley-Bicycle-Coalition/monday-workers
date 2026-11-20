@@ -63,7 +63,8 @@ jobs:
         env:
           EXTRA_TEST: ${{ matrix.worker.extraTest }}
         run: npm run "$EXTRA_TEST"
-      - run: npm run typecheck
+      # svbc-bike-lanes is plain JavaScript with no typecheck script.
+      - run: npm run typecheck --if-present
 
   # Fallback path for the sandbox deploy connection (see each Worker's README "Sandbox
   # environment" section and docs/superpowers/specs/2026-09-18-sandbox-environment-design.md §8):
@@ -82,7 +83,8 @@ jobs:
   # writer can't be published as its consumer while the portal still is. (wrangler deploy doesn't
   # detach a consumer dropped from the config, so the one-time detach is a manual step: see
   # member-portal/DEPLOY.md, "Sandbox environment".) monday-auth, quickbooks-sync (postponed
-  # indefinitely, 2026-10-28), svbc-calendars, salesforce-import and geo-filter have no entry on
+  # indefinitely, 2026-10-28), svbc-calendars, svbc-bike-lanes (its own workflow,
+  # svbc-bike-lanes.yml, deploys production), salesforce-import and geo-filter have no entry on
   # purpose.
   deploy-sandbox:
     needs: [changes, test]

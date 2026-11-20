@@ -38,7 +38,10 @@ when a Worker directory isn't listed). `ci-ok` and `checks` are the required che
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has
 its own `CLAUDE.md`, and the conventions below about the sandbox environment, the write switch and
-Monday access don't apply to it.
+Monday access don't apply to it. The same goes for `svbc-bike-lanes`, the staff-only bike lane
+tracker at lanes.bikesiliconvalley.org: an Eleventy site deployed as a static-assets-only Worker by
+its own workflow (`.github/workflows/svbc-bike-lanes.yml`, weekly), whose history lives on the
+`svbc-bike-lanes-history` branch rather than `main`.
 
 ## Concurrency — default to a worktree
 

@@ -94,6 +94,7 @@
     "extraPaths": ["scripts/lib/**"]
   },
   { "dir": "svbc-calendars" },
+  { "dir": "svbc-bike-lanes" },
   {
     "dir": "sync-watchdog",
     "extraPaths": [
