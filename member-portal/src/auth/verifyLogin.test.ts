@@ -10,6 +10,7 @@ describe('verifyLogin', () => {
     const tokenStore: MagicLinkTokenStore = {
       createToken: vi.fn(),
       consumeToken: vi.fn().mockResolvedValue(['donor-1', 'donor-2']),
+      consumeCode: vi.fn(),
     };
     const sessionStore: SessionStore = {
       createSession: vi.fn().mockResolvedValue(undefined),
@@ -28,7 +29,11 @@ describe('verifyLogin', () => {
   });
 
   it('returns null and creates no session when the token is invalid or already used', async () => {
-    const tokenStore: MagicLinkTokenStore = { createToken: vi.fn(), consumeToken: vi.fn().mockResolvedValue(null) };
+    const tokenStore: MagicLinkTokenStore = {
+      createToken: vi.fn(),
+      consumeToken: vi.fn().mockResolvedValue(null),
+      consumeCode: vi.fn(),
+    };
     const sessionStore: SessionStore = {
       createSession: vi.fn(),
       getSession: vi.fn(),

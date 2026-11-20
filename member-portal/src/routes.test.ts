@@ -57,6 +57,9 @@ function inMemoryTokenStore(): MagicLinkTokenStore {
       row.usedAt = nowISO;
       return row.donorItemIds;
     },
+    async consumeCode() {
+      return null;
+    },
   };
 }
 

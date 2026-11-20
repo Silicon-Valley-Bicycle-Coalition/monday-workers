@@ -122,7 +122,7 @@ function fakeMonday(): MondayClient {
 }
 
 function fakeTokenStore(): MagicLinkTokenStore {
-  return { createToken: vi.fn().mockResolvedValue(undefined), consumeToken: vi.fn() };
+  return { createToken: vi.fn().mockResolvedValue(undefined), consumeToken: vi.fn(), consumeCode: vi.fn() };
 }
 
 function fakeEmailSender(): EmailSender {
