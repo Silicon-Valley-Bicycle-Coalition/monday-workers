@@ -171,5 +171,10 @@
     "welcomeInterest": null,
     "maxWritesPerRun": 200
   },
-  "employerAnswers": null
+  "employerAnswers": {
+    "mergeField": "EMPLOYER",
+    "boardId": 18437342592,
+    "emailColumns": ["email_mm8h4kkb", "email_mm8hj3f8"],
+    "maxAnswersPerRun": 50
+  }
 }
