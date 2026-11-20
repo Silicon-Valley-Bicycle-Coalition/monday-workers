@@ -282,7 +282,7 @@ export const en = {
   'matchingGifts.searchFrameTitle': 'Employer matching-gift search',
 
   // Login email (src/email/cloudflareEmail.ts)
-  'email.subject': 'Your SVBC member portal sign-in code and link',
+  'email.subject': '{{code}} is your SVBC member portal sign-in code',
   'email.loginButton': 'Sign in',
   'email.codeIntro': 'Your sign-in code:',
   'email.codeHint': 'Type it on the page where you asked to sign in, or use the button below. Both expire in {{minutes}} minutes and work once.',

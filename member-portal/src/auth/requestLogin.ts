@@ -62,5 +62,12 @@ export async function requestLogin(email: string, localeHint: Locale, requestId:
   });
 
   const loginUrl = magicLinkUrl(deps.portalBaseUrl, rawToken, locale, next);
-  await deps.emailSender.sendLoginEmail({ to: email, loginUrl, code, ttlMinutes: deps.magicLinkTtlMinutes, locale });
+  await deps.emailSender.sendLoginEmail({
+    to: email,
+    loginUrl,
+    code,
+    ttlMinutes: deps.magicLinkTtlMinutes,
+    domain: new URL(deps.portalBaseUrl).host,
+    locale,
+  });
 }

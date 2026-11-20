@@ -252,7 +252,7 @@ export const hi: Record<TranslationKey, string> = {
   'verify.notValid': 'यह कार्ड मान्य नहीं है। हो सकता है इसे फिर से जनरेट किया गया हो या यह अब सक्रिय न हो।',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'SVBC डोनर पोर्टल का आपका लॉगिन कोड और लिंक',
+  'email.subject': '{{code}} आपका SVBC सदस्य पोर्टल कोड है',
   'email.loginButton': 'साइन इन करें',
   'email.codeIntro': 'आपका लॉगिन कोड:',
   'email.codeHint': 'इसे उस पेज पर दर्ज करें जहाँ आपने लॉग इन के लिए अनुरोध किया था, या नीचे दिए बटन का उपयोग करें। दोनों {{minutes}} मिनट में समाप्त हो जाते हैं और केवल एक बार काम करते हैं।',

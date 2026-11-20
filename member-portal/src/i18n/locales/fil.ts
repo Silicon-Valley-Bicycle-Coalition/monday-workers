@@ -252,7 +252,7 @@ export const fil: Record<TranslationKey, string> = {
   'verify.notValid': 'Hindi valid ang card na ito. Maaaring na-regenerate na ito o hindi na active.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'Ang sign-in code at login link mo para sa SVBC member portal',
+  'email.subject': '{{code}} ang iyong code sa member portal ng SVBC',
   'email.loginButton': 'Mag-sign in',
   'email.codeIntro': 'Ang sign-in code mo:',
   'email.codeHint': 'I-type ito sa page kung saan ka humiling na mag-log in, o gamitin ang button sa ibaba. Parehong mag-e-expire sa loob ng {{minutes}} minuto at isang beses lang gagana.',

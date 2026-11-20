@@ -252,7 +252,7 @@ export const ja: Record<TranslationKey, string> = {
   'verify.notValid': 'この会員証は無効です。再発行されたか、すでに有効でなくなっている可能性があります。',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'SVBC寄付者ポータルへのログインコードとリンク',
+  'email.subject': '{{code}} はSVBCメンバーポータルのコードです',
   'email.loginButton': 'サインイン',
   'email.codeIntro': 'ログインコード:',
   'email.codeHint': 'ログインをリクエストしたページで入力するか、下のボタンをご利用ください。どちらも{{minutes}}分で有効期限が切れ、1回のみ使えます。',

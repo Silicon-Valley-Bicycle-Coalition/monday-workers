@@ -252,7 +252,7 @@ export const es: Record<TranslationKey, string> = {
   'verify.notValid': 'Esta tarjeta no es válida. Es posible que haya sido regenerada o que ya no esté activa.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'Tu código y enlace de acceso al portal de donantes de SVBC',
+  'email.subject': '{{code}} es tu código del portal de miembros de SVBC',
   'email.loginButton': 'Iniciar sesión',
   'email.codeIntro': 'Tu código de acceso:',
   'email.codeHint': 'Escríbelo en la página donde pediste iniciar sesión, o usa el botón de abajo. Ambos caducan en {{minutes}} minutos y solo funcionan una vez.',

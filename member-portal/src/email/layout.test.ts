@@ -35,4 +35,15 @@ describe('renderEmailLayout', () => {
     expect(styleBlock).toContain('@media (prefers-color-scheme: dark)');
     expect(styleBlock).not.toContain('#000000');
   });
+
+  it('puts lastTextLine after the footer, as the final line of the text part', () => {
+    const result = renderEmailLayout({ bodyHtml: '<p>x</p>', bodyText: 'x', logoUrl: LOGO_URL, lastTextLine: '@a.example #123456' });
+    expect(result.text.endsWith('\n@a.example #123456')).toBe(true);
+    expect(result.html).not.toContain('@a.example #123456');
+  });
+
+  it('adds nothing without lastTextLine', () => {
+    const result = renderEmailLayout({ bodyHtml: '<p>x</p>', bodyText: 'x', logoUrl: LOGO_URL });
+    expect(result.text.endsWith('bikesiliconvalley.org')).toBe(true);
+  });
 });

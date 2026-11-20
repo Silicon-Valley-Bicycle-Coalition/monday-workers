@@ -252,7 +252,7 @@ export const ko: Record<TranslationKey, string> = {
   'verify.notValid': '이 카드는 유효하지 않습니다. 재발급되었거나 더 이상 활성 상태가 아닐 수 있습니다.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'SVBC 기부자 포털 로그인 코드 및 링크',
+  'email.subject': '{{code}}은(는) SVBC 회원 포털 코드입니다',
   'email.loginButton': '로그인',
   'email.codeIntro': '로그인 코드:',
   'email.codeHint': '로그인을 요청한 페이지에 입력하거나 아래 버튼을 사용하세요. 둘 다 {{minutes}}분 후에 만료되며 한 번만 사용할 수 있습니다.',

@@ -7,6 +7,9 @@ export interface SendLoginEmailParams {
   code: string;
   // How long the link and code last, for the email's expiry line.
   ttlMinutes: number;
+  // The portal's host (member.bikesiliconvalley.org), for the "@host #code" line that lets Apple
+  // AutoFill offer the code on that site only.
+  domain: string;
   locale: Locale;
 }
 

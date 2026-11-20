@@ -252,7 +252,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'verify.notValid': '此卡片无效，可能已被重新生成或已不再有效。',
 
   // Login email (src/email/resend.ts)
-  'email.subject': '您的 SVBC 捐赠者门户登录码和链接',
+  'email.subject': '{{code}} 是您的 SVBC 会员门户验证码',
   'email.loginButton': '登录',
   'email.codeIntro': '您的登录码：',
   'email.codeHint': '请在您申请登录的页面输入此码，或使用下方按钮。两者都将在 {{minutes}} 分钟后失效，且只能使用一次。',

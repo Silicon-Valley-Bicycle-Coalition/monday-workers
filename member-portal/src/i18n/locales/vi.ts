@@ -252,7 +252,7 @@ export const vi: Record<TranslationKey, string> = {
   'verify.notValid': 'Thẻ này không hợp lệ. Thẻ có thể đã được tạo lại hoặc không còn hoạt động.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'Mã đăng nhập và liên kết đăng nhập cổng thông tin nhà tài trợ SVBC của bạn',
+  'email.subject': '{{code}} là mã cổng thông tin thành viên SVBC của bạn',
   'email.loginButton': 'Đăng nhập',
   'email.codeIntro': 'Mã đăng nhập của bạn:',
   'email.codeHint': 'Hãy nhập mã trên trang bạn đã yêu cầu đăng nhập, hoặc dùng nút bên dưới. Cả hai đều hết hạn sau {{minutes}} phút và chỉ dùng được một lần.',
