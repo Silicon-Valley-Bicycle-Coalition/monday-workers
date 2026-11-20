@@ -409,6 +409,13 @@ config-gated features:
   consolidated per-year giving letter rendered live from the Donations board as HTML with print
   CSS — the browser's Print → Save as PDF is the delivery mechanism; nothing is generated or
   stored server-side. Only completed calendar years with at least one donation get a letter.
+  **Printed on the 2026 letterhead** (Box: SVBC Letter 2026): the sand band down the right edge
+  with the logo, contact lines, board and executive director, the gold tagline and 501(c)(3) line
+  at the foot of page one, and "· page N" after (`src/letters/letterViews.ts`, shared with the
+  organization statement). The band's text is `taxLetter.letterhead` in config — update the board
+  there when the Box template changes; without that block the band shows the logo and
+  `officeAddress`. Print relies on a fixed element repeating on every page and on `@page` margin
+  boxes; checked in Chrome's Save as PDF, not yet in Safari or Firefox.
   **Gift Types treated differently** (`monday.columns.donationDescription` is the board's Gift Type
   column; labels compare without case or punctuation): `taxLetter.excludedGiftTypes` (Event Ticket,
   Sponsorship, In Kind Donation / Sponsorship, Matching Donation, Grants, Contracts) are left off and

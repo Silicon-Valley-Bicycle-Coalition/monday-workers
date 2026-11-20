@@ -73,7 +73,7 @@ Portal UI sizes stay small and functional (14–16px controls, 13px footer in co
 
 ## Print and letterhead
 
-The current letterhead is `2026 SVBC updated letterhead art 6.2.2026.docx` in Box (Administrative › Forms & Templates › Electronic letterhead › archive). US Letter, portrait:
+The current letterhead is the `SVBC Letter 2026` template (`.dotx`, with a `.docx` copy) in Box (Administrative › Forms & Templates › Electronic letterhead), built from the art in `2026 SVBC updated letterhead art 6.2.2026.docx` (same folder › archive). US Letter, portrait; body margins 1.5in top, 0.9in left, 2.65in right (clear of the band), 1.1in bottom; Avenir 11pt, 9pt after each paragraph; pages after the first carry only the band and a "Silicon Valley Bicycle Coalition · page N" footer. `member-portal`'s tax letter and organization statement print on it (`src/letters/letterViews.ts`):
 
 - **Top right:** website, street address, city, phone, right-aligned, 9pt `svbc-grey-text`.
 - **Logo:** the grey-and-gold logo (`svbc-logo.svg`) on a full-height `svbc-sand` band.

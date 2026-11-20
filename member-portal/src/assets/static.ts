@@ -1,4 +1,5 @@
 import { EMBEDDED_FONTS } from './fontData';
+import { SVBC_LETTERHEAD_LOGO_SVG } from './letterheadLogo';
 import { SVBC_LOGO_SVG } from './logo';
 import { PORTAL_CSS } from './portalStyles';
 
@@ -67,8 +68,9 @@ export const FONT_FACE_CSS = FONTS.map((f) => f.rule).join('\n');
 // The @font-face rules lead the stylesheet, so a font file's new hash also changes the CSS URL.
 export const PORTAL_CSS_ASSET = asset('portal', 'css', 'text/css; charset=utf-8', `${FONT_FACE_CSS}\n${PORTAL_CSS}`);
 export const LOGO_SVG_ASSET = asset('logo', 'svg', 'image/svg+xml', SVBC_LOGO_SVG);
+export const LETTERHEAD_LOGO_SVG_ASSET = asset('letterhead-logo', 'svg', 'image/svg+xml', SVBC_LETTERHEAD_LOGO_SVG);
 
-const BY_PATH = new Map([PORTAL_CSS_ASSET, LOGO_SVG_ASSET, ...FONT_ASSETS].map((a) => [a.path, a] as const));
+const BY_PATH = new Map([PORTAL_CSS_ASSET, LOGO_SVG_ASSET, LETTERHEAD_LOGO_SVG_ASSET, ...FONT_ASSETS].map((a) => [a.path, a] as const));
 
 // Exact path match only: an old hash (a page cached from before a deploy) or a guessed name gets
 // a 404 rather than different bytes under an immutable header.
