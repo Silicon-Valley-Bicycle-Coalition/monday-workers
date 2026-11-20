@@ -79,17 +79,17 @@ The deploy uses `CLOUDFLARE_API_TOKEN`, a secret of the GitHub `svbc-bike-lanes`
 
 Don't also connect the Worker to Workers Builds: that would be a second deploy path, and it has no weekly schedule.
 
-### Cutover from Pages (one time)
+### Cutover from Pages (done 2026-11-20)
 
-Until this is done, the Pages project `svbc-bike-lanes` still serves the domain. The Pages project has two deploy paths, its GitLab Git integration and the old GitLab CI job, so disconnect both. Expect a few minutes of downtime between steps 3 and 4.
+The move ran in this order; a fork moving off Pages can follow it.
 
-1. In GitLab, pause the "Weekly data update" pipeline schedule on `svbc-bike-lanes`, and archive the repository (it becomes the read-only record).
-2. In Cloudflare → Workers & Pages → `svbc-bike-lanes` (Pages) → Settings → Builds, disconnect the Git repository.
-3. In the Pages project → Custom domains, remove `lanes.bikesiliconvalley.org`. Then in DNS, delete the `lanes` CNAME to `svbc-bike-lanes.pages.dev`: a Worker Custom Domain can't be created over an existing CNAME.
-4. From this directory, signed in with `wrangler login`: `npm ci && npm run build && npm run deploy`. Creating the Worker needs Workers Admin, so this first deploy is by hand; it adds the custom domain and its DNS record.
-5. In Zero Trust → Access → Applications → **SVBC Bike Lanes**, remove the two `pages.dev` hostnames, leaving `lanes.bikesiliconvalley.org`. Check in a private window that the site redirects to the Google login.
-6. Create the GitHub `svbc-bike-lanes` environment (deployment branches: `main` only) with the `CLOUDFLARE_API_TOKEN` secret described above, then run the workflow by hand and check it deploys and creates the `svbc-bike-lanes-history` branch.
-7. Delete the Pages project, which takes the `pages.dev` URLs with it.
+1. Paused the GitLab "Weekly data update" schedule and archived the GitLab repository (now the read-only record).
+2. Disconnected the Pages project's Git repository.
+3. Removed `lanes.bikesiliconvalley.org` from the Pages project's custom domains. This also deletes the `lanes` CNAME, which has to go before a Worker Custom Domain can take the hostname. The site is down from here until step 4 (about a minute).
+4. First deploy by hand, signed in with `wrangler login` (creating the Worker needs Workers Admin): `npm ci && npm run build && npm run deploy`. It attached the custom domain and its DNS record.
+5. Deleted the Pages project, which took the `pages.dev` URLs with it.
+6. Only then removed the `pages.dev` hostnames from the **SVBC Bike Lanes** Access application. Doing this before step 5 would leave `svbc-bike-lanes.pages.dev` public.
+7. Left: create the GitHub `svbc-bike-lanes` environment's `CLOUDFLARE_API_TOKEN` (the environment exists, restricted to `main`), then run the workflow by hand to check it deploys and creates the `svbc-bike-lanes-history` branch.
 
 ### Manual Deployment
 
