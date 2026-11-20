@@ -43,8 +43,9 @@ Apple Mail.
   rate-limited and malformed addresses.
 - **A code usable from any browser but the one that asked.** A 6-digit code is only safe because
   it's bound to the requesting browser.
-- **A per-address code-attempt lockout** that lets an attacker who knows a donor's email lock
-  them out (the hole GL#62 closed for login emails).
+- **A per-address limit that blocks signing in.** GL#62 closed a hole where an attacker could keep
+  a donor from getting login emails. The daily code-guess limit below is allowed only because it
+  never touches the link: a donor whose codes are spent for the day still signs in by link.
 
 ## Approaches considered
 
@@ -123,6 +124,25 @@ request id**: each check increments `code_attempts` on every live row for that h
 whose count has reached 5 can't succeed. Any code from that browser's recent emails works, so
 the copy says "the code from the email" rather than "the newest email".
 
+**Attacker-started requests and the daily guess limit** (added 2026-11-19 after review). The
+browser binding stops guessing at *someone else's* request, but an attacker can type a donor's
+address into the login form in their own browser: the code goes to the donor, the cookie to the
+attacker. So, decided with David:
+
+- **Per request:** at most 5 checks across all of a request's rows. A row created for a request
+  that already has live rows starts at their current count, so a resend never buys fresh guesses
+  at older codes; and a check only matches rows it counted against.
+- **Per address:** at most **10 code checks per 24 hours** for an address, across every browser,
+  counted in a new `login_code_checks (email_hash, checked_at)` table (`email_hash` =
+  `sha256` of the lowercased address, as in `login_attempts`). Over the limit, every code for that
+  address fails with the usual generic error until the oldest check is 24 hours old; links are
+  unaffected. Bound: about 10 guesses a day per targeted donor, roughly 1 in 100,000 per day.
+- **One address per request:** `magic_link_tokens` gains `email_hash`. Creating a code row for a
+  request marks any live rows of that request with a *different* `email_hash` as used, so a
+  browser asking for two addresses can't charge guesses at one address to the other's budget.
+- The purge deletes `login_code_checks` rows older than `rateLimit.attemptRetentionHours`
+  (validated to be at least 24).
+
 **Language** (my call): `requestLogin` stores the locale it resolved (Monday preference over the
 browser hint) on the row in a new `locale` column. `POST /auth/code` lands the donor in that
 locale, as the link does, not in the form's `lang`; the form's `lang` is used only to render
@@ -147,6 +167,9 @@ KV flag, since it isn't an outage control).
   `ALTER TABLE magic_link_tokens ADD COLUMN code_hash TEXT;`
   `ALTER TABLE magic_link_tokens ADD COLUMN code_attempts INTEGER NOT NULL DEFAULT 0;`
   `ALTER TABLE magic_link_tokens ADD COLUMN locale TEXT;`
+  `ALTER TABLE magic_link_tokens ADD COLUMN email_hash TEXT;`
+  `CREATE TABLE login_code_checks (id INTEGER PRIMARY KEY AUTOINCREMENT, email_hash TEXT NOT NULL, checked_at TEXT NOT NULL);`
+  with indexes on `(email_hash, checked_at)` and `(checked_at)`,
   plus an index on `request_hash`. Letter-ready rows leave the new columns null. The retention
   purge needs no change (it deletes by `expires_at`).
 

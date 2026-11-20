@@ -16,7 +16,7 @@ All commands run from `member-portal/`. Worker tests need the sandbox disabled (
 
 - Every response of `POST /` is identical for matched, unmatched, malformed and rate-limited addresses, including the `Set-Cookie` attributes. No D1 write in its response path.
 - Every failure of `POST /auth/code` (no cookie, bad format, wrong, expired, used, attempts spent, IP-limited, switch off) renders the same check-email page with the same error, status 200.
-- Code: exactly 6 digits, uniform, leading zeros kept. Max **5** code checks per request id.
+- Code: exactly 6 digits, uniform, leading zeros kept. Max **5** code checks per request id, and max **10** code checks per address per 24 hours (`login_code_checks`); links are never limited by either.
 - Cookie: `__Host-login-request`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age = magicLinkTtlMinutes * 60`, value 64 lowercase hex chars.
 - Never log the code, request id or email (`node ../scripts/check-log-safety.mjs`).
 - Every new i18n key goes into all 10 locales in the same task (`en es fil hi ja ko pt-BR vi zh-Hans zh-Hant`); the per-locale tests fail otherwise.
@@ -135,7 +135,7 @@ All commands run from `member-portal/`. Worker tests need the sandbox disabled (
 - Produces: `RequestLoginDeps` gains `displayTimeZone: string`; `requestLogin(email, localeHint, deps, next = null, requestId: string | null = null)`.
 
 - [ ] **Step 1: Write failing tests:**
-  - With `requestId`: `createToken` gets `requestHash = sha256Hex(requestId)`, `codeHash = hashLoginCode(requestId, sentCode)` and the resolved `locale`; `sendLoginEmail` gets `loginCode` with that code, the row's `expiresAt`, `displayTimeZone`, and `domain = new URL(portalBaseUrl).host`.
+  - With `requestId`: `createToken` also gets `emailHash = sha256Hex(email)` (the lowercased address, as `login_attempts` hashes it), `requestHash = sha256Hex(requestId)`, `codeHash = hashLoginCode(requestId, sentCode)` and the resolved `locale`; `sendLoginEmail` gets `loginCode` with that code, the row's `expiresAt`, `displayTimeZone`, and `domain = new URL(portalBaseUrl).host`.
   - Without `requestId`: no code fields, no `loginCode` (today's behaviour).
   - Unmatched email with `requestId`: no write, no send.
 - [ ] **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** PASS.
