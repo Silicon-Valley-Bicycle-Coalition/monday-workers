@@ -102,7 +102,7 @@ validated at startup (`src/config.ts`). `config/split.test.ts` fails if the two 
 | Key | Meaning |
 |---|---|
 | `monday.apiUrl`, `monday.accountUrl` | Monday API and the account URL used to build item links |
-| `boards.peopleLive`, `peopleHistorical`, `organizations` | Board ids. The sandbox file holds the CRM Sandbox ids; `svbc.json` holds `0` placeholders until production ids exist |
+| `boards.peopleLive`, `peopleHistorical`, `organizations` | Board ids. The sandbox file holds the CRM Sandbox ids; `svbc.json` holds the production ids |
 | `columns.*` | Column titles (address, city, zip, lat, lng, membership status, do not solicit). Matched with `bareTitle`, so the 🔒/📜 markers don't matter |
 | `activeLabel` | Membership Status label that counts as an active member (`Active`) |
 | `lapsedLabel` | Membership Status label that counts as a lapsed member (`Lapsed`); any other value is a never-member |
@@ -114,7 +114,8 @@ Reference-build settings (counties, ACS/TIGER year, road classes, bike class wei
 
 ## Cloudflare Access setup (prerequisite, operator work)
 
-There is no Access setup today. Do this before any staff testing.
+Done for SVBC: both Access applications ("SVBC Member Map" and "SVBC Member Map (sandbox)") exist,
+and both configs carry their `access` values. These are the steps to rebuild them, or for a fork.
 
 1. Create the Cloudflare Zero Trust organization (team domain) on SVBC's account.
 2. Add **Google Workspace** as the identity provider, restricted to `@bikesiliconvalley.org`.

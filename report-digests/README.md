@@ -75,8 +75,8 @@ curl -X POST -H "Authorization: Bearer $DIGESTS_SECRET" \
 
 Every send — the hourly cron and the operator route — is gated by the shared write switch (root
 README, "Write switch: off / hold / on"; module `src/flags.ts`, a byte-identical copy of
-`member-portal/src/flags.ts`), read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are
-placeholders until the namespaces exist). The Worker's only sink is email: Monday is only read,
+`member-portal/src/flags.ts`), read from the `FLAGS` KV namespace (`wrangler.jsonc` binds both namespace
+ids, `FLAGS` and `sandbox-FLAGS`). The Worker's only sink is email: Monday is only read,
 and it has no queue, D1 or cursor.
 
 - `report-digests:writes` `on`: sends as above.
@@ -102,8 +102,8 @@ dry-runs every digest.
 `config/svbc.json` is production and `config/sandbox.json` is the CRM Sandbox. `ENVIRONMENT`
 picks one, and `src/config.ts` validates it.
 
-* `boards.donations`, `boards.people`: board ids. Production stays `0` until the cutover load
-  creates the boards. Fill them in weekend step 4, before the first Monday.
+* `boards.donations`, `boards.people`: board ids. Production holds the production Donations and
+  People boards, created by the cutover load.
 * `recipientDomains`: the only domains a digest goes to (`["bikesiliconvalley.org"]`), matched
   exactly against the part after the `@`. Production's `EMAIL` binding has no platform allowlist,
   because that would list staff addresses in this repo. This check stands in for it.

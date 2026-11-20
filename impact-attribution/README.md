@@ -1,7 +1,7 @@
 # impact-attribution
 
-**Status (2026-11-17): sandbox writes `on`; production deployed (`efb17a82`, migrations through `0003`)
-with writes `off`, waiting on the `excludedPayers` gate. No production Monday write has been run.** It has two jobs, both
+**Status (checked 2026-11-19): deployed in both environments, writes `on` in both, D1 migrations
+through `0003` applied in both. Production's `excludedPayers` list is filled.** It has two jobs, both
 proposing Draft employer affiliations for staff to confirm: from repeated matching gifts (issue
 [GL#125](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/125)) and from a donor's company email domain (issue [GL#124](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/124)). The matching-gift job also takes employer
 answers collected by `eventbrite-sync` (issue [GL#127](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/127)), whose hand-over is on in both environments: answers

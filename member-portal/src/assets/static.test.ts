@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { FONT_ASSETS, FONT_FACE_CSS, LOGO_SVG_ASSET, PORTAL_CSS_ASSET, PORTAL_TABS_JS_ASSET, contentHash, staticAssetFor } from './static';
+import {
+  FONT_ASSETS,
+  FONT_FACE_CSS,
+  LETTERHEAD_LOGO_SVG_ASSET,
+  LOGO_SVG_ASSET,
+  PORTAL_CSS_ASSET,
+  PORTAL_TABS_JS_ASSET,
+  contentHash,
+  staticAssetFor,
+} from './static';
 import { PORTAL_TABS_JS } from './portalTabs';
 import { EMBEDDED_FONTS } from './fontData';
+import { SVBC_LETTERHEAD_LOGO_SVG } from './letterheadLogo';
 import { SVBC_LOGO_SVG } from './logo';
 import { PORTAL_CSS } from './portalStyles';
 
@@ -12,6 +22,7 @@ describe('static assets', () => {
     expect(LOGO_SVG_ASSET.path).toBe(`/assets/logo.${contentHash(SVBC_LOGO_SVG)}.svg`);
     expect(PORTAL_CSS_ASSET.body).toBe(css);
     expect(LOGO_SVG_ASSET.body).toBe(SVBC_LOGO_SVG);
+    expect(LETTERHEAD_LOGO_SVG_ASSET.path).toBe(`/assets/letterhead-logo.${contentHash(SVBC_LETTERHEAD_LOGO_SVG)}.svg`);
   });
 
   it('changes the hash when the content changes, and is stable otherwise', () => {
@@ -23,6 +34,7 @@ describe('static assets', () => {
   it('looks assets up by exact path only', () => {
     expect(staticAssetFor(PORTAL_CSS_ASSET.path)).toBe(PORTAL_CSS_ASSET);
     expect(staticAssetFor(LOGO_SVG_ASSET.path)).toBe(LOGO_SVG_ASSET);
+    expect(staticAssetFor(LETTERHEAD_LOGO_SVG_ASSET.path)).toBe(LETTERHEAD_LOGO_SVG_ASSET);
     expect(staticAssetFor('/assets/portal.0000000000000000.css')).toBeUndefined();
     expect(staticAssetFor('/assets/portal.css')).toBeUndefined();
     for (const font of FONT_ASSETS) expect(staticAssetFor(font.path)).toBe(font);

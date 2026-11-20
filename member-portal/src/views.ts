@@ -141,17 +141,38 @@ export function loginFormView(locale: Locale, next: string | null = null): strin
 // The code form posts to /auth/code; the request cookie it relies on was set by POST /. `next`
 // arrives already validated by routes.ts's portalReturnPath. codeError re-renders the page after a
 // refused code.
-export function checkEmailView(locale: Locale, next: string | null = null, codeError = false): string {
+// `resend` (given whenever the typed address was well-formed, on file or not) adds a Send again
+// form that re-posts the address to POST /, and carries the address in the code form too so a
+// refused code can offer it again. The button is held hidden for `delaySeconds` (the per-address
+// cooldown, before which a resend would be refused anyway) by a CSS animation alone, no script;
+// with animations off it shows at once and the server's cooldown still applies.
+export interface ResendOffer {
+  email: string;
+  delaySeconds: number;
+}
+
+export function checkEmailView(locale: Locale, next: string | null = null, codeError = false, resend: ResendOffer | null = null): string {
   const nextField = next === null ? '' : `\n      <input type="hidden" name="next" value="${escapeHtml(next)}" />`;
+  const emailField = resend === null ? '' : `\n      <input type="hidden" name="email" value="${escapeHtml(resend.email)}" />`;
   const error = codeError ? `\n    <p role="alert">${escapeHtml(t(locale, 'checkEmail.codeError'))}</p>` : '';
+  const resendForm =
+    resend === null
+      ? ''
+      : `
+    <p>${escapeHtml(t(locale, 'checkEmail.resendHelp'))}</p>
+    <form action="/" method="post">${emailField}${nextField}
+      <div class="resend-reveal" style="animation-duration: ${Math.max(0, Math.floor(resend.delaySeconds))}s">
+        <button type="submit">${escapeHtml(t(locale, 'checkEmail.resend'))}</button>
+      </div>
+    </form>`;
   return `
     <h1>${escapeHtml(t(locale, 'checkEmail.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>${error}
     <form action="/auth/code" method="post">
       <label for="sign-in-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
-      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />${nextField}
+      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />${nextField}${emailField}
       <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>
-    </form>
+    </form>${resendForm}
   `;
 }
 

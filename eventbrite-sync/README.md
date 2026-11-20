@@ -68,7 +68,7 @@ consumer fetches the order at processing time. That is why out-of-order deliveri
 (whatever Eventbrite says now is what gets written), why a redelivery is enqueued rather than
 deduped (one extra fetch, an idempotent write, never a second item), and why the D1 ledger holds
 **no name, email or payload** — nothing personal at rest, so unlike `funraise-sync` there is no
-retention purge. (The hourly cron runs the ended-event sweep and the daily missed-order check; neither purges.) See `../README.md`'s Reliability section for why the Queue shape is
+retention purge. (The hourly cron runs the ended-event sweep, the daily missed-order check and the daily send-link sweep; none purges.) See `../README.md`'s Reliability section for why the Queue shape is
 standard across every webhook-driven Worker here.
 
 ## APIs & auth
@@ -324,8 +324,18 @@ every Eventbrite event: the Events item's **Send event email** link is written w
 volunteer event's emails go to its Volunteers (see "Who gets each email"). Internal names stay as
 they were, because the deployed page and its secret use them: the `/class-emails` routes,
 `X-Class-Email-Secret`, `CLASS_EMAIL_SECRET`, `attendeeSync.classEmails` and the
-`class_email_recipients` table. `scripts/backfill-send-links.mjs` writes the new link on events the
-Worker won't process again (`--dry-run` first; needs a `MONDAY_API_TOKEN` that reaches Events).
+`class_email_recipients` table.
+
+**Keeping the link current.** The Worker writes the link only when Eventbrite tells it about an
+event, so an event nobody edits after a change (a new label, a redeployed page URL, an event
+imported from Salesforce) kept a stale link or none: on 2026-11-19 only 7 of 242 events had the
+current one and staff couldn't find the button. Now, on the missed-order check's hour, the
+**send-link sweep** (`src/sendLinks/sweep.ts`) reads the whole Events board and rewrites every
+Eventbrite event's link that is missing or differs, so a page URL change reaches every event within
+a day. It skips items with no Eventbrite id, stops after three failures in a row, and has no cursor:
+what it didn't write is still stale tomorrow. `scripts/backfill-send-links.mjs` does the same by
+hand (`--dry-run` first; needs a `MONDAY_API_TOKEN` that reaches Events); both use
+`src/sendLinks/plan.ts`.
 
 ```
 Eventbrite (SaaS)
@@ -341,6 +351,7 @@ Events board (one item per Eventbrite event, program from the organizer name)
 Event Registrations board (one item per attendee: Attendance, First Name, Class Date/Day/Location, People link)
   ▲
 Hourly cron  0 * * * *  → ended-event sweep re-queues events that have ended, for Event Status
+Daily (check hour)      → send-link sweep rewrites missing or stale Send event email links on Events
 Send page (Apps Script, runs as the coordinator)   X-Class-Email-Secret
   │  GET  /class-emails/:eventId          who may get each email, refusals, earlier sends
   │  POST /class-emails/:eventId/claim    records the recipients, returns the ones newly claimed
@@ -850,7 +861,7 @@ no second item). Production repeats the list under the production names at cutov
 Every Monday write and ledger update is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
 byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `eventbrite-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages queued
   (they retry); `off` writes nothing and logs one `"writeSwitch":"skipped"` line per would-be
@@ -890,6 +901,9 @@ beyond the table above:
   and any still inside it are re-queued on the first `on` run. Only a correction to an event that
   has already ended, so unlike a poller's cursor nothing is skipped for good. `hold` or an unreadable
   switch skips the run with one `eventbrite-sync scheduled: write mode is …` line, and the first `on` run walks what it missed.
+- **The daily send-link sweep** (`sweepSendLinks`). `on` writes; `off` reads the board and logs how
+  many links are stale, writing none; `hold` or an unreadable switch skips it with the other jobs.
+  It recomputes from the board each day, so nothing is skipped for good.
 - **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
   runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with one
   `eventbrite-sync scheduled: write mode is …` line. Its 26-hour lookback does not reach back over a long hold, so after a
@@ -909,9 +923,10 @@ beyond the table above:
    arrived since 2026-11-08. Still open: a first missed-you, and a timed run of `result` on a 26-person
    roster (the CPU limit in `wrangler.jsonc`). The 2026-11-09 generic change is deployed (the 2026-11-14
    updates read "Event email"), but as of 2026-11-17 the column is still `🔒 Send class email` and
-   five Volunteering and Group Rides events dated November–December have no link. Still to do: rename the column
-   `🔒 Send event email` (`MARKED_COLUMNS` already has the new title), run
-   `scripts/backfill-send-links.mjs`, and redeploy the page with its matching wording.
+   five Volunteering and Group Rides events dated November–December have no link. On 2026-11-19
+   `scripts/backfill-send-links.mjs` wrote the link on 235 events, and the daily send-link sweep
+   keeps it current from then on. Still to do: rename the column `🔒 Send event email`
+   (`MARKED_COLUMNS` already has the new title) and redeploy the page with its matching wording.
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.

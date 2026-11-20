@@ -1,6 +1,7 @@
 import type { EventbriteEvent } from '../eventbrite/client';
 import type { EventbriteSyncConfig } from '../types';
 import { toISODate } from '../util/isoDate';
+import { sendLink } from '../sendLinks/plan';
 
 export interface EventMapping {
   itemName: string;
@@ -91,12 +92,10 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, n
   const url = nonEmpty(event.url);
   if (url !== null) columnValues[cols.urlColumn] = { url, text: 'Eventbrite' };
   // Every event gets the send link, whatever its program, but never before the page is deployed
-  // (pageUrl null). Who can be emailed is the page's call, not the link's.
+  // (pageUrl null). Who can be emailed is the page's call, not the link's. Events nobody edits
+  // get theirs from the daily sweep (src/sendLinks/sweep.ts).
   const pageUrl = config.attendeeSync.classEmails.pageUrl;
-  if (pageUrl !== null) {
-    const sep = pageUrl.includes('?') ? '&' : '?';
-    columnValues[cols.sendLinkColumn] = { url: `${pageUrl}${sep}event=${encodeURIComponent(event.id)}`, text: 'Send event email' };
-  }
+  if (pageUrl !== null) columnValues[cols.sendLinkColumn] = sendLink(pageUrl, event.id);
 
   const itemName = nonEmpty(event.name?.text) ?? `Eventbrite event ${event.id}`;
   return {

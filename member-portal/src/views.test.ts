@@ -135,6 +135,28 @@ describe('checkEmailView', () => {
     const html = checkEmailView('es');
     expect(html).toContain(t('es', 'checkEmail.heading'));
   });
+  it('offers Send again with the address, revealed after the delay by CSS alone', () => {
+    const html = checkEmailView('en', '/en/portal/letters', false, { email: 'a"<b@x.org', delaySeconds: 60 });
+    expect(html).toContain(t('en', 'checkEmail.resendHelp').replace("'", '&#39;'));
+    const resend = html.slice(html.indexOf('<form action="/" method="post"'));
+    expect(resend).toContain('name="email" value="a&quot;&lt;b@x.org"');
+    expect(resend).toContain('name="next" value="/en/portal/letters"');
+    expect(resend).toContain('class="resend-reveal" style="animation-duration: 60s"');
+    expect(resend).toContain(`>${t('en', 'checkEmail.resend')}</button>`);
+    expect(html).not.toContain('<script');
+  });
+
+  it('carries the address in the code form too, so a refused code can offer Send again', () => {
+    const html = checkEmailView('en', null, true, { email: 'a@x.org', delaySeconds: 60 });
+    const codeForm = html.slice(html.indexOf('<form action="/auth/code"'), html.indexOf('</form>') + 7);
+    expect(codeForm).toContain('name="email" value="a@x.org"');
+  });
+
+  it('has no Send again without an address', () => {
+    const html = checkEmailView('en');
+    expect(html).not.toContain('resend-reveal');
+    expect(html).not.toContain('name="email"');
+  });
 });
 
 describe('errorView', () => {

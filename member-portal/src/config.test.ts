@@ -448,6 +448,35 @@ describe('taxLetter Gift Type lists', () => {
   });
 });
 
+describe('taxLetter.letterhead', () => {
+  const letterhead = {
+    contactLines: ['example.org', '1 Main St'],
+    boardOfDirectors: ['Ada Example'],
+    executiveDirector: 'Bo Example',
+    tagline: ['Riding together'],
+    nonprofitLines: ['A 501(c)(3)'],
+  };
+  const withLetterhead = (value: unknown) => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as unknown as Record<string, unknown>;
+    raw.taxLetter = { ...(raw.taxLetter as Record<string, unknown>), letterhead: value };
+    return raw;
+  };
+
+  it('is optional, and kept when valid', () => {
+    expect(validateConfig(withLetterhead(letterhead)).taxLetter.letterhead).toEqual(letterhead);
+  });
+
+  it.each(['contactLines', 'boardOfDirectors', 'tagline', 'nonprofitLines'])('rejects an empty or missing %s', (key) => {
+    expect(() => validateConfig(withLetterhead({ ...letterhead, [key]: [] }))).toThrow(`taxLetter.letterhead.${key}`);
+    expect(() => validateConfig(withLetterhead({ ...letterhead, [key]: undefined }))).toThrow(`taxLetter.letterhead.${key}`);
+  });
+
+  it('rejects a blank executive director and a non-object block', () => {
+    expect(() => validateConfig(withLetterhead({ ...letterhead, executiveDirector: ' ' }))).toThrow('executiveDirector');
+    expect(() => validateConfig(withLetterhead(['x']))).toThrow('taxLetter.letterhead');
+  });
+});
+
 describe('lettersEnabled', () => {
   it('is true when every taxLetter field is real', () => {
     const cfg = validateConfig(Object.assign(structuredClone(validConfig), structuredClone(v2Sections)));
@@ -1243,7 +1272,7 @@ describe('organizations', () => {
 
 describe('shipped configs organizations block', () => {
   // Production stays off until its Portal access column exists; the sandbox column does.
-  it.each([['svbc', svbcConfig, false], ['sandbox', sandboxConfig, true]])('%s has the block, org access %s', (_n, cfg, enabled) => {
+  it.each([['svbc', svbcConfig, true], ['sandbox', sandboxConfig, true]])('%s has the block, org access %s', (_n, cfg, enabled) => {
     const v = validateConfig(cfg);
     expect(v.organizations.acknowledgmentSignedOff).toBe(false);
     expect(v.organizations.volunteerFloor).toBe(3);

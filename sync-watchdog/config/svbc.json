@@ -11,6 +11,7 @@
       "expectedWrites": "on",
       "crons": [{ "cron": "0 * * * *", "maxGapHours": 3 }, { "cron": "0 9 * * *", "maxGapHours": 48 }]
     },
+    "impact-attribution": { "script": "svbc-impact-attribution", "expectedWrites": "on", "crons": [{ "cron": "0 11 * * *", "maxGapHours": 48 }] },
     "mailchimp-sync": {
       "script": "svbc-mailchimp-sync",
       "expectedWrites": "on",
@@ -31,7 +32,6 @@
   "notLive": {
     "dtd-sync": "not deployed to production",
     "nearby-search": "not deployed to production (sandbox rollout pending)",
-    "impact-attribution": "production script deployed without its cron and with writes off",
     "quickbooks-sync": "sandbox only, postponed indefinitely"
   },
   "queues": [

@@ -162,6 +162,37 @@ export class HttpMondayClient implements MondayClient {
     return result;
   }
 
+  // Every active item on a board with the requested columns, paged 500 at a time. Not on the
+  // MondayClient interface: only the daily send-link sweep reads a whole board.
+  async listBoardItems(boardId: number, columnIds: string[]): Promise<MondayItemColumns[]> {
+    type Page = { cursor: string | null; items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[] };
+    const fields = 'cursor items { id name state column_values(ids: $columnIds) { id text value } }';
+    const result: MondayItemColumns[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: Page = cursor === null
+        ? (await this.transport.request<{ boards: { items_page: Page }[] }>(
+          `query ($boardId: ID!, $columnIds: [String!]) { boards(ids: [$boardId]) { items_page(limit: 500) { ${fields} } } }`,
+          { boardId, columnIds }
+        )).boards[0]!.items_page
+        : (await this.transport.request<{ next_items_page: Page }>(
+          `query ($cursor: String!, $columnIds: [String!]) { next_items_page(cursor: $cursor, limit: 500) { ${fields} } }`,
+          { cursor, columnIds }
+        )).next_items_page;
+      for (const item of page.items) {
+        result.push({
+          id: item.id,
+          name: item.name,
+          state: item.state,
+          columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
+          values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
+        });
+      }
+      cursor = page.cursor;
+    } while (cursor !== null);
+    return result;
+  }
+
   async postUpdate(itemId: string, body: string): Promise<void> {
     await this.transport.request<{ create_update: { id: string } }>(
       `mutation ($itemId: ID!, $body: String!) {

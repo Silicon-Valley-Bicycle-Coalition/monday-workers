@@ -57,13 +57,14 @@ Worker uses `production.json`, not `svbc.json`.
 `Sent to Organizer`, and `Send Failed`. Writing `Sent to Organizer` doesn't re-fire the automation,
 which triggers only on `Ready to Send`.
 
-**To verify:** that the `Send Failed` label exists on the production column. Monday rejects an
-unknown label and the Worker only logs the rejection, so a failed send stays invisible on the
-board until the label is added.
+All four labels exist on the production column (`Send Failed` added 2026-11-19). Don't rename or
+delete them: Monday rejects an unknown label and the Worker only logs the rejection, so a failed send
+would stay invisible on the board.
 
-The sandbox config reuses the production board's column ids, on the assumption that the sandbox
-mirror was duplicated from the live board. **To verify:** that those ids are correct on the
-sandbox mirror (a `bp-feedback-no-email` log for an item that has an address means they aren't).
+The sandbox config points at board `18431960612`, "BP Request Form (sandbox)", which has been
+deleted (as has the later copy, `18435720706`). The sandbox Worker has no board to read until a new
+mirror is made and `config/sandbox.json` updated. Duplicate the live board so the column ids carry
+over; a `bp-feedback-no-email` log for an item that has an address means they didn't.
 
 Changing the board's structure takes board ownership; without it, the `+` column button does
 nothing.

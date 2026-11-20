@@ -68,12 +68,14 @@ nine sources) and `config/eventbriteOrganizers.json` (Eventbrite organizer ids a
 | `EVENTBRITE_TOKEN` | Eventbrite private token for listing SVBC's public events | Eventbrite: Account Settings → Developer Links → API Keys → Private token | Create a new key, `npx wrangler secret put EVENTBRITE_TOKEN` (and `--env sandbox`), revoke the old key |
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook for source-failure alerts. Optional in the sandbox; alerts no-op without it | Slack workspace admin (incoming webhook app) | Create a new webhook, `npx wrangler secret put SLACK_WEBHOOK_URL`, delete the old one |
 
-This token is separate from `eventbrite-sync`'s `EVENTBRITE_PRIVATE_TOKEN`. **To verify:** which
-Eventbrite account minted `EVENTBRITE_TOKEN`, and which Slack channel the webhook posts to.
+This token is separate from `eventbrite-sync`'s `EVENTBRITE_PRIVATE_TOKEN`. Which Eventbrite login
+minted it, and which Slack channel the webhook posts to, are recorded in the private appendix.
 
-`CF_WEB_ANALYTICS_TOKEN` is a var, deliberately empty: the zone's automatic Web Analytics already
-injects the beacon. **To verify:** that the zone is still on automatic setup (Analytics & Logs →
-Web Analytics). Only if it isn't, add a token to the var.
+`CF_WEB_ANALYTICS_TOKEN` is a var, deliberately empty, on the assumption (checked 2026-09-21) that
+the zone's automatic Web Analytics injects the beacon. On 2026-11-19 the `/events` listing page
+carried no beacon, so these pages are probably not measured. If page analytics are wanted, check
+Analytics & Logs → Web Analytics: turn automatic setup back on, or create a site and put its token
+in the var (not both, or the beacon loads twice).
 
 ## Write switch
 

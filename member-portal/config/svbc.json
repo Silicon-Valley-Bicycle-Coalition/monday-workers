@@ -80,7 +80,23 @@
       "Contracts"
     ],
     "separateGiftTypes": ["Donor Advised Fund"],
-    "separateGiftsStatement": "REPLACE_AFTER_SIGNOFF"
+    "separateGiftsStatement": "REPLACE_AFTER_SIGNOFF",
+    "letterhead": {
+      "contactLines": ["bikesiliconvalley.org", "95 South Market Street", "San Jose, CA 95113", "408-287-7259"],
+      "boardOfDirectors": [
+        "Jennifer Fierman",
+        "Kay Cheng",
+        "Andrew Hsu",
+        "Liên Hoa Johnson",
+        "James Lucas",
+        "Josh Mello",
+        "Ed Morimoto",
+        "Hong Quan"
+      ],
+      "executiveDirector": "Clarrissa Cabansagan",
+      "tagline": ["Building healthier and more just communities", "by making bicycling safe and accessible for everyone"],
+      "nonprofitLines": ["SVBC is a 501(c)(3)", "non-profit organization"]
+    }
   },
   "changeRequests": {
     "boardId": 18438337985,
@@ -185,7 +201,7 @@
     "taxLetterUntil": "04-15"
   },
   "organizations": {
-    "portalAccessColumn": "REPLACE_WITH_COLUMN_ID",
+    "portalAccessColumn": "boolean_mm9859qh",
     "workEmailColumn": "email_mm8ndy69",
     "addressColumns": ["text_mm8nhnjq", "text_mm8nsrw9", "text_mm8nwg34"],
     "acknowledgmentSignedOff": false,

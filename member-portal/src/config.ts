@@ -268,6 +268,7 @@ export function validateConfig(raw: unknown): Config {
   if (overlap !== undefined) {
     throw new Error(`config: "${overlap}" is in both taxLetter.excludedGiftTypes and taxLetter.separateGiftTypes`);
   }
+  if (taxLetter.letterhead !== undefined) validateLetterhead(taxLetter.letterhead);
 
   const changeRequests = requireObject(cfg, 'changeRequests');
   requireKeys(changeRequests, 'changeRequests', REQUIRED_CHANGE_REQUEST_KEYS);
@@ -490,6 +491,24 @@ export function lettersEnabled(config: Config): boolean {
     t.separateGiftsStatement,
   ];
   return strings.every((s) => s !== SIGNOFF_PLACEHOLDER && s.length > 0);
+}
+
+// Printed on every letter, so a missing board list or a typo'd key fails at startup rather than
+// leaving a blank band on a tax document.
+function validateLetterhead(raw: unknown): void {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('config: "taxLetter.letterhead" must be an object');
+  }
+  const block = raw as Record<string, unknown>;
+  for (const key of ['contactLines', 'boardOfDirectors', 'tagline', 'nonprofitLines'] as const) {
+    const lines = block[key];
+    if (!Array.isArray(lines) || lines.length === 0 || lines.some((line) => typeof line !== 'string' || line.trim().length === 0)) {
+      throw new Error(`config: "taxLetter.letterhead.${key}" must be a non-empty array of non-empty strings`);
+    }
+  }
+  if (typeof block.executiveDirector !== 'string' || block.executiveDirector.trim().length === 0) {
+    throw new Error('config: "taxLetter.letterhead.executiveDirector" must be a non-empty string');
+  }
 }
 
 function validateEmployerAnswer(raw: unknown): EmployerAnswerConfig | null {

@@ -7,7 +7,7 @@ import { doorPage } from '../doors/layout';
 import { formatShortDate } from '../dates';
 import { formatUsd, formatUsdText, parseAmount } from '../money';
 import { giftYear } from '../letters/loadLetterData';
-import { LETTER_CSS } from '../letters/letterViews';
+import { letterhead, letterheadFoot, letterheadStyles } from '../letters/letterViews';
 import type { OrgGift } from '../monday/client';
 import type { TaxLetterConfig } from '../types';
 import type { OrgStatement } from './statement';
@@ -166,29 +166,30 @@ export function orgStatementView(s: OrgStatement, taxLetter: TaxLetterConfig, op
   }
 
   return `
-    <style>${LETTER_CSS}</style>
+    <style>${letterheadStyles(taxLetter)}</style>
     <nav class="no-print">
       <a href="/${locale}/portal/org/${encodeURIComponent(s.org.id)}">${e(t(locale, 'orgs.back', { name: s.org.name }))}</a>
       <button type="button" onclick="window.print()">${e(t(locale, 'orgs.print'))}</button>
     </nav>
     <article class="letter" lang="en">
-      <header>
-        <p><strong>${e(taxLetter.orgLegalName)}</strong><br>
-        ${e(taxLetter.officeAddress)}</p>
-      </header>
-      <p>${e(opts.generatedOn)}</p>
-      <h1>${s.year} year-end statement for ${e(s.org.name)}</h1>
-      <p>${e(s.org.address)}</p>
-      ${summary}
-      ${gifts}
-      ${matching}
-      ${volunteering}
-      ${acknowledgment}
-      <p>If anything here looks incorrect, contact us and we will review it.</p>
-      <p>Sincerely,<br>
-      ${e(taxLetter.signatureName)}<br>
-      ${e(taxLetter.signatureTitle)}, ${e(taxLetter.orgLegalName)}</p>
-      <footer><p><small>Generated from ${e(taxLetter.orgLegalName)}'s records on ${e(opts.generatedOn)}.</small></p></footer>
+      ${letterhead(taxLetter)}
+      <div class="letter-body">
+        <p>${e(opts.generatedOn)}</p>
+        <h1>${s.year} year-end statement for ${e(s.org.name)}</h1>
+        <p>${e(s.org.address)}</p>
+        ${summary}
+        ${gifts}
+        ${matching}
+        ${volunteering}
+        ${acknowledgment}
+        <p>If anything here looks incorrect, contact us and we will review it.</p>
+        <p class="letter-signature">Sincerely,<br>
+        ${e(taxLetter.signatureName)}<br>
+        ${e(taxLetter.signatureTitle)}<br>
+        ${e(taxLetter.orgLegalName)}</p>
+        <p class="letter-generated">Generated from ${e(taxLetter.orgLegalName)}'s records on ${e(opts.generatedOn)}.</p>
+      </div>
+      ${letterheadFoot(taxLetter)}
     </article>
   `;
 }

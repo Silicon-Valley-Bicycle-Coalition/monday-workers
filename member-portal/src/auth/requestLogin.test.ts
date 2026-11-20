@@ -111,6 +111,8 @@ describe('requestLogin', () => {
     expect(emailCall.to).toBe('shared@example.org');
     // Issue GL#61: the token rides in the fragment, never the query string, so it can't reach request logs.
     expect(emailCall.loginUrl).toMatch(/^https:\/\/portal\.example\.org\/auth\/callback\?lang=en#token=[0-9a-f]{64}$/);
+    // The domain-bound AutoFill line names the portal's own host.
+    expect(emailCall.domain).toBe('portal.example.org');
   });
 
   it("uses the matched donor's stored preferred language for the magic-link URL when set", async () => {

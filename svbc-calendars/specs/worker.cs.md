@@ -1,5 +1,11 @@
 # SVBC Events Worker
 
+> **Historical.** This is the original spec for the single-file events Worker (`src/worker.ts`),
+> from before the calendar Workers merged. The code now spans many modules under `src/` (entry
+> point `src/index.ts`) and also serves the `.ics` calendar feeds. For how it works today, read
+> [`../README.md`](../README.md) and `docs/manual/workers/svbc-calendars.md`. Keep this file as a
+> record of the original design. Don't update it to match the code.
+
 A Cloudflare Worker that proxies the Eventbrite API v3, keeping the private OAuth token server-side, and serves an embeddable HTML events widget. Responses are edge-cached via the Cloudflare Cache API with a configurable TTL.
 
 Written in TypeScript using `@cloudflare/workers-types`. Wrangler handles transpilation — no separate build step. Lives in a single file: `src/worker.ts`.

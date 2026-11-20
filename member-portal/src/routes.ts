@@ -485,7 +485,10 @@ export function createApp(deps: AppDeps) {
         maxAge: deps.config.auth.magicLinkTtlMinutes * 60,
       });
     }
-    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next), locale));
+    // The page echoes the typed address into its Send again form, so it must never be cached.
+    c.header('Cache-Control', NO_STORE);
+    const resend = email.length > 0 ? { email, delaySeconds: deps.config.rateLimit.emailCooldownSeconds } : null;
+    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, false, resend), locale));
   });
 
   // The typed-code half of sign-in. Like POST /auth/callback it is CSRF-checked and stays live
@@ -495,8 +498,13 @@ export function createApp(deps: AppDeps) {
     const body = await c.req.parseBody();
     const locale = detectLocale(c);
     const next = portalReturnPath(body.next);
-    const codeError = () =>
-      c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, true), locale));
+    // The code form carries the address back (when it had one) so the refusal can offer Send again.
+    const resendEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const resend = isPlausibleEmail(resendEmail) ? { email: resendEmail, delaySeconds: deps.config.rateLimit.emailCooldownSeconds } : null;
+    const codeError = () => {
+      c.header('Cache-Control', NO_STORE);
+      return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, true, resend), locale));
+    };
 
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     try {

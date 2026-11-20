@@ -2,10 +2,10 @@
 
 **Staff UAT script:** [`docs/uat/contact-roles.md`](../docs/uat/contact-roles.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: built, not deployed. No live Monday write has been run.** Nothing here is verified
-against live Monday beyond read-only board inspection (2026-11-11); the smoke tests below are
-still to do. Every Monday write ships **off** (the write switch `contact-roles:writes` is unset,
-which means `off`). Design: [`docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md`](../docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md)
+**Status (checked 2026-11-19): deployed in both environments. Sandbox writes are `on`;
+production writes are `off`**, so production dry-runs every 10 minutes. Production goes `on`
+after the rollout checklist below (dry-run counts checked, backfill, smoke tests). A new
+deployment of this Worker ships **off**: an unset write switch means `off`. Design: [`docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md`](../docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md)
 (including "Calls made while writing this"); plan: [`docs/superpowers/plans/2026-11-11-organization-contact-roles.md`](../docs/superpowers/plans/2026-11-11-organization-contact-roles.md).
 **Stack:** TypeScript on Cloudflare Workers, a 10-minute cron, no HTTP surface, **no D1, no queue**.
 

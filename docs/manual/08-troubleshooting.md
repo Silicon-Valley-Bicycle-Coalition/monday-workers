@@ -55,7 +55,7 @@ problems, and the vendor's admin for anything on their side.
 | Writes fail with `UserUnauthorizedException` | Board made private without subscribing SVBC Integration, or a deleted board | Board permissions in Monday | Subscribe the integration user, or update the config |
 | Writes fail with 401 or 403 for every Worker | Broker consent lost | `/health` on the broker | Re-consent ([`monday-auth`](workers/monday-auth.md)) |
 | Writes fail with 429 or `COMPLEXITY_BUDGET_EXHAUSTED` | Monday rate or complexity limit, often during a bulk operation | Workers Issues; whether a bulk edit, import or backup is running | Nothing. Queues back off and retry. If it persists, `hold` the less urgent Workers. |
-| `DAILY_LIMIT_EXCEEDED` | Monday's daily API call limit for the plan | Monday admin → API usage (**To verify** the menu path) | Retries wait until midnight. Reduce polling or bulk work. |
+| `DAILY_LIMIT_EXCEEDED` | Monday's daily API call limit for the plan | Monday: profile picture → Administration → Usage stats → API (account admins; needs the API usage add-on or Enterprise). The `platform_api` GraphQL object reports the same numbers | Retries wait until midnight. Reduce polling or bulk work. |
 | Nothing at all is written, and logs say "skip" or "dry run" | Write switch `off` or `hold`, or the key is missing | `flags.mjs status` | `writes on` |
 | A cron-polled sync silently missed a window | Switch was `off` during that window, so cursors advanced by design | `flags.mjs status`; the Worker's D1 cursor table | Backfill with the Worker's script, if it has one |
 

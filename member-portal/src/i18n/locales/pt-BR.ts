@@ -33,6 +33,8 @@ export const ptBR: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'Recebeu um código? Digite aqui',
   'checkEmail.codeSubmit': 'Entrar',
   'checkEmail.codeError': 'Esse código não funcionou. Confira-o ou peça um novo e-mail.',
+  'checkEmail.resendHelp': 'Não recebeu? Verifique sua pasta de spam ou envie novamente.',
+  'checkEmail.resend': 'Enviar novamente',
   'confirmLogin.heading': 'Continue para seu portal',
   'confirmLogin.body': 'Use o botão abaixo para concluir o login.',
   'confirmLogin.submit': 'Continuar para seu portal',
@@ -252,7 +254,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'verify.notValid': 'Esta carteirinha não é válida. Ela pode ter sido substituída por uma nova ou não estar mais ativa.',
 
   // Login email (src/email/resend.ts)
-  'email.subject': 'Seu código e link de acesso ao portal do doador da SVBC',
+  'email.subject': '{{code}} é o seu código do portal de membros da SVBC',
   'email.loginButton': 'Entrar',
   'email.codeIntro': 'Seu código de acesso:',
   'email.codeHint': 'Digite-o na página em que você pediu para entrar, ou use o botão abaixo. Ambos expiram em {{minutes}} minutos e só funcionam uma vez.',

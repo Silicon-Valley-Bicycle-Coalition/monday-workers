@@ -93,13 +93,13 @@ column can't be mapped in a move and Monday's API can't create one to fix a mism
 | `MONDAY_SIGNING_SECRET` | Verifies the JWT Monday signs app-created webhooks with | Monday Developer Center → the Staff sync app → Basic Information → Signing Secret (not the OAuth client secret) | Regenerate in the Developer Center, then `wrangler secret put` here and in `donation-rollups` |
 | `MONDAY_API_TOKEN` (optional) | Fallback Monday token from the OAuth cutover | Monday (SVBC Integration user) | Delete once the binding is confirmed. Don't add new uses |
 
-`MONDAY_WEBHOOK_JWT_REQUIRED` is a var in `wrangler.jsonc`: `"true"` also rejects unsigned
-deliveries. See the root README's section on Monday's signed webhook JWT.
+`MONDAY_WEBHOOK_JWT_REQUIRED` is an optional var: `"true"` also rejects unsigned deliveries. It
+isn't set in `wrangler.jsonc`, so a signed delivery must verify and an unsigned one is still
+accepted with a logged warning. `MONDAY_SIGNING_SECRET` is set in both environments. See the root
+README's section on Monday's signed webhook JWT.
 
-**To verify:** that the current `RECLASSIFY_SECRET` values (both environments) are stored somewhere
-recoverable. The README records that earlier values were not saved. `MONDAY_SIGNING_SECRET` is set
-in both environments. `MONDAY_WEBHOOK_JWT_REQUIRED` isn't set in `wrangler.jsonc`, so a signed
-delivery must verify, and an unsigned one is still accepted with a logged warning.
+Earlier `RECLASSIFY_SECRET` values were never saved. Where the current ones are kept belongs in the
+private appendix; if they aren't there, generate new ones and `wrangler secret put` them.
 
 ## Write switch
 

@@ -149,7 +149,8 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
-**Visual design:** `docs/design-system/` (follows bikesiliconvalley.org). Take colours, type,
+**Visual design:** `docs/design-system/` (brand basis: the 2026 letterhead; the website and Workers
+still use the older `web-gold` #FFC700 and Manrope/Poppins until migrated). Take colours, type,
 spacing and component patterns for any Worker page or email from its `tokens.json` and README,
 not from older Worker code. Fonts are self-hosted (`scripts/build-font-modules.mjs`); never link
 Google Fonts from a Worker page.
@@ -263,8 +264,9 @@ environment with its own set), the broker holds the tokens, and a Worker's `MOND
 binding picks its app by entrypoint (`PortalToken`, `SyncToken`, `ReadOnlyToken`; the
 `monday-auth-bindings` step of `checks.yml` checks the mapping). New Workers bind an entrypoint instead of
 adding a `MONDAY_API_TOKEN` secret; never use a staff member's personal token. Leftovers from the
-OAuth cutover: `benevity-import`, `mailchimp-sync`, `monday-backup`, `quickbooks-sync` and
-`report-digests` still declare an optional `MONDAY_API_TOKEN` fallback (don't add new uses), and
+OAuth cutover: most Workers' `Env` types still declare an optional `MONDAY_API_TOKEN`, which
+the transport's `tokenProviderFor()` uses only when the `MONDAY_AUTH` binding is missing (don't add
+new uses). No deployed Worker has that secret set (the last copies were deleted 2026-11-19), and
 operator scripts such as `monday-backup`'s restore CLI and `check-donation-form.mjs` read one from
 the operator's shell. One user is not a scoped one (GL#18): any Monday team member can read and
 edit every Main board in every open workspace, so "only the boards it reads" holds only for

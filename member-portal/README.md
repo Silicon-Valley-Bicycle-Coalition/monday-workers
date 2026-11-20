@@ -3,10 +3,12 @@
 **Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
 **Status:** Production config filled 2026-11-02 (813261b: People, Donations, Organizations and
-Volunteers ids from the Donors & Contacts workspace, 18201685); this repo doesn't record a
-production deploy yet. Still placeholders in `config/svbc.json`, each a feature gate rather than a
-deploy blocker: `preferredLanguage`, `letterCron`, `eventRegistrations`, `pledges`,
-`taxLetter.benefitStatement` and `funraise.renewMembershipUrl`. Code-complete through v8 (the
+Volunteers ids from the Donors & Contacts workspace, 18201685), and the Change Requests and
+letter boards (`changeRequests`, `letterCron`) are filled too. `svbc-member-portal` and
+`svbc-member-portal-writer` are deployed in production (checked 2026-11-19). Still placeholders in
+`config/svbc.json`, each a feature gate rather than a deploy blocker: `preferredLanguage`,
+`eventRegistrations`, `pledges`, `taxLetter.benefitStatement` and
+`funraise.renewMembershipUrl`. Code-complete through v8 (the
 sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
 live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
@@ -242,6 +244,16 @@ same batch and hashes the code too, so response time doesn't tell whether an add
 The IP limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic
 page.
 
+**AutoFill and Send again.** The email's subject leads with the code, and the last line of its
+text part (also the last paragraph of the HTML) is WebKit's origin-bound one-time-code form,
+`@member.bikesiliconvalley.org #123456` (the host comes from `auth.portalBaseUrl`), so Apple Mail
+and Safari offer the code above the keyboard on the check-email page without the donor switching
+apps. Seeing the code in a notification is harmless: it only works with the requesting browser's
+cookie. Whenever the typed address was well-formed (on file or not), the check-email page also
+offers **Send again**: a form that re-posts the address to `POST /`, held hidden by a CSS animation
+for `rateLimit.emailCooldownSeconds` (no script; with animations off it shows at once and the
+cooldown still applies). The page echoes the address, so it is served `no-store`.
+
 **Household Email.** Sign-in matches an address against a donor's Household Email as well as
 their own, so a shared household address signs in every person on it; the session covers all
 of them, labeled as above.
@@ -378,12 +390,12 @@ Routing destination). A live login-link request for a real sandbox People record
   validated to cover the 24-hour daily cap). Deletes are batched and capped per run
   (`src/db/authRetention.ts`); indexes in migrations `0005`/`0006`. The hash is unkeyed: it keeps
   addresses out of D1 dumps, not out of reach of someone testing a known address.
-* The Worker's Monday API token comes from a dedicated integration user with access to only the
-  boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
-  v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
-  a staff member's
-  personal token, which would make this public-facing Worker a door to the whole workspace. See
-  `../README.md`'s least-privilege-token note.
+* The Worker's Monday token comes from the `monday-auth` broker's Portal app (`PortalToken`,
+  `boards:read` and `me:read` only), authorized by the SVBC Integration user — never a staff
+  member's personal token. It cannot write. It can, however, **read every board SVBC Integration
+  can see**, not only the ones this portal displays: an accepted risk, mitigated by keeping
+  sensitive boards private and the integration user off private boards it doesn't need. See
+  `../README.md`'s least-privilege-token note and `monday-auth/README.md`, "Accepted risk".
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
@@ -430,6 +442,13 @@ config-gated features:
   consolidated per-year giving letter rendered live from the Donations board as HTML with print
   CSS — the browser's Print → Save as PDF is the delivery mechanism; nothing is generated or
   stored server-side. Only completed calendar years with at least one donation get a letter.
+  **Printed on the 2026 letterhead** (Box: SVBC Letter 2026): the sand band down the right edge
+  with the logo, contact lines, board and executive director, the gold tagline and 501(c)(3) line
+  at the foot of page one, and "· page N" after (`src/letters/letterViews.ts`, shared with the
+  organization statement). The band's text is `taxLetter.letterhead` in config — update the board
+  there when the Box template changes; without that block the band shows the logo and
+  `officeAddress`. Print relies on a fixed element repeating on every page and on `@page` margin
+  boxes; checked in Chrome's Save as PDF, not yet in Safari or Firefox.
   **Gift Types treated differently** (`monday.columns.donationDescription` is the board's Gift Type
   column; labels compare without case or punctuation): `taxLetter.excludedGiftTypes` (Event Ticket,
   Sponsorship, In Kind Donation / Sponsorship, Matching Donation, Grants, Contracts) are left off and
@@ -1071,8 +1090,8 @@ Gates in `src/config.ts`: `orgAccessEnabled` (a real Portal access column, the
 January pass; `workEmailSignInEnabled` adds a real Work Email column; `orgAcknowledgmentEnabled`
 adds `acknowledgmentSignedOff: true` and a signed-off EIN. The Portal access checkbox exists on both
 Affiliations boards: sandbox `boolean_mm986pxt` (configured in `config/sandbox.json`, so the
-feature is **on in the sandbox**), production `boolean_mm9859qh` (created, **not yet in
-`config/svbc.json`**, so production is off until it is pasted in).
+feature is **on in the sandbox**), production `boolean_mm9859qh` (in `config/svbc.json` since 2026-11-19, so it is **on in
+production** too; nothing shows until staff tick the box on a Current Affiliation).
 
 **Migration `0009_organization_reps.sql`** adds `org_grants` to `magic_link_tokens` and `sessions`
 and creates `org_statement_sends`. Apply it to the sandbox and production D1 databases **before**
@@ -1122,7 +1141,7 @@ Staff steps are in [`docs/uat/member-portal.md`](../docs/uat/member-portal.md#gi
 Every write the portal makes on a donor's behalf is gated by the shared write switch (spec
 `../docs/superpowers/specs/2026-10-26-write-switch-design.md`; this Worker holds the canonical
 `src/flags.ts`, and its gating is `src/writeSwitch.ts`), read from the `FLAGS` KV namespace
-(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+(`wrangler.jsonc` binds both namespace ids, `FLAGS` and `sandbox-FLAGS`):
 
 - `member-portal:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
   queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording

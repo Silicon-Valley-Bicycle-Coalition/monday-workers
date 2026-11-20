@@ -2,8 +2,9 @@
 // Writes the Send event email link on every Eventbrite event on the Events board that lacks it or
 // still has an older one (such as "Send class email", or a link only Public events used to get).
 // The Worker writes the same link whenever it processes an event; this reaches the events it won't
-// process again, such as ones that have already happened. Skips what's current, so stopping and
-// re-running is safe. Prints counts and item ids, never names.
+// process again, such as ones that have already happened. The Worker's daily sweep
+// (src/sendLinks/sweep.ts) now does the same; this is for running it by hand. Skips what's current,
+// so stopping and re-running is safe. Prints counts and item ids, never names.
 //
 // Usage (from eventbrite-sync/):
 //   MONDAY_API_TOKEN=... node scripts/backfill-send-links.mjs --dry-run
@@ -17,7 +18,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayGraphQL } from '../src/monday/graphql.ts';
 import { readArg } from './backfill-orders-lib.mjs';
-import { planSendLinks } from './backfill-send-links-lib.mjs';
+import { parseLink, planSendLinks } from './backfill-send-links-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const token = process.env.MONDAY_API_TOKEN;
@@ -41,16 +42,6 @@ if (!pageUrl) {
 const client = new MondayGraphQL('https://api.monday.com/v2', token);
 const log = (m) => console.log(`${new Date().toISOString()} ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function parseLink(raw) {
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw);
-    return typeof v?.url === 'string' ? { url: v.url, text: typeof v.text === 'string' ? v.text : '' } : null;
-  } catch {
-    return null;
-  }
-}
 
 async function readEvents() {
   const fields = `cursor items { id column_values(ids: ["${eventbriteIdColumn}", "${sendLinkColumn}"]) { id text value } }`;
