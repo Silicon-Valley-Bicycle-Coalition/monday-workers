@@ -36,23 +36,27 @@ describe('D1MagicLinkTokenStore', () => {
   });
 
   describe('consumeCode', () => {
+    const CREATED = '2026-08-22T00:00:00.000Z';
     const EXPIRES = '2026-08-22T01:00:00.000Z';
     const NOW = '2026-08-22T00:30:00.000Z';
 
-    async function createCodeRow(
-      store: D1MagicLinkTokenStore,
-      tokenHash: string,
-      requestHash: string,
-      codeHash: string,
-      expiresAt = EXPIRES
-    ): Promise<void> {
+    interface CodeRow {
+      tokenHash: string;
+      requestHash: string;
+      codeHash: string;
+      emailHash?: string;
+      expiresAt?: string;
+      createdAt?: string;
+    }
+
+    async function createCodeRow(store: D1MagicLinkTokenStore, row: CodeRow): Promise<void> {
       await store.createToken({
-        tokenHash,
         donorItemIds: ['donor-1'],
-        expiresAt,
-        requestHash,
-        codeHash,
+        expiresAt: EXPIRES,
+        createdAt: CREATED,
+        emailHash: 'email-a',
         locale: 'es',
+        ...row,
       });
     }
 
@@ -65,9 +69,16 @@ describe('D1MagicLinkTokenStore', () => {
       return results.map((row) => row.code_attempts);
     }
 
+    async function checksFor(emailHash: string): Promise<number> {
+      const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM login_code_checks WHERE email_hash = ?1`)
+        .bind(emailHash)
+        .first<{ n: number }>();
+      return row?.n ?? 0;
+    }
+
     it('succeeds once', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'code-once-token', 'code-once-req', 'code-once-code');
+      await createCodeRow(store, { tokenHash: 'code-once-token', requestHash: 'code-once-req', codeHash: 'code-once-code' });
 
       expect(await store.consumeCode('code-once-req', 'code-once-code', NOW)).toEqual({
         donorItemIds: ['donor-1'],
@@ -78,7 +89,7 @@ describe('D1MagicLinkTokenStore', () => {
 
     it('burns the link', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'burn-link-token', 'burn-link-req', 'burn-link-code');
+      await createCodeRow(store, { tokenHash: 'burn-link-token', requestHash: 'burn-link-req', codeHash: 'burn-link-code' });
 
       expect(await store.consumeCode('burn-link-req', 'burn-link-code', NOW)).not.toBeNull();
       expect(await store.consumeToken('burn-link-token', NOW)).toBeNull();
@@ -86,7 +97,7 @@ describe('D1MagicLinkTokenStore', () => {
 
     it('is burned by consumeToken', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'burn-code-token', 'burn-code-req', 'burn-code-code');
+      await createCodeRow(store, { tokenHash: 'burn-code-token', requestHash: 'burn-code-req', codeHash: 'burn-code-code' });
 
       expect(await store.consumeToken('burn-code-token', NOW)).toEqual(['donor-1']);
       expect(await store.consumeCode('burn-code-req', 'burn-code-code', NOW)).toBeNull();
@@ -94,7 +105,7 @@ describe('D1MagicLinkTokenStore', () => {
 
     it('stops after 5 checks', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'cap-token', 'cap-req', 'cap-code');
+      await createCodeRow(store, { tokenHash: 'cap-token', requestHash: 'cap-req', codeHash: 'cap-code', emailHash: 'cap-email' });
 
       for (let i = 0; i < 5; i++) {
         expect(await store.consumeCode('cap-req', 'wrong-code', NOW)).toBeNull();
@@ -102,10 +113,31 @@ describe('D1MagicLinkTokenStore', () => {
       expect(await store.consumeCode('cap-req', 'cap-code', NOW)).toBeNull();
     });
 
+    // A resend for the same request must not buy fresh guesses at the older code.
+    it('keeps the cap across a row created after the checks', async () => {
+      const store = new D1MagicLinkTokenStore(env.DB);
+      await createCodeRow(store, { tokenHash: 'resend-token-1', requestHash: 'resend-req', codeHash: 'resend-code-1', emailHash: 'resend-email' });
+      for (let i = 0; i < 5; i++) {
+        await store.consumeCode('resend-req', 'wrong-code', NOW);
+      }
+
+      await createCodeRow(store, {
+        tokenHash: 'resend-token-2',
+        requestHash: 'resend-req',
+        codeHash: 'resend-code-2',
+        emailHash: 'resend-email',
+        createdAt: NOW,
+      });
+
+      expect(await attemptsFor('resend-req')).toEqual([5, 5]);
+      expect(await store.consumeCode('resend-req', 'resend-code-1', NOW)).toBeNull();
+      expect(await store.consumeCode('resend-req', 'resend-code-2', NOW)).toBeNull();
+    });
+
     it('matches any live row for the request', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'multi-token-1', 'multi-req', 'multi-code-1');
-      await createCodeRow(store, 'multi-token-2', 'multi-req', 'multi-code-2');
+      await createCodeRow(store, { tokenHash: 'multi-token-1', requestHash: 'multi-req', codeHash: 'multi-code-1' });
+      await createCodeRow(store, { tokenHash: 'multi-token-2', requestHash: 'multi-req', codeHash: 'multi-code-2' });
 
       expect(await store.consumeCode('multi-req', 'multi-code-1', NOW)).toEqual({
         donorItemIds: ['donor-1'],
@@ -115,7 +147,12 @@ describe('D1MagicLinkTokenStore', () => {
 
     it('ignores expired rows', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'expired-token', 'expired-req', 'expired-code', '2026-08-22T00:00:00.000Z');
+      await createCodeRow(store, {
+        tokenHash: 'expired-token',
+        requestHash: 'expired-req',
+        codeHash: 'expired-code',
+        expiresAt: '2026-08-22T00:10:00.000Z',
+      });
 
       expect(await store.consumeCode('expired-req', 'expired-code', NOW)).toBeNull();
     });
@@ -127,8 +164,8 @@ describe('D1MagicLinkTokenStore', () => {
 
     it('concurrent wrong guesses cannot exceed 5', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
-      await createCodeRow(store, 'race-token-1', 'race-req', 'race-code-1');
-      await createCodeRow(store, 'race-token-2', 'race-req', 'race-code-2');
+      await createCodeRow(store, { tokenHash: 'race-token-1', requestHash: 'race-req', codeHash: 'race-code-1', emailHash: 'race-email' });
+      await createCodeRow(store, { tokenHash: 'race-token-2', requestHash: 'race-req', codeHash: 'race-code-2', emailHash: 'race-email' });
 
       const results = await Promise.all(
         Array.from({ length: 8 }, () => store.consumeCode('race-req', 'wrong-code', NOW))
@@ -142,6 +179,84 @@ describe('D1MagicLinkTokenStore', () => {
       }
     });
 
+    it('caps an address at 10 checks a day across requests', async () => {
+      const store = new D1MagicLinkTokenStore(env.DB);
+      const emailHash = 'daily-email';
+      await createCodeRow(store, { tokenHash: 'daily-token-1', requestHash: 'daily-req-1', codeHash: 'daily-code-1', emailHash });
+      await createCodeRow(store, { tokenHash: 'daily-token-2', requestHash: 'daily-req-2', codeHash: 'daily-code-2', emailHash });
+      await createCodeRow(store, { tokenHash: 'daily-token-3', requestHash: 'daily-req-3', codeHash: 'daily-code-3', emailHash });
+      for (let i = 0; i < 5; i++) {
+        await store.consumeCode('daily-req-1', 'wrong-code', NOW);
+        await store.consumeCode('daily-req-2', 'wrong-code', NOW);
+      }
+      expect(await checksFor(emailHash)).toBe(10);
+
+      expect(await store.consumeCode('daily-req-3', 'daily-code-3', NOW)).toBeNull();
+      expect(await checksFor(emailHash)).toBe(10);
+
+      // The link is not limited by the code budget.
+      expect(await store.consumeToken('daily-token-3', NOW)).toEqual(['donor-1']);
+
+      const nextDay = '2026-08-23T00:30:01.000Z';
+      await createCodeRow(store, {
+        tokenHash: 'daily-token-4',
+        requestHash: 'daily-req-4',
+        codeHash: 'daily-code-4',
+        emailHash,
+        createdAt: nextDay,
+        expiresAt: '2026-08-23T01:00:00.000Z',
+      });
+      expect(await store.consumeCode('daily-req-4', 'daily-code-4', nextDay)).toEqual({
+        donorItemIds: ['donor-1'],
+        locale: 'es',
+      });
+    });
+
+    it('retires a request\'s rows for another address when a new address is asked for', async () => {
+      const store = new D1MagicLinkTokenStore(env.DB);
+      await createCodeRow(store, { tokenHash: 'swap-token-a', requestHash: 'swap-req', codeHash: 'swap-code-a', emailHash: 'swap-email-a' });
+      await createCodeRow(store, {
+        tokenHash: 'swap-token-b',
+        requestHash: 'swap-req',
+        codeHash: 'swap-code-b',
+        emailHash: 'swap-email-b',
+        createdAt: NOW,
+      });
+
+      expect(await store.consumeCode('swap-req', 'swap-code-a', NOW)).toBeNull();
+      expect(await store.consumeToken('swap-token-a', NOW)).toBeNull();
+      expect(await checksFor('swap-email-a')).toBe(0);
+      expect(await store.consumeCode('swap-req', 'swap-code-b', NOW)).not.toBeNull();
+    });
+
+    it('never matches a row without an email hash', async () => {
+      const store = new D1MagicLinkTokenStore(env.DB);
+      await store.createToken({
+        tokenHash: 'no-email-token',
+        donorItemIds: ['donor-1'],
+        expiresAt: EXPIRES,
+        createdAt: CREATED,
+        requestHash: 'no-email-req',
+        codeHash: 'no-email-code',
+      });
+
+      expect(await store.consumeCode('no-email-req', 'no-email-code', NOW)).toBeNull();
+    });
+
+    it('refuses a code row without createdAt', async () => {
+      const store = new D1MagicLinkTokenStore(env.DB);
+      await expect(
+        store.createToken({
+          tokenHash: 'no-created-token',
+          donorItemIds: ['donor-1'],
+          expiresAt: EXPIRES,
+          requestHash: 'no-created-req',
+          codeHash: 'no-created-code',
+          emailHash: 'email-a',
+        })
+      ).rejects.toThrow();
+    });
+
     it('never matches a row created without code fields', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
       await store.createToken({
@@ -151,11 +266,11 @@ describe('D1MagicLinkTokenStore', () => {
       });
 
       const row = await env.DB.prepare(
-        `SELECT request_hash, code_hash, code_attempts, locale FROM magic_link_tokens WHERE token_hash = ?1`
+        `SELECT request_hash, code_hash, code_attempts, locale, email_hash FROM magic_link_tokens WHERE token_hash = ?1`
       )
         .bind('letter-token')
         .first();
-      expect(row).toEqual({ request_hash: null, code_hash: null, code_attempts: 0, locale: null });
+      expect(row).toEqual({ request_hash: null, code_hash: null, code_attempts: 0, locale: null, email_hash: null });
 
       expect(await store.consumeCode('', '', NOW)).toBeNull();
       expect(await store.consumeToken('letter-token', NOW)).toEqual(['donor-1']);

@@ -50,6 +50,18 @@ describe('D1AuthRetentionStore', () => {
     expect(await count("SELECT COUNT(*) AS n FROM magic_link_tokens WHERE token_hash = 'purge-t-live-used'")).toBe(1);
   });
 
+  it('deletes login_code_checks older than the cutoff and keeps newer ones', async () => {
+    const store = new D1AuthRetentionStore(env.DB);
+    for (const at of ['2026-08-20T00:00:00.000Z', '2026-08-21T00:00:00.000Z', '2026-08-22T12:00:00.000Z']) {
+      await env.DB.prepare('INSERT INTO login_code_checks (email_hash, checked_at) VALUES (?1, ?2)').bind('purge-c', at).run();
+    }
+
+    const deleted = await store.purgeLoginCodeChecksBefore('2026-08-22T00:00:00.000Z');
+
+    expect(deleted).toBe(2);
+    expect(await count("SELECT COUNT(*) AS n FROM login_code_checks WHERE email_hash = 'purge-c'")).toBe(1);
+  });
+
   // A months-long backlog (the first run after deploy) must not turn one cron invocation into an
   // unbounded delete: each run removes at most batchSize × maxBatches rows per table and the
   // next daily run picks up the rest.

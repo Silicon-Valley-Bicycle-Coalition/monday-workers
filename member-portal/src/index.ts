@@ -216,9 +216,10 @@ export default {
       );
     }
 
-    // Auth-table retention (issue GL#31): login_attempts past rateLimit.attemptRetentionHours,
-    // sessions and magic-link tokens past their own expiry. Bounded per run and per-table
-    // failure-isolated inside purgeExpiredAuthRows, so it can't block the letter cron below.
+    // Auth-table retention (issue GL#31): login_attempts and login_code_checks past
+    // rateLimit.attemptRetentionHours, sessions and magic-link tokens past their own expiry.
+    // Bounded per run and per-table failure-isolated inside purgeExpiredAuthRows, so it can't
+    // block the letter cron below.
     const purgedAuth = await purgeExpiredAuthRows({
       store: new D1AuthRetentionStore(env.DB),
       attemptRetentionHours: config.rateLimit.attemptRetentionHours,
@@ -227,7 +228,8 @@ export default {
     if (Object.values(purgedAuth).some((n) => n !== null && n > 0)) {
       console.log(
         `member-portal scheduled: purged ${purgedAuth.loginAttempts ?? 'n/a'} login_attempts, ` +
-          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows`
+          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens, ` +
+          `${purgedAuth.loginCodeChecks ?? 'n/a'} login_code_checks rows`
       );
     }
 

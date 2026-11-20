@@ -12,10 +12,12 @@ export interface PurgeExpiredAuthResult {
   loginAttempts: number | null;
   sessions: number | null;
   magicLinkTokens: number | null;
+  loginCodeChecks: number | null;
 }
 
 // Daily retention purge for the auth tables (issue GL#31): login_attempts kept a row per submitted
-// email forever, and expired sessions/magic-link tokens were never deleted. Each table is purged
+// email forever, and expired sessions/magic-link tokens were never deleted. login_code_checks
+// shares login_attempts' retention. Each table is purged
 // independently — scheduled() runs this ahead of the letter cron, so a D1 error on one table must
 // not skip the rest.
 export async function purgeExpiredAuthRows(deps: PurgeExpiredAuthDeps): Promise<PurgeExpiredAuthResult> {
@@ -27,6 +29,7 @@ export async function purgeExpiredAuthRows(deps: PurgeExpiredAuthDeps): Promise<
     loginAttempts: await attempt('login_attempts', () => deps.store.purgeLoginAttemptsBefore(attemptCutoffISO)),
     sessions: await attempt('sessions', () => deps.store.purgeSessionsExpiredBefore(nowISO)),
     magicLinkTokens: await attempt('magic_link_tokens', () => deps.store.purgeMagicLinkTokensExpiredBefore(nowISO)),
+    loginCodeChecks: await attempt('login_code_checks', () => deps.store.purgeLoginCodeChecksBefore(attemptCutoffISO)),
   };
 }
 

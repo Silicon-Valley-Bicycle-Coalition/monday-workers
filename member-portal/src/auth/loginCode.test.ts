@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken } from '../crypto/token';
 import {
+  LOGIN_CODE_DAILY_MAX,
   LOGIN_CODE_MAX_ATTEMPTS,
   generateLoginCode,
   hashLoginCode,
@@ -54,5 +55,11 @@ describe('hashLoginCode', () => {
 describe('LOGIN_CODE_MAX_ATTEMPTS', () => {
   it('is 5', () => {
     expect(LOGIN_CODE_MAX_ATTEMPTS).toBe(5);
+  });
+});
+
+describe('LOGIN_CODE_DAILY_MAX', () => {
+  it('is 10', () => {
+    expect(LOGIN_CODE_DAILY_MAX).toBe(10);
   });
 });

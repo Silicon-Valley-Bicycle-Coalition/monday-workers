@@ -7,6 +7,7 @@ function fakeStore(overrides: Partial<AuthRetentionStore> = {}): AuthRetentionSt
     purgeLoginAttemptsBefore: vi.fn().mockResolvedValue(3),
     purgeSessionsExpiredBefore: vi.fn().mockResolvedValue(2),
     purgeMagicLinkTokensExpiredBefore: vi.fn().mockResolvedValue(1),
+    purgeLoginCodeChecksBefore: vi.fn().mockResolvedValue(4),
     ...overrides,
   };
 }
@@ -14,7 +15,7 @@ function fakeStore(overrides: Partial<AuthRetentionStore> = {}): AuthRetentionSt
 const now = () => new Date('2026-08-24T12:00:00.000Z');
 
 describe('purgeExpiredAuthRows', () => {
-  it('purges login attempts past retention and sessions/tokens past expiry', async () => {
+  it('purges login attempts and code checks past retention and sessions/tokens past expiry', async () => {
     const store = fakeStore();
 
     const result = await purgeExpiredAuthRows({ store, attemptRetentionHours: 24, now });
@@ -22,7 +23,8 @@ describe('purgeExpiredAuthRows', () => {
     expect(store.purgeLoginAttemptsBefore).toHaveBeenCalledWith('2026-08-23T12:00:00.000Z');
     expect(store.purgeSessionsExpiredBefore).toHaveBeenCalledWith('2026-08-24T12:00:00.000Z');
     expect(store.purgeMagicLinkTokensExpiredBefore).toHaveBeenCalledWith('2026-08-24T12:00:00.000Z');
-    expect(result).toEqual({ loginAttempts: 3, sessions: 2, magicLinkTokens: 1 });
+    expect(store.purgeLoginCodeChecksBefore).toHaveBeenCalledWith('2026-08-23T12:00:00.000Z');
+    expect(result).toEqual({ loginAttempts: 3, sessions: 2, magicLinkTokens: 1, loginCodeChecks: 4 });
   });
 
   // Runs inside scheduled() ahead of the letter cron: one table's D1 error must not skip the
@@ -33,7 +35,7 @@ describe('purgeExpiredAuthRows', () => {
 
     const result = await purgeExpiredAuthRows({ store, attemptRetentionHours: 24, now });
 
-    expect(result).toEqual({ loginAttempts: 3, sessions: null, magicLinkTokens: 1 });
+    expect(result).toEqual({ loginAttempts: 3, sessions: null, magicLinkTokens: 1, loginCodeChecks: 4 });
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('sessions'));
     errorSpy.mockRestore();
   });

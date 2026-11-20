@@ -1,4 +1,4 @@
-// Retention deletes for the three auth tables (issue GL#31) — used only by the daily scheduled()
+// Retention deletes for the auth tables (issue GL#31) — used only by the daily scheduled()
 // purge, so it's its own store rather than widening the request-path stores' interfaces.
 export interface AuthRetentionStore {
   // login_attempts holds a hashed address per login email allowed (valid donor or not) — only
@@ -8,6 +8,9 @@ export interface AuthRetentionStore {
   // Expired tokens only, used or not. A used-but-unexpired token is already inert (used_at set),
   // and deleting it early could race consumeToken's UPDATE-then-SELECT.
   purgeMagicLinkTokensExpiredBefore(nowISO: string): Promise<number>;
+  // login_code_checks holds a hashed address per login-code check — only needed inside the
+  // per-address daily code limit (24 hours).
+  purgeLoginCodeChecksBefore(cutoffISO: string): Promise<number>;
 }
 
 export interface BatchOptions {
@@ -38,9 +41,13 @@ export class D1AuthRetentionStore implements AuthRetentionStore {
     return this.deleteInBatches('magic_link_tokens', 'expires_at', nowISO);
   }
 
+  purgeLoginCodeChecksBefore(cutoffISO: string): Promise<number> {
+    return this.deleteInBatches('login_code_checks', 'checked_at', cutoffISO);
+  }
+
   // DELETE ... LIMIT needs SQLITE_ENABLE_UPDATE_DELETE_LIMIT, which D1 doesn't promise — so each
   // batch deletes by rowid from a LIMITed subquery instead. Table/column names are fixed literals
-  // from the methods above, never input. Each column is indexed (migrations/0005).
+  // from the methods above, never input. Each column is indexed (migrations/0005, 0007).
   private async deleteInBatches(table: string, column: string, cutoffISO: string): Promise<number> {
     let total = 0;
     for (let i = 0; i < this.batch.maxBatches; i++) {

@@ -1,6 +1,9 @@
 import { sha256Hex } from '../crypto/hash';
 
+// Checks per request, across all of its rows.
 export const LOGIN_CODE_MAX_ATTEMPTS = 5;
+// Checks per address per rolling 24 hours, across every browser.
+export const LOGIN_CODE_DAILY_MAX = 10;
 
 // Largest multiple of 10^6 below 2^32; draws at or above it are rejected so
 // `% 1_000_000` stays uniform.
