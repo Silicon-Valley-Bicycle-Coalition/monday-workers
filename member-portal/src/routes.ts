@@ -28,7 +28,7 @@ import { loadHomeData, type HomeData, type TabKey } from './home/loadHomeData';
 import { TAB_TITLES, portalView } from './home/homeView';
 import { benefitsTabView, cardCodeSection } from './doors/card';
 import { givingTabData, givingTabView } from './doors/giving';
-import { eventsTabView, loadEventsTab, volunteeringTabView } from './doors/activity';
+import { eventsTabView, volunteeringTabView } from './doors/activity';
 import { infoDoorView, loadInfoDoor } from './doors/info';
 import { signInEmailHash } from './doors/emailLabels';
 import { findTestPersonasByEmail } from './testAccounts/personas';
@@ -666,13 +666,11 @@ export function createApp(deps: AppDeps) {
   );
 
   app.get('/:locale/portal/events', (c) =>
-    portalTab(c, 'events', (session, locale) => {
-      const eventsLeg = loadEventsTab(session.donorItemIds, deps);
-      return async (home) => {
-        const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
-        const household = people.length + home.unavailableCount > 1;
-        return { panel: eventsTabView(people, household, await eventsLeg, deps.config.getInvolved.links, locale) };
-      };
+    portalTab(c, 'events', (_session, locale) => async (home) => {
+      const people = home.portal.donors.map((d) => ({ id: d.id, name: d.name }));
+      const household = people.length + home.unavailableCount > 1;
+      // The header already read the registrations (for Events attended).
+      return { panel: eventsTabView(people, household, home.events, deps.config.getInvolved.links, locale) };
     })
   );
 

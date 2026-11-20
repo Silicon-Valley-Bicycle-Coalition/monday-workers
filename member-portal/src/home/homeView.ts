@@ -204,11 +204,12 @@ function personBlock(entry: HomeData['people'][number], data: HomeData, locale: 
 }
 
 // The member's totals beside their card. A total that isn't available (history gate closed,
-// volunteer history off or failed, no Member Since) is left out rather than shown as zero.
+// volunteer history or events off or failed, no Member Since) is left out rather than shown as zero.
 function statsList(stats: PersonStats, since: string, locale: Locale): string {
   const rows: [TranslationKey, string][] = [];
   if (stats.totalDonated !== null) rows.push(['stats.totalGiven', formatUsdText(stats.totalDonated)]);
   if (stats.volunteerHours !== null) rows.push(['stats.hoursVolunteered', new Intl.NumberFormat(locale).format(stats.volunteerHours)]);
+  if (stats.eventsAttended !== null) rows.push(['stats.eventsAttended', new Intl.NumberFormat(locale).format(stats.eventsAttended)]);
   const sinceYear = /^\d{4}-\d{2}-\d{2}$/.test(since.trim()) ? since.trim().slice(0, 4) : null;
   if (sinceYear !== null) rows.push(['stats.memberSince', sinceYear]);
   if (rows.length === 0) return '';

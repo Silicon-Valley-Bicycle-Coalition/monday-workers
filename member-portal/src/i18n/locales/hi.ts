@@ -202,6 +202,7 @@ export const hi: Record<TranslationKey, string> = {
   'tabs.profile': 'प्रोफ़ाइल',
   'stats.totalGiven': 'कुल दान',
   'stats.hoursVolunteered': 'स्वयंसेवा के घंटे',
+  'stats.eventsAttended': 'शामिल हुए इवेंट',
   'stats.memberSince': 'सदस्य कब से',
   'card.newCodeIntro': 'अगर किसी और के पास आपके कार्ड के कोड की कॉपी है, तो नया कोड लें और पुराना कोड काम करना बंद कर देगा।',
   'profile.requestChange': 'बदलाव का अनुरोध करें',

@@ -209,6 +209,7 @@ export const en = {
   'tabs.profile': 'Profile',
   'stats.totalGiven': 'Total given',
   'stats.hoursVolunteered': 'Hours volunteered',
+  'stats.eventsAttended': 'Events attended',
   'stats.memberSince': 'Member since',
   'card.newCodeIntro': "If someone else has a copy of your card's code, get a new one and the old code stops working.",
   'profile.requestChange': 'Request a change',

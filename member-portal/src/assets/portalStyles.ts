@@ -311,6 +311,8 @@ export const PORTAL_CSS = `
     max-width: 340px;
     margin: 10px 0 0;
   }
+  /* Four totals don't fit one row beside a 340px card: an even 2 x 2 instead of 3 + 1. */
+  .member-stats:has(> :nth-child(4)) { grid-template-columns: repeat(2, 1fr); }
   .member-stat { padding: 8px 10px; border: 1px solid var(--table-border); border-radius: 10px; background: var(--surface); }
   .member-stat dt { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .member-stat dd { margin: 2px 0 0; font-family: var(--font-heading); font-size: 20px; font-weight: 700; }

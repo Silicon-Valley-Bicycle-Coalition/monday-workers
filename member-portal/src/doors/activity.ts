@@ -23,8 +23,9 @@ export interface TabPerson {
 
 type EventsDeps = Pick<AppDeps, 'monday' | 'config' | 'now'>;
 
-// The Events tab's one read of its own. null when the feature is off or the read failed: no
-// registrations section at all, just Get involved.
+// The registrations read, made by the header loader (loadHomeData) for Events attended and reused
+// by the Events tab. null when the feature is off or the read failed: no registrations section at
+// all, just Get involved.
 export async function loadEventsTab(donorItemIds: string[], deps: EventsDeps): Promise<Record<string, EventRegistrationListing> | null> {
   if (!eventsEnabled(deps.config)) return null;
   try {

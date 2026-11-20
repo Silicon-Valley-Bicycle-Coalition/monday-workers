@@ -1,12 +1,15 @@
 // The portal header's loader, shared by every tab: membership fields per person, each person's
-// totals for the member card (total given, hours volunteered), one card token per member, the
-// discount list, and from Jan 1 to home.taxLetterUntil whether last year's tax letter exists.
-// Tabs reuse what it read (`portal`): Benefits shows its discount list, Your giving its donations,
-// Volunteering its shifts, so a tab never reads the same Monday data twice.
+// totals for the member card (total given, hours volunteered, events attended), one card token per
+// member, the discount list, event registrations, and from Jan 1 to home.taxLetterUntil whether
+// last year's tax letter exists. Tabs reuse what it read (`portal`, `events`): Benefits shows its
+// discount list, Your giving its donations, Events its registrations, Volunteering its shifts, so
+// a tab never reads the same Monday data twice.
 import type { AppDeps } from '../routes';
 import type { PortalView } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { cardFor } from '../doors/card';
+import { loadEventsTab } from '../doors/activity';
+import type { EventRegistrationListing } from '../events/loadEventRegistrations';
 import { loadLetterData } from '../letters/loadLetterData';
 import { loadPortalData } from '../portal/loadPortalData';
 import { statementExists } from '../orgs/loadOrgData';
@@ -38,6 +41,8 @@ export interface PersonStats {
   totalDonated: string | null;
   // null while volunteer history is off or its read failed.
   volunteerHours: number | null;
+  // Past registrations marked attended; null while events are off or their read failed.
+  eventsAttended: number | null;
 }
 
 export interface HomeData {
@@ -54,6 +59,8 @@ export interface HomeData {
   orgs: { orgItemId: string; name: string | null; statementReadyYear: number | null }[];
   // What the header read, for the tabs to reuse.
   portal: PortalView;
+  // Event registrations by donor id; null while events are off or the read failed.
+  events: Record<string, EventRegistrationListing> | null;
 }
 
 type HomeDeps = Pick<AppDeps, 'monday' | 'config' | 'now' | 'cardTokenStore'>;
@@ -107,6 +114,8 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
   const letterWindow = today.slice(5) <= cfg.taxLetterUntil && lettersEnabled(deps.config);
 
   const orgsLeg = loadOrgs(orgGrants, deps);
+  // Never throws: a failed read is null, like the feature being off.
+  const eventsLeg = donorItemIds.length === 0 ? Promise.resolve(null) : loadEventsTab(donorItemIds, deps);
 
   // A failed letter costs that person the tax-letter state, nothing else.
   const lettersLeg: Promise<(LetterSummary | null)[]> = Promise.all(
@@ -135,6 +144,7 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
           donationHistoryEnabled(deps.config, now)
         );
   const letters = await lettersLeg;
+  const events = await eventsLeg;
   const letterFor = new Map(donorItemIds.map((id, i) => [id, letters[i] ?? null]));
 
   const withCards = cardEnabled(deps.config);
@@ -158,6 +168,7 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
       const stats: PersonStats = {
         totalDonated: portal.donationHistoryEnabled && parseAmount(donor.totalDonated) !== null ? donor.totalDonated : null,
         volunteerHours: portal.volunteerHistory?.[donor.id]?.totalHours ?? null,
+        eventsAttended: events?.[donor.id]?.past.filter((r) => r.attended).length ?? null,
       };
       return { person, state, card, ended: membershipEnded(person, today), stats };
     })
@@ -173,6 +184,7 @@ export async function loadHomeData(donorItemIds: string[], deps: HomeDeps, local
     tabs: people.length === 0 ? [] : tabLinks(deps, locale),
     orgs,
     portal,
+    events,
   };
 }
 

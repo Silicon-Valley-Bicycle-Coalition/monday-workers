@@ -27,7 +27,7 @@ const TABS: TabLink[] = [
   { key: 'profile', href: '/en/portal/info' },
 ];
 
-const NO_STATS: PersonStats = { totalDonated: null, volunteerHours: null };
+const NO_STATS: PersonStats = { totalDonated: null, volunteerHours: null, eventsAttended: null };
 
 // The Benefits tab with an empty panel: these tests are about the frame.
 const homeView = (d: HomeData, locale: Parameters<typeof portalView>[3], renewUrl: string) => portalView(d, 'benefits', '<p>panel</p>', locale, renewUrl);
@@ -48,7 +48,7 @@ function data(
     ended: membershipEnded(e.person, TODAY),
     stats: e.stats ?? NO_STATS,
   }));
-  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, tabs: TABS, orgs: [], portal: EMPTY_PORTAL, ...overrides };
+  return { people, discountCount: 14, page: pageState(people), unavailableCount: 0, tabs: TABS, orgs: [], portal: EMPTY_PORTAL, events: null, ...overrides };
 }
 
 const goldCount = (html: string) => (html.match(/class="cta-button/g) ?? []).length;
@@ -328,8 +328,8 @@ describe('portalView — member card and tabs', () => {
   it("shows each person's totals under their card, leaving out any that aren't available", () => {
     const html = homeView(
       data([
-        { person: person('j', 'Jordan', { since: '2019-04-02' }), state: { kind: 'default' }, stats: { totalDonated: '1250', volunteerHours: 12.5 } },
-        { person: person('s', 'Sam'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 0 } },
+        { person: person('j', 'Jordan', { since: '2019-04-02' }), state: { kind: 'default' }, stats: { totalDonated: '1250', volunteerHours: 12.5, eventsAttended: 3 } },
+        { person: person('s', 'Sam'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 0, eventsAttended: null } },
       ]),
       'en',
       RENEW
@@ -338,10 +338,12 @@ describe('portalView — member card and tabs', () => {
     const jordan = html.slice(0, sam);
     expect(jordan).toContain('<dt>Total given</dt><dd>$1,250.00</dd>');
     expect(jordan).toContain('<dt>Hours volunteered</dt><dd>12.5</dd>');
+    expect(jordan).toContain('<dt>Events attended</dt><dd>3</dd>');
     expect(jordan).toContain('<dt>Member since</dt><dd>2019</dd>');
     const samPart = html.slice(sam);
     expect(samPart).toContain('<dt>Hours volunteered</dt><dd>0</dd>');
     expect(samPart).not.toContain('Total given');
+    expect(samPart).not.toContain('Events attended');
     expect(samPart).not.toContain('Member since');
   });
 
@@ -350,7 +352,7 @@ describe('portalView — member card and tabs', () => {
   });
 
   it('formats hours for the locale', () => {
-    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 1234.5 } }]), 'es', RENEW);
+    const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' }, stats: { totalDonated: null, volunteerHours: 1234.5, eventsAttended: null } }]), 'es', RENEW);
     expect(html).toContain(`<dd>${new Intl.NumberFormat('es').format(1234.5)}</dd>`);
   });
 });
@@ -392,7 +394,7 @@ describe('homeView — organizations', () => {
 
   it('a session with no people shows only the section: no greeting, cards or tabs', () => {
     const html = homeView(
-      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }], portal: EMPTY_PORTAL },
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [{ orgItemId: 'o1', name: 'Acme', statementReadyYear: null }], portal: EMPTY_PORTAL, events: null },
       'en',
       RENEW
     );
@@ -406,7 +408,7 @@ describe('homeView — organizations', () => {
 
   it('a session with no people and no organizations shows a short note, not an empty layout', () => {
     const html = homeView(
-      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [], portal: EMPTY_PORTAL },
+      { people: [], discountCount: null, page: { kind: 'default', personIds: [] }, unavailableCount: 0, tabs: [], orgs: [], portal: EMPTY_PORTAL, events: null },
       'en',
       RENEW
     );

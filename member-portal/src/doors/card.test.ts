@@ -32,7 +32,7 @@ function home(people: { id: string; firstName: string; card?: PortalCard | null 
       state: { kind: 'default' },
       card: p.card === undefined ? card(p.id, `${p.firstName} Rivera`) : p.card,
       ended: false,
-      stats: { totalDonated: null, volunteerHours: null },
+      stats: { totalDonated: null, volunteerHours: null, eventsAttended: null },
     })),
     discountCount: null,
     page: { kind: 'default', personIds: [] },
@@ -40,6 +40,7 @@ function home(people: { id: string; firstName: string; card?: PortalCard | null 
     tabs: [],
     orgs: overrides.orgs ?? [],
     portal: { donors: [], discounts: overrides.discounts === undefined ? discounts : overrides.discounts, volunteerHistory: null, donationHistoryEnabled: false },
+    events: null,
   };
 }
 

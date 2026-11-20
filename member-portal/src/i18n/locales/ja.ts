@@ -202,6 +202,7 @@ export const ja: Record<TranslationKey, string> = {
   'tabs.profile': 'プロフィール',
   'stats.totalGiven': '寄付総額',
   'stats.hoursVolunteered': 'ボランティア時間',
+  'stats.eventsAttended': '参加したイベント',
   'stats.memberSince': '入会年',
   'card.newCodeIntro': 'カードのコードを他の人が持っている場合は、新しいコードを発行すると古いコードは使えなくなります。',
   'profile.requestChange': '変更をリクエスト',

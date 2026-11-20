@@ -202,6 +202,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'tabs.profile': '个人资料',
   'stats.totalGiven': '累计捐赠',
   'stats.hoursVolunteered': '志愿服务时长',
+  'stats.eventsAttended': '参加的活动',
   'stats.memberSince': '入会年份',
   'card.newCodeIntro': '如果他人持有您会员卡代码的副本，请获取新代码，旧代码将失效。',
   'profile.requestChange': '申请更改',

@@ -202,6 +202,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'tabs.profile': '個人資料',
   'stats.totalGiven': '累計捐款',
   'stats.hoursVolunteered': '志工服務時數',
+  'stats.eventsAttended': '參加的活動',
   'stats.memberSince': '入會年份',
   'card.newCodeIntro': '如果他人持有您會員卡代碼的副本，請取得新代碼，舊代碼將失效。',
   'profile.requestChange': '申請變更',

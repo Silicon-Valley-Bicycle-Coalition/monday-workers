@@ -202,6 +202,7 @@ export const es: Record<TranslationKey, string> = {
   'tabs.profile': 'Perfil',
   'stats.totalGiven': 'Total donado',
   'stats.hoursVolunteered': 'Horas de voluntariado',
+  'stats.eventsAttended': 'Eventos asistidos',
   'stats.memberSince': 'Miembro desde',
   'card.newCodeIntro': 'Si alguien más tiene una copia del código de tu tarjeta, genera uno nuevo y el anterior dejará de funcionar.',
   'profile.requestChange': 'Solicitar un cambio',

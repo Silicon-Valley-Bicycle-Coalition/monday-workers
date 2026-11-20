@@ -110,8 +110,9 @@ Nothing is written back to Monday at any point.
 ## Portal layout: member card and tabs
 
 Every signed-in page shares one frame (`src/home/homeView.ts`): each person's member card with
-their totals (Total given, Hours volunteered, Member since), the status line with at most one gold
-button, then a tab bar. Tabs are links, one page each, with `aria-current` on the active one; on
+their totals (Total given, Hours volunteered, Events attended, Member since), a status line with
+at most one gold button when there's something to act on (a tax letter, a renewal, a new member's
+welcome; none in the default state), then a tab bar. Tabs are links, one page each, with `aria-current` on the active one; on
 a phone they wrap as pills. A small script (`src/assets/portalTabs.ts`, served as a hashed
 same-origin asset) fetches the clicked tab's page and swaps in its panel and tab bar, so the page
 never scrolls on a tab click; Back and Forward work the same way. Without the script, or on any
@@ -124,9 +125,10 @@ does too). Design history: the card-first home with "doors"
 
 The frame's loader (`src/home/loadHomeData.ts`) runs on every tab and reads membership, donations
 (only once `historyVisibleFromISO` has passed, so Total given stays hidden until then), completed
-volunteer shifts (when volunteer history is configured), the discount list, card tokens and, from
-Jan 1 to `home.taxLetterUntil`, last year's letter. Benefits, Your giving and Volunteering render
-from that read; Events and Profile add their own. A total that isn't available is left off the
+volunteer shifts (when volunteer history is configured), event registrations (when events are
+configured; Events attended counts past ones marked attended), the discount list, card tokens and,
+from Jan 1 to `home.taxLetterUntil`, last year's letter. Benefits, Your giving, Events and
+Volunteering render from that read; Your giving (letters) and Profile add their own. A total that isn't available is left off the
 card rather than shown as zero.
 
 **States** (`src/home/homeState.ts`, a pure resolver; highest first). Each person gets one; the
@@ -147,7 +149,7 @@ household each tab groups by person.
 | Benefits | `/:locale/portal` | discount list, organizations the session manages | always | `/portal/card`, `/portal/card/:id` |
 | Your giving | `/:locale/portal/giving` | history and total (behind `historyVisibleFromISO`; until then a note gives that date), impact, tax letters (`#tax-letters`, while letters are enabled), Funraise links, pledges, matching gifts | always | `/portal/letters` |
 | Events | `/:locale/portal/events` | registrations (upcoming, past), Get involved meeting and event links | events configured, or a non-volunteer Get involved link | `/portal/activity` |
-| Volunteering | `/:locale/portal/volunteering` | completed shifts and total, volunteer Get involved links | volunteer history configured, or a volunteer link | |
+| Volunteering | `/:locale/portal/volunteering` | completed shifts, volunteer Get involved links | volunteer history configured, or a volunteer link | |
 | Profile | `/:locale/portal/info` | details on file with a "Request a change" button (the change-request form, in a dialog), communication preferences, email addresses, "Get a new code" per card (a regenerate lands back here) | always | `/portal/change-request` (query kept, so `?field=employer` still preselects Employer) |
 
 A hidden tab's path redirects to Benefits. A session with no people (an organization rep only)

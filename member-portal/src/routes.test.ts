@@ -2911,7 +2911,7 @@ describe('GET /:locale/portal — events tab', () => {
   });
 
   // Event registrations show only on the Events tab.
-  it('never queries the events board from Benefits, and links the Events tab once configured', async () => {
+  it('reads registrations once in the header (for Events attended), and links the Events tab once configured', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined), sendOrgStatementReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
@@ -2922,7 +2922,7 @@ describe('GET /:locale/portal — events tab', () => {
 
     expect(res.status).toBe(200);
     expect(body).toContain('href="/en/portal/events#tabs"');
-    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+    expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledTimes(1);
   });
 
   it('logs and omits just the registrations (not the whole page) when the Monday lookup throws', async () => {
@@ -4104,7 +4104,8 @@ describe('doors', () => {
       // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
       expect(html).not.toContain('Ride Marshal');
       expect(html).not.toContain('Fall Gala');
-      expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+      // The header reads registrations once, for Events attended; the tab doesn't show them.
+      expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledTimes(1);
     });
 
     it('Events still renders Get involved when the events read fails', async () => {

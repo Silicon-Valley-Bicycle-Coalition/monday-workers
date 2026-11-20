@@ -202,6 +202,7 @@ export const fil: Record<TranslationKey, string> = {
   'tabs.profile': 'Profile',
   'stats.totalGiven': 'Kabuuang naibigay',
   'stats.hoursVolunteered': 'Oras ng pagboboluntaryo',
+  'stats.eventsAttended': 'Mga event na dinaluhan',
   'stats.memberSince': 'Miyembro mula',
   'card.newCodeIntro': 'Kung may ibang may kopya ng code ng iyong card, kumuha ng bago at hindi na gagana ang luma.',
   'profile.requestChange': 'Humiling ng pagbabago',

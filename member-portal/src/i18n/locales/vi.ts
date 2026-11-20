@@ -202,6 +202,7 @@ export const vi: Record<TranslationKey, string> = {
   'tabs.profile': 'Hồ sơ',
   'stats.totalGiven': 'Tổng số đã đóng góp',
   'stats.hoursVolunteered': 'Số giờ tình nguyện',
+  'stats.eventsAttended': 'Sự kiện đã tham dự',
   'stats.memberSince': 'Thành viên từ',
   'card.newCodeIntro': 'Nếu người khác có bản sao mã thẻ của bạn, hãy tạo mã mới và mã cũ sẽ ngừng hoạt động.',
   'profile.requestChange': 'Yêu cầu thay đổi',
