@@ -87,7 +87,7 @@ From `member-portal/`, in order:
 # SVBC: the D1 already exists and its id is in wrangler.jsonc — skip the create. Forks: run it
 # and paste the returned id into wrangler.jsonc database_id.
 wrangler d1 create svbc-member-portal
-wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0007 (0006 hashes login_attempts; without it logins send no email; 0007 adds the login-code columns and table: apply it BEFORE deploying code that reads them)
+wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0007 (0006 hashes login_attempts; without it logins send no email; 0007 adds the login-code columns and table: apply it before turning auth.loginCodeEnabled on)
 wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
 wrangler queues create member-portal-letter-emails
@@ -117,7 +117,9 @@ it the Worker would deploy unreachable):
 Commit the `database_id` edit. On any later deploy that adds a migration, run
 `wrangler d1 migrations apply svbc-member-portal --remote` first, then deploy. The login code
 (migration `0007`) ships with `auth.loginCodeEnabled: false`; flip it only after the AutoFill check
-in the README's "Login code" section.
+in the README's "Login code" section, and apply `0007` to production before flipping it. A deploy
+of this code before `0007` is safe while the switch is off: login and letter-ready links insert
+only the original columns, so they keep working on the unmigrated table.
 
 ```sh
 npm test && npm run typecheck
@@ -170,7 +172,7 @@ namespace, cron — and can only email `sandbox@bikesiliconvalley.org`. Provisio
 
 ```sh
 wrangler d1 create svbc-member-portal-sandbox           # paste the id into env.sandbox.d1_databases[0].database_id
-wrangler d1 migrations apply svbc-member-portal-sandbox --remote --env sandbox   # also before any deploy that adds a migration (0007: login code)
+wrangler d1 migrations apply svbc-member-portal-sandbox --remote --env sandbox   # also before any deploy that adds a migration; 0007 (login code) BEFORE merging its PR, since a merge to main auto-deploys the sandbox, where the switch is on
 wrangler queues create member-portal-change-requests-sandbox
 wrangler queues create member-portal-change-requests-sandbox-dlq
 wrangler queues create member-portal-letter-emails-sandbox

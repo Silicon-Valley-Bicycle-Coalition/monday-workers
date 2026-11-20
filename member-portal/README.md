@@ -173,8 +173,12 @@ both.
   `rateLimit.attemptRetentionHours`), plus the per-IP limiter on `POST /auth/code`. The links are
   never limited, so a donor whose codes are spent still signs in by link, and a stranger can't
   lock a donor out.
-* **Rollout.** Migration `0007_login_codes.sql` adds columns and a table, so apply it with
-  `wrangler d1 migrations apply` to **both** databases **before** deploying this code ([DEPLOY.md](DEPLOY.md)).
+* **Rollout.** Migration `0007_login_codes.sql` adds columns and a table; apply it with
+  `wrangler d1 migrations apply` ([DEPLOY.md](DEPLOY.md)). Sandbox: apply it **before merging the
+  PR**, since a merge to `main` auto-deploys the sandbox, where the switch is on, and every code
+  row needs the new columns. Production: apply it **before turning `loginCodeEnabled` on**. A
+  production deploy before that is safe with the switch off, because login and letter-ready links
+  then insert only the original columns.
   Ship it with the switch off in production, then run the AutoFill check there: set
   `loginCodeEnabled: true` and deploy, request a login for your own donor record in Safari on iOS
   and on macOS with that mailbox in Apple Mail, and confirm AutoFill offers the code on the
