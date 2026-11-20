@@ -6,6 +6,7 @@ import type { AppDeps } from '../routes';
 import type { SessionInfo } from '../db/sessions';
 import type { DonorContactInfo, DonorEmails, PrefField } from '../types';
 import { changeRequestsEnabled, configuredPrefFields } from '../config';
+import { pendingPreference, preferenceWindowStart } from '../changeRequests/submitPreferences';
 import { changeRequestFormView, type EmployerFieldMode } from '../changeRequests/changeRequestViews';
 import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
@@ -33,9 +34,33 @@ export interface InfoDoorData {
   unavailableCount: number;
 }
 
-type InfoDeps = Pick<AppDeps, 'monday' | 'config' | 'verifiedEmailStore'>;
+type InfoDeps = Pick<AppDeps, 'monday' | 'config' | 'verifiedEmailStore' | 'changeStore' | 'now'>;
 
 const NO_EMAILS: DonorEmails = { personal: '', household: '', personalConsent: '', householdConsent: '' };
+
+// Each preference shows the member's newest request still in the dedupe window, else Monday: the
+// writer applies a choice within moments, but Mailchimp's side reaches Personal Email Consent only
+// on mailchimp-sync's hourly run, and a reload in between mustn't show the old choice. A failed
+// read keeps Monday's value.
+async function withPendingPreferences(donors: DonorContactInfo[], deps: InfoDeps): Promise<DonorContactInfo[]> {
+  const sinceISO = preferenceWindowStart(deps.now(), deps.config.changeRequests.dedupeWindowHours);
+  const fields = configuredPrefFields(deps.config);
+  try {
+    return await Promise.all(
+      donors.map(async (donor) => {
+        const pending = await Promise.all(fields.map((field) => pendingPreference(deps.changeStore, donor.id, field, sinceISO)));
+        const next = { ...donor };
+        fields.forEach((field, i) => {
+          if (pending[i] !== null && pending[i] !== undefined) next[field] = pending[i];
+        });
+        return next;
+      })
+    );
+  } catch (err) {
+    console.error(`member-portal info door pending-preference read failed: ${errorText(err)}`);
+    return donors;
+  }
+}
 
 // Each read degrades on its own: a failed contact read drops that person (their name comes from
 // it); a failed address read drops only their addresses; a failed verified-row read only loses
@@ -70,8 +95,9 @@ export async function loadInfoDoor(session: SessionInfo, deps: InfoDeps, employe
     }
   });
 
-  const donors = contacts.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
-  if (donors.length === 0) return null;
+  const fetched = contacts.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  if (fetched.length === 0) return null;
+  const donors = changeRequestsEnabled(deps.config) ? await withPendingPreferences(fetched, deps) : fetched;
 
   const shown =
     emailReads === null

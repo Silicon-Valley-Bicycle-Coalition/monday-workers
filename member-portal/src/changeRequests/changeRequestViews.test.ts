@@ -102,6 +102,11 @@ describe('changeRequestFormView — communication preferences section', () => {
     expect(html).toMatch(/name="smsOptOut" value="no"[^>]* checked/);
   });
 
+  it('notes the confirm email only when the email preference is shown', () => {
+    expect(changeRequestFormView([optedOutDonor], 'es', ['emailOptOut'])).toContain(`<p class="prefs-note">${escapeHtml(t('es', 'changeRequest.prefEmailConfirmNote'))}</p>`);
+    expect(changeRequestFormView([optedOutDonor], 'en', ['doNotMail'])).not.toContain('prefs-note');
+  });
+
   it('gives each preference row a live status cell and the table its Saving/Saved copy', () => {
     const html = changeRequestFormView([optedOutDonor], 'es', ['emailOptOut']);
     expect(html).toContain(`data-saving="${t('es', 'changeRequest.prefsSaving')}" data-saved="${t('es', 'changeRequest.prefsSaved')}"`);

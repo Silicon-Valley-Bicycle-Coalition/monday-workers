@@ -138,6 +138,7 @@ export const hi: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': 'प्राथमिकताएँ अपडेट करें',
   'changeRequest.prefsSaving': 'सहेजा जा रहा है…',
   'changeRequest.prefsSaved': 'सहेजा गया',
+  'changeRequest.prefEmailConfirmNote': 'ईमेल फिर से चालू कर रहे हैं? पुष्टि के लिए हम आपको एक लिंक ईमेल करेंगे।',
   'changeRequest.prefsNoChangesHeading': 'भेजने के लिए कोई बदलाव नहीं',
   'changeRequest.prefsNoChangesBody': 'आपकी प्राथमिकताएँ पहले से हमारे रिकॉर्ड से मेल खाती हैं।',
   'changeRequest.prefsReceivedHeading': 'प्राथमिकताएं मिल गईं',

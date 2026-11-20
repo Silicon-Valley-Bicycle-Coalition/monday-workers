@@ -37,6 +37,7 @@ export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
 // the letter email's `loginUrl` carries a (dry-run, never stored) magic-link token.
 export const MEMBER_PORTAL_PII_KEYS: readonly string[] = [...DEFAULT_PII_KEYS, 'value', 'url', 'token', 'template'];
 
+const MAILCHIMP_SINK = 'Mailchimp';
 const MONDAY_SINK = 'Monday';
 const EMAIL_SINK = 'Email';
 
@@ -68,7 +69,11 @@ export function dryRunChangeDeps(deps: ProcessChangeBatchDeps, ctx: SkipContext)
     store: readOnlyProxy(deps.store, CHANGE_STORE_MUTATORS),
     // The writes return nothing, so there is no placeholder id to mint. Reads (the Organization
     // lookup, the person's affiliations) stay live so a dry run logs the writes it would make.
-    monday: recordingProxy(deps.monday, MONDAY_SINK, { createChangeRequestItem: undefined, createAffiliation: undefined, updateAffiliation: undefined }, ctx),
+    monday: recordingProxy(deps.monday, MONDAY_SINK, { createChangeRequestItem: undefined, createAffiliation: undefined, updateAffiliation: undefined, setDonorCheckbox: undefined }, ctx),
+    // The Mailchimp change goes through mailchimp-sync, but it's this Worker's write: skipped here.
+    ...(deps.emailPreferences === undefined
+      ? {}
+      : { emailPreferences: recordingProxy(deps.emailPreferences, MAILCHIMP_SINK, { setEmailPreference: () => 'dry-run' }, ctx) }),
   };
 }
 

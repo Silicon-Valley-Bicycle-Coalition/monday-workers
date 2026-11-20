@@ -138,6 +138,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': '更新偏好',
   'changeRequest.prefsSaving': '正在保存…',
   'changeRequest.prefsSaved': '已保存',
+  'changeRequest.prefEmailConfirmNote': '要重新接收电子邮件？我们会给您发送一个确认链接。',
   'changeRequest.prefsNoChangesHeading': '没有需要提交的变更',
   'changeRequest.prefsNoChangesBody': '您的偏好与我们记录的内容一致。',
   'changeRequest.prefsReceivedHeading': '已收到偏好设置',

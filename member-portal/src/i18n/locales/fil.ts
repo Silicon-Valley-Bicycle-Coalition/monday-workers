@@ -138,6 +138,7 @@ export const fil: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': 'I-update ang mga kagustuhan',
   'changeRequest.prefsSaving': 'Sine-save…',
   'changeRequest.prefsSaved': 'Na-save',
+  'changeRequest.prefEmailConfirmNote': 'Ibabalik ang email? Magpapadala kami ng link para kumpirmahin ito.',
   'changeRequest.prefsNoChangesHeading': 'Walang pagbabagong ipapasa',
   'changeRequest.prefsNoChangesBody': 'Tugma na ang inyong mga kagustuhan sa aming talaan.',
   'changeRequest.prefsReceivedHeading': 'Natanggap ang mga kagustuhan',

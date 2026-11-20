@@ -67,6 +67,7 @@ function donorPreferencesForm(donor: DonorContactInfo, prefFields: PrefField[], 
         <table class="prefs-table" data-saving="${escapeHtml(t(locale, 'changeRequest.prefsSaving'))}" data-saved="${escapeHtml(t(locale, 'changeRequest.prefsSaved'))}">
           <tbody>${prefFields.map((field) => prefRow(donor.id, field, donor[field] === true, locale)).join('')}</tbody>
         </table>
+        ${prefFields.includes('emailOptOut') ? `<p class="prefs-note">${escapeHtml(t(locale, 'changeRequest.prefEmailConfirmNote'))}</p>` : ''}
         <button type="submit">${escapeHtml(t(locale, 'changeRequest.prefsSubmit'))}</button>
       </form>
     </section>

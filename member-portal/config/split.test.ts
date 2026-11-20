@@ -204,7 +204,13 @@ describe('wrangler.writer.jsonc', () => {
   });
 
   it.each(pairs)('%s: binds the broker’s SyncToken (write scope), the portal PortalToken', (_env, w, p, service) => {
-    expect(w.services).toEqual([{ binding: 'MONDAY_AUTH', service, entrypoint: 'SyncToken' }]);
+    // The writer also reaches its own environment's mailchimp-sync (PreferenceSync): sandbox to
+    // sandbox, so a sandbox preference can never change the production audience.
+    const mailchimp = service === 'svbc-monday-auth' ? 'svbc-mailchimp-sync' : 'svbc-mailchimp-sync-sandbox';
+    expect(w.services).toEqual([
+      { binding: 'MONDAY_AUTH', service, entrypoint: 'SyncToken' },
+      { binding: 'MAILCHIMP_PREFS', service: mailchimp, entrypoint: 'PreferenceSync' },
+    ]);
     expect(p.services).toEqual([{ binding: 'MONDAY_AUTH', service, entrypoint: 'PortalToken' }]);
   });
 

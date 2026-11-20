@@ -95,6 +95,7 @@ function fakeStore(getResult: ChangeRequestRow | null): ChangeRequestStore {
     findRecentByDedupeHash: vi.fn(),
     getRequest: vi.fn().mockResolvedValue(getResult),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    hasNewerRequest: vi.fn().mockResolvedValue(false),
     purgeWrittenBefore: vi.fn().mockResolvedValue(0),
   };
 }
@@ -393,5 +394,86 @@ describe('employer rows', () => {
     const ops = log.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((line) => line.writeSwitch === 'skipped').map((line) => line.operation);
     expect(ops).toEqual(['createAffiliation', 'createChangeRequestItem']);
     log.mockRestore();
+  });
+});
+
+describe('processChangeQueueBatch — communication preferences (applied, not left for staff)', () => {
+  const gate = (mode: WriteMode): BatchSkipContext => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
+  const prefConfig: Config = {
+    ...config,
+    monday: { ...config.monday, columns: { donorSmsOptOut: 'sms_col', donorDoNotMail: 'mail_col', donorEmailConsent: 'consent_col' } as never },
+  };
+  const prefRow = (field: ChangeRequestRow['field'], newValue: string): ChangeRequestRow => ({ ...row, field, oldValue: '', newValue });
+  function prefMonday(personal = 'jane@example.org') {
+    return {
+      findChangeRequestItem: vi.fn().mockResolvedValue(null),
+      createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+      setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
+      getDonorEmails: vi.fn().mockResolvedValue({ personal, household: 'family@example.org', personalConsent: '', householdConsent: '' }),
+    } as unknown as MondayClient & Record<string, ReturnType<typeof vi.fn>>;
+  }
+  const loggedLabel = (monday: MondayClient) => (monday.createChangeRequestItem as ReturnType<typeof vi.fn>).mock.calls[0]![0].fieldLabel;
+
+  it.each([
+    ['smsOptOut', 'Opted out of SMS', 'sms_col', true, 'SMS Opt-Out (applied)'],
+    ['smsOptOut', 'Subscribed to SMS', 'sms_col', false, 'SMS Opt-Out (applied)'],
+    ['doNotMail', 'Do not mail', 'mail_col', true, 'Do Not Mail (applied)'],
+  ] as const)('sets the People checkbox for %s = %s, then logs it as applied', async (field, value, columnId, checked, label) => {
+    const monday = prefMonday();
+    const store = fakeStore(prefRow(field, value));
+    const message = makeMessage(42);
+    await processChangeQueueBatch([message], { store, monday, config: prefConfig });
+    expect(monday.setDonorCheckbox).toHaveBeenCalledWith({ itemId: 'donor-1', columnId, checked });
+    expect(loggedLabel(monday)).toBe(label);
+    expect(store.markWritten).toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it("sends an email preference to mailchimp-sync for the Personal Email only, logging Mailchimp's result", async () => {
+    const monday = prefMonday();
+    const emailPreferences = { setEmailPreference: vi.fn().mockResolvedValue('unsubscribed') };
+    await processChangeQueueBatch([makeMessage(42)], { store: fakeStore(prefRow('emailOptOut', 'Opted out of email')), monday, config: prefConfig, emailPreferences });
+    expect(emailPreferences.setEmailPreference).toHaveBeenCalledWith('jane@example.org', true, '42');
+    expect(loggedLabel(monday)).toBe('Email Opt-Out (Mailchimp: unsubscribed)');
+    expect(monday.setDonorCheckbox).not.toHaveBeenCalled();
+  });
+
+  it('logs an email preference with no Personal Email without calling Mailchimp', async () => {
+    const monday = prefMonday('');
+    const emailPreferences = { setEmailPreference: vi.fn() };
+    await processChangeQueueBatch([makeMessage(42)], { store: fakeStore(prefRow('emailOptOut', 'Subscribed to email')), monday, config: prefConfig, emailPreferences });
+    expect(emailPreferences.setEmailPreference).not.toHaveBeenCalled();
+    expect(loggedLabel(monday)).toBe('Email Opt-Out (no Personal Email)');
+  });
+
+  it('logs a request a newer one supersedes without applying it', async () => {
+    const monday = prefMonday();
+    const store = fakeStore(prefRow('smsOptOut', 'Opted out of SMS'));
+    (store.hasNewerRequest as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    await processChangeQueueBatch([makeMessage(42)], { store, monday, config: prefConfig });
+    expect(monday.setDonorCheckbox).not.toHaveBeenCalled();
+    expect(loggedLabel(monday)).toBe('SMS Opt-Out (superseded)');
+  });
+
+  it('retries (not acks) when mailchimp-sync throws, e.g. its writes are on hold', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = prefMonday();
+    const message = makeMessage(42);
+    const emailPreferences = { setEmailPreference: vi.fn().mockRejectedValue(new Error('mailchimp-sync writes are hold; retry later')) };
+    await processChangeQueueBatch([message], { store: fakeStore(prefRow('emailOptOut', 'Opted out of email')), monday, config: prefConfig, emailPreferences });
+    expect(message.retry).toHaveBeenCalled();
+    expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('writes nothing under the write switch off: no checkbox, no Mailchimp call', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const monday = prefMonday();
+    const emailPreferences = { setEmailPreference: vi.fn() };
+    await consumeChangeQueueBatch([makeMessage(42)], { store: fakeStore(prefRow('emailOptOut', 'Opted out of email')), monday, config: prefConfig, emailPreferences }, gate('off'));
+    await consumeChangeQueueBatch([makeMessage(42)], { store: fakeStore(prefRow('smsOptOut', 'Opted out of SMS')), monday, config: prefConfig }, gate('off'));
+    expect(emailPreferences.setEmailPreference).not.toHaveBeenCalled();
+    expect(monday.setDonorCheckbox).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

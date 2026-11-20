@@ -15,6 +15,7 @@ function fakeMonday(names: { id: string; name: string }[], pledgesById: Record<s
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn(),
     getVolunteerShiftsForDonor: vi.fn(),
     getDonorNames: vi.fn().mockResolvedValue(names),

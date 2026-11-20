@@ -138,6 +138,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': 'Atualizar preferências',
   'changeRequest.prefsSaving': 'Salvando…',
   'changeRequest.prefsSaved': 'Salvo',
+  'changeRequest.prefEmailConfirmNote': 'Vai voltar a receber e-mails? Enviaremos um link para você confirmar.',
   'changeRequest.prefsNoChangesHeading': 'Nenhuma alteração a enviar',
   'changeRequest.prefsNoChangesBody': 'Suas preferências já correspondem ao que temos registrado.',
   'changeRequest.prefsReceivedHeading': 'Preferências recebidas',

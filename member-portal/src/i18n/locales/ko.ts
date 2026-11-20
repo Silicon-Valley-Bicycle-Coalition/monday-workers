@@ -138,6 +138,7 @@ export const ko: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': '설정 업데이트',
   'changeRequest.prefsSaving': '저장 중…',
   'changeRequest.prefsSaved': '저장됨',
+  'changeRequest.prefEmailConfirmNote': '이메일 수신을 다시 켜시나요? 확인 링크를 이메일로 보내 드립니다.',
   'changeRequest.prefsNoChangesHeading': '제출할 변경 사항이 없습니다',
   'changeRequest.prefsNoChangesBody': '설정이 이미 저희 기록과 일치합니다.',
   'changeRequest.prefsReceivedHeading': '설정이 접수되었습니다',

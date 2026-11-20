@@ -1,6 +1,7 @@
 import type { PrefField } from '../types';
 import { submitChangeRequest, PREF_VALUES, type SubmitDeps } from './submitChangeRequest';
 import { sha256Hex } from '../crypto/hash';
+import type { ChangeRequestStore } from '../db/changeRequests';
 
 // Render/diff order for the preference fields — matches PREF_FIELD_COLUMNS in config.ts.
 export const PREF_FIELD_ORDER: PrefField[] = ['emailOptOut', 'smsOptOut', 'doNotMail'];
@@ -16,6 +17,27 @@ export type PreferencesResult =
   | { kind: 'submitted'; submitted: number; duplicates: number }
   | { kind: 'noChanges' }
   | { kind: 'invalid'; message: string };
+
+export function preferenceWindowStart(now: Date, dedupeWindowHours: number): string {
+  return new Date(now.getTime() - dedupeWindowHours * 3600 * 1000).toISOString();
+}
+
+// The member's newest request for a preference inside the window (true = opted out), or null for
+// none. Also what the Profile tab shows (src/doors/info.ts): Monday and Mailchimp catch up after
+// the writer applies it, and the email side only on mailchimp-sync's hourly consent run.
+export async function pendingPreference(
+  store: Pick<ChangeRequestStore, 'findRecentByDedupeHash'>,
+  donorItemId: string,
+  field: PrefField,
+  sinceISO: string
+): Promise<boolean | null> {
+  const find = async (value: string) => store.findRecentByDedupeHash(await sha256Hex(`${donorItemId}|${field}|${value}`), sinceISO);
+  const [on, off] = await Promise.all([find(PREF_VALUES[field].on), find(PREF_VALUES[field].off)]);
+  if (on === null && off === null) return null;
+  if (off === null) return true;
+  if (on === null) return false;
+  return on.id > off.id;
+}
 
 // Diffs the submitted preference states against the donor's effective state and files one change
 // request per actual change, through the same Change Requests path as the free-text fields.
@@ -36,17 +58,8 @@ export async function submitPreferences(
   }
 
   const contact = await deps.monday.getDonorContactInfo(input.donorItemId);
-  const sinceISO = new Date(deps.now().getTime() - deps.dedupeWindowHours * 3600 * 1000).toISOString();
-  // The newest request in the window for this field (true = opted out), or null for none.
-  const latestPending = async (field: PrefField): Promise<boolean | null> => {
-    const find = async (value: string) =>
-      deps.store.findRecentByDedupeHash(await sha256Hex(`${input.donorItemId}|${field}|${value}`), sinceISO);
-    const [on, off] = await Promise.all([find(PREF_VALUES[field].on), find(PREF_VALUES[field].off)]);
-    if (on === null && off === null) return null;
-    if (off === null) return true;
-    if (on === null) return false;
-    return on.id > off.id;
-  };
+  const sinceISO = preferenceWindowStart(deps.now(), deps.dedupeWindowHours);
+  const latestPending = (field: PrefField) => pendingPreference(deps.store, input.donorItemId, field, sinceISO);
   const changes: { field: PrefField; newValue: string; supersedes?: { oldValue: string } }[] = [];
   for (const field of PREF_FIELD_ORDER) {
     const desired = input.prefs[field];

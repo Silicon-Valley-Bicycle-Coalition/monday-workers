@@ -145,6 +145,7 @@ export const en = {
   'changeRequest.prefsSubmit': 'Update preferences',
   'changeRequest.prefsSaving': 'Saving…',
   'changeRequest.prefsSaved': 'Saved',
+  'changeRequest.prefEmailConfirmNote': "Turning email back on? We'll email you a link to confirm.",
   'changeRequest.prefsNoChangesHeading': 'No changes to submit',
   'changeRequest.prefsNoChangesBody': 'Your preferences already match what we have on file.',
   'changeRequest.prefsReceivedHeading': 'Preferences received',

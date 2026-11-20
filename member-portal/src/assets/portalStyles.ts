@@ -469,6 +469,7 @@ export const PORTAL_CSS = `
   }
   /* Live save (portalTabs.ts): html.js hides the button; each row's last cell shows a spinning bike
      wheel while it saves, then a check. Reduced motion: the wheel holds still. */
+  .prefs-note { margin: -8px 0 16px; font-size: 14px; color: var(--text-muted); }
   html.js .prefs-form button[type='submit'] { display: none; }
   .pref-status { width: 6.5em; white-space: nowrap; font-size: 13px; color: var(--text-muted); }
   .pref-status svg { width: 20px; height: 20px; vertical-align: -5px; margin-right: 4px; }

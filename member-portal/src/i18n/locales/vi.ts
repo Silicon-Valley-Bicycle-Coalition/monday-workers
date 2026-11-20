@@ -138,6 +138,7 @@ export const vi: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': 'Cập nhật tùy chọn',
   'changeRequest.prefsSaving': 'Đang lưu…',
   'changeRequest.prefsSaved': 'Đã lưu',
+  'changeRequest.prefEmailConfirmNote': 'Bật lại email? Chúng tôi sẽ gửi cho bạn một liên kết để xác nhận.',
   'changeRequest.prefsNoChangesHeading': 'Không có thay đổi nào để gửi',
   'changeRequest.prefsNoChangesBody': 'Tùy chọn của quý vị đã khớp với hồ sơ của chúng tôi.',
   'changeRequest.prefsReceivedHeading': 'Đã nhận tùy chọn',

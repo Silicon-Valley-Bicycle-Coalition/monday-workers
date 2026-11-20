@@ -138,6 +138,7 @@ export const ja: Record<TranslationKey, string> = {
   'changeRequest.prefsSubmit': '設定を更新',
   'changeRequest.prefsSaving': '保存中…',
   'changeRequest.prefsSaved': '保存しました',
+  'changeRequest.prefEmailConfirmNote': 'メールを再開しますか？確認用のリンクをメールでお送りします。',
   'changeRequest.prefsNoChangesHeading': '送信する変更はありません',
   'changeRequest.prefsNoChangesBody': 'ご希望の設定は、すでに登録内容と一致しています。',
   'changeRequest.prefsReceivedHeading': '設定を受け付けました',

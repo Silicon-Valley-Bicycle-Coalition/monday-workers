@@ -146,6 +146,7 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
     findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    hasNewerRequest: vi.fn().mockResolvedValue(false),
     purgeWrittenBefore: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
@@ -203,6 +204,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -262,6 +264,7 @@ function fakeMondayWithDonations(): MondayClient {
     getPersonAffiliations: vi.fn().mockResolvedValue([]),
     createAffiliation: vi.fn(),
     updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -1507,6 +1510,7 @@ describe('POST / error handling', () => {
       getPersonAffiliations: vi.fn().mockResolvedValue([]),
       createAffiliation: vi.fn(),
       updateAffiliation: vi.fn(),
+    setDonorCheckbox: vi.fn().mockResolvedValue(undefined),
       createChangeRequestItem: vi.fn(),
       getDonorNames: vi.fn().mockResolvedValue([]),
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -3008,7 +3012,7 @@ function fakeMondayWithPrefs(): MondayClient {
 function prefsConfig(): Config {
   const cfg = structuredClone(config);
   cfg.monday.columns = {
-    donorEmailOptOut: 'check_email_opt',
+    donorEmailConsent: 'email_consent_col',
     donorSmsOptOut: 'check_sms_opt',
     donorDoNotMail: 'check_no_mail',
   } as never;
@@ -3034,6 +3038,21 @@ describe('GET /:locale/portal/info — communication preferences section', () =>
     expect(html).toContain('action="/en/portal/change-request/preferences"');
     expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
     expect(html).toMatch(/name="doNotMail" value="yes"[^>]* checked/);
+  });
+
+  it("shows a member's pending choice, not Monday's yet-to-catch-up value", async () => {
+    const monday = fakeMondayWithPrefs(); // Monday: email subscribed, SMS subscribed, do not mail
+    const emailSender = prefsEmailSender();
+    const pendingSms = await sha256Hex('donor-1|smsOptOut|Opted out of SMS');
+    const changeStore = fakeChangeStore({
+      findRecentByDedupeHash: vi.fn(async (hash: string) => (hash === pendingSms ? { id: 5, status: 'written' as const } : null)),
+    });
+    const app = createApp(makeDeps({ monday, emailSender, changeStore, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const html = await (await app.request('/en/portal/info', { headers: { Cookie: cookie } })).text();
+    expect(html).toMatch(/name="smsOptOut" value="yes"[^>]* checked/);
+    expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
   });
 
   it('omits the preferences section while the columns are unconfigured', async () => {

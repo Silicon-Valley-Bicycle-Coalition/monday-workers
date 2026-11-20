@@ -23,7 +23,7 @@
       "membershipExpiry": "expiry",
       "preferredLanguage": "language",
       "donorHouseholdEmail": "REPLACE_WITH_COLUMN_ID",
-      "donorEmailOptOut": "email_opt_out",
+      "donorEmailConsent": "email_consent",
       "donorSmsOptOut": "sms_opt_out",
       "donorDoNotMail": "do_not_mail",
       "volunteerDonorLink": "volunteer_donor_link",
@@ -38,7 +38,6 @@
       "donorEmployer": "REPLACE_WITH_COLUMN_ID",
       "memberSince": "REPLACE_WITH_COLUMN_ID",
       "memberType": "REPLACE_WITH_COLUMN_ID",
-      "donorEmailConsent": "REPLACE_WITH_COLUMN_ID",
       "donorHouseholdEmailConsent": "REPLACE_WITH_COLUMN_ID"
     }
   },
