@@ -1,23 +1,20 @@
-// The card door: each person's member card with its QR and "Get a new code", then the discount
-// list. The card widget itself is shared with the home page, which shows it without the form.
+// The member card widget (shown in the portal header) and the Benefits tab: the discount list,
+// "Get a new code" for each card, and the organizations the session manages.
 import type { AppDeps } from '../routes';
 import type { DiscountOrganization, MemberPortalData } from '../types';
 import type { PortalCard } from '../card/loadCardData';
 import { buildCardData } from '../card/loadCardData';
 import { generateQrSvg } from '../card/qr';
 import { getOrCreateCardToken } from '../card/getOrCreateCardToken';
-import { cardEnabled } from '../config';
-import { loadPortalData } from '../portal/loadPortalData';
 import type { Locale } from '../i18n/locales';
 import { t } from '../i18n/t';
 import { errorText } from '../logSafe';
-import { escapeHtml, logoImg, someRecordsUnavailableNote } from '../views';
-import { doorPage, personGroup } from './layout';
-import { membershipEnded, todayInLosAngeles } from '../home/homeState';
+import { escapeHtml, logoImg } from '../views';
+import { tabPanel } from './layout';
+import type { HomeData } from '../home/loadHomeData';
+import { orgSection } from '../home/homeView';
 
 export interface MemberCardOptions {
-  // The "Get a new code" form under the card: on the card door, not on the home page.
-  regenerate?: boolean;
   // A lapsed membership: the card greys out and reads "Ended MM/YYYY" (ended is '' when unknown).
   lapsed?: { ended: string } | null;
 }
@@ -29,17 +26,11 @@ export interface MemberCardOptions {
 // bearer credential (see /verify/:token in routes.ts).
 export function memberCardWidget(card: PortalCard, locale: Locale, options: MemberCardOptions = {}): string {
   const { data, qrSvg } = card;
-  const { regenerate = true, lapsed = null } = options;
+  const { lapsed = null } = options;
   const expiry =
     lapsed === null
       ? `<span class="label">${escapeHtml(t(locale, 'card.expiresLabel'))}</span><span class="value">${escapeHtml(data.expiryShort)}</span>`
       : `<span class="label">${escapeHtml(t(locale, 'home.cardEnded'))}</span><span class="value">${escapeHtml(lapsed.ended)}</span>`;
-  const form = regenerate
-    ? `
-    <form class="member-card-regenerate" action="/${locale}/portal/card/${encodeURIComponent(data.donorId)}/regenerate" method="post">
-      <button type="submit">${escapeHtml(t(locale, 'card.regenerate'))}</button>
-    </form>`
-    : '';
   return `
     <div class="member-card${lapsed === null ? '' : ' member-card-lapsed'}">
       <div class="member-card-top">
@@ -52,14 +43,12 @@ export function memberCardWidget(card: PortalCard, locale: Locale, options: Memb
         <div>${expiry}</div>
         <div class="member-card-tier">${escapeHtml(data.membershipTier)}</div>
       </div>
-    </div>${form}
+    </div>
   `;
 }
 
-type CardDeps = Pick<AppDeps, 'monday' | 'config' | 'now' | 'cardTokenStore'>;
-
 // A card token failure costs that person their card, never the page.
-export async function cardFor(donor: MemberPortalData, deps: Pick<CardDeps, 'config' | 'now' | 'cardTokenStore'>): Promise<PortalCard | null> {
+export async function cardFor(donor: MemberPortalData, deps: Pick<AppDeps, 'config' | 'now' | 'cardTokenStore'>): Promise<PortalCard | null> {
   try {
     const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
     return { data: buildCardData(donor), qrSvg: generateQrSvg(`${deps.config.auth.portalBaseUrl}/verify/${token}`) };
@@ -76,77 +65,41 @@ export function endedMonth(until: string): string {
   return `${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 }
 
-// No membership on file: a blank Membership Status (with or without a Tier). Covers the home page's
-// "never a member" rule (homeState.ts: status and tier both blank); a card for a blank status would
-// show a member number with no status to anyone scanning it.
-function neverAMember(donor: MemberPortalData): boolean {
-  return donor.membershipStatus.trim() === '';
-}
-
-export interface CardDoorPerson {
-  id: string;
-  name: string;
-  // null when the card feature is off, the person never joined, or their token failed.
-  card: PortalCard | null;
-  notMember: boolean;
-  // "MM/YYYY" ('' when unknown) for an ended membership (membershipEnded), else null.
-  lapsedEnded: string | null;
-}
-
-export interface CardDoorData {
-  people: CardDoorPerson[];
-  // null when the discount read failed.
-  discounts: DiscountOrganization[] | null;
-  unavailableCount: number;
-}
-
-export async function loadCardDoor(donorItemIds: string[], deps: CardDeps): Promise<CardDoorData> {
-  // Membership fields and the discount list; no donations. Throws only when no one loads.
-  const data = await loadPortalData(donorItemIds, deps.monday, undefined, false);
-  const withCards = cardEnabled(deps.config);
-  const today = todayInLosAngeles(deps.now());
-  const people = await Promise.all(
-    data.donors.map(async (donor) => {
-      const notMember = neverAMember(donor);
-      return {
-        id: donor.id,
-        name: donor.name,
-        card: withCards && !notMember ? await cardFor(donor, deps) : null,
-        notMember,
-        // The home page's rule (Lapsed, or a Member Until already past; never Lifetime).
-        lapsedEnded: membershipEnded({ status: donor.membershipStatus, tier: donor.membershipTier, until: donor.membershipExpiry }, today)
-          ? endedMonth(donor.membershipExpiry)
-          : null,
-      };
-    })
-  );
-  return { people, discounts: data.discounts, unavailableCount: data.unavailableDonorCount ?? 0 };
-}
-
 function discountRow(discount: DiscountOrganization): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
-export function cardDoorView(data: CardDoorData, locale: Locale): string {
+// "Get a new code" for each card the header shows: a code someone else has a copy of stops working.
+function cardCodeSection(data: HomeData, locale: Locale): string {
+  const withCards = data.people.filter((e) => e.card !== null);
+  if (withCards.length === 0) return '';
   const household = data.people.length + data.unavailableCount > 1;
-  const groups = data.people
-    .map((person) => {
-      const body = person.notMember
-        ? `<div class="home-not-member"><p>${escapeHtml(t(locale, 'home.notMember'))}</p></div>`
-        : person.card === null
-          ? ''
-          : memberCardWidget(person.card, locale, { lapsed: person.lapsedEnded === null ? null : { ended: person.lapsedEnded } });
-      return body === '' ? '' : personGroup(person.name, body, household);
+  const forms = withCards
+    .map(({ person, card }) => {
+      const label = household ? `<span class="card-code-name">${escapeHtml(person.firstName)}</span>` : '';
+      return `<form class="member-card-regenerate" action="/${locale}/portal/card/${encodeURIComponent(card!.data.donorId)}/regenerate" method="post">${label}<button type="submit">${escapeHtml(t(locale, 'card.regenerate'))}</button></form>`;
     })
     .join('');
-  const discounts =
-    data.discounts === null
+  return `
+    <section>
+      <h2>${escapeHtml(t(locale, withCards.length > 1 ? 'home.defaultHeadlineMany' : 'home.defaultHeadline'))}</h2>
+      <p>${escapeHtml(t(locale, 'benefits.cardIntro'))}</p>
+      ${forms}
+    </section>`;
+}
+
+// The Benefits tab: the shop discount list, the card's "Get a new code", then the organizations the
+// session manages. Everything comes from the header's read.
+export function benefitsTabView(data: HomeData, locale: Locale): string {
+  const discounts = data.portal.discounts;
+  const discountSection =
+    discounts === null
       ? ''
-      : `<section>
+      : `<section id="discounts">
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
-        ${data.discounts.map(discountRow).join('')}
+        ${discounts.map(discountRow).join('')}
       </ul>
     </section>`;
-  return doorPage(t(locale, 'home.doorCard'), `${someRecordsUnavailableNote(data.unavailableCount, locale)}${groups}${discounts}`, locale);
+  return tabPanel(t(locale, 'tabs.benefits'), `${discountSection}${cardCodeSection(data, locale)}${orgSection(data.orgs, locale)}`);
 }

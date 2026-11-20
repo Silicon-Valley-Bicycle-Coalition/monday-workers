@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FONT_ASSETS, FONT_FACE_CSS, LOGO_SVG_ASSET, PORTAL_CSS_ASSET, contentHash, staticAssetFor } from './static';
+import { FONT_ASSETS, FONT_FACE_CSS, LOGO_SVG_ASSET, PORTAL_CSS_ASSET, PORTAL_TABS_JS_ASSET, contentHash, staticAssetFor } from './static';
+import { PORTAL_TABS_JS } from './portalTabs';
 import { EMBEDDED_FONTS } from './fontData';
 import { SVBC_LOGO_SVG } from './logo';
 import { PORTAL_CSS } from './portalStyles';
@@ -27,6 +28,14 @@ describe('static assets', () => {
     for (const font of FONT_ASSETS) expect(staticAssetFor(font.path)).toBe(font);
   });
 
+  it('serves the tab-switch script as hashed JavaScript that parses', () => {
+    expect(PORTAL_TABS_JS_ASSET.path).toBe(`/assets/tabs.${contentHash(PORTAL_TABS_JS)}.js`);
+    expect(PORTAL_TABS_JS_ASSET.contentType).toBe('text/javascript; charset=utf-8');
+    expect(staticAssetFor(PORTAL_TABS_JS_ASSET.path)).toBe(PORTAL_TABS_JS_ASSET);
+    // Compiles without running: a syntax slip would otherwise surface only in a browser.
+    expect(() => new Function(PORTAL_TABS_JS)).not.toThrow();
+  });
+
   it('serves every embedded font as woff2 and declares each in an @font-face rule (#123)', () => {
     expect(FONT_ASSETS).toHaveLength(EMBEDDED_FONTS.length);
     const families = new Set(EMBEDDED_FONTS.map((f) => `${f.family} ${f.weight}`));
@@ -43,8 +52,8 @@ describe('static assets', () => {
     });
   });
 
-  it("hides the home page's door list in print, like the rest of the chrome", () => {
+  it('hides the tab bar in print, like the rest of the chrome', () => {
     const print = PORTAL_CSS.slice(PORTAL_CSS.indexOf('@media print'));
-    expect(print).toMatch(/\.home-doors[^{]*\{\s*display: none;/);
+    expect(print).toMatch(/\.portal-tabs[^{]*\{\s*display: none;/);
   });
 });

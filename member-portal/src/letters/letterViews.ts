@@ -5,10 +5,15 @@ import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 import { doorPage, personGroup } from '../doors/layout';
 
-// The letters door: one list of years per person (named only for a household) in the door frame.
-export function lettersListView(listings: LetterYearListing[], locale: Locale): string {
+// The tax letters section of the Your giving tab: one list of years per person (named only for a
+// household). `listings` null: the read failed, so a note stands in for the lists.
+export function lettersSection(listings: LetterYearListing[] | null, locale: Locale): string {
+  const heading = `<h2>${escapeHtml(t(locale, 'home.doorLetters'))}</h2>`;
+  if (listings === null) {
+    return `<section id="tax-letters">${heading}<p>${escapeHtml(t(locale, 'error.lettersLoadFailed'))}</p></section>`;
+  }
   const household = listings.length > 1;
-  const sections = listings
+  const lists = listings
     .map((listing) => {
       const items =
         listing.years.length === 0
@@ -19,11 +24,10 @@ export function lettersListView(listings: LetterYearListing[], locale: Locale): 
                   `<li><a href="/${locale}/portal/letters/${encodeURIComponent(listing.donorId)}/${year}">${escapeHtml(t(locale, 'letters.yearLink', { year: String(year) }))}</a></li>`
               )
               .join('')}</ul>`;
-      return personGroup(listing.donorName, items, household);
+      return household ? `<h3>${escapeHtml(listing.donorName)}</h3>${items}` : items;
     })
     .join('');
-
-  return doorPage(t(locale, 'home.doorLetters'), `<p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>${sections}`, locale);
+  return `<section id="tax-letters">${heading}<p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>${lists}</section>`;
 }
 
 // The letter's fixed light "paper" styling, shared with the organization statement.
@@ -82,7 +86,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
   return `
     <style>${LETTER_CSS}</style>
     <nav class="no-print">
-      <a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'letters.backToLetters'))}</a>
+      <a href="/${locale}/portal/giving#tax-letters">${escapeHtml(t(locale, 'letters.backToLetters'))}</a>
       <button type="button" onclick="window.print()">${escapeHtml(t(locale, 'letters.print'))}</button>
     </nav>
     <p class="no-print"><small>${escapeHtml(t(locale, 'letters.englishOnlyNote'))}</small></p>

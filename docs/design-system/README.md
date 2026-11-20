@@ -75,7 +75,7 @@ Portal UI sizes stay small and functional (14–16px controls, 13px footer in co
 ## Accessibility and behaviour
 
 - Focus: 2px `svbc-gold` outline, 2px offset (map: 3px `map-accent`).
-- No JavaScript in the portal: forms post to the server. The portal no longer uses tabs: its home page links to one page per section (a "door"), each starting with a "‹ Home" link. The Tabs component and `tab-*` tokens stay here for any future surface, built as radio inputs kept in flow so keyboards and assistive tech reach them.
+- Almost no JavaScript in the portal: forms post to the server. Its tabs (Benefits, Your giving, Events, Volunteering, Profile) are links, one page each, styled like the Tabs component with `aria-current="page"` on the active one, and wrap as pills on a phone. One small script (`member-portal/src/assets/portalTabs.ts`) swaps a tab's panel in place so a tab click never moves the page; without it the links still work. The radio-input Tabs component stays here for any surface that needs in-page tabs.
 - Labels are words, never colour alone (the info door's email labels are outlined text pills; Bounced is bold).
 - Print hides header and footer and each door's "‹ Home" link.
 - Emails are table-based with inline styles; dark-mode overrides are best effort.
