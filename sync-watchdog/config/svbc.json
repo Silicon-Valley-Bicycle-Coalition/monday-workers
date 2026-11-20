@@ -32,7 +32,8 @@
   "notLive": {
     "dtd-sync": "not deployed to production",
     "nearby-search": "not deployed to production (sandbox rollout pending)",
-    "quickbooks-sync": "sandbox only, postponed indefinitely"
+    "quickbooks-sync": "sandbox only, postponed indefinitely",
+    "zoom-phone-sync": "not deployed (D1, queues and consumer pending, #54/#55)"
   },
   "queues": [
     { "name": "benevity-import-writes", "maxBacklogAgeHours": 6 },
