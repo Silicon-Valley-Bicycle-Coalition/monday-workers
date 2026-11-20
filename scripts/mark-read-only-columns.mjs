@@ -61,7 +61,9 @@ const PEOPLE = {
     // Its Email Preferences link, which the stewardship Sequences link to (2026-11-20).
     'Email Preferences',
     // mailchimp-sync's daily stewardship labels, which start the Monday Sequences (2026-11-19).
-    'Stewardship Email'],
+    'Stewardship Email',
+    // zoom-phone-sync's date of the last answered call or text (GitHub #51).
+    'Last Phone Contact'],
   history: [...SALESFORCE, 'Salesforce Owner'],
 };
 

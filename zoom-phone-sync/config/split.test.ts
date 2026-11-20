@@ -7,8 +7,9 @@ import { validateConfig } from '../src/config';
 import { queueBaseName } from '../src/environment';
 
 // Keeps the sandbox and production deployments apart (design 2026-09-18 sandbox environment §5,
-// and the zoom-phone-sync design's Sandbox section): no shared board, column, activity or Zoom
-// app id, the sandbox limited to named test lines, and env.sandbox sharing no resource.
+// and the zoom-phone-sync design's Sandbox section): no shared board, column or Zoom app id, the
+// sandbox limited to named test lines, and env.sandbox sharing no resource. Custom activities are
+// per Monday account, so the two configs name the same activity ids (as mailchimp-sync's does).
 
 type Json = Record<string, unknown>;
 const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((o, key) => (o as Json | undefined)?.[key], obj);
@@ -31,8 +32,6 @@ describe('config split', () => {
     'people.boardId',
     'people.phoneColumn',
     'people.lastPhoneContactColumn',
-    'timeline.callActivityId',
-    'timeline.textActivityId',
     'zoom.accountId',
   ])('%s is never shared between sandbox and production', (path) => {
     const sb = get(sandbox, path);
@@ -40,6 +39,16 @@ describe('config split', () => {
     if (sb === null || prod === null) return;
     expect(sb).not.toBe(prod);
   });
+
+  it.each(['timeline.callActivityId', 'timeline.textActivityId'])(
+    '%s is the same account-wide custom activity in both',
+    (path) => {
+      const sb = get(sandbox, path);
+      const prod = get(production, path);
+      if (sb === null || prod === null) return;
+      expect(sb).toBe(prod);
+    },
+  );
 
   it('the sandbox is limited to named test lines; production logs every line', () => {
     expect(Array.isArray(sandbox.zoom.includeUsers)).toBe(true);

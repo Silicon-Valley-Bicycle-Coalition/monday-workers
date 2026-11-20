@@ -174,7 +174,7 @@ the call-history and SMS APIs once their endpoints and scopes are confirmed.
 There is one Zoom account, so the sandbox gets its **own** Server-to-Server app and webhook
 subscription, with `zoom.includeUsers` set to one test line. Production calls never reach the sandbox People
 board, matching "sandbox is inbound only, no outbound data". `config/sandbox.json` and
-`config/svbc.json` follow `member-portal`'s split test (no shared board, column, activity or Zoom
+`config/svbc.json` follow `member-portal`'s split test (no shared board, column or Zoom
 app id). `env.sandbox` needs explicit `routes: []` (it has none anyway, but the rule holds).
 
 ## Config
