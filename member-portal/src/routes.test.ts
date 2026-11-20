@@ -1025,7 +1025,7 @@ describe('GET /assets/:file', () => {
     // The stylesheet's @font-face rules point at self-hosted woff2 files (GL#123).
     const cssText = await (await app.request(cssPath!)).text();
     expect(cssText).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
-    const fontPath = /url\((\/assets\/poppins-latin-400\.[0-9a-f]{16}\.woff2)\)/.exec(cssText)?.[1];
+    const fontPath = /url\((\/assets\/nunito-sans-latin-wght-normal\.[0-9a-f]{16}\.woff2)\)/.exec(cssText)?.[1];
     expect(fontPath).toBeDefined();
     const font = await app.request(fontPath!);
     expect(font.status).toBe(200);

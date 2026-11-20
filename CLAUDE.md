@@ -33,7 +33,7 @@ when a Worker directory isn't listed). `ci-ok` and `checks` are the required che
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
   really reach, GL#18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
   `docs/runbooks/windfall-private-board.md`), `funding-leads-board.mjs` (sandbox-only Funding
-  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `propose-partner-types.mjs` and `build-font-modules.mjs` (regenerates the self-hosted Manrope/Poppins `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, GL#123).
+  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `propose-partner-types.mjs` and `build-font-modules.mjs` (regenerates the self-hosted Nunito Sans `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, GL#123).
 
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has
@@ -149,8 +149,9 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
-**Visual design:** `docs/design-system/` (brand basis: the 2026 letterhead; the website and Workers
-still use the older `web-gold` #FFC700 and Manrope/Poppins until migrated). Take colours, type,
+**Visual design:** `docs/design-system/` (brand basis: the 2026 letterhead and SVBC's print; `svbc-gold`
+#FFC20E for screens, `svbc-gold-soft` for letterhead documents; Nunito Sans self-hosted as the web
+face). Take colours, type,
 spacing and component patterns for any Worker page or email from its `tokens.json` and README,
 not from older Worker code. Fonts are self-hosted (`scripts/build-font-modules.mjs`); never link
 Google Fonts from a Worker page.

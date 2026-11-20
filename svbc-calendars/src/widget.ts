@@ -31,21 +31,21 @@ function widgetHTML(
 <title>SVBC Events</title>
 ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliberately: Cloudflare serves beacon.min.js from its own edge and updates it without version pinning, so a pinned SRI hash would break the beacon the next time Cloudflare ships an update. This is the standard, documented way to load Cloudflare Web Analytics. --><script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${webAnalyticsToken}"}'></script>` : ''}
 <style>
-  /* Manrope/Poppins, self-hosted by this Worker (src/fonts.ts): the widget is an iframe, so it doesn't inherit the site's fonts. */
+  /* Nunito Sans, as bikesiliconvalley.org sets it, self-hosted by this Worker (src/fonts.ts): the widget is an iframe, so it doesn't inherit the site's fonts. */
   ${FONT_FACE_CSS}
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    --svbc-accent: #FFC700;
+    --svbc-accent: #FFC20E;
     --svbc-accent-light: #FEF3D6;
     --svbc-dark: #303030;
     --svbc-black: #000000;
-    --svbc-accent-hover: #E6B300;
+    --svbc-accent-hover: #E6AF0D;
     --svbc-text: #303030;
     --svbc-text-muted: #6b7280;
     --svbc-border: #e5e7eb;
     --svbc-radius: 10px;
-    --svbc-font-heading: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --svbc-font-heading: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-family: "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     color: var(--svbc-text);
     background: transparent;
     max-width: 720px;

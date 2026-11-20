@@ -71,8 +71,8 @@
   },
   "lastChange": {
     "by": "David W. Keith",
-    "at": "2026-11-20T00:43:11.399Z",
-    "via": "Claude Code · Box: 2026 SVBC letterhead (file 1346312091954)",
-    "note": "The 2026 letterhead becomes the brand basis: svbc-gold #e8b85f, svbc-grey, svbc-grey-text, warm svbc-sand, Avenir stack, Print type group and section, grey-and-gold logo; #ffc700 kept as legacy web-gold"
+    "at": "2026-11-20T05:00:00.000Z",
+    "via": "Claude Code · issue #40",
+    "note": "member-portal and the calendar widget moved to svbc-gold, svbc-sand and self-hosted Nunito Sans: Workers status rewritten, web-heading/web-body replaced by one web family (Nunito Sans), web-gold left only in mailchimp-sync templates"
   }
 }

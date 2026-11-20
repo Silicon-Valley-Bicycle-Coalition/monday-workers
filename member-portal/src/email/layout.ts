@@ -43,7 +43,7 @@ export function renderEmailLayout(params: EmailLayoutParams): RenderedEmail {
 </style>
 </head>
 <body style="margin:0; padding:0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F4F4F3;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="em-wrap" style="background:#F0EBE8;">
 <tr><td align="center" style="padding:24px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
 <tr><td style="background:#000000; padding:24px; text-align:center; border-radius:8px 8px 0 0;">

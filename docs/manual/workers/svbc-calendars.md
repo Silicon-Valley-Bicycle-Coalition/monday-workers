@@ -25,7 +25,7 @@ subscriptions stop updating. No CRM data is involved.
 | `GET /calendars` | committees. | 24 h | Staff listing page of every subscribe link |
 | `GET /calendars/<id>.ics` | committees. | 24 h | One source's ICS feed |
 | `GET /status.json` | either | never | Per-source consecutive-failure count and last success time |
-| `GET /fonts/<name>.woff2` | either | immutable | Self-hosted Manrope and Poppins for the widget |
+| `GET /fonts/<name>.woff2` | either | immutable | Self-hosted Nunito Sans for the widget |
 | Cron `0 13 * * *` (production only) | — | — | Warms every source into `CALENDAR_KV` |
 
 `OPTIONS` answers the CORS preflight; any other non-`GET` method is 405; unknown paths are 404.

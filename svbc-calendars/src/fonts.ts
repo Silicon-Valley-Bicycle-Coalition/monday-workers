@@ -1,9 +1,10 @@
 import { EMBEDDED_FONTS } from './fontData';
 
-// Manrope and Poppins for the widget, served by this Worker (GL#123) rather than Google Fonts, so a
+// Nunito Sans for the widget, served by this Worker (GL#123) rather than Google Fonts, so a
 // website visitor's IP address isn't sent to Google from the widget. The widget is an iframe and
 // doesn't inherit bikesiliconvalley.org's fonts, so it declares its own @font-face rules
-// (FONT_FACE_CSS, inlined into its <style>) pointing at /fonts/<family>-<subset>-<weight>.woff2.
+// (FONT_FACE_CSS, inlined into its <style>) pointing at /fonts/<Fontsource file stem>-<version>.woff2.
+// Nunito Sans is the variable build: one file per subset covers every weight the widget sets.
 //
 // The files only change when scripts/build-font-modules.mjs regenerates fontData.ts, so the
 // version is in the path (the Fontsource release) and the response is immutable.
@@ -19,9 +20,9 @@ function decodeBase64(base64: string): ArrayBuffer {
 }
 
 const FONTS = EMBEDDED_FONTS.map((f) => {
-  const name = `${f.family.toLowerCase()}-${f.subset}-${f.weight}-${FONT_VERSION}`;
+  const name = `${f.id}-${FONT_VERSION}`;
   const rule =
-    `@font-face { font-family: "${f.family}"; font-style: normal; font-weight: ${f.weight}; font-display: swap; ` +
+    `@font-face { font-family: "${f.family}"; font-style: ${f.style}; font-weight: ${f.weight}; font-display: swap; ` +
     `src: url(/fonts/${name}.woff2) format("woff2"); unicode-range: ${f.unicodeRange}; }`;
   return { name, base64: f.woff2Base64, rule };
 });

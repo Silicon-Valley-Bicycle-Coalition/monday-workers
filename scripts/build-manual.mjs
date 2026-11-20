@@ -132,7 +132,7 @@ export function findChrome(env, exists) {
 export function fontFaceCss(fonts) {
   return fonts.map((f) => `@font-face {
   font-family: '${f.family}';
-  font-style: normal;
+  font-style: ${f.style ?? 'normal'};
   font-weight: ${f.weight};
   font-display: block;
   src: url(data:font/woff2;base64,${f.woff2Base64}) format('woff2');

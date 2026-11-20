@@ -8,15 +8,17 @@
 export const PORTAL_CSS = `
   :root {
     --svbc-black: #000000;
-    --svbc-gold: #FFC700;
+    --svbc-gold: #FFC20E;
     --svbc-white: #FFFFFF;
     --svbc-chrome: #383838;
     --svbc-ink: #303030;
-    --svbc-sand: #F4F4F3;
-    /* Manrope and Poppins are self-hosted: static.ts prepends their @font-face rules to this
-       stylesheet. The system stack covers the load (font-display: swap) and CJK locales. */
-    --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-body: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --svbc-sand: #F0EBE8;
+    /* The brand's Avenir stack (docs/design-system). Avenir can't be served, so Nunito Sans is
+       self-hosted: static.ts prepends its @font-face rules to this stylesheet. Poppins is
+       declared for Devanagari only, so it sets Hindi text and nothing else. The system stack
+       covers the load (font-display: swap) and CJK locales. */
+    --font-heading: Avenir, 'Avenir Next', 'Nunito Sans', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body: Avenir, 'Avenir Next', 'Nunito Sans', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --radius-pill: 300px;
     --button-pad: 16px 20.8px;
     /* Semantic tokens that flip under prefers-color-scheme below. The brand tokens above stay
@@ -248,7 +250,7 @@ export const PORTAL_CSS = `
     box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.15);
     color: var(--svbc-white);
     background:
-      radial-gradient(circle at 20% 0%, rgba(255,199,0,0.10), transparent 60%),
+      radial-gradient(circle at 20% 0%, rgba(255,194,14,0.10), transparent 60%),
       linear-gradient(135deg, #2b2628 0%, var(--svbc-black) 55%, #171415 100%);
     padding: 18px 22px;
     display: flex;
@@ -267,7 +269,7 @@ export const PORTAL_CSS = `
     background: #171415;
     padding: 5px;
     border-radius: 6px;
-    box-shadow: inset 0 0 0 1px rgba(255,199,0,0.35);
+    box-shadow: inset 0 0 0 1px rgba(255,194,14,0.35);
   }
   .member-card-qr svg { display: block; width: 77px; height: 77px; }
   .member-card-name { font-family: var(--font-heading); font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
