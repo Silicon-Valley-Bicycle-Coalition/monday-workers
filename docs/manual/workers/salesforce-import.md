@@ -39,9 +39,9 @@ All are environment variables in the operator's shell. None are Worker secrets.
 | Name | Purpose | Issued by | Rotate |
 |---|---|---|---|
 | `MONDAY_API_TOKEN` | All Monday reads and writes | The SVBC Integration user (production) or Sandbox Integration user, never a personal admin token | When the integration user's token is regenerated |
-| `MONDAY_DASHBOARD_TOKEN` (optional) | `configure`'s dashboard step; the integration user gets 403 on `create_dashboard`/`create_widget` | A Monday user allowed to create dashboards. **To verify:** which user. | With that user's token |
-| `GOOGLE_MAPS_API_KEY` (optional) | `enrich` (required) and `geocode` fallback | Google Cloud console. **To verify:** which project. | In Google Cloud |
-| `sf` CLI login | `extract` | Salesforce org login | Salesforce has been retired; `extract` can no longer run against the live org. **To verify.** |
+| `MONDAY_DASHBOARD_TOKEN` (optional) | `configure`'s dashboard step; the integration user gets 403 on `create_dashboard`/`create_widget` | The operator's own admin token. `configure` falls back to `MONDAY_API_TOKEN`, so set this only when that token is an integration user's | With that user's token |
+| `GOOGLE_MAPS_API_KEY` (optional) | `enrich` (required) and `geocode` fallback | Google Cloud console (Maps Geocoding API). The project is recorded in the private appendix | In Google Cloud |
+| `sf` CLI login | `extract` | Salesforce org login | The org stays live on Salesforce's free tier for reference, read-only for staff. The operator's `sf` alias is `svbc` (integration user), so `extract` can still run |
 
 ## Write switch
 

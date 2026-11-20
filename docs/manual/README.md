@@ -70,19 +70,7 @@ Open items, by file. Search each file for **To verify** to find them.
 
 | File | Open items |
 |---|---|
-| [`03-accounts-and-access.md`](03-accounts-and-access.md) | 4 |
-| [`08-troubleshooting.md`](08-troubleshooting.md) | 1 |
-| [`workers/bp-feedback-notify.md`](workers/bp-feedback-notify.md) | 2 |
-| [`workers/dtd-sync.md`](workers/dtd-sync.md) | 2 |
-| [`workers/eventbrite-sync.md`](workers/eventbrite-sync.md) | 2 |
-| [`workers/funraise-sync.md`](workers/funraise-sync.md) | 2 |
-| [`workers/mailchimp-sync.md`](workers/mailchimp-sync.md) | 1 |
-| [`workers/monday-backup.md`](workers/monday-backup.md) | 1 |
-| [`workers/nearby-search.md`](workers/nearby-search.md) | 1 |
-| [`workers/people-reclassification.md`](workers/people-reclassification.md) | 1 |
 | [`workers/report-digests.md`](workers/report-digests.md) | 1 |
-| [`workers/salesforce-import.md`](workers/salesforce-import.md) | 3 |
-| [`workers/svbc-calendars.md`](workers/svbc-calendars.md) | 2 |
 
 ## Building the PDF
 
