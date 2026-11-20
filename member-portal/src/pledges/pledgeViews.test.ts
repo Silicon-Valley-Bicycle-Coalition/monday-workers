@@ -18,7 +18,7 @@ describe('pledgesView', () => {
     expect(html).toContain('2026 Annual Pledge');
     expect(html).toContain('$1,000.00');
     expect(html).toContain('40%');
-    expect(html).toContain('2026-12-31');
+    expect(html).toContain('Dec 31, 2026');
   });
 
   it('renders a dash, not 0%, when progress is not computable', () => {

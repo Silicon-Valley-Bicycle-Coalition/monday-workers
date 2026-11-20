@@ -107,7 +107,7 @@ const giftTable = (gifts: OrgGift[]) => `
         <tbody>${gifts
           .map(
             (g) =>
-              `<tr><td>${escapeHtml(g.date)}</td><td>${escapeHtml(g.amount)}</td><td>${escapeHtml(g.giftType)}</td></tr>`
+              `<tr><td>${escapeHtml(formatShortDate(g.date))}</td><td>${escapeHtml(g.amount)}</td><td>${escapeHtml(g.giftType)}</td></tr>`
           )
           .join('')}</tbody>
       </table>`;
@@ -143,7 +143,7 @@ export function orgStatementView(s: OrgStatement, taxLetter: TaxLetterConfig, op
       <p>Matching gifts from ${e(s.org.name)} for its employees' gifts.</p>
       <table>
         <thead><tr><th>Date</th><th>Amount</th></tr></thead>
-        <tbody>${s.matches.map((m) => `<tr><td>${e(m.date)}</td><td>${e(m.amount)}</td></tr>`).join('')}</tbody>
+        <tbody>${s.matches.map((m) => `<tr><td>${e(formatShortDate(m.date))}</td><td>${e(m.amount)}</td></tr>`).join('')}</tbody>
       </table>
       <p class="total">Total matching in ${s.year}: ${e(s.matchTotal)}</p>`;
 

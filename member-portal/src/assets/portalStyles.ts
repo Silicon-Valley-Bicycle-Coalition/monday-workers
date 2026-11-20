@@ -287,7 +287,6 @@ export const PORTAL_CSS = `
      page each, with aria-current on the active one. */
   .home { display: flex; flex-direction: column; gap: 20px; }
   .home-header { display: flex; flex-direction: column; gap: 20px; }
-  .home-greeting { margin: 0; color: var(--text-muted); }
   .home-headline { font-family: var(--font-heading); font-weight: 700; font-size: 28px; line-height: 1.15; margin: 2px 0 4px; }
   .home-sub { margin: 0 0 14px; color: var(--text-muted); }
   .home-note { margin: 10px 0 0; font-size: 14px; color: var(--text-muted); }
@@ -441,7 +440,17 @@ export const PORTAL_CSS = `
   .email-kind { font-size: 14px; color: var(--text-muted); }
   .email-label { font-size: 13px; padding: 1px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); }
   .email-label-bounced { font-weight: 700; border-color: var(--text); }
-  .email-legend { font-size: 14px; color: var(--text-muted); }
+  /* A label's tooltip (src/doors/info.ts): hidden until the pill is hovered or focused, then a small
+     card under it, right-aligned since the pill ends the row. */
+  .email-label { position: relative; cursor: help; }
+  .email-tip {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 10;
+    width: max-content; max-width: min(280px, calc(100vw - 32px));
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--svbc-black); color: var(--svbc-white);
+    font-size: 13px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal;
+  }
+  .email-label:hover .email-tip, .email-label:focus .email-tip { display: block; }
 
   .site-footer {
     background: var(--svbc-chrome);

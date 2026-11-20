@@ -1,4 +1,5 @@
 import { escapeHtml } from '../views';
+import { formatShortDate } from '../dates';
 import type { TaxLetterConfig } from '../types';
 import type { LetterData, LetterGift, LetterYearListing } from './loadLetterData';
 import { t } from '../i18n/t';
@@ -60,7 +61,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
   const giftTable = (gifts: LetterGift[]) => `
       <table>
         <thead><tr><th>Date</th><th>Amount</th></tr></thead>
-        <tbody>${gifts.map((gift) => `<tr><td>${escapeHtml(gift.date)}</td><td>${escapeHtml(gift.amount)}</td></tr>`).join('')}</tbody>
+        <tbody>${gifts.map((gift) => `<tr><td>${escapeHtml(formatShortDate(gift.date))}</td><td>${escapeHtml(gift.amount)}</td></tr>`).join('')}</tbody>
       </table>`;
 
   // A donor whose only gifts that year are separately listed has nothing to acknowledge: no

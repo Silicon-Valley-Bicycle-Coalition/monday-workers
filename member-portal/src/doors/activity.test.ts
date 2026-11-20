@@ -93,7 +93,7 @@ describe('eventsTabView', () => {
 });
 
 describe('volunteeringTabView', () => {
-  it('shows volunteer history with total hours, and a volunteer prompt for someone with none', () => {
+  it('shows volunteer history without a total, and a volunteer prompt for someone with none', () => {
     const html = volunteeringTabView(
       [jane, also],
       true,
@@ -106,7 +106,8 @@ describe('volunteeringTabView', () => {
     );
     expect(html).toContain(`<h1 class="visually-hidden">${escapeHtml(t('en', 'tabs.volunteering'))}</h1>`);
     expect(html).toContain('Bike Valet');
-    expect(html).toContain(t('en', 'portal.volunteerTotalHours', { hours: '3.5' }));
+    // The total is in the header's Hours volunteered stat, not repeated here.
+    expect(html).not.toContain('Total volunteer hours');
     const second = html.slice(html.indexOf('<h2>Jane Also</h2>'));
     expect(second).toContain(t('en', 'portal.volunteerEmptyMessage'));
     expect(second).toContain('href="https://bikesiliconvalley.org/get-involved/volunteer"');

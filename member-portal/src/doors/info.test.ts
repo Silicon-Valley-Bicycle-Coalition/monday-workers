@@ -63,8 +63,11 @@ describe('infoDoorView', () => {
     expect(html).toContain('jane@example.org');
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindPersonal')}</span>`);
     expect(html).toContain(`<span class="email-kind">${t('en', 'info.kindHousehold')}</span>`);
-    expect(html).toContain(`<span class="email-label email-label-verified">${t('en', 'info.labelVerified')}</span>`);
-    expect(html).toContain(`<span class="email-label email-label-bounced">${t('en', 'info.labelBounced')}</span>`);
+    expect(html).toContain(`<span class="email-label email-label-verified" tabindex="0" aria-describedby="email-tip-0">${t('en', 'info.labelVerified')}<span class="email-tip" role="tooltip" id="email-tip-0">${escapeHtml(t('en', 'info.hintVerified'))}</span></span>`);
+    expect(html).toContain(`<span class="email-label email-label-bounced" tabindex="0" aria-describedby="email-tip-1">${t('en', 'info.labelBounced')}<span class="email-tip" role="tooltip" id="email-tip-1">`);
+    expect(html).toContain(escapeHtml(t('en', 'info.hintBounced')));
+    // The hints replaced the paragraph that explained every label at once.
+    expect(html).not.toContain('email-legend');
   });
 
   it("leaves the current-details list without anyone's email: the address list is the one place addresses show", () => {

@@ -123,7 +123,7 @@ describe('homeView — one person', () => {
 
   it('new member: names the shop count, gold button to the card door', () => {
     const html = homeView(data([{ person: person('j', 'Jordan', { memberType: 'New' }), state: { kind: 'newMember' } }]), 'en', RENEW);
-    expect(html).toContain('Welcome, Jordan');
+    expect(html).not.toContain('Welcome, Jordan');
     expect(html).toContain("You're a member.".replace("'", '&#39;'));
     expect(html).toContain('Show your card at 14 local bike shops for member discounts.');
     expect(goldCount(html)).toBe(1);
@@ -136,10 +136,10 @@ describe('homeView — one person', () => {
     expect(html).not.toMatch(/at \d+ local/);
   });
 
-  it('default: "Your member card" and no gold button', () => {
+  it('default: no greeting, no headline and no gold button, just the card', () => {
     const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
-    expect(html).toContain('Hi Jordan');
-    expect(html).toContain('Your member card');
+    expect(html).not.toContain('Hi Jordan');
+    expect(html).not.toContain('home-status');
     expect(goldCount(html)).toBe(0);
     expect(html).toContain('class="member-card"');
     // The header card has no regenerate form (that lives on the Profile tab).
@@ -163,7 +163,7 @@ describe('homeView — one person', () => {
 describe('homeView — household', () => {
   const jordan = person('j', 'Jordan');
 
-  it('greets both, and a lapsed Sam names Sam but the button renews "a membership"', () => {
+  it('a lapsed Sam names Sam but the button renews "a membership"', () => {
     const sam = person('s', 'Sam', { status: 'Lapsed', until: '2026-10-31' });
     const html = homeView(
       data([
@@ -173,7 +173,7 @@ describe('homeView — household', () => {
       'en',
       RENEW
     );
-    expect(html).toContain('Hi Jordan and Sam');
+    expect(html).not.toContain('Hi Jordan');
     expect(html).toContain('Sam&#39;s membership ended Oct 31, 2026.');
     expect(goldCount(html)).toBe(1);
     expect(goldText(html)).toBe(t('en', 'home.renewAny'));
@@ -281,22 +281,10 @@ describe('homeView — household', () => {
     expect(html).not.toContain('Renew');
   });
 
-  it('default: a household says "Your member cards", with one record missing too', () => {
+  it('default: a household gets no headline either, with one record missing too', () => {
     const html = homeView(data([{ person: jordan, state: { kind: 'default' } }], { unavailableCount: 1 }), 'en', RENEW);
-    expect(html).toContain(`<p class="home-headline">${t('en', 'home.defaultHeadlineMany')}</p>`);
-  });
-
-  it('default with no card to show: no "member card" headline', () => {
-    const html = homeView(
-      data([
-        { person: jordan, state: { kind: 'default' }, card: null },
-        { person: person('s', 'Sam'), state: { kind: 'default' }, card: null },
-      ]),
-      'en',
-      RENEW
-    );
-    expect(html).toContain(`<p class="home-headline">${t('en', 'home.defaultHeadlineNoCard')}</p>`);
-    expect(html).not.toContain('member card');
+    expect(html).not.toContain('home-headline');
+    expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
   });
 
   it('shows the unavailable note when a record failed to load', () => {
@@ -306,9 +294,9 @@ describe('homeView — household', () => {
 });
 
 describe('portalView — member card and tabs', () => {
-  it('puts the member card first, then the status, then the tab bar and the panel', () => {
+  it('puts the member card first, then the tab bar and the panel', () => {
     const html = homeView(data([{ person: person('j', 'Jordan'), state: { kind: 'default' } }]), 'en', RENEW);
-    const order = ['class="member-card"', 'home-headline', 'class="portal-tabs"', '<p>panel</p>'].map((s) => html.indexOf(s));
+    const order = ['class="member-card"', 'class="portal-tabs"', '<p>panel</p>'].map((s) => html.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });

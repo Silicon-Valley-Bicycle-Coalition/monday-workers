@@ -110,7 +110,6 @@ export function changeRequestFormView(
       : `<option value="employer"${employerField === 'preselected' ? ' selected' : ''}>${escapeHtml(t(locale, 'changeRequest.fieldEmployer'))}</option>`;
   const id = CHANGE_REQUEST_DIALOG_ID;
   return `
-    <h2>${escapeHtml(t(locale, 'profile.detailsHeading'))}</h2>
     ${donors.map((d) => donorCurrentValues(d, locale, employerField, donors.length > 1)).join('')}
     <p><a class="outline-button" href="/${locale}/portal/info?change=1" data-dialog-open="${id}">${escapeHtml(t(locale, 'profile.requestChange'))}</a></p>
     <dialog id="${id}" class="portal-dialog" aria-labelledby="${id}-title"${openForm ? ' open data-open-on-load' : ''}>

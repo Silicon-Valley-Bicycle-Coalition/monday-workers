@@ -2115,7 +2115,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
+    expect(html).toContain('class="portal-tabs"'); // the rest of the home page still renders
   });
 
   it('logs and omits just the card widget (not the whole dashboard) when getActiveToken throws', async () => {
@@ -2141,7 +2141,7 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).not.toContain('class="member-card"');
-    expect(html).toContain('Hi Donor'); // the rest of the home page still renders
+    expect(html).toContain('class="portal-tabs"'); // the rest of the home page still renders
   });
 
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
@@ -2818,7 +2818,7 @@ describe('locale sweep', () => {
     expect(body).toContain(`<html lang="${locale}">`);
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
-    expect(body).toContain(escapeHtml(t(locale, 'home.defaultHeadline')));
+    expect(body).toContain(escapeHtml(t(locale, 'tabs.benefits')));
   });
 });
 
@@ -3635,7 +3635,7 @@ describe('GET /:locale/portal — home page', () => {
 
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('Hi Donor');
+    expect(html).not.toContain('Hi Donor');
     expect(html).toContain('class="member-card"');
     expect(html).toContain('<a class="portal-tab" href="/en/portal#tabs" aria-current="page">Benefits</a>');
     expect(html).toContain('<a class="portal-tab" href="/en/portal/info#tabs">Profile</a>');
@@ -3677,7 +3677,7 @@ describe('GET /:locale/portal — home page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
-    expect(html).toContain('Hi Jane');
+    expect(html).toContain('Jane');
     expect(html).not.toContain('Joe');
     // Still a household: the viewer may be Joe, so the button can't promise to renew Jane.
     expect(html).toContain('Jane&#39;s membership ended Jul 31, 2026.');
@@ -4094,13 +4094,13 @@ describe('doors', () => {
       expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 }));
     });
 
-    it('Volunteering shows completed shifts and their total, not registrations', async () => {
+    it('Volunteering shows completed shifts (no total line), not registrations', async () => {
       const monday = mondayWithActivity();
       const { app, cookie } = await signedIn({ monday, config: allOnConfig() });
 
       const html = await (await app.request('/en/portal/volunteering', { headers: { Cookie: cookie } })).text();
       expect(html).toContain('Bike Valet');
-      expect(html).toContain('Total volunteer hours: 3.5');
+      expect(html).not.toContain('Total volunteer hours');
       // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
       expect(html).not.toContain('Ride Marshal');
       expect(html).not.toContain('Fall Gala');
@@ -4505,7 +4505,7 @@ describe('sandbox test accounts', () => {
   it('gives a donor with no membership on file no membership card or regenerate form', async () => {
     const app = createApp(testDeps());
     const home = await homeOf(app, 'test-donor@example.org');
-    expect(home).toContain('Hi Dana');
+    expect(home).toContain('Dana');
     expect(home).toContain(t('en', 'home.notMember'));
     expect(home).not.toContain('class="member-card"');
 

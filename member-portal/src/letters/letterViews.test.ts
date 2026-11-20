@@ -72,7 +72,7 @@ describe('letterView', () => {
     expect(html).toContain('Silicon Valley Bicycle Coalition');
     expect(html).toContain('00-0000000');
     expect(html).toContain('No goods or services were provided.');
-    expect(html).toContain('2025-01-15');
+    expect(html).toContain('Jan 15, 2025');
     expect(html).toContain('$75.00');
     expect(html).toContain('August 24, 2026');
   });

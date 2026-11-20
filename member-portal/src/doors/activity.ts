@@ -9,6 +9,7 @@ import type { Locale } from '../i18n/locales';
 import { t, type TranslationKey } from '../i18n/t';
 import { errorText } from '../logSafe';
 import { escapeHtml } from '../views';
+import { formatShortDate } from '../dates';
 import { emptyState, personGroup, tabPanel } from './layout';
 
 const VOLUNTEER_CTA_URL = 'https://bikesiliconvalley.org/get-involved/volunteer';
@@ -38,7 +39,7 @@ export async function loadEventsTab(donorItemIds: string[], deps: EventsDeps): P
 function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): string {
   return `
     <tr>
-      <td>${escapeHtml(shift.date)}</td>
+      <td>${escapeHtml(formatShortDate(shift.date))}</td>
       <td>${escapeHtml(shift.job)}</td>
       <td>${escapeHtml(shift.hours)}</td>
     </tr>
@@ -51,7 +52,6 @@ function volunteerPanel(history: DonorVolunteerHistory, locale: Locale): string 
   }
   const rows = history.shifts.map(volunteerShiftRow).join('');
   return `
-    <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>
     <table>
       <thead>
         <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableActivity'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableHours'))}</th></tr>
@@ -77,7 +77,7 @@ function eventRegistrationTable(records: EventRegistrationRecord[], locale: Loca
       const statusCell = withStatus
         ? `<td>${escapeHtml(t(locale, record.attended ? 'events.statusAttended' : 'events.statusRegistered'))}</td>`
         : '';
-      return `<tr><td>${escapeHtml(eventLabel(record))}</td><td>${escapeHtml(record.eventDate)}</td>${statusCell}</tr>`;
+      return `<tr><td>${escapeHtml(eventLabel(record))}</td><td>${escapeHtml(formatShortDate(record.eventDate))}</td>${statusCell}</tr>`;
     })
     .join('');
   return `

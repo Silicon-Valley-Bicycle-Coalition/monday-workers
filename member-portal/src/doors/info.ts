@@ -103,16 +103,18 @@ export async function loadInfoDoor(session: SessionInfo, deps: InfoDeps, employe
 }
 
 const KIND_KEY: Record<ShownEmail['kind'], TranslationKey> = { personal: 'info.kindPersonal', household: 'info.kindHousehold' };
-const LABEL: Record<EmailLabel, { key: TranslationKey; className: string }> = {
-  verified: { key: 'info.labelVerified', className: 'verified' },
-  subscribed: { key: 'info.labelSubscribed', className: 'subscribed' },
-  onFile: { key: 'info.labelOnFile', className: 'on-file' },
-  bounced: { key: 'info.labelBounced', className: 'bounced' },
+const LABEL: Record<EmailLabel, { key: TranslationKey; hint: TranslationKey; className: string }> = {
+  verified: { key: 'info.labelVerified', hint: 'info.hintVerified', className: 'verified' },
+  subscribed: { key: 'info.labelSubscribed', hint: 'info.hintSubscribed', className: 'subscribed' },
+  onFile: { key: 'info.labelOnFile', hint: 'info.hintOnFile', className: 'on-file' },
+  bounced: { key: 'info.labelBounced', hint: 'info.hintBounced', className: 'bounced' },
 };
 
-function emailRow(email: ShownEmail, locale: Locale): string {
+// The label explains itself in a tooltip: shown on hover, and on focus (the pill takes Tab or a
+// tap), and read as the pill's description by a screen reader. CSS only.
+function emailRow(email: ShownEmail, locale: Locale, tipId: string): string {
   const label = LABEL[email.label];
-  return `<li><span class="email-address">${escapeHtml(email.address)}</span> <span class="email-kind">${escapeHtml(t(locale, KIND_KEY[email.kind]))}</span> <span class="email-label email-label-${label.className}">${escapeHtml(t(locale, label.key))}</span></li>`;
+  return `<li><span class="email-address">${escapeHtml(email.address)}</span> <span class="email-kind">${escapeHtml(t(locale, KIND_KEY[email.kind]))}</span> <span class="email-label email-label-${label.className}" tabindex="0" aria-describedby="${tipId}">${escapeHtml(t(locale, label.key))}<span class="email-tip" role="tooltip" id="${tipId}">${escapeHtml(t(locale, label.hint))}</span></span></li>`;
 }
 
 function emailsSection(data: InfoDoorData, locale: Locale): string {
@@ -122,20 +124,18 @@ function emailsSection(data: InfoDoorData, locale: Locale): string {
   }
   const loaded = data.people.filter((person): person is InfoDoorPerson & { emails: ShownEmail[] } => person.emails !== null);
   if (loaded.length === 0) return '';
+  let tipCount = 0;
   const groups = loaded
     .filter((person) => person.emails.length > 0)
     .map(
       (person) => `
       <div class="email-person">
         ${data.household ? `<h3>${escapeHtml(person.name)}</h3>` : ''}
-        <ul class="email-list">${person.emails.map((email) => emailRow(email, locale)).join('')}</ul>
+        <ul class="email-list">${person.emails.map((email) => emailRow(email, locale, `email-tip-${tipCount++}`)).join('')}</ul>
       </div>`
     )
     .join('');
-  const body =
-    groups === ''
-      ? `<p>${escapeHtml(t(locale, 'info.emailsNone'))}</p>`
-      : `${groups}<p class="email-legend">${escapeHtml(t(locale, 'info.emailsLegend'))}</p>`;
+  const body = groups === '' ? `<p>${escapeHtml(t(locale, 'info.emailsNone'))}</p>` : groups;
   return `<section class="info-emails">${heading}${body}</section>`;
 }
 
