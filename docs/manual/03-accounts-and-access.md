@@ -129,15 +129,17 @@ npx wrangler secret list --env sandbox    # sandbox names
 npx wrangler secret put FUNRAISE_API_KEY  # prompts for the new value; takes effect on the next request
 ```
 
-**Leftover secrets to clean up.** A listing on 2026-11-19 found secrets no current code needs:
+**No `MONDAY_API_TOKEN` should be set on any Worker.** Several Workers' code still falls back to
+that secret when their `MONDAY_AUTH` binding is missing. The leftover copies from before the
+broker were deleted on 2026-11-19, along with an unused `FUNRAISE_WEBHOOK_SECRET` on production
+`report-digests`. If `npx wrangler secret list` ever shows `MONDAY_API_TOKEN` again:
 
-- `MONDAY_API_TOKEN` on six sandbox Workers (`benevity-import`, `eventbrite-sync`,
-  `funraise-sync`, `mailchimp-sync`, `quickbooks-sync`, `report-digests`). These are from before
-  the broker. Each of those Workers prefers its `MONDAY_AUTH` binding, but still falls back to
-  this token.
-- `FUNRAISE_WEBHOOK_SECRET` on production `report-digests`, which never reads it.
+1. Confirm the deployed version has its `MONDAY_AUTH` binding (`npx wrangler deployments status`,
+   then `npx wrangler versions view <id>`).
+2. Delete the secret with `npx wrangler secret delete MONDAY_API_TOKEN [--env sandbox]`.
 
-Confirm each is unused, then remove it with `npx wrangler secret delete <NAME> [--env sandbox]`.
+Secret listings can lag a minute or two after a change. Check the deployed version's bindings
+rather than trusting a single listing.
 
 To rotate a secret, change it at the issuer first if the issuer holds it. Then put the new value
 in the Worker, then update the password manager. For URL secrets, also update the URL at the
