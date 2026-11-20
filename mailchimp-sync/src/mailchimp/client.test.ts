@@ -279,6 +279,45 @@ function sequenceFetch(...responses: { status: number; json?: unknown }[]) {
   return fn;
 }
 
+describe('HttpMailchimpClient.requestResubscribe', () => {
+  const HASH_URL = 'https://us1.api.mailchimp.com/3.0/lists/aud1/members/357a20e8c56e69d6f9734d23ef9517e8';
+
+  it.each([
+    ['an unsubscribed member', { status: 200, json: { status: 'unsubscribed' } }],
+    ['an archived member', { status: 200, json: { status: 'archived' } }],
+    ['an address the audience does not hold', { status: 404 }],
+  ])('PUTs %s to pending, so Mailchimp emails a confirm link', async (_label, lookup) => {
+    const fetchFn = sequenceFetch(lookup, { status: 200 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.requestResubscribe('A@B.com ')).resolves.toBe('pending');
+    const [url, init] = fetchFn.mock.calls[1]!;
+    expect(url).toBe(`${HASH_URL}?skip_merge_validation=true`);
+    expect((init as RequestInit).method).toBe('PUT');
+    // Never 'subscribed': only the member's own click on the confirm link subscribes them.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ email_address: 'A@B.com', status: 'pending', status_if_new: 'pending' });
+  });
+
+  it.each([
+    ['subscribed', 'already-subscribed'],
+    ['pending', 'already-pending'],
+    ['cleaned', 'cleaned'],
+  ])('writes nothing for a member who is %s', async (status, result) => {
+    const fetchFn = sequenceFetch({ status: 200, json: { status } });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+    await expect(client.requestResubscribe('a@b.com')).resolves.toBe(result);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws transient on 429/5xx and permanent on other 4xx, from the lookup or the PUT', async () => {
+    const base = 'https://us1.api.mailchimp.com/3.0';
+    await expect(new HttpMailchimpClient(base, 'k', 'aud1', sequenceFetch({ status: 503 })).requestResubscribe('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+    await expect(
+      new HttpMailchimpClient(base, 'k', 'aud1', sequenceFetch({ status: 200, json: { status: 'unsubscribed' } }, { status: 400 })).requestResubscribe('a@b.com'),
+    ).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+});
+
 describe('HttpMailchimpClient.unsubscribeMember', () => {
   const HASH_URL = 'https://us1.api.mailchimp.com/3.0/lists/aud1/members/357a20e8c56e69d6f9734d23ef9517e8';
 
