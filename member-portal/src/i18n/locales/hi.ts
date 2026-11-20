@@ -172,6 +172,10 @@ export const hi: Record<TranslationKey, string> = {
   'email.subject': 'SVBC डोनर पोर्टल का आपका लॉगिन लिंक',
   'email.bodyIntro': 'डोनर पोर्टल में लॉग इन करने के लिए नीचे क्लिक करें। यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
   'email.loginButton': 'लॉग इन करें',
+  'email.subjectWithCode': '{{code}} आपका SVBC सदस्य पोर्टल कोड है',
+  'email.codeIntro': 'आपका लॉगिन कोड:',
+  'email.codeOrLink': 'इसे उसी पेज पर दर्ज करें जहाँ आपने लॉग इन करने का अनुरोध किया था, या नीचे दिए गए लिंक का उपयोग करें।',
+  'email.codeExpiry': 'यह कोड और लिंक {{time}} पर समाप्त हो जाएँगे।',
 
   // Pledges + employer matching gifts
   'title.pledges': 'आपकी प्रतिज्ञाएँ',

@@ -172,6 +172,10 @@ export const zhHans: Record<TranslationKey, string> = {
   'email.subject': '您的 SVBC 捐赠者门户登录链接',
   'email.bodyIntro': '点击下方链接登录捐赠者门户。此链接很快会失效，且只能使用一次。',
   'email.loginButton': '登录',
+  'email.subjectWithCode': '{{code}} 是您的 SVBC 会员门户验证码',
+  'email.codeIntro': '您的登录验证码：',
+  'email.codeOrLink': '请在您请求登录的页面输入，或使用下方链接。',
+  'email.codeExpiry': '此验证码和链接将于 {{time}} 失效。',
 
   // Pledges + employer matching gifts
   'title.pledges': '您的认捐',

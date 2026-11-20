@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CloudflareEmailSender } from './cloudflareEmail';
 import { t } from '../i18n/t';
+import { formatExpiryTime } from './expiryTime';
 
 const LOGO_URL = 'https://example.org/email/logo.png';
 
@@ -26,6 +27,58 @@ describe('CloudflareEmailSender', () => {
       // Wrapped in the shared branded layout (logo image + footer), not sent as a bare fragment.
       expect(message.html).toContain(LOGO_URL);
       expect(message.text).toContain('Silicon Valley Bicycle Coalition');
+    });
+
+    describe('with a login code', () => {
+      const loginUrl = 'https://portal.example.org/auth/callback?token=abc';
+      const loginCode = {
+        code: '012345',
+        expiresAt: '2026-11-19T23:15:00.000Z',
+        timeZone: 'America/Los_Angeles',
+        domain: 'member.bikesiliconvalley.org',
+      };
+
+      it('puts the code in the subject, both bodies and a trailing domain-bound line', async () => {
+        const binding = fakeBinding();
+        const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
+
+        await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl, locale: 'en', loginCode });
+
+        const message = binding.send.mock.calls[0]![0];
+        const expiry = t('en', 'email.codeExpiry', { time: formatExpiryTime(loginCode.expiresAt, 'en', loginCode.timeZone) });
+        const line = '@member.bikesiliconvalley.org #012345';
+        expect(message.subject).toBe('🚴 012345 is your SVBC member portal code');
+        for (const body of [message.html, message.text]) {
+          expect(body).toContain('012345');
+          expect(body).toContain(loginUrl);
+          expect(body).toContain(expiry);
+        }
+        const lines = message.text.split('\n').filter((l: string) => l.trim() !== '');
+        expect(lines.at(-1)).toBe(line);
+        expect(message.html).toContain(`<p>${line}</p>`);
+      });
+
+      it('ends the HTML body fragment with the domain-bound line', async () => {
+        const layout = await import('./layout');
+        const spy = vi.spyOn(layout, 'renderEmailLayout');
+        const sender = new CloudflareEmailSender(fakeBinding(), 'login@example.org', 'Test Portal', LOGO_URL);
+
+        await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl, locale: 'en', loginCode });
+
+        expect(spy.mock.calls[0]![0].bodyHtml.endsWith('<p>@member.bikesiliconvalley.org #012345</p>')).toBe(true);
+        spy.mockRestore();
+      });
+
+      it('localizes the code copy', async () => {
+        const binding = fakeBinding();
+        const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
+
+        await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl, locale: 'es', loginCode });
+
+        const message = binding.send.mock.calls[0]![0];
+        expect(message.subject).toBe(`🚴 ${t('es', 'email.subjectWithCode', { code: '012345' })}`);
+        expect(message.text).toContain(t('es', 'email.codeIntro'));
+      });
     });
 
     it('sends the subject and body for the given locale', async () => {

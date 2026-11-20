@@ -172,6 +172,10 @@ export const vi: Record<TranslationKey, string> = {
   'email.subject': 'Liên kết đăng nhập cổng thông tin nhà tài trợ SVBC của bạn',
   'email.bodyIntro': 'Nhấp vào bên dưới để đăng nhập vào cổng thông tin nhà tài trợ. Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
   'email.loginButton': 'Đăng nhập',
+  'email.subjectWithCode': '{{code}} là mã cổng thông tin thành viên SVBC của bạn',
+  'email.codeIntro': 'Mã đăng nhập của bạn:',
+  'email.codeOrLink': 'Hãy nhập mã trên trang bạn đã yêu cầu đăng nhập, hoặc dùng liên kết bên dưới.',
+  'email.codeExpiry': 'Mã và liên kết này hết hạn lúc {{time}}.',
 
   // Pledges + employer matching gifts
   'title.pledges': 'Cam Kết Quyên Góp Của Bạn',

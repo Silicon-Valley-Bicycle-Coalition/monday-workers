@@ -202,6 +202,10 @@ export const en = {
   'email.subject': 'Your SVBC member portal login link',
   'email.bodyIntro': 'Click below to log in to the member portal. This link expires soon and can only be used once.',
   'email.loginButton': 'Log in',
+  'email.subjectWithCode': '{{code}} is your SVBC member portal code',
+  'email.codeIntro': 'Your login code:',
+  'email.codeOrLink': 'Enter it on the page where you asked to log in, or use the link below.',
+  'email.codeExpiry': 'This code and link expire at {{time}}.',
 
   // Letter-ready email (src/email/cloudflareEmail.ts) — the built-in copy used when the Letter
   // Settings board has no template for the donor's locale.

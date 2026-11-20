@@ -5,8 +5,9 @@ import type { EmailSender, SendLetterReadyEmailParams, SendLoginEmailParams } fr
 // into the browser to complete login or open a letter-ready link.
 export class ConsoleEmailSender implements EmailSender {
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
+    const code = params.loginCode ? `\n  Code: ${params.loginCode.code} (expires ${params.loginCode.expiresAt})` : '';
     // log-safety: allow — local-only (index.local.ts), never deployed; printing the address and link is the point.
-    console.log(`\n[dev email] Login link for ${params.to} (${params.locale}):\n  ${params.loginUrl}\n`);
+    console.log(`\n[dev email] Login link for ${params.to} (${params.locale}):\n  ${params.loginUrl}${code}\n`);
   }
 
   async sendLetterReadyEmail(params: SendLetterReadyEmailParams): Promise<void> {

@@ -172,6 +172,10 @@ export const zhHant: Record<TranslationKey, string> = {
   'email.subject': '您的 SVBC 捐款者入口網站登入連結',
   'email.bodyIntro': '請按下方按鈕登入捐款者入口網站。此連結將於短時間內失效，且只能使用一次。',
   'email.loginButton': '登入',
+  'email.subjectWithCode': '{{code}} 是您的 SVBC 會員入口網站驗證碼',
+  'email.codeIntro': '您的登入驗證碼：',
+  'email.codeOrLink': '請在您要求登入的頁面輸入，或使用下方連結。',
+  'email.codeExpiry': '此驗證碼和連結將於 {{time}} 失效。',
 
   // Pledges + employer matching gifts
   'title.pledges': '您的認捐',

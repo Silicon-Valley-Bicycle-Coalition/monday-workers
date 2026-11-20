@@ -4,6 +4,10 @@ export interface SendLoginEmailParams {
   to: string;
   loginUrl: string;
   locale: Locale;
+  // Browser-bound one-time code, shown in the email so Mail/Safari AutoFill can offer it.
+  // Absent → the plain link-only email. `domain` is the portal's host, for the domain-bound
+  // last line; `timeZone` is the requester's, for the expiry time.
+  loginCode?: { code: string; expiresAt: string; timeZone: string; domain: string };
 }
 
 export interface SendLetterReadyEmailParams {

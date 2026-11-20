@@ -172,6 +172,10 @@ export const ptBR: Record<TranslationKey, string> = {
   'email.subject': 'Seu link de acesso ao portal do doador da SVBC',
   'email.bodyIntro': 'Clique abaixo para entrar no portal do doador. Este link expira em breve e só pode ser usado uma vez.',
   'email.loginButton': 'Entrar',
+  'email.subjectWithCode': '{{code}} é o seu código do portal de membros da SVBC',
+  'email.codeIntro': 'Seu código de login:',
+  'email.codeOrLink': 'Digite-o na página em que você pediu para entrar, ou use o link abaixo.',
+  'email.codeExpiry': 'Este código e o link expiram às {{time}}.',
 
   // Pledges + employer matching gifts
   'title.pledges': 'Suas Promessas de Doação',

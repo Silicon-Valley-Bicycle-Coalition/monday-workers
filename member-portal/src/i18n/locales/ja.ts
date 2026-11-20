@@ -172,6 +172,10 @@ export const ja: Record<TranslationKey, string> = {
   'email.subject': 'SVBC寄付者ポータルへのログインリンク',
   'email.bodyIntro': '下のボタンをクリックして寄付者ポータルにログインしてください。このリンクは有効期限が短く、1回のみご利用いただけます。',
   'email.loginButton': 'ログイン',
+  'email.subjectWithCode': '{{code}} はSVBCメンバーポータルのコードです',
+  'email.codeIntro': 'ログインコード:',
+  'email.codeOrLink': 'ログインをリクエストしたページで入力するか、下のリンクをご利用ください。',
+  'email.codeExpiry': 'このコードとリンクは{{time}}に失効します。',
 
   // Pledges + employer matching gifts
   'title.pledges': 'ご寄付の誓約',

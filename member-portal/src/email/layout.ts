@@ -5,6 +5,9 @@ export interface EmailLayoutParams {
   bodyHtml: string;
   bodyText: string;
   logoUrl: string;
+  // Plain-text only: a line placed after the footer so it is the message's last line. Apple
+  // Mail/Safari AutoFill reads its domain-bound one-time-code line from the end of the text.
+  lastTextLine?: string;
 }
 
 export interface RenderedEmail {
@@ -58,7 +61,7 @@ Silicon Valley Bicycle Coalition · <a href="https://bikesiliconvalley.org" styl
 </body>
 </html>`;
 
-  const text = `${params.bodyText}\n\n--\n${FOOTER_TEXT}`;
+  const text = `${params.bodyText}\n\n--\n${FOOTER_TEXT}${params.lastTextLine ? `\n\n${params.lastTextLine}` : ''}`;
 
   return { html, text };
 }

@@ -2,7 +2,13 @@ import { escapeHtml } from '../views';
 import { t } from '../i18n/t';
 import { renderLetterEmailBody } from '../letters/letterEmailBody';
 import { renderEmailLayout } from './layout';
+import { formatExpiryTime } from './expiryTime';
 import type { EmailSender, SendLoginEmailParams, SendLetterReadyEmailParams } from './types';
+
+// Letter-spacing 0.08em is the design system's wide-tracking token; tokens.json defines no
+// monospace family, so the code uses the system monospace stack to keep 0 and O distinct.
+const CODE_STYLE =
+  "font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:32px; font-weight:600; letter-spacing:0.08em; margin:8px 0;";
 
 export class CloudflareEmailSender implements EmailSender {
   constructor(
@@ -14,14 +20,32 @@ export class CloudflareEmailSender implements EmailSender {
   ) {}
 
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
-    const subject = `🚴 ${t(params.locale, 'email.subject')}`;
+    const { loginCode } = params;
+    const subject = loginCode
+      ? `🚴 ${t(params.locale, 'email.subjectWithCode', { code: loginCode.code })}`
+      : `🚴 ${t(params.locale, 'email.subject')}`;
     const bodyIntro = t(params.locale, 'email.bodyIntro');
     const loginButton = t(params.locale, 'email.loginButton');
-    const body = renderEmailLayout({
-      bodyHtml: `<p>${bodyIntro}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`,
-      bodyText: `${bodyIntro}\n\n${params.loginUrl}`,
-      logoUrl: this.logoUrl,
-    });
+    let bodyHtml = `<p>${bodyIntro}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`;
+    let bodyText = `${bodyIntro}\n\n${params.loginUrl}`;
+    let lastTextLine: string | undefined;
+    if (loginCode) {
+      const codeIntro = t(params.locale, 'email.codeIntro');
+      const codeOrLink = t(params.locale, 'email.codeOrLink');
+      const expiry = t(params.locale, 'email.codeExpiry', {
+        time: formatExpiryTime(loginCode.expiresAt, params.locale, loginCode.timeZone),
+      });
+      // Domain-bound last line: the format Apple Mail/Safari AutoFill reads to offer the code.
+      const domainBound = `@${loginCode.domain} #${loginCode.code}`;
+      bodyHtml =
+        `<p>${codeIntro}</p>` +
+        `<p style="${CODE_STYLE}">${loginCode.code}</p>` +
+        `<p>${codeOrLink}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>` +
+        `<p>${expiry}</p><p>${domainBound}</p>`;
+      bodyText = `${codeIntro}\n\n${loginCode.code}\n\n${codeOrLink}\n\n${params.loginUrl}\n\n${expiry}`;
+      lastTextLine = domainBound;
+    }
+    const body = renderEmailLayout({ bodyHtml, bodyText, logoUrl: this.logoUrl, lastTextLine });
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },

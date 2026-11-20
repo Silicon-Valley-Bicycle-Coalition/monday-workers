@@ -36,3 +36,11 @@ describe('renderEmailLayout', () => {
     expect(styleBlock).not.toContain('#000000');
   });
 });
+
+describe('renderEmailLayout lastTextLine', () => {
+  it('puts the line after the footer in the text only', () => {
+    const out = renderEmailLayout({ bodyHtml: '<p>x</p>', bodyText: 'x', logoUrl: 'https://e.org/l.png', lastTextLine: '@a.org #1' });
+    expect(out.text.endsWith('\n\n@a.org #1')).toBe(true);
+    expect(out.html).not.toContain('@a.org #1');
+  });
+});
