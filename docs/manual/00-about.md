@@ -78,8 +78,8 @@ A **private appendix** goes with the PDF in a restricted Box folder. Its source 
 It records:
 
 - who holds each role, and their backups;
-- where each secret value is stored (password manager vault and item names, and the `.env` files
-  operators keep);
+- where each secret value is stored (the Secret Manager project, its owner and backup holder,
+  the second copy of each `BACKUP_ENCRYPTION_KEY`, and the `.env` files operators keep);
 - account recovery contacts and procedures for each vendor;
 - vendor account numbers, billing owners and renewal dates.
 

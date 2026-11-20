@@ -95,9 +95,11 @@ Subscribing the integration user to a board also opens it to `member-portal`'s r
 | `SLACK_WEBHOOK_URL` | Failure, watchdog and API-usage alerts (production: a private staff channel; sandbox: `#crm-sandbox`) | Slack incoming webhook | New URL, `wrangler secret put` |
 | `MONDAY_API_TOKEN` | Optional fallback only; normal access is the broker. The restore CLI reads one from the operator's shell | Monday | Do not add new uses |
 
-Keep a copy of `BACKUP_ENCRYPTION_KEY` outside Cloudflare and Google (for example the restore
-operator's password manager), named for the environment and key id. Where the copies live is in
-the private appendix.
+Keep each `BACKUP_ENCRYPTION_KEY` in Secret Manager
+([chapter 3](../03-accounts-and-access.md#where-secret-values-live-secret-manager)), with the key
+id of each version recorded in the secret's annotations, **and** a second copy outside Cloudflare and Google: Secret Manager
+and the backup Shared Drive are both Google, and one Google account problem must not take the
+snapshots and their key together. Where the second copy lives is in the private appendix.
 
 The service account is a **Contributor** on the Shared Drive, not Content manager: it can upload
 but cannot trash, move or delete. Shared Drive members should be only the service account and the

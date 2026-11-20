@@ -136,15 +136,16 @@ For each row:
 Monday access comes from the `MONDAY_AUTH` binding, not a secret: a `MONDAY_API_TOKEN` is only a
 cutover-era fallback where a Worker still declares one, and is not set for production.
 
-Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
-password manager before `wrangler secret put` — the same value goes into the registration URL
+Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in
+Secret Manager before `wrangler secret put` — the same value goes into the registration URL
 below, and a lost copy means re-setting the secret and re-registering the webhook.
 
-**The password manager is Google Passwords**, in the deploying operator's
-`@bikesiliconvalley.org` account: the only approved store, per SVBC's Information Technology and
-Cyber Security protocols. Worker secrets, webhook secrets (and the registration URLs that contain
-them) and Monday integration-user credentials **never** go in the shared Box note, a Box file,
-email or chat. Forks: substitute your own password manager.
+**The store is Google Cloud Secret Manager** (chosen 2026-11-20; naming and
+commands in [IT manual chapter 3](manual/03-accounts-and-access.md#where-secret-values-live-secret-manager)).
+Google Passwords stays for staff's own logins only: it can't share an item, so a secret kept there
+is lost with its operator. Worker secrets, webhook secrets (and the registration URLs that contain
+them) and Monday integration-user credentials **never** go in Google Passwords, the shared Box
+note, a Box file, email or chat. Forks: substitute your own secret store.
 
 **Webhook registration URLs.** Register each after its Worker's production deploy, in that
 Worker's Phase 3/4 step; `<SECRET>` is the value set above. The secret is part of the URL, so

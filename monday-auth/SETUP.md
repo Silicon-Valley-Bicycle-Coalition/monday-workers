@@ -15,7 +15,7 @@ Production's user, **SVBC Integration** (user id `120827741`), already exists (c
 
 - [ ] Admin → Users → Invite: **SVBC Integration**, on an address you control
       (e.g. `integrations@bikesiliconvalley.org`).
-- [ ] Accept the invite and set its password (store it in the password manager, not here).
+- [ ] Accept the invite and set its password (store it in Secret Manager, not here).
 - [ ] Seats: **CRM member** and **Work Management member** (the backup reads every workspace).
 - [ ] Note its **user id** (open its profile; the number in the URL). It isn't secret — send it
       over so it can go in `wrangler.jsonc` as production `EXPECTED_USER_ID`.
@@ -80,7 +80,7 @@ npx wrangler secret put SYNC_CLIENT_ID --env sandbox
 npx wrangler secret put SYNC_CLIENT_SECRET --env sandbox
 npx wrangler secret put READONLY_CLIENT_ID --env sandbox
 npx wrangler secret put READONLY_CLIENT_SECRET --env sandbox
-npx wrangler secret put START_KEY --env sandbox          # at least 32 chars, e.g. `openssl rand -hex 32`; keep it in the password manager
+npx wrangler secret put START_KEY --env sandbox          # at least 32 chars, e.g. `openssl rand -hex 32`; keep it in Secret Manager
 openssl rand -base64 32 | npx wrangler secret put TOKEN_ENC_KEY --env sandbox   # encrypts the token columns in D1; set before the first deploy
 npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # optional; see below
 ```
@@ -101,7 +101,7 @@ Authorize (production: same paths on `svbc-monday-auth.svbc-account.workers.dev`
 - [ ] `…/oauth/start/sync`
 - [ ] `…/oauth/start/readonly`
 
-Each page asks for `START_KEY` (paste it from the password manager) and posts it; the key never
+Each page asks for `START_KEY` (paste it from Secret Manager) and posts it; the key never
 goes in the URL, where Workers Logs and browser history would keep it.
 
 Each should end on a page naming the app, the Monday user and the scopes. A "wrong user" page
