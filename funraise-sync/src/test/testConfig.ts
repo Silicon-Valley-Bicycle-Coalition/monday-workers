@@ -61,5 +61,6 @@ export function testConfig(
       maxPagesPerRun: 200,
       ...subscriptionsPoll,
     },
+    employerAnswers: { enabled: false },
   };
 }

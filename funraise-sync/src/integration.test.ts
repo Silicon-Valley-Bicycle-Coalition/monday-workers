@@ -43,6 +43,7 @@ const config: FunraiseSyncConfig = {
     doNotMigrateFields: ['transaction.lastFour', 'transaction.expirationDate'],
   },
   subscriptionsPoll: testConfig().subscriptionsPoll,
+  employerAnswers: { enabled: false },
 };
 
 // The example delivery from help.funraise.io "Webhooks", trimmed to the fields this Worker reads

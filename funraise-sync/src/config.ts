@@ -197,5 +197,9 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     throw new Error('config: "subscriptionsPoll.funraiseLinkBase" must be a non-empty URL prefix');
   }
 
+  if (!isObject(cfg.employerAnswers) || typeof cfg.employerAnswers.enabled !== 'boolean') {
+    throw new Error('config: "employerAnswers.enabled" must be a boolean (false keeps matching-gift companies from being handed to impact-attribution)');
+  }
+
   return cfg as unknown as FunraiseSyncConfig;
 }

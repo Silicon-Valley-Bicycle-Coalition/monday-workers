@@ -94,6 +94,7 @@ export default {
       config,
       subscriptionStore: new D1SubscriptionStore(env.DB),
       funraiseClient: funraiseClient(env),
+      employerAnswers: env.EMPLOYER_ANSWERS ?? null,
     }, gate);
   },
 
