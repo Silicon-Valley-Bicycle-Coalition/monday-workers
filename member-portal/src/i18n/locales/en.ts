@@ -32,6 +32,8 @@ export const en = {
   'checkEmail.codeLabel': 'Got a code? Enter it here',
   'checkEmail.codeSubmit': 'Sign in',
   'checkEmail.codeError': 'That code didn\'t work. Check it, or ask for a new email.',
+  'checkEmail.resendHelp': "Didn't get it? Check your spam folder, or send it again.",
+  'checkEmail.resend': 'Send again',
 
   // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
   // scanners that prefetch links can't burn the single-use token (issue GL#31).

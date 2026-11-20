@@ -32,6 +32,8 @@ export const fil: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'May code ka ba? Ilagay dito',
   'checkEmail.codeSubmit': 'Mag-sign in',
   'checkEmail.codeError': 'Hindi gumana ang code na iyon. Suriin ito, o humiling ng bagong email.',
+  'checkEmail.resendHelp': 'Hindi mo ba natanggap? Tingnan ang iyong spam folder, o ipadala itong muli.',
+  'checkEmail.resend': 'Ipadala muli',
   'confirmLogin.heading': 'Magpatuloy sa iyong portal',
   'confirmLogin.body': 'Gamitin ang button sa ibaba para tapusin ang pag-log in.',
   'confirmLogin.submit': 'Magpatuloy sa iyong portal',

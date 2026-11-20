@@ -32,6 +32,8 @@ export const es: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': '¿Tienes un código? Ingrésalo aquí',
   'checkEmail.codeSubmit': 'Iniciar sesión',
   'checkEmail.codeError': 'Ese código no funcionó. Revísalo o pide un correo nuevo.',
+  'checkEmail.resendHelp': '¿No te llegó? Revisa tu carpeta de spam o envíalo de nuevo.',
+  'checkEmail.resend': 'Enviar de nuevo',
   'confirmLogin.heading': 'Continúa a tu portal',
   'confirmLogin.body': 'Usa el botón de abajo para terminar de iniciar sesión.',
   'confirmLogin.submit': 'Continuar a tu portal',

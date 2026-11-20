@@ -32,6 +32,8 @@ export const ko: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': '코드가 있나요? 여기에 입력하세요',
   'checkEmail.codeSubmit': '로그인',
   'checkEmail.codeError': '이 코드는 사용할 수 없습니다. 코드를 확인하시거나 새 이메일을 요청해 주세요.',
+  'checkEmail.resendHelp': '받지 못하셨나요? 스팸 메일함을 확인하시거나 다시 보내세요.',
+  'checkEmail.resend': '다시 보내기',
   'confirmLogin.heading': '포털로 계속하기',
   'confirmLogin.body': '아래 버튼을 눌러 로그인을 완료해 주세요.',
   'confirmLogin.submit': '포털로 계속하기',

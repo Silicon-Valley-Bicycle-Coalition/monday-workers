@@ -32,6 +32,8 @@ export const ptBR: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'Recebeu um código? Digite aqui',
   'checkEmail.codeSubmit': 'Entrar',
   'checkEmail.codeError': 'Esse código não funcionou. Confira-o ou peça um novo e-mail.',
+  'checkEmail.resendHelp': 'Não recebeu? Verifique sua pasta de spam ou envie novamente.',
+  'checkEmail.resend': 'Enviar novamente',
   'confirmLogin.heading': 'Continue para seu portal',
   'confirmLogin.body': 'Use o botão abaixo para concluir o login.',
   'confirmLogin.submit': 'Continuar para seu portal',

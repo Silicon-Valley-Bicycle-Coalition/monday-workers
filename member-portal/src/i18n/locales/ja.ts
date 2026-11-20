@@ -32,6 +32,8 @@ export const ja: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'コードをお持ちですか？こちらに入力してください',
   'checkEmail.codeSubmit': 'サインイン',
   'checkEmail.codeError': 'このコードは使用できませんでした。ご確認いただくか、新しいメールをリクエストしてください。',
+  'checkEmail.resendHelp': 'メールが届きませんか？迷惑メールフォルダをご確認いただくか、再送信してください。',
+  'checkEmail.resend': '再送信',
   'confirmLogin.heading': 'ポータルへ進む',
   'confirmLogin.body': '下のボタンを押してログインを完了してください。',
   'confirmLogin.submit': 'ポータルへ進む',

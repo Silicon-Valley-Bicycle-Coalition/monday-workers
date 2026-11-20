@@ -32,6 +32,8 @@ export const vi: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'Có mã? Nhập tại đây',
   'checkEmail.codeSubmit': 'Đăng nhập',
   'checkEmail.codeError': 'Mã đó không hợp lệ. Hãy kiểm tra lại, hoặc yêu cầu một email mới.',
+  'checkEmail.resendHelp': 'Chưa nhận được? Hãy kiểm tra thư mục spam, hoặc gửi lại.',
+  'checkEmail.resend': 'Gửi lại',
   'confirmLogin.heading': 'Tiếp tục đến cổng thông tin của bạn',
   'confirmLogin.body': 'Nhấn nút bên dưới để hoàn tất đăng nhập.',
   'confirmLogin.submit': 'Tiếp tục đến cổng thông tin',

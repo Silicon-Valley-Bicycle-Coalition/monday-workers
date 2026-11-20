@@ -32,6 +32,8 @@ export const hi: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': 'कोड मिला है? इसे यहाँ दर्ज करें',
   'checkEmail.codeSubmit': 'साइन इन करें',
   'checkEmail.codeError': 'वह कोड काम नहीं किया। उसे जाँचें, या नया ईमेल माँगें।',
+  'checkEmail.resendHelp': 'नहीं मिला? अपना स्पैम फ़ोल्डर देखें, या इसे दोबारा भेजें।',
+  'checkEmail.resend': 'फिर से भेजें',
   'confirmLogin.heading': 'अपने पोर्टल पर जारी रखें',
   'confirmLogin.body': 'लॉगिन पूरा करने के लिए नीचे दिए गए बटन का उपयोग करें।',
   'confirmLogin.submit': 'अपने पोर्टल पर जारी रखें',

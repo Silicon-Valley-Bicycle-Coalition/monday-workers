@@ -417,8 +417,35 @@ describe('POST /', () => {
       headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
-    expect(await matchingRes.text()).toBe(await nonMatchingRes.text());
+    // The page echoes the typed address into its Send again form; apart from that, identical.
+    const matchingHtml = (await matchingRes.text()).replaceAll('donor@example.org', 'ADDRESS');
+    const nonMatchingHtml = (await nonMatchingRes.text()).replaceAll('nobody@example.org', 'ADDRESS');
+    expect(matchingHtml).toBe(nonMatchingHtml);
     expect(matchingRes.status).toBe(nonMatchingRes.status);
+    expect(matchingRes.headers.get('Cache-Control')).toBe(nonMatchingRes.headers.get('Cache-Control'));
+  });
+
+  it('offers Send again with the typed address, after the cooldown, and is never cached', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'Someone@Example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const html = await res.text();
+    expect(html).toContain('name="email" value="someone@example.org"');
+    expect(html).toContain('animation-duration: 60s');
+    expect(res.headers.get('Cache-Control')).toContain('no-store');
+  });
+
+  it('offers no Send again for a malformed address', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'not-an-address' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    expect(await res.text()).not.toContain('resend-reveal');
   });
 });
 
@@ -1083,7 +1110,10 @@ describe('sign in with the emailed code', () => {
     const matching = await requestSignIn(app, 'donor@example.org');
     const other = await requestSignIn(app, 'nobody@example.org');
 
-    expect(await matching.text()).toBe(await other.text());
+    // Identical apart from the typed address echoed into the Send again form.
+    expect((await matching.text()).replaceAll('donor@example.org', 'ADDRESS')).toBe(
+      (await other.text()).replaceAll('nobody@example.org', 'ADDRESS')
+    );
     for (const res of [matching, other]) {
       const header = res.headers.get('set-cookie') ?? '';
       expect(header).toMatch(/__Host-login-request=[^;]+/);
@@ -1428,7 +1458,10 @@ describe('POST / email validation', () => {
     });
 
     expect(malformedRes.status).toBe(nonMatchingRes.status);
-    expect(await malformedRes.text()).toBe(await nonMatchingRes.text());
+    // The only difference: a malformed address gets no Send again (there's nothing to resend).
+    // That varies with the input's format, never with whether an address is on file.
+    const withoutResend = (html: string) => html.replace(/\n    <p>[^<]*<\/p>\n    <form action="\/" method="post">[\s\S]*?<\/form>/, '').replace(/\n      <input type="hidden" name="email" value="[^"]*" \/>/, '');
+    expect(await malformedRes.text()).toBe(withoutResend(await nonMatchingRes.text()));
     expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
   });
 

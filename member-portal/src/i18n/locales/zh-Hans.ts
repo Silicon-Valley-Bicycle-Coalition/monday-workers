@@ -32,6 +32,8 @@ export const zhHans: Record<TranslationKey, string> = {
   'checkEmail.codeLabel': '有验证码？请在此输入',
   'checkEmail.codeSubmit': '登录',
   'checkEmail.codeError': '该验证码无效。请检查后重试，或重新获取一封邮件。',
+  'checkEmail.resendHelp': '没收到？请检查垃圾邮件文件夹，或重新发送。',
+  'checkEmail.resend': '重新发送',
   'confirmLogin.heading': '继续进入您的门户',
   'confirmLogin.body': '请点击下方按钮完成登录。',
   'confirmLogin.submit': '继续进入您的门户',
