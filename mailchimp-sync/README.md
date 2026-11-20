@@ -471,13 +471,25 @@ collects each member's `web_id`; the link is `https://<dc>.admin.mailchimp.com/l
 for the address in `profileLinks.emailColumn`. Only differing links are written (capped per run), a
 link is cleared when the address leaves the audience, and nothing is planned on a failed read.
 
+**Email Preferences (`profileLinks.preferences`, same run).** A second 🔒 link: the person's page on
+Mailchimp's hosted preferences form, `<pageUrl>&e=<unique_email_id>`, where they can unsubscribe or
+untick Renewal Reminders. The Monday stewardship Sequences link to it
+(`docs/runbooks/stewardship-sequences.md`), because Monday's own unsubscribe list never reaches
+Mailchimp; a change made on the page comes back to Monday's consent columns through the audience
+webhook like any other. Only non-archived members get one (an archived member has no page). `pageUrl`
+is the audience's form with no person in it, `https://<org>.<dc>.list-manage.com/profile?u=<account>&id=<audienceId>`
+(the `u` and host are in the audience's `subscribe_url_long`); config validation refuses another
+audience's form. Checked 2026-11-20: a real `e` opens the page, a wrong one is a 404. Anyone holding
+the link can change that person's Mailchimp profile, as with the one in every Mailchimp email.
+
 **Turning it on** (both `null` in both configs until the Monday pieces exist):
 
 1. The **Mailchimp email** custom activity exists (created 2026-11-19; custom activities are per
    account, so both environments use `8a429b81-1416-4211-b8fc-d23e0ce87752`). Add **Last Journey
    Email** (Date) and **Mailchimp Profile** (Link) to People; run
    `node scripts/mark-read-only-columns.mjs` (both are in `MARKED_COLUMNS`). The sandbox has both
-   (`date_mm98v7ej`, `link_mm98rz6c`) and its config is filled.
+   (`date_mm98v7ej`, `link_mm98rz6c`) and its config is filled. For the preferences link, also add
+   **Email Preferences** (Link); the sandbox's is `link_mm99ntk0`.
 2. Apply migration `0007` (`npx wrangler d1 migrations apply <db> --remote [--env sandbox]`).
 3. Fill the config, e.g. production:
    ```json
@@ -485,7 +497,9 @@ link is cleared when the address leaves the audience, and nothing is planned on 
      "timelineActivityId": "8a429b81-1416-4211-b8fc-d23e0ce87752", "journeyIds": null,
      "lastJourneyEmailColumn": "<date column id>", "maxEntriesPerRun": 200 },
    "profileLinks": { "boardId": 18437909781, "emailColumn": "email_mm8nx6qg",
-     "linkColumn": "<link column id>", "maxWritesPerRun": 500 }
+     "linkColumn": "<link column id>", "maxWritesPerRun": 500,
+     "preferences": { "column": "<Email Preferences column id>",
+       "pageUrl": "https://bikesiliconvalley.us9.list-manage.com/profile?u=f5051c378a338d4fba23caa04&id=eab542a5df" } }
    ```
 4. Deploy **before** Felicia turns the Journeys on, so the first run has no history to log. A Journey
    that already sent would have its earlier sends logged with their real send times on the first run.

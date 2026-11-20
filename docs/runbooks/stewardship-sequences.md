@@ -42,6 +42,12 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
       production People (Donors & Contacts, `18201685`) and sandbox People.
 - [x] Welcome #2 stays (Felicia, 2026-11-19).
 - [ ] The accountant's word on a deductibility line for the renewal emails, which mention Donor Perks.
+- [ ] **🔒 Email Preferences filled on production People.** Add a Link column **Email Preferences**
+      to production People, run `node scripts/mark-read-only-columns.mjs`, then turn on
+      `profileLinks` (with `preferences`) in `mailchimp-sync/config/svbc.json` as in
+      `mailchimp-sync/README.md`, "Turning it on" (it needs the **Mailchimp Profile** column too).
+      PR, merge, deploy. The hourly run fills the column within a few hours (500 writes a run).
+      Sandbox: `link_mm99ntk0`, config filled.
 
 ## 2. Five Sequences (UI)
 
@@ -67,6 +73,12 @@ For each:
       - Welcome #1 "your generous gift of **XX**" → **Last Gift Amount**.
       - Renewal `*|MEMBUNTIL|*` (a Mailchimp tag) → **Member Until**. Check in the test send how
         Monday formats the date.
+- [ ] Last line of the body, above Monday's unsubscribe footer: "Choose which emails you get from
+      us, or unsubscribe from all of them: {Email Preferences}", with **Email Preferences** from the
+      `{ } Columns` picker. That page is Mailchimp's, so an opt-out there stops newsletters and these
+      emails alike. Monday's own unsubscribe link only stops Monday's emails (see "Mailchimp
+      Journeys" below), so this is the one to point people at. If renewal reminders are all they
+      want to stop, the page's **Renewal Reminders** box does that.
 - [ ] Copy fixes:
   - [ ] Welcome #1's "Why Your Gift Matters" link: drop `?utm_source=chatgpt.com`.
   - [ ] Renewal day-of: "Sillicon" → "Silicon".
@@ -91,7 +103,10 @@ On People, one per label:
 
 - [ ] Use a staff-only People item with a staff Personal Email that is **subscribed** in Mailchimp.
       Set its label by hand to each value in turn, with that Sequence briefly active. Confirm the
-      delivered email: photo, bold, links, Last Gift Amount and Member Until filled, unsubscribe link.
+      delivered email: photo, bold, links, Last Gift Amount and Member Until filled, unsubscribe link,
+      and the Email Preferences link **clickable and opening the staff address's Mailchimp page**.
+      If Monday prints the link's text without the link, or the raw URL, change the column's text
+      in `LINK_TEXT` (`mailchimp-sync/src/profileLinks/run.ts`) or move the sentence; tell David.
       Then clear the label and pause the Sequences again.
 
 ## 5. Go live
@@ -130,6 +145,7 @@ writes hold`) also stops labels, but it holds every other part of mailchimp-sync
 
 The Journey plan is dropped. The renewal-due tag and the Welcome Drip / Renewal Reminders interests
 keep being maintained, so renewals keep using the interest as the opt-out preference. Monday's
-unsubscribe list doesn't reach Mailchimp: someone who unsubscribes from a Monday email still gets
-the Mailchimp newsletter until they unsubscribe there too. Mailchimp unsubscribes are honoured before
-every Monday send.
+unsubscribe list doesn't reach Mailchimp, and Monday has no API or automation for it (checked
+2026-11-20), so someone who uses Monday's unsubscribe link still gets the Mailchimp newsletter
+until they unsubscribe there too. The Email Preferences link in each email is the way around that:
+it opts out in Mailchimp. Mailchimp unsubscribes are honoured before every Monday send.

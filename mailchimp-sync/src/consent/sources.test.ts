@@ -52,6 +52,17 @@ describe('readMailchimpStatuses', () => {
     expect([...webIds]).toEqual([['pat@example.org', 11], ['c@x.org', 33]]);
   });
 
+  it("fills uniqueEmailIds when asked, leaving archived members out (they can't be emailed)", async () => {
+    const { fetchFn, urls } = mailchimpFetch({
+      default: [{ email_address: 'Pat@Example.org', status: 'subscribed', unique_email_id: 'aa' } as never],
+      archived: [{ email_address: 'c@x.org', status: 'archived', unique_email_id: 'cc' } as never],
+    });
+    const uniqueEmailIds = new Map<string, string>();
+    await readMailchimpStatuses({ ...opts(fetchFn), uniqueEmailIds });
+    expect([...uniqueEmailIds]).toEqual([['pat@example.org', 'aa']]);
+    expect(decodeURIComponent(urls[0]!)).toContain('members.unique_email_id');
+  });
+
   it('pages by offset until total_items', async () => {
     const members = ['a', 'b', 'c'].map((n) => ({ email_address: `${n}@x.org`, status: 'subscribed' }));
     const { fetchFn, urls } = mailchimpFetch({ default: members, archived: [] });

@@ -155,6 +155,12 @@ export interface ProfileLinksConfig {
   linkColumn: string;
   // Link writes per run at most; the first fill catches up over a few hours.
   maxWritesPerRun: number;
+  // The 🔒 Email Preferences link column: each person's page on Mailchimp's hosted preferences
+  // form, where they can unsubscribe or untick Renewal Reminders. The stewardship Sequences link
+  // to it, so an opt-out lands in Mailchimp, which Monday's own unsubscribe list never reaches.
+  // pageUrl is the audience's form without the person: https://<org>.<dc>.list-manage.com/profile?u=<account>&id=<audience>.
+  // null turns it off.
+  preferences: { column: string; pageUrl: string } | null;
 }
 
 // The donor stewardship emails sent by monday CRM Sequences (src/stewardship; spec

@@ -170,7 +170,7 @@ function journeyLogConfig(value: unknown): JourneyLogConfig | null {
 }
 
 // Optional: absent or null turns the Mailchimp Profile link off.
-function profileLinksConfig(value: unknown): ProfileLinksConfig | null {
+function profileLinksConfig(value: unknown, audienceId: string): ProfileLinksConfig | null {
   if (value === undefined || value === null) return null;
   const obj = requireObject(value, 'profileLinks');
   if (typeof obj.boardId !== 'number') throw new Error('config: "profileLinks.boardId" must be a number');
@@ -178,7 +178,30 @@ function profileLinksConfig(value: unknown): ProfileLinksConfig | null {
     throw new Error('config: "profileLinks" needs emailColumn and linkColumn ids');
   }
   if (!positiveInt(obj.maxWritesPerRun)) throw new Error('config: "profileLinks.maxWritesPerRun" must be a positive integer');
-  return { boardId: obj.boardId, emailColumn: obj.emailColumn, linkColumn: obj.linkColumn, maxWritesPerRun: obj.maxWritesPerRun };
+  return {
+    boardId: obj.boardId, emailColumn: obj.emailColumn, linkColumn: obj.linkColumn, maxWritesPerRun: obj.maxWritesPerRun,
+    preferences: preferencesConfig(obj.preferences, audienceId),
+  };
+}
+
+// Optional within profileLinks. The page must be this audience's hosted profile form with no
+// person in it: a link built from another audience's form would open a page that can't find them.
+function preferencesConfig(value: unknown, audienceId: string): { column: string; pageUrl: string } | null {
+  if (value === undefined || value === null) return null;
+  const obj = requireObject(value, 'profileLinks.preferences');
+  if (!nonEmptyString(obj.column)) throw new Error('config: "profileLinks.preferences.column" must be a column id');
+  let url: URL;
+  try {
+    url = new URL(String(obj.pageUrl));
+  } catch {
+    throw new Error('config: "profileLinks.preferences.pageUrl" must be a URL');
+  }
+  const ok = url.protocol === 'https:' && url.hostname.endsWith('.list-manage.com') && url.pathname === '/profile'
+    && nonEmptyString(url.searchParams.get('u')) && url.searchParams.get('id') === audienceId && !url.searchParams.has('e');
+  if (!ok) {
+    throw new Error(`config: "profileLinks.preferences.pageUrl" must be https://<org>.<dc>.list-manage.com/profile?u=<account>&id=${audienceId}, with no e=`);
+  }
+  return { column: obj.column, pageUrl: url.toString() };
 }
 
 const STEWARDSHIP_COLUMNS = ['email', 'label', 'membershipStatus', 'membershipTier', 'memberType', 'memberSince', 'memberUntil', 'hasActiveRecurringGift', 'doNotSolicit'] as const;
@@ -298,7 +321,7 @@ export function validateConfig(raw: unknown): Config {
     dnsConfirmedValue: cfg.dnsConfirmedValue,
     consent: consentConfig(cfg.consent),
     journeyLog: journeyLogConfig(cfg.journeyLog),
-    profileLinks: profileLinksConfig(cfg.profileLinks),
+    profileLinks: profileLinksConfig(cfg.profileLinks, mailchimp.audienceId),
     stewardship: stewardshipConfig(cfg.stewardship),
   };
 }
