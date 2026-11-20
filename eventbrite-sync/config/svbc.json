@@ -164,6 +164,36 @@
         "consentValues": [
           "Yes/Si"
         ]
+      },
+      "1119156359799": {
+        "year": 2025,
+        "questions": {
+          "266760173": "zip",
+          "266760233": "daysPledged",
+          "266760243": "heardAbout",
+          "275733213": "riderType"
+        },
+        "ignoreQuestions": [
+          "266760193",
+          "266760183",
+          "266760203"
+        ],
+        "choices": {
+          "A newer bike rider": "I am a new rider",
+          "Very familiar/comfortable with cycling": "I am comfortable with riding a bike",
+          "A recreational bike rider": "I am a recreational bike rider",
+          "Someone who commutes by bike": "I commute by bike",
+          "1 day": "1 day",
+          "2-7 days": "2-7 days",
+          "> 7 days": "> 7 days",
+          "Email": "Email",
+          "Social Media": "Social Media",
+          "News Article": "News Article",
+          "Banner/Flyer/Poster": "Flyer",
+          "Friend": "Friend",
+          "Other": "Other"
+        },
+        "consentValues": []
       }
     }
   }
