@@ -212,7 +212,7 @@ describe('D1MagicLinkTokenStore', () => {
       });
     });
 
-    it('retires a request\'s rows for another address when a new address is asked for', async () => {
+    it('detaches a request\'s rows for another address when a new address is asked for', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
       await createCodeRow(store, { tokenHash: 'swap-token-a', requestHash: 'swap-req', codeHash: 'swap-code-a', emailHash: 'swap-email-a' });
       await createCodeRow(store, {
@@ -223,10 +223,17 @@ describe('D1MagicLinkTokenStore', () => {
         createdAt: NOW,
       });
 
+      // The old address's code no longer matches, and checking it isn't charged to that address.
       expect(await store.consumeCode('swap-req', 'swap-code-a', NOW)).toBeNull();
-      expect(await store.consumeToken('swap-token-a', NOW)).toBeNull();
       expect(await checksFor('swap-email-a')).toBe(0);
+      const detached = await env.DB.prepare(`SELECT request_hash, code_hash, used_at FROM magic_link_tokens WHERE token_hash = ?1`)
+        .bind('swap-token-a')
+        .first();
+      expect(detached).toEqual({ request_hash: null, code_hash: null, used_at: null });
+
       expect(await store.consumeCode('swap-req', 'swap-code-b', NOW)).not.toBeNull();
+      // Its link still works: a household sharing a browser can each use their own link.
+      expect(await store.consumeToken('swap-token-a', NOW)).toEqual(['donor-1']);
     });
 
     it('never matches a row without an email hash', async () => {
@@ -257,6 +264,23 @@ describe('D1MagicLinkTokenStore', () => {
       ).rejects.toThrow();
     });
 
+    // Merging deploys the sandbox before anyone applies 0007 by hand, and production may deploy
+    // before it too: a row without a request must still insert on the pre-0007 table.
+    it('inserts a row without a request on a table without the 0007 columns', async () => {
+      await env.DB.exec(
+        'CREATE TABLE IF NOT EXISTS magic_link_tokens_pre0007 (token_hash TEXT PRIMARY KEY, donor_item_ids TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT)'
+      );
+      const store = new D1MagicLinkTokenStore(renamedTable(env.DB, 'magic_link_tokens_pre0007'));
+
+      await store.createToken({ tokenHash: 'pre0007-letter', donorItemIds: ['donor-1'], expiresAt: EXPIRES });
+      expect(await store.consumeToken('pre0007-letter', NOW)).toEqual(['donor-1']);
+
+      // A code row does need the migration.
+      await expect(
+        createCodeRow(store, { tokenHash: 'pre0007-code', requestHash: 'pre0007-req', codeHash: 'pre0007-code', emailHash: 'email-a' })
+      ).rejects.toThrow();
+    });
+
     it('never matches a row created without code fields', async () => {
       const store = new D1MagicLinkTokenStore(env.DB);
       await store.createToken({
@@ -277,3 +301,15 @@ describe('D1MagicLinkTokenStore', () => {
     });
   });
 });
+
+// The same database with every statement pointed at another table, to run the store's real SQL
+// against an older schema.
+function renamedTable(db: D1Database, table: string): D1Database {
+  return new Proxy(db, {
+    get(target, prop) {
+      if (prop === 'prepare') return (sql: string) => target.prepare(sql.replaceAll('magic_link_tokens', table));
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}

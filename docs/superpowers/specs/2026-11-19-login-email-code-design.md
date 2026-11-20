@@ -138,8 +138,9 @@ attacker. So, decided with David:
   address fails with the usual generic error until the oldest check is 24 hours old; links are
   unaffected. Bound: about 10 guesses a day per targeted donor, roughly 1 in 100,000 per day.
 - **One address per request:** `magic_link_tokens` gains `email_hash`. Creating a code row for a
-  request marks any live rows of that request with a *different* `email_hash` as used, so a
-  browser asking for two addresses can't charge guesses at one address to the other's budget.
+  request detaches (clears the request and code hashes on) any live rows of that request with a
+  *different* `email_hash`, so their codes stop working and a browser asking for two addresses
+  can't charge guesses at one address to the other's budget; their links still work.
 - The purge deletes `login_code_checks` rows older than `rateLimit.attemptRetentionHours`
   (validated to be at least 24).
 

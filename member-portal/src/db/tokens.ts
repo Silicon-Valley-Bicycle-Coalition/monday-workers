@@ -6,6 +6,7 @@ export interface NewMagicLinkToken {
   donorItemIds: string[];
   expiresAt: string;
   // Set only for an emailed link that also carries a login code; letter-ready rows omit them.
+  // Without requestHash the other code fields are ignored.
   requestHash?: string;
   codeHash?: string;
   // sha256 of the lowercased address, as login_attempts keys it. A code row without one never
@@ -33,17 +34,37 @@ const DAY_MS = 86_400_000;
 export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
   constructor(private db: D1Database) {}
 
+  // A row without a request (the switch off, or a letter-ready email) names only the original
+  // columns, so it inserts on a database that hasn't had migration 0007 yet.
+  //
   // A code row joins its request's checks, not a fresh budget: it starts at the highest count
   // among the request's live rows, so a resend never buys new guesses at an older code. A request
-  // holds one address's codes at a time: live rows for any other address are retired (used_at)
-  // first, so guesses at one address can't be charged to another's daily budget. Both statements
-  // run in one D1 batch (a transaction).
+  // holds one address's codes at a time: live rows for any other address are detached from it
+  // first (request and code hashes cleared), so their codes stop working and guesses at one
+  // address can't be charged to another's daily budget, while their links still work. Both
+  // statements run in one D1 batch (a transaction).
   async createToken(params: NewMagicLinkToken): Promise<void> {
+    const donorItemIds = JSON.stringify(params.donorItemIds);
     const requestHash = params.requestHash ?? null;
+    if (requestHash === null) {
+      await this.db
+        .prepare(`INSERT INTO magic_link_tokens (token_hash, donor_item_ids, expires_at) VALUES (?1, ?2, ?3)`)
+        .bind(params.tokenHash, donorItemIds, params.expiresAt)
+        .run();
+      return;
+    }
+
     const createdAt = params.createdAt ?? null;
-    if (requestHash !== null && createdAt === null) {
+    if (createdAt === null) {
       throw new Error('createToken: createdAt is required with requestHash');
     }
+
+    const detachOtherAddresses = this.db
+      .prepare(
+        `UPDATE magic_link_tokens SET request_hash = NULL, code_hash = NULL
+         WHERE request_hash = ?1 AND used_at IS NULL AND expires_at > ?2 AND email_hash IS NOT ?3`
+      )
+      .bind(requestHash, createdAt, params.emailHash ?? null);
 
     const insert = this.db
       .prepare(
@@ -56,7 +77,7 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
       )
       .bind(
         params.tokenHash,
-        JSON.stringify(params.donorItemIds),
+        donorItemIds,
         params.expiresAt,
         requestHash,
         params.codeHash ?? null,
@@ -65,19 +86,7 @@ export class D1MagicLinkTokenStore implements MagicLinkTokenStore {
         createdAt
       );
 
-    if (requestHash === null) {
-      await insert.run();
-      return;
-    }
-
-    const retireOtherAddresses = this.db
-      .prepare(
-        `UPDATE magic_link_tokens SET used_at = ?2
-         WHERE request_hash = ?1 AND used_at IS NULL AND expires_at > ?2 AND email_hash IS NOT ?3`
-      )
-      .bind(requestHash, createdAt, params.emailHash ?? null);
-
-    await this.db.batch([retireOtherAddresses, insert]);
+    await this.db.batch([detachOtherAddresses, insert]);
   }
 
   async consumeToken(tokenHash: string, nowISO: string): Promise<string[] | null> {
