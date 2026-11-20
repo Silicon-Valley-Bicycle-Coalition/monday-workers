@@ -109,9 +109,9 @@ describe('config split: column ids', () => {
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
-  it('sets only the ENVIRONMENT var, and never at the top level', () => {
-    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
-    expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
+  it('sets ENVIRONMENT only in the sandbox, and requires the webhook JWT in both', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', MONDAY_WEBHOOK_JWT_REQUIRED: 'true' });
+    expect(wrangler.vars).toEqual({ MONDAY_WEBHOOK_JWT_REQUIRED: 'true' });
   });
 
   it('uses sandbox-suffixed queue names that map back to the production queues', () => {

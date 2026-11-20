@@ -5,6 +5,10 @@
   "compatibility_date": "2026-08-01",
   "preview_urls": false,
   "upload_source_maps": true,
+  // Reject Monday deliveries without a verified Authorization JWT (GL#110, GitHub #3). Turned on
+  // 2026-11-19 after every subscription was re-registered as the Staff sync app and three days of
+  // deliveries logged no "carried no Authorization JWT" warning. Restated in env.sandbox.
+  "vars": { "MONDAY_WEBHOOK_JWT_REQUIRED": "true" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -99,12 +103,12 @@
   // nothing with production. The consumer settings mirror the top level — same subrequest and
   // D1-quota reasoning applies. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_WEBHOOK_SECRET, CUSTODIAN_SECRET). Monday access comes from the MONDAY_AUTH binding,
+  // (MONDAY_WEBHOOK_SECRET, CUSTODIAN_SECRET, MONDAY_SIGNING_SECRET). Monday access comes from the MONDAY_AUTH binding,
   // not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "sandbox" },
+      "vars": { "ENVIRONMENT": "sandbox", "MONDAY_WEBHOOK_JWT_REQUIRED": "true" },
       "d1_databases": [
         {
           "binding": "DB",

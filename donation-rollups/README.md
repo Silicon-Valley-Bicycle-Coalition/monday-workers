@@ -1248,7 +1248,7 @@ sandbox gets rebuilt before cutover:
   shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
   Second factor (issue [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)): with `MONDAY_SIGNING_SECRET` set, the `Authorization` JWT Monday
   signs app-created webhooks with is verified too, and `MONDAY_WEBHOOK_JWT_REQUIRED = "true"`
-  rejects unsigned deliveries; rollout table and operator steps in the root README, "Monday's
+  (set in both environments since 2026-11-19) rejects unsigned deliveries; rollout table and operator steps in the root README, "Monday's
   signed webhook JWT". The URL secret is compared in
   constant time and **fails closed** since issue [GL#27](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/27): with the secret unset or empty every
   delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
@@ -1275,7 +1275,7 @@ sandbox gets rebuilt before cutover:
   | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell; `setup-webhooks.mjs` prefers `MONDAY_AUTH_URL` + `START_KEY` (the broker's `/oauth/webhooks`, so deliveries are signed, [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)) |
   | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
   | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
-  | `MONDAY_SIGNING_SECRET` (optional, [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
+  | `MONDAY_SIGNING_SECRET` (required, [GL#110](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/110)) | `wrangler secret put` | `wrangler secret put … --env sandbox` | — |
 
   With neither the binding nor the secret, building the Monday client throws a config error
   naming both, rather than sending an empty `Authorization` header. Local `wrangler dev` has no
