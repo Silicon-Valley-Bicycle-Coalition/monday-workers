@@ -71,8 +71,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-zoom-phone-sync-sandbox",
-          // Not created yet: `wrangler d1 create svbc-zoom-phone-sync-sandbox` (#55).
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "database_id": "dbdd3941-bdc9-48c9-9649-55de2ebd7452",
           "migrations_dir": "migrations"
         }
       ],
