@@ -204,12 +204,16 @@ Sandbox, done 2026-11-20: new column `color_mm9arcwx`, all 4,125 items copied la
 6. After the deploys, copy over any Gift Type written to the old column in the meantime (items
    whose new cell is empty), then delete the old column.
 
-**Production** repeats 1–6 on board 18437909794 (old column `text_mm8nyftg`). Normalize the
-`Grant` and `Contract` cells to `Grants` / `Contracts` before converting, so the copy doesn't make
-two extra labels, then put the new id in each `config/svbc.json` that holds `text_mm8nyftg`
-(`funraise-sync`, `eventbrite-sync`, `benevity-import`, `donation-rollups` ×2, `dtd-sync`,
-`member-portal`'s `donationDescription`) and deploy those Workers before step 6. Production views
-to repoint: whatever filters `text_mm8nyftg` (`get_board_info` views), at least Matching gifts.
+**Production, done 2026-11-20:** new column `color_mm9afjhr` on board 18437909794 (old
+`text_mm8nyftg`). The one `Grant` and one `Contract` cell became `Grants` / `Contracts` first;
+all 4,265 values then copied label-for-label (one item was blank in both). Label ids match the
+sandbox's (Donor Advised Fund 12, Click & Pledge (historical) 17, Driver Training 151, Commute
+Workshop 160). Four views filtered the old column and were repointed with the same meaning,
+counts unchanged: Matching gifts and Reconciliation: matching gifts (`any_of` Matching
+Donation, 381), Reconciliation: sponsorships (`any_of` Sponsorship, In Kind Donation /
+Sponsorship, 59: the old `contains_text` "Sponsorship" matched both), Reconciliation: individual
+gifts (`not_any_of` the eight non-individual labels, 3,229). On the form, adding the column from
+the "+" under the old Gift Type question places it right after Status, inside the page.
 
 **Code.** Readers take the cell's text, which is the label for a Status column, so only
 `impact-attribution`'s column-type check changed (it accepts `status` or `text`). `dtd-sync`'s

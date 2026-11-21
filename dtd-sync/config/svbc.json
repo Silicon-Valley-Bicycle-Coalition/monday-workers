@@ -7,7 +7,7 @@
   },
   "boards": { "donations": 18437909794, "people": 18437909781, "organizations": 18437909779, "programSummary": 0 },
   "donations": {
-    "amount": "numeric_mm8nsb7t", "date": "date_mm8nty3x", "status": "color_mm8nspep", "giftType": "text_mm8nyftg", "funraiseId": "link_mm8nbqv8",
+    "amount": "numeric_mm8nsb7t", "date": "date_mm8nty3x", "status": "color_mm8nspep", "giftType": "color_mm9afjhr", "funraiseId": "link_mm8nbqv8",
     "salesforceId": "text_mm8ns8p6", "benevityTransactionId": "text_mm8nz4rk", "anonymousDonor": "boolean_mm8ng6gp", "donor": "board_relation_mm8n97wj",
     "matchedBy": "board_relation_mm8nkc1g", "matchStatus": "REPLACE_WITH_COLUMN_ID", "dtdStatusRaw": "REPLACE_WITH_COLUMN_ID", "matchCompany": "REPLACE_WITH_COLUMN_ID",
     "matchesGift": "REPLACE_WITH_COLUMN_ID", "matchPairing": "REPLACE_WITH_COLUMN_ID", "sentToDtd": "REPLACE_WITH_COLUMN_ID"
