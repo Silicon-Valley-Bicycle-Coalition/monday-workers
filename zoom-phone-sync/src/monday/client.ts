@@ -10,9 +10,27 @@ export interface PeoplePhone {
   phone: string | null;
 }
 
+export interface TimelineEntry {
+  itemId: string;
+  customActivityId: string;
+  title: string;
+  summary: string;
+  content: string;
+  timestamp: string;
+}
+
 export interface PhoneSyncMondayClient {
   /** Every item on the board with the given phone column's text, paged 500 at a time. */
   listPeoplePhones(boardId: number, phoneColumn: string): Promise<PeoplePhone[]>;
+}
+
+export interface PhoneLogMondayClient {
+  /** Names of the items that still exist, by id. A deleted item is simply absent. */
+  itemNames(itemIds: string[]): Promise<Map<string, string>>;
+  /** Sets the date column to `date` (YYYY-MM-DD) unless it already holds a later one. Idempotent. */
+  advanceDate(boardId: number, itemId: string, columnId: string, date: string): Promise<'set' | 'kept'>;
+  /** Creates one timeline entry; returns its id. Not idempotent. */
+  createTimelineItem(entry: TimelineEntry): Promise<string>;
 }
 
 interface RawItem { id: string; column_values: { id: string; text: string | null }[] }
@@ -23,9 +41,13 @@ interface ItemsPage { cursor: string | null; items: RawItem[] }
 // place for the next night to replace.
 const NIGHTLY_OPTIONS: MondayGraphQLOptions = { maxAttempts: 4, requestTimeoutMs: 30_000 };
 
+// The queue consumer keeps 3 in-process attempts and leaves longer waits to the queue's backoff
+// (root CLAUDE.md, "One Monday GraphQL transport").
+export const CONSUMER_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
+
 const PAGE = 'cursor items { id column_values(ids: $columnIds) { id text } }';
 
-export class HttpMondayClient implements PhoneSyncMondayClient {
+export class HttpMondayClient implements PhoneSyncMondayClient, PhoneLogMondayClient {
   private readonly transport: MondayGraphQL;
 
   constructor(token: string | TokenProvider, options: MondayGraphQLOptions = {}, apiUrl = MONDAY_API_URL) {
@@ -60,5 +82,44 @@ export class HttpMondayClient implements PhoneSyncMondayClient {
       collect(page);
     }
     return out;
+  }
+
+  async itemNames(itemIds: string[]): Promise<Map<string, string>> {
+    if (itemIds.length === 0) return new Map();
+    const data = await this.transport.request<{ items: { id: string; name: string; state?: string | null }[] }>(
+      `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id name state } }`,
+      { ids: itemIds },
+    );
+    // `items` returns archived and deleted items too, flagged by state; only active ones get entries.
+    return new Map(data.items.filter((i) => i.state === undefined || i.state === null || i.state === 'active').map((i) => [String(i.id), i.name]));
+  }
+
+  async advanceDate(boardId: number, itemId: string, columnId: string, date: string): Promise<'set' | 'kept'> {
+    const data = await this.transport.request<{ items: { column_values: { text: string | null }[] }[] }>(
+      `query ($itemId: ID!, $columnIds: [String!]) { items(ids: [$itemId]) { column_values(ids: $columnIds) { text } } }`,
+      { itemId, columnIds: [columnId] },
+    );
+    const current = (data.items[0]?.column_values[0]?.text ?? '').trim().slice(0, 10);
+    if (current !== '' && current >= date) return 'kept';
+    await this.transport.request(
+      `mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+        change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+      }`,
+      { boardId: String(boardId), itemId, columnId, value: JSON.stringify({ date }) },
+    );
+    return 'set';
+  }
+
+  async createTimelineItem(entry: TimelineEntry): Promise<string> {
+    const data = await this.transport.request<{ create_timeline_item: { id: string } }>(
+      `mutation ($itemId: ID!, $customActivityId: String!, $title: String!, $summary: String, $content: String, $timestamp: ISO8601DateTime!) {
+        create_timeline_item(item_id: $itemId, custom_activity_id: $customActivityId, title: $title, summary: $summary, content: $content, timestamp: $timestamp) { id }
+      }`,
+      { ...entry },
+      // Not idempotent: a create that may have committed throws rather than retrying into a
+      // duplicate. The queue's retry is then the rare duplicate, never a missing entry.
+      { idempotent: false },
+    );
+    return String(data.create_timeline_item.id);
   }
 }

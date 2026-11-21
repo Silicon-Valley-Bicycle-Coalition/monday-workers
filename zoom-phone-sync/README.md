@@ -1,10 +1,9 @@
 # zoom-phone-sync
 
-**Status: ingest and nightly index built, not deployed.** The webhook route, signature check,
-ingest filter and D1 dedupe are in (#52), and so is the nightly cron (#53) that rebuilds the phone
-index from People, expires unmatched events after `unmatchedRetentionDays` and rematches the rest.
-Not yet: the queue consumer that writes Monday (#54), real payload fixtures (#50, waiting on a
-staff line), and the D1 databases and queues themselves (#55).
+**Status: built, not deployed.** Ingest (#52), the nightly phone index with rematch and expiry
+(#53), and the queue consumer that writes timeline entries and Last Phone Contact (#54) are in.
+Not yet: real payload fixtures (#50, waiting on a staff line), `zoom.smsUrl`, and the D1
+databases and queues themselves with a sandbox end-to-end run (#55).
 
 Logs Zoom Phone calls and texts between staff and supporters on each supporter's Monday People
 item: one Emails & Activities timeline entry per call or text, plus a 🔒 Last Phone Contact date.

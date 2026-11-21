@@ -20,9 +20,22 @@
     }
   ],
   "queues": {
-    // Producer only for now (#52, ingest). The consumer, its outage retry policy and the
-    // dead-letter queue come with the Monday writes (#54). Messages carry the D1 key only.
-    "producers": [{ "queue": "zoom-phone-sync-writes", "binding": "WRITE_QUEUE" }]
+    // Messages carry the D1 key only, never a number.
+    "producers": [{ "queue": "zoom-phone-sync-writes", "binding": "WRITE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "zoom-phone-sync-writes",
+        // Retries back off by attempt, 1 minute doubling to an hour (retryDelaySeconds in
+        // src/flags.ts), so 100 retries ride out about four days of Monday outage or `hold`.
+        "max_retries": 100,
+        // Floor for a whole-batch redelivery (a throw from queue() carries no delay of its own).
+        "retry_delay": 60,
+        // One writer at a time: Monday's per-token complexity budget punishes concurrent writers.
+        "max_concurrency": 1,
+        "dead_letter_queue": "zoom-phone-sync-writes-dlq"
+      },
+      { "queue": "zoom-phone-sync-writes-dlq", "max_batch_size": 10, "max_retries": 2, "max_concurrency": 1 }
+    ]
   },
   // Write-switch flags (scripts/flags.mjs): `zoom-phone-sync:writes` in the shared FLAGS namespace
   // (`sandbox-FLAGS` under env.sandbox); scripts/check-worker-flags.mjs checks the ids.
@@ -38,8 +51,8 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
-  // Monday access: the monday-auth broker's Staff sync app (SyncToken). The nightly cron reads
-  // People with it; the consumer (#54) will write with it.
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken): the nightly cron reads
+  // People with it and the consumer writes timeline entries and Last Phone Contact.
   "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `npm run deploy:sandbox` deploys svbc-zoom-phone-sync-sandbox, fed by the sandbox's own Zoom
@@ -64,7 +77,17 @@
         }
       ],
       "queues": {
-        "producers": [{ "queue": "zoom-phone-sync-writes-sandbox", "binding": "WRITE_QUEUE" }]
+        "producers": [{ "queue": "zoom-phone-sync-writes-sandbox", "binding": "WRITE_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "zoom-phone-sync-writes-sandbox",
+            "max_retries": 100,
+            "retry_delay": 60,
+            "max_concurrency": 1,
+            "dead_letter_queue": "zoom-phone-sync-writes-sandbox-dlq"
+          },
+          { "queue": "zoom-phone-sync-writes-sandbox-dlq", "max_batch_size": 10, "max_retries": 2, "max_concurrency": 1 }
+        ]
       },
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2104", "simple": { "limit": 60, "period": 60 } }],
