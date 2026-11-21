@@ -33,6 +33,7 @@ describe('parseDelivery: calls', () => {
         callId: 'call_out_1',
         occurredAt: '2026-11-19T18:00:00.000Z',
         zoomUserId: 'user_ann',
+        staffName: 'Ann Staff',
         externalE164: '+14085550123',
         direction: 'outbound',
         result: 'answered',
@@ -112,6 +113,7 @@ describe('parseDelivery: texts', () => {
         callId: null,
         occurredAt: '2026-11-19T20:00:00.000Z',
         zoomUserId: 'user_ann',
+        staffName: 'Ann Staff',
         externalE164: '+14085550123',
         direction: 'outbound',
         result: null,
@@ -122,7 +124,7 @@ describe('parseDelivery: texts', () => {
 
   it('reads a received text, external number from the sender', () => {
     const { events } = parseDelivery('phone.sms_received', smsReceivedFixture.payload, testConfig());
-    expect(events[0]).toMatchObject({ eventId: 'msg_in_1', direction: 'inbound', externalE164: '+14085550123', zoomUserId: 'user_ann' });
+    expect(events[0]).toMatchObject({ eventId: 'msg_in_1', direction: 'inbound', externalE164: '+14085550123', zoomUserId: 'user_ann', staffName: 'Ann Staff' });
   });
 
   it('never carries the message text', () => {

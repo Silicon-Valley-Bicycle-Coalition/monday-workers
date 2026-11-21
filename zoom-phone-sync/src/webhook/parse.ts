@@ -25,6 +25,8 @@ export interface PhoneEvent {
   callId: string | null;
   occurredAt: string;
   zoomUserId: string;
+  // The staff party's display name as Zoom gives it; null when absent.
+  staffName: string | null;
   externalE164: string;
   direction: Direction;
   result: string | null;
@@ -68,6 +70,7 @@ function party(element: Json, side: 'caller' | 'callee'): Json {
     phone_number: field('phone_number') ?? field('number'),
     ext_number: field('ext_number') ?? field('extension_number'),
     email: field('email'),
+    name: field('name') ?? nested.display_name,
     user_id: field('user_id') ?? nested.id,
   };
 }
@@ -124,6 +127,7 @@ function parseCall(event: (typeof CALL_EVENTS)[number], raw: unknown, config: Zo
     callId: str(raw.call_id),
     occurredAt,
     zoomUserId: staffIds[0] ?? 'unknown',
+    staffName: str(staff.name),
     externalE164,
     direction: direction === 'inbound' || direction === 'outbound' ? direction : staffSide === 'caller' ? 'outbound' : 'inbound',
     result: str(raw.result),
@@ -160,6 +164,9 @@ function parseText(event: (typeof SMS_EVENTS)[number], raw: Json, config: ZoomPh
     callId: null,
     occurredAt,
     zoomUserId: staffIds[0] ?? 'unknown',
+    // owner.name is the line's name (a user, or a call queue's name); the staff party's own
+    // display name is the fallback.
+    staffName: str(owner.name) ?? (sent ? str(sender.display_name) : members.map((m) => str(m.display_name)).find((n) => n !== null) ?? null),
     externalE164,
     direction: sent ? 'outbound' : 'inbound',
     result: null,
