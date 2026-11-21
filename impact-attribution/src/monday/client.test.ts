@@ -81,6 +81,20 @@ describe('readActiveMatches', () => {
     expect(f.queryParams[0]).toEqual({ rules: [{ column_id: 'mb', compare_value: [], operator: 'is_not_empty' }] });
     expect(f.requests.some((r) => r.query.includes('linked_items { id board { id } }'))).toBe(true);
   });
+
+  it('reads Gift Type as a Status column too, by its label text', async () => {
+    const f = new FakeMonday();
+    f.addBoard({ id: '200', columns: DONATION_COLUMNS.map((c) => (c.id === 'gt' ? { ...c, type: 'status' } : c)), items: [donation('d1', 'Matching Donation')] });
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+    expect((await client.readActiveMatches(cfg)).stored.map((m) => m.donationItemId)).toEqual(['d1']);
+  });
+
+  it('refuses a Gift Type column of any other type', async () => {
+    const f = new FakeMonday();
+    f.addBoard({ id: '200', columns: DONATION_COLUMNS.map((c) => (c.id === 'gt' ? { ...c, type: 'dropdown' } : c)), items: [] });
+    const client = new HttpMondayClient('https://x', 'tok', { fetchFn: f.fetchFn });
+    await expect(client.readActiveMatches(cfg)).rejects.toThrow('is type "dropdown", expected "status" or "text"');
+  });
 });
 
 describe('existingAffiliationPairs', () => {

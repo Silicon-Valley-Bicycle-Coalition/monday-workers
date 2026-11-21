@@ -1,12 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPECTED_QUESTIONS, checkForm } from './donation-form.mjs';
+import { EXPECTED_QUESTIONS, EXPECTED_TYPES, checkForm } from './donation-form.mjs';
 
 const question = (title, extra = {}) => ({ id: `id_${title}`, type: 'ShortText', title, visible: true, required: false, ...extra });
 const goodForm = () => ({
   questions: [
     { id: 'page', type: 'PAGE_BLOCK', title: 'Page', visible: true, required: false },
-    ...Object.entries(EXPECTED_QUESTIONS).map(([title, required]) => question(title, { required })),
+    ...Object.entries(EXPECTED_QUESTIONS).map(([title, required]) => question(title, { required, ...(EXPECTED_TYPES[title] ? { type: EXPECTED_TYPES[title] } : {}) })),
     question('🔒 Funding Stream', { visible: false }),
   ],
   features: { requireLogin: { enabled: true } },
@@ -37,6 +37,12 @@ describe('checkForm', () => {
     const form = goodForm();
     form.questions.find((q) => q.title === 'Status').required = false;
     assert.deepEqual(checkForm(form), ['"Status" should be required']);
+  });
+
+  it('flags Gift Type shown as free text instead of the Status pick list', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Gift Type').type = 'ShortText';
+    assert.deepEqual(checkForm(form), ['"Gift Type" is a ShortText question (id_Gift Type); expected SingleSelect']);
   });
 
   it('flags a form that does not require login, or has no feature block', () => {

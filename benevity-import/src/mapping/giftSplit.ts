@@ -32,9 +32,9 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
     [cols.amount]: amount,
     [cols.date]: { date: row.donationDate },
     [cols.disbursementDate]: { date: disbursementPeriodEnding },
-    // Fiscal Year Ending and Gift Type are TEXT columns on the Donations board (same as
-    // funraise-sync and salesforce-import write them), so they take plain strings — a `{date}`
-    // or `{label}` object here is what Monday rejects as "invalid value" for the column.
+    // Fiscal Year Ending is a TEXT column and Gift Type a Status column (text until
+    // 2026-11-20). Both take plain strings — a `{date}` or `{label}` object on a text column is
+    // what Monday rejects as "invalid value", and a plain string is a label name for a Status.
     [cols.fiscalYearEnding]: fyEnding,
     [cols.status]: { label: 'Received' },
     [cols.anonymousDonor]: { checked: personItemId ? 'false' : 'true' },

@@ -47,7 +47,8 @@ export function giftStatus(o: Record<string, unknown>, staleBeforeFY?: number | 
 
 // Gift Type for an Eventbrite paid ticket order. Same label funraise-sync writes for its paid
 // events (`eventGiftTypeValue` in ../../funraise-sync/config/svbc.json) — keep them identical,
-// Gift Type is a text column and the dashboards group on the string.
+// the dashboards group on the string. (Gift Type was a text column at the import; it became a
+// Status column on 2026-11-20, whose label names are these same strings.)
 export const EVENT_TICKET_GIFT_TYPE = 'Event Ticket';
 
 // An eb4sf ticket order: Closed Won AND created by the integration user the package runs as

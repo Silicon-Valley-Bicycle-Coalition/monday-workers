@@ -75,7 +75,7 @@ on the first request.
 
 Labels the Worker depends on, which must exist exactly:
 
-- Donations **Status** `Received`; **Gift Type** text `Donation` / `Matching Donation`.
+- Donations **Status** `Received`; **Gift Type** `Donation` / `Matching Donation`.
 - Uploads **Retry**: `Needs review`, `Retry`, `Queued`, `Done` (names configurable in
   `uploadsBoard.retry.labels`).
 

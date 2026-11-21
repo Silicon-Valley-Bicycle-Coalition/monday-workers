@@ -17,7 +17,7 @@
     "entityIdField": "id",
     "entityIdColumn": "link_mm8hqhsx",
     "thankYouSentColumn": "boolean_mm8j82yw",
-    "giftTypeColumn": "text_mm8h238c",
+    "giftTypeColumn": "color_mm9arcwx",
     "giftTypeValue": "Donation",
     "eventGiftTypeValue": "Event Ticket",
     "oldestActiveFiscalYear": 2026,
