@@ -29,12 +29,17 @@
   "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   // A signed delivery skips this (src/rateLimit.ts); it bounds everything else on the public host.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2103", "simple": { "limit": 60, "period": 60 } }],
-  "limits": { "cpu_ms": 100 },
+  // Raised from 100 for the nightly cron, which normalizes ~8,400 People phones and builds the
+  // index batch in one invocation. Still a cap on a runaway request on the public host.
+  "limits": { "cpu_ms": 1000 },
+  // Nightly phone index rebuild, rematch and expiry (#53): 10:30 UTC is 02:30/03:30 Pacific.
+  "triggers": { "crons": ["30 10 * * *"] },
   "observability": {
     "enabled": true,
     "issues": { "enabled": true }
   },
-  // Monday access: the monday-auth broker's Staff sync app (SyncToken). Unused until #54.
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken). The nightly cron reads
+  // People with it; the consumer (#54) will write with it.
   "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `npm run deploy:sandbox` deploys svbc-zoom-phone-sync-sandbox, fed by the sandbox's own Zoom
@@ -47,6 +52,8 @@
       // Explicit, never inherited: an env block without routes can take over the top level's.
       "routes": [],
       "vars": { "ENVIRONMENT": "sandbox" },
+      // Explicit, like routes: the same nightly run against the CRM Sandbox People board.
+      "triggers": { "crons": ["30 10 * * *"] },
       "d1_databases": [
         {
           "binding": "DB",
@@ -61,7 +68,7 @@
       },
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2104", "simple": { "limit": 60, "period": 60 } }],
-      "limits": { "cpu_ms": 100 },
+      "limits": { "cpu_ms": 1000 },
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }

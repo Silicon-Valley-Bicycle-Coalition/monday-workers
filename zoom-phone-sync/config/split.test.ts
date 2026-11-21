@@ -7,9 +7,11 @@ import { validateConfig } from '../src/config';
 import { queueBaseName } from '../src/environment';
 
 // Keeps the sandbox and production deployments apart (design 2026-09-18 sandbox environment §5,
-// and the zoom-phone-sync design's Sandbox section): no shared board, column or Zoom app id, the
-// sandbox limited to named test lines, and env.sandbox sharing no resource. Custom activities are
-// per Monday account, so the two configs name the same activity ids (as mailchimp-sync's does).
+// and the zoom-phone-sync design's Sandbox section): no shared board or column, the sandbox
+// limited to named test lines, and env.sandbox sharing no resource. Custom activities are per
+// Monday account, so the two configs name the same activity ids (as mailchimp-sync's does). SVBC
+// has one Zoom account, so zoom.accountId is the same in both too: the two Zoom apps are told
+// apart by their webhook secrets, not by account.
 
 type Json = Record<string, unknown>;
 const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((o, key) => (o as Json | undefined)?.[key], obj);
@@ -32,7 +34,6 @@ describe('config split', () => {
     'people.boardId',
     'people.phoneColumn',
     'people.lastPhoneContactColumn',
-    'zoom.accountId',
   ])('%s is never shared between sandbox and production', (path) => {
     const sb = get(sandbox, path);
     const prod = get(production, path);
@@ -40,8 +41,8 @@ describe('config split', () => {
     expect(sb).not.toBe(prod);
   });
 
-  it.each(['timeline.callActivityId', 'timeline.textActivityId'])(
-    '%s is the same account-wide custom activity in both',
+  it.each(['timeline.callActivityId', 'timeline.textActivityId', 'zoom.accountId'])(
+    '%s is the same account-wide id in both',
     (path) => {
       const sb = get(sandbox, path);
       const prod = get(production, path);

@@ -20,7 +20,8 @@
     "dtd-sync": "not deployed to production",
     "nearby-search": "not deployed to production (sandbox rollout pending)",
     "impact-attribution": "production script deployed without its cron and with writes off",
-    "quickbooks-sync": "sandbox only, postponed indefinitely"
+    "quickbooks-sync": "sandbox only, postponed indefinitely",
+    "zoom-phone-sync": "not deployed (D1, queues and consumer pending, #54/#55)"
   },
   "queues": []
 }
