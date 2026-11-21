@@ -194,6 +194,39 @@
           "Other": "Other"
         },
         "consentValues": []
+      },
+      "2004835226130": {
+        "year": 2027,
+        "questions": {
+          "324736606": "daysPledged",
+          "324736607": "zip",
+          "324736608": "whoAsked",
+          "324736609": "riderType",
+          "324736610": "heardAbout",
+          "324736611": "consent"
+        },
+        "ignoreQuestions": [],
+        "choices": {
+          "1 day/Un día ": "1 day",
+          "Multiple days/Varios días ": "Multiple days",
+          "All month long!/ ¡Todo el mes!": "All month",
+          "I am a new rider/ Andar en bici es nuevo para mi ": "I am a new rider",
+          "I am comfortable with riding a bike/ Me siento cómodo usando una bici": "I am comfortable with riding a bike",
+          "I commute by bike/ Voy en bici al trabajo ": "I commute by bike",
+          "I bike with my children/ Ando en bici con niños ": "I bike with my children",
+          "I am a recreational bike rider/ Ando en bici para recreación  ": "I am a recreational bike rider",
+          "None of these apply to me/ Ninguna condición aplica para mi ": "None of these apply to me",
+          "Employer/ Empleador ": "Employer",
+          "Email/ Correo electrónico ": "Email",
+          "Social Media/Redes social ": "Social Media",
+          "News Article/Articulo en la noticias": "News Article",
+          "Banner/Flyer/Poster/Letrero/folleto": "Flyer",
+          "Friend/ Amigos": "Friend",
+          "Other/ Otra manera": "Other"
+        },
+        "consentValues": [
+          "Yes/Si"
+        ]
       }
     }
   }
