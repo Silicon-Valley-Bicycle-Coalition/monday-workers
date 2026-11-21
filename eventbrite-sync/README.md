@@ -185,7 +185,7 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 | `eventbriteSync.statusColumn` | Donations → Status (status) | `color_mm8hshet` | `placed → Received`, `refunded → Refunded` via `statusLabelMap`; **`Refunded` is not yet a label on the board** (funraise-sync's open item) |
 | `eventbriteSync.dateColumn` | Donations → Date (date) | `date_mm8hfsvm` | the Pacific calendar day of the order's `created` |
 | `eventbriteSync.thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | first write only; Eventbrite sends the buyer its own confirmation |
-| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (status; text before 2026-11-20) | `text_mm8h238c` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
+| `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (status; text before 2026-11-20) | `color_mm9arcwx` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
 | `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | first write only, derived from the same date as the Date column |
 | `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm8h4kkb` | lookup by bare address; create writes `{ email, text }` |
 | `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |

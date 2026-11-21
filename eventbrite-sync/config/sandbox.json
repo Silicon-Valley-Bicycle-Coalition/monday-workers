@@ -33,7 +33,7 @@
     },
     "itemNameTemplate": "{buyer} - {event}",
     "thankYouSentColumn": "boolean_mm8j82yw",
-    "giftTypeColumn": "text_mm8h238c",
+    "giftTypeColumn": "color_mm9arcwx",
     "giftTypeValue": "Event Ticket",
     "fiscalYearColumn": "text_mm8hpk76",
     "donorEmailColumn": "email_mm8h4kkb",

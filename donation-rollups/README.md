@@ -1093,7 +1093,7 @@ rows can differ from what a live run would write.
        "people": "board_relation_mm8qkvrn", "organization": "board_relation_mm8qqr7m",
        "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q", "householdName": "text_mm8rga06" },
      "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "date": "date_mm8hfsvm", "status": "color_mm8hshet",
-       "fiscalYear": "text_mm8hpk76", "giftType": "text_mm8h238c", "donorLink": "board_relation_mm8hhdk7",
+       "fiscalYear": "text_mm8hpk76", "giftType": "color_mm9arcwx", "donorLink": "board_relation_mm8hhdk7",
        "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h",
        "inKindValue": "numeric_mm8hpt4q", "recognitionFiscalYear": "text_mm8rsesm" } },
      "people": {

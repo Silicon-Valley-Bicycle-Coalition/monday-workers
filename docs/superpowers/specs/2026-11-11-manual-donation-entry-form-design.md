@@ -175,11 +175,41 @@ Workers and staff write that Salesforce never had:
 relabeled `Grants` and `Contracts`, the spelling every Worker config uses.
 
 **Conversion.** The Monday API cannot change a column's type (`update_column` requires the
-existing type), so it is done in the board UI: column menu → **Change column type** → Status.
-Sandbox first: confirm the column id survives (Worker configs hold `text_mm8h238c` /
-`text_mm8nyftg`), every label above exists (add missing ones; remove Monday's default
-`Working on it` / `Done` / `Stuck`), each writer's plain-string write still lands, and the
-board views that filter Gift Type with `contains_text` still filter.
+existing type), so it is done in the board UI: Gift Type column menu → **Change column type** →
+Status. Monday does **not** convert in place: it adds a new Status column titled Gift Type (new
+id), copies every value into it as a label (a few seconds per thousand items), and leaves the
+text column beside it with the same title. So every config that holds the column id changes.
+
+Sandbox, done 2026-11-20: new column `color_mm9arcwx`, all 4,125 items copied label-for-label
+(checked by grouping both columns). Then:
+
+1. Rename the old column `Gift Type (old text)` at once (`change_column_title`): two columns
+   titled Gift Type break every lookup by title (`impact-attribution`, `report-digests`,
+   `bareTitle` scripts).
+2. Set the labels and order above with `update_column` (keeps existing label ids; the copy made
+   none of Monday's `Working on it` / `Done` / `Stuck` defaults). Copy the description.
+3. Repoint views that filter the old column. Sandbox had one, **Matching gifts**
+   (`contains_text` "Matching Donation" → `any_of` the Matching Donation label; 366 items before
+   and after). `contains_text` still works on a Status column, so `dtd-sync`'s query is fine.
+4. Form: a new column is **not** added to the form by itself. In the form editor, Add content →
+   Board columns → Gift Type, then (API) make it required, Dropdown, Custom order, with Event
+   Ticket and Click & Pledge (historical) hidden (Workers write those, staff don't); hide the
+   old text question. Dismiss the editor's "Question title out of sync" dialog with ✕: **Sync
+   titles** would overwrite the form's own wording ("Date received", …). The new question lands
+   outside the page block; drag it into Page 1 in the outline. `check-donation-form.mjs` now
+   fails if the visible Gift Type question isn't a SingleSelect.
+5. Point the Worker configs at the new id and deploy. Writes are plain label strings, which a
+   Status column takes as label names (verified: create and change both land; an unknown label
+   fails with `missingLabel`).
+6. After the deploys, copy over any Gift Type written to the old column in the meantime (items
+   whose new cell is empty), then delete the old column.
+
+**Production** repeats 1–6 on board 18437909794 (old column `text_mm8nyftg`). Normalize the
+`Grant` and `Contract` cells to `Grants` / `Contracts` before converting, so the copy doesn't make
+two extra labels, then put the new id in each `config/svbc.json` that holds `text_mm8nyftg`
+(`funraise-sync`, `eventbrite-sync`, `benevity-import`, `donation-rollups` ×2, `dtd-sync`,
+`member-portal`'s `donationDescription`) and deploy those Workers before step 6. Production views
+to repoint: whatever filters `text_mm8nyftg` (`get_board_info` views), at least Matching gifts.
 
 **Code.** Readers take the cell's text, which is the label for a Status column, so only
 `impact-attribution`'s column-type check changed (it accepts `status` or `text`). `dtd-sync`'s

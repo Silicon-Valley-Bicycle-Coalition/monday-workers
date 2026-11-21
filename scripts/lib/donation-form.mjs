@@ -24,6 +24,10 @@ export const EXPECTED_QUESTIONS = {
   Campaign: false,
 };
 
+// Questions that must be a particular type. Gift Type is a pick list of the Status column's labels
+// (2026-11-20); a ShortText "Gift Type" means the old text column's question is showing again.
+export const EXPECTED_TYPES = { 'Gift Type': 'SingleSelect' };
+
 // Pure. `form` is the monday `form(formToken:)` result: { questions: [{ id, type, title, visible,
 // required }], features: { requireLogin: { enabled } } }. Returns a list of problems; empty = OK.
 export function checkForm(form) {
@@ -44,6 +48,9 @@ export function checkForm(form) {
       problems.push(`expected question "${title}" is hidden or missing`);
     } else if (mustBeRequired && !q.required) {
       problems.push(`"${title}" should be required`);
+    }
+    if (q && EXPECTED_TYPES[title] && q.type !== EXPECTED_TYPES[title]) {
+      problems.push(`"${title}" is a ${q.type} question (${q.id}); expected ${EXPECTED_TYPES[title]}`);
     }
   }
   if (form.features?.requireLogin?.enabled !== true) {
