@@ -614,7 +614,9 @@ Pledge to Ride is a free Eventbrite event for Bike to Wherever Days, with about 
 Design: [`docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md`](../docs/superpowers/specs/2026-11-05-pledge-to-ride-board-design.md).
 **Status:** live in both environments. Production's board is 18439165954 (created 2026-11-09, private,
 backed up); `pledge.events` holds 2026 (1977741403778) and 2025 (1119156359799), both backfilled
-2026-11-20 (IT Requests item 13527993339). The board matches Eventbrite: 2026 has 2,906 Pledged (352
+2026-11-20 (IT Requests item 13527993339). 2027 (2004835226130, a draft due to publish 2027-01-15) is configured
+ahead of publishing; its draft has no employer question yet (step 4 below), and its "I see myself as" and
+"Please describe" text questions go to Other Answers. The board matches Eventbrite: 2026 has 2,906 Pledged (352
 `Buyer only`) and 5 Canceled; 2025 has 3,272 Pledged (340 `Buyer only`) and 15 Canceled. The dashboard is
 **Pledge to Ride** (40597968, `/overviews/40597968`), a workspace dashboard whose charts split by Year; its
 first chart has the exact Pledged totals, the others include the few Canceled rows, since Monday's API
