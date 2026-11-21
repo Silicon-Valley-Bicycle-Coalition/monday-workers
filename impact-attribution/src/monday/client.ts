@@ -59,12 +59,15 @@ export function parseMatchItem(item: RawMatchItem, cfg: ImpactAttributionConfig)
 
 interface BoardColumn { id: string; title: string; type: string }
 
-function columnByTitle(columns: BoardColumn[], title: string, boardId: string, type?: string): BoardColumn {
+function columnByTitle(columns: BoardColumn[], title: string, boardId: string, type?: string | string[]): BoardColumn {
   const matches = columns.filter((c) => bareTitle(c.title) === bareTitle(title));
   if (matches.length === 0) throw new ColumnLookupError(`board ${boardId}: no column titled "${title}"`);
   if (matches.length > 1) throw new ColumnLookupError(`board ${boardId}: ${matches.length} columns titled "${title}"; rename one`);
   const col = matches[0]!;
-  if (type !== undefined && col.type !== type) throw new ColumnLookupError(`board ${boardId}: column "${title}" is type "${col.type}", expected "${type}"`);
+  const types = type === undefined ? undefined : [type].flat();
+  if (types !== undefined && !types.includes(col.type)) {
+    throw new ColumnLookupError(`board ${boardId}: column "${title}" is type "${col.type}", expected "${types.join('" or "')}"`);
+  }
   return col;
 }
 
@@ -152,7 +155,9 @@ export class HttpMondayClient implements ImpactMondayClient {
   async readActiveMatches(cfg: ImpactAttributionConfig): Promise<BoardMatchRead> {
     const d = cfg.donations;
     const cols = await this.columns(d.boardId);
-    const giftType = columnByTitle(cols, d.giftType, d.boardId, 'text').id;
+    // Gift Type became a Status column on 2026-11-20 (a pick list for the staff form); text is
+    // the type before the conversion. Only the cell's text is read, which is the same for both.
+    const giftType = columnByTitle(cols, d.giftType, d.boardId, ['status', 'text']).id;
     const matchedBy = columnByTitle(cols, d.matchedBy, d.boardId, 'board_relation').id;
     const donor = columnByTitle(cols, d.donor, d.boardId, 'board_relation').id;
     const date = columnByTitle(cols, d.date, d.boardId, 'date').id;

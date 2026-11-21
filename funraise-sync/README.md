@@ -181,7 +181,7 @@ too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 | `columnMap.donationDate` | Donations → Date (date) | `date_mm8hfsvm` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `entityIdColumn` | Donations → Funraise ID (link) | `link_mm8hqhsx` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm8j82yw` | |
-| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm8h238c` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
+| `giftTypeColumn` | Donations → Gift Type (status; text before 2026-11-20) | `text_mm8h238c` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
 | `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | |
 | `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm8h60g2` | set on every write of an installment |
 | `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm8ha5g0` | lookup by bare id; create writes `{url, text}` |

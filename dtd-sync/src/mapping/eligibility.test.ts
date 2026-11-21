@@ -33,8 +33,8 @@ describe('pushDecision', () => {
     expect(pushDecision(item({ giftType: null }), donor(), cfg, NOW)).toEqual(no('gift-type'));
   });
   it('does not send a gift type that is both listed and excluded', () => {
-    const c = { ...cfg, giftTypes: ['Donation', 'Grant'] };
-    expect(pushDecision(item({ giftType: 'Grant' }), donor(), c, NOW)).toEqual(no('gift-type'));
+    const c = { ...cfg, giftTypes: ['Donation', 'Grants'] };
+    expect(pushDecision(item({ giftType: 'Grants' }), donor(), c, NOW)).toEqual(no('gift-type'));
   });
   it('does not send an item already marked Sent to DTD', () => {
     expect(pushDecision(item({ sentToDtd: '2026-10-31' }), donor(), cfg, NOW)).toEqual(no('already-sent'));

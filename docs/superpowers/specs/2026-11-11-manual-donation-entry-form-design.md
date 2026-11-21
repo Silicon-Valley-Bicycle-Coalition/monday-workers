@@ -40,7 +40,7 @@ afterward, same steps.
 | 2 | Donor | ConnectedBoards | yes (unless Q1) | Donor | Must offer People, People (Historical) **and** Organizations. A connect column spanning three boards may only pick from one in the form UI — verify. Fallback: two questions (Person / Organization), exactly one required via show-if. |
 | 3 | Amount | Number | yes | Amount | Description: "Dollars, no $ or commas." |
 | 4 | Date received | Date | yes | Date | Default today. For a check, the date it was deposited/received, not written. |
-| 5 | Gift type | SingleSelect | yes | Gift Type | **Gift Type is a text column**; a form select can't write to text. Options: either convert the column to Dropdown (touches `salesforce-import`, `donation-rollups` classify, `funraise-sync` reads — check first) or use ShortText with the allowed values listed in the description. Recommend: leave column as text, ShortText, default `Donation`. |
+| 5 | Gift type | SingleSelect | yes | Gift Type | Gift Type becomes a **Status** column (decided 2026-11-20; see "Gift Type as a Status column"), so the question is a single select of its labels. Default `Donation`. |
 | 6 | Campaign | ConnectedBoards (Campaigns) | no | Campaign | |
 | 7 | ~~Thank you already sent?~~ | Boolean | — | Thank You Sent | **Hidden (2026-11-12).** The form is only for entering checks and cash. Thank-yous are sent separately and recorded on the board, so the form doesn't set this column. |
 | 8 | Payment method | ShortText | no | Payment Method | Default `Cash/Check`. Column already exists. |
@@ -146,6 +146,46 @@ Findings:
 - Gift Type and Payment Method are both text, so neither can be a form dropdown without
   converting the column.
 
+## Gift Type as a Status column (decided 2026-11-20)
+
+Free text had drifted on production (`Grant` beside `Grants`, `Contract` beside `Contracts`), and a
+form select can only write to a select column. Status rather than Dropdown: a gift has exactly
+one type, Status is single-select, Workers already write it as a plain label string, and
+`contains_text` filters keep working (`dtd-sync` relies on that).
+
+**Labels.** Salesforce's Opportunity record types (counts from the `svbc` org), plus the labels
+Workers and staff write that Salesforce never had:
+
+| Label | Salesforce records | Written by |
+|---|---|---|
+| Donation | 24,950 | `funraise-sync`, `benevity-import`, staff |
+| Membership | 15,003 | historical |
+| Sponsorship | 3,617 | staff |
+| Matching Donation | 3,067 | `benevity-import`, staff |
+| In Kind Donation / Sponsorship | 1,109 | staff |
+| Contracts | 479 | staff |
+| Grants | 125 | staff |
+| Commute Workshop | 65 | staff |
+| Driver Training | 21 | staff |
+| Event Ticket | — | `funraise-sync`, `eventbrite-sync` |
+| Donor Advised Fund | — | staff (`donation-rollups` counts it toward membership) |
+| Click & Pledge (historical) | — | `salesforce-import` |
+
+`Major Gift` (one Salesforce record) is left out. Existing `Grant` and `Contract` cells are
+relabeled `Grants` and `Contracts`, the spelling every Worker config uses.
+
+**Conversion.** The Monday API cannot change a column's type (`update_column` requires the
+existing type), so it is done in the board UI: column menu → **Change column type** → Status.
+Sandbox first: confirm the column id survives (Worker configs hold `text_mm8h238c` /
+`text_mm8nyftg`), every label above exists (add missing ones; remove Monday's default
+`Working on it` / `Done` / `Stuck`), each writer's plain-string write still lands, and the
+board views that filter Gift Type with `contains_text` still filter.
+
+**Code.** Readers take the cell's text, which is the label for a Status column, so only
+`impact-attribution`'s column-type check changed (it accepts `status` or `text`). `dtd-sync`'s
+`excludeGiftTypes` now names `Grants` / `Contracts`. A writer that sends a label that doesn't
+exist fails the item write, so add the label to the column before configuring a new value.
+
 ## Access and safety
 
 - Form **must require a Monday login** (not public / not "anyone with the link"): it writes
@@ -240,5 +280,5 @@ tested on the sandbox form (a production form carries the same two settings):
 
 1. (Resolved: yes, via a board dropdown then an item dropdown.)
 2. (Resolved: the columns already exist.)
-3. Is converting Gift Type to a dropdown acceptable, or keep text?
+3. (Resolved 2026-11-20: convert Gift Type to a Status column; see "Gift Type as a Status column".)
 4. Who owns the form (David, or Martha)?

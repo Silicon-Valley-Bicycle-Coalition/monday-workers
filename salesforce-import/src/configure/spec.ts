@@ -373,7 +373,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grants, Contracts… For a gift from a donor-advised fund, ' +
-        'type Donor Advised Fund exactly.',
+        'pick Donor Advised Fund.',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
         'Anonymous Donor is checked. For a gift an organization made through an affiliated ' +
         'person, the organization is the Donor and the person is in Acting for.',

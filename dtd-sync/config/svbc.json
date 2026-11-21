@@ -23,7 +23,7 @@
   },
   "push": {
     "giftTypes": ["Donation", "Event Ticket"],
-    "excludeGiftTypes": ["Matching Donation", "Sponsorship", "Grant", "Contract", "Membership"],
+    "excludeGiftTypes": ["Matching Donation", "Sponsorship", "Grants", "Contracts", "Membership"],
     "receivedStatus": "Received",
     "windowDays": 30,
     "backfillFromISO": null,
