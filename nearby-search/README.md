@@ -6,9 +6,14 @@ onto a results board in Monday, one row per contact, and adds the search's label
 person's **Nearby** column, which `mailchimp-sync` turns into a Mailchimp tag. Design:
 [`docs/superpowers/specs/2026-11-02-nearby-search-design.md`](../docs/superpowers/specs/2026-11-02-nearby-search-design.md).
 
-**Status: built, not yet deployed. Sandbox rollout is pending** (D1/queues, the Access application,
-real board and column ids in `config/sandbox.json`, the write switch, and the checklist under
-[Verify during sandbox rollout](#verify-during-sandbox-rollout)).
+**Status: built; production not deployed. Sandbox partly provisioned 2026-11-23:** D1
+`svbc-nearby-search-sandbox` (migration `0001` applied), both sandbox queues (14-day retention), a
+Nearby dropdown column on both sandbox People boards, and the board and column ids in
+`config/sandbox.json` (sandbox v4 workspace 18210301). Organizations has no State column in either
+environment, so its `address` is `null` and the geocode cron skips it. **Still to do before the
+sandbox serves a search:** a hostname and its route, the Access application (`access.teamDomain`,
+`access.aud`), `osm.userAgent`, the write switch (`nearby-search:writes`, `off` today), and the
+checklist under [Verify during sandbox rollout](#verify-during-sandbox-rollout).
 
 ## How a search works
 

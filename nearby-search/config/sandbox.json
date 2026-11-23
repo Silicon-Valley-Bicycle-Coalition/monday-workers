@@ -4,35 +4,35 @@
     "sources": [
       {
         "kind": "person",
-        "boardId": null,
-        "latColumn": "REPLACE_WITH_COLUMN_ID",
-        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "boardId": 18437342592,
+        "latColumn": "text_mm8hh5mn",
+        "lngColumn": "text_mm8hw6wm",
         "nameColumn": null,
-        "nearbyColumn": "REPLACE_WITH_COLUMN_ID",
-        "address": { "street": "REPLACE_WITH_COLUMN_ID", "city": "REPLACE_WITH_COLUMN_ID", "state": "REPLACE_WITH_COLUMN_ID", "zip": "REPLACE_WITH_COLUMN_ID" }
+        "nearbyColumn": "dropdown_mm9c8mna",
+        "address": { "street": "text_mm8hf280", "city": "text_mm8h6v58", "state": "text_mm90wc9s", "zip": "text_mm8hkfy3" }
       },
       {
         "kind": "historical",
-        "boardId": null,
-        "latColumn": "REPLACE_WITH_COLUMN_ID",
-        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "boardId": 18437342607,
+        "latColumn": "text_mm8hc9ce",
+        "lngColumn": "text_mm8hbe0p",
         "nameColumn": null,
-        "nearbyColumn": "REPLACE_WITH_COLUMN_ID",
+        "nearbyColumn": "dropdown_mm9c22m",
         "address": null
       },
       {
         "kind": "organization",
-        "boardId": null,
-        "latColumn": "REPLACE_WITH_COLUMN_ID",
-        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "boardId": 18437342579,
+        "latColumn": "text_mm8h608w",
+        "lngColumn": "text_mm8h86nd",
         "nameColumn": null,
         "nearbyColumn": null,
-        "address": { "street": "REPLACE_WITH_COLUMN_ID", "city": "REPLACE_WITH_COLUMN_ID", "state": "REPLACE_WITH_COLUMN_ID", "zip": "REPLACE_WITH_COLUMN_ID" }
+        "address": null
       }
     ],
-    "resultsWorkspaceIds": [],
-    "eventsBoardId": null,
-    "eventsAddressColumn": "REPLACE_WITH_COLUMN_ID"
+    "resultsWorkspaceIds": [18210301],
+    "eventsBoardId": 18437342639,
+    "eventsAddressColumn": "text_mm8hza8p"
   },
   "osm": {
     "nominatimUrl": "https://nominatim.openstreetmap.org",
