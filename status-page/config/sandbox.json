@@ -147,7 +147,8 @@
       "statusPageUrl": "https://www.eventbrite.com/help/",
       "feed": {
         "kind": "none"
-      }
+      },
+      "linkLabel": "Help center"
     },
     {
       "name": "Mailchimp",

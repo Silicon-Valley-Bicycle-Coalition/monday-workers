@@ -12,6 +12,9 @@ export interface VendorSpec {
   name: string;
   usedFor: string;
   statusPageUrl: string | null; // null only for a link-only vendor with no status page at all
+  // Set when statusPageUrl isn't a status page (Eventbrite has none; it links its help center):
+  // the row then says "No public status page" and labels the link with this.
+  linkLabel?: string;
   feed: FeedSpec;
 }
 
@@ -105,7 +108,9 @@ function vendor(raw: unknown, path: string): VendorSpec {
   } else {
     statusPageUrl = httpsUrl(v, 'statusPageUrl', path);
   }
-  return { name: str(v, 'name', path), usedFor: str(v, 'usedFor', path), statusPageUrl, feed: f };
+  const spec: VendorSpec = { name: str(v, 'name', path), usedFor: str(v, 'usedFor', path), statusPageUrl, feed: f };
+  if (v.linkLabel !== undefined) spec.linkLabel = str(v, 'linkLabel', path);
+  return spec;
 }
 
 function sync(raw: unknown, path: string): SyncSpec {

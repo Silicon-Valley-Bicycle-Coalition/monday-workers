@@ -9,6 +9,7 @@ export interface VendorRow {
   name: string;
   usedFor: string;
   statusPageUrl: string | null;
+  linkLabel?: string; // see VendorSpec.linkLabel
   level: Level;
   incidents: Incident[];
 }
@@ -32,5 +33,7 @@ async function read(spec: VendorSpec, opts: { timeoutMs: number; cacheSeconds: n
 
 export async function vendorRow(spec: VendorSpec, opts: { timeoutMs: number; cacheSeconds: number }): Promise<VendorRow> {
   const { level, incidents } = await read(spec, opts);
-  return { name: spec.name, usedFor: spec.usedFor, statusPageUrl: spec.statusPageUrl, level, incidents };
+  const row: VendorRow = { name: spec.name, usedFor: spec.usedFor, statusPageUrl: spec.statusPageUrl, level, incidents };
+  if (spec.linkLabel) row.linkLabel = spec.linkLabel;
+  return row;
 }

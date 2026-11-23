@@ -50,3 +50,13 @@ describe('validateConfig', () => {
     expect(() => validateConfig(c)).toThrow(/products/);
   });
 });
+
+describe('linkLabel', () => {
+  it('Eventbrite links its help center, not a status page', () =>
+    expect(validateConfig(production).vendors.find((v) => v.name === 'Eventbrite')).toMatchObject({ linkLabel: 'Help center', statusPageUrl: 'https://www.eventbrite.com/help/' }));
+  it('rejects an empty linkLabel', () => {
+    const c = clone();
+    (c.vendors[0] as { linkLabel?: string }).linkLabel = '';
+    expect(() => validateConfig(c)).toThrow(/linkLabel/);
+  });
+});

@@ -42,6 +42,14 @@ export const TARGETS = [
       'Nunito Sans': { styles: ['normal'], subsets: ['latin', 'latin-ext'] },
     },
   },
+  {
+    // The staff status page is English-only: headings in Manrope 500, body in Poppins.
+    out: 'status-page/src/fontData.ts',
+    faces: {
+      Manrope: { weights: [500], subsets: ['latin'] },
+      Poppins: { weights: [400, 600], subsets: ['latin'] },
+    },
+  },
 ];
 
 /**

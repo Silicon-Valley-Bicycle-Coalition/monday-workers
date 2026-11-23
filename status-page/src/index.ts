@@ -4,7 +4,12 @@ import sandboxConfig from '../config/sandbox.json';
 import { devBypassAllowed, remoteKeysFor, verifyAccess } from './access';
 import { validateConfig, type StatusConfig } from './config';
 import { createConfigSelector } from './environment';
+import { cloudflareSection } from './cloudflare';
+import { fontResponse } from './fonts';
 import { checkRequestRateLimit } from './rateLimit';
+import { renderPage, STYLES_CSS } from './render';
+import { syncSection } from './syncs';
+import { vendorRow } from './vendors';
 
 export interface Env {
   // sync-watchdog's STATE namespace; only `snapshot:latest` is ever read.
@@ -23,6 +28,10 @@ export interface AppDeps {
   now?: () => Date;
 }
 
+// Only this origin's stylesheet and fonts; no script at all.
+const CONTENT_SECURITY_POLICY =
+  "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'";
+
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
 export function createHandler(deps: AppDeps = {}) {
@@ -39,10 +48,35 @@ export function createHandler(deps: AppDeps = {}) {
       }
 
       const url = new URL(request.url);
-      if (request.method === 'GET' && url.pathname === '/') return new Response('ok');
+      if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+      if (url.pathname === '/') return page(env, config, (deps.now ?? (() => new Date()))());
+      if (url.pathname === '/styles.css') {
+        return new Response(STYLES_CSS, { headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'private, max-age=300' } });
+      }
+      if (url.pathname.startsWith('/fonts/')) return fontResponse(url.pathname) ?? new Response('Not found', { status: 404 });
       return new Response('Not found', { status: 404 });
     },
   };
+}
+
+// Every source is fetched in parallel and none can throw (feeds and the snapshot read turn their
+// own failures into "Couldn't check"), so one slow or broken vendor never blanks the page.
+async function page(env: Env, config: StatusConfig, now: Date): Promise<Response> {
+  const opts = { timeoutMs: config.feedTimeoutMs, cacheSeconds: config.feedCacheSeconds };
+  const [syncs, cloudflare, vendors] = await Promise.all([
+    syncSection(env.WATCHDOG_STATE, config.syncs, config.snapshotMaxAgeHours, now),
+    cloudflareSection(config.cloudflare, opts),
+    Promise.all(config.vendors.map((v) => vendorRow(v, opts))),
+  ]);
+  return new Response(renderPage({ syncs, cloudflare, vendors, checkedAt: now }, config.timezone), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+      'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+    },
+  });
 }
 
 export default createHandler() satisfies ExportedHandler<Env>;

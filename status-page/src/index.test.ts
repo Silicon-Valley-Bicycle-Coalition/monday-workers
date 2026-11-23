@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT, generateKeyPair } from 'jose';
 import { createHandler, type Env } from './index';
 
@@ -44,5 +44,44 @@ describe('access gate', () => {
   it('404s an unknown path, after the Access check', async () => {
     expect((await handler.fetch(get('https://status.bikesiliconvalley.org/nope', valid), env())).status).toBe(404);
     expect((await handler.fetch(get('https://status.bikesiliconvalley.org/nope'), env())).status).toBe(403);
+  });
+});
+
+describe('routes', () => {
+  const live = (over: Partial<Env> = {}) => env(over);
+  const stubFeeds = (respond: () => Promise<Response>) => vi.stubGlobal('fetch', respond);
+  afterEach(() => vi.unstubAllGlobals());
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  it('GET / renders the page, private and with a strict CSP', async () => {
+    stubFeeds(async () => Response.json({ status: { indicator: 'none' }, components: [], incidents: [], scheduled_maintenances: [] }));
+    const res = await handler.fetch(get('https://status.bikesiliconvalley.org/', valid), live());
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('Content-Security-Policy')).toBe(
+      "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+    );
+    expect(await res.text()).toContain('Services we use');
+  });
+
+  it('GET / still renders when every feed rejects', async () => {
+    stubFeeds(async () => { throw new TypeError('network down'); });
+    const res = await handler.fetch(get('https://status.bikesiliconvalley.org/', valid), live());
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Couldn't check");
+  });
+
+  it('GET /styles.css and a font', async () => {
+    const css = await handler.fetch(get('https://status.bikesiliconvalley.org/styles.css', valid), live());
+    expect(css.headers.get('Content-Type')).toBe('text/css; charset=utf-8');
+    const fontPath = /url\((\/fonts\/[^)]+\.woff2)\)/.exec(await css.text())![1]!;
+    const font = await handler.fetch(get(`https://status.bikesiliconvalley.org${fontPath}`, valid), live());
+    expect(font.headers.get('Content-Type')).toBe('font/woff2');
+  });
+
+  it('styles and fonts need Access too', async () => {
+    expect((await handler.fetch(get('https://status.bikesiliconvalley.org/styles.css'), live())).status).toBe(403);
+    expect((await handler.fetch(get('https://status.bikesiliconvalley.org/fonts/poppins-latin-400-v5.woff2'), live())).status).toBe(403);
   });
 });
