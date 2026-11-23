@@ -48,14 +48,14 @@
     "defaultName": "Local News Matters"
   },
   "reconciliation": {
-    "funraiseOpportunities": 3648,
-    "funraiseTotalAmountCents": 28622824,
+    "funraiseOpportunities": 3815,
+    "funraiseTotalAmountCents": 34199946,
     "paymentsOnFunraiseOpps": 3466,
     "activeSubscriptions": 540,
-    "subscriptionsAll": 604,
-    "eventRegistrations": 616,
-    "eventbriteAttendees": 6307,
+    "subscriptionsAll": 1176,
+    "eventRegistrations": 619,
+    "eventbriteAttendees": 6291,
     "funraiseContacts": 1993,
-    "organizations": 1888
+    "organizations": 1889
   }
 }
