@@ -439,7 +439,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Membership payments', tag: 'Reference', columns: ['Donor', 'Amount', 'Term Start', 'Term End', 'Membership Type'],
         filter: { rules: [{ columnTitle: 'Term Start', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Term End', direction: 'desc' }] },
       { name: 'Matching gifts', tag: 'Reference', columns: ['Donor', 'Amount', 'Date', 'Matched By'],
-        filter: { rules: [{ columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+        filter: { rules: [{ columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Matching Donation'] }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       // Martha's month-end reconciliation reports, rebuilt from her private Salesforce reports
       // (Individual / Matching / Sponsorship Reconciliation). Ungrouped on purpose (2026-11-11): the
       // Amount footer's Sum is then one total for the whole view, which a grouped view splits per group;
@@ -450,9 +450,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [
           { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
-          // Gift Type is text, so "individual" is everything that isn't one of the other streams.
-          ...['Sponsorship', 'Matching Donation', 'In Kind', 'Grants', 'Contracts', 'Commute Workshop', 'Driver Training', 'Event Ticket']
-            .map((t) => ({ columnTitle: 'Gift Type', operator: 'not_contains_text', compareValue: t })),
+          // "Individual" is every Gift Type that isn't one of the other streams. Gift Type is a Status
+          // column (2026-11-20), so these are label names, resolved to label ids when configure runs.
+          { columnTitle: 'Gift Type', operator: 'not_any_of', labelValues: [
+            'Sponsorship', 'Matching Donation', 'In Kind Donation / Sponsorship', 'Grants', 'Contracts',
+            'Commute Workshop', 'Driver Training', 'Event Ticket',
+          ] },
         ] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Reconciliation: matching gifts', tag: 'Report',
@@ -460,17 +463,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [
           { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
-          { columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' },
+          { columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Matching Donation'] },
         ] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Reconciliation: sponsorships', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Sponsorship Cycle', 'Status'],
         filter: { rules: [
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
-          { columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Sponsorship' },
-          // In-kind gifts' Gift Type is "In Kind Donation / Sponsorship", which also contains
-          // Sponsorship; they're goods, not sponsorship cash, so keep them out of the sum.
-          { columnTitle: 'Gift Type', operator: 'not_contains_text', compareValue: 'In Kind' },
+          // Sponsorship only: "In Kind Donation / Sponsorship" is goods, not sponsorship cash, so it
+          // stays out of the sum.
+          { columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Sponsorship'] },
         ] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Needs a donor', tag: 'Worklist', columns: ['Amount', 'Date', 'Gift Type', 'Anonymous Donor'],
