@@ -303,11 +303,17 @@ describe('HttpMondayClient — affiliation model reads', () => {
   });
   it('getAffiliationSummary returns the item name and its Person link + board', async () => {
     const calls = [
-      { items: [{ id: 'af-1', name: 'Ada @ Acme', column_values: [{ id: 'br_p', linked_item_ids: ['p-1'] }] }] },
+      { items: [{ id: 'af-1', name: 'Ada @ Acme', state: 'active', column_values: [{ id: 'br_p', linked_item_ids: ['p-1'] }] }] },
       { items: [{ board: { id: '18428131737' } }] },
     ];
     const client = clientReturningSequence(calls.map((c) => ({ data: c })));
-    expect(await client.getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'Ada @ Acme', personItemId: 'p-1', personBoardId: '18428131737' });
+    expect(await client.getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'Ada @ Acme', personItemId: 'p-1', personBoardId: '18428131737', state: 'active' });
+  });
+  // Seen live 2026-11-20: a deleted affiliation's Person link reads back empty, so the summary has
+  // to say the item is in the trash for the consumer to look the person up elsewhere.
+  it('getAffiliationSummary reports an item in the trash as deleted', async () => {
+    const client = clientReturning({ data: { items: [{ id: 'af-1', name: 'Ada @ Acme', state: 'deleted', column_values: [{ id: 'br_p', linked_item_ids: [] }] }] } });
+    expect(await client.getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'Ada @ Acme', personItemId: null, personBoardId: null, state: 'deleted' });
   });
   it('getPersonEmployerState returns the Employer Name text and the Affiliations link', async () => {
     const client = clientReturning({ data: { items: [{ state: 'active', column_values: [

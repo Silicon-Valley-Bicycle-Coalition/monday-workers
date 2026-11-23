@@ -1731,9 +1731,11 @@ describe('affiliation messages (kind: affiliation)', () => {
   const message = () => ({ body: { kind: 'affiliation' as const, donationItemId: 'af-1', donationBoardId: '555' }, ack: vi.fn(), retry: vi.fn() });
   const current = (id: string, organizationName: string, primary = false) => ({ id, statusLabel: 'Current', primary, organizationName });
 
-  function deps(over: { config?: DonationRollupsConfig; monday?: Partial<DonationRollupsMondayClient> } = {}) {
+  function deps(over: { config?: DonationRollupsConfig; monday?: Partial<DonationRollupsMondayClient>;
+    affiliations?: Partial<AffiliationsStore>; pending?: Partial<PendingStore> } = {}) {
     const changeColumnValues = vi.fn().mockResolvedValue(undefined);
-    const pendingStore = fakePendingStore();
+    const pendingStore = fakePendingStore(over.pending);
+    const affiliationsStore = fakeAffiliationsStore(over.affiliations);
     const mondayClient = fakeMondayClient({
       changeColumnValues,
       getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'Uma @ Acme', personItemId: 'p-1', personBoardId: '2' }),
@@ -1742,10 +1744,10 @@ describe('affiliation messages (kind: affiliation)', () => {
       ...over.monday,
     });
     const allDeps = {
-      pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+      pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), affiliationsStore,
       recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: over.config ?? cfg,
       queue: { send: vi.fn().mockResolvedValue(undefined) }, now: NOW };
-    return { changeColumnValues, pendingStore, mondayClient, allDeps, run: (m = message()) => processRecomputeBatch([m], allDeps) };
+    return { changeColumnValues, pendingStore, affiliationsStore, mondayClient, allDeps, run: (m = message()) => processRecomputeBatch([m], allDeps) };
   }
 
   it('writes the organization name to the person\'s Employer Name and marks the pending row written', async () => {
@@ -1785,6 +1787,73 @@ describe('affiliation messages (kind: affiliation)', () => {
       expect(d.changeColumnValues).not.toHaveBeenCalled();
       expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('af-1', 'written', expect.anything());
     }
+  });
+
+  it('remembers which person a live affiliation belongs to, for when it is later deleted', async () => {
+    const d = deps();
+    await d.run();
+    expect(d.affiliationsStore.upsert).toHaveBeenCalledWith(
+      { affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Acme' }, NOW.toISOString());
+  });
+
+  describe('a deleted affiliation (its Person link reads back empty)', () => {
+    const deleted = { name: 'Uma @ Acme', personItemId: null, personBoardId: null, state: 'deleted' as const };
+    const known = { get: vi.fn().mockResolvedValue({ affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Acme' }) };
+    const gone = (extra: Partial<DonationRollupsMondayClient> = {}) => ({
+      getAffiliationSummary: vi.fn().mockResolvedValue(deleted),
+      getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: 'Acme', affiliationItemIds: [] }),
+      getEmployerAffiliations: vi.fn().mockResolvedValue([]),
+      ...extra,
+    });
+
+    it('clears Employer Name when it was the person\'s last affiliation', async () => {
+      const d = deps({ monday: gone(), affiliations: known });
+      const m = message();
+      await d.run(m);
+      expect(d.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { emp: '' });
+      expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('af-1', 'written', expect.objectContaining({ ownerItemId: 'p-1', ownerBoard: '2' }));
+      expect(m.ack).toHaveBeenCalled();
+    });
+
+    it('switches Employer Name to another current affiliation the person still has', async () => {
+      const d = deps({ affiliations: known, monday: gone({
+        getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: 'Acme', affiliationItemIds: ['af-2'] }),
+        getEmployerAffiliations: vi.fn().mockResolvedValue([current('af-2', 'Beta')]) }) });
+      await d.run();
+      expect(d.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { emp: 'Beta' });
+    });
+
+    it('leaves Employer Name alone when only Former affiliations remain', async () => {
+      const d = deps({ affiliations: known, monday: gone({
+        getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: 'Acme', affiliationItemIds: ['af-2'] }),
+        getEmployerAffiliations: vi.fn().mockResolvedValue([{ ...current('af-2', 'Beta'), statusLabel: 'Former' }]) }) });
+      await d.run();
+      expect(d.changeColumnValues).not.toHaveBeenCalled();
+    });
+
+    it('skips the write when Employer Name is already empty', async () => {
+      const d = deps({ affiliations: known, monday: gone({
+        getPersonEmployerState: vi.fn().mockResolvedValue({ employerName: '', affiliationItemIds: [] }) }) });
+      await d.run();
+      expect(d.changeColumnValues).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the owner its last pending row recorded when D1 has no affiliation row', async () => {
+      const d = deps({ monday: gone(), pending: { getPending: vi.fn().mockResolvedValue({
+        donationItemId: 'af-1', donationBoardId: '555', eventId: 'e', status: 'written', ownerItemId: 'p-1', ownerBoard: '2',
+        error: null, receivedAt: '2026-11-17T00:00:00Z', writtenAt: '2026-11-17T00:00:30Z', kind: 'affiliation' }) } });
+      await d.run();
+      expect(d.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { emp: '' });
+    });
+
+    it('writes nothing when no record says whose affiliation it was', async () => {
+      const d = deps({ monday: gone() });
+      const m = message();
+      await d.run(m);
+      expect(d.mondayClient.getPersonEmployerState).not.toHaveBeenCalled();
+      expect(d.changeColumnValues).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+    });
   });
 
   it('does nothing for a person on a board with no Employer Name configured', async () => {

@@ -41,6 +41,9 @@ export interface AffiliationSummary {
   name: string;
   personItemId: string | null;
   personBoardId: string | null;
+  // 'deleted' while the item is in Monday's trash, where its Person link reads back empty (seen
+  // 2026-11-20), so the consumer has to find the person from D1. Optional so fakes can omit it.
+  state?: ItemState;
 }
 
 export type ItemState = 'active' | 'archived' | 'deleted';
@@ -621,9 +624,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   }
 
   async getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null> {
-    const data = await this.graphql<{ items: { id: string; name: string; column_values: { id: string; linked_item_ids?: string[] }[] }[] }>(
+    const data = await this.graphql<{ items: { id: string; name: string; state: ItemState; column_values: { id: string; linked_item_ids?: string[] }[] }[] }>(
       `query ($itemId: ID!, $columnId: [String!]) {
-        items(ids: [$itemId]) { id name column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids } } }
+        items(ids: [$itemId]) { id name state column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids } } }
       }`,
       { itemId: affiliationItemId, columnId: [personLinkColumnId] },
     );
@@ -631,7 +634,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     if (item === undefined) return null;
     const personItemId = item.column_values[0]?.linked_item_ids?.[0] ?? null;
     const personBoardId = personItemId === null ? null : await this.getItemBoardId(personItemId);
-    return { name: item.name, personItemId, personBoardId };
+    return { name: item.name, personItemId, personBoardId, state: item.state };
   }
 
   async getPersonEmployerState(

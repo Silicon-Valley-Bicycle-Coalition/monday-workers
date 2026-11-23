@@ -95,12 +95,12 @@ for (const board of config.donationRollups.volunteerBoards ?? []) {
   await ensure('registrations board', String(board.boardId), ['create_item', 'change_column_value', 'item_deleted', 'item_restored']);
 }
 
-// Affiliations board, once employer sync is configured: a new item or a column change re-derives
-// the person's Employer Name. The route ignores every column but Person, Organization, Status and
-// Primary, which covers the attributed totals this Worker writes here. No deletion events: removing
-// an affiliation leaves Employer Name as it was.
+// Affiliations board, once employer sync is configured: a new item, a column change, a deletion or
+// a restore re-derives the person's Employer Name (deleting someone's last affiliation clears it).
+// The route ignores every column but Person, Organization, Status and Primary, which covers the
+// attributed totals this Worker writes here. No item_archived: an archived affiliation keeps it.
 if (config.affiliations?.employerSync) {
-  await ensure('affiliations board', String(config.affiliations.boardId), ['create_item', 'change_column_value']);
+  await ensure('affiliations board', String(config.affiliations.boardId), ['create_item', 'change_column_value', 'item_deleted', 'item_restored']);
 }
 
 console.error('setup-webhooks: done');

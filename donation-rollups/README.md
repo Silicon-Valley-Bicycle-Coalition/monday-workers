@@ -849,10 +849,15 @@ gated on `config.affiliations.employerSync` (absent = off). The Affiliations boa
 the same route as kind `affiliation`; only Person, Organization, Status and Primary count, so the
 attributed totals below don't trigger it. The consumer reads all of the person's affiliations and
 picks with `employerNameFor` (`src/affiliations/employer.ts`): `Current` only, the `Primary` one
-first, then the one that just changed. With nothing current (`Draft`, `Former`, or a deleted
-affiliation) the column keeps its value. It runs on change only: people whose affiliations nobody
+first, then the one that just changed. With nothing current (`Draft` or `Former`) the column keeps
+its value. Deleting an affiliation re-derives it from the person's remaining ones, and deleting
+their last one clears it. A deleted item's Person link reads back empty, so the consumer finds the
+person in D1: the `affiliations` table (this path now writes it too), else the owner on the
+affiliation's last pending row. An affiliation the Worker never saw before it was deleted has
+neither, and is logged and skipped. It runs on change only: people whose affiliations nobody
 edits keep their Salesforce value, and a staff edit to the column lasts until the next affiliation
-change. Re-run `setup-webhooks.mjs` after deploying to subscribe the board.
+change. Re-run `setup-webhooks.mjs` after deploying to subscribe the board (`create_item`,
+`change_column_value`, `item_deleted`, `item_restored`).
 
 ## Affiliation model (Plan 2)
 
