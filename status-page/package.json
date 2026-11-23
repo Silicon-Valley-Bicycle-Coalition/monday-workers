@@ -1,0 +1,29 @@
+{
+  "name": "status-page",
+  "version": "0.1.0",
+  "description": "Staff-only status page: SVBC syncs (from sync-watchdog), Cloudflare platform status, and the SaaS vendors SVBC relies on.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev --infer-origin-from-routes=false",
+    "dev:sandbox": "wrangler dev --env sandbox --infer-origin-from-routes=false",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "jose": "^6"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}
