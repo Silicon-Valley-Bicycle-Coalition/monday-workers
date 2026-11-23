@@ -288,21 +288,41 @@ describe('Martha\'s reconciliation views', () => {
     for (const v of views.slice(0, 2)) expect(v.columns, v.name).toContain('Gift Size');
   });
 
-  it('the sponsorships view counts sponsorships but not in-kind gifts, whose Gift Type also says Sponsorship', () => {
-    // Gift Type is text; the view's text rules all have to hold (svbc-monday-migration#114).
-    const textRules = views[2]!.filter!.rules.filter((r) => r.columnTitle === 'Gift Type');
-    const shows = (giftType: string) => textRules.every((r) => {
-      const has = giftType.toLowerCase().includes(String(r.compareValue).toLowerCase());
-      return r.operator === 'contains_text' ? has : r.operator === 'not_contains_text' ? !has : true;
-    });
-    expect(shows('Sponsorship')).toBe(true);
-    expect(shows('In Kind Donation / Sponsorship')).toBe(false);
-    expect(shows('Donation')).toBe(false);
+  // Gift Type is a Status column (2026-11-20): a gift shows when it passes every Gift Type rule.
+  const showsGiftType = (v: (typeof views)[number], giftType: string) =>
+    v.filter!.rules.filter((r) => r.columnTitle === 'Gift Type').every((r) =>
+      r.operator === 'any_of' ? r.labelValues!.includes(giftType)
+        : r.operator === 'not_any_of' ? !r.labelValues!.includes(giftType) : true);
+
+  it('the sponsorships view counts sponsorships but not in-kind gifts (svbc-monday-migration GL#114)', () => {
+    expect(showsGiftType(views[2]!, 'Sponsorship')).toBe(true);
+    expect(showsGiftType(views[2]!, 'In Kind Donation / Sponsorship')).toBe(false);
+    expect(showsGiftType(views[2]!, 'Donation')).toBe(false);
   });
 
   it('the individual view leaves out every other revenue stream', () => {
-    const excluded = views[0]!.filter!.rules.filter((r) => r.operator === 'not_contains_text').map((r) => r.compareValue);
-    expect(excluded).toEqual(expect.arrayContaining(['Sponsorship', 'Matching Donation', 'In Kind']));
+    for (const t of ['Sponsorship', 'Matching Donation', 'In Kind Donation / Sponsorship', 'Grants', 'Contracts', 'Event Ticket']) {
+      expect(showsGiftType(views[0]!, t), t).toBe(false);
+    }
+    for (const t of ['Donation', 'Membership', 'Donor Advised Fund']) expect(showsGiftType(views[0]!, t), t).toBe(true);
+  });
+
+  it('the matching view counts matching gifts only', () => {
+    expect(showsGiftType(views[1]!, 'Matching Donation')).toBe(true);
+    expect(showsGiftType(views[1]!, 'Donation')).toBe(false);
+  });
+});
+
+describe('Donations Gift Type filters', () => {
+  it('match Status labels, never text: Monday rejects a text operator on a Status column', () => {
+    const rules = BOARD_SPECS['donations']!.views!.flatMap((v) => (v.filter?.rules ?? []).map((r) => ({ view: v.name, r })))
+      .filter(({ r }) => r.columnTitle === 'Gift Type');
+    expect(rules.length).toBeGreaterThan(0);
+    for (const { view, r } of rules) {
+      expect(['any_of', 'not_any_of'], view).toContain(r.operator);
+      expect(r.labelValues?.length, view).toBeGreaterThan(0);
+      expect(r.compareValue, view).toBeUndefined();
+    }
   });
 });
 
