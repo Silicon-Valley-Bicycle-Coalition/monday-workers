@@ -1,7 +1,8 @@
 # status-page
 
-**Status: built, not deployed.** Its Cloudflare Access applications exist (below); deploy
-`sync-watchdog` first.
+**Status: deployed 2026-11-23** to production (`status.bikesiliconvalley.org`, version
+`175ed2a2`) and sandbox (`status.sandbox.bikesiliconvalley.org`), both behind their Access
+applications (below). Checked signed in on both.
 
 A staff-only page at `status.bikesiliconvalley.org` that answers "is it us, a vendor, or
 Cloudflare?" when something seems broken. Three sections, in this order:
