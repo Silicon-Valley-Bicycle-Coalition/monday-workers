@@ -510,9 +510,11 @@ Workers Builds connection to the same repo and root directory, deploy command
 `npx wrangler deploy --env sandbox`, also tracking `main` — see each Worker's README "Sandbox
 environment" section for its specific Worker name. **Verify in the dashboard before relying on
 it:** if Cloudflare refuses two connections on one root directory, `.github/workflows/workers.yml`'s
-`deploy-sandbox` job is the fallback — same deploy command, run on pushes to `main`, gated on a
-`CLOUDFLARE_API_TOKEN` secret so it stays inert until that secret is actually set (so turning on
-the fallback never risks a double deploy alongside a working dashboard connection). When adding
+`deploy-sandbox` job is the fallback — same deploy command, run on pushes to `main`. No Worker
+with a sandbox entry has that second connection today, so the job is the only sandbox deploy path,
+and it **fails** while its `CLOUDFLARE_API_TOKEN` secret is missing rather than skipping green
+(#89). If a Worker ever gets a dashboard sandbox connection, take it out of the job's
+roster first so the two don't double-deploy. When adding
 it ([GL#58](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/58)): store it as a secret of the GitHub `sandbox` environment, which is restricted to the
 `main` branch, never as a repository secret; pull requests (forks included) never see it. Mint it
 in Cloudflare with only *Workers Scripts: Edit* (plus D1/Queues/KV edit only if a deploy needs

@@ -33,8 +33,12 @@ and forbids force-pushes.
    `package.json` isn't in the roster**, so a new Worker can't skip CI.
 2. **test:** for each affected Worker, `npm ci`, `npm test`, any `extraTest`, then
    `npm run typecheck`.
-3. **deploy-sandbox:** only on pushes to `main`, and only when the `sandbox` GitHub environment
-   has a `CLOUDFLARE_API_TOKEN` secret. **That secret isn't set, so this job skips.**
+3. **deploy-sandbox:** only on pushes to `main`, for each changed Worker that has a sandbox
+   environment. It needs a `CLOUDFLARE_API_TOKEN` secret in the `sandbox` GitHub environment.
+   **That secret isn't set yet, so this job fails** with a job summary naming each Worker that
+   wasn't deployed and the command to deploy it by hand. It used to skip and finish green, which
+   made an undeployed sandbox look deployed (#89). It isn't a required check, so a red
+   deploy-sandbox marks `main`'s commit without blocking pull requests.
 4. **ci-ok:** the single required result.
 
 ## What deploys when

@@ -46,7 +46,8 @@ Things to know:
     is an account token with only Account Analytics Read and Queues Read.
   - The two Workers Builds connections (`svbc-calendars`, `monday-backup`) use a build token
     Cloudflare created, named "svbc-events-widgets build token".
-  - GitHub's optional `CLOUDFLARE_API_TOKEN` for sandbox deploys is **not set** (see
+  - GitHub's `CLOUDFLARE_API_TOKEN` for sandbox deploys is **not set yet**, so the
+    `deploy-sandbox` job fails on every merge that touches a sandbox Worker (see
     [chapter 6](06-ci-and-deploy.md)).
   - The GitHub `svbc-bike-lanes` environment holds its own `CLOUDFLARE_API_TOKEN` for the bike
     lanes site's weekly production deploy: Workers Editor scoped to that Worker and
