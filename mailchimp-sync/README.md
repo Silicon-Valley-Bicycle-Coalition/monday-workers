@@ -360,6 +360,13 @@ Monday is lifted only by Mailchimp saying subscribed.
   handful of changes an hour.
 * A board whose read fails (a mistyped column id in config, say) is logged and skipped; the
   others still run.
+* **Repeat cron deliveries.** Cloudflare occasionally delivers the same scheduled event twice, the
+  second about 15½ minutes after the scheduled time (4 of 134 hourly events, 2026-11-18 to 11-23;
+  never the short `20 * * * *` or daily runs). Every cron in this Worker first claims its
+  `(cron, scheduledTime)` in D1 (`cron_runs`, migration `0009`, `src/db/cronRuns.ts`); a repeat
+  finds the claim, logs a `cron-duplicate-skipped` line and returns. If the claim can't be recorded
+  (D1 error, migration not applied) the run goes ahead, since every job here tolerates running
+  twice. Claims older than a week are pruned as new ones are made.
 
 **Switches.** `consent.enabled` in `config/*.json`: `true` in both the sandbox and production;
 when it's `false`, each hourly run logs one line and does nothing else. Under the write switch: `on` writes,
