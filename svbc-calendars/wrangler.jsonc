@@ -32,11 +32,11 @@
     "CACHE_TTL": "900", // /events, /widget — 15 min, unchanged from events-widgets
     "CALENDAR_CACHE_TTL": "86400", // /calendars/*.ics, /calendars — 24h, "nothing needs to be real-time"
     "CACHE_VERSION": "1", // reset to 1 for the new merged Worker's cache key space
-    // Deliberately empty. As of 2026-09-21 bikesiliconvalley.org had Web Analytics on automatic
-    // setup, which injects the beacon into every subdomain's pages with no code changes, so a
-    // manual token here would be a second, redundant beacon (README Deploy step 2 — confirm it is
-    // still on automatic setup). src/widget.ts and src/listing.ts only emit the beacon <script>
-    // when this is truthy, so it stays empty rather than carrying a token that double-counts.
+    // Token of the Web Analytics site for events.bikesiliconvalley.org (GitHub #47, decided
+    // 2026-11-20). The zone's automatic setup stopped injecting the beacon without notice
+    // (none on /events, 2026-11-19), so the beacon is explicit here instead. Keep the zone's
+    // automatic setup off: both at once loads the beacon twice. Not a secret — it ships in the
+    // page HTML. src/widget.ts and src/listing.ts emit the beacon only when this is non-empty.
     "CF_WEB_ANALYTICS_TOKEN": ""
   },
   "triggers": {

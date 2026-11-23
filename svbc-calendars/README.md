@@ -95,8 +95,7 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 **Deployed and live** on both custom domains (checked 2026-09-30: both secrets set, both domains
 attached to `svbc-calendars`, and the two predecessor Workers deleted). It has a Workers Builds
 connection to GitHub `main` (moved from GitLab 2026-11-17), so every merge to `main` redeploys it — see the root `README.md`'s Deploys section.
-Step 2 (`CF_WEB_ANALYTICS_TOKEN` is empty) is probably already covered by the zone's automatic Web
-Analytics, and step 8 (embedding the widget on the live site) is only partly done. The feeds also
+Web Analytics (step 2) uses an explicit site token, and step 8 (embedding the widget on the live site) is only partly done. The feeds also
 depend on a WAF rule that lives outside this repo — see step 7. The checklist below is the cutover as it
 was done, kept for forks and for a rebuild from scratch:
 
@@ -110,16 +109,15 @@ without it the env inherits the production custom domains, and the first sandbox
 took `events.`/`committees.bikesiliconvalley.org` over to the untested Worker. Set the sandbox
 secrets separately with `--env sandbox` (see the comment above `env` in `wrangler.jsonc`).
 
-### 2. Enable Cloudflare Web Analytics — probably not needed
+### 2. Enable Cloudflare Web Analytics
 
-Checked 2026-09-21 (not re-checked since): `bikesiliconvalley.org` already had Web Analytics on
-**automatic setup**, which per Cloudflare's docs injects the beacon into every page served through
-the proxied zone, on all subdomains, with no code changes. If that still holds, this Worker's
-pages are already covered and `vars.CF_WEB_ANALYTICS_TOKEN` should stay empty — a manual token on
-top would add a second, redundant beacon. Confirm under **Analytics & Logs → Web Analytics** that
-the site is still on automatic setup; only if it isn't, add the site there and paste its token
-into `wrangler.jsonc`'s `vars.CF_WEB_ANALYTICS_TOKEN`. Left empty, the widget and listing page
-omit the beacon script rather than shipping a broken one — see the comment above that var.
+Decided 2026-11-20 (GitHub #47): measure these pages with a token set in the Worker, not the zone's
+automatic setup. Automatic setup was on as of 2026-09-21 but had stopped injecting the beacon by
+2026-11-19, with no notice. Under **Analytics & Logs → Web Analytics**, add a site for
+`events.bikesiliconvalley.org` and put its token in `wrangler.jsonc`'s
+`vars.CF_WEB_ANALYTICS_TOKEN`; leave the zone's automatic setup off, or the beacon loads twice. The
+widget and the `/events` listing page then load the beacon; left empty, they omit it. The sandbox
+keeps it empty so test traffic isn't counted.
 
 ### 3. ~~Set the secrets~~ Done
 

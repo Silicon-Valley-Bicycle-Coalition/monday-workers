@@ -218,15 +218,17 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     expect(html).toContain("var MAX_EVENTS = 5");
   });
 
-  it("GET /widget omits the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is unset (the shipped default)", async () => {
-    // wrangler.jsonc ships CF_WEB_ANALYTICS_TOKEN as "" until a real deploy fills it in — this is
-    // the actual default state, not just a hypothetical, so it's worth asserting directly (see
-    // finding: the placeholder used to be a non-empty sentinel string, which was truthy and would
-    // have emitted a broken beacon tag).
-    expect(env.CF_WEB_ANALYTICS_TOKEN).toBe("");
-    const res = await call(req("/widget"));
-    const html = await res.text();
-    expect(html).not.toContain("cloudflareinsights.com");
+  it("GET /widget omits the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is empty", async () => {
+    // The sandbox env ships it empty; an empty string must not emit a broken beacon tag.
+    const original = env.CF_WEB_ANALYTICS_TOKEN;
+    env.CF_WEB_ANALYTICS_TOKEN = "";
+    try {
+      const res = await call(req("/widget"));
+      const html = await res.text();
+      expect(html).not.toContain("cloudflareinsights.com");
+    } finally {
+      env.CF_WEB_ANALYTICS_TOKEN = original;
+    }
   });
 
   it("GET /widget includes the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is set", async () => {
