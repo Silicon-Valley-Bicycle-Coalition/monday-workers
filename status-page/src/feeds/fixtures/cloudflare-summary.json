@@ -1,0 +1,247 @@
+{
+ "page": {
+  "id": "yh6f0r4529hb",
+  "name": "Cloudflare Status",
+  "url": "https://www.cloudflarestatus.com",
+  "time_zone": "Etc/UTC",
+  "updated_at": "2026-11-23T17:00:18.984Z"
+ },
+ "components": [
+  {
+   "id": "5wnz34mhfhrk",
+   "name": "CDN/Cache",
+   "status": "operational",
+   "created_at": "2020-03-25T19:03:33.000Z",
+   "updated_at": "2026-10-28T14:30:39.261Z",
+   "position": 1,
+   "description": null,
+   "showcase": false,
+   "start_date": null,
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "dp8ppfycqxcs",
+   "name": "Authoritative DNS",
+   "status": "operational",
+   "created_at": "2019-01-24T16:53:09.000Z",
+   "updated_at": "2026-11-12T05:00:42.715Z",
+   "position": 11,
+   "description": "Cloudflare DNS is an enterprise-grade authoritative DNS service that offers the fastest response time, unparalleled redundancy, and advanced security with built-in DDoS mitigation and DNSSEC",
+   "showcase": false,
+   "start_date": null,
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "4n0gb0kh02gf",
+   "name": "Network",
+   "status": "operational",
+   "created_at": "2023-01-13T13:39:19.000Z",
+   "updated_at": "2026-11-23T04:52:22.293Z",
+   "position": 18,
+   "description": null,
+   "showcase": false,
+   "start_date": "2023-01-13",
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "4xvd68d7k70c",
+   "name": "San Jose, United States - (SJC)",
+   "status": "operational",
+   "created_at": "2014-10-16T04:33:22.000Z",
+   "updated_at": "2026-11-23T15:30:21.719Z",
+   "position": 50,
+   "description": null,
+   "showcase": false,
+   "start_date": null,
+   "group_id": "4l01sk5cdn5c",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "57srcl8zcn7c",
+   "name": "Workers",
+   "status": "degraded_performance",
+   "created_at": "2019-01-24T16:49:08.000Z",
+   "updated_at": "2026-11-23T13:52:11.144Z",
+   "position": 70,
+   "description": "Cloudflare Workers provides a serverless execution environment that allows you to create new applications or augment existing ones without configuring or maintaining infrastructure",
+   "showcase": false,
+   "start_date": null,
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "z0yd3sxqjqdm",
+   "name": "D1",
+   "status": "operational",
+   "created_at": "2024-02-09T08:57:38.000Z",
+   "updated_at": "2026-11-22T01:11:58.075Z",
+   "position": 75,
+   "description": null,
+   "showcase": false,
+   "start_date": "2024-02-09",
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "3z7cmdfch5kb",
+   "name": "Queues",
+   "status": "degraded_performance",
+   "created_at": "2025-10-22T09:19:59.000Z",
+   "updated_at": "2026-11-10T01:53:58.905Z",
+   "position": 82,
+   "description": "Send and receive messages with guaranteed delivery and no charges for egress bandwidth.",
+   "showcase": false,
+   "start_date": "2025-10-22",
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "hb7g5sq2zz0h",
+   "name": "R2",
+   "status": "operational",
+   "created_at": "2022-07-05T10:55:24.000Z",
+   "updated_at": "2026-11-22T01:11:58.075Z",
+   "position": 83,
+   "description": "High-performance storage for files and objects with zero egress charges",
+   "showcase": false,
+   "start_date": "2022-07-05",
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "tmh50tx2nprs",
+   "name": "Workers KV",
+   "status": "operational",
+   "created_at": "2019-01-24T16:49:32.000Z",
+   "updated_at": "2026-10-28T14:30:39.261Z",
+   "position": 90,
+   "description": "Workers KV is a data storage that allows you to store and retrieve data globally to build dynamic and performant APIs and websites that support high read volumes with low latency",
+   "showcase": false,
+   "start_date": null,
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "gjb0yzvvrpf6",
+   "name": "Email Routing",
+   "status": "operational",
+   "created_at": "2022-01-27T17:18:07.000Z",
+   "updated_at": "2026-10-28T14:30:39.261Z",
+   "position": 103,
+   "description": "Email Routing service allowing for forwarding of email traffic",
+   "showcase": false,
+   "start_date": "2022-01-27",
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  },
+  {
+   "id": "w4k8yvhfb3vp",
+   "name": "Access",
+   "status": "operational",
+   "created_at": "2018-02-09T21:46:39.000Z",
+   "updated_at": "2026-11-19T08:56:14.612Z",
+   "position": 108,
+   "description": "Cloudflare Access determines who can reach your application by applying the Access policies you configure",
+   "showcase": false,
+   "start_date": null,
+   "group_id": "1km35smx8p41",
+   "page_id": "yh6f0r4529hb",
+   "group": false,
+   "only_show_if_degraded": false
+  }
+ ],
+ "incidents": [
+  {
+   "id": "00dp7cliyqqt",
+   "name": "Cloudflare Workers API \u2013 Delayed or Inconsistent Responses",
+   "status": "investigating",
+   "impact": "minor",
+   "shortlink": "https://www.cloudflarestatus.com/incidents/00dp7cliyqqt",
+   "components": [
+    {
+     "name": "Workers",
+     "status": "degraded_performance"
+    }
+   ]
+  },
+  {
+   "id": "0ocqieaifg7h",
+   "name": "Changes to Cloudflare Workers are not producing Event Subscription events",
+   "status": "identified",
+   "impact": "minor",
+   "shortlink": "https://www.cloudflarestatus.com/incidents/0ocqieaifg7h",
+   "components": [
+    {
+     "name": "Workers",
+     "status": "degraded_performance"
+    },
+    {
+     "name": "Queues",
+     "status": "degraded_performance"
+    }
+   ]
+  }
+ ],
+ "scheduled_maintenances": [
+  {
+   "id": "f7xp1ilx7re2",
+   "name": "SIN (Singapore) on 2026-11-23",
+   "status": "scheduled",
+   "shortlink": "https://www.cloudflarestatus.com/incidents/f7xp1ilx7re2",
+   "components": [
+    {
+     "name": "Singapore, Singapore - (SIN)"
+    }
+   ]
+  },
+  {
+   "id": "7o826pnadpvk",
+   "name": "DEL (New Delhi) on 2026-11-23",
+   "status": "scheduled",
+   "shortlink": "https://www.cloudflarestatus.com/incidents/7o826pnadpvk",
+   "components": [
+    {
+     "name": "New Delhi, India - (DEL)"
+    }
+   ]
+  },
+  {
+   "id": "3jvtd475xzv7",
+   "name": "DEL (New Delhi) on 2026-11-23",
+   "status": "scheduled",
+   "shortlink": "https://www.cloudflarestatus.com/incidents/3jvtd475xzv7",
+   "components": [
+    {
+     "name": "New Delhi, India - (DEL)"
+    }
+   ]
+  }
+ ],
+ "status": {
+  "indicator": "minor",
+  "description": "Partially Degraded Service"
+ }
+}

@@ -1,0 +1,21 @@
+{
+ "status": "active",
+ "date_created": "2026-11-20T08:00:00-08:00",
+ "date_updated": "2026-11-20T09:00:00-08:00",
+ "active_incidents": [
+  {
+   "id": 1,
+   "title": "Messages failing to send",
+   "type": "outage",
+   "status": "active",
+   "url": "https://slack-status.com/2026-11/abc"
+  },
+  {
+   "id": 2,
+   "title": "Scheduled maintenance of Huddles",
+   "type": "notice",
+   "status": "active",
+   "url": "https://slack-status.com/2026-11/def"
+  }
+ ]
+}
