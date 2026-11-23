@@ -200,10 +200,9 @@ const indexes = (labels, wanted) => wanted.map((l) => labels.indexOf(l));
 const fiscalYearIs = (fy) => ({ column_id: columns.fiscalYear, compare_value: [String(fy)], operator: 'any_of' });
 const listedOnly = { column_id: columns.listed, compare_value: indexes(LISTED, ['Listed']), operator: 'any_of' };
 const VIEWS = [
-  { name: 'This year so far', rules: [fiscalYearIs(currentFY), listedOnly,
-    { column_id: columns.tier, compare_value: indexes(TIERS, ['Under $100']), operator: 'not_any_of' }] },
-  { name: 'Last closed year', rules: [fiscalYearIs(currentFY - 1), listedOnly,
-    { column_id: columns.tier, compare_value: indexes(TIERS, TIERS.filter((t) => t !== 'Under $100')), operator: 'any_of' }] },
+  // No Tier rule: every listed donor from $1 up appears (changed 2026-11-02 at development's request).
+  { name: 'This year so far', rules: [fiscalYearIs(currentFY), listedOnly] },
+  { name: 'Last closed year', rules: [fiscalYearIs(currentFY - 1), listedOnly] },
   { name: 'Needs review', rules: [{ column_id: columns.reviewNote, compare_value: [], operator: 'is_not_empty' }] },
 ];
 for (const view of VIEWS) {
