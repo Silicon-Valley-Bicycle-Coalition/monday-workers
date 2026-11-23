@@ -1,7 +1,7 @@
 {
   "access": {
     "teamDomain": "https://bikesiliconvalley.cloudflareaccess.com",
-    "aud": "",
+    "aud": "a3e0719ef1c594436b409202292284cdb79baa4f7a5190970325b3c3c52ab836",
     "allowedEmailDomain": "bikesiliconvalley.org"
   },
   "timezone": "America/Los_Angeles",

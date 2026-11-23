@@ -1,7 +1,7 @@
 # status-page
 
-**Status: built, not deployed.** Needs its two Cloudflare Access applications before the first
-deploy (below).
+**Status: built, not deployed.** Its Cloudflare Access applications exist (below); deploy
+`sync-watchdog` first.
 
 A staff-only page at `status.bikesiliconvalley.org` that answers "is it us, a vendor, or
 Cloudflare?" when something seems broken. Three sections, in this order:
@@ -75,20 +75,23 @@ line sits behind "Why".
   ("No public status page"). If the link isn't a status page, set `linkLabel` too (Eventbrite:
   `"Help center"`).
 
-## Cloudflare Access setup (prerequisite, operator work)
+## Cloudflare Access
 
-The Zero Trust organization already exists (`member-map` uses it), and `access.teamDomain` is
-filled in. For this Worker:
+Two self-hosted Access applications, created 2026-11-23, both in the existing Zero Trust organization
+(`https://bikesiliconvalley.cloudflareaccess.com`, shared with `member-map`):
 
-1. Create two Access applications, one for `status.bikesiliconvalley.org` and one for
-   `status.sandbox.bikesiliconvalley.org`, each with an Allow policy for emails ending in
-   `@bikesiliconvalley.org`.
-2. Put each application's **AUD** (Audience tag, on its overview page) into `access.aud`:
-   production in `config/svbc.json`, sandbox in `config/sandbox.json`.
+| Application | Hostname | AUD (in config) |
+|---|---|---|
+| SVBC Status Page | `status.bikesiliconvalley.org` | `config/svbc.json` |
+| SVBC Status Page (sandbox) | `status.sandbox.bikesiliconvalley.org` | `config/sandbox.json` |
 
-Until `aud` is set, every request gets a 403, which is deliberate. `workers_dev` and
-`preview_urls` are `false` in both environments, so the custom domain is the only way in, and the
-Worker checks the Access JWT itself on every route, its stylesheet and fonts included.
+Each uses the reusable **SVBC Staff** policy (allow emails ending in `@bikesiliconvalley.org`),
+Google Workspace as the only identity provider with automatic redirect, and 24-hour sessions, like
+`lanes.` and `map.sandbox.`. Forks: create your own and replace `access.teamDomain` and `access.aud`.
+
+An empty `aud` refuses every request. `workers_dev` and `preview_urls` are `false` in both
+environments, so the custom domain is the only way in, and the Worker checks the Access JWT itself
+on every route, its stylesheet and fonts included.
 
 ## Deploy
 
