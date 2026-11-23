@@ -1096,17 +1096,21 @@ rows can differ from what a live run would write.
      "columns": { "fiscalYear": "text_mm8qzwa", "tier": "color_mm8q7wfp", "type": "color_mm8q99m",
        "listed": "color_mm8qk8ef", "total": "numeric_mm8qwz2e", "gifts": "numeric_mm8q7gh",
        "people": "board_relation_mm8qkvrn", "organization": "board_relation_mm8qqr7m",
-       "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q", "householdName": "text_mm8rga06" },
+       "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q", "householdName": "text_mm8rga06",
+       "mailingAddress": "text_mm8s8km4" },
      "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "date": "date_mm8hfsvm", "status": "color_mm8hshet",
        "fiscalYear": "text_mm8hpk76", "giftType": "color_mm9arcwx", "donorLink": "board_relation_mm8hhdk7",
        "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h",
        "inKindValue": "numeric_mm8hpt4q", "recognitionFiscalYear": "text_mm8rsesm" } },
      "people": {
        "18437342592": { "householdId": "text_mm8qmhc8", "householdGreeting": "text_mm8qzmk6",
-         "householdEmail": "email_mm8hj3f8", "doNotSolicit": "boolean_mm8h1x0b", "dontList": "boolean_mm8qmb9v" },
+         "householdEmail": "email_mm8hj3f8", "doNotSolicit": "boolean_mm8h1x0b", "dontList": "boolean_mm8qmb9v",
+         "address": "text_mm8hf280", "doNotMail": "boolean_mm8h9h24" },
        "18437342607": { "householdId": "text_mm8qh43v", "householdGreeting": "text_mm8qqva9",
-         "householdEmail": "email_mm8hzsdg", "doNotSolicit": "boolean_mm8h56b4", "dontList": "boolean_mm8qxc1f" } },
-     "organizations": { "boardId": 18437342579, "columns": { "recognitionName": "text_mm8q3rj", "dontList": "boolean_mm8qt96y" } }
+         "householdEmail": "email_mm8hzsdg", "doNotSolicit": "boolean_mm8h56b4", "dontList": "boolean_mm8qxc1f",
+         "address": "text_mm8htsg", "doNotMail": "boolean_mm8h59aw" } },
+     "organizations": { "boardId": 18437342579, "columns": { "recognitionName": "text_mm8q3rj", "dontList": "boolean_mm8qt96y",
+       "address": "text_mm8ht7ja" } }
    }
    ```
 
