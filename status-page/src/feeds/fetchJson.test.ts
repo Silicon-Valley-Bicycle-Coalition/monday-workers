@@ -47,3 +47,12 @@ describe('fetchJson', () => {
     expect(calls[0]!.init.cf).toEqual({ cacheTtl: 60, cacheEverything: true });
   });
 });
+
+describe('a body that stalls after the headers', () => {
+  it('times out as unknown instead of hanging', async () => {
+    stub(async () => new Response(new ReadableStream({ start() {} }), { headers: { 'Content-Type': 'application/json' } }));
+    const started = Date.now();
+    expect(await fetchJson('https://slow-body.test/', { timeoutMs: 20, cacheSeconds: 60 })).toEqual({ ok: false, reason: 'timeout' });
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});

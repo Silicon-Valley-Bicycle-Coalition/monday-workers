@@ -30,7 +30,7 @@ describe('attentionItems', () => {
 
   it('a stale snapshot is one watchdog line and no per-sync lines', () => {
     const stale: SyncSection = { runAt: '2026-11-20T14:40:00.000Z', stale: true, rows: [row('A', 'unknown')] };
-    expect(attentionItems({ syncs: stale, cloudflare: cf(), vendors: [] }, TZ)).toEqual(["The sync watchdog hasn't reported since 6:40 AM"]);
+    expect(attentionItems({ syncs: stale, cloudflare: cf(), vendors: [] }, TZ, new Date('2026-11-20T18:41:00Z'))).toEqual(["The sync watchdog hasn't reported since 6:40 AM"]);
     expect(attentionItems({ syncs: { ...stale, runAt: null }, cloudflare: cf(), vendors: [] }, TZ)).toEqual(["The sync watchdog hasn't reported yet"]);
   });
 
@@ -38,5 +38,17 @@ describe('attentionItems', () => {
     expect(attentionItems({ syncs: syncs(), cloudflare: cf({ name: 'D1', level: 'outage' }), vendors: [vendor('Slack', 'outage')] }, TZ)).toEqual([
       'Cloudflare D1: outage',
       'Slack: outage',
+    ]));
+});
+
+describe('dates and write switches', () => {
+  it('a stale runAt from an earlier day carries its date', () =>
+    expect(attentionItems({ syncs: { runAt: '2026-11-18T17:41:00.000Z', stale: true, rows: [] }, cloudflare: cf(), vendors: [] }, TZ, new Date('2026-11-20T18:41:00Z'))).toEqual([
+      "The sync watchdog hasn't reported since Nov 18, 9:41 AM",
+    ]));
+
+  it('a write switch turned on when off was expected says so, not paused', () =>
+    expect(attentionItems({ syncs: syncs(row('Contact roles on People', 'switch-changed')), cloudflare: cf(), vendors: [] }, TZ)).toEqual([
+      'Contact roles on People: write switch changed',
     ]));
 });

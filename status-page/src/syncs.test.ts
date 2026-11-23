@@ -95,3 +95,13 @@ describe('syncSection', () => {
     expect((await syncSection(broken, [funraise], 2, NOW)).stale).toBe(true);
   });
 });
+
+describe('write switch direction', () => {
+  const roles: SyncSpec = { label: 'Contact roles on People', description: 'd', worker: 'contact-roles', queues: [] };
+  it('writes on when off was expected is switch-changed, not paused', () =>
+    expect(rollUp(roles, snap(ok('cron:contact-roles:*/10 * * * *'), bad('writes:contact-roles', 'writes are on, expected off'))).state).toBe('switch-changed'));
+  it('writes hold or off when on was expected is still paused', () => {
+    expect(rollUp(roles, snap(ok('cron:contact-roles:*/10 * * * *'), bad('writes:contact-roles', 'writes are hold, expected on'))).state).toBe('paused');
+    expect(rollUp(roles, snap(ok('cron:contact-roles:*/10 * * * *'), bad('writes:contact-roles', 'writes are unknown, expected on'))).state).toBe('paused');
+  });
+});

@@ -112,3 +112,28 @@ describe('a vendor whose link is not a status page', () => {
     expect(text(html)).not.toContain('Status page only');
   });
 });
+
+describe('final review fixes', () => {
+  it('does not claim All systems normal when rows could not be checked', () => {
+    const html = renderPage(model({ vendors: [{ name: 'Box', usedFor: 'Files', statusPageUrl: 'https://status.box.com', level: 'unknown', incidents: [] }] }), TZ);
+    expect(text(html)).not.toContain('All systems normal');
+    expect(text(html)).toContain("Nothing needs attention · 1 couldn't be checked");
+    expect(html).not.toContain('banner-ok');
+  });
+
+  it('counts unchecked sync rows and Cloudflare components too', () => {
+    const html = renderPage(
+      model({
+        syncs: { runAt: '2026-11-20T18:40:00.000Z', stale: false, rows: [row({ state: 'unknown' }), row({ label: 'B', state: 'unknown' })] },
+        cloudflare: { statusPageUrl: 'https://www.cloudflarestatus.com', components: [{ name: 'D1', level: 'unknown' }], incidents: [] },
+      }),
+      TZ,
+    );
+    expect(text(html)).toContain("Nothing needs attention · 3 couldn't be checked");
+  });
+
+  it('stale watchdog over a day old shows the date', () => {
+    const html = text(renderPage(model({ syncs: { runAt: '2026-11-18T17:41:00.000Z', stale: true, rows: [row({ state: 'unknown' })] } }), TZ));
+    expect(html).toContain("The sync watchdog hasn't reported since Nov 18, 9:41 AM");
+  });
+});

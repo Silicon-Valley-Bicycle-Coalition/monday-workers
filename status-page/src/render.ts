@@ -2,11 +2,11 @@
 // (incident titles and watchdog details are vendor- or system-controlled text). Every state shows
 // an icon and a word, never colour alone.
 
-import { attentionItems } from './banner';
+import { attentionItems, uncheckedCount } from './banner';
 import type { CloudflareSection } from './cloudflare';
 import { FONT_FACE_CSS } from './fonts';
 import type { SyncRow, SyncSection, SyncState } from './syncs';
-import { clockTime, relativeTime } from './time';
+import { clockTime, relativeTime, sinceTime } from './time';
 import type { Incident, Level } from './types';
 import type { VendorRow } from './vendors';
 
@@ -34,6 +34,7 @@ const SYNC: Record<SyncState, { icon: string; word: string; tone: Tone }> = {
   'not-running': { icon: '✕', word: 'Not running', tone: 'bad' },
   'backed-up': { icon: '⚠', word: 'Backed up', tone: 'warn' },
   paused: { icon: '⚠', word: 'Paused', tone: 'warn' },
+  'switch-changed': { icon: '⚠', word: 'Write switch changed', tone: 'warn' },
   unknown: { icon: '?', word: "Couldn't check", tone: 'unknown' },
 };
 
@@ -72,15 +73,18 @@ function vendorRow(v: VendorRow): string {
 
 export function renderPage(model: PageModel, timezone: string): string {
   const { syncs, cloudflare, vendors, checkedAt } = model;
-  const items = attentionItems(model, timezone);
+  const items = attentionItems(model, timezone, checkedAt);
+  const unchecked = uncheckedCount(model);
   const banner =
-    items.length === 0
+    items.length === 0 && unchecked > 0
+      ? `<section class="banner banner-neutral" aria-live="polite"><p><span aria-hidden="true">?</span> Nothing needs attention · ${unchecked} couldn't be checked</p></section>`
+      : items.length === 0
       ? `<section class="banner banner-ok" aria-live="polite"><p><span aria-hidden="true">✓</span> All systems normal</p></section>`
       : `<section class="banner banner-attention" aria-live="polite"><p><span aria-hidden="true">⚠</span> ${items.length} ${items.length === 1 ? 'thing needs' : 'things need'} attention</p><ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></section>`;
 
   const watchdogNote = syncs.stale
     ? syncs.runAt
-      ? `The sync watchdog hasn't reported since ${esc(clockTime(syncs.runAt, timezone))}`
+      ? `The sync watchdog hasn't reported since ${esc(sinceTime(syncs.runAt, timezone, checkedAt))}`
       : "The sync watchdog hasn't reported yet"
     : `watchdog checked ${esc(clockTime(syncs.runAt!, timezone))}`;
 
@@ -150,6 +154,7 @@ section { margin-bottom: 32px; }
 .banner ul { margin: 8px 0 0; padding-left: 20px; }
 .banner-ok { background: var(--sand); color: var(--ok); }
 .banner-attention { background: var(--warn-bg); color: var(--warn-fg); }
+.banner-neutral { background: var(--sand); color: var(--text-muted); }
 .rows { list-style: none; margin: 0; padding: 0; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--table-border); }
 .name { display: flex; flex-direction: column; }

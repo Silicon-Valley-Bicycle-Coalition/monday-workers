@@ -15,7 +15,9 @@ Cloudflare?" when something seems broken. Three sections, in this order:
 
 A banner at the top says "All systems normal" or lists what needs attention: a sync that isn't
 running, is paused or is backed up; a watchdog that has stopped reporting; a Cloudflare product or
-vendor in an outage. Degraded, maintenance and "Couldn't check" show on their rows only.
+vendor in an outage. Degraded, maintenance and "Couldn't check" show on their rows only, but the
+banner never says "All systems normal" over unchecked rows: it says "Nothing needs attention · N
+couldn't be checked" instead.
 
 Design: [`docs/superpowers/specs/2026-11-20-status-page-design.md`](../docs/superpowers/specs/2026-11-20-status-page-design.md).
 
@@ -55,7 +57,8 @@ shown sync. When a Worker goes live in the watchdog, give it a row here.
 
 A row's state is the worst of its watchdog subjects: a missed cron → **Not running** (with
 "last ran 4 hours ago"), a stuck queue → **Backed up**, a write switch other than expected →
-**Paused**; a failed check or missing subject → **Couldn't check**. The watchdog's own detail
+**Paused** (or **Write switch changed** when writes are on but the watchdog expected them off, as
+for `contact-roles`); a failed check or missing subject → **Couldn't check**. The watchdog's own detail
 line sits behind "Why".
 
 ## Adding a vendor

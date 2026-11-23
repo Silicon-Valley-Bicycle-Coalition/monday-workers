@@ -11,11 +11,14 @@ export interface WatchdogSnapshot {
 }
 const SNAPSHOT_KEY = 'snapshot:latest';
 
-export type SyncState = 'running' | 'not-running' | 'paused' | 'backed-up' | 'unknown';
+// 'paused': writes are hold/off/unreadable when on was expected. 'switch-changed': writes are on
+// when the watchdog expected them off (contact-roles), so the Worker is writing, not paused.
+export type SyncState = 'running' | 'not-running' | 'paused' | 'switch-changed' | 'backed-up' | 'unknown';
 export interface SyncRow { label: string; description: string; state: SyncState; details: string[]; lastRunAt: string | null }
 export interface SyncSection { runAt: string | null; stale: boolean; rows: SyncRow[] }
 
 const NO_RUN_SINCE = /^no run since (\S+)$/;
+const WRITING = /^writes are on,/; // sync-watchdog's detail: `writes are ${value}, expected ${expected}`
 
 export function rollUp(spec: SyncSpec, snapshot: WatchdogSnapshot): SyncRow {
   const queueSubjects = spec.queues.map((q) => `queue:${q}`);
@@ -29,7 +32,7 @@ export function rollUp(spec: SyncSpec, snapshot: WatchdogSnapshot): SyncRow {
   let state: SyncState;
   if (badCrons.length > 0) state = 'not-running';
   else if (badOf('queue:').length > 0) state = 'backed-up';
-  else if (badOf('writes:').length > 0) state = 'paused';
+  else if (badOf('writes:').length > 0) state = badOf('writes:').every((s) => WRITING.test(s.detail ?? '')) ? 'switch-changed' : 'paused';
   else if (missing || mine.some((s) => s.status === 'check-failed')) state = 'unknown';
   else state = 'running';
 
