@@ -28,6 +28,8 @@ describe('wrangler.jsonc env.sandbox', () => {
   it('never serves workers.dev or preview URLs', () => {
     expect(wrangler.workers_dev).toBe(false);
     expect(wrangler.preview_urls).toBe(false);
+    expect(sandboxEnv.workers_dev).toBe(false);
+    expect(sandboxEnv.preview_urls).toBe(false);
   });
 });
 

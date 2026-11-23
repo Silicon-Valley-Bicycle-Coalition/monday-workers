@@ -1,6 +1,6 @@
 {
   "access": {
-    "teamDomain": "",
+    "teamDomain": "https://bikesiliconvalley.cloudflareaccess.com",
     "aud": "",
     "allowedEmailDomain": "bikesiliconvalley.org"
   },

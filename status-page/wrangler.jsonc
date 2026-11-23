@@ -19,6 +19,8 @@
   "env": {
     "sandbox": {
       "name": "svbc-status-page-sandbox",
+      "workers_dev": false,
+      "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
       // No ACCESS_DEV_BYPASS here either.
       "routes": [{ "pattern": "status.sandbox.bikesiliconvalley.org", "custom_domain": true }],

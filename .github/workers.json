@@ -120,5 +120,10 @@
       "zoom-phone-sync/wrangler.jsonc"
     ]
   },
-  { "dir": "zoom-phone-sync" }
+  { "dir": "zoom-phone-sync" },
+  {
+    "dir": "status-page",
+    "extraPaths": ["sync-watchdog/config/**", "scripts/build-font-modules.mjs"],
+    "sandbox": {}
+  }
 ]
