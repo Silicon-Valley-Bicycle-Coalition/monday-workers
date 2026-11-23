@@ -51,9 +51,9 @@ Things to know:
   - The GitHub `svbc-bike-lanes` environment holds its own `CLOUDFLARE_API_TOKEN` for the bike
     lanes site's weekly production deploy: Workers Editor scoped to that Worker and
     Workers Routes: Write on the zone (see [its chapter](workers/svbc-bike-lanes.md)).
-- **Cloudflare Access** protects the staff-only Workers (`member-map`, `nearby-search`, `svbc-bike-lanes`). Each has
+- **Cloudflare Access** protects the staff-only Workers (`member-map`, `nearby-search`, `status-page`, `svbc-bike-lanes`). Each has
   (or, for `nearby-search`, will have once it's deployed) an Access application in Zero Trust → Access → Applications, allowing SVBC staff email
-  addresses. `member-map` and `nearby-search` also verify the Access JWT themselves (`access.aud`
+  addresses. `member-map`, `nearby-search` and `status-page` also verify the Access JWT themselves (`access.aud`
   and `access.teamDomain` in their config); `svbc-bike-lanes` is static files with no script, so
   Access is its only gate.
 - **WAF / Super Bot Fight Mode.** The zone challenges non-browser clients. Calendar apps polling

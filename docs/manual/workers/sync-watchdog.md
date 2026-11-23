@@ -45,7 +45,9 @@ the Cloudflare dashboard post those to the same channel. See the
 
 ### Storage
 
-No D1. `STATE` KV holds one alert-state record per subject.
+No D1. `STATE` KV holds one alert-state record per subject, and `snapshot:latest`: every
+subject's result and the run time, written after each run (both environments) for
+[`status-page`](status-page.md). A failed snapshot write is logged; alerts still go out.
 
 ## Monday boards and columns
 
