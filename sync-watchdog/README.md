@@ -27,7 +27,9 @@ doesn't match. To take a Worker live, move it from `notLive` to `watched`.
 ## Bindings and secrets
 
 - `FLAGS`: the production `FLAGS` KV namespace, read only.
-- `STATE`: this Worker's own KV namespace, holding per-subject alert state.
+- `STATE`: this Worker's own KV namespace, holding per-subject alert state, and also
+  `snapshot:latest`: every subject's result and the run time, written each run (both environments)
+  and read by [`status-page`](../status-page/README.md).
 - `CLOUDFLARE_API_TOKEN` (secret): an account token with Account Analytics Read and Queues Read.
 - `SLACK_WEBHOOK_URL` (secret): the private staff channel's incoming webhook.
 

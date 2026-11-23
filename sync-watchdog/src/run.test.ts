@@ -104,6 +104,49 @@ describe('runWatchdog', () => {
     expect(slack.posts).toEqual([]);
   });
 
+  describe('snapshot:latest', () => {
+    type Snap = { runAt: string; subjects: { subject: string; status: string; detail?: string }[] };
+    const snapshot = async () => JSON.parse((await env.STATE.get('snapshot:latest'))!) as Snap;
+    const bySubject = (s: Snap) => Object.fromEntries(s.subjects.map((x) => [x.subject, x]));
+    beforeEach(async () => { await env.STATE.delete('snapshot:latest'); });
+
+    it('writes a snapshot of every subject', async () => {
+      await armAll();
+      await runWatchdog(deps());
+      const s = await snapshot();
+      expect(s.runAt).toBe(TUESDAY.toISOString());
+      expect(bySubject(s)).toEqual(Object.fromEntries(SUBJECTS.map((x) => [x, { subject: x, status: 'ok' }])));
+    });
+
+    it('snapshot carries bad detail and check-failed error', async () => {
+      await armAll();
+      await env.FLAGS.put('funraise-sync:writes', 'hold');
+      const api: CloudflareApi = { ...healthyApi(TUESDAY), lastScheduledRun: async () => { throw new Error('boom'); } };
+      await runWatchdog(deps({ api }));
+      const s = bySubject(await snapshot());
+      expect(s['cron:funraise-sync:0 * * * *']).toEqual({ subject: 'cron:funraise-sync:0 * * * *', status: 'check-failed', detail: 'boom' });
+      expect(s['writes:funraise-sync']).toEqual({ subject: 'writes:funraise-sync', status: 'bad', detail: 'writes are hold, expected on' });
+    });
+
+    it("a failed snapshot write doesn't stop alerts", async () => {
+      await armAll();
+      await env.FLAGS.put('funraise-sync:writes', 'hold');
+      const state = {
+        get: env.STATE.get.bind(env.STATE),
+        put: (k: string, v: string) => (k === 'snapshot:latest' ? Promise.reject(new Error('kv down')) : env.STATE.put(k, v)),
+      } as unknown as KVNamespace;
+      await runWatchdog(deps({ state }));
+      expect(slack.posts).toEqual(['sync-watchdog: writes:funraise-sync: writes are hold, expected on']);
+      expect(errors.some((e) => e.startsWith('sync-watchdog: snapshot write failed'))).toBe(true);
+    });
+
+    it('sandbox writes a snapshot too', async () => {
+      await armAll();
+      await runWatchdog(deps({ environment: 'sandbox' }));
+      expect(await env.STATE.get('snapshot:latest')).not.toBeNull();
+    });
+  });
+
   it('messages start with "sync-watchdog:" and contain no @', async () => {
     await armAll();
     await env.FLAGS.put('funraise-sync:writes', 'off');
