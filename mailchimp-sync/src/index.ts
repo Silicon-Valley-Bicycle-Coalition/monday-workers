@@ -27,6 +27,7 @@ import { JOURNEY_LOG_CRON, runJourneyLog } from './journeyLog/run';
 import { createJourneyLogMonday } from './journeyLog/monday';
 import { listJourneyEmails, readAddress, readSendTime, readSentTo } from './journeyLog/mailchimp';
 import { D1JourneySendStore } from './db/journeySends';
+import { claimCronEvent } from './db/cronRuns';
 import { adminBaseUrl, createProfileLinksMonday, runProfileLinks } from './profileLinks/run';
 import { createConsentMonday, readMailchimpStatuses } from './consent/sources';
 import { createEmployerPeople, runEmployerAnswers } from './employerAnswers/run';
@@ -54,6 +55,22 @@ const WORKER = 'mailchimp-sync';
 async function skipContext(env: Env): Promise<BatchSkipContext> {
   const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
   return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+}
+
+// False for a repeat delivery of a cron event this Worker already started (src/db/cronRuns.ts).
+// Fails open: if the claim can't be recorded (D1 down, migration 0009 not applied yet), the run
+// goes ahead, since every cron job here tolerates running twice and skipping one costs a run.
+// An event without a scheduledTime (a hand-made test event) always runs.
+async function firstDelivery(event: ScheduledEvent, env: Env): Promise<boolean> {
+  if (!Number.isFinite(event.scheduledTime)) return true;
+  try {
+    if (await claimCronEvent(env.DB, event.cron, event.scheduledTime)) return true;
+  } catch (err) {
+    console.error(`mailchimp-sync: could not record the cron claim; running anyway: ${(err as Error).name}: ${redactEmails((err as Error).message)}`);
+    return true;
+  }
+  console.warn(JSON.stringify({ worker: WORKER, event: 'cron-duplicate-skipped', environment: environmentOf(env), cron: event.cron, scheduledTime: new Date(event.scheduledTime).toISOString() }));
+  return false;
 }
 
 export default {
@@ -147,6 +164,7 @@ export default {
   // full 15 minutes, while waitUntil work is only promised 30 seconds after the handler returns.
   // A failed run is logged, not thrown, so Workers Issues shows the error line.
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    if (!(await firstDelivery(event, env))) return;
     const config = configFor(env);
     // Three crons (wrangler.jsonc): the hourly consent sync (with the Mailchimp Profile links and
     // the employer-answer hand-over),

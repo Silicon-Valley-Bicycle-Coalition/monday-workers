@@ -262,6 +262,44 @@ describe('scheduled', () => {
       warn.mockRestore();
     }
   });
+
+  it('scheduled skips a second delivery of the same cron event', async () => {
+    const env = fakeEnv({ FLAGS: flags('hold') });
+    const event = { cron: '5 * * * *', scheduledTime: Date.parse('2026-11-23T14:05:57.341Z') } as ScheduledEvent;
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void lines.push(line));
+    const warn = vi.spyOn(console, 'warn').mockImplementation((line: string) => void lines.push(line));
+    try {
+      await worker.scheduled(event, env);
+      expect(lines.some((l) => l.includes('skipping the consent run'))).toBe(true);
+
+      lines.length = 0;
+      await worker.scheduled(event, env);
+      expect(lines.some((l) => l.includes('consent'))).toBe(false);
+      expect(lines.some((l) => l.includes('"event":"cron-duplicate-skipped"') && l.includes('"scheduledTime":"2026-11-23T14:05:57.341Z"'))).toBe(true);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it('scheduled still runs when the claim cannot be recorded', async () => {
+    const broken = { prepare: () => { throw new Error('no such table: cron_runs'); }, batch: async () => { throw new Error('no such table: cron_runs'); } } as unknown as D1Database;
+    const event = { cron: '5 * * * *', scheduledTime: Date.parse('2026-11-23T15:05:57.341Z') } as ScheduledEvent;
+    const lines: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void lines.push(line));
+    const warn = vi.spyOn(console, 'warn').mockImplementation((line: string) => void lines.push(line));
+    const error = vi.spyOn(console, 'error').mockImplementation((line: string) => void lines.push(line));
+    try {
+      await worker.scheduled(event, fakeEnv({ FLAGS: flags('hold'), DB: broken }));
+      expect(lines.some((l) => l.includes('could not record the cron claim'))).toBe(true);
+      expect(lines.some((l) => l.includes('skipping the consent run'))).toBe(true);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
 });
 
 describe('request-time config selection', () => {
