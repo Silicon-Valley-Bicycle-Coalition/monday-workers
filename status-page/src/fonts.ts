@@ -1,9 +1,11 @@
 import { EMBEDDED_FONTS } from './fontData';
 
-// Manrope and Poppins for the status page, served by this Worker (behind Access like every other
-// route) rather than Google Fonts, so a staff member's IP address isn't sent to Google. Copied
-// from svbc-calendars/src/fonts.ts. STYLES_CSS carries FONT_FACE_CSS pointing at
-// /fonts/<family>-<subset>-<weight>-<version>.woff2.
+// Nunito Sans for the status page, served by this Worker (behind Access like every other route)
+// rather than Google Fonts, so a staff member's IP address isn't sent to Google. Copied from
+// svbc-calendars/src/fonts.ts. STYLES_CSS carries FONT_FACE_CSS pointing at
+// /fonts/<Fontsource file stem>-<version>.woff2. Nunito Sans is the variable build: one file covers
+// every weight the page sets.
+//
 // The files only change when scripts/build-font-modules.mjs regenerates fontData.ts, so the
 // version is in the path (the Fontsource release) and the response is immutable.
 
@@ -18,9 +20,9 @@ function decodeBase64(base64: string): ArrayBuffer {
 }
 
 const FONTS = EMBEDDED_FONTS.map((f) => {
-  const name = `${f.family.toLowerCase()}-${f.subset}-${f.weight}-${FONT_VERSION}`;
+  const name = `${f.id}-${FONT_VERSION}`;
   const rule =
-    `@font-face { font-family: "${f.family}"; font-style: normal; font-weight: ${f.weight}; font-display: swap; ` +
+    `@font-face { font-family: "${f.family}"; font-style: ${f.style}; font-weight: ${f.weight}; font-display: swap; ` +
     `src: url(/fonts/${name}.woff2) format("woff2"); unicode-range: ${f.unicodeRange}; }`;
   return { name, base64: f.woff2Base64, rule };
 });

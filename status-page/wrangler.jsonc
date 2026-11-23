@@ -13,7 +13,7 @@
   // sync-watchdog's STATE namespace: this Worker only ever reads `snapshot:latest` from it.
   "kv_namespaces": [{ "binding": "WATCHDOG_STATE", "id": "fd4cd11d203d4b7fbdf2dd1bbc0bce4a" }],
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits".
-  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2103", "simple": { "limit": 60, "period": 60 } }],
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2105", "simple": { "limit": 60, "period": 60 } }],
   // No crons, no secrets, no write switch: it writes nothing anywhere.
   "observability": { "enabled": true },
   "env": {
@@ -25,7 +25,7 @@
       // No ACCESS_DEV_BYPASS here either.
       "routes": [{ "pattern": "status.sandbox.bikesiliconvalley.org", "custom_domain": true }],
       "kv_namespaces": [{ "binding": "WATCHDOG_STATE", "id": "e82a6053131d4fd6a90d7cf7e8c852d6" }],
-      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2104", "simple": { "limit": 60, "period": 60 } }],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2106", "simple": { "limit": 60, "period": 60 } }],
       "observability": { "enabled": true }
     }
   }

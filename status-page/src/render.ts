@@ -122,11 +122,11 @@ ${banner}
 // map-dot-org (green) values; the design system has no dedicated success token.
 export const STYLES_CSS = `${FONT_FACE_CSS}
 :root {
-  --svbc-black: #000000; --svbc-gold: #ffc700; --svbc-white: #ffffff; --svbc-chrome: #383838;
-  --bg: #ffffff; --text: #303030; --text-muted: #666666; --surface: #ffffff; --sand: #f4f4f3;
+  --svbc-black: #000000; --svbc-gold: #ffc20e; --svbc-white: #ffffff; --svbc-chrome: #383838;
+  --bg: #ffffff; --text: #303030; --text-muted: #666666; --surface: #ffffff; --sand: #f0ebe8;
   --border: #cccccc; --table-border: #eeeeee;
   --ok: #15803d; --warn-fg: #92400e; --warn-bg: #fef3c7; --bad-fg: #b91c1c; --bad-bg: #fef2f2;
-  --font-heading: "Manrope", system-ui, sans-serif; --font-body: "Poppins", system-ui, sans-serif;
+  --font-web: "Nunito Sans", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -136,10 +136,10 @@ export const STYLES_CSS = `${FONT_FACE_CSS}
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.5 var(--font-body); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.5 var(--font-web); }
 a { color: inherit; text-underline-offset: 2px; }
 a:focus-visible { outline: 3px solid var(--svbc-gold); outline-offset: 2px; }
-h1, h2 { font-family: var(--font-heading); font-weight: 500; letter-spacing: -0.02em; margin: 0; }
+h1, h2 { font-weight: 500; letter-spacing: -0.02em; margin: 0; }
 .bar { background: var(--svbc-black); color: var(--svbc-white); display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; padding: 20px 16px; }
 .bar h1 { font-size: 24.64px; }
 .bar p { margin: 0; color: #cfcfcf; }

@@ -57,6 +57,12 @@
       "queues": []
     },
     {
+      "label": "Employer match suggestions",
+      "description": "Draft employer affiliations are proposed from matching gifts and work email domains for staff to confirm.",
+      "worker": "impact-attribution",
+      "queues": []
+    },
+    {
       "label": "Member and donor reclassification",
       "description": "People move between the live and historical boards as their status changes.",
       "worker": "people-reclassification",

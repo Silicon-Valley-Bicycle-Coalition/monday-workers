@@ -82,6 +82,6 @@ describe('routes', () => {
 
   it('styles and fonts need Access too', async () => {
     expect((await handler.fetch(get('https://status.bikesiliconvalley.org/styles.css'), live())).status).toBe(403);
-    expect((await handler.fetch(get('https://status.bikesiliconvalley.org/fonts/poppins-latin-400-v5.woff2'), live())).status).toBe(403);
+    expect((await handler.fetch(get('https://status.bikesiliconvalley.org/fonts/nunito-sans-latin-wght-normal-v5.woff2'), live())).status).toBe(403);
   });
 });

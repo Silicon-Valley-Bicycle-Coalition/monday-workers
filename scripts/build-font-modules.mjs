@@ -43,11 +43,10 @@ export const TARGETS = [
     },
   },
   {
-    // The staff status page is English-only: headings in Manrope 500, body in Poppins.
+    // The staff status page is English-only and sets no italic.
     out: 'status-page/src/fontData.ts',
     faces: {
-      Manrope: { weights: [500], subsets: ['latin'] },
-      Poppins: { weights: [400, 600], subsets: ['latin'] },
+      'Nunito Sans': { styles: ['normal'], subsets: ['latin'] },
     },
   },
 ];
