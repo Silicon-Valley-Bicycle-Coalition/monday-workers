@@ -15,10 +15,12 @@ export const VOLUNTEER_COLUMN_SPECS = [
   { key: 'attendeeIdColumn', title: 'Eventbrite Attendee ID', type: 'text' },
   { key: 'attendeeNameColumn', title: 'Attendee Name', type: 'text' },
   { key: 'attendeeEmailColumn', title: 'Attendee Email', type: 'email' },
+  // Shift and Phone Number are staff's names (2026-11-24), formerly Ticket Type and Attendee Phone. The
+  // script matches by title, so a rename in Monday needs one here too or the next run duplicates it.
   // GL#115. Text, not status: ticket class names are free text, per event.
-  { key: 'ticketTypeColumn', title: 'Ticket Type', type: 'text' },
+  { key: 'ticketTypeColumn', title: 'Shift', type: 'text' },
   // Text, as entered: Monday's phone column refuses what it can't parse.
-  { key: 'attendeePhoneColumn', title: 'Attendee Phone', type: 'text' },
+  { key: 'attendeePhoneColumn', title: 'Phone Number', type: 'text' },
 ];
 
 // Columns Monday works out from the linked event, in the order they must be created. No Worker

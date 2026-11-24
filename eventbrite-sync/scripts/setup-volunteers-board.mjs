@@ -100,9 +100,9 @@ async function main() {
   }
   if (views.includes(UPCOMING_VIEW_NAME)) {
     const status = find(volunteers, 'Status', 'status');
-    const ticketType = find(volunteers, 'Ticket Type', 'text');
+    const ticketType = find(volunteers, 'Shift', 'text');
     const shown = [
-      'name', ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Attendee Phone', 'text').id, status.id,
+      'name', ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Phone Number', 'text').id, status.id,
       find(volunteers, 'Shift Lead', 'mirror').id, find(volunteers, 'Shift Lead Email', 'mirror').id,
     ];
     await graphql(CREATE_VIEW, upcomingViewVariables(args.board, {

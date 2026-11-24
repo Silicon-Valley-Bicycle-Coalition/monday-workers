@@ -45,7 +45,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name, Attendee Email, Ticket Type and Attendee Phone (each only if missing) and the
+   Attendee Name, Attendee Email, Shift and Phone Number (each only if missing) and the
    Recent events view (Date within the last 90 days, newest first, ungrouped), and prints the column
    ids. Since 2026-11-24 it also creates Shift Lead and Shift Lead Email on Events; Event Date, Shift
    Lead, Shift Lead Email and Event and Date on Volunteers; and the Upcoming by event view. Then, from the repo root, add the 🔒
@@ -70,8 +70,8 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    exactly as before; so a deploy from `main` before this step is safe. Fill all five or none: a
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
    splitting volunteers across two boards. `ticketTypeColumn` is not one of the five: left as the
-   placeholder it only means Ticket Type stays blank. The same goes for `attendeePhoneColumn` and
-   Attendee Phone.
+   placeholder it only means Shift stays blank. The same goes for `attendeePhoneColumn` and
+   Phone Number.
 
 3. **Hold `eventbrite-sync`** (repo root).
 
@@ -308,10 +308,11 @@ step. Never delete the Volunteers items the backfill created.
   again after creating the item, so your choice sticks. **Eventbrite Listing** keeps the listing
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
-  Attendee Email, Ticket Type, Attendee Phone). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+  Attendee Email, Shift, Phone Number): the sync overwrites an edit. Don't rename columns either
+  without asking IT; the setup script finds them by name. Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
 - **Rows that look like duplicates usually aren't ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)).** One row is one Eventbrite ticket.
-  One order can hold several: two shifts (different **Ticket Type**), or several people bought
-  under one buyer's email (same Ticket Type, different Attendee Name). A cancel or refund keeps
+  One order can hold several: two shifts (different **Shift**), or several people bought
+  under one buyer's email (same Shift, different Attendee Name). A cancel or refund keeps
   its row with Status **Canceled**; the sync never deletes one. To count people at an event,
   leave out Canceled rows and count Eventbrite Attendee IDs, not emails. Two live rows with
   different Eventbrite orders are a real double registration in Eventbrite.
