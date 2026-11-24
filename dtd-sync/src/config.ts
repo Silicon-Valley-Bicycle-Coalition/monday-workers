@@ -1,6 +1,33 @@
 import { createConfigSelector } from './environment';
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
+import { normalizeEmployerName } from './employerName';
+
+/** An employer known to match SVBC gifts, as the post-gift email describes it. */
+export interface MatchingEmployer {
+  name: string; aliases: string[]; platform: string;
+  requestUrl: string | null; steps: 'benevity-off-platform'; deadlineNote: string | null;
+}
+
+/**
+ * The post-gift matching-gift email (src/jobs/prompt.ts). Null means off: the Worker does what it
+ * did before the email existed. Every string here reaches donors, so a block holding a placeholder
+ * is rejected whole.
+ */
+export interface OutreachConfig {
+  /** 'email': prompt runs and push/pull never do. 'dtd': push/pull run and prompt never does. */
+  mode: 'email' | 'dtd';
+  delayDays: number; donorCooldownDays: number; maxAttempts: number; excludeGiftTypes: string[];
+  /** The member portal's Employer field. Null: nobody is asked where they work. */
+  employerFormUrl: string | null;
+  /** The day the development team approved the copy in src/outreach/email.ts. */
+  wordingApprovedOn: string;
+  ein: string; fromAddress: string; fromName: string; replyTo: string; postalAddress: string; logoUrl: string;
+  donations: { matchPromptSent: string };
+  people: { employerName: string; doNotSolicit: string };
+  programSummary: { prompted: string; promptedMatched: string; promptedMatchDollars: string };
+  matchingEmployers: MatchingEmployer[];
+}
 
 export interface DtdSyncConfig {
   dtd: { apiBase: string; campaign: string; publicKey: string; pullOverlapMinutes: number };
@@ -23,9 +50,11 @@ export interface DtdSyncConfig {
   };
   pairing: { windowMonths: number; amountTolerance: number };
   statusLabels: Record<string, string>; // DTD keyword (e.g. ":waiting-for-donor-action") → Match Status label
+  outreach: OutreachConfig | null;
 }
 
 const PLACEHOLDER = 'REPLACE_WITH_COLUMN_ID';
+const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
 function object(raw: unknown, path: string): Record<string, unknown> {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`config: ${path} must be an object`);
@@ -69,6 +98,86 @@ function allowEmails(o: Record<string, unknown>): string[] | '*' | null {
   if (v === '*' || v === null) return v;
   if (Array.isArray(v) && v.every((s) => typeof s === 'string' && s !== '')) return v as string[];
   throw new Error('config: push.allowEmails must be "*", an array of email strings, or null (send nothing)');
+}
+
+// A string donors see, or that decides who does: never the sign-off placeholder.
+function signedOff(o: Record<string, unknown>, key: string, path: string): string {
+  const v = string(o, key, path);
+  if (v === SIGNOFF_PLACEHOLDER) throw new Error(`config: ${path}.${key} is ${SIGNOFF_PLACEHOLDER}; it needs the development team's sign-off`);
+  return v;
+}
+
+function httpsUrl(o: Record<string, unknown>, key: string, path: string): string {
+  const v = signedOff(o, key, path);
+  if (!URL.canParse(v) || new URL(v).protocol !== 'https:') throw new Error(`config: ${path}.${key} must be an https URL`);
+  return v;
+}
+
+function orNull<T>(o: Record<string, unknown>, key: string, read: () => T): T | null {
+  return o[key] === null ? null : read();
+}
+
+// YYYY-MM-DD and a real day: `new Date('2026-02-30')` would roll over or be invalid.
+function day(o: Record<string, unknown>, key: string, path: string): string {
+  const v = signedOff(o, key, path);
+  const at = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00Z`) : null;
+  if (at === null || Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== v) throw new Error(`config: ${path}.${key} must be a date (YYYY-MM-DD)`);
+  return v;
+}
+
+function matchingEmployers(raw: unknown): MatchingEmployer[] {
+  const path = 'outreach.matchingEmployers';
+  if (!Array.isArray(raw)) throw new Error(`config: ${path} must be an array`);
+  const owner = new Map<string, number>(); // normalised spelling → index of the employer that has it
+  return raw.map((entry, i) => {
+    const at = `${path}[${i}]`;
+    const o = object(entry, at);
+    const aliases = stringArray(o, 'aliases', at);
+    if (aliases.includes(SIGNOFF_PLACEHOLDER)) throw new Error(`config: ${at}.aliases holds ${SIGNOFF_PLACEHOLDER}`);
+    if (o.steps !== 'benevity-off-platform') throw new Error(`config: ${at}.steps must be "benevity-off-platform"`);
+    const name = signedOff(o, 'name', at);
+    for (const spelling of [name, ...aliases]) {
+      const key = normalizeEmployerName(spelling);
+      if (key === '') throw new Error(`config: ${at} spelling "${spelling}" has nothing left to match on`);
+      const taken = owner.get(key);
+      if (taken !== undefined && taken !== i) throw new Error(`config: ${at} spelling "${spelling}" also belongs to ${path}[${taken}]`);
+      owner.set(key, i);
+    }
+    return {
+      name,
+      aliases,
+      platform: signedOff(o, 'platform', at),
+      requestUrl: orNull(o, 'requestUrl', () => httpsUrl(o, 'requestUrl', at)),
+      steps: o.steps,
+      deadlineNote: orNull(o, 'deadlineNote', () => signedOff(o, 'deadlineNote', at)),
+    };
+  });
+}
+
+function outreach(raw: unknown): OutreachConfig | null {
+  if (raw === undefined || raw === null) return null;
+  const path = 'outreach';
+  const o = object(raw, path);
+  if (o.mode !== 'email' && o.mode !== 'dtd') throw new Error('config: outreach.mode must be "email" or "dtd"');
+  return {
+    mode: o.mode,
+    delayDays: positiveNumber(o, 'delayDays', path),
+    donorCooldownDays: positiveNumber(o, 'donorCooldownDays', path),
+    maxAttempts: positiveNumber(o, 'maxAttempts', path),
+    excludeGiftTypes: stringArray(o, 'excludeGiftTypes', path),
+    employerFormUrl: orNull(o, 'employerFormUrl', () => httpsUrl(o, 'employerFormUrl', path)),
+    wordingApprovedOn: day(o, 'wordingApprovedOn', path),
+    ein: signedOff(o, 'ein', path),
+    fromAddress: signedOff(o, 'fromAddress', path),
+    fromName: signedOff(o, 'fromName', path),
+    replyTo: signedOff(o, 'replyTo', path),
+    postalAddress: signedOff(o, 'postalAddress', path),
+    logoUrl: httpsUrl(o, 'logoUrl', path),
+    donations: columns(o.donations, 'outreach.donations', ['matchPromptSent'] as const),
+    people: columns(o.people, 'outreach.people', ['employerName', 'doNotSolicit'] as const),
+    programSummary: columns(o.programSummary, 'outreach.programSummary', ['prompted', 'promptedMatched', 'promptedMatchDollars'] as const),
+    matchingEmployers: matchingEmployers(o.matchingEmployers),
+  };
 }
 
 export function validateConfig(raw: unknown): DtdSyncConfig {
@@ -125,6 +234,7 @@ export function validateConfig(raw: unknown): DtdSyncConfig {
       amountTolerance: positiveNumber(pairing, 'amountTolerance', 'pairing'),
     },
     statusLabels: labels as Record<string, string>,
+    outreach: outreach(root.outreach),
   };
 }
 
