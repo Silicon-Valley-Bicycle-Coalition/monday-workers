@@ -84,12 +84,15 @@ Stream and Gift Size on a pledge, so those views need the filters below.
 
 ### A gift entered as Received that was really a pledge
 
-**Delete the item and enter it again as Pledged.** Don't change Status and clear Date: an item with
-no Date is skipped before the ledger is refreshed, so the old Received row stays in the ledger and
-keeps counting in the gift history, membership, Organizational Giving and the roll call, though
-Lifetime Giving drops. Deleting the item removes the row. Likewise, don't put an expected payment
-date in Date. A Worker change (a cleared Date removes the ledger row) would lift this; it is not
-part of this work unless David asks for it. (Found in review, read from the code, not run.)
+Set Status to **Pledged**, fill in Pledge Date, and clear **Date** and **Fiscal Year Ending**. Clearing
+Date removes the gift's ledger row, so it leaves every total within about a minute (#115, live in
+production 2026-11-24 as `donation-rollups` version 926e9917). Clear Fiscal Year Ending too: the
+nightly `classify` fills only a blank cell, so a pledge paid next year would otherwise count in the
+old year. Membership dates already written to the donor aren't pulled back. Don't put an expected
+payment date in Date.
+
+Until #115 the rule was to delete the item and enter it again, because clearing Date left a counted
+Received row in the ledger. #115 was tested live on the sandbox, not yet on a production gift.
 
 ### Views on Donations
 
