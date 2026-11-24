@@ -609,6 +609,10 @@ until staff renamed them on 2026-11-24 (config keys keep the old words); the set
 rename in Monday needs one there too. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
+**Completed by event** is production's first tab, the same layout for past events: Completed with an Event,
+newest first. It was Completed hours until 2026-11-24, changed by hand on that board only; the setup script
+doesn't make it, and `salesforce-import`'s configure spec still names the old view.
+
 Cutover order, rollback and open gaps:
 [`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
 
