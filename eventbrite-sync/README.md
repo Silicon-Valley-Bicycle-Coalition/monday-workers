@@ -924,18 +924,20 @@ beyond the table above:
 
 ## Open
 
-0. **Production event emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
+0. **Production event emails.** Configured 2026-11-04: the `🔒 Send event email` column on Events
    (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
    `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
    First real sends (checked 2026-11-17): Kendra's reminder on 2026-11-11 (6 people) and, on 2026-11-14,
    a thank-you (7) and a second class's reminder (9), with timeline entries on the recipients' items; check-ins have
    arrived since 2026-11-08. Still open: a first missed-you, and a timed run of `result` on a 26-person
    roster (the CPU limit in `wrangler.jsonc`). The 2026-11-09 generic change is deployed (the 2026-11-14
-   updates read "Event email"), but as of 2026-11-17 the column is still `🔒 Send class email` and
-   five Volunteering and Group Rides events dated November–December have no link. On 2026-11-19
-   `scripts/backfill-send-links.mjs` wrote the link on 235 events, and the daily send-link sweep
-   keeps it current from then on. Still to do: rename the column `🔒 Send event email`
-   (`MARKED_COLUMNS` already has the new title) and redeploy the page with its matching wording.
+   updates read "Event email"). On 2026-11-19 `scripts/backfill-send-links.mjs` wrote the link on 235
+   events, and the daily send-link sweep keeps it current from then on. On 2026-11-24, because staff
+   still couldn't find it (the link was set but not shown on the Event Card, and off-screen in the
+   table views), the column was renamed `🔒 Send event email`, added to the Event Card after Name, and
+   moved next to Date in the Upcoming, All events and Volunteer events views. Monday doesn't add a new
+   column to an existing card: edit the card's Event widget and check it. The page's matching wording
+   is live (version 4, 2026-11-19).
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.

@@ -85,8 +85,15 @@ describe('Event Registrations class roster', () => {
 });
 
 describe('Events send link', () => {
-  it('has a Send class email link column, written by eventbrite-sync', () => {
-    expect(BOARD_SPECS['events']!.columns).toContainEqual({ title: 'Send class email', type: 'link' });
+  it('has a Send event email link column, written by eventbrite-sync', () => {
+    expect(BOARD_SPECS['events']!.columns).toContainEqual({ title: 'Send event email', type: 'link' });
+  });
+
+  it('sits right after Date in the event views, where staff look for it', () => {
+    for (const name of ['Upcoming', 'All events']) {
+      const view = BOARD_SPECS['events']!.views!.find((v) => v.name === name)!;
+      expect(view.columns!.slice(0, 2)).toEqual(['Date', 'Send event email']);
+    }
   });
 });
 
