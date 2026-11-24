@@ -53,7 +53,8 @@ Throwaway columns and views, all deleted; the one re-pointed row was put back.
   to People.
 - The filter (Date today or later, Status not Canceled) returned the expected 43 of 45 rows.
 - A view grouped by a formula disables New item. That suits these rows, which the sync creates.
-- Not tested: a second-level mirror (the lead's email on volunteer rows); exporting one section.
+- Built in sandbox the same day: a mirror of a mirror works (the lead's email), and clearing a row's Event
+  puts it under `No event linked`. Not tested: exporting one section.
 
 ## Design
 
@@ -69,8 +70,9 @@ Throwaway columns and views, all deleted; the one re-pointed row was put back.
   Phone (stage 2), Status, Shift Lead.
 - `setup-volunteers-board.mjs` gains the columns and the view, so a rebuilt board gets them. Idempotent
   through `bareTitle`, dry run by default. `Shift Lead` goes on Events, which the script already takes.
-- My call: try the lead's email as a mirror on Volunteers; if Monday refuses a mirror of a mirror, staff
-  open the lead's People item.
+- `Shift Lead Email`: a mirror on Events (the lead's Personal Email) and a mirror of that on Volunteers.
+- The filter stays on the row's own `Date`: when Eventbrite moves an event, the sync re-queues its
+  attendees, so `Date` follows. Filtering on `Event Date` would drop rows with no event.
 
 **Stage 2, phone and shift (`eventbrite-sync`).**
 

@@ -287,8 +287,8 @@ step. Never delete the Volunteers items the backfill created.
   for today onward, one section per event in date order, with shift, email and phone. Canceled
   sign-ups are hidden, and an event with no sign-ups has no section. One row is one ticket, so someone
   on two shifts is listed twice and two people can share an email.
-- **Shift lead.** Set **Shift Lead** on the event (Events board); it shows on every volunteer's row.
-  The lead must be on People first. **Send event email** goes to the volunteers, not the lead: email
+- **Shift lead.** Set **Shift Lead** on the event (Events board); it shows, with their
+  Personal Email, on every volunteer's row. The lead must be on People first. **Send event email** goes to the volunteers, not the lead: email
   the lead separately.
 - **What the lead gets is your call.** The view shows you everything. Some volunteers are probably
   minors, and the sign-up forms checked on 2026-11-24 don't ask about sharing contact info with

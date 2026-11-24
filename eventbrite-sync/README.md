@@ -596,7 +596,7 @@ and date (`2026-11-28 · Cardinals vs Mustangs…`), so a renamed event or a re-
 row with nothing to sync; a row with no Event goes under "No event linked". It starts with the date
 because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift Lead** is a one-way
 link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
-through a mirror. Design:
+and **Shift Lead Email** (the lead's Personal Email) through mirrors. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
 Cutover order, rollback and open gaps:

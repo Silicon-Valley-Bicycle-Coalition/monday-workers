@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Adds the Eventbrite sign-up columns to the Volunteers board, the Shift Lead link to Events, the
+// Adds the Eventbrite sign-up columns to the Volunteers board, the Shift Lead columns to Events, the
 // columns Monday works out from the linked event, and the "Recent events" and "Upcoming by event"
 // views, each only if missing (idempotent by bare column title, so a 🔒 marker never causes a
 // duplicate; by name for the views). Dry run by default. Prints the config-ready column ids to paste
@@ -15,8 +15,8 @@
 import { fileURLToPath } from 'node:url';
 import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 import {
-  UPCOMING_VIEW_NAME, VIEW_NAME, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, parseArgs, planDerivedColumns,
-  planShiftLead, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
+  UPCOMING_VIEW_NAME, VIEW_NAME, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, leadEmailVariables, parseArgs,
+  planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
 } from './setup-volunteers-board-lib.mjs';
 
 const CREATE_COLUMN = `mutation ($board: ID!, $title: String!, $type: ColumnType!, $defaults: JSON, $description: String) {
@@ -55,18 +55,24 @@ async function main() {
   let volunteers = await read(args.board);
   let events = await read(args.eventsBoard);
   const { toCreate } = planVolunteersBoard(volunteers.columns);
-  const { create: createLead } = planShiftLead(events.columns);
+  const onEvents = planEventsColumns(events.columns);
   const derived = planDerivedColumns(volunteers.columns);
   const views = planViews(volunteers.views ?? []);
   if (!args.apply) {
     const list = (titles, none) => titles.map((t) => `"${t}"`).join(', ') || none;
-    log(`dry run: Events board ${args.eventsBoard} needs ${createLead ? '"Shift Lead"' : 'no columns'}`);
+    log(`dry run: Events board ${args.eventsBoard} needs ${list(onEvents, 'no columns')}`);
     log(`dry run: Volunteers board ${args.board} needs ${list([...toCreate.map((s) => s.title), ...derived], 'no columns')} and ${list(views, 'no views')}`);
     return;
   }
 
-  if (createLead) {
+  if (onEvents.includes('Shift Lead')) {
     await createColumn(shiftLeadVariables(args.eventsBoard, args.peopleBoards));
+    events = await read(args.eventsBoard);
+  }
+  if (onEvents.includes('Shift Lead Email')) {
+    const emailColumns = [];
+    for (const id of args.peopleBoards) emailColumns.push([id, find(await read(id), 'Personal Email', 'email').id]);
+    await createColumn(leadEmailVariables(args.eventsBoard, { shiftLeadColumn: find(events, 'Shift Lead', 'board_relation').id, emailColumns }));
     events = await read(args.eventsBoard);
   }
   for (const spec of toCreate) await createColumn(createColumnVariables(args.board, spec, args.eventsBoard));
@@ -82,6 +88,7 @@ async function main() {
       eventColumn: find(volunteers, 'Event', 'board_relation').id,
       eventsDateColumn: find(events, 'Date', 'date').id,
       shiftLeadColumn: find(events, 'Shift Lead', 'board_relation').id,
+      leadEmailColumn: find(events, 'Shift Lead Email', 'mirror').id,
       eventDateColumn: eventDate?.id,
     }));
     volunteers = await read(args.board);
@@ -96,7 +103,7 @@ async function main() {
     const ticketType = find(volunteers, 'Ticket Type', 'text');
     const shown = [
       'name', ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Attendee Phone', 'text').id, status.id,
-      find(volunteers, 'Shift Lead', 'mirror').id,
+      find(volunteers, 'Shift Lead', 'mirror').id, find(volunteers, 'Shift Lead Email', 'mirror').id,
     ];
     await graphql(CREATE_VIEW, upcomingViewVariables(args.board, {
       filterDateColumn: find(volunteers, 'Date', 'date').id,

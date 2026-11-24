@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { MARKED_COLUMNS } from '../../scripts/mark-read-only-columns.mjs';
 import {
   UPCOMING_VIEW_NAME, VIEW_NAME, VOLUNTEER_COLUMN_SPECS, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, parseArgs,
-  planDerivedColumns, planShiftLead, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
+  leadEmailVariables, planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
 } from './setup-volunteers-board-lib.mjs';
 
 const col = (id, title, type = 'text') => ({ id, title, type });
@@ -59,8 +59,9 @@ describe('planViews', () => {
 
 describe('Shift Lead on Events', () => {
   it('is planned when absent and skipped when present, marked or not', () => {
-    expect(planShiftLead([col('b', 'Organizer', 'board_relation')])).toEqual({ create: true });
-    expect(planShiftLead([col('b', '🔒 Shift Lead', 'board_relation')])).toEqual({ create: false });
+    expect(planEventsColumns([col('b', 'Organizer', 'board_relation')])).toEqual(['Shift Lead', 'Shift Lead Email']);
+    expect(planEventsColumns([col('b', '🔒 Shift Lead', 'board_relation')])).toEqual(['Shift Lead Email']);
+    expect(planEventsColumns([col('b', 'Shift Lead', 'board_relation'), col('m', 'Shift Lead Email', 'mirror')])).toEqual([]);
   });
 
   it('links one person, one way, on either People board', () => {
@@ -68,27 +69,35 @@ describe('Shift Lead on Events', () => {
     expect(vars).toMatchObject({ board: '9', title: 'Shift Lead', type: 'board_relation' });
     expect(JSON.parse(vars.defaults)).toEqual({ boardIds: [1, 2], allowMultipleItems: false, allowCreateReflectionColumn: false });
   });
+
+  it('mirrors the lead’s email from either People board', () => {
+    const vars = leadEmailVariables('9', { shiftLeadColumn: 'lead', emailColumns: [['1', 'e1'], ['2', 'e2']] });
+    expect(vars).toMatchObject({ board: '9', title: 'Shift Lead Email', type: 'mirror' });
+    expect(JSON.parse(vars.defaults)).toEqual({ relation_column: { lead: true }, displayed_linked_columns: [{ board_id: '1', column_ids: ['e1'] }, { board_id: '2', column_ids: ['e2'] }] });
+  });
 });
 
 describe('derived Volunteers columns', () => {
-  const ids = { board: '7', eventsBoard: '9', eventColumn: 'rel', eventsDateColumn: 'd', shiftLeadColumn: 'lead', eventDateColumn: 'mir' };
+  const ids = { board: '7', eventsBoard: '9', eventColumn: 'rel', eventsDateColumn: 'd', shiftLeadColumn: 'lead', leadEmailColumn: 'mail', eventDateColumn: 'mir' };
 
   it('plans the missing ones in dependency order', () => {
-    expect(planDerivedColumns([])).toEqual(['Event Date', 'Shift Lead', 'Event and Date']);
-    expect(planDerivedColumns([col('m', '🔒 Event Date', 'mirror')])).toEqual(['Shift Lead', 'Event and Date']);
+    expect(planDerivedColumns([])).toEqual(['Event Date', 'Shift Lead', 'Shift Lead Email', 'Event and Date']);
+    expect(planDerivedColumns([col('m', '🔒 Event Date', 'mirror')])).toEqual(['Shift Lead', 'Shift Lead Email', 'Event and Date']);
   });
 
   it('does not take the 📜 Date column for Event Date', () => {
     expect(planDerivedColumns([col('date_1', '📜 Date', 'date')])).toContain('Event Date');
   });
 
-  it('mirrors the linked event’s date and lead', () => {
+  it('mirrors the linked event’s date, lead and lead email', () => {
     const date = derivedColumnVariables('Event Date', ids);
     expect(date).toMatchObject({ board: '7', title: 'Event Date', type: 'mirror' });
     expect(JSON.parse(date.defaults)).toEqual({ relation_column: { rel: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['d'] }] });
     const lead = derivedColumnVariables('Shift Lead', ids);
     expect(lead.type).toBe('mirror');
     expect(JSON.parse(lead.defaults)).toEqual({ relation_column: { rel: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['lead'] }] });
+    const email = derivedColumnVariables('Shift Lead Email', ids);
+    expect(JSON.parse(email.defaults)).toEqual({ relation_column: { rel: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['mail'] }] });
   });
 
   it('heads a row with its event’s date and name, or says none is linked', () => {
