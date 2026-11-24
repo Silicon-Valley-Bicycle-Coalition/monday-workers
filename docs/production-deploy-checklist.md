@@ -140,7 +140,7 @@ Webhook secrets must be **fresh production values**, never the sandbox ones. Sav
 Secret Manager before `wrangler secret put` — the same value goes into the registration URL
 below, and a lost copy means re-setting the secret and re-registering the webhook.
 
-**The store is Google Cloud Secret Manager** (chosen 2026-11-20; naming and
+**The store is Google Cloud Secret Manager** (chosen 2026-11-20, not set up yet as of 2026-11-24; naming and
 commands in [IT manual chapter 3](manual/03-accounts-and-access.md#where-secret-values-live-secret-manager)).
 Google Passwords stays for staff's own logins only: it can't share an item, so a secret kept there
 is lost with its operator. Worker secrets, webhook secrets (and the registration URLs that contain

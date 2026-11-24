@@ -9,8 +9,9 @@ is stored, is in the **private appendix** ([chapter 0](00-about.md#whats-public-
 - **Least privilege, by design.** Workers never use a person's credentials. Monday access goes
   through the broker's OAuth apps ([chapter 2](02-architecture.md#monday-access-the-token-broker)).
   Other vendors' keys are issued to SVBC's account and stored only as Cloudflare Worker secrets.
-- **Secrets live in two places only:** as Cloudflare Worker secrets (`npx wrangler secret put`),
-  and in Google Cloud Secret Manager ([below](#where-secret-values-live-secret-manager)). Operators also keep local `.env` files at the repo root,
+- **Secrets belong in two places only:** as Cloudflare Worker secrets (`npx wrangler secret put`),
+  and in Google Cloud Secret Manager, which is not set up yet
+  ([below](#where-secret-values-live-secret-manager)). Operators also keep local `.env` files at the repo root,
   which are gitignored: `.env` (dev), `.env.sandbox` and `.env.production`. These hold the
   operator's own personal tokens for running scripts. Never commit a secret, paste one into an
   issue or chat, or log one.
@@ -128,14 +129,21 @@ generate those (`openssl rand -hex 32`) and no vendor issues them.
 
 ## Where secret values live: Secret Manager
 
-Every shared IT secret has one home: **Google Cloud Secret Manager**, in the Google Cloud project
-that owns `monday-backup`'s service account (the private appendix names the project and its
-owner and backup holder). Staff keep their own logins in Google Passwords, but Google Passwords
+> **Not set up yet (checked 2026-11-24).** The Secret Manager API is not enabled in the project
+> described below, so the `gcloud secrets` commands fail. The rest of this section is the chosen
+> design. A Worker secret can't be read back from Cloudflare, so don't assume another copy exists:
+> confirm one before you rotate or delete anything, `BACKUP_ENCRYPTION_KEY` first. Setup is enabling
+> the API, granting the access below, loading the secrets, recording the project and its holders in
+> the private appendix, and then removing this note and the "not set up yet" notes that link here.
+
+Every shared IT secret will have one home: **Google Cloud Secret Manager**, in the Google Cloud
+project that owns `monday-backup`'s service account (the private appendix is to name the project
+and its owner and backup holder). Staff keep their own logins in Google Passwords, but Google Passwords
 can't share an item with anyone else, so it is not the place for anything here. The shared Box
 note, Box files, email and chat are never the place either. (Staff on Google Passwords: Tech
 Sync, 2026-11-20. Secret Manager for shared IT secrets: chosen the same day.)
 
-What goes in it:
+What will go in it:
 
 - every Worker secret, production and sandbox: webhook and operator secrets, vendor API keys,
   Slack webhook URLs, `START_KEY`, `TOKEN_ENC_KEY`, `BACKUP_ENCRYPTION_KEY`;
@@ -149,10 +157,10 @@ people [delegated access](https://support.google.com/mail/answer/138350) or make
 [Collaborative Inbox](https://support.google.com/a/answer/167430), so each person signs in as
 themselves.
 
-**Access** is by Google Workspace group, not by person: the IT group holds
-`roles/secretmanager.secretAccessor` (read) and the owner and backup holder hold
+**Access** will be by Google Workspace group, not by person: the IT group gets
+`roles/secretmanager.secretAccessor` (read) and the owner and backup holder get
 `roles/secretmanager.admin`. Adding or removing someone is a group membership change. Every read
-is in the project's [audit logs](https://cloud.google.com/secret-manager/docs/audit-logging).
+will be in the project's [audit logs](https://cloud.google.com/secret-manager/docs/audit-logging).
 
 **Naming:** `<environment>-<worker>-<NAME>`, with the Worker's own secret name, e.g.
 `production-monday-auth-START_KEY` or `sandbox-funraise-sync-FUNRAISE_API_KEY`. Accounts that
@@ -181,7 +189,7 @@ Old versions stay until destroyed (a disabled one can be re-enabled). Keep every
 long as its snapshots are kept, and never destroy one that a kept snapshot needs.
 
 **One exception, by design:** Secret Manager is Google, and so is the backup Shared Drive, so
-`BACKUP_ENCRYPTION_KEY` also keeps a second copy outside Google and Cloudflare
+`BACKUP_ENCRYPTION_KEY` also needs a second copy outside Google and Cloudflare
 ([monday-backup](workers/monday-backup.md)). The private appendix says where.
 
 Forks: substitute your own secret store; what matters is one shared place, group-based access,
@@ -209,12 +217,12 @@ Secret listings can lag a minute or two after a change. Check the deployed versi
 rather than trusting a single listing.
 
 To rotate a secret, change it at the issuer first if the issuer holds it. Then put the new value
-in Secret Manager as a new version, then copy it into the Worker. For URL secrets, also update the URL at the
+in Secret Manager as a new version (once it is [set up](#where-secret-values-live-secret-manager)), then copy it into the Worker. For URL secrets, also update the URL at the
 sender. A secret change applies immediately and needs no deploy.
 
 ## Quick access checklist for a new IT person
 
-1. Secret Manager: added to the IT Google group, then `gcloud auth login` and
+1. Secret Manager (once it is [set up](#where-secret-values-live-secret-manager)): added to the IT Google group, then `gcloud auth login` and
    `gcloud secrets list` against the project named in the private appendix.
 2. Cloudflare: invited as a member of SVBC Account. Run `npx wrangler login`, then
    `npx wrangler whoami`.
