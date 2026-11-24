@@ -599,7 +599,10 @@ and date (`2026-11-28 · Cardinals vs Mustangs…`), so a renamed event or a re-
 the heading with nothing to sync; a row with no Event goes under "No event linked". It starts with the date
 because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift Lead** is a one-way
 link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
-and **Shift Lead Email** (the lead's Personal Email) through mirrors. Either date keeps a row because Date is the listing's: it
+and **Shift Lead Email** (the lead's Personal Email) through mirrors. **Send event email** mirrors the Events
+link through **Eventbrite Listing**, not Event: the send page emails the volunteers of the listing, while a
+re-pointed Event is the attendee event, whose page emails its participants. The script skips that mirror where Events has
+no such link (the sandbox). Production has it since 2026-11-24 (`lookup_mm9dn1bn`), after Name in Upcoming by event and Recent events. Either date keeps a row because Date is the listing's: it
 doesn't follow the event staff re-pointed the row to. Production has the columns and the view since
 2026-11-24; `scripts/backfill-attendees.mjs` fills Phone Number on sign-ups from before it. Shift and Phone Number were Ticket Type and Attendee Phone
 until staff renamed them on 2026-11-24 (config keys keep the old words); the setup script matches by title, so a

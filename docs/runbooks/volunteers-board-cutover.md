@@ -48,7 +48,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    Attendee Name, Attendee Email, Shift and Phone Number (each only if missing) and the
    Recent events view (Date within the last 90 days, newest first, ungrouped), and prints the column
    ids. Since 2026-11-24 it also creates Shift Lead and Shift Lead Email on Events; Event Date, Shift
-   Lead, Shift Lead Email and Event and Date on Volunteers; and the Upcoming by event view. Then, from the repo root, add the 🔒
+   Lead, Shift Lead Email, Event and Date and Send event email on Volunteers; and the Upcoming by event view. Then, from the repo root, add the 🔒
    markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
    `18201685` is the production Donors & Contacts workspace, per
    `docs/production-deploy-checklist.md`):
@@ -290,6 +290,10 @@ step. Never delete the Volunteers items the backfill created.
   for today onward, one section per event in date order, with shift, email and phone. Canceled
   sign-ups are hidden, and an event with no sign-ups has no section. One row is one ticket, so someone
   on two shifts is listed twice and two people can share an email.
+- **Emailing an event's volunteers.** In **Upcoming by event** or **Recent events**, click **Send event
+  email** on any row: every row of a listing opens the same page, which shows who will get the email
+  before anything goes. It is the same link as on the event. Rows with no Eventbrite listing (history)
+  have none.
 - **Shift lead.** Set **Shift Lead** on the event (Events board); it shows, with their
   Personal Email, on every volunteer's row. The lead must be on People first. **Send event email**
   goes to the volunteers, not the lead: email the lead separately.
