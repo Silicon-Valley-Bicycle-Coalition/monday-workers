@@ -243,6 +243,10 @@ function stewardshipConfig(value: unknown): StewardshipConfig | null {
   if (typeof catchUp !== 'number' || !Number.isInteger(catchUp) || catchUp < 0 || catchUp > 6) {
     throw new Error('config: "stewardship.plan.catchUpDays" must be an integer from 0 to 6');
   }
+  const early = plan.renewalMonthsEarly;
+  if (typeof early !== 'number' || !Number.isInteger(early) || early < 0 || early > 11) {
+    throw new Error('config: "stewardship.plan.renewalMonthsEarly" must be an integer from 0 to 11');
+  }
   if (!nonEmptyString(obj.renewalOptOutTag)) throw new Error('config: missing required key "stewardship.renewalOptOutTag"');
   for (const key of ['renewalInterest', 'welcomeInterest'] as const) {
     if (obj[key] !== null && !nonEmptyString(obj[key])) throw new Error(`config: "stewardship.${key}" must be an interest id or null`);

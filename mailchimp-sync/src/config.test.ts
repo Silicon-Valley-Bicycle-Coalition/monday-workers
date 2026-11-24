@@ -368,7 +368,7 @@ describe('validateConfig: consent', () => {
     },
     plan: {
       labels: { welcomeDayAfter: 'W1', welcome3Weeks: 'W2', renewal3Weeks: 'R1', renewal1Week: 'R2', renewalDayOf: 'R3' },
-      activeStatusValue: 'Active', lifetimeTierValue: 'Lifetime', newMemberTypeValue: 'New', catchUpDays: 2,
+      activeStatusValue: 'Active', lifetimeTierValue: 'Lifetime', newMemberTypeValue: 'New', catchUpDays: 2, renewalMonthsEarly: 0,
     },
     renewalOptOutTag: 'renewal-opt-out', renewalInterest: 'r1', welcomeInterest: null, maxWritesPerRun: 200,
   });
@@ -386,6 +386,10 @@ describe('validateConfig: consent', () => {
       { ...s, columns: { ...s.columns, label: '' } },
       { ...s, plan: { ...s.plan, labels: { ...s.plan.labels, renewalDayOf: 'R1' } } },
       { ...s, plan: { ...s.plan, catchUpDays: 7 } },
+      { ...s, plan: { ...s.plan, renewalMonthsEarly: undefined } },
+      { ...s, plan: { ...s.plan, renewalMonthsEarly: -1 } },
+      { ...s, plan: { ...s.plan, renewalMonthsEarly: 1.5 } },
+      { ...s, plan: { ...s.plan, renewalMonthsEarly: 12 } },
       { ...s, plan: { ...s.plan, newMemberTypeValue: undefined } },
       { ...s, renewalOptOutTag: '' },
       { ...s, renewalInterest: '' },

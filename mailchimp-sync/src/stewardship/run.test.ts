@@ -17,7 +17,7 @@ const settings: StewardshipConfig = {
       welcomeDayAfter: 'Welcome: day after', welcome3Weeks: 'Welcome: 3 weeks',
       renewal3Weeks: 'Renewal: 3 weeks before', renewal1Week: 'Renewal: 1 week before', renewalDayOf: 'Renewal: day of',
     },
-    activeStatusValue: 'Active', lifetimeTierValue: 'Lifetime', newMemberTypeValue: 'New', catchUpDays: 2,
+    activeStatusValue: 'Active', lifetimeTierValue: 'Lifetime', newMemberTypeValue: 'New', catchUpDays: 2, renewalMonthsEarly: 0,
   },
   renewalOptOutTag: 'renewal-opt-out',
   renewalInterest: 'r1',

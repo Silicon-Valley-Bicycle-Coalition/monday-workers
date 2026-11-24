@@ -77,6 +77,9 @@ For each:
       emails alike. Monday's own unsubscribe link only stops Monday's emails (see "Mailchimp
       Journeys" below), so this is the one to point people at. If renewal reminders are all they
       want to stop, the page's **Renewal Reminders** box does that.
+      - **The date those emails print needs Felicia's word first.** Reminders go out a month before
+        Member Until (`renewalMonthsEarly`), so the day-of email would say support expires a month
+        from now.
 - [ ] Copy fixes:
   - [ ] Welcome #1's "Why Your Gift Matters" link: drop `?utm_source=chatgpt.com`.
   - [ ] Renewal day-of: "Sillicon" → "Silicon".
@@ -122,7 +125,7 @@ On People, one per label:
          "renewal3Weeks": "Renewal: 3 weeks before", "renewal1Week": "Renewal: 1 week before",
          "renewalDayOf": "Renewal: day of" },
        "activeStatusValue": "Active", "lifetimeTierValue": "Lifetime", "newMemberTypeValue": "New",
-       "catchUpDays": 2 },
+       "catchUpDays": 2, "renewalMonthsEarly": 1 },
      "renewalOptOutTag": "renewal-opt-out", "renewalInterest": "986d6c84bf", "welcomeInterest": null,
      "maxWritesPerRun": 200
    }
@@ -130,8 +133,10 @@ On People, one per label:
    `welcomeInterest` stays `null`. On 2026-11-19 no active member had Welcome Drip ticked, so
    requiring it would welcome nobody.
 3. The first run only picks up people inside a window that day (within `catchUpDays`). Nobody whose
-   membership already lapsed is emailed. Someone 10 days out at launch gets 1-week and day-of only,
-   and someone who joined before launch gets no welcome email.
+   membership already lapsed is emailed. Days count to the reminder date, a month before Member
+   Until: someone 10 days out at launch gets 1-week and day-of only, and someone already past it gets
+   no reminder this cycle (98 eligible members if launched 2026-11-24, before Mailchimp opt-outs).
+   Someone who joined before launch gets no welcome email.
 4. The next morning, check the Worker log line `stewardship-run` (counts) and the Sequences' enrolled
    counts.
 

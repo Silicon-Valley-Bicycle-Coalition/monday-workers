@@ -431,9 +431,14 @@ People and plans one label per person on the 🔒 **Stewardship Email** status c
 |---|---|---|
 | `Welcome: day after` | 1 day after Member Since | Member Type New, label blank |
 | `Welcome: 3 weeks` | 21 days after Member Since | label is `Welcome: day after` |
-| `Renewal: 3 weeks before` | 21 days before Member Until | Active, not Lifetime, no active recurring gift |
+| `Renewal: 3 weeks before` | 21 days before the reminder date | Active, not Lifetime, no active recurring gift |
 | `Renewal: 1 week before` | 7 days before | same |
-| `Renewal: day of` | on Member Until | same |
+| `Renewal: day of` | on the reminder date | same |
+
+The reminder date is Member Until less `plan.renewalMonthsEarly` months (1). Member Until is 13
+months after the last gift or volunteer shift, and Salesforce counted 12; Felicia asked on 2026-11-23
+to keep Salesforce's timing. Someone still carrying a migrated 12-month Member Until is reminded a
+month early. The emails themselves print Member Until.
 
 Nobody with Do Not Solicit or without a Personal Email. Before setting a send label it reads the
 person's Mailchimp member (`GET /lists/{id}/members/{hash}`): only `subscribed`, and for renewals not
@@ -444,7 +449,7 @@ changes to X, enroll item in Sequence X") does the enrolling; each Sequence is o
 
 The label is the state. A stage is set once (re-runs are no-ops), a missed day is caught up within
 `plan.catchUpDays` (2), day-of is never sent after the date, and a renewal label is cleared once
-Member Until moves past 21 days (a renewal), so next year's reminders start fresh. Someone who renews
+the reminder date moves past 21 days (a renewal), so next year's reminders start fresh. Someone who renews
 between reminders gets no further one: each email is decided on its own day. Follows the write
 switch (`hold` skips the day, `off` logs what it would set). Logs carry item ids and labels only.
 `stewardship: null` turns it off; production stays `null` until the Sequences and automations exist,

@@ -164,7 +164,8 @@
       "activeStatusValue": "Active",
       "lifetimeTierValue": "Lifetime",
       "newMemberTypeValue": "New",
-      "catchUpDays": 2
+      "catchUpDays": 2,
+      "renewalMonthsEarly": 1
     },
     "renewalOptOutTag": "renewal-opt-out",
     "renewalInterest": null,
