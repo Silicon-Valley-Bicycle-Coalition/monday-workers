@@ -95,7 +95,7 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 **Deployed and live** on both custom domains (checked 2026-09-30: both secrets set, both domains
 attached to `svbc-calendars`, and the two predecessor Workers deleted). It has a Workers Builds
 connection to GitHub `main` (moved from GitLab 2026-11-17), so every merge to `main` redeploys it — see the root `README.md`'s Deploys section.
-Web Analytics (step 2) uses an explicit site token, and step 8 (embedding the widget on the live site) is only partly done. The feeds also
+Web Analytics (step 2) comes from Cloudflare's automatic setup, and step 8 (embedding the widget on the live site) is only partly done. The feeds also
 depend on a WAF rule that lives outside this repo — see step 7. The checklist below is the cutover as it
 was done, kept for forks and for a rebuild from scratch:
 
@@ -109,15 +109,19 @@ without it the env inherits the production custom domains, and the first sandbox
 took `events.`/`committees.bikesiliconvalley.org` over to the untested Worker. Set the sandbox
 secrets separately with `--env sandbox` (see the comment above `env` in `wrangler.jsonc`).
 
-### 2. Enable Cloudflare Web Analytics
+### 2. Cloudflare Web Analytics — automatic setup, leave the token empty
 
-Decided 2026-11-20 (GitHub #47): measure these pages with a token set in the Worker, not the zone's
-automatic setup. Automatic setup was on as of 2026-09-21 but had stopped injecting the beacon by
-2026-11-19, with no notice. Under **Analytics & Logs → Web Analytics**, add a site for
-`events.bikesiliconvalley.org` and put its token in `wrangler.jsonc`'s
-`vars.CF_WEB_ANALYTICS_TOKEN`; leave the zone's automatic setup off, or the beacon loads twice. The
-widget and the `/events` listing page then load the beacon; left empty, they omit it. The sandbox
-keeps it empty so test traffic isn't counted.
+Checked 2026-11-24 (GitHub #47): Cloudflare injects the beacon at the edge into this Worker's HTML
+pages, `/widget` and `/calendars`, on both custom domains. Keep `vars.CF_WEB_ANALYTICS_TOKEN` empty,
+or those pages load a second beacon. `/events` returns JSON and never carries one. To check, send an
+HTML `Accept` header; without it the beacon isn't injected:
+
+```sh
+curl -s -H 'Accept: text/html' https://events.bikesiliconvalley.org/widget | grep cloudflareinsights
+```
+
+To use a token instead (a fork outside a proxied zone, say), turn automatic setup off first, then
+set the var. Left empty, the Worker emits no beacon of its own.
 
 ### 3. ~~Set the secrets~~ Done
 
