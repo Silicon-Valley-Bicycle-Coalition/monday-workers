@@ -270,3 +270,40 @@ describe('statusText', () => {
     expect(statusText(mondayItem('1', 'A', {}), 's')).toBe('');
   });
 });
+
+describe('HttpMondayClient board reads', () => {
+  const rawItem = (id: string, columnValues: Record<string, unknown>[]) => ({ id, name: `Item ${id}`, state: 'active', column_values: columnValues });
+
+  // One response per page, in order; returns what was sent.
+  function mockPages(...bodies: unknown[]) {
+    const fetchMock = vi.fn();
+    for (const body of bodies) fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => body });
+    vi.stubGlobal('fetch', fetchMock);
+    return (n: number) => JSON.parse(fetchMock.mock.calls[n]![1].body as string) as { query: string; variables: Record<string, unknown> };
+  }
+
+  it('listBoardItems reads a connect column as its linked ids', async () => {
+    mockPages({ data: { boards: [{ items_page: { cursor: null, items: [
+      rawItem('1', [{ id: 'link', text: null, value: null, linked_item_ids: ['900', '901'] }]),
+      rawItem('2', [{ id: 'link', text: null, value: null, linked_item_ids: [] }]),
+    ] } }] } });
+    const items = await newClient().listBoardItems(777, ['link']);
+    expect(items.map((i) => i.columns.link)).toEqual(['900,901', '']);
+  });
+
+  it('listItemsLinkedTo filters on the connect column and follows the cursor', async () => {
+    const sent = mockPages(
+      { data: { boards: [{ items_page: { cursor: 'next', items: [rawItem('1', [{ id: 'att', text: 'Attended', value: '{"index":1}' }])] } }] } },
+      { data: { next_items_page: { cursor: null, items: [rawItem('2', [{ id: 'att', text: 'Registered', value: '{"index":0}' }])] } } },
+    );
+    const items = await newClient().listItemsLinkedTo(333, 'event_col', '900', ['att']);
+    expect(items.map((i) => [i.id, i.columns.att])).toEqual([['1', 'Attended'], ['2', 'Registered']]);
+    expect(sent(0).variables).toMatchObject({ boardId: 333, params: { rules: [{ column_id: 'event_col', compare_value: [900], operator: 'any_of' }] } });
+    expect(sent(1).variables).toMatchObject({ cursor: 'next' });
+  });
+
+  it('listItemsLinkedTo throws when Monday returns no board, rather than reading it as no items', async () => {
+    mockPages({ data: { boards: [] } });
+    await expect(newClient().listItemsLinkedTo(333, 'event_col', '900', ['att'])).rejects.toThrow('board 333');
+  });
+});

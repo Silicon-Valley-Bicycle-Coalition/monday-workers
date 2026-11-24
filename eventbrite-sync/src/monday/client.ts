@@ -1,3 +1,4 @@
+import { linkedItemId } from '../util/itemId';
 import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 export interface MondayItem {
@@ -67,6 +68,28 @@ export function isActive(item: MondayItemColumns | undefined): item is MondayIte
   return item !== undefined && item.state === 'active';
 }
 
+interface RawItem {
+  id: string;
+  name: string;
+  state: string;
+  column_values: { id: string; text: string | null; value: string | null; linked_item_ids?: string[] }[];
+}
+
+// $columnIds is the query's own variable.
+const ITEM_FIELDS = 'id name state column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } }';
+
+function toItemColumns(item: RawItem): MondayItemColumns {
+  return {
+    id: item.id,
+    name: item.name,
+    state: item.state,
+    // A linked board_relation cell has no text or value, only linked_item_ids: expose them as
+    // comma-joined ids ('' when none) so every caller's blank check on a link column holds.
+    columns: Object.fromEntries(item.column_values.map((c) => [c.id, Array.isArray(c.linked_item_ids) ? c.linked_item_ids.join(',') : (c.text ?? '')])),
+    values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
+  };
+}
+
 // items(ids:) accepts at most 100 ids per call.
 const ITEMS_BATCH_SIZE = 100;
 
@@ -128,69 +151,47 @@ export class HttpMondayClient implements MondayClient {
   async getItems(_boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]> {
     const result: MondayItemColumns[] = [];
     for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
-      const data = await this.transport.request<{
-        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null; linked_item_ids?: string[] }[] }[] | null;
-      }>(
+      const data = await this.transport.request<{ items: RawItem[] | null }>(
         // limit: without it items(ids:) returns at most 25 (Monday's default page size).
-        `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) {
-            id
-            name
-            state
-            column_values(ids: $columnIds) {
-              id
-              text
-              value
-              ... on BoardRelationValue { linked_item_ids }
-            }
-          }
-        }`,
+        `query ($ids: [ID!], $columnIds: [String!]) { items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) { ${ITEM_FIELDS} } }`,
         { ids: itemIds.slice(i, i + ITEMS_BATCH_SIZE), columnIds }
       );
-      for (const item of data.items ?? []) {
-        result.push({
-          id: item.id,
-          name: item.name,
-          state: item.state,
-          // A linked board_relation cell has no text or value, only linked_item_ids: expose them as
-          // comma-joined ids ('' when none) so every caller's blank check on a link column holds.
-          columns: Object.fromEntries(item.column_values.map((c) => [c.id, Array.isArray(c.linked_item_ids) ? c.linked_item_ids.join(',') : (c.text ?? '')])),
-          values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
-        });
-      }
+      result.push(...(data.items ?? []).map(toItemColumns));
     }
     return result;
   }
 
-  // Every active item on a board with the requested columns, paged 500 at a time. Not on the
-  // MondayClient interface: only the daily send-link sweep reads a whole board.
-  async listBoardItems(boardId: number, columnIds: string[]): Promise<MondayItemColumns[]> {
-    type Page = { cursor: string | null; items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[] };
-    const fields = 'cursor items { id name state column_values(ids: $columnIds) { id text value } }';
+  // Every active item on a board with the requested columns, paged 500 at a time. Neither this nor
+  // listItemsLinkedTo is on the MondayClient interface: only the cron sweeps read whole boards.
+  listBoardItems(boardId: number, columnIds: string[]): Promise<MondayItemColumns[]> {
+    return this.listItems(boardId, columnIds, null);
+  }
+
+  // Every active item whose connect column links to the given item.
+  listItemsLinkedTo(boardId: number, linkColumn: string, itemId: string, columnIds: string[]): Promise<MondayItemColumns[]> {
+    return this.listItems(boardId, columnIds, {
+      rules: [{ column_id: linkColumn, compare_value: [linkedItemId(itemId)], operator: 'any_of' }],
+    });
+  }
+
+  private async listItems(boardId: number, columnIds: string[], params: Record<string, unknown> | null): Promise<MondayItemColumns[]> {
+    type Page = { cursor: string | null; items: RawItem[] };
+    const fields = `cursor items { ${ITEM_FIELDS} }`;
     const result: MondayItemColumns[] = [];
-    let cursor: string | null = null;
-    do {
-      const page: Page = cursor === null
-        ? (await this.transport.request<{ boards: { items_page: Page }[] }>(
-          `query ($boardId: ID!, $columnIds: [String!]) { boards(ids: [$boardId]) { items_page(limit: 500) { ${fields} } } }`,
-          { boardId, columnIds }
-        )).boards[0]!.items_page
-        : (await this.transport.request<{ next_items_page: Page }>(
-          `query ($cursor: String!, $columnIds: [String!]) { next_items_page(cursor: $cursor, limit: 500) { ${fields} } }`,
-          { cursor, columnIds }
-        )).next_items_page;
-      for (const item of page.items) {
-        result.push({
-          id: item.id,
-          name: item.name,
-          state: item.state,
-          columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
-          values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
-        });
-      }
-      cursor = page.cursor;
-    } while (cursor !== null);
-    return result;
+    let page: Page | undefined = (await this.transport.request<{ boards: { items_page: Page }[] }>(
+      `query ($boardId: ID!, $columnIds: [String!], $params: ItemsQuery) { boards(ids: [$boardId]) { items_page(limit: 500, query_params: $params) { ${fields} } } }`,
+      { boardId, columnIds, params }
+    )).boards[0]?.items_page;
+    // Never an empty list: a caller would take it for a board with nothing on it.
+    if (page === undefined) throw new Error(`Monday returned no board ${boardId}; nothing read`);
+    for (;;) {
+      result.push(...page.items.map(toItemColumns));
+      if (page.cursor === null) return result;
+      page = (await this.transport.request<{ next_items_page: Page }>(
+        `query ($cursor: String!, $columnIds: [String!]) { next_items_page(cursor: $cursor, limit: 500) { ${fields} } }`,
+        { cursor: page.cursor, columnIds }
+      )).next_items_page;
+    }
   }
 
   async postUpdate(itemId: string, body: string): Promise<void> {
