@@ -71,7 +71,7 @@ Routes (every one sits behind Access **and** a Worker-side check of the Access J
   20 minutes old). See [Refresh](#refresh).
 * Everything else: the static page and reference data in `public/`.
 
-The cron is `0 13 * * 1` (Mondays 13:00 UTC). Monday access goes through the `monday-auth`
+The cron is `0 13 * * 2` (Mondays 13:00 UTC; Cloudflare counts 1 as Sunday). Monday access goes through the `monday-auth`
 broker's Read-only app (`MONDAY_AUTH` service binding, `ReadOnlyToken`); the Worker holds no
 Monday token. It has no write switch, because it never writes to Monday.
 

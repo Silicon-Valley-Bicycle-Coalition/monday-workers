@@ -18,7 +18,7 @@
       "expectedWrites": "on",
       "crons": [{ "cron": "0 15 * * *", "maxGapHours": 48 }, { "cron": "5 * * * *", "maxGapHours": 3 }, { "cron": "20 * * * *", "maxGapHours": 3 }]
     },
-    "member-map": { "script": "svbc-member-map", "expectedWrites": null, "crons": [{ "cron": "0 13 * * 1", "maxGapHours": 192 }] },
+    "member-map": { "script": "svbc-member-map", "expectedWrites": null, "crons": [{ "cron": "0 13 * * 2", "maxGapHours": 192 }] },
     "member-portal": { "script": "svbc-member-portal", "expectedWrites": "on", "crons": [{ "cron": "0 9 * * *", "maxGapHours": 48 }] },
     "monday-auth": { "script": "svbc-monday-auth", "expectedWrites": null, "crons": [{ "cron": "*/30 * * * *", "maxGapHours": 3 }] },
     "monday-backup": {
