@@ -374,7 +374,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grants, Contracts… For a gift from a donor-advised fund, ' +
-        'pick Donor Advised Fund.',
+        'pick Donor Advised Fund; for a gift from a foundation, nonprofit or company, ' +
+        'pick Foundation & Corp Contributions.',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
         'Anonymous Donor is checked. For a gift an organization made through an affiliated ' +
         'person, the organization is the Donor and the person is in Acting for.',
@@ -462,7 +463,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           // column (2026-11-20), so these are label names, resolved to label ids when configure runs.
           { columnTitle: 'Gift Type', operator: 'not_any_of', labelValues: [
             'Sponsorship', 'Matching Donation', 'In Kind Donation / Sponsorship', 'Grants', 'Contracts',
-            'Commute Workshop', 'Driver Training', 'Event Ticket',
+            'Commute Workshop', 'Driver Training', 'Event Ticket', 'Foundation & Corp Contributions',
           ] },
         ] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
