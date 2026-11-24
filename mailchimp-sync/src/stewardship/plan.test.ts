@@ -15,6 +15,7 @@ const opts: StewardshipPlanOptions = {
   lifetimeTierValue: 'Lifetime',
   newMemberTypeValue: 'New',
   catchUpDays: 2,
+  renewalMonthsEarly: 0,
 };
 const person = (over: Partial<StewardshipPerson> = {}): StewardshipPerson => ({
   itemId: '1',
@@ -68,6 +69,46 @@ describe('renewal stages', () => {
       person({ ...due, membershipStatus: '' }),
       person({ ...due, email: '' }),
     ]) expect(plan([p]).writes).toEqual([]);
+  });
+});
+
+describe('renewalMonthsEarly', () => {
+  const early = { renewalMonthsEarly: 1 };
+
+  it('counts each stage from Member Until less the months', () => {
+    // Member Until 2027-01-22 less a month is 2026-12-22, 21 days out.
+    expect(plan([person({ memberUntil: '2027-01-22' })], early).writes[0]?.label).toBe(LABELS.renewal3Weeks);
+    expect(plan([person({ memberUntil: '2027-01-08', label: LABELS.renewal3Weeks })], early).writes[0]?.label).toBe(LABELS.renewal1Week);
+    expect(plan([person({ memberUntil: '2027-01-01', label: LABELS.renewal1Week })], early).writes[0]?.label).toBe(LABELS.renewalDayOf);
+  });
+
+  it('sends nothing on the unshifted dates', () => {
+    for (const memberUntil of ['2026-12-22', '2026-12-08', '2026-12-01']) expect(plan([person({ memberUntil })], early).writes).toEqual([]);
+  });
+
+  it('keeps the day-of label through the last month, then clears it on renewal', () => {
+    expect(plan([person({ memberUntil: '2026-12-15', label: LABELS.renewalDayOf })], early).writes).toEqual([]);
+    expect(plan([person({ memberUntil: '2028-01-01', label: LABELS.renewalDayOf })], early).writes[0]).toMatchObject({ label: '', kind: 'clear' });
+  });
+
+  it('uses the last day of a shorter month', () => {
+    const march31 = person({ memberUntil: '2027-03-31', label: LABELS.renewal1Week });
+    expect(plan([march31], { ...early, today: '2027-02-28' }).writes[0]?.label).toBe(LABELS.renewalDayOf);
+    expect(plan([march31], { ...early, today: '2027-03-01' }).writes).toEqual([]);
+  });
+
+  it('crosses a year boundary', () => {
+    const jan5 = person({ memberUntil: '2027-01-05', label: LABELS.renewal1Week });
+    expect(plan([jan5], { ...early, today: '2026-12-05' }).writes[0]?.label).toBe(LABELS.renewalDayOf);
+  });
+
+  it('still ignores a person with no Member Until', () => {
+    expect(plan([person({ memberUntil: '' })], early).writes).toEqual([]);
+  });
+
+  it('leaves the welcome emails alone', () => {
+    const fresh = person({ memberType: 'New', memberSince: '2026-11-30', memberUntil: '2027-12-30' });
+    expect(plan([fresh], early).writes[0]?.label).toBe(LABELS.welcomeDayAfter);
   });
 });
 

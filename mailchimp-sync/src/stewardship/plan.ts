@@ -41,6 +41,8 @@ export interface StewardshipPlanOptions {
   newMemberTypeValue: string;
   // How many days late a stage may still be set, after a failed or skipped run.
   catchUpDays: number;
+  // Months to send the renewal reminders ahead of Member Until; 0 counts from Member Until itself.
+  renewalMonthsEarly: number;
 }
 
 // 'clear' blanks a renewal label after a renewal; it enrolls nothing.
@@ -57,10 +59,20 @@ export interface StewardshipPlan {
   writes: StewardshipWrite[];
 }
 
-// Days before Member Until each renewal reminder goes, in sending order.
+// Days before the reminder date (Member Until less renewalMonthsEarly) each renewal reminder goes,
+// in sending order.
 const RENEWAL_DAYS = [21, 7, 0] as const;
 // Days after Member Since each welcome email goes.
 const WELCOME_DAYS = [1, 21] as const;
+
+// `date` (YYYY-MM-DD) less `months`, on the last day of the month when that month is shorter.
+// Anything else passes through, for daysUntil to reject.
+function monthsBefore(date: string, months: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const lastDay = new Date(Date.UTC(y, m - months, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 - months, Math.min(d, lastDay))).toISOString().slice(0, 10);
+}
 
 function renewalStages(labels: StewardshipLabels): string[] {
   return [labels.renewal3Weeks, labels.renewal1Week, labels.renewalDayOf];
@@ -69,7 +81,7 @@ function renewalStages(labels: StewardshipLabels): string[] {
 function planRenewal(p: StewardshipPerson, o: StewardshipPlanOptions): StewardshipWrite | null {
   const stages = renewalStages(o.labels);
   const current = stages.indexOf(p.label);
-  const days = daysUntil(p.memberUntil, o.today);
+  const days = daysUntil(monthsBefore(p.memberUntil, o.renewalMonthsEarly), o.today);
   if (Number.isNaN(days)) return null;
   // Renewed (the date moved past the first reminder): start the next cycle from a blank label.
   if (current >= 0 && days > RENEWAL_DAYS[0]) return { itemId: p.itemId, email: p.email, label: '', kind: 'clear' };

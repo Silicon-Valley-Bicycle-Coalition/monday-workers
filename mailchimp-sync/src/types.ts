@@ -209,6 +209,9 @@ export interface StewardshipConfig {
     lifetimeTierValue: string;
     newMemberTypeValue: string;
     catchUpDays: number;
+    // Months to send the renewal reminders ahead of Member Until. Member Until is 13 months after
+    // the last gift; 1 keeps Salesforce's 12-month timing.
+    renewalMonthsEarly: number;
   };
   // The tag scripts/renewal-opt-out.mjs gave Salesforce's Renewal Opt Out contacts.
   renewalOptOutTag: string;
