@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpDtdMondayClient, personName, splitName } from './client';
-import { validateConfig } from '../config';
+import { validateConfig, type OutreachConfig } from '../config';
+import { rawOutreach } from '../../test/outreach';
 import sandbox from '../../config/sandbox.json';
 
 const config = validateConfig(sandbox);
@@ -10,14 +11,14 @@ const S = config.programSummary;
 
 interface Call { query: string; variables: Record<string, any> }
 
-function mondayFetch(responses: unknown[]) {
+function mondayFetch(responses: unknown[], cfg = config) {
   const calls: Call[] = [];
   const fetchFn = vi.fn(async (_url: unknown, init?: RequestInit) => {
     calls.push(JSON.parse(String(init?.body)) as Call);
     const next = responses.shift();
     return new Response(JSON.stringify({ data: next }), { status: 200 });
   });
-  const client = new HttpDtdMondayClient('https://api.example.org/v2', 'test-token', config, {
+  const client = new HttpDtdMondayClient('https://api.example.org/v2', 'test-token', cfg, {
     fetchFn: fetchFn as unknown as typeof fetch, maxAttempts: 1,
   });
   return { client, calls };
@@ -281,6 +282,49 @@ describe('HttpDtdMondayClient people and organizations', () => {
     const { client } = mondayFetch([{ items: [{ id: '5', name: 'Example Corp' }] }, { items: [] }]);
     expect(await client.getOrganizationName('5')).toBe('Example Corp');
     expect(await client.getOrganizationName('6')).toBeNull();
+  });
+});
+
+describe('getPromptDonors', () => {
+  const outreach = rawOutreach() as OutreachConfig;
+  const O = outreach.people;
+  const withOutreach = { ...config, outreach };
+  const person = (id: string, employer: string | null, dns: string | null) => ({
+    id, name: 'Pat Example', board: { id: String(config.boards.people) }, column_values: [
+      cv(P.email, 'pat@example.org'), cv(O.employerName, employer), cv(O.doNotSolicit, '', { value: dns }),
+    ],
+  });
+
+  it('adds the employer and Do Not Solicit to what getPeople reads', async () => {
+    const { client, calls } = mondayFetch([{ items: [person('1', ' Google ', null), person('2', '', '{"checked":"true"}')] }], withOutreach);
+    const [a, b] = await client.getPromptDonors(['1', '2']);
+    expect(a).toMatchObject({ id: '1', email: 'pat@example.org', firstName: 'Pat', lastName: 'Example', employerName: 'Google', doNotSolicit: false });
+    expect(b).toMatchObject({ employerName: null, doNotSolicit: true });
+    expect(calls[0]!.variables.columnIds).toEqual(expect.arrayContaining([P.email, O.employerName, O.doNotSolicit]));
+  });
+
+  it('omits a donor that is not on People', async () => {
+    const { client } = mondayFetch([{ items: [{ ...person('1', 'Google', null), board: { id: '99' } }] }], withOutreach);
+    expect(await client.getPromptDonors(['1'])).toEqual([]);
+  });
+
+  it.each(['employerName', 'doNotSolicit'] as const)('throws when Monday has no %s column, rather than reading it as empty', async (key) => {
+    const p = person('1', 'Google', null);
+    p.column_values = p.column_values.filter((c) => c.id !== O[key]);
+    const { client } = mondayFetch([{ items: [p] }], withOutreach);
+    await expect(client.getPromptDonors(['1'])).rejects.toThrow(new RegExp(`${key}.*${O[key]}`));
+  });
+
+  it('throws while the email is off', async () => {
+    const { client, calls } = mondayFetch([]);
+    await expect(client.getPromptDonors(['1'])).rejects.toThrow(/outreach/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('getPeople asks for neither column even when the email is on', async () => {
+    const { client, calls } = mondayFetch([{ items: [] }], withOutreach);
+    await client.getPeople(['1']);
+    expect(calls[0]!.variables.columnIds).toEqual([P.email, P.householdEmail, P.firstName, P.lastName, P.phone, P.dtdCompanyId]);
   });
 });
 

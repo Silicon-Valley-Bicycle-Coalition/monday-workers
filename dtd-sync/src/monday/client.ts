@@ -24,6 +24,8 @@ export interface DtdMondayClient {
   listDonationsOfTypeDatedSince(giftType: string, dateISO: string): Promise<DonationItem[]>;
   listGiftsForDonor(donorItemId: string, fromISO: string): Promise<DonationItem[]>;
   getPeople(ids: string[]): Promise<PersonItem[]>;
+  /** getPeople plus what the post-gift email needs. Throws while config.outreach is null. */
+  getPromptDonors(ids: string[]): Promise<PromptDonor[]>;
   getOrganizationName(itemId: string): Promise<string | null>;
   updateDonation(itemId: string, values: Record<string, unknown>): Promise<void>;
   updatePerson(itemId: string, values: Record<string, unknown>): Promise<void>;
@@ -258,27 +260,46 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   }
 
   async getPeople(ids: string[]): Promise<PersonItem[]> {
+    return (await this.readPeople(ids, [])).map(({ person }) => person);
+  }
+
+  async getPromptDonors(ids: string[]): Promise<PromptDonor[]> {
+    const { outreach } = this.config;
+    if (outreach === null) throw new Error('getPromptDonors: config.outreach is null');
+    const { employerName, doNotSolicit } = outreach.people;
+    return (await this.readPeople(ids, [employerName, doNotSolicit])).map(({ person, byId }) => {
+      // A wrong column id comes back as no value at all. Reading that as "not checked" would email
+      // donors who asked not to be.
+      for (const [key, id] of Object.entries({ employerName, doNotSolicit })) {
+        if (!byId.has(id)) throw new Error(`getPromptDonors: People has no ${key} column "${id}"`);
+      }
+      return { ...person, employerName: text(byId.get(employerName)), doNotSolicit: checked(byId.get(doNotSolicit)) };
+    });
+  }
+
+  private async readPeople(ids: string[], extraColumns: string[]): Promise<{ person: PersonItem; byId: Map<string, ColumnValue> }[]> {
     const p = this.config.people;
     const peopleBoard = this.config.boards.people;
-    const out: PersonItem[] = [];
+    const out: { person: PersonItem; byId: Map<string, ColumnValue> }[] = [];
     for (const chunk of chunksOf(ids, 100)) {
       const data = await this.transport.request<{ items: RawItem[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
           items(ids: $ids, limit: 100) { id name state board { id } column_values(ids: $columnIds) { id text value } }
         }`,
-        { ids: chunk, columnIds: [p.email, p.householdEmail, p.firstName, p.lastName, p.phone, p.dtdCompanyId] },
+        { ids: chunk, columnIds: [p.email, p.householdEmail, p.firstName, p.lastName, p.phone, p.dtdCompanyId, ...extraColumns] },
       );
       // Only People-board donors: an Organizations or People (Historical) donor has no DTD columns.
       for (const item of data.items.filter((i) => live(i) && onBoard(i, peopleBoard))) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
-        out.push({
+        const person = {
           id: item.id,
           email: text(byId.get(p.email)) ?? text(byId.get(p.householdEmail)),
           householdEmail: text(byId.get(p.householdEmail)),
           ...personName(text(byId.get(p.firstName)), text(byId.get(p.lastName)), item.name ?? ''),
           phone: text(byId.get(p.phone)),
           dtdCompanyId: text(byId.get(p.dtdCompanyId)),
-        });
+        };
+        out.push({ person, byId });
       }
     }
     return out;
