@@ -18,7 +18,8 @@
 //
 // Rename both People boards in the same run (the list below marks them identically): Monday's
 // move_item_to_board maps connect columns by title, and people-reclassification compares titles
-// across the two boards (it ignores markers, Monday does not).
+// across the two boards (it ignores markers, Monday does not). A "not on board" line for only one of
+// them means moves are stopped: run people-reclassification/scripts/match-people-columns.mjs.
 //
 // --apply retries each rename on a transient Monday failure (a 5xx, throttling, or the HTTP-200
 // DOWNSTREAM_SERVICE_ERROR that stopped the first production run on 2026-11-02, after 109 of 160),

@@ -497,7 +497,8 @@ the link can change that person's Mailchimp profile, as with the one in every Ma
 
 1. The **Mailchimp email** custom activity exists (created 2026-11-19; custom activities are per
    account, so both environments use `8a429b81-1416-4211-b8fc-d23e0ce87752`). Add **Last Journey
-   Email** (Date) and **Mailchimp Profile** (Link) to People; run
+   Email** (Date) and **Mailchimp Profile** (Link) to People and People (Historical)
+   (`people-reclassification/scripts/match-people-columns.mjs` copies them across); run
    `node scripts/mark-read-only-columns.mjs` (both are in `MARKED_COLUMNS`). The sandbox has both
    (`date_mm98v7ej`, `link_mm98rz6c`) and its config is filled. For the preferences link, also add
    **Email Preferences** (Link); the sandbox's is `link_mm99ntk0`.

@@ -80,7 +80,9 @@ Promote to People labels: `Promote`, `Promoted`, `Couldn't promote` (`promote` i
 
 **Any column added to one People board must be added to the other, with the same title and type.**
 A column on only one board stops every pass. This has happened with a hand-added Location column, a
-two-way connect column, and a connect column from another board pointing at People only. Every
+two-way connect column, a connect column from another board pointing at People only, and columns
+other Workers' rollouts added to People alone (2026-11-20). After adding a column to either board, run
+`match-people-columns.mjs` ("Operator scripts" below). Every
 connect column that points at people must connect to both People boards. A doc (`direct_doc`)
 column can't be mapped in a move and Monday's API can't create one to fix a mismatch.
 
@@ -121,7 +123,7 @@ don't count when the cron decides whether a pass is due. Cron dry runs under `of
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| Pass refused; names columns | The two People boards' columns differ | Add the missing column to the other board with the same title and type |
+| Pass, sweep or logged-contact run refused; names columns | The two People boards' columns differ | `match-people-columns.mjs --config config/<env>.json`, then `--apply`. The next morning's run picks up anyone due; an item at `Couldn't promote` needs `Promote` set again |
 | Pass fails at a schema read | A configured column title was renamed or removed | Restore the title or update config |
 | Pass stops early; report shows `remaining` | Five consecutive move failures (Monday trouble) | The next day's cron continues it. Check `moves` for the error |
 | `moves` rows `ambiguous` | Monday may have applied a move before a timeout | The next pass settles them; check the item's board meanwhile |
@@ -152,6 +154,12 @@ To inspect: `npx wrangler d1 execute svbc-people-reclassification --remote --com
   ```
 
   Step 3 needs the broker's webhook route turned on for that deploy (see `monday-auth/README.md`).
+- **`match-people-columns.mjs`** checks that the two People boards have the same columns, by the rule
+  that stops a pass. `--apply` creates the missing ones, except connect, dropdown and doc columns:
+
+  ```sh
+  MONDAY_API_TOKEN=... node scripts/match-people-columns.mjs --config config/<env>.json [--apply]
+  ```
 - Run a pass, preview first:
 
   ```sh

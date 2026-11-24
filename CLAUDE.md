@@ -168,6 +168,12 @@ column reads as missing, and an idempotent setup script creates a duplicate unde
 A Worker that imports the module adds `scripts/lib/**` to its `extraPaths` in `.github/workers.json`, as `monday-auth` does.
 When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run the script.
 
+**A column added to People also goes on People (Historical).** Same title and type, and for a status
+the same label ids. `people-reclassification` refuses every move while the boards differ. That stopped
+its daily run from 2026-11-20, after three Workers' rollouts added columns to People alone. After adding a column
+to either board, run `node scripts/match-people-columns.mjs --config config/<env>.json` from
+`people-reclassification/` (`--apply` creates what's missing).
+
 **The staff "Enter a gift" form shows every Donations column unless hidden.** A Monday form view
 lists all of its board's columns, visible by default, so a column a Worker adds later (a new 🔒
 rollup, an integration id, `contact-roles`' `Contacts`) appears on the form and staff can overwrite it. A new form view also
