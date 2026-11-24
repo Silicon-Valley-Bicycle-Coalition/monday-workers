@@ -35,6 +35,9 @@
   // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
   // the OAuth token and its refresh. DTD_PRIVATE_KEY is a Worker secret (wrangler secret put).
   "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // The post-gift matching email (src/jobs/prompt.ts), off until config outreach is set. Production
+  // has no destination allowlist, since it writes to donors.
+  "send_email": [{ "name": "EMAIL" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` deploys svbc-dtd-sync-sandbox against the CRM Sandbox boards
   // (config/sandbox.json, selected by the ENVIRONMENT var). Everything here is non-inheritable in
@@ -44,7 +47,12 @@
   "env": {
     "sandbox": {
       "preview_urls": false,
-      "vars": { "ENVIRONMENT": "sandbox" },
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
       "d1_databases": [
         {
           "binding": "DB",

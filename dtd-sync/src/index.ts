@@ -1,6 +1,8 @@
 // dtd-sync entrypoint: a cron-only Worker, gated by the fleet write switch (src/flags.ts).
 //
-//   15 * * * *  pull (DTD -> Monday), push (Monday -> DTD), pairing (Matching Donation <-> gift)
+//   15 * * * *  pull (DTD -> Monday), push (Monday -> DTD), pairing (Matching Donation <-> gift).
+//               With config.outreach in email mode: pairing, then prompt (the post-gift email),
+//               and neither pull nor push. Off (outreach null) in both environments as shipped.
 //   0 10 * * *  summary (Matching Gift Program board)
 //
 // Write mode `on` runs live, `off` is a dry run (reads everything, logs each write it would make),
@@ -17,8 +19,10 @@ import { tokenProviderFor, type MondayTokenSource } from './monday/graphql';
 import { runPull, type PullDeps } from './jobs/pull';
 import { runPush, type PushDeps } from './jobs/push';
 import { runPairing, type PairingDeps } from './jobs/pairing';
+import { runPrompt, type PromptDeps } from './jobs/prompt';
 import { runSummary, type SummaryDeps } from './jobs/summary';
-import { dryRunDb, dryRunDtd, dryRunMonday, type DryRunnableDtd } from './writeSwitch';
+import { sandboxEmailBinding } from './email/sandboxBinding';
+import { dryRunDb, dryRunDtd, dryRunEmail, dryRunMonday, type DryRunnableDtd } from './writeSwitch';
 
 const WORKER = 'dtd-sync';
 const MONDAY_API_URL = 'https://api.monday.com/v2';
@@ -35,20 +39,34 @@ export interface Clients {
   dtd: DryRunnableDtd | null;
   monday: DtdMondayClient;
   db: D1Database;
+  /** Null unless config.outreach is in email mode and EMAIL is bound (emailFor). */
+  email: SendEmail | null;
 }
 
 export interface Jobs {
   pull: (deps: PullDeps, now: Date) => Promise<unknown>;
   push: (deps: PushDeps, now: Date) => Promise<unknown>;
   pairing: (deps: PairingDeps, now: Date) => Promise<unknown>;
+  prompt: (deps: PromptDeps, now: Date) => Promise<unknown>;
   summary: (deps: SummaryDeps, now: Date) => Promise<unknown>;
 }
 
-const LIVE_JOBS: Jobs = { pull: runPull, push: runPush, pairing: runPairing, summary: runSummary };
+const LIVE_JOBS: Jobs = { pull: runPull, push: runPush, pairing: runPairing, prompt: runPrompt, summary: runSummary };
 
 // Log the message only (a stack could carry more), scrubbed: Monday errors can echo submitted values.
 function logFailure(job: string, err: unknown): void {
   console.log(`dtd-sync: ${job} failed ${err instanceof Error ? redactText(err.message) : 'unknown error'}`);
+}
+
+/**
+ * The binding prompt sends through: null unless the post-gift email is on, so nothing else can send.
+ * In the sandbox every recipient is rewritten to the sink, and a missing sink throws.
+ */
+export function emailFor(env: { EMAIL?: SendEmail; ENVIRONMENT?: string; SANDBOX_EMAIL_SINK?: string }, config: DtdSyncConfig): SendEmail | null {
+  if (config.outreach?.mode !== 'email' || !env.EMAIL) return null;
+  if (environmentOf(env) !== 'sandbox') return env.EMAIL;
+  if (!env.SANDBOX_EMAIL_SINK) throw new Error('SANDBOX_EMAIL_SINK must be set when ENVIRONMENT=sandbox');
+  return sandboxEmailBinding(env.EMAIL, env.SANDBOX_EMAIL_SINK);
 }
 
 /** Runs the jobs one cron owes. `mode` 'dry-run' swaps every write for a skip line. */
@@ -79,6 +97,11 @@ export async function runCron(
     return;
   }
 
+  if (config.outreach?.mode === 'email') {
+    await runEmailMode({ ...clients, monday, db }, config, skip, dry, now, jobs);
+    return;
+  }
+
   let pulled = false;
   if (dtd === null) console.log('dtd-sync: DTD_PRIVATE_KEY is not set');
   if (dtd !== null) {
@@ -100,6 +123,27 @@ export async function runCron(
     await jobs.pairing({ monday, db, config }, now);
   } catch (err) {
     logFailure('pairing', err);
+  }
+}
+
+/** The hourly cron while outreach is in email mode: pairing, then prompt if pairing finished. */
+async function runEmailMode(clients: Clients, config: DtdSyncConfig, skip: SkipContext, dry: boolean, now: Date, jobs: Jobs): Promise<void> {
+  const { monday, db } = clients;
+  try {
+    await jobs.pairing({ monday, db, config }, now);
+  } catch (err) {
+    logFailure('pairing', err);
+    console.log('dtd-sync: prompt skipped, pairing failed'); // a gift may already be matched
+    return;
+  }
+  if (clients.email === null) {
+    console.log('dtd-sync: no EMAIL binding, prompt skipped');
+    return;
+  }
+  try {
+    await jobs.prompt({ monday, db, config, email: dry ? dryRunEmail(skip) : clients.email, dryRun: dry }, now);
+  } catch (err) {
+    logFailure('prompt', err);
   }
 }
 
@@ -127,6 +171,7 @@ export default {
       dtd: key ? new DtdClient(config.dtd.apiBase, key, config.dtd.publicKey) : null,
       monday: new HttpDtdMondayClient(MONDAY_API_URL, tokenProviderFor(bindings), config),
       db: env.DB,
+      email: emailFor(env as unknown as Parameters<typeof emailFor>[0], config),
     };
     await runCron(controller.cron, clients, config, disposition, await skipContext(env, mode), new Date(controller.scheduledTime));
   },

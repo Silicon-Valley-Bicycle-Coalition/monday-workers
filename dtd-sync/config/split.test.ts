@@ -10,6 +10,8 @@ import { validateConfig } from '../src/config';
 // svbc.json is production and holds no sandbox id; and env.sandbox in wrangler.jsonc shares no
 // resource with the top level.
 
+const SINK = 'sandbox@bikesiliconvalley.org';
+
 type Json = Record<string, unknown>;
 const get = (obj: unknown, path: string): unknown =>
   path.split('.').reduce<unknown>((o, key) => (o as Json | undefined)?.[key], obj);
@@ -75,9 +77,14 @@ describe('config split', () => {
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
-  it('sets only the ENVIRONMENT var, and never at the top level', () => {
-    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
-    expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
+  it('sets only ENVIRONMENT and the email sink, and neither at the top level', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', SANDBOX_EMAIL_SINK: SINK });
+    expect(wrangler.vars).toBeUndefined();
+  });
+
+  it('locks the sandbox EMAIL binding to exactly the sink, and does not restrict production', () => {
+    expect(sandboxEnv.send_email).toEqual([{ name: 'EMAIL', allowed_destination_addresses: [SINK] }]);
+    expect(wrangler.send_email).toEqual([{ name: 'EMAIL' }]);
   });
 
   it('binds FLAGS to a different KV namespace than production', () => {
