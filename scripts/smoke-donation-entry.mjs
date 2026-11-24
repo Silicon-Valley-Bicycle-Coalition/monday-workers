@@ -125,6 +125,7 @@ async function main() {
 
   const created = [];
   const problems = [];
+  let donorBefore = null;
   try {
     const data = await query(token, `query($ids:[ID!]){ boards(ids:$ids){ name columns { id title } } }`, { ids: [args.board] });
     const board = data.boards[0];
@@ -132,7 +133,7 @@ async function main() {
     if (!isSandboxName(board.name)) throw new Error(`refusing: board "${board.name}" is not a sandbox board`);
     const { byTitle, missing } = resolveColumns(board.columns);
     if (missing.length > 0) throw new Error(`board is missing columns: ${missing.join(', ')}`);
-    const donorBefore = args.rollups ? await lifetimeGiving(token, args.donor) : null;
+    donorBefore = args.rollups ? await lifetimeGiving(token, args.donor) : null;
     console.log(`Board: ${board.name} (${args.board})`);
 
     const dateISO = new Date().toISOString().slice(0, 10);
@@ -172,7 +173,8 @@ async function main() {
       };
       await check(person.amount, 'the check counts and the pledge does not');
       await pay(steps[0]);
-      await sleep(10_000);
+      // donation-rollups takes up to ~30 s to move a total, so give a wrong count time to show.
+      await sleep(40_000);
       await check(person.amount, `the pledge does not count after only its ${args.payStatusFirst ? 'Status' : 'Date'} is set`);
       await pay(steps[1]);
       await check(person.amount + pledge.scenario.amount, 'the paid pledge counts once');
@@ -183,6 +185,23 @@ async function main() {
     return 2;
   }
   await cleanup(token, created);
+  // Wait for the deletes to reach the total, or the next run reads a stale baseline.
+  if (args.rollups) {
+    const label = 'Lifetime Giving is back where it started after the deletes';
+    let after = null;
+    try {
+      for (let waited = 0; waited < args.wait; waited += 5) {
+        after = await lifetimeGiving(token, args.donor);
+        if (rollupMoved(donorBefore, after, 0)) break;
+        await sleep(5000);
+      }
+    } catch (err) {
+      console.error(err.message);
+    }
+    const settled = after !== null && rollupMoved(donorBefore, after, 0);
+    if (!settled) problems.push(`${label}: no, ${donorBefore} -> ${after} after ${args.wait}s`);
+    console.log(`${settled ? 'OK  ' : 'FAIL'} ${label}`);
+  }
   if (problems.length === 0) {
     console.log('PASS');
     return 0;
