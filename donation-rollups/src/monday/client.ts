@@ -46,6 +46,15 @@ export interface AffiliationSummary {
   state?: ItemState;
 }
 
+// What getDonationsByIds read. undatedIds: active items whose Date is blank (a pledge, or a gift
+// whose Date staff cleared) — they count for nothing, so the caller takes any ledger row they have
+// out. An item left out of both lists (archived or trashed, a blank Amount, or not returned by
+// Monday) says nothing about its ledger row, which stays as it was.
+export interface DonationsRead {
+  donations: DonationRecord[];
+  undatedIds: string[];
+}
+
 export type ItemState = 'active' | 'archived' | 'deleted';
 
 // One item's requested columns from pageItemsColumnsText: text ('' reads as null) and the raw
@@ -136,7 +145,7 @@ export interface DonationRollupsMondayClient {
     itemIds: string[],
     columns: DonationReadColumns,
     fiscalYearStartMonth: number,
-  ): Promise<DonationRecord[]>;
+  ): Promise<DonationsRead>;
   // Each item's board id and group title; an item Monday no longer returns is absent from the map.
   getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>>;
   // The eight membership columns on a People-type owner, as label/date text — the membership
@@ -375,8 +384,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     itemIds: string[],
     columns: DonationReadColumns,
     fiscalYearStartMonth: number,
-  ): Promise<DonationRecord[]> {
-    if (itemIds.length === 0) return [];
+  ): Promise<DonationsRead> {
+    if (itemIds.length === 0) return { donations: [], undatedIds: [] };
     const columnIds = [columns.amount, columns.date, columns.status,
       ...(columns.fiscalYear ? [columns.fiscalYear] : []),
       ...(columns.giftType ? [columns.giftType] : []),
@@ -388,6 +397,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       ...(columns.inKindValue ? [columns.inKindValue] : []),
       ...(columns.sponsorshipPipelineLinks ?? [])];
     const donations: DonationRecord[] = [];
+    const undatedIds: string[] = [];
     const optionalText = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined =>
       id ? (byId.get(id) || null) : undefined;
     // Term dates are compared as YYYY-MM-DD, but Monday's `text` for a date column can carry a
@@ -415,14 +425,18 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         if (item.state === 'deleted') continue;
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
         const statusCell = item.column_values.find((cv) => cv.id === columns.status);
-        // A blank Amount must be treated as malformed like a blank Date — never as $0, which
+        // A blank Amount must be treated as malformed — never as $0, which
         // would refresh the ledger's real (bootstrap-loaded) amount down to $0 on the next
         // recompute (refreshFacts would see a changed amount and write it). Parsed straight
         // to integer cents (issue GL#27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
         const amountCents = parseAmountCents(byId.get(columns.amount));
         const dateISO = byId.get(columns.date) ?? '';
         const status = statusLabel(statusCell?.text, statusCell?.value) ?? '';
-        if (!dateISO || amountCents === null) continue; // malformed or deleted item, skip
+        // Only an active item whose Date cell came back empty says staff left it blank. An archived
+        // item can't be edited, so its stored row is the record; and a cell missing altogether (a
+        // retyped column's new id, an item moved to another board) is no reading of the Date.
+        if (!dateISO && item.state === 'active' && byId.has(columns.date)) undatedIds.push(item.id);
+        if (!dateISO || amountCents === null) continue;
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet, or the cell is blank — see fiscalYearFromDate in
         // rollups/compute.ts. Blank has to be checked as text, same as Amount above:
@@ -456,7 +470,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         });
       }
     }
-    return donations;
+    return { donations, undatedIds };
   }
 
   async getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>> {

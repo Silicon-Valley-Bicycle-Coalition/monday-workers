@@ -56,6 +56,17 @@ the consumer asks Monday for the item's `state` to tell them apart:
   The recompute is queued, not run inline, to stay inside the per-invocation subrequest
   budget `max_batch_size` is sized for.
 
+**When an active gift's Date is cleared** (a gift entered as Received, then corrected to Pledged),
+the gift keeps its owner but counts for nothing until it has a Date again, whatever its Status says.
+The recompute leaves it out of Lifetime Giving and soft-removes its `gifts` row (`removed_at`), so
+it also leaves Gift History, the Gift Ledger JSON, membership activity, the affiliation and
+Organizational Giving totals it fed, the annual summaries, the ledger's side of the roll call and
+the year-end archive's work list. Its `donation_links` row stays, so setting a Date restores the row with its
+provenance. Only an active item whose Date cell came back empty is removed. An archived gift, one
+Monday didn't return, one with only its Amount blank, and one that read back without the Date
+column keep their stored row. As with a deleted gift, membership dates already written to the
+donor's record aren't pulled back.
+
 Deletes only arrive if the board is subscribed to `item_deleted`, so `scripts/setup-webhooks.mjs`
 now also subscribes `item_deleted`, `item_archived` and `item_restored`. Re-run it once on
 existing boards; it only adds the missing subscriptions.
@@ -1024,9 +1035,11 @@ Donor, anything with no Donor — plus an `unmatched_match` flag for an employer
 Matched By. A row is dropped when its gift no longer qualifies or is deleted. An Anonymous or
 Matched By row is kept whether or not its gift counts tonight (any year, any status or gift type,
 a blank Date), and only clearing the flag or deleting the gift drops it: the ledger keeps its own
-copy of a gift's facts, which can lag the board or (for a gift whose Date was cleared) never
-refresh, so it may still count a gift the board says doesn't. Dropping the row there would credit
-the gift to its Donor by name. Whether a gift counts is decided once, when the roll call is
+copy of a gift's facts, which lags the board until the consumer's next recompute (or never
+refreshes, for a gift whose Amount was cleared), so it may still count a gift the board says
+doesn't. Dropping the row there would credit
+the gift to its Donor by name. A gift whose Date was cleared leaves the ledger on that recompute;
+its flagged row is still kept, for the nights before it and for when the gift is dated again. Whether a gift counts is decided once, when the roll call is
 computed, from whichever copy it has. When a gift
 archives its row is **kept** and stamped `archived_at` (an archived item's connect columns read
 back empty, so it can't be recomputed from Monday); that keeps closed years reproducible. The first

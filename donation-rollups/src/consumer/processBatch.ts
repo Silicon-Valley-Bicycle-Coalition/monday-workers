@@ -529,7 +529,10 @@ async function recomputeOwnerLeased(
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, readColumns(b.columns, sponsorshipsCfg !== null), config.fiscalYear.startMonth) })));
+    .map(async (b) => {
+      const read = await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, readColumns(b.columns, sponsorshipsCfg !== null), config.fiscalYear.startMonth);
+      return { board: b, items: read.donations, undatedIds: read.undatedIds };
+    }));
   const donations = perBoard.flatMap((p) => p.items);
 
   // Sponsorship facts (only when the feature is configured): the event a gift belongs to is its
@@ -581,6 +584,18 @@ async function recomputeOwnerLeased(
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
     console.log(`donation-rollups consumer: owner ${ownerItemId}: ${refreshed.changed} of ${donations.length} gift facts changed`);
+  }
+
+  // An active gift with no Date (corrected to Pledged, say) is in none of the totals above, so its
+  // ledger row, if it has one, must not count either. Its link stays: once it has a Date again
+  // the refresh above restores the row. The affiliation it fed is recomputed even when the row was
+  // already marked, so a retry after a failed affiliation write still lands it.
+  const affiliationsLeft = new Set(extraAffiliations);
+  for (const id of perBoard.flatMap((p) => p.undatedIds)) {
+    const removed = await deps.giftsStore.markRemoved(id, new Date().toISOString());
+    if (removed === null) continue; // never in the ledger: an ordinary pledge
+    console.log(`donation-rollups consumer: donation "${id}" has no Date — out of owner ${ownerItemId}'s ledger`);
+    if (removed.actingForItemId) affiliationsLeft.add(removed.actingForItemId);
   }
 
   const thisFY = currentFiscalYear(deps.now ?? new Date(), config.fiscalYear);
@@ -677,7 +692,7 @@ async function recomputeOwnerLeased(
 
   if (affiliationsCfg !== null) {
     const affected = affectedAffiliations(previousActingFor, donations, donationItemId);
-    for (const a of extraAffiliations) affected.add(a);
+    for (const a of affiliationsLeft) affected.add(a);
     await recomputeAffiliations(deps, affiliationsCfg, affected);
   }
 

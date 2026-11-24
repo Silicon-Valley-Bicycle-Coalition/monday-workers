@@ -52,9 +52,9 @@ export interface GiftsStore {
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
   // Takes a gift out of every total (issue GL#26): the item was deleted on Monday, or staff cleared
-  // its Donor link. Returns the owner and acting-for it had, so the caller can recompute them;
+  // its Donor link or its Date. Returns the owner and acting-for it had, so the caller can recompute them;
   // null when the ledger never knew the gift. A later recompute that sees it again (restore,
-  // re-link) clears the mark via refreshFacts.
+  // re-link, re-date) clears the mark via refreshFacts.
   markRemoved(mondayItemId: string, now: string): Promise<{ ownerItemId: string; ownerBoardId: string; actingForItemId: string | null } | null>;
   // acting_for_item_id per gift, for the affiliation recompute path.
   actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>>;

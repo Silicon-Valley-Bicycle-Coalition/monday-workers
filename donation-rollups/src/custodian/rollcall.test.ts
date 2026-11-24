@@ -276,9 +276,8 @@ describe('runRollCall', () => {
     }
   });
 
-  // The ledger keeps a gift's facts from the consumer's last read, and that read skips a gift
-  // with a blank Date (getDonationsByIds), so it can still count a gift the nightly read sees
-  // as not counting. The flag must keep winning in every such case, night after night.
+  // The ledger keeps a gift's facts from the consumer's last read, so until the next one it can
+  // still count a gift the nightly read sees as not counting. The flag must keep winning in every such case, night after night.
   describe.each([
     ['its Date is cleared (fiscal year unreadable)', { fiscalYear: 0 }],
     ['it reads Pledged', { status: 'Pledged' }],
