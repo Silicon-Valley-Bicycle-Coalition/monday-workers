@@ -15,7 +15,7 @@
 import { fileURLToPath } from 'node:url';
 import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 import {
-  UPCOMING_VIEW_NAME, VIEW_NAME, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, leadEmailVariables, parseArgs,
+  SEND_LINK, UPCOMING_VIEW_NAME, VIEW_NAME, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, leadEmailVariables, parseArgs,
   planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
 } from './setup-volunteers-board-lib.mjs';
 
@@ -56,7 +56,7 @@ async function main() {
   let events = await read(args.eventsBoard);
   const { toCreate } = planVolunteersBoard(volunteers.columns);
   const onEvents = planEventsColumns(events.columns);
-  const derived = planDerivedColumns(volunteers.columns);
+  const derived = planDerivedColumns(volunteers.columns, events.columns);
   const views = planViews(volunteers.views ?? []);
   if (!args.apply) {
     const list = (titles, none) => titles.map((t) => `"${t}"`).join(', ') || none;
@@ -90,6 +90,7 @@ async function main() {
       shiftLeadColumn: find(events, 'Shift Lead', 'board_relation').id,
       leadEmailColumn: find(events, 'Shift Lead Email', 'mirror').id,
       eventDateColumn: eventDate?.id,
+      ...(title === SEND_LINK && { listingColumn: find(volunteers, 'Eventbrite Listing', 'board_relation').id, sendLinkColumn: find(events, SEND_LINK, 'link').id }),
     }));
     volunteers = await read(args.board);
   }
@@ -101,8 +102,9 @@ async function main() {
   if (views.includes(UPCOMING_VIEW_NAME)) {
     const status = find(volunteers, 'Status', 'status');
     const ticketType = find(volunteers, 'Shift', 'text');
+    const sendLink = volunteers.columns.find((c) => bareTitle(c.title) === SEND_LINK && c.type === 'mirror');
     const shown = [
-      'name', ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Phone Number', 'text').id, status.id,
+      'name', ...(sendLink ? [sendLink.id] : []), ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Phone Number', 'text').id, status.id,
       find(volunteers, 'Shift Lead', 'mirror').id, find(volunteers, 'Shift Lead Email', 'mirror').id,
     ];
     await graphql(CREATE_VIEW, upcomingViewVariables(args.board, {

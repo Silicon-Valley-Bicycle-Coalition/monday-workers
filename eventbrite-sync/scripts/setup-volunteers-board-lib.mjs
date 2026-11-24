@@ -27,7 +27,8 @@ export const VOLUNTEER_COLUMN_SPECS = [
 // writes them and no config holds their ids.
 const SHIFT_LEAD = 'Shift Lead';
 const SHIFT_LEAD_EMAIL = 'Shift Lead Email';
-const DERIVED_TITLES = ['Event Date', SHIFT_LEAD, SHIFT_LEAD_EMAIL, 'Event and Date'];
+export const SEND_LINK = 'Send event email';
+const DERIVED_TITLES = ['Event Date', SHIFT_LEAD, SHIFT_LEAD_EMAIL, 'Event and Date', SEND_LINK];
 const EVENTS_TITLES = [SHIFT_LEAD, SHIFT_LEAD_EMAIL];
 
 /** Idempotent through bareTitle, so a 🔒 marker never causes a duplicate column. */
@@ -87,17 +88,22 @@ export function leadEmailVariables(eventsBoardId, { shiftLeadColumn, emailColumn
   };
 }
 
-export function planDerivedColumns(volunteersColumns) {
-  return missingTitles(DERIVED_TITLES, volunteersColumns);
+/** The send link needs its column on Events, which an environment without a send page doesn't have. */
+export function planDerivedColumns(volunteersColumns, eventsColumns) {
+  const hasSendLink = missingTitles([SEND_LINK], eventsColumns).length === 0;
+  return missingTitles(DERIVED_TITLES, volunteersColumns).filter((title) => title !== SEND_LINK || hasSendLink);
 }
 
 /**
  * The heading starts with the ISO date because Monday sorts formula groups only A to Z (2026-11-24):
  * that makes A to Z date order. It reads the linked event, so a rename or a re-pointed Event moves the
  * row at once, with nothing to sync (Job would go stale).
+ *
+ * The send link alone goes through Eventbrite Listing: its page emails the volunteers of the listing
+ * it names, while a re-pointed Event is the attendee event, whose page emails the participants.
  */
-export function derivedColumnVariables(title, { board, eventsBoard, eventColumn, eventsDateColumn, shiftLeadColumn, leadEmailColumn, eventDateColumn }) {
-  const mirrorOf = (columnId) => mirrorSettings(eventColumn, [[eventsBoard, columnId]]);
+export function derivedColumnVariables(title, { board, eventsBoard, eventColumn, eventsDateColumn, shiftLeadColumn, leadEmailColumn, eventDateColumn, listingColumn, sendLinkColumn }) {
+  const mirrorOf = (columnId, relationColumn = eventColumn) => mirrorSettings(relationColumn, [[eventsBoard, columnId]]);
   const columns = {
     'Event Date': { type: 'mirror', defaults: () => mirrorOf(eventsDateColumn), description: "The linked event's date." },
     [SHIFT_LEAD]: { type: 'mirror', defaults: () => mirrorOf(shiftLeadColumn), description: "The linked event's shift lead; set it on the event." },
@@ -106,6 +112,11 @@ export function derivedColumnVariables(title, { board, eventsBoard, eventColumn,
       type: 'formula',
       defaults: () => ({ formula: `IF({${eventColumn}}="","No event linked",CONCATENATE({${eventDateColumn}}," · ",{${eventColumn}}))` }),
       description: 'Heads each section of the Upcoming by event view.',
+    },
+    [SEND_LINK]: {
+      type: 'mirror',
+      defaults: () => mirrorOf(sendLinkColumn, listingColumn),
+      description: 'Opens the page that emails everyone signed up for this volunteer listing.',
     },
   };
   const spec = columns[title];

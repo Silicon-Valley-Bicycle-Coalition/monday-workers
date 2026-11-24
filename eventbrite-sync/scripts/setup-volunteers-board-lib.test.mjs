@@ -78,15 +78,20 @@ describe('Shift Lead on Events', () => {
 });
 
 describe('derived Volunteers columns', () => {
-  const ids = { board: '7', eventsBoard: '9', eventColumn: 'rel', eventsDateColumn: 'd', shiftLeadColumn: 'lead', leadEmailColumn: 'mail', eventDateColumn: 'mir' };
+  const ids = { board: '7', eventsBoard: '9', eventColumn: 'rel', eventsDateColumn: 'd', shiftLeadColumn: 'lead', leadEmailColumn: 'mail', eventDateColumn: 'mir', listingColumn: 'list', sendLinkColumn: 'send' };
+  const events = [col('send', '🔒 Send event email', 'link')];
 
   it('plans the missing ones in dependency order', () => {
-    expect(planDerivedColumns([])).toEqual(['Event Date', 'Shift Lead', 'Shift Lead Email', 'Event and Date']);
-    expect(planDerivedColumns([col('m', '🔒 Event Date', 'mirror')])).toEqual(['Shift Lead', 'Shift Lead Email', 'Event and Date']);
+    expect(planDerivedColumns([], events)).toEqual(['Event Date', 'Shift Lead', 'Shift Lead Email', 'Event and Date', 'Send event email']);
+    expect(planDerivedColumns([col('m', '🔒 Event Date', 'mirror')], events)).toEqual(['Shift Lead', 'Shift Lead Email', 'Event and Date', 'Send event email']);
+  });
+
+  it('leaves out Send event email where Events has no such link (the sandbox)', () => {
+    expect(planDerivedColumns([], [])).toEqual(['Event Date', 'Shift Lead', 'Shift Lead Email', 'Event and Date']);
   });
 
   it('does not take the 📜 Date column for Event Date', () => {
-    expect(planDerivedColumns([col('date_1', '📜 Date', 'date')])).toContain('Event Date');
+    expect(planDerivedColumns([col('date_1', '📜 Date', 'date')], [])).toContain('Event Date');
   });
 
   it('mirrors the linked event’s date, lead and lead email', () => {
@@ -98,6 +103,13 @@ describe('derived Volunteers columns', () => {
     expect(JSON.parse(lead.defaults)).toEqual({ relation_column: { rel: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['lead'] }] });
     const email = derivedColumnVariables('Shift Lead Email', ids);
     expect(JSON.parse(email.defaults)).toEqual({ relation_column: { rel: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['mail'] }] });
+  });
+
+  // A re-pointed Event is the attendee event, whose send page emails its participants.
+  it('mirrors the send link through Eventbrite Listing, not Event', () => {
+    const vars = derivedColumnVariables('Send event email', ids);
+    expect(vars).toMatchObject({ board: '7', title: 'Send event email', type: 'mirror' });
+    expect(JSON.parse(vars.defaults)).toEqual({ relation_column: { list: true }, displayed_linked_columns: [{ board_id: '9', column_ids: ['send'] }] });
   });
 
   it('heads a row with its event’s date and name, or says none is linked', () => {
