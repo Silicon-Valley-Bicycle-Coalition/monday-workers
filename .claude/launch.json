@@ -4,7 +4,10 @@
     {
       "name": "member-portal-local",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd member-portal && npm run dev:local"],
+      "runtimeArgs": [
+        "-c",
+        "cd member-portal && npm run dev:local"
+      ],
       "port": 8787
     },
     {
@@ -12,6 +15,12 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "cd svbc-bike-lanes && npx wrangler dev --port 8790"],
       "port": 8790
+    },
+    {
+      "name": "status-page-local",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd status-page && npx wrangler dev --infer-origin-from-routes=false --port 8791"],
+      "port": 8791
     }
   ]
 }

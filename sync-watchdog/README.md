@@ -24,10 +24,28 @@ crons with their maximum gap) or `notLive` (with a reason). `config/coverage.tes
 when any Worker's `wrangler.jsonc` gains, loses or changes a production cron that this file
 doesn't match. To take a Worker live, move it from `notLive` to `watched`.
 
+Cron expressions must be ones `src/cron.ts` can read (numbers, `*`, `*/n`, ranges and lists; no
+names, `L`, `W` or `#`); config validation rejects the rest. Weekdays are Cloudflare's: 1 is Sunday.
+
+## How cron runs are read
+
+From Cloudflare's GraphQL `workersInvocationsAdaptive`, filtered to `eventType: "cron"`. It gives
+the script and the minute, not the cron expression, so `src/cron.ts` matches runs to expressions by
+time (up to 2 minutes late). Where several crons of one Worker share a minute, all of them count as
+run only if that minute has that many runs; otherwise the shortest-gap ones are credited first.
+The data can lose the odd row, so one missing run never alerts on its own.
+
+`workersInvocationsScheduled`, which does carry the expression, returned no rows for this account
+(checked 2026-11-24, 30 days back) while the crons ran, so until then every cron subject alerted
+daily. If the data has no run of any watched Worker or of the watchdog itself (`selfScript`) in the
+last 2 h, every cron subject is "check failed" (logged, not posted) instead of "no run".
+
 ## Bindings and secrets
 
 - `FLAGS`: the production `FLAGS` KV namespace, read only.
-- `STATE`: this Worker's own KV namespace, holding per-subject alert state.
+- `STATE`: this Worker's own KV namespace, holding per-subject alert state, and also
+  `snapshot:latest`: every subject's result and the run time, written each run (both environments)
+  and read by [`status-page`](../status-page/README.md).
 - `CLOUDFLARE_API_TOKEN` (secret): an account token with Account Analytics Read and Queues Read.
 - `SLACK_WEBHOOK_URL` (secret): the private staff channel's incoming webhook.
 

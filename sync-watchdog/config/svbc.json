@@ -1,5 +1,6 @@
 {
   "accountId": "f323cb191edeb5d30acc4d289427a010",
+  "selfScript": "svbc-sync-watchdog",
   "watched": {
     "benevity-import": { "script": "svbc-benevity-import", "expectedWrites": "on", "crons": [{ "cron": "15 9 * * *", "maxGapHours": 48 }] },
     "bp-feedback-notify": { "script": "svbc-bp-feedback-notify", "expectedWrites": "on", "crons": [] },

@@ -16,6 +16,13 @@ export interface RunDeps {
 
 const key = (subject: string) => `subject:${subject}`;
 
+// Read by status-page (its src/syncs.ts redeclares this shape; keep the two in step).
+export const SNAPSHOT_KEY = 'snapshot:latest';
+export interface WatchdogSnapshot {
+  runAt: string;
+  subjects: { subject: string; status: 'ok' | 'bad' | 'check-failed'; detail?: string }[];
+}
+
 async function loadState(kv: KVNamespace, subject: string): Promise<SubjectState | null> {
   const raw = await kv.get(key(subject));
   return raw === null ? null : (JSON.parse(raw) as SubjectState);
@@ -61,6 +68,24 @@ export async function runWatchdog(deps: RunDeps): Promise<void> {
     let { post, next } = decide(r.subject, r.health, prev, now);
     if (post && (await send(post.text)) && post.kind !== 'recovered') next = markSent(next, now);
     await state.put(key(r.subject), JSON.stringify(next));
+  }
+
+  // Every subject's result this run, for status-page (the alert state above keeps no run time and
+  // skips check-failed subjects). A failed write is logged; alerting has already happened.
+  const snapshot: WatchdogSnapshot = {
+    runAt: now.toISOString(),
+    subjects: results.map((r) =>
+      r.health === 'check-failed'
+        ? { subject: r.subject, status: 'check-failed', detail: r.error ?? 'unknown error' }
+        : r.health.ok
+          ? { subject: r.subject, status: 'ok' }
+          : { subject: r.subject, status: 'bad', detail: r.health.detail },
+    ),
+  };
+  try {
+    await state.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch (err) {
+    console.error(`sync-watchdog: snapshot write failed: ${err instanceof Error ? err.name : 'unknown'}`);
   }
 
   if (isHeartbeatRun(now)) {

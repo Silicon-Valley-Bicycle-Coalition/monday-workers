@@ -51,6 +51,7 @@ of a dedicated integration user. No Worker holds a Monday token of its own.
 | [`nearby-search`](workers/nearby-search.md) | Serve | HTTP (staff), hourly cron | Staff-only search for contacts near an address or road |
 | [`monday-backup`](workers/monday-backup.md) | Safety net | Daily cron, Workflow | Encrypted snapshot of every Monday board and doc to Google Drive |
 | [`sync-watchdog`](workers/sync-watchdog.md) | Safety net | Hourly cron | Slack alert when a cron stops, a write switch is wrong or a queue backs up |
+| [`status-page`](workers/status-page.md) | Serve | HTTP (staff) | Staff status page: SVBC syncs, Cloudflare and SaaS vendor status |
 | [`monday-auth`](workers/monday-auth.md) | Platform | Service binding, cron | Monday OAuth token broker for every other Worker |
 | [`svbc-calendars`](workers/svbc-calendars.md) | Website | HTTP (public), cron | Events widget and committee and event `.ics` calendar feeds |
 | [`svbc-bike-lanes`](workers/svbc-bike-lanes.md) | Serve | HTTP (staff), weekly build | Staff-only tracker of bike lane miles by county, city and class |

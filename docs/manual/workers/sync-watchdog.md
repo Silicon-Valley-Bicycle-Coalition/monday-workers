@@ -22,7 +22,7 @@ Each run checks three kinds of subject:
 
 | Subject | Healthy when | Source |
 |---|---|---|
-| `cron:<worker>:<cron>` | The Worker ran that cron within `maxGapHours` | Cloudflare GraphQL analytics (scheduled invocations) |
+| `cron:<worker>:<cron>` | The Worker ran that cron within `maxGapHours` | Cloudflare GraphQL analytics (`workersInvocationsAdaptive`, cron events), matched to the expression by time |
 | `writes:<worker>` | `<worker>:writes` in production `FLAGS` equals `expectedWrites` | `FLAGS` KV, read only |
 | `queue:<queue>` | The oldest message is younger than `maxBacklogAgeHours` (6) | Cloudflare Queues REST API (metrics) |
 
@@ -45,7 +45,9 @@ the Cloudflare dashboard post those to the same channel. See the
 
 ### Storage
 
-No D1. `STATE` KV holds one alert-state record per subject.
+No D1. `STATE` KV holds one alert-state record per subject, and `snapshot:latest`: every
+subject's result and the run time, written after each run (both environments) for
+[`status-page`](status-page.md). A failed snapshot write is logged; alerts still go out.
 
 ## Monday boards and columns
 
@@ -56,6 +58,7 @@ What it watches is `config/svbc.json` (production) and `config/sandbox.json`:
 | Key | Meaning |
 |---|---|
 | `accountId` | Cloudflare account to query |
+| `selfScript` | This Worker's own script; its runs prove Cloudflare's run data is arriving |
 | `watched` | Each live Worker: production `script` name, `expectedWrites` (`on`, `off`, or `null` for Workers without a switch), and `crons` with `maxGapHours` |
 | `notLive` | Workers with production crons that are not live yet, each with a reason |
 | `queues` | Production main queues and `maxBacklogAgeHours` |
@@ -96,6 +99,7 @@ Problems with the watchdog itself:
 |---|---|---|
 | No Monday heartbeat | Watchdog down, cron removed, or Slack webhook revoked | Check `svbc-sync-watchdog` in the dashboard and its logs |
 | `sync-watchdog: N check(s) failed` in logs, no posts | Cloudflare API token expired or lacks a permission, or an API outage | Check the token's permissions; replace it if needed |
+| `sync-watchdog: N check(s) failed … Cloudflare reports no cron runs …` in logs | Cloudflare's invocation data is empty or late. The Workers may be fine; cron subjects are not judged until it returns | Check the Workers' logs directly, and cloudflarestatus.com |
 | CI fails in `coverage.test.ts` | A Worker's production cron changed without a matching config change | Update `config/svbc.json` (`watched` or `notLive`) in the same PR |
 | A Worker on deliberate `hold` alerts every day | Expected; `expectedWrites` says `on` | Leave it during a planned hold, or change `expectedWrites` |
 

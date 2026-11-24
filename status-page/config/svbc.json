@@ -1,0 +1,261 @@
+{
+  "access": {
+    "teamDomain": "https://bikesiliconvalley.cloudflareaccess.com",
+    "aud": "a3e0719ef1c594436b409202292284cdb79baa4f7a5190970325b3c3c52ab836",
+    "allowedEmailDomain": "bikesiliconvalley.org"
+  },
+  "timezone": "America/Los_Angeles",
+  "feedTimeoutMs": 3000,
+  "feedCacheSeconds": 60,
+  "snapshotMaxAgeHours": 2,
+  "syncs": [
+    {
+      "label": "Funraise donations → Monday",
+      "description": "Online gifts from Funraise appear on the Donations board.",
+      "worker": "funraise-sync",
+      "queues": [
+        "funraise-sync-writes"
+      ]
+    },
+    {
+      "label": "Eventbrite orders → Monday",
+      "description": "Event ticket orders and refunds appear on the Donations board.",
+      "worker": "eventbrite-sync",
+      "queues": [
+        "eventbrite-sync-writes"
+      ]
+    },
+    {
+      "label": "Mailchimp ↔ Monday",
+      "description": "Subscribers, unsubscribes and member tags stay in step between Mailchimp and People.",
+      "worker": "mailchimp-sync",
+      "queues": [
+        "mailchimp-sync-outbound",
+        "mailchimp-sync-inbound"
+      ]
+    },
+    {
+      "label": "Benevity gifts → Monday",
+      "description": "Uploaded Benevity workplace-giving reports become Donations items.",
+      "worker": "benevity-import",
+      "queues": [
+        "benevity-import-writes"
+      ]
+    },
+    {
+      "label": "Giving totals on People",
+      "description": "Lifetime giving and tier on each person update after a gift.",
+      "worker": "donation-rollups",
+      "queues": [
+        "donation-rollups-recompute"
+      ]
+    },
+    {
+      "label": "Contact roles on People",
+      "description": "The Contacts column on People is recomputed from their donations and roles.",
+      "worker": "contact-roles",
+      "queues": []
+    },
+    {
+      "label": "Employer match suggestions",
+      "description": "Draft employer affiliations are proposed from matching gifts and work email domains for staff to confirm.",
+      "worker": "impact-attribution",
+      "queues": []
+    },
+    {
+      "label": "Member and donor reclassification",
+      "description": "People move between the live and historical boards as their status changes.",
+      "worker": "people-reclassification",
+      "queues": []
+    },
+    {
+      "label": "Scheduled report emails",
+      "description": "Weekly and daily report emails (recent gifts, renewals, unmatched gifts) go out.",
+      "worker": "report-digests",
+      "queues": []
+    },
+    {
+      "label": "Monday backups",
+      "description": "Nightly and hourly backups of the CRM boards are taken.",
+      "worker": "monday-backup",
+      "queues": []
+    },
+    {
+      "label": "Member portal",
+      "description": "Members can sign in, see their giving, and send change requests and letters.",
+      "worker": "member-portal",
+      "queues": [
+        "member-portal-change-requests",
+        "member-portal-letter-emails"
+      ]
+    },
+    {
+      "label": "Member map refresh",
+      "description": "The staff member map refreshes its weekly snapshot.",
+      "worker": "member-map",
+      "queues": [
+        "svbc-member-map-refresh"
+      ]
+    },
+    {
+      "label": "Bike Parking feedback emails",
+      "description": "Bike Parking organizers get their feedback form link once staff mark an event ready.",
+      "worker": "bp-feedback-notify",
+      "queues": []
+    },
+    {
+      "label": "Website event calendars",
+      "description": "The events widget and committee calendars on bikesiliconvalley.org stay current.",
+      "worker": "svbc-calendars",
+      "queues": []
+    }
+  ],
+  "hiddenWorkers": {
+    "monday-auth": "plumbing; its failure shows as the syncs that depend on it"
+  },
+  "cloudflare": {
+    "statusPageUrl": "https://www.cloudflarestatus.com",
+    "components": [
+      "Workers",
+      "Workers KV",
+      "D1",
+      "Queues",
+      "R2",
+      "Email Routing",
+      "Access",
+      "Authoritative DNS",
+      "CDN/Cache",
+      "San Jose, United States - (SJC)"
+    ]
+  },
+  "vendors": [
+    {
+      "name": "Monday.com",
+      "usedFor": "CRM",
+      "statusPageUrl": "https://status.monday.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.monday.com"
+      }
+    },
+    {
+      "name": "Funraise",
+      "usedFor": "Online donations",
+      "statusPageUrl": "https://status.funraise.org",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.funraise.org"
+      }
+    },
+    {
+      "name": "Eventbrite",
+      "usedFor": "Event tickets",
+      "statusPageUrl": "https://www.eventbrite.com/help/",
+      "feed": {
+        "kind": "none"
+      },
+      "linkLabel": "Help center"
+    },
+    {
+      "name": "Mailchimp",
+      "usedFor": "Email newsletters",
+      "statusPageUrl": "https://status.mailchimp.com",
+      "feed": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "Google Workspace",
+      "usedFor": "Email, Drive, Calendar",
+      "statusPageUrl": "https://www.google.com/appsstatus/dashboard/",
+      "feed": {
+        "kind": "google",
+        "url": "https://www.google.com/appsstatus/dashboard/incidents.json",
+        "products": [
+          "Gmail",
+          "Google Drive",
+          "Google Calendar",
+          "Google Meet"
+        ]
+      }
+    },
+    {
+      "name": "Slack",
+      "usedFor": "Staff chat",
+      "statusPageUrl": "https://slack-status.com",
+      "feed": {
+        "kind": "slack",
+        "url": "https://slack-status.com/api/v2.0.0/current"
+      }
+    },
+    {
+      "name": "Box",
+      "usedFor": "Files",
+      "statusPageUrl": "https://status.box.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.box.com"
+      }
+    },
+    {
+      "name": "Zoom",
+      "usedFor": "Meetings",
+      "statusPageUrl": "https://www.zoomstatus.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://www.zoomstatus.com"
+      }
+    },
+    {
+      "name": "QuickBooks",
+      "usedFor": "Accounting",
+      "statusPageUrl": "https://status.quickbooks.intuit.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.quickbooks.intuit.com"
+      }
+    },
+    {
+      "name": "Zapier",
+      "usedFor": "Automations",
+      "statusPageUrl": "https://status.zapier.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.zapier.com"
+      }
+    },
+    {
+      "name": "Squarespace",
+      "usedFor": "Website",
+      "statusPageUrl": "https://status.squarespace.com",
+      "feed": {
+        "kind": "statuspage",
+        "url": "https://status.squarespace.com"
+      }
+    },
+    {
+      "name": "Benevity",
+      "usedFor": "Workplace giving",
+      "statusPageUrl": null,
+      "feed": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "Double the Donation",
+      "usedFor": "Matching gifts",
+      "statusPageUrl": null,
+      "feed": {
+        "kind": "none"
+      }
+    },
+    {
+      "name": "Windfall",
+      "usedFor": "Donor research",
+      "statusPageUrl": null,
+      "feed": {
+        "kind": "none"
+      }
+    }
+  ]
+}

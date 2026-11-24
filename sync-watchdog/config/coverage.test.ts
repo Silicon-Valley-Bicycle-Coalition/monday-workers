@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import production from './svbc.json';
+import sandbox from './sandbox.json';
+import ownWrangler from '../wrangler.jsonc?raw';
 import flagsScript from '../../scripts/check-worker-flags.mjs?raw';
 import { parseJsonc } from '../test/jsonc';
 
@@ -50,6 +52,12 @@ describe('watchdog coverage', () => {
   it('finds the repo Workers', () => {
     expect(Object.keys(workers)).toContain('funraise-sync');
     expect(inScope).toContain('funraise-sync');
+  });
+
+  it('selfScript is this Worker in each environment', () => {
+    const own = parseJsonc(ownWrangler) as Json & { env: { sandbox: Json } };
+    expect(production.selfScript).toBe(own.name);
+    expect(sandbox.selfScript).toBe(own.env.sandbox.name);
   });
 
   it('every Worker with production crons is watched or notLive, never both', () => {

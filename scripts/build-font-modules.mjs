@@ -42,6 +42,13 @@ export const TARGETS = [
       'Nunito Sans': { styles: ['normal'], subsets: ['latin', 'latin-ext'] },
     },
   },
+  {
+    // The staff status page is English-only and sets no italic.
+    out: 'status-page/src/fontData.ts',
+    faces: {
+      'Nunito Sans': { styles: ['normal'], subsets: ['latin'] },
+    },
+  },
 ];
 
 /**

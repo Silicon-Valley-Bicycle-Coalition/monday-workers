@@ -1,0 +1,32 @@
+{
+  "name": "svbc-status-page",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "preview_urls": false,
+  "upload_source_maps": true,
+  // Staff-only: reachable only through the custom domain, which sits behind Cloudflare Access.
+  // The Worker verifies the Access JWT itself too. No ACCESS_DEV_BYPASS var belongs in this file
+  // (or any env block) — it lives only in the git-ignored .dev.vars.
+  "workers_dev": false,
+  "routes": [{ "pattern": "status.bikesiliconvalley.org", "custom_domain": true }],
+  // sync-watchdog's STATE namespace: this Worker only ever reads `snapshot:latest` from it.
+  "kv_namespaces": [{ "binding": "WATCHDOG_STATE", "id": "fd4cd11d203d4b7fbdf2dd1bbc0bce4a" }],
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits".
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2105", "simple": { "limit": 60, "period": 60 } }],
+  // No crons, no secrets, no write switch: it writes nothing anywhere.
+  "observability": { "enabled": true },
+  "env": {
+    "sandbox": {
+      "name": "svbc-status-page-sandbox",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": { "ENVIRONMENT": "sandbox" },
+      // No ACCESS_DEV_BYPASS here either.
+      "routes": [{ "pattern": "status.sandbox.bikesiliconvalley.org", "custom_domain": true }],
+      "kv_namespaces": [{ "binding": "WATCHDOG_STATE", "id": "e82a6053131d4fd6a90d7cf7e8c852d6" }],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2106", "simple": { "limit": 60, "period": 60 } }],
+      "observability": { "enabled": true }
+    }
+  }
+}

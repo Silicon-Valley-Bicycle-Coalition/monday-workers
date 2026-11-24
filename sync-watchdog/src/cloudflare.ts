@@ -9,20 +9,29 @@ export class CloudflareApiError extends Error {
   override name = 'CloudflareApiError';
 }
 
+// Runs of one Worker started by a cron in one minute (UTC). Which cron isn't recorded; see src/cron.ts.
+export interface CronRun {
+  script: string;
+  at: Date;
+  count: number;
+}
+
 export interface CloudflareApi {
-  lastScheduledRun(script: string, cron: string, since: Date): Promise<Date | null>;
+  cronRuns(scripts: string[], since: Date): Promise<CronRun[]>;
   queueBacklog(queueName: string): Promise<{ count: number; oldestAgeHours: number | null }>;
 }
 
-// The dataset rejects wide ranges (live 2026-11-17: 192 h → GraphQL error code "quota"; 48 h
-// works), so a longer window is read in slices of at most this, newest first.
-const MAX_RANGE_MS = 48 * 3_600_000;
-
-const SCHEDULED_QUERY = `query LastScheduledRun($accountTag: string!, $scriptName: string!, $cron: string!, $since: Time!, $until: Time!) {
+// workersInvocationsAdaptive, not workersInvocationsScheduled: the latter has the cron expression
+// but returned no rows at all for this account (checked 2026-11-24, 30 days back) while the crons
+// were running. Needs only Account Analytics Read, and takes a 192 h range in one query.
+const ROW_LIMIT = 10_000;
+const CRON_RUNS_QUERY = `query CronRuns($accountTag: string!, $scripts: [string!], $since: Time!, $until: Time!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
-      workersInvocationsScheduled(limit: 1, orderBy: [datetime_DESC], filter: { scriptName: $scriptName, cron: $cron, datetime_geq: $since, datetime_leq: $until }) {
-        datetime
+      workersInvocationsAdaptive(limit: ${ROW_LIMIT}, orderBy: [datetimeMinute_DESC], filter: { eventType: "cron", scriptName_in: $scripts, datetime_geq: $since, datetime_leq: $until }) {
+        sum { requests }
+        avg { sampleInterval }
+        dimensions { scriptName datetimeMinute }
       }
     }
   }
@@ -76,34 +85,38 @@ export function cloudflareApi(
   }
 
   return {
-    async lastScheduledRun(script, cron, since) {
-      let until = now().getTime();
-      do {
-        const from = Math.max(since.getTime(), until - MAX_RANGE_MS);
-        const body = await call(`${API}/graphql`, {
-          method: 'POST',
-          body: JSON.stringify({
-            query: SCHEDULED_QUERY,
-            variables: {
-              accountTag: accountId,
-              scriptName: script,
-              cron,
-              since: new Date(from).toISOString(),
-              until: new Date(until).toISOString(),
-            },
-          }),
-        });
-        if (Array.isArray(body.errors) && body.errors.length > 0) {
-          throw new CloudflareApiError(`graphql: ${JSON.stringify(body.errors)}`);
+    async cronRuns(scripts, since) {
+      const body = await call(`${API}/graphql`, {
+        method: 'POST',
+        body: JSON.stringify({
+          query: CRON_RUNS_QUERY,
+          variables: { accountTag: accountId, scripts, since: since.toISOString(), until: now().toISOString() },
+        }),
+      });
+      if (Array.isArray(body.errors) && body.errors.length > 0) {
+        throw new CloudflareApiError(`graphql: ${JSON.stringify(body.errors)}`);
+      }
+      const rows = (((body.data as Json | undefined)?.viewer as Json | undefined)?.accounts as Json[] | undefined)?.[0]
+        ?.workersInvocationsAdaptive;
+      if (!Array.isArray(rows)) throw new CloudflareApiError('graphql: unexpected response shape');
+      if (rows.length >= ROW_LIMIT) throw new CloudflareApiError(`graphql: cron runs reached the ${ROW_LIMIT}-row limit`);
+      return rows.map((row: Json): CronRun => {
+        const { scriptName, datetimeMinute } = (row.dimensions ?? {}) as Json;
+        const at = new Date(String(datetimeMinute));
+        const requests = (row.sum as Json | undefined)?.requests;
+        const interval = (row.avg as Json | undefined)?.sampleInterval;
+        if (
+          typeof scriptName !== 'string' ||
+          Number.isNaN(at.getTime()) ||
+          typeof requests !== 'number' ||
+          typeof interval !== 'number' ||
+          interval <= 0
+        ) {
+          throw new CloudflareApiError('graphql: unexpected cron run row');
         }
-        const rows = (((body.data as Json | undefined)?.viewer as Json | undefined)?.accounts as Json[] | undefined)?.[0]
-          ?.workersInvocationsScheduled;
-        if (!Array.isArray(rows)) throw new CloudflareApiError('graphql: unexpected response shape');
-        const first = rows[0] as Json | undefined;
-        if (first) return new Date(String(first.datetime));
-        until -= MAX_RANGE_MS;
-      } while (until > since.getTime());
-      return null;
+        // `requests` is scaled up by the sample interval (live: one run reported as 10); count what was observed.
+        return { script: scriptName, at, count: Math.round(requests / interval) };
+      });
     },
 
     async queueBacklog(queueName) {

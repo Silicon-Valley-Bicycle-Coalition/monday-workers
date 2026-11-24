@@ -1,6 +1,8 @@
 // What the watchdog watches, per environment (config/svbc.json, config/sandbox.json).
 // config/coverage.test.ts keeps svbc.json in step with every Worker's wrangler.jsonc.
 
+import { cronMatcher } from './cron';
+
 export interface CronWatch {
   cron: string;
   maxGapHours: number;
@@ -20,6 +22,7 @@ export interface QueueWatch {
 
 export interface WatchdogConfig {
   accountId: string;
+  selfScript: string; // this Worker's own script: proves Cloudflare's run data is arriving
   watched: Record<string, WatchedWorker>; // key: Worker directory name
   notLive: Record<string, string>; // key: directory name, value: reason
   queues: QueueWatch[];
@@ -37,6 +40,7 @@ const positive = (v: unknown): v is number => typeof v === 'number' && Number.is
 export function validateConfig(raw: unknown): WatchdogConfig {
   if (!isObject(raw)) fail('not an object');
   if (typeof raw.accountId !== 'string' || raw.accountId === '') fail('accountId is required');
+  if (typeof raw.selfScript !== 'string' || raw.selfScript === '') fail('selfScript is required');
   if (!isObject(raw.watched)) fail('watched must be an object');
   if (!isObject(raw.notLive)) fail('notLive must be an object');
   if (!Array.isArray(raw.queues)) fail('queues must be an array');
@@ -50,6 +54,11 @@ export function validateConfig(raw: unknown): WatchdogConfig {
     if (!Array.isArray(w.crons)) fail(`${dir}: crons must be an array`);
     for (const c of w.crons as unknown[]) {
       if (!isObject(c) || typeof c.cron !== 'string') fail(`${dir}: each cron needs an expression`);
+      try {
+        cronMatcher(c.cron);
+      } catch (err) {
+        fail(`${dir}: ${err instanceof Error ? err.message : err}`);
+      }
       if (!positive(c.maxGapHours)) fail(`${dir} ${c.cron}: maxGapHours must be a positive number`);
     }
   }
