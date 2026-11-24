@@ -947,7 +947,7 @@ beyond the table above:
 ## Open
 
 0. **Production event emails.** Configured 2026-11-04: the `🔒 Send event email` column on Events
-   (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
+   (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Event Emails" (named "SVBC Class Emails" until 2026-11-24). Its
    `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
    First real sends (checked 2026-11-17): Kendra's reminder on 2026-11-11 (6 people) and, on 2026-11-14,
    a thank-you (7) and a second class's reminder (9), with timeline entries on the recipients' items; check-ins have
