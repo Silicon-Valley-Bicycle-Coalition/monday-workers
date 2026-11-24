@@ -28,7 +28,7 @@
     "@cloudflare/workers-types": "^5.20260822.1",
     "@turf/turf": "^7.2.0",
     "fflate": "^0.8",
-    "mapshaper": "^0.6",
+    "mapshaper": "^0.8",
     "shapefile": "^0.6.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",

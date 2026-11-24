@@ -28,12 +28,12 @@ routes, 24h for the calendar routes — with a KV last-known-good fallback per s
 - `npm run deploy` — Deploy Worker to Cloudflare
 - `npm run tail` — Stream live Worker logs
 - `npm run typecheck` — Regenerate Worker types and run `tsc --noEmit`
-- `npm test` — Run unit tests (Vitest + `@cloudflare/vitest-pool-workers`)
+- `npm test` — Run unit tests (Vitest + `@cloudflare/vitest-plugin`)
 
 ## Key details
 
 - TypeScript with `@cloudflare/workers-types`. Wrangler handles transpilation — no separate build step.
-- Tests use `@cloudflare/vitest-pool-workers` with `fetchMock` to intercept outbound calls. Tests live alongside their source files (`*.test.ts`) and in `test/`.
+- Tests use `@cloudflare/vitest-plugin` with `fetchMock` to intercept outbound calls. Tests live alongside their source files (`*.test.ts`) and in `test/`.
 - `EVENTBRITE_TOKEN` and `SLACK_WEBHOOK_URL` are secrets, set via `npx wrangler secret put`, never stored in code.
 - CORS is `Access-Control-Allow-Origin: *` on every response — never reflect the request's `Origin`, since cached responses carry no `Vary: Origin` ([GL#72](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/72)).
 - Public error bodies stay generic (`/events` 502s, `/status.json` omits `lastError`); upstream detail goes to `console.error`, KV and the Slack alert only.

@@ -1,11 +1,11 @@
 import path from "node:path";
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig, defineProject } from "vitest/config";
 
 export default defineConfig(
   defineProject({
     // The `ics` npm package (used by src/ics.ts, Task 6) depends on yup, nanoid, and runes2,
-    // each shipped as dual CJS/ESM packages. @cloudflare/vitest-pool-workers' module-fallback
+    // each shipped as dual CJS/ESM packages. @cloudflare/vitest-plugin's module-fallback
     // resolver disables CJS/ESM interop for modules reached via CJS requires, which breaks when
     // it resolves their ESM builds instead of CJS:
     //  - yup has no "exports" map, just "main"/"module" fields; forcing `mainFields: ['main']`
