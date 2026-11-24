@@ -71,6 +71,9 @@ function fakeVolunteerStore(rows: VolunteerActivityRow[] = []): VolunteerActivit
     markRemoved: vi.fn().mockResolvedValue(null), ownersWithActivity: vi.fn().mockResolvedValue([]) };
 }
 
+// A getDonationsByIds that reads these gifts, all of them dated.
+const donationsRead = (donations: unknown[]) => vi.fn().mockResolvedValue({ donations, undatedIds: [] });
+
 const NOW = new Date('2026-11-06T12:00:00Z');
 const renewalGift = { id: 'dn1', amountCents: 5000, dateISO: '2026-11-05', fiscalYear: 2027, status: 'Received',
   giftType: 'Donation', termStart: null, termEnd: null, membershipType: null };
@@ -152,7 +155,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     getDonorLinkForDonation: vi.fn().mockResolvedValue('donor-1'),
     getDonationState: vi.fn().mockResolvedValue('active'),
     getItemsBoardAndGroup: vi.fn().mockResolvedValue(new Map()),
-    getDonationsByIds: vi.fn().mockResolvedValue([]),
+    getDonationsByIds: donationsRead([]),
     getOwnerMembership: vi.fn().mockResolvedValue({ statusLabel: null, tierLabel: null, since: null, until: null,
       currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null }),
     getRegistration: vi.fn().mockResolvedValue(null),
@@ -202,7 +205,7 @@ async function runSponsor(cfg: DonationRollupsConfig, ownerBoard: string, histor
   (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
   const setItemDescription = vi.fn().mockResolvedValue(undefined);
   const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(ownerBoard), setItemDescription,
-    getDonationsByIds: vi.fn().mockResolvedValue(donations), ...clientOver });
+    getDonationsByIds: donationsRead(donations), ...clientOver });
   await processRecomputeBatch([fakeMessage('dn1')],
     { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: NOW });
   return { giftsStore, setItemDescription, mondayClient };
@@ -225,7 +228,7 @@ describe('sponsorships section in the recompute path', () => {
     (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
     const setItemDescription = vi.fn().mockResolvedValue(undefined);
     const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue('2'), setItemDescription,
-      getDonationsByIds: vi.fn().mockResolvedValue([sponsorDonation()]) });
+      getDonationsByIds: donationsRead([sponsorDonation()]) });
     await processRecomputeBatch([fakeMessage('dn1')],
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: new Date('2027-01-01T05:00:00Z') });
     const md = setItemDescription.mock.calls[0]![1] as string;
@@ -337,7 +340,7 @@ describe('gift-history projections in the recompute path', () => {
     const setItemDescription = vi.fn().mockResolvedValue(undefined);
     const mondayClient = fakeMondayClient({
       changeColumnValues, setItemDescription,
-      getDonationsByIds: vi.fn().mockResolvedValue([
+      getDonationsByIds: donationsRead([
         { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
@@ -357,7 +360,7 @@ describe('gift-history projections in the recompute path', () => {
     const setItemDescription = vi.fn().mockRejectedValue(new Error('monday API: Internal server error'));
     const mondayClient = fakeMondayClient({
       setItemDescription,
-      getDonationsByIds: vi.fn().mockResolvedValue([
+      getDonationsByIds: donationsRead([
         { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
@@ -375,7 +378,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     const giftsStore = fakeGiftsStore();
     (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory);
     const mondayClient = fakeMondayClient({
-      getDonationsByIds: vi.fn().mockResolvedValue([
+      getDonationsByIds: donationsRead([
         { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
       ...overrides,
@@ -521,7 +524,7 @@ describe('processRecomputeBatch', () => {
   });
 
   it('fetches every donation the reverse index knows about for this owner, grouped by board', async () => {
-    const getDonationsByIds = vi.fn().mockResolvedValue([]);
+    const getDonationsByIds = donationsRead([]);
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1', 'dnOld']], ['9', ['dnHist']]]));
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1', '1')],
@@ -532,7 +535,7 @@ describe('processRecomputeBatch', () => {
   });
 
   it('skips a configured board entirely when the index has no links there for this owner', async () => {
-    const getDonationsByIds = vi.fn().mockResolvedValue([]);
+    const getDonationsByIds = donationsRead([]);
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])); // nothing on board 9
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1')],
@@ -546,7 +549,7 @@ describe('processRecomputeBatch', () => {
     const donations: DonationRecord[] = [
       { id: 'd1', amountCents: 10000, dateISO: '2026-06-15', fiscalYear: 2026, status: 'Received' },
     ];
-    const mondayClient = fakeMondayClient({ getDonationsByIds: vi.fn().mockResolvedValue(donations) });
+    const mondayClient = fakeMondayClient({ getDonationsByIds: donationsRead(donations) });
     const run = (now: string) => processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(),
       linksStore: fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['d1']]])) }),
       affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(),
@@ -564,7 +567,7 @@ describe('processRecomputeBatch', () => {
     ];
     const mondayClient = fakeMondayClient({
       getItemBoardId: vi.fn().mockResolvedValue('3'), // matches the second configured owner board
-      getDonationsByIds: vi.fn().mockResolvedValue(donations),
+      getDonationsByIds: donationsRead(donations),
     });
     const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])) });
     const pendingStore = fakePendingStore();
@@ -666,7 +669,7 @@ describe('processRecomputeBatch', () => {
 
   it('waits (retries without a failure) while another recompute of the same owner holds the lease', async () => {
     const changeColumnValues = vi.fn().mockResolvedValue(undefined);
-    const getDonationsByIds = vi.fn().mockResolvedValue([]);
+    const getDonationsByIds = donationsRead([]);
     const pendingStore = fakePendingStore();
     const recomputesStore = fakeRecomputesStore(null, { leaseFree: false });
     const message = fakeMessage('dn6');
@@ -707,7 +710,7 @@ describe('membership step (spec 2026-10-09 — full-history fold)', () => {
     const mondayClient = fakeMondayClient({
       changeColumnValues,
       getItemBoardId: vi.fn().mockResolvedValue(over.ownerBoard ?? '2'),
-      getDonationsByIds: vi.fn().mockResolvedValue(over.donations ?? [renewalGift]),
+      getDonationsByIds: donationsRead(over.donations ?? [renewalGift]),
       getOwnerMembership: vi.fn().mockResolvedValue({ ...BLANK_BOARD, ...over.board }),
     });
     return { changeColumnValues, giftsStore, volunteerStore, mondayClient,
@@ -926,7 +929,7 @@ describe('owner recompute coalescing (fix 3)', () => {
   it('a successful recompute records the owner with fetched_at taken before the Monday fetch and written_at after the write', async () => {
     const order: string[] = [];
     const mondayClient = fakeMondayClient({
-      getDonationsByIds: vi.fn().mockImplementation(async () => { order.push('fetch'); return []; }),
+      getDonationsByIds: vi.fn().mockImplementation(async () => { order.push('fetch'); return { donations: [], undatedIds: [] }; }),
       changeColumnValues: vi.fn().mockImplementation(async () => { order.push('write'); }),
     });
     const recomputesStore = fakeRecomputesStore(null);
@@ -1190,7 +1193,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
     (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
     (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
     const mondayClient = fakeMondayClient({
-      getDonationsByIds: vi.fn().mockResolvedValue([donation]),
+      getDonationsByIds: donationsRead([donation]),
       getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'Uma @ Beta', personItemId: 'p-1', personBoardId: '2' }),
       ...over.monday });
     const affiliationsStore = fakeAffiliationsStore(over.affiliationsStore);
@@ -1257,7 +1260,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
       { id: 'dn2', amountCents: 10000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
     ];
     const mondayClient = fakeMondayClient({
-      getDonationsByIds: vi.fn().mockResolvedValue(donations),
+      getDonationsByIds: donationsRead(donations),
       // aff-a resolves person p-shared to board 2 (fresh); aff-b is deleted on Monday.
       getAffiliationSummary: vi.fn().mockImplementation(async (id: string) =>
         id === 'aff-a' ? { name: 'A name', personItemId: 'p-shared', personBoardId: '2' } : null),
@@ -1341,7 +1344,7 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
       const mondayClient = fakeMondayClient({
         getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
         getDonationState: vi.fn().mockResolvedValue(state),
-        getDonationsByIds: vi.fn().mockResolvedValue([]), // the only remaining link set is empty
+        getDonationsByIds: donationsRead([]), // the only remaining link set is empty
       });
       const linksStore = fakeLinksStore({
         getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }),
@@ -1484,7 +1487,7 @@ describe('registration messages (kind: registration)', () => {
       getRegistration: vi.fn().mockResolvedValue(over.registration === undefined ? reg() : over.registration),
       getEventStart: vi.fn().mockResolvedValue(over.eventStart === undefined ? '2027-05-02' : over.eventStart),
       getItemBoardId: vi.fn().mockResolvedValue(over.ownerBoard ?? '2'),
-      getDonationsByIds: vi.fn().mockResolvedValue([]),
+      getDonationsByIds: donationsRead([]),
     });
     const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map()) });
     return { changeColumnValues, volunteerStore, queue, pendingStore, mondayClient,
@@ -1594,7 +1597,7 @@ describe('write switch (consumeRecomputeBatch)', () => {
     const volunteerStore = fakeVolunteerStore();
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
     const mondayClient = fakeMondayClient({
-      getDonationsByIds: vi.fn().mockResolvedValue([{ id: 'dn1', amountCents: 5000, dateISO: '2026-01-15', fiscalYear: 2026, status: 'Received' }]),
+      getDonationsByIds: donationsRead([{ id: 'dn1', amountCents: 5000, dateISO: '2026-01-15', fiscalYear: 2026, status: 'Received' }]),
     });
     const deps: ProcessBatchDeps = { pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore,
       mondayClient, config: configWithAlert, queue, now: over.now ?? new Date('2026-01-01') };

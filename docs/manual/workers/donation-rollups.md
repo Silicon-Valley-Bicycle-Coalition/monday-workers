@@ -40,7 +40,8 @@ activity), and the Affiliations board (when employer sync is on) all reach this 
    Gift Ledger JSON and the item description (Gift History, plus Sponsorships on
    Organizations). Description writes are non-fatal.
 6. A gift that is deleted or has its Donor link cleared is soft-removed (`removed_at`) and its
-   old owner recomputed. A gift moved to another owner queues a recompute for the old owner.
+   old owner recomputed. An active gift whose Date is cleared (corrected to Pledged) is
+   soft-removed too, and comes back once it has a Date. A gift moved to another owner queues a recompute for the old owner.
 
 Only gifts whose Status is exactly `Received` count (`receivedStatusLabel`). `Received
 (Historical)` is excluded on purpose. Do not merge those two labels.

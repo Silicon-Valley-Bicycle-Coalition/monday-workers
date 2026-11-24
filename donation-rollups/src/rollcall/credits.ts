@@ -40,8 +40,9 @@ export function creditFor(
 ): { credit: string | null; unmatchedMatch: boolean } | 'ledger' | 'skip' {
   // A credit that names someone else (Matched By, Anonymous) comes from the flags alone, before
   // anything that decides whether the gift counts: not the amount, year, status or gift type.
-  // The ledger keeps its own copy of those facts, which can lag the board or, for a gift whose
-  // Date was cleared, never refresh at all, so it may still count a gift this read would skip.
+  // The ledger keeps its own copy of those facts, which lags the board until the consumer's next
+  // recompute (a cleared Date) or never refreshes at all (a cleared Amount), so it may still count
+  // a gift this read would skip.
   // Dropping the row there would hand the gift back to its Donor by name. rollCallGifts' counted()
   // decides whether it counts, from whichever copy it has.
   const matching = item.giftType === MATCHING;
