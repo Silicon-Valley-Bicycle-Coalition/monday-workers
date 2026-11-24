@@ -12,6 +12,8 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
 
 - [x] 🔒 Stewardship Email status column, labels at ids 0–4 (nothing at id 5):
   - Production People `18437909781`: `color_mm98qe1j`
+  - Production People (Historical) `18437909784`: `color_mm9dtn3c`, added 2026-11-24 so people can move
+    between the boards (`people-reclassification`)
   - Sandbox People `18437342592`: `color_mm98np52` (config filled)
 - [x] Worker code, sandbox run on 2026-11-19: it read all 7,684 sandbox people and planned 63 labels. 62 were
       held (none of those addresses are in the 2-member sandbox audience) and one renewal label was cleared

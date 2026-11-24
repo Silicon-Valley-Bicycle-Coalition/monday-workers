@@ -167,8 +167,10 @@ So:
   connects to both People boards, like every connect column that points at people, and the
   setup script (`member-portal/scripts/setup-production-boards.mjs`) does the same. From 2026-11-20
   the daily run failed on columns other Workers' rollouts had added to People alone (`SMS Opt-Out`,
-  `Stewardship Email`, `Mailchimp Profile`, `Email Preferences`, `Last Phone Contact`). Nobody was
-  due to move on those days.
+  `Stewardship Email`, `Mailchimp Profile`, `Email Preferences`, `Last Phone Contact`). They were
+  added to production's Historical board on 2026-11-24, and a dry run then passed the check (557 due out, 91 due
+  back, for the 2027-01-01 pass). Nobody was due to move by the daily paths in between. Sandbox Historical got the same
+  day's fix but still lacks the `Mailchimp Campaigns` connect column, so sandbox passes still refuse.
 * **After adding a column to either People board, run
   `MONDAY_API_TOKEN=... node scripts/match-people-columns.mjs --config config/<env>.json`** from this
   directory. It applies the Worker's own column check and exits 1 with the differences; `--apply`
