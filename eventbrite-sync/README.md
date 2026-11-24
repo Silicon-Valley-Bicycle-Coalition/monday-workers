@@ -435,7 +435,7 @@ answers of their own (see their sections).
   Eventbrite organizer account, and the main account is `Public`, so a ticketed event there, like the
   Bike Summit, gets a zip if its form asks;
 * `attendeeSync.registrations.homeZipColumn` isn't the placeholder, so a deploy can precede the column;
-* a `text` question whose wording has the whole word `zip` or `zipcode` holds a value that matches
+* a `text` question whose wording has the whole word `zip` or `zipcode`, or `código postal`, holds a value that matches
   `^\d{5}(-\d{4})?$` after trimming. The first valid answer wins, and only its first 5 digits are kept.
 
 Anything else counts as no answer and its text is discarded. With no valid answer the column is left
