@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { expectedTier, resolveColumns, columnValues, checkItem, rollupMoved, SCENARIOS, NEEDED_COLUMNS } from './donation-smoke.mjs';
+import { expectedTier, resolveColumns, columnValues, checkItem, paymentSteps, rollupMoved, SCENARIOS, NEEDED_COLUMNS } from './donation-smoke.mjs';
 
 const columns = NEEDED_COLUMNS.map((t, i) => ({ id: `c${i}`, title: t === 'Acknowledgment Tier' ? t : t }));
 const { byTitle: cols } = resolveColumns(columns);
@@ -35,6 +35,25 @@ describe('columnValues', () => {
     assert.equal(cols.get('Donor') in anon, false);
     assert.deepEqual(anon[cols.get('Anonymous Donor')], { checked: 'true' });
   });
+  it('writes a pledge with a Pledge Date and no Date, method or reference', () => {
+    const v = columnValues(cols, SCENARIOS[2], { donorItemId: '42', dateISO: '2026-11-24' });
+    assert.deepEqual(v[cols.get('Status')], { label: 'Pledged' });
+    assert.deepEqual(v[cols.get('Pledge Date')], { date: '2026-11-24' });
+    for (const t of ['Date', 'Payment Method', 'Check/Reference Number']) assert.equal(cols.get(t) in v, false);
+  });
+  it('writes no Pledge Date on a received gift', () => {
+    const v = columnValues(cols, SCENARIOS[0], { donorItemId: '42', dateISO: '2026-11-24' });
+    assert.equal(cols.get('Pledge Date') in v, false);
+  });
+});
+
+describe('paymentSteps', () => {
+  it('pays a pledge Date first, then Status', () => {
+    assert.deepEqual(paymentSteps(cols, { dateISO: '2026-11-25' }), [
+      { [cols.get('Date')]: { date: '2026-11-25' } },
+      { [cols.get('Status')]: { label: 'Received' } },
+    ]);
+  });
 });
 
 describe('checkItem', () => {
@@ -51,6 +70,18 @@ describe('checkItem', () => {
     assert.match(checkItem(cols, SCENARIOS[0], item('Major', 'Pending', ['42']))[0], /Status/);
     assert.match(checkItem(cols, SCENARIOS[0], item('Major', 'Received', []))[0], /1 linked donor/);
     assert.match(checkItem(cols, SCENARIOS[1], item('Standard', 'Received', ['42']))[0], /no linked donor/);
+  });
+});
+
+describe('checkItem on a pledge', () => {
+  const pledge = (date) => ({
+    text: new Map([[cols.get('Acknowledgment Tier'), 'Major'], [cols.get('Status'), 'Pledged'], [cols.get('Date'), date]]), donorIds: ['42'],
+  });
+  it('passes a pledge with a blank Date', () => {
+    assert.deepEqual(checkItem(cols, SCENARIOS[2], pledge('')), []);
+  });
+  it('fails a pledge that has a Date', () => {
+    assert.deepEqual(checkItem(cols, SCENARIOS[2], pledge('2026-11-24')), ['SMOKE pledge: Date is "2026-11-24", expected blank']);
   });
 });
 
