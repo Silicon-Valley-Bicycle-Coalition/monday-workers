@@ -134,6 +134,38 @@
       "pageUrl": "https://bikesiliconvalley.us9.list-manage.com/profile?u=f5051c378a338d4fba23caa04&id=eab542a5df"
     }
   },
+  "stewardship": {
+    "boardId": 18437909781,
+    "columns": {
+      "email": "email_mm8nx6qg",
+      "label": "color_mm98qe1j",
+      "membershipStatus": "color_mm8ng6nw",
+      "membershipTier": "color_mm8n5hh8",
+      "memberType": "color_mm8pz9ry",
+      "memberSince": "date_mm8nemca",
+      "memberUntil": "date_mm8n6xgb",
+      "hasActiveRecurringGift": "boolean_mm8nmjs9",
+      "doNotSolicit": "boolean_mm8nf0wq"
+    },
+    "plan": {
+      "labels": {
+        "welcomeDayAfter": "Welcome: day after",
+        "welcome3Weeks": "Welcome: 3 weeks",
+        "renewal3Weeks": "Renewal: 3 weeks before",
+        "renewal1Week": "Renewal: 1 week before",
+        "renewalDayOf": "Renewal: day of"
+      },
+      "activeStatusValue": "Active",
+      "lifetimeTierValue": "Lifetime",
+      "newMemberTypeValue": "New",
+      "catchUpDays": 2,
+      "renewalMonthsEarly": 1
+    },
+    "renewalOptOutTag": "renewal-opt-out",
+    "renewalInterest": "986d6c84bf",
+    "welcomeInterest": null,
+    "maxWritesPerRun": 200
+  },
   "employerAnswers": {
     "mergeField": "EMPLOYER",
     "boardId": 18437909781,
