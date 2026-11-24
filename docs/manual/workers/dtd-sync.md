@@ -65,7 +65,13 @@ A paired gift gets Match Status `Matched`, and pull stops overwriting it. Pairin
 **Summary:** recomputes one row per fiscal year (current and previous) on the Matching Gift Program
 board from scratch.
 
-D1 tables: `dtd_records`, `pushes`, `sync_state` (the pull watermark).
+**Prompt (off):** with `outreach.mode` set to `email` in config, the hourly run is pairing and then one
+matching-gift email per eligible gift, and pull and push never run. Both configs ship `outreach: null`,
+so no email has ever been sent. It sends through the `EMAIL` binding; in the sandbox every recipient is
+rewritten to `sandbox@bikesiliconvalley.org`. How to turn it on is in the
+[README](../../../dtd-sync/README.md), "Post-gift email".
+
+D1 tables: `dtd_records`, `pushes`, `prompts` (post-gift emails), `sync_state` (the pull watermark).
 
 ## Monday boards and columns
 
@@ -132,6 +138,9 @@ See [Operations](../07-operations.md).
 | Push sends nothing in sandbox; logs "not-allow-listed" | `push.allowEmails` is `null` | Add staff test addresses |
 | Match Status stops changing on a gift | Gift is paired (`Matched`); pull no longer overwrites it | Expected |
 | Matching Donation left at Needs review | No single candidate, or match has no Amount | Staff set Matches gift by hand and Match pairing to `Staff` |
+| Log `dtd-sync: prompt item <id> stuck` | A run died between claiming a gift and recording the send, so the email may have gone out | Never retried. If the sending log shows it didn't go, delete that row from `prompts` |
+| Log `dtd-sync: prompt skipped, pairing failed` | Pairing threw, so a gift might already be matched | Fix pairing; the next run sends |
+| `People has no doNotSolicit column` | Wrong column id in `outreach.people` | Correct the id. Nothing is sent meanwhile, by design |
 | `people-reclassification` stops moving people after setup | DTD columns landed on People but not People (Historical) | Re-run `setup-columns.mjs` until it finishes (idempotent) |
 | Worker throws at load | Config placeholder left in `config/svbc.json` | Fill every id from `setup-columns.mjs` output |
 
