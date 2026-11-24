@@ -99,6 +99,15 @@ describe('wrangler.jsonc env.sandbox', () => {
   });
 });
 
+describe('wrangler.jsonc routes', () => {
+  // `routes` is inheritable, unlike bindings: without its own, the sandbox would take production's.
+  it('serves the sandbox on its own custom domain only', () => {
+    expect(sandboxEnv.routes).toEqual([{ pattern: 'nearby.sandbox.bikesiliconvalley.org', custom_domain: true }]);
+    const prod = (wrangler.routes as { pattern: string }[] | undefined) ?? [];
+    expect(prod.map((r) => r.pattern)).not.toContain('nearby.sandbox.bikesiliconvalley.org');
+  });
+});
+
 describe('wrangler.jsonc workers_dev', () => {
   it('is off in production and the sandbox (custom domain behind Access)', () => {
     expect(wrangler.workers_dev).toBe(false);

@@ -37,9 +37,9 @@
   "osm": {
     "nominatimUrl": "https://nominatim.openstreetmap.org",
     "overpassUrl": "https://overpass-api.de/api/interpreter",
-    "userAgent": "REPLACE_WITH_USER_AGENT (svbc-nearby-search; contact address)"
+    "userAgent": "svbc-nearby-search-sandbox (sandbox@bikesiliconvalley.org)"
   },
   "serviceArea": [36.89, -122.53, 37.71, -121.20],
-  "access": { "teamDomain": "REPLACE_WITH_ACCESS_TEAM_DOMAIN", "aud": "REPLACE_WITH_SANDBOX_ACCESS_AUD" },
+  "access": { "teamDomain": "bikesiliconvalley.cloudflareaccess.com", "aud": "REPLACE_WITH_SANDBOX_ACCESS_AUD" },
   "geocode": { "censusUrl": "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress", "perRun": 200 }
 }
