@@ -133,7 +133,7 @@ throws a config error naming both. Local `wrangler dev` has no broker to call, s
 
 ## Sandbox environment
 
-`npm run deploy:sandbox` deploys `svbc-report-digests-sandbox` against the `(sandbox v3)` boards.
+`npm run deploy:sandbox` deploys `svbc-report-digests-sandbox` against the `(sandbox v4)` boards.
 The `EMAIL` binding may only deliver to `sandbox@bikesiliconvalley.org` (Cloudflare enforces it),
 and `src/email/sandboxBinding.ts` rewrites every recipient to that address, noting the original.
 `config/split.test.ts` keeps the two environments apart.
@@ -141,8 +141,8 @@ and `src/email/sandboxBinding.ts` rewrites every recipient to that address, noti
 Deployed and secrets set 2026-10-26. All five digests rendered correctly from live sandbox data
 under `wrangler dev --env sandbox`. The deployed Worker built each digest, but Cloudflare
 reported **`permanent delivery failure for: sandbox@bikesiliconvalley.org`** on every send, even
-the smallest. The sink mailbox is rejecting mail. Check that it still exists before relying on
-sandbox email from any Worker.
+the smallest. A test email sent to the mailbox with `wrangler email sending send` on 2026-11-24 arrived,
+so the mailbox accepts mail now. A digest from the deployed Worker hasn't been retried (#45).
 
 ## Production (cutover weekend)
 

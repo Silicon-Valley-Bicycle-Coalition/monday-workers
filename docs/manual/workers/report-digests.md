@@ -106,8 +106,9 @@ bodies as length only). See [Operations](../07-operations.md).
 | Operator route 401 | Wrong or missing bearer secret | Use the current `DIGESTS_SECRET` |
 | Operator route 503 | Switch is `hold` or unreadable | Set writes `on` |
 
-**To verify:** that the sandbox mailbox accepts mail. Earlier sandbox sends from this Worker were
-rejected by it.
+The sandbox mailbox accepts mail: a test email to it, sent with `wrangler email sending send`, arrived
+on 2026-11-24. Sandbox sends from this Worker were rejected on 2026-10-26; a digest send hasn't been
+retried as part of #45.
 
 Production's `EMAIL` binding has no platform destination allowlist, because that would list staff
 addresses in the repo. `recipientDomains` is the guard; don't remove it.

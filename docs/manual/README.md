@@ -66,11 +66,7 @@ flows, vendor-side settings) are marked **To verify:** in the text. When you con
 the marker and update the count below.
 
 <!-- to-verify-list: regenerate with  grep -c 'To verify' docs/manual/*.md docs/manual/workers/*.md -->
-Open items, by file. Search each file for **To verify** to find them.
-
-| File | Open items |
-|---|---|
-| [`workers/report-digests.md`](workers/report-digests.md) | 1 |
+No open items as of 2026-11-24. When there are some, list them here by file, with a count.
 
 ## Building the PDF
 
