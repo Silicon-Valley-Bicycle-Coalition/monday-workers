@@ -534,11 +534,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       '(public, volunteering, bike parking, group rides, private). One item per event; who came ' +
       `is on Event Registrations. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Events',
-    // Written per Public event by eventbrite-sync once the send page is deployed.
-    columns: [{ title: 'Send class email', type: 'link' }],
+    // Written on every Eventbrite event by eventbrite-sync once the send page is deployed.
+    columns: [{ title: 'Send event email', type: 'link' }],
     columnDescriptions: {
-      'Send class email': 'Opens the page that emails everyone registered for this class. Filled in by ' +
-        'the Eventbrite integration for Public classes.',
+      'Send event email': 'Opens the page that emails everyone registered for this event. Filled in by ' +
+        'the Eventbrite integration for every Eventbrite event.',
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
@@ -547,9 +547,9 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Tickets Sold': "Eventbrite's count at migration; not maintained until the Eventbrite integration runs.",
     },
     views: [
-      { name: 'Upcoming', tag: 'Report', columns: ['Date', 'Program', 'Venue', 'City', 'Tickets Sold', 'Eventbrite URL'],
+      { name: 'Upcoming', tag: 'Report', columns: ['Date', 'Send event email', 'Program', 'Venue', 'City', 'Tickets Sold', 'Eventbrite URL'],
         filter: { rules: UPCOMING_EVENT }, sort: [{ columnTitle: 'Date' }] },
-      { name: 'All events', tag: 'Reference', columns: ['Date', 'Program', 'Event Status', 'Source', 'City'],
+      { name: 'All events', tag: 'Reference', columns: ['Date', 'Send event email', 'Program', 'Event Status', 'Source', 'City'],
         groupBy: { columnTitle: 'Event Status' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
         coloring: [{ columnTitle: 'Event Status', labelValues: ['Completed', 'Canceled'], color: 'grey' }] },
     ],
