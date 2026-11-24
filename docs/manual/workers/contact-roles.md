@@ -2,7 +2,7 @@
 
 [Appendix A](../reference/contact-roles.md) lists this Worker's routes, crons, queues, storage and bindings.
 
-`contact-roles` runs as the Cloudflare Worker `svbc-contact-roles` (sandbox: `svbc-contact-roles-sandbox`). It has no hostname and no HTTP surface: every request gets a 404, and the only entry point is a cron. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). It ships with its write switch off. Check the root README's [Status at a glance](../../../README.md#status-at-a-glance) table for where it is deployed and whether writes are on.
+`contact-roles` runs as the Cloudflare Worker `svbc-contact-roles` (sandbox: `svbc-contact-roles-sandbox`). It has no hostname and no HTTP surface: every request gets a 404, and the only entry point is a cron. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). A new deployment ships with its write switch off; production went on 2026-11-24. Check the root README's [Status at a glance](../../../README.md#status-at-a-glance) table for where it is deployed and whether writes are on.
 
 ## What it does
 
@@ -33,7 +33,7 @@ Board ids live in [`config/svbc.json`](../../../contact-roles/config/svbc.json) 
 
 Each board in config has either one fixed `role` or a `typeColumn` plus `typeRoles` map (Leads uses the item's Type to choose the role).
 
-In production, Sponsorships (`Organization` → Sponsorship) and Donations (`Matched By` → Donation Matching) are enabled. Grants & Contracts, BP Request Form, Bike Education Lifecycle Tracker and Leads are disabled because they have no link to the Organizations board. To turn one on, add the link on the board, point `orgColumn` at it, set `enabled: true`, and re-run the provisioning script so the board gets its `Contacts` column. The sandbox covers Sponsorships, Grants & Contracts and Donations.
+In production, 2027 PROSPECTING - Sponsorships (`Sponsor (Organization)` → Sponsorship) and Donations (`Matched By` → Donation Matching) are enabled. Sponsorships (past cycles), Grants & Contracts, BP Request Form, Bike Education Lifecycle Tracker and Leads are disabled; the [README](../../../contact-roles/README.md#which-boards-are-on) says why for each. A new year's prospecting board needs its own entry. To turn a board on, make sure it has a link to Organizations, point `orgColumn` at it, set `enabled: true`, and re-run the provisioning script so the board gets its `Contacts` column. The sandbox covers Sponsorships, Grants & Contracts and Donations.
 
 ## Secrets
 

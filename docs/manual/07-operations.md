@@ -33,7 +33,7 @@ the row as `MISMATCH`. Fix it by re-running the same command.
 - **Leave `hold` with `on`, never `off`.** Going from `hold` to `off` throws away everything
   held.
 - **Never run `all writes on`.** Several Workers must stay `off` until their own rollout gates
-  pass: `contact-roles`, `impact-attribution`, `dtd-sync`, `nearby-search` and `quickbooks-sync`.
+  pass: `impact-attribution`, `dtd-sync`, `nearby-search` and `quickbooks-sync`.
   `all` would turn them on. Flip Workers one at a time.
 - **Wait about a minute after `hold`** before relying on it. Reads are cached for 30 seconds.
 - `sync-watchdog` alerts when a production Worker's switch isn't the value in its config
