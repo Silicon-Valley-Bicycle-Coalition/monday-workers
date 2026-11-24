@@ -10,6 +10,7 @@ export interface GiftClassification { fundingStream: string; giftSize: string; f
 export const FUNDING_STREAMS = [
   'Individual Giving', 'Membership', 'Sponsorships', 'Grants & Contracts',
   'Matching Donations', 'Other Program Revenue', 'Donor Advised Funds', 'Event Tickets',
+  'Foundation & Corp Contributions',
 ] as const;
 
 // Gift Type holds Salesforce RecordType display names ("Matching Donation"); the migration
@@ -29,6 +30,7 @@ const STREAM_BY_TYPE = new Map<string, string>([
   ['drivertraining', 'Other Program Revenue'],
   ['donoradvisedfund', 'Donor Advised Funds'],
   ['eventticket', 'Event Tickets'],
+  ['foundationcorpcontributions', 'Foundation & Corp Contributions'],
 ]);
 
 // The $200 and $1k edges are the Salesforce "Donation size" buckets staff reported on for years
