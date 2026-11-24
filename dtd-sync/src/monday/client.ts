@@ -10,6 +10,9 @@ export interface DonationItem {
 }
 export interface PersonItem { id: string; email: string | null; householdEmail: string | null; firstName: string; lastName: string; phone: string | null; dtdCompanyId: string | null }
 
+/** A People donor with what the post-gift email needs. */
+export interface PromptDonor extends PersonItem { employerName: string | null; doNotSolicit: boolean }
+
 export interface DtdMondayClient {
   findDonationByFunraiseId(id: string): Promise<DonationItem | null>;
   findDonationBySalesforceId(id: string): Promise<DonationItem | null>;
