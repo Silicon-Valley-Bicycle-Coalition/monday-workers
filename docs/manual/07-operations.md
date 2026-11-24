@@ -206,8 +206,8 @@ comment describing its usage. Load your Monday token first (`source .env.product
 | `check-monday-token-scope.mjs` | Which workspaces and boards a Monday token can actually reach |
 | `make-boards-private.mjs` | List or change board privacy, with a dry run by default. As of this writing `--apply` fails on SVBC's account, so make boards private in the UI. |
 | `mark-read-only-columns.mjs` | Adds 🔒 and 📜 to the columns in `MARKED_COLUMNS` |
-| `check-donation-form.mjs` | Checks the staff "Enter a gift" form shows only the expected questions (`--form <token>`) |
-| `smoke-donation-entry.mjs` | Creates, checks and deletes test gifts on a **sandbox** Donations board |
+| `check-donation-form.mjs` | Checks the staff "Enter a gift" form shows only the expected questions, each for the right Status (`--form <token>`) |
+| `smoke-donation-entry.mjs` | Creates, checks and deletes test gifts, and a pledge through to payment, on a **sandbox** Donations board |
 | `windfall-board.mjs`, `funding-leads-board.mjs`, `sponsor-outreach-setup.mjs`, `propose-partner-types.mjs` | One-off board builders, each with a runbook in `docs/runbooks/` |
 | `build-font-modules.mjs` | Regenerates the self-hosted fonts in `member-portal` and `svbc-calendars` |
 | `manual-reference.mjs`, `check-manual.mjs`, `build-manual.mjs` | This manual |

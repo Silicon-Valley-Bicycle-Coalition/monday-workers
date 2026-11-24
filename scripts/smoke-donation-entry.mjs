@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Smoke test for manual donation entry, against a SANDBOX Donations board only. Creates the same
-// items the "Enter a gift" form creates (a person's check, an anonymous cash gift), checks what the
-// board does with them (Acknowledgment Tier, Status, the donor link), optionally checks that the
-// donor's Lifetime Giving moves (donation-rollups), then deletes everything it created.
+// items the "Enter a gift" form creates (a person's check, an anonymous cash gift, a pledge), checks
+// what the board does with them (Acknowledgment Tier, Status, the donor link), optionally checks the
+// donor's Lifetime Giving (donation-rollups: the check counts, the pledge counts once and only once
+// it is paid), then deletes everything it created.
 //
 //   MONDAY_API_TOKEN=... node scripts/smoke-donation-entry.mjs --board 18437342657 --donor <People item id>
 //   MONDAY_API_TOKEN=... node scripts/smoke-donation-entry.mjs --board 18437342657 --donor 13397907956 --rollups
+//   ... --rollups --pay-status-first   (pays the pledge Status first, then Date)
 //
 // Why it does not submit the form itself: the monday GraphQL API can edit a form but has no
 // mutation to submit one. The form's own shape is checked by scripts/check-donation-form.mjs.
@@ -20,15 +22,16 @@
 import { fileURLToPath } from 'node:url';
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
 import { bareTitle } from './lib/column-titles.mjs';
-import { SCENARIOS, resolveColumns, columnValues, checkItem, rollupMoved } from './lib/donation-smoke.mjs';
+import { SCENARIOS, resolveColumns, columnValues, checkItem, paymentSteps, rollupMoved } from './lib/donation-smoke.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 
 export function parseArgs(argv) {
-  const args = { board: null, donor: null, rollups: false, wait: 90 };
+  const args = { board: null, donor: null, rollups: false, wait: 90, payStatusFirst: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--rollups') { args.rollups = true; continue; }
+    if (a === '--pay-status-first') { args.payStatusFirst = true; continue; }
     if (a !== '--board' && a !== '--donor' && a !== '--wait') throw new Error(`unknown argument "${a}"`);
     const v = argv[++i];
     if (v === undefined || !/^\d+$/.test(v)) throw new Error(`${a} needs a numeric value`);
@@ -38,6 +41,7 @@ export function parseArgs(argv) {
   }
   if (!args.board) throw new Error('--board <Donations board id> is required');
   if (!args.donor) throw new Error('--donor <People item id> is required');
+  if (args.payStatusFirst && !args.rollups) throw new Error('--pay-status-first needs --rollups');
   return args;
 }
 
@@ -79,6 +83,24 @@ async function lifetimeGiving(token, donorId) {
   return Number((col.text || '0').replace(/[$,]/g, ''));
 }
 
+// Waits for the donor's Lifetime Giving to rise by `amount` over `before`, then (so a late or double
+// count is caught) reads it again after HOLD_MS. Returns the problem, or null.
+const HOLD_MS = 20_000;
+async function checkGiving(token, donorId, before, amount, waitSeconds, label) {
+  let after = before;
+  for (let waited = 0; waited < waitSeconds; waited += 5) {
+    after = await lifetimeGiving(token, donorId);
+    if (rollupMoved(before, after, amount)) break;
+    await sleep(5000);
+  }
+  if (!rollupMoved(before, after, amount)) {
+    return `${label}: donor Lifetime Giving did not rise by ${amount} within ${waitSeconds}s (${before} -> ${after}); is donation-rollups:writes on for the sandbox?`;
+  }
+  await sleep(HOLD_MS);
+  after = await lifetimeGiving(token, donorId);
+  return rollupMoved(before, after, amount) ? null : `${label}: donor Lifetime Giving moved again (${before} -> ${after}), expected +${amount}`;
+}
+
 async function cleanup(token, created) {
   for (const c of created) {
     try {
@@ -97,12 +119,13 @@ async function main() {
     args = parseArgs(process.argv.slice(2));
     if (!token) throw new Error('MONDAY_API_TOKEN is not set');
   } catch (err) {
-    console.error(`${err.message}\nusage: MONDAY_API_TOKEN=... node scripts/smoke-donation-entry.mjs --board <id> --donor <item id> [--rollups] [--wait <seconds>]`);
+    console.error(`${err.message}\nusage: MONDAY_API_TOKEN=... node scripts/smoke-donation-entry.mjs --board <id> --donor <item id> [--rollups [--pay-status-first]] [--wait <seconds>]`);
     return 2;
   }
 
   const created = [];
   const problems = [];
+  let donorBefore = null;
   try {
     const data = await query(token, `query($ids:[ID!]){ boards(ids:$ids){ name columns { id title } } }`, { ids: [args.board] });
     const board = data.boards[0];
@@ -110,7 +133,7 @@ async function main() {
     if (!isSandboxName(board.name)) throw new Error(`refusing: board "${board.name}" is not a sandbox board`);
     const { byTitle, missing } = resolveColumns(board.columns);
     if (missing.length > 0) throw new Error(`board is missing columns: ${missing.join(', ')}`);
-    const donorBefore = args.rollups ? await lifetimeGiving(token, args.donor) : null;
+    donorBefore = args.rollups ? await lifetimeGiving(token, args.donor) : null;
     console.log(`Board: ${board.name} (${args.board})`);
 
     const dateISO = new Date().toISOString().slice(0, 10);
@@ -137,19 +160,24 @@ async function main() {
     }
 
     if (args.rollups) {
-      const person = SCENARIOS.find((s) => s.donor);
-      let after = donorBefore;
-      for (let waited = 0; waited < args.wait; waited += 5) {
-        after = await lifetimeGiving(token, args.donor);
-        if (rollupMoved(donorBefore, after, person.amount)) break;
-        await sleep(5000);
-      }
-      if (rollupMoved(donorBefore, after, person.amount)) {
-        console.log(`OK   donor Lifetime Giving moved ${donorBefore} -> ${after}`);
-      } else {
-        problems.push(`donor Lifetime Giving did not rise by ${person.amount} within ${args.wait}s (${donorBefore} -> ${after}); is donation-rollups:writes on for the sandbox?`);
-        console.log('FAIL donor Lifetime Giving');
-      }
+      const person = SCENARIOS.find((s) => s.donor && s.status === undefined);
+      const pledge = created.find((c) => c.scenario.status === 'Pledged');
+      const steps = paymentSteps(byTitle, { dateISO });
+      if (args.payStatusFirst) steps.reverse();
+      const pay = (values) => query(token, `mutation($b:ID!,$i:ID!,$v:JSON!){ change_multiple_column_values(board_id:$b, item_id:$i, column_values:$v){ id } }`,
+        { b: args.board, i: pledge.id, v: JSON.stringify(values) });
+      const check = async (amount, label) => {
+        const problem = await checkGiving(token, args.donor, donorBefore, amount, args.wait, label);
+        if (problem) problems.push(problem);
+        console.log(`${problem ? 'FAIL' : 'OK  '} ${label}`);
+      };
+      await check(person.amount, 'the check counts and the pledge does not');
+      await pay(steps[0]);
+      // donation-rollups takes up to ~30 s to move a total, so give a wrong count time to show.
+      await sleep(40_000);
+      await check(person.amount, `the pledge does not count after only its ${args.payStatusFirst ? 'Status' : 'Date'} is set`);
+      await pay(steps[1]);
+      await check(person.amount + pledge.scenario.amount, 'the paid pledge counts once');
     }
   } catch (err) {
     console.error(err.cause ? `${err.message}: ${err.cause.message ?? err.cause}` : err.message);
@@ -157,6 +185,23 @@ async function main() {
     return 2;
   }
   await cleanup(token, created);
+  // Wait for the deletes to reach the total, or the next run reads a stale baseline.
+  if (args.rollups) {
+    const label = 'Lifetime Giving is back where it started after the deletes';
+    let after = null;
+    try {
+      for (let waited = 0; waited < args.wait; waited += 5) {
+        after = await lifetimeGiving(token, args.donor);
+        if (rollupMoved(donorBefore, after, 0)) break;
+        await sleep(5000);
+      }
+    } catch (err) {
+      console.error(err.message);
+    }
+    const settled = after !== null && rollupMoved(donorBefore, after, 0);
+    if (!settled) problems.push(`${label}: no, ${donorBefore} -> ${after} after ${args.wait}s`);
+    console.log(`${settled ? 'OK  ' : 'FAIL'} ${label}`);
+  }
   if (problems.length === 0) {
     console.log('PASS');
     return 0;

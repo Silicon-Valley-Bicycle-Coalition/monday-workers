@@ -1,16 +1,36 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPECTED_QUESTIONS, EXPECTED_TYPES, checkForm } from './donation-form.mjs';
+import { EXPECTED_QUESTIONS, EXPECTED_TYPES, checkForm, shownForLabels } from './donation-form.mjs';
 
-const question = (title, extra = {}) => ({ id: `id_${title}`, type: 'ShortText', title, visible: true, required: false, ...extra });
-const goodForm = () => ({
-  questions: [
-    { id: 'page', type: 'PAGE_BLOCK', title: 'Page', visible: true, required: false },
-    ...Object.entries(EXPECTED_QUESTIONS).map(([title, required]) => question(title, { required, ...(EXPECTED_TYPES[title] ? { type: EXPECTED_TYPES[title] } : {}) })),
-    question('🔒 Funding Stream', { visible: false }),
+const question = (title, extra = {}) => ({ id: `id_${title}`, type: 'ShortText', title, visible: true, required: false, showIfRules: { operator: 'OR', rules: [] }, ...extra });
+// A show-if rule as monday returns it (read back 2026-11-24).
+const rule = (values, questionId = 'status') => ({ operator: 'OR', rules: [{ operator: 'OR', conditions: [{ building_block_id: questionId, operator: 'OR', values }] }] });
+const STATUS = {
+  id: 'status',
+  options: [
+    { label: 'Received', value: '0', visible: true },
+    { label: 'Failed', value: '2', visible: true },
+    { label: 'Pending', value: '3', visible: true },
+    { label: 'Lost', value: '4', visible: false },
+    { label: 'Pledged', value: '7', visible: true },
   ],
-  features: { requireLogin: { enabled: true } },
-});
+};
+const NOT_PLEDGED = ['0', '2', '3'];
+const goodForm = () => {
+  const form = {
+    questions: [
+      { id: 'page', type: 'PAGE_BLOCK', title: 'Page', visible: true, required: false },
+      ...Object.entries(EXPECTED_QUESTIONS).map(([title, required]) => question(title, { required, ...(EXPECTED_TYPES[title] ? { type: EXPECTED_TYPES[title] } : {}) })),
+      question('🔒 Funding Stream', { visible: false }),
+    ],
+    features: { requireLogin: { enabled: true } },
+  };
+  const named = (title) => form.questions.find((q) => q.title === title);
+  Object.assign(named('Status'), structuredClone(STATUS));
+  named('Pledge date').showIfRules = rule(['7']);
+  for (const title of ['Date received', 'Payment Method', 'Check/Reference Number']) named(title).showIfRules = rule(NOT_PLEDGED);
+  return form;
+};
 
 describe('checkForm', () => {
   it('passes the configured form, ignoring hidden questions and the page block', () => {
@@ -51,5 +71,59 @@ describe('checkForm', () => {
     assert.match(checkForm(form)[0], /Require login/);
     delete form.features;
     assert.match(checkForm(form)[0], /Require login/);
+  });
+
+  it('requires the Pledge date question', () => {
+    const form = goodForm();
+    form.questions = form.questions.filter((q) => q.title !== 'Pledge date');
+    assert.deepEqual(checkForm(form), ['expected question "Pledge date" is hidden or missing']);
+  });
+
+  it('flags a conditional question whose rule was lost', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Date received').showIfRules = { operator: 'OR', rules: [] };
+    assert.deepEqual(checkForm(form), ['"Date received" should be shown for Received, Failed, Pending; it is always shown']);
+  });
+
+  it('flags Pledge date shown for the wrong status', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Pledge date').showIfRules = rule(['0']);
+    assert.deepEqual(checkForm(form), ['"Pledge date" should be shown for Pledged; it is shown for Received']);
+  });
+
+  it('flags a visible status that leaves Date received hidden', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Status').options.push({ label: 'Refunded', value: '17', visible: true });
+    assert.ok(checkForm(form).some((p) => p.startsWith('"Date received" should be shown for Received, Failed, Pending, Refunded')));
+  });
+
+  it('flags Status without a visible Pledged option', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Status').options.find((o) => o.label === 'Pledged').visible = false;
+    assert.ok(checkForm(form).includes('Status should offer "Pledged"'));
+  });
+
+  it('flags an unconditional question that gained a rule', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Donor').showIfRules = rule(['0']);
+    assert.deepEqual(checkForm(form), ['"Donor" should always be shown; it is shown for Received']);
+  });
+
+  it('flags a rule that depends on a question other than Status', () => {
+    const form = goodForm();
+    form.questions.find((q) => q.title === 'Date received').showIfRules = rule(['1'], 'anonymous');
+    assert.deepEqual(checkForm(form), ['"Date received" has a rule on a question other than Status']);
+  });
+});
+
+describe('shownForLabels', () => {
+  it('is null for a question with no rule', () => {
+    assert.equal(shownForLabels(question('Donor'), STATUS), null);
+    assert.equal(shownForLabels({ title: 'Donor' }, STATUS), null);
+  });
+
+  it('is the visible Status labels of every rule and condition', () => {
+    const showIfRules = { operator: 'OR', rules: [...rule(['3', '4']).rules, ...rule(['0']).rules] };
+    assert.deepEqual(shownForLabels({ title: 'x', showIfRules }, STATUS), new Set(['Received', 'Pending']));
   });
 });

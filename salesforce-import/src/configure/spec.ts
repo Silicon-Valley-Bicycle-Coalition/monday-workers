@@ -369,7 +369,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Status': 'Received, or Received (Historical) for gifts staff filed under Salesforce’s ' +
         'legacy Closed Won stage (Eventbrite ticket orders also arrive as Closed Won, but those ' +
         'are Received with Gift Type Event Ticket). Failed and Pending are real outcomes, not ' +
-        'stages to work. Closed Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
+        'stages to work. Pledged is promised but not paid: Date stays blank until the money arrives. ' +
+        'Closed Lost is a sponsorship, grant or contract pitch that didn’t land, or an ' +
         'old Salesforce prospect nobody closed; it counts toward nothing.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grants, Contracts… For a gift from a donor-advised fund, ' +
@@ -414,8 +415,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Gift Fiscal Year': 'The fiscal year the gift date falls in, e.g. FY2026. ' + NIGHTLY_CLASSIFY,
     },
     views: [
+      // Pledged gifts (promised, not paid; 2026-11-24) stay out of the views below. The two pledge views,
+      // Pledges to invoice and Pledges awaiting payment, aren't here: the second needs a nested filter
+      // this spec can't express, and configure never touches a view it doesn't list.
       { name: 'Recent gifts', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] }] },
         groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       // These two are emailed weekly by the report-digests Worker (monday-migration docs/35 §3.6).
       { name: 'Gifts, last 7 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
@@ -425,13 +430,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 60] }] },
         sort: [{ columnTitle: 'Amount', direction: 'desc' }] },
       { name: 'Revenue by funding stream', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Fiscal Year', 'Gift Type'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] }] },
         groupBy: { columnTitle: 'Funding Stream' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'By gift size', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'not_any_of', labelValues: ['Pledged'] }] },
         groupBy: { columnTitle: 'Gift Size' }, sort: [{ columnTitle: 'Amount', direction: 'desc' }] },
       { name: 'By fiscal quarter', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'not_any_of', labelValues: ['Pledged'] }] },
         groupBy: { columnTitle: 'Fiscal Quarter', direction: 'desc' } },
       { name: 'Major gifts to thank', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Thank You Sent'],
-        filter: { rules: [{ columnTitle: 'Acknowledgment Tier', operator: 'any_of', labelValues: ['Major'] }, { columnTitle: 'Thank You Sent', operator: 'is_empty' }] },
+        filter: { rules: [{ columnTitle: 'Acknowledgment Tier', operator: 'any_of', labelValues: ['Major'] }, { columnTitle: 'Thank You Sent', operator: 'is_empty' }, { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] }] },
         sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Unacknowledged', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Gift Type'],
         filter: { rules: [{ columnTitle: 'Thank You Sent', operator: 'is_empty' }, { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] }] },
@@ -439,7 +447,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Membership payments', tag: 'Reference', columns: ['Donor', 'Amount', 'Term Start', 'Term End', 'Membership Type'],
         filter: { rules: [{ columnTitle: 'Term Start', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Term End', direction: 'desc' }] },
       { name: 'Matching gifts', tag: 'Reference', columns: ['Donor', 'Amount', 'Date', 'Matched By'],
-        filter: { rules: [{ columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Matching Donation'] }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+        filter: { rules: [{ columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Matching Donation'] }, { columnTitle: 'Status', operator: 'not_any_of', labelValues: ['Pledged'] }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       // Martha's month-end reconciliation reports, rebuilt from her private Salesforce reports
       // (Individual / Matching / Sponsorship Reconciliation). Ungrouped on purpose (2026-11-11): the
       // Amount footer's Sum is then one total for the whole view, which a grouped view splits per group;
@@ -469,6 +477,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Reconciliation: sponsorships', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Sponsorship Cycle', 'Status'],
         filter: { rules: [
+          { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] },
           { columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 },
           // Sponsorship only: "In Kind Donation / Sponsorship" is goods, not sponsorship cash, so it
           // stays out of the sum.
