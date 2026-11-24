@@ -1,6 +1,7 @@
 # Manual donation entry form — design
 
-**Status:** draft, 2026-11-11. Nothing built in Monday yet.
+**Status:** built on the sandbox and production, 2026-11-11 (see the build sections below). Pledges,
+and the questions that depend on Status, are in `2026-11-24-pledges-and-invoices-design.md`.
 
 ## Problem
 

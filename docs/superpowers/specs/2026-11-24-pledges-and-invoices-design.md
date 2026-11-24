@@ -154,3 +154,23 @@ Organizations: Accounts Payable `long_text_mm9dntrm`. The API created all of the
   Cash/Check, no Pledge Date.
 - Accounts Payable typed on the organization showed on both items' mirror.
 - Typing a Status and pressing Return does not select it; the option must be picked.
+
+**Rollups.** `smoke-donation-entry.mjs --rollups` passed in both payment orders: the pledge moved
+nothing when entered, nothing after only its Date or only its Status was set (60 s hold), and
+counted once when both were. `donation-rollups` takes about 30 s to move a total.
+
+**Views.** Pledges to invoice 293852958; Pledges awaiting payment 293852963 (nested groups, set
+through `create_view_table`). Every other setting on the existing views read back unchanged, plus
+the four new columns hidden.
+
+| View | Before | After | Difference |
+|---|---|---|---|
+| Recent gifts | 4,125 | 3,825 | 300 Failed or Pending |
+| Revenue by funding stream | 4,125 | 3,825 | 300 Failed or Pending |
+| Major gifts to thank | 400 | 381 | 4 Failed, 15 Pending |
+| By gift size, By fiscal quarter | 4,125 | 4,125 | none |
+| Matching gifts | 366 | 366 | none |
+
+Five test items (Pledged, invoiced, Received with no Date, Lost, no Donor) each showed only where
+they should. Lost items still show in By gift size and By fiscal quarter, as Failed ones do. A
+Received gift with no Date also shows in Recent gifts until it is dated. All were deleted.
