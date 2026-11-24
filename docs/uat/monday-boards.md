@@ -179,8 +179,8 @@ size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching
-Donations, Other Program Revenue, Donor Advised Funds), **Gift Size**, **Fiscal Quarter**
-(`FY26 Q1` is July to September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
+Donations, Other Program Revenue, Donor Advised Funds, Event Tickets), **Gift Size**,
+**Fiscal Quarter** (`FY26 Q1` is July to September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
 
 **Try it:**
 
@@ -195,7 +195,8 @@ Donations, Other Program Revenue, Donor Advised Funds), **Gift Size**, **Fiscal 
    FY2026 Matching Donations and Grants & Contracts reconcile to Salesforce to the cent;
    Individual Giving read about $11,900 lower on the 2026-09-29 load because every "Closed Won"
    gift was excluded from revenue; the Eventbrite ticket orders that stage mostly holds now map
-   to Received / Event Ticket, so re-check this figure after the next load.
+   to Received / Event Ticket, which has its own Event Tickets stream, so compare Individual
+   Giving plus Event Tickets with that figure.
 4. **Find an old gift.** Searching the table only finds the active two years. For older gifts,
    use the board's ⋯ menu → Archived items, or start from the donor's card. Is that workable, or
    too awkward to live with?

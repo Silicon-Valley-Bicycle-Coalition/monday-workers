@@ -53,7 +53,8 @@ do not.
    Fiscal Quarter, and Gift Fiscal Year, and its Acknowledgment Tier fill in overnight (the
    nightly pass runs around 2 am Pacific, 1 am in winter). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
    A gift with Gift Type **Donor Advised Fund**, typed exactly, reads Funding Stream **Donor Advised
-   Funds** and renews the donor's membership the way a Donation does.
+   Funds** and renews the donor's membership the way a Donation does. An **Event Ticket** gift reads
+   Funding Stream **Event Tickets** and doesn't renew membership.
 5. **Annual Giving Summary.** Open
    [Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437530607):
    one row per closed fiscal year, FY2005 and FY2009 through FY2025, with Total Received, Gift
