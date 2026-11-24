@@ -68,7 +68,8 @@
       "eventStatusColumn": "color_mm8n8y5v",
       "sourceColumn": "color_mm8nbh4t",
       "urlColumn": "link_mm8njbkh",
-      "sendLinkColumn": "link_mm8sk30a"
+      "sendLinkColumn": "link_mm8sk30a",
+      "grantColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8ng6d5",
@@ -107,7 +108,8 @@
       "sandboxRecipient": null,
       "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
-    "peopleEmailColumn": "email_mm8nx6qg"
+    "peopleEmailColumn": "email_mm8nx6qg",
+    "tracker": null
   },
   "employerAnswers": { "enabled": true },
   "pledge": {

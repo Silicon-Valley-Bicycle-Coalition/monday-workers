@@ -72,7 +72,8 @@
       "eventStatusColumn": "color_mm8hzm9d",
       "sourceColumn": "color_mm8hkfvx",
       "urlColumn": "link_mm8hs8v8",
-      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID",
+      "grantColumn": "dropdown_mm8t5b6g"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8hb9t7",
@@ -113,7 +114,8 @@
       "sandboxRecipient": "sandbox@bikesiliconvalley.org",
       "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
-    "peopleEmailColumn": "email_mm8h4kkb"
+    "peopleEmailColumn": "email_mm8h4kkb",
+    "tracker": null
   },
   "employerAnswers": { "enabled": true },
   "pledge": {

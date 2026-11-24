@@ -111,6 +111,26 @@ export interface PledgeConfig {
   events: Record<string, PledgeEventConfig>;
 }
 
+// The staff-built Bike Education Lifecycle Tracker
+// (docs/superpowers/specs/2026-11-04-event-counts-design.md).
+export interface TrackerConfig {
+  boardId: number;
+  crmEventColumn: string;
+  registeredColumn: string;
+  checkedInColumn: string;
+  noShowColumn: string;
+  dateColumn: string;
+  statusColumn: string;
+  funderColumn: string;
+  // Rows in these statuses get nothing.
+  skipStatusLabels: string[];
+  // Funder label to Grant label. A Funder not here means no grant.
+  grantByFunder: Record<string, string>;
+  // YYYY-MM-DD: rows dated earlier get no totals, or no Grant.
+  startDate: string;
+  grantStartDate: string;
+}
+
 export type AmountSource = 'gross' | 'base_price';
 
 export interface EventbriteSyncConfig {
@@ -187,6 +207,9 @@ export interface EventbriteSyncConfig {
       urlColumn: string;
       // The Events board link column holding the class's send-page link.
       sendLinkColumn: string;
+      // The Events board's Grant dropdown, written from the tracker's Funder. The placeholder is fine
+      // while attendeeSync.tracker is null.
+      grantColumn: string;
     };
     registrations: {
       attendeeIdColumn: string;
@@ -238,6 +261,8 @@ export interface EventbriteSyncConfig {
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;
+    // The Education Tracker's totals and Grant (src/tracker/sweep.ts); null turns the job off.
+    tracker: TrackerConfig | null;
   };
   pledge?: PledgeConfig;
   // Employer answers handed to impact-attribution's EmployerAnswers RPC (GL#127). Off unless

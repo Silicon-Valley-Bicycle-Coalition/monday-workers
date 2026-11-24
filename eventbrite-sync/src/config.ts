@@ -19,7 +19,10 @@ const NULLABLE_COLUMN_KEYS = {
 
 const ATTENDEE_EVENT_COLUMN_KEYS = [
   'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
-  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn', 'grantColumn',
+] as const;
+const TRACKER_COLUMN_KEYS = [
+  'crmEventColumn', 'registeredColumn', 'checkedInColumn', 'noShowColumn', 'dateColumn', 'statusColumn', 'funderColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'attendeePhoneColumn', 'firstNameColumn', 'attendanceColumn',
@@ -209,6 +212,38 @@ function validateAttendeeSync(raw: unknown): void {
   // mapEvent writes the link whenever pageUrl is set, so the placeholder would reach Monday as a column id.
   if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
     throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
+  }
+  validateTracker(a.tracker, a.events as Record<string, unknown>);
+}
+
+function validateTracker(raw: unknown, events: Record<string, unknown>): void {
+  if (raw === null) return;
+  if (!isObject(raw)) {
+    throw new Error('config: "attendeeSync.tracker" must be an object, or null to turn the tracker job off');
+  }
+  if (!Number.isInteger(raw.boardId)) {
+    throw new Error('config: "attendeeSync.tracker.boardId" must be a Monday board id number');
+  }
+  requireColumns(raw, 'attendeeSync.tracker', TRACKER_COLUMN_KEYS);
+  // Unlike the other columns, there is no half-on: the job reads and writes all of these.
+  for (const key of TRACKER_COLUMN_KEYS) {
+    if (raw[key] === PLACEHOLDER_COLUMN_ID) {
+      throw new Error(`config: "attendeeSync.tracker.${key}" must be a real Monday column id`);
+    }
+  }
+  if (events.grantColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: "attendeeSync.events.grantColumn" must be a real Monday column id when "attendeeSync.tracker" is set');
+  }
+  if (!Array.isArray(raw.skipStatusLabels) || raw.skipStatusLabels.some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.tracker.skipStatusLabels" must be an array of Status labels');
+  }
+  if (!isObject(raw.grantByFunder) || Object.values(raw.grantByFunder).some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.tracker.grantByFunder" must map Funder labels to Grant labels');
+  }
+  for (const key of ['startDate', 'grantStartDate']) {
+    if (typeof raw[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw[key])) {
+      throw new Error(`config: "attendeeSync.tracker.${key}" must be a YYYY-MM-DD date`);
+    }
   }
 }
 

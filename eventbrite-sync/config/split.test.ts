@@ -47,6 +47,7 @@ const COLUMN_KEYS = [
   'attendeeSync.events.sourceColumn',
   'attendeeSync.events.urlColumn',
   'attendeeSync.events.sendLinkColumn',
+  'attendeeSync.events.grantColumn',
   'attendeeSync.registrations.attendeeIdColumn',
   'attendeeSync.registrations.attendeeNameColumn',
   'attendeeSync.registrations.attendeeEmailColumn',
@@ -124,8 +125,8 @@ describe('config split: board and column ids', () => {
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {
     expect(production.monday.boards['events']).toBe(18437909790);
     expect(production.monday.boards['event-registrations']).toBe(18437909792);
-    // Home Zip is a column staff create after this ships; it stays the placeholder until then.
-    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && !k.endsWith('homeZipColumn'))) {
+    // Home Zip and Grant are columns staff create after this ships; each stays the placeholder until then.
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && !/(homeZip|grant)Column$/.test(k))) {
       expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
   });
@@ -134,6 +135,12 @@ describe('config split: board and column ids', () => {
     const sb = get(sandbox, 'attendeeSync.registrations.homeZipColumn');
     const prod = get(production, 'attendeeSync.registrations.homeZipColumn');
     expect(sb === PLACEHOLDER_COLUMN_ID || prod === PLACEHOLDER_COLUMN_ID || sb !== prod).toBe(true);
+  });
+
+  it('production and sandbox share no tracker board once both are set', () => {
+    const sb = get(sandbox, 'attendeeSync.tracker.boardId');
+    const prod = get(production, 'attendeeSync.tracker.boardId');
+    if (sb !== undefined && prod !== undefined) expect(sb).not.toBe(prod);
   });
 
   it('class emails: production never redirects to the sandbox inbox; sandbox always does', () => {
