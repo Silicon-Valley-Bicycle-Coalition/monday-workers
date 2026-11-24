@@ -63,8 +63,9 @@ How the editor behaves, for the next edit or rebuild:
   and drops paragraph spacing: sent paragraphs have no margin, so each gap is an empty line.
 - **Photos** go in by pasting an image into the body. There is no image button, and the **`<>`** HTML
   editor replaces the whole email and turns off the column picker.
-- **Email tracking** is a tick box on each email step, off in all five. Monday's own timeline copy still
-  shows tracker links; delivered links go straight to the site.
+- **Email tracking** is a tick box on each email step, off in all five. The links in a delivered email
+  still go through `trackingservice.monday.com` (checked in a received message's source, 2026-11-24);
+  the UTM tags are inside, so the redirect should still carry them. No mailbox setting turns it off.
 - **Last Gift Amount** prints without a dollar sign, so the copy has `$` before it. **Member Until**
   prints like "August 12th 2023".
 - Monday's unsubscribe link carries a token that expires 30 days after sending.
@@ -124,9 +125,9 @@ On People, one per label:
 
 Two rounds of all five were sent to one staff record on 2026-11-24 by turning each Sequence on, enrolling
 that one item (the MCP's `enroll-item-in-sequence`, no label or automation needed) and turning it off.
-Merge fields, photos, links, tracking and the address were right. That record had no Email Preferences
-link, so the check below is still needed. Also open: do the photos load a day later? Monday's timeline
-copy uses image links that expire in an hour.
+Merge fields, photos, links and the address were right. That record had no Email Preferences
+link, so the check below is still needed. The photos are
+embedded in the message (`cid:`, about 900 KB each), so they don't expire.
 
 - [ ] Use a staff-only People item with a staff Personal Email that is **subscribed** in Mailchimp.
       Set its label by hand to each value in turn, with that Sequence briefly active. Confirm the
