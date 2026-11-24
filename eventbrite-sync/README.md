@@ -598,7 +598,7 @@ because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift L
 link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
 and **Shift Lead Email** (the lead's Personal Email) through mirrors. Either date keeps a row because Date is the listing's: it
 doesn't follow the event staff re-pointed the row to. Production has the columns and the view since
-2026-11-24; `attendeePhoneColumn` is still the placeholder there, so Attendee Phone is blank. Design:
+2026-11-24; `scripts/backfill-attendees.mjs` fills Attendee Phone on sign-ups from before it. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
 Cutover order, rollback and open gaps:

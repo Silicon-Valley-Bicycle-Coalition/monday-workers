@@ -99,7 +99,7 @@
       "eventColumn": "board_relation_mm925xt9",
       "listingColumn": "board_relation_mm92t0g4",
       "ticketTypeColumn": "text_mm92pfac",
-      "attendeePhoneColumn": "REPLACE_WITH_COLUMN_ID"
+      "attendeePhoneColumn": "text_mm9dxy1r"
     },
     "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {
