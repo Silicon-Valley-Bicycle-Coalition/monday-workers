@@ -568,9 +568,9 @@ written to the Volunteers board (`monday.boards.volunteers`), not Event Registra
 `src/consumer/processVolunteer.ts`, one item per Eventbrite attendee. Columns, under
 `attendeeSync.volunteers`: **Event** (a relation to Events, staff-editable; defaults to the
 listing's own Events item on create and is never written again), **Eventbrite Listing**,
-**Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Ticket Type** (the
+**Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Shift** (the
 attendee's `ticket_class_name`, e.g. "Shift 2"; `ticketTypeColumn`, optional: the placeholder
-writes nothing), **Attendee Phone** (same rules as on Event Registrations; `attendeePhoneColumn`,
+writes nothing), **Phone Number** (same rules as Attendee Phone on Event Registrations; `attendeePhoneColumn`,
 optional too), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
 Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
 Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
@@ -598,7 +598,9 @@ because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift L
 link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
 and **Shift Lead Email** (the lead's Personal Email) through mirrors. Either date keeps a row because Date is the listing's: it
 doesn't follow the event staff re-pointed the row to. Production has the columns and the view since
-2026-11-24; `scripts/backfill-attendees.mjs` fills Attendee Phone on sign-ups from before it. Design:
+2026-11-24; `scripts/backfill-attendees.mjs` fills Phone Number on sign-ups from before it. Shift and Phone Number were Ticket Type and Attendee Phone
+until staff renamed them on 2026-11-24 (config keys keep the old words); the setup script matches by title, so a
+rename in Monday needs one there too. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
 Cutover order, rollback and open gaps:

@@ -10,11 +10,11 @@ const col = (id, title, type = 'text') => ({ id, title, type });
 describe('planVolunteersBoard', () => {
   it('plans all seven columns on a board that has none of them', () => {
     const { toCreate } = planVolunteersBoard([col('text_1', '📜 Job'), col('date_1', '📜 Date', 'date')]);
-    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type', 'Attendee Phone']);
+    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number']);
     expect(toCreate.map((s) => s.type)).toEqual(['board_relation', 'board_relation', 'text', 'text', 'email', 'text', 'text']);
   });
 
-  it('plans only Ticket Type on a board set up before #115', () => {
+  it('plans only Shift on a board set up before #115', () => {
     const before = VOLUNTEER_COLUMN_SPECS.filter((s) => s.key !== 'ticketTypeColumn').map((s, i) => col(`c_${i}`, `🔒 ${s.title}`, s.type));
     expect(planVolunteersBoard(before).toCreate.map((s) => s.key)).toEqual(['ticketTypeColumn']);
   });
@@ -180,7 +180,7 @@ describe('parseArgs', () => {
 
 describe('read-only markers', () => {
   it('locks the Worker-written Volunteers columns', () => {
-    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type', 'Attendee Phone']);
+    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number']);
   });
   it('leaves Event editable', () => {
     const { locked, history } = MARKED_COLUMNS['Volunteers'];

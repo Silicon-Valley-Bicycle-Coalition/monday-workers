@@ -122,7 +122,7 @@ export const MARKED_COLUMNS = {
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (GL#82).
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Active'] },
-  'Volunteers': { locked: ['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Ticket Type', 'Attendee Phone'], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
+  'Volunteers': { locked: ['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number'], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
   'Activities': { locked: [], history: [...SALESFORCE, 'Owner'] },
 };
 
