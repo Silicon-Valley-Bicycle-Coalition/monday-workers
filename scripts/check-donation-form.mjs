@@ -30,7 +30,8 @@ export function parseArgs(argv) {
 }
 
 async function fetchForm(token, formToken) {
-  const graphql = `{ form(formToken: "${formToken}") { token active questions { id type title visible required } features { requireLogin { enabled } } } }`;
+  // showIfRules is named show_if_rules from API version 2026-10.
+  const graphql = `{ form(formToken: "${formToken}") { token active questions { id type title visible required showIfRules options { label value visible } } features { requireLogin { enabled } } } }`;
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': MONDAY_API_VERSION },
