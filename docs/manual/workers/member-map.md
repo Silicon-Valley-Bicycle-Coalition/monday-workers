@@ -12,7 +12,7 @@ It is a staff-only web map of SVBC members over OpenStreetMap. It shades the Cen
 
 | Trigger | What it does |
 |---|---|
-| Cron `0 13 * * 1` (Mondays 13:00 UTC, production only) | Runs a refresh |
+| Cron `0 13 * * 2` (Mondays 13:00 UTC, production only; Cloudflare counts 1 as Sunday) | Runs a refresh |
 | `POST /api/refresh` (the **Refresh now** button) | Queues a refresh. 202 when queued. 429 if the snapshot is under 10 minutes old or a refresh is already pending. |
 | Queue `svbc-member-map-refresh` (`-sandbox`), consumed by the same Worker | Runs the queued refresh, batch size 1, no retries |
 | `GET /api/snapshot` | Serves the snapshot from R2, `Cache-Control: private, no-store`. 503 until the first snapshot exists. |
