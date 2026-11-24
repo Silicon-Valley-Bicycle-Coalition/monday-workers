@@ -158,6 +158,14 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).not.toThrow();
     });
 
+    it('requires attendeeSync.volunteers.attendeePhoneColumn (the placeholder opts out)', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.volunteers.attendeePhoneColumn;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.volunteers.attendeePhoneColumn" must be a Monday column id string');
+      cfg.attendeeSync.volunteers.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+
     it('accepts the placeholder in all five new columns (the pre-cutover production config)', () => {
       const cfg = valid();
       for (const key of NEW_VOLUNTEER_COLUMN_KEYS) cfg.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
@@ -205,6 +213,13 @@ describe('validateConfig', () => {
     it('ignores Ticket Type: its placeholder only means the ticket class is not written (#115)', () => {
       const cfg = testConfig();
       cfg.attendeeSync.volunteers.ticketTypeColumn = PLACEHOLDER_COLUMN_ID;
+      expect(volunteerBoardMode(cfg)).toBe('ready');
+      expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
+    });
+
+    it('ignores Attendee Phone: its placeholder only means the phone is not written', () => {
+      const cfg = testConfig();
+      cfg.attendeeSync.volunteers.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
       expect(volunteerBoardMode(cfg)).toBe('ready');
       expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
     });

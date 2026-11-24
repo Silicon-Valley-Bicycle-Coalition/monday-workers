@@ -92,4 +92,26 @@ describe('mapVolunteer', () => {
     expect(Object.keys(m.columnValues)).not.toContain(PLACEHOLDER_COLUMN_ID);
     expect(Object.values(m.columnValues)).not.toContain('Shift 1');
   });
+
+  it('writes the cell phone as entered', () => {
+    const m = mapVolunteer(attendee({ profile: { name: 'Jane Rider', cell_phone: ' (408) 555-0100 ' } }), facts, config, 'Registered');
+    expect(m.columnValues.vol_phone_col).toBe('(408) 555-0100');
+  });
+
+  it.each([
+    ['nothing given', {}],
+    ['a placeholder', { profile: { cell_phone: 'Info Requested' } }],
+    ['only an emergency contact', { answers: [{ question: 'Emergency contact phone', answer: '408-555-0199' }] }],
+  ])('omits the phone for %s, so a stored one stays', (_label, overrides) => {
+    const m = mapVolunteer(attendee(overrides as Partial<EventbriteAttendee>), facts, config, 'Registered');
+    expect(m.columnValues).not.toHaveProperty('vol_phone_col');
+  });
+
+  it('writes no phone while the column is the placeholder', () => {
+    const cfg = testConfig();
+    cfg.attendeeSync.volunteers.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
+    const m = mapVolunteer(attendee({ profile: { cell_phone: '408-555-0100' } }), facts, cfg, 'Registered');
+    expect(Object.keys(m.columnValues)).not.toContain(PLACEHOLDER_COLUMN_ID);
+    expect(Object.values(m.columnValues)).not.toContain('408-555-0100');
+  });
 });

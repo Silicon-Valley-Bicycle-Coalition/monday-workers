@@ -47,7 +47,7 @@ function realPhone(value: unknown): string | null {
 // An order form collects a phone as a built-in field (on the profile) or as a custom question (in
 // answers), and each event's form is its own, so read both. Kept as entered, for a text column:
 // Monday's phone column refuses what it can't parse, which would fail the whole registration write.
-function attendeePhone(a: EventbriteAttendee): string | null {
+export function attendeePhone(a: EventbriteAttendee): string | null {
   const answers = (a.answers ?? [])
     .filter((answer) => PHONE_QUESTION.test(answer.question ?? '') && !OTHER_PERSON_QUESTION.test(answer.question ?? ''))
     .map((answer) => answer.answer);
