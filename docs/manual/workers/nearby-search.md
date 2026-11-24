@@ -2,7 +2,7 @@
 
 [Appendix A](../reference/nearby-search.md) lists this Worker's routes, crons, queues, storage and bindings.
 
-`nearby-search` is configured as the Cloudflare Worker `svbc-nearby-search` (sandbox: `svbc-nearby-search-sandbox`). `wrangler.jsonc` declares no route or custom domain yet, and `workers_dev` is off; the page is meant to be served on a custom domain behind a Cloudflare Access application. No hostname has been assigned yet; add it here when one is. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). It is built but not deployed in either environment, and `config/svbc.json` and `config/sandbox.json` still hold `null` / `REPLACE_WITH_*` placeholders. See the root README's [Status at a glance](../../../README.md#status-at-a-glance).
+`nearby-search` is configured as the Cloudflare Worker `svbc-nearby-search` (sandbox: `svbc-nearby-search-sandbox`). `workers_dev` is off; the page is served on a custom domain behind a Cloudflare Access application. The sandbox's is `nearby.sandbox.bikesiliconvalley.org` (declared in `wrangler.jsonc`, not attached until the next sandbox deploy, which waits on its Access application); production has none yet. It reaches Monday through the `monday-auth` broker's `SyncToken` entrypoint (the Staff sync app). It is built. Production isn't deployed, and `config/svbc.json` still holds `null` / `REPLACE_WITH_*` placeholders. The sandbox Worker is deployed but can't serve a search until `access.aud` is filled in `config/sandbox.json`. See the root README's [Status at a glance](../../../README.md#status-at-a-glance).
 
 ## What it does
 

@@ -10,10 +10,11 @@ person's **Nearby** column, which `mailchimp-sync` turns into a Mailchimp tag. D
 `svbc-nearby-search-sandbox` (migration `0001` applied), both sandbox queues (14-day retention), a
 Nearby dropdown column on both sandbox People boards, and the board and column ids in
 `config/sandbox.json` (sandbox v4 workspace 18210301). Organizations has no State column in either
-environment, so its `address` is `null` and the geocode cron skips it. **Still to do before the
-sandbox serves a search:** a hostname and its route, the Access application (`access.teamDomain`,
-`access.aud`), `osm.userAgent`, the write switch (`nearby-search:writes`, `off` today), and the
-checklist under [Verify during sandbox rollout](#verify-during-sandbox-rollout).
+environment, so its `address` is `null` and the geocode cron skips it. The sandbox hostname is
+`nearby.sandbox.bikesiliconvalley.org` (declared, not deployed yet). **Still to do before the
+sandbox serves a search:** the Access application and its `access.aud`, then a deploy (which
+attaches the hostname), the write switch (`nearby-search:writes`, `off` today), and the checklist
+under [Verify during sandbox rollout](#verify-during-sandbox-rollout).
 
 ## How a search works
 
@@ -176,7 +177,7 @@ directly (`https://<host>/`) and type the event's address, or put the item id in
 
 1. In Cloudflare One, add a self-hosted Access application for the Worker's hostname with a policy
    that allows only SVBC staff.
-2. Copy the team domain (`<team>.cloudflareaccess.com`) into `access.teamDomain`, and the
+2. Copy the team domain (`<team>.cloudflareaccess.com`, no `https://`) into `access.teamDomain`, and the
    application's **AUD tag** into `access.aud`. Each environment is its own Access application
    with its own AUD tag.
 3. Exclude `/health` from the application (a Bypass policy for that path) if an uptime check needs it.

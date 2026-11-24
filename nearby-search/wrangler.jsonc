@@ -73,6 +73,7 @@
     "sandbox": {
       "preview_urls": false,
       "vars": { "ENVIRONMENT": "sandbox" },
+      "routes": [{ "pattern": "nearby.sandbox.bikesiliconvalley.org", "custom_domain": true }],
       "workers_dev": false, // served on a custom domain behind one Access application, never workers.dev
       "d1_databases": [
         {
