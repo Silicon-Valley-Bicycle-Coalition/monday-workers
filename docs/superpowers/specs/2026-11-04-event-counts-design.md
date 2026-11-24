@@ -1,7 +1,7 @@
 # Class totals on the Education Tracker, and the grant report
 
 **Status:** design, rewritten 2026-11-24 after Cherie Barnett's request; David chose class totals, written by
-the Worker. Waiting on David's approval of this version. The 2026-11-04 version (git history) also had count columns on Events
+the Worker, and approved this version the same day. Plan: [`2026-11-24-education-tracker-totals.md`](../plans/2026-11-24-education-tracker-totals.md). The 2026-11-04 version (git history) also had count columns on Events
 and a restricted SMCTA answers board. Both are dropped; see "Approaches". Release 1's zip code was designed in
 [`2026-11-04-eventbrite-grant-report-design.md`](2026-11-04-eventbrite-grant-report-design.md) and is built; where
 the two differ, this document wins.
