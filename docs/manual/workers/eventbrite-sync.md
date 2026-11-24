@@ -77,7 +77,7 @@ Ids live in `config/svbc.json` (production) and `config/sandbox.json`.
 | People | Personal Email (match), First Name, Last Name (new people only) | Read; create |
 | Events | Eventbrite ID, Date, End, Venue, Address, City, Program, Event Status, Source, URL, Send event email link (`attendeeSync.events`) | Write |
 | Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Registrants link (`attendeeSync.registrations`) | Write |
-| Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Ticket Type, Job, Date, Status, Historical, Volunteer | Write |
+| Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Ticket Type, Attendee Phone, Job, Date, Status, Historical, Volunteer | Write |
 | Pledge to Ride | The columns in `pledge.columns`: attendee id, year, status, date, email, Details, zip, County, consent, Other Answers and the pledge's own answers | Write (creates missing labels) |
 
 Labels and types that must be right:
@@ -175,7 +175,7 @@ sandbox `--worker-url` (the script refuses a mismatch).
 | `backfill-send-links.mjs` | Write the Send event email link on events the Worker won't process again | `MONDAY_API_TOKEN=… node scripts/backfill-send-links.mjs --dry-run` |
 | `backfill-registrants-link.mjs` | Fill the Registrants link on older registrations | `MONDAY_API_TOKEN=… node scripts/backfill-registrants-link.mjs --dry-run` |
 | `backfill-volunteers.mjs` | Move Role = Volunteer registrations to the Volunteers board (dry run by default) | `MONDAY_API_TOKEN=… node scripts/backfill-volunteers.mjs [--apply] [--env sandbox]` |
-| `setup-volunteers-board.mjs` | Create missing Volunteers columns and the "Recent events" view; prints config ids | `MONDAY_API_TOKEN=… node scripts/setup-volunteers-board.mjs --board <id> --events-board <id> [--apply]` |
+| `setup-volunteers-board.mjs` | Create missing Volunteers columns, the Shift Lead columns on Events, and the "Recent events" and "Upcoming by event" views; prints config ids | `MONDAY_API_TOKEN=… node scripts/setup-volunteers-board.mjs --board <id> --events-board <id> --people-boards <people id>,<people historical id> [--apply]` |
 | `setup-pledge-board.mjs` | Create the private Pledge to Ride board; prints config. Subscribe the integration user and `monday-backup`'s user | `MONDAY_API_TOKEN=… node scripts/setup-pledge-board.mjs --workspace <id> [--subscribe <userId>] [--apply]` |
 | `pledge-event-config.mjs` | Each year, on the **draft** Pledge to Ride event; paste the output into config and deploy before publishing | `EVENTBRITE_PRIVATE_TOKEN=… node scripts/pledge-event-config.mjs --event-id <id> --year <n>` |
 | `compare-attendee-pairs.mjs` | Read-only check whether two attendee rows for one person are real in Eventbrite | `EVENTBRITE_PRIVATE_TOKEN=… node scripts/compare-attendee-pairs.mjs --event <id> --attendees <id>,<id>` |
