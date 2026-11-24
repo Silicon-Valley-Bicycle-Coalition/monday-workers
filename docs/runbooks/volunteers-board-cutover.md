@@ -290,6 +290,9 @@ step. Never delete the Volunteers items the backfill created.
   for today onward, one section per event in date order, with shift, email and phone. Canceled
   sign-ups are hidden, and an event with no sign-ups has no section. One row is one ticket, so someone
   on two shifts is listed twice and two people can share an email.
+- **Completed by event view.** The board's first tab (Completed hours until 2026-11-24) lists Completed
+  sign-ups that have an event, one section per event, newest first. Eventbrite sign-ups have no hours:
+  for hours, and for everything before 2025, use a **Table** view.
 - **Emailing an event's volunteers.** In **Upcoming by event** or **Recent events**, click **Send event
   email** on any row: every row of a listing opens the same page, which shows who will get the email
   before anything goes. It is the same link as on the event. Rows with no Eventbrite listing (history)

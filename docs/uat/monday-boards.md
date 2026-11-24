@@ -270,7 +270,9 @@ you match a few to People?
 logged volunteer hours (Job, Hours, Date, Status, the Volunteer link), including the 2014 to 2020
 records from the old separate system, marked **Historical**.
 
-**Tabs:** **Completed hours** (opens here, grey, newest first).
+**Tabs:** in production, **Completed by event** (opens here; one section per event, newest first;
+called Completed hours until 2026-11-24). This sandbox board still has **Completed hours** (grey, newest
+first). In production the 2014 to 2020 records and their hours are in the **Table** views.
 
 **Try it:** find a long-time volunteer and check their hours look complete. Eventbrite volunteer sign-ups
 now arrive here through the eventbrite-sync integration.
