@@ -588,6 +588,9 @@ board as history. The Event column is a two-way connection (turned on in the col
 UI; the API can't): the Events board's **Volunteers** column is its other side, kept by Monday, and
 that board's **Volunteer events** view (Volunteers not empty, Date newest first) is where staff
 click an event to see who signed up. Production and sandbox v4 have both since 2026-11-17.
+An event shows on the Volunteers board only once it has a sign-up, so production's Events board also
+has an **Upcoming volunteer events** view (Program = Volunteering and Event Status = Upcoming, soonest
+first; made by hand 2026-11-24), which lists those still with none.
 
 **Upcoming by event** (same script) is the contact sheet staff email from before an event: Date or
 Event Date today or later, Canceled hidden, one section per event with each person's shift, email, phone and the
