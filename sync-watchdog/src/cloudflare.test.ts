@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import scheduled from '../test/fixtures/scheduled.json';
+import recorded from '../test/fixtures/cronRuns.json';
 import queue from '../test/fixtures/queue.json';
 import { cloudflareApi, CloudflareApiError } from './cloudflare';
 
-// Fixture shapes follow Cloudflare's docs (GraphQL `workersInvocationsScheduled`; Queues
-// `GET /queues` and `GET /queues/{id}/metrics`). Confirm them against the live account at deploy.
+// cronRuns.json is recorded from the live account (2026-11-23 08:30-10:05 UTC). The Queues shapes
+// follow Cloudflare's docs (`GET /queues` and `GET /queues/{id}/metrics`).
 
 const ACCOUNT = 'acct';
 const NOW = new Date('2026-11-17T19:00:00Z');
@@ -21,44 +21,58 @@ function stub(routes: (url: string, init?: RequestInit) => Response) {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-describe('lastScheduledRun', () => {
-  it('returns the newest datetime', async () => {
-    const { fetcher, calls } = stub(() => json(scheduled));
-    const api = cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW);
-    expect(await api.lastScheduledRun('svbc-funraise-sync', '0 * * * *', new Date('2026-11-17T00:00:00Z'))).toEqual(new Date('2026-11-17T18:00:01Z'));
-    const body = JSON.parse(String(calls[0]!.init!.body)) as { query: string; variables: Record<string, string> };
+const row = (scriptName: string, datetimeMinute: string, requests = 1, sampleInterval = 1) => ({
+  sum: { requests },
+  avg: { sampleInterval },
+  dimensions: { scriptName, datetimeMinute },
+});
+const gql = (rows: unknown) => ({ data: { viewer: { accounts: [{ workersInvocationsAdaptive: rows }] } }, errors: null });
+
+describe('cronRuns', () => {
+  const SINCE = new Date('2026-11-09T19:00:00Z');
+
+  it('reads the recorded live response', async () => {
+    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(recorded)).fetcher, () => NOW);
+    const runs = await api.cronRuns(['svbc-funraise-sync'], SINCE);
+    expect(runs).toHaveLength(9);
+    expect(runs).toContainEqual({ script: 'svbc-funraise-sync', at: new Date('2026-11-23T09:00:00Z'), count: 2 });
+  });
+
+  it('asks once for cron invocations of the named scripts over the whole window', async () => {
+    const { fetcher, calls } = stub(() => json(gql([row('svbc-a', '2026-11-17T18:00:00Z')])));
+    await cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW).cronRuns(['svbc-a', 'svbc-b'], SINCE);
+    expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe('https://api.cloudflare.com/client/v4/graphql');
-    expect(body.query).toContain('workersInvocationsScheduled');
-    expect(body.variables).toMatchObject({ accountTag: ACCOUNT, scriptName: 'svbc-funraise-sync', cron: '0 * * * *' });
-  });
-
-  it('splits a window longer than 48 h into ≤48 h slices, newest first, stopping at the first run', async () => {
-    // Live 2026-11-17: a 192 h range came back as GraphQL error code "quota"; 48 h ranges work.
-    const empty = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [] }] } }, errors: null };
-    const hit = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [{ datetime: '2026-11-12T13:00:02Z' }] }] } }, errors: null };
-    const ranges: { since: string; until: string }[] = [];
-    const { fetcher } = stub((_u, init) => {
-      const v = (JSON.parse(String(init!.body)) as { variables: { since: string; until: string } }).variables;
-      ranges.push({ since: v.since, until: v.until });
-      return json(ranges.length === 3 ? hit : empty);
+    const body = JSON.parse(String(calls[0]!.init!.body)) as { query: string; variables: Record<string, unknown> };
+    expect(body.query).toContain('eventType: "cron"');
+    expect(body.variables).toEqual({
+      accountTag: ACCOUNT,
+      scripts: ['svbc-a', 'svbc-b'],
+      since: SINCE.toISOString(),
+      until: NOW.toISOString(),
     });
-    const api = cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW);
-    const since = new Date(NOW.getTime() - 192 * 3_600_000);
-    expect(await api.lastScheduledRun('svbc-member-map', '0 13 * * 1', since)).toEqual(new Date('2026-11-12T13:00:02Z'));
-    expect(ranges).toHaveLength(3);
-    expect(ranges[0]).toEqual({ since: new Date(NOW.getTime() - 48 * 3_600_000).toISOString(), until: NOW.toISOString() });
-    for (const r of ranges) expect(Date.parse(r.until) - Date.parse(r.since)).toBeLessThanOrEqual(48 * 3_600_000);
   });
 
-  it('returns null when there are no runs', async () => {
-    const empty = { data: { viewer: { accounts: [{ workersInvocationsScheduled: [] }] } }, errors: null };
-    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(empty)).fetcher, () => NOW);
-    expect(await api.lastScheduledRun('svbc-x', '0 * * * *', NOW)).toBeNull();
+  it('undoes sampling: 10 estimated requests at interval 10 is one observed run', async () => {
+    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(gql([row('svbc-a', '2026-11-17T17:10:00Z', 10, 10)]))).fetcher, () => NOW);
+    expect((await api.cronRuns(['svbc-a'], SINCE))[0]!.count).toBe(1);
   });
 
-  it('throws CloudflareApiError on GraphQL errors', async () => {
-    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json({ data: null, errors: [{ message: 'not authorized' }] })).fetcher, () => NOW);
-    await expect(api.lastScheduledRun('svbc-x', '0 * * * *', NOW)).rejects.toBeInstanceOf(CloudflareApiError);
+  it('throws when the response hits the row limit (older runs may be cut off)', async () => {
+    const rows = Array.from({ length: 10_000 }, () => row('svbc-a', '2026-11-17T18:00:00Z'));
+    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(gql(rows))).fetcher, () => NOW);
+    await expect(api.cronRuns(['svbc-a'], SINCE)).rejects.toThrow(/limit/);
+  });
+
+  it.each([
+    ['GraphQL errors', { data: null, errors: [{ message: 'not authorized' }] }],
+    ['no rows array', gql(undefined)],
+    ['an unreadable minute', gql([row('svbc-a', 'yesterday')])],
+    ['a missing script name', gql([{ ...row('svbc-a', '2026-11-17T18:00:00Z'), dimensions: { datetimeMinute: '2026-11-17T18:00:00Z' } }])],
+    ['a missing request count', gql([{ ...row('svbc-a', '2026-11-17T18:00:00Z'), sum: {} }])],
+  ])('throws CloudflareApiError on %s', async (_name, body) => {
+    const api = cloudflareApi(ACCOUNT, 'tok', stub(() => json(body)).fetcher, () => NOW);
+    await expect(api.cronRuns(['svbc-a'], SINCE)).rejects.toBeInstanceOf(CloudflareApiError);
   });
 });
 
@@ -103,14 +117,14 @@ describe('queueBacklog', () => {
 describe('transport', () => {
   it('throws CloudflareApiError on non-2xx and on malformed JSON', async () => {
     const down = cloudflareApi(ACCOUNT, 'tok', stub(() => new Response('bad gateway', { status: 502 })).fetcher, () => NOW);
-    await expect(down.lastScheduledRun('svbc-x', '0 * * * *', NOW)).rejects.toBeInstanceOf(CloudflareApiError);
+    await expect(down.cronRuns(['svbc-x'], NOW)).rejects.toBeInstanceOf(CloudflareApiError);
     const garbled = cloudflareApi(ACCOUNT, 'tok', stub(() => new Response('{not json', { status: 200 })).fetcher, () => NOW);
     await expect(garbled.queueBacklog('funraise-sync-writes')).rejects.toBeInstanceOf(CloudflareApiError);
   });
 
   it('sends the bearer token and a timeout signal', async () => {
-    const { fetcher, calls } = stub(() => json(scheduled));
-    await cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW).lastScheduledRun('svbc-x', '0 * * * *', NOW);
+    const { fetcher, calls } = stub(() => json(recorded));
+    await cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW).cronRuns(['svbc-x'], NOW);
     expect(new Headers(calls[0]!.init!.headers).get('authorization')).toBe('Bearer tok');
     expect(calls[0]!.init!.signal).toBeInstanceOf(AbortSignal);
   });

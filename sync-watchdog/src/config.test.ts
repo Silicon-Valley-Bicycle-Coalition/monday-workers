@@ -17,6 +17,18 @@ describe('validateConfig', () => {
     expect(() => validateConfig(c)).toThrow(/accountId/);
   });
 
+  it('rejects a missing selfScript', () => {
+    const c = base();
+    delete c.selfScript;
+    expect(() => validateConfig(c)).toThrow(/selfScript/);
+  });
+
+  it("rejects a cron expression the matcher can't read", () => {
+    const c = base();
+    c.watched['funraise-sync'].crons[0].cron = '0 18 * * 6L';
+    expect(() => validateConfig(c)).toThrow(/6L/);
+  });
+
   it('rejects a non-positive maxGapHours', () => {
     const c = base();
     c.watched['funraise-sync'].crons[0].maxGapHours = 0;

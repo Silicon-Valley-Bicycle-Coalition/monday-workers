@@ -12,6 +12,7 @@ const WEBHOOK = 'https://hooks.slack.test/services/x';
 
 const cfg: WatchdogConfig = {
   accountId: 'acct',
+  selfScript: 'svbc-sync-watchdog',
   watched: { 'funraise-sync': { script: 'svbc-funraise-sync', expectedWrites: 'on', crons: [{ cron: '0 * * * *', maxGapHours: 3 }] } },
   notLive: {},
   queues: [{ name: 'funraise-sync-writes', maxBacklogAgeHours: 6 }],
@@ -19,7 +20,8 @@ const cfg: WatchdogConfig = {
 const SUBJECTS = ['cron:funraise-sync:0 * * * *', 'writes:funraise-sync', 'queue:funraise-sync-writes'];
 
 const healthyApi = (now: Date): CloudflareApi => ({
-  lastScheduledRun: async () => new Date(now.getTime() - 30 * 60_000),
+  // The latest top of the hour, which is when the watched `0 * * * *` fires.
+  cronRuns: async () => [{ script: 'svbc-funraise-sync', at: new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000), count: 1 }],
   queueBacklog: async () => ({ count: 0, oldestAgeHours: null }),
 });
 
@@ -121,7 +123,7 @@ describe('runWatchdog', () => {
     it('snapshot carries bad detail and check-failed error', async () => {
       await armAll();
       await env.FLAGS.put('funraise-sync:writes', 'hold');
-      const api: CloudflareApi = { ...healthyApi(TUESDAY), lastScheduledRun: async () => { throw new Error('boom'); } };
+      const api: CloudflareApi = { ...healthyApi(TUESDAY), cronRuns: async () => { throw new Error('boom'); } };
       await runWatchdog(deps({ api }));
       const s = bySubject(await snapshot());
       expect(s['cron:funraise-sync:0 * * * *']).toEqual({ subject: 'cron:funraise-sync:0 * * * *', status: 'check-failed', detail: 'boom' });

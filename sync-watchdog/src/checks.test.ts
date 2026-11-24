@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { cronSubjects, writeSwitchSubjects, queueSubjects } from './checks';
-import { CloudflareApiError, type CloudflareApi } from './cloudflare';
+import { CloudflareApiError, type CloudflareApi, type CronRun } from './cloudflare';
+import recorded from '../test/fixtures/cronRuns.json';
+import { cloudflareApi } from './cloudflare';
 import type { WatchdogConfig } from './config';
 import type { SubjectState } from './state';
 
@@ -10,6 +12,7 @@ const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
 
 const cfg: WatchdogConfig = {
   accountId: 'acct',
+  selfScript: 'svbc-sync-watchdog',
   watched: {
     'funraise-sync': {
       script: 'svbc-funraise-sync',
@@ -31,53 +34,102 @@ const armedLongAgo = (): Map<string, SubjectState> =>
     ]),
   );
 
+// The watchdog's own previous run: what tells an empty dataset from Workers that didn't run.
+const own: CronRun = { script: 'svbc-sync-watchdog', at: hoursAgo(1), count: 1 };
+const run = (iso: string, count = 1): CronRun => ({ script: 'svbc-funraise-sync', at: new Date(iso), count });
+
 function api(over: Partial<CloudflareApi>): CloudflareApi {
   return {
-    lastScheduledRun: async () => null,
+    cronRuns: async () => [own],
     queueBacklog: async () => ({ count: 0, oldestAgeHours: null }),
     ...over,
   };
 }
 
 describe('cronSubjects', () => {
+  const HOURLY = 'cron:funraise-sync:0 * * * *';
+  const DAILY = 'cron:funraise-sync:0 9 * * *';
+  const check = async (runs: CronRun[], states = armedLongAgo()) => {
+    const results = await cronSubjects(cfg, api({ cronRuns: async () => [own, ...runs] }), states, NOW);
+    return Object.fromEntries(results.map((r) => [r.subject, r]));
+  };
+
   it('no run within maxGapHours is unhealthy with "no run since"', async () => {
-    const lastRuns: Record<string, Date> = { '0 * * * *': hoursAgo(5), '0 9 * * *': hoursAgo(10) };
-    const results = await cronSubjects(cfg, api({ lastScheduledRun: async (_s, cron) => lastRuns[cron]! }), armedLongAgo(), NOW);
-    const hourly = results.find((r) => r.subject === 'cron:funraise-sync:0 * * * *')!;
-    const daily = results.find((r) => r.subject === 'cron:funraise-sync:0 9 * * *')!;
-    expect(hourly.health).toEqual({ ok: false, detail: `no run since ${hoursAgo(5).toISOString()}` });
-    expect(daily.health).toEqual({ ok: true });
+    const r = await check([run('2026-11-17T14:00:00Z'), run('2026-11-17T09:00:00Z', 2)]);
+    expect(r[HOURLY]!.health).toEqual({ ok: false, detail: 'no run since 2026-11-17T14:00:00.000Z' });
+    expect(r[DAILY]!.health).toEqual({ ok: true });
   });
 
-  it('asks for runs since now − maxGapHours only (keeps GraphQL ranges short)', async () => {
-    const sinces: Record<string, string> = {};
-    await cronSubjects(cfg, api({ lastScheduledRun: async (_s, cron, since) => { sinces[cron] = since.toISOString(); return null; } }), armedLongAgo(), NOW);
-    expect(sinces['0 * * * *']).toBe(hoursAgo(3).toISOString());
-    expect(sinces['0 9 * * *']).toBe(hoursAgo(48).toISOString());
+  it("a dead daily job can't hide behind a live hourly one", async () => {
+    const r = await check(
+      ['2026-11-15T09:00:00Z', '2026-11-16T09:00:00Z', '2026-11-17T09:00:00Z', '2026-11-17T19:00:00Z'].map((m) => run(m, 1)),
+    );
+    expect(r[HOURLY]!.health).toEqual({ ok: true });
+    expect(r[DAILY]!.health).toEqual({ ok: false, detail: 'no run in the last 48 h' });
+  });
+
+  it('a live daily job does not keep a dead hourly one healthy', async () => {
+    const r = await check([run('2026-11-17T09:00:00Z', 1), run('2026-11-16T09:00:00Z', 2)]);
+    expect(r[HOURLY]!.health).toMatchObject({ ok: false });
+    expect(r[DAILY]!.health).toEqual({ ok: true });
+  });
+
+  it('asks once, for every watched script with crons and itself, over the longest gap', async () => {
+    const asked: { scripts: string[]; since: string }[] = [];
+    await cronSubjects(cfg, api({ cronRuns: async (scripts, since) => { asked.push({ scripts, since: since.toISOString() }); return [own]; } }), armedLongAgo(), NOW);
+    expect(asked).toEqual([{ scripts: ['svbc-funraise-sync', 'svbc-sync-watchdog'], since: hoursAgo(48).toISOString() }]);
+  });
+
+  it('an empty dataset is check-failed, never "no run" (live 2026-11-17 to 11-23: every cron alerted daily)', async () => {
+    const results = await cronSubjects(cfg, api({ cronRuns: async () => [] }), armedLongAgo(), NOW);
+    expect(results).toHaveLength(2);
+    for (const r of results) {
+      expect(r.health).toBe('check-failed');
+      expect(r.error).toMatch(/no cron runs/);
+    }
+  });
+
+  it('a dataset that stopped updating is check-failed', async () => {
+    const stale = [{ ...own, at: hoursAgo(2.5) }, run('2026-11-17T17:00:00Z')];
+    const results = await cronSubjects(cfg, api({ cronRuns: async () => stale }), armedLongAgo(), NOW);
+    expect(results.every((r) => r.health === 'check-failed')).toBe(true);
+  });
+
+  it('when only the watchdog itself has run, the other Workers are reported as not running', async () => {
+    const r = await check([]);
+    expect(r[HOURLY]!.health).toEqual({ ok: false, detail: 'no run in the last 3 h' });
+    expect(r[DAILY]!.health).toEqual({ ok: false, detail: 'no run in the last 48 h' });
+  });
+
+  it('judges the recorded live response healthy', async () => {
+    const now = new Date('2026-11-23T10:05:00Z');
+    const fetcher = (async () => new Response(JSON.stringify(recorded))) as unknown as typeof fetch;
+    const results = await cronSubjects(cfg, cloudflareApi('acct', 'tok', fetcher, () => now), armedLongAgo(), now);
+    expect(results.map((r) => r.health)).toEqual([{ ok: true }, { ok: true }]);
+  });
+
+  it('asks nothing when no cron is watched (sandbox)', async () => {
+    const none = { ...cfg, watched: { 'monday-auth': cfg.watched['monday-auth']! } };
+    const results = await cronSubjects(none, api({ cronRuns: async () => { throw new Error('called'); } }), new Map(), NOW);
+    expect(results).toEqual([]);
   });
 
   it('a subject armed less than maxGapHours ago is ok even with no runs', async () => {
     const states = new Map<string, SubjectState>([
-      ['cron:funraise-sync:0 * * * *', { armedAt: hoursAgo(1).toISOString(), bad: false, lastAlertAt: null, detail: null }],
+      [HOURLY, { armedAt: hoursAgo(1).toISOString(), bad: false, lastAlertAt: null, detail: null }],
     ]);
-    const results = await cronSubjects(cfg, api({}), states, NOW);
-    expect(results.find((r) => r.subject === 'cron:funraise-sync:0 * * * *')!.health).toEqual({ ok: true });
+    expect((await check([], states))[HOURLY]!.health).toEqual({ ok: true });
   });
 
   it('a subject never seen before is ok (it arms now)', async () => {
-    const results = await cronSubjects(cfg, api({}), new Map(), NOW);
-    expect(results.every((r) => r.health !== 'check-failed' && r.health.ok)).toBe(true);
+    const r = await check([], new Map());
+    expect(r[HOURLY]!.health).toEqual({ ok: true });
+    expect(r[DAILY]!.health).toEqual({ ok: true });
   });
 
-  it('an API error is check-failed for that subject only', async () => {
-    const results = await cronSubjects(
-      cfg,
-      api({ lastScheduledRun: async (_s, cron) => { if (cron === '0 9 * * *') throw new CloudflareApiError('boom'); return hoursAgo(0.5); } }),
-      armedLongAgo(),
-      NOW,
-    );
-    expect(results.find((r) => r.subject === 'cron:funraise-sync:0 9 * * *')!.health).toBe('check-failed');
-    expect(results.find((r) => r.subject === 'cron:funraise-sync:0 * * * *')!.health).toEqual({ ok: true });
+  it('an API error is check-failed for every cron', async () => {
+    const results = await cronSubjects(cfg, api({ cronRuns: async () => { throw new CloudflareApiError('boom'); } }), armedLongAgo(), NOW);
+    expect(results.map((r) => [r.health, r.error])).toEqual([['check-failed', 'boom'], ['check-failed', 'boom']]);
   });
 });
 

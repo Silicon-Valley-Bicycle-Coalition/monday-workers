@@ -1,0 +1,14 @@
+{
+  "data": { "viewer": { "accounts": [{ "workersInvocationsAdaptive": [
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T10:00:00Z", "scriptName": "svbc-funraise-sync"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:40:00Z", "scriptName": "svbc-sync-watchdog"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:30:00Z", "scriptName": "svbc-monday-backup"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:20:00Z", "scriptName": "svbc-mailchimp-sync"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:05:00Z", "scriptName": "svbc-mailchimp-sync"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:00:00Z", "scriptName": "svbc-monday-backup"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T09:00:00Z", "scriptName": "svbc-funraise-sync"}, "sum": {"requests": 2}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T08:40:00Z", "scriptName": "svbc-sync-watchdog"}, "sum": {"requests": 1}},
+    {"avg": {"sampleInterval": 1}, "dimensions": {"datetimeMinute": "2026-11-23T08:30:00Z", "scriptName": "svbc-monday-backup"}, "sum": {"requests": 1}}
+  ] }] } },
+  "errors": null
+}

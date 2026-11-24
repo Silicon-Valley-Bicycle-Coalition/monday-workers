@@ -1,8 +1,9 @@
 // The three checks. Each returns one result per subject; an error reading a subject's state makes
 // that subject 'check-failed' (logged by src/run.ts, state left alone), never healthy.
 
-import type { CloudflareApi } from './cloudflare';
+import type { CloudflareApi, CronRun } from './cloudflare';
 import type { WatchdogConfig } from './config';
+import { lastRuns } from './cron';
 import type { Health, SubjectState } from './state';
 
 export interface SubjectResult {
@@ -12,6 +13,8 @@ export interface SubjectResult {
 }
 
 const HOUR_MS = 3_600_000;
+// Two of the watchdog's own hourly runs: one may be missing from the data.
+const STALE_DATA_HOURS = 2;
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 // cron:<worker>:<cron> — one subject per schedule, so a dead daily job can't hide behind a live
@@ -23,25 +26,41 @@ export async function cronSubjects(
   states: Map<string, SubjectState>,
   now: Date,
 ): Promise<SubjectResult[]> {
-  const jobs = Object.entries(cfg.watched).flatMap(([worker, w]) =>
-    w.crons.map(async ({ cron, maxGapHours }): Promise<SubjectResult> => {
-      const subject = `cron:${worker}:${cron}`;
-      // Only the window that decides health: a wider one buys nothing and risks the dataset's
-      // maximum query range.
-      const lookback = maxGapHours;
-      try {
-        const lastRun = await api.lastScheduledRun(w.script, cron, new Date(now.getTime() - lookback * HOUR_MS));
-        const armedAt = Date.parse(states.get(subject)?.armedAt ?? now.toISOString());
-        const reference = Math.max(lastRun?.getTime() ?? 0, armedAt);
-        if (now.getTime() - reference <= maxGapHours * HOUR_MS) return { subject, health: { ok: true } };
-        const detail = lastRun ? `no run since ${lastRun.toISOString()}` : `no run in the last ${lookback} h`;
-        return { subject, health: { ok: false, detail } };
-      } catch (err) {
-        return { subject, health: 'check-failed', error: errorText(err) };
-      }
-    }),
-  );
-  return Promise.all(jobs);
+  const workers = Object.entries(cfg.watched).filter(([, w]) => w.crons.length > 0);
+  if (workers.length === 0) return [];
+  const subjectOf = (worker: string, cron: string) => `cron:${worker}:${cron}`;
+
+  let runs: CronRun[];
+  try {
+    // Only the window that decides health.
+    const lookback = Math.max(...workers.flatMap(([, w]) => w.crons.map((c) => c.maxGapHours)));
+    runs = await api.cronRuns([...workers.map(([, w]) => w.script), cfg.selfScript], new Date(now.getTime() - lookback * HOUR_MS));
+    // The watchdog ran an hour ago, so data with no recent run at all is missing data, and says
+    // nothing about the Workers.
+    const newest = runs.reduce((max, r) => Math.max(max, r.at.getTime()), 0);
+    if (now.getTime() - newest > STALE_DATA_HOURS * HOUR_MS) {
+      throw new Error(
+        `Cloudflare reports no cron runs of any watched Worker, or of this one, in the last ${STALE_DATA_HOURS} h; its data is missing or late`,
+      );
+    }
+  } catch (err) {
+    return workers.flatMap(([worker, w]) =>
+      w.crons.map(({ cron }): SubjectResult => ({ subject: subjectOf(worker, cron), health: 'check-failed', error: errorText(err) })),
+    );
+  }
+
+  return workers.flatMap(([worker, w]) => {
+    const last = lastRuns(w.crons, runs.filter((r) => r.script === w.script));
+    return w.crons.map(({ cron, maxGapHours }): SubjectResult => {
+      const subject = subjectOf(worker, cron);
+      const lastRun = last.get(cron);
+      const armedAt = Date.parse(states.get(subject)?.armedAt ?? now.toISOString());
+      const reference = Math.max(lastRun?.getTime() ?? 0, armedAt);
+      if (now.getTime() - reference <= maxGapHours * HOUR_MS) return { subject, health: { ok: true } };
+      const detail = lastRun ? `no run since ${lastRun.toISOString()}` : `no run in the last ${maxGapHours} h`;
+      return { subject, health: { ok: false, detail } };
+    });
+  });
 }
 
 // writes:<worker> — a missing key reads as `off`, the repo's write-switch convention.

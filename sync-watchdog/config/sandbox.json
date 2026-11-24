@@ -1,5 +1,6 @@
 {
   "accountId": "f323cb191edeb5d30acc4d289427a010",
+  "selfScript": "svbc-sync-watchdog-sandbox",
   "watched": {
     "benevity-import": { "script": "svbc-benevity-import-sandbox", "expectedWrites": "on", "crons": [] },
     "bp-feedback-notify": { "script": "svbc-bp-feedback-notify-sandbox", "expectedWrites": "on", "crons": [] },
