@@ -42,10 +42,15 @@ email with the feedback form link.
    before it reaches the Subject.
 5. It sends the organizer an email with the feedback form link via Cloudflare Email Sending.
 
-The sandbox config uses the production board's column ids, on the assumption that the sandbox
-mirror was duplicated from the live board (monday keeps column ids on duplicate). Not verified:
-the tokens available when [GL#66](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/66) was fixed couldn't see the sandbox board. If a sandbox send logs
-`bp-feedback-no-email` for an item that has an address, check the ids with `get_board_info`.
+The sandbox board, `BP Request Form (sandbox)` (`18441421707`, CRM Sandbox v4 workspace, made
+2026-11-24 for #46), has the production board's ids for the two columns the Worker reads, checked
+with the sandbox integration user. It was **built, not duplicated**: a duplicate of the live board
+brings its live automations along (a notification to Bike Parking staff, and the webhook to the
+*production* Worker with its secret), which only the Monday UI can switch off, plus real organizer
+requests. To rebuild it, create an empty board and pass each id to `create_column`. Monday refuses
+`color_mm8rtt99`, so the status column's id differs (`post_event_feedback`); use that one if
+`sendStatus` is ever set in the sandbox. If a sandbox send logs `bp-feedback-no-email` for an item
+that has an address, check the ids with `get_board_info`.
 
 No queue here (unlike `funraise-sync`/`quickbooks-sync`): a missed reminder email is low-stakes
 compared to a dropped donation write, so a synchronous send-on-receipt is enough. D1 holds only the
@@ -82,8 +87,8 @@ apply migrations; every send answers 503 until they're applied.
 ## Monday automation setup
 
 On the target board (production: `BP Request Form`, id `18395469629`; prototyped and confirmed
-working end-to-end on its sandbox mirror `BP Request Form (sandbox)`, id `18431960612`, in the
-`Bike Parking Forms (sandbox)` workspace). Per the project convention of never writing directly to
+working end-to-end on an earlier sandbox mirror, since deleted. The current one, `18441421707`, has
+no automation yet). Per the project convention of never writing directly to
 live SVBC boards from an agent session, these steps are for a human with write access (Zachary
 Kearsley, the live board's owner, or an account admin) to apply manually — verified against the
 sandbox mirror's actual live config on 2026-09-21, not just described generically:

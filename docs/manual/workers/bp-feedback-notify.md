@@ -61,10 +61,12 @@ All four labels exist on the production column (`Send Failed` added 2026-11-19).
 delete them: Monday rejects an unknown label and the Worker only logs the rejection, so a failed send
 would stay invisible on the board.
 
-The sandbox config points at board `18431960612`, "BP Request Form (sandbox)", which has been
-deleted (as has the later copy, `18435720706`). The sandbox Worker has no board to read until a new
-mirror is made and `config/sandbox.json` updated. Duplicate the live board so the column ids carry
-over; a `bp-feedback-no-email` log for an item that has an address means they didn't.
+The sandbox config points at board `18441421707`, "BP Request Form (sandbox)", in the CRM Sandbox v4
+workspace, with the live board's ids for the two columns the Worker reads. Its feedback form's
+responses go to "Organizer Feedback Form (sandbox)", `18441421727`. Don't replace it with a duplicate
+of the live board: a duplicate keeps live automations, the production webhook included (see the
+README). The sandbox board has no webhook automation until someone adds it in the Monday UI. A
+`bp-feedback-no-email` log for an item that has an address means the column ids are wrong.
 
 Changing the board's structure takes board ownership; without it, the `+` column button does
 nothing.

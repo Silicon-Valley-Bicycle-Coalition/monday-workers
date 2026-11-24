@@ -17,8 +17,8 @@ will not receive anything.
 
 ## Try it
 
-1. Open [BP Request Form (sandbox)](https://bikesiliconvalley.monday.com/boards/18431960612) in
-   the Bike Parking Forms (sandbox) workspace. Pick any item with an address in **Preferred Email
+1. Open [BP Request Form (sandbox)](https://bikesiliconvalley.monday.com/boards/18441421707) in
+   the CRM Sandbox v4 workspace. Pick any item with an address in **Preferred Email
    Address For Coordination**, or create one. That column, and **Event Name**, are what the email
    uses; nothing else on the item matters.
 2. Set its **Post-Event Feedback** column to **Ready to Send**.
@@ -44,6 +44,8 @@ will not receive anything.
 
 ## Not testable yet
 
+- **Steps 2 to 6, until the sandbox board's webhook automation is added** (it was rebuilt on 2026-11-24
+  without one; see "Monday automation setup" in the Worker's README).
 - The automatic Sent / Failed write-back to the item.
 - The production version is live (2026-11-03), but no real organizer email has gone out through
   it yet.
