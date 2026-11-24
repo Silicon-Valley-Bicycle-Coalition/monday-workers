@@ -2,10 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/contact-roles.md`](../docs/uat/contact-roles.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status (checked 2026-11-19): deployed in both environments. Sandbox writes are `on`;
-production writes are `off`**, so production dry-runs every 10 minutes. Production goes `on`
-after the rollout checklist below (dry-run counts checked, backfill, smoke tests). A new
-deployment of this Worker ships **off**: an unset write switch means `off`. Design: [`docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md`](../docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md)
+**Status (checked 2026-11-24): deployed in both environments, writes `on` in both.** Production
+went `on` 2026-11-24, and its first `on` run wrote nothing: no affiliation had a confirmed
+`SVBC Roles` value, so every board reported `skipped: "no-confirmed-roles"` (the mass-removal guard
+below). `Contacts` fills in once staff confirm roles; the first confirmed role is the first real
+production write, so check that item against the smoke tests below. The sandbox has no cron (off to
+save cost). A new deployment of this Worker ships **off**: an unset write switch means `off`. Design: [`docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md`](../docs/superpowers/specs/2026-11-11-organization-contact-roles-design.md)
 (including "Calls made while writing this"); plan: [`docs/superpowers/plans/2026-11-11-organization-contact-roles.md`](../docs/superpowers/plans/2026-11-11-organization-contact-roles.md).
 **Stack:** TypeScript on Cloudflare Workers, a 10-minute cron, no HTTP surface, **no D1, no queue**.
 
@@ -140,6 +142,8 @@ Tests: `cd contact-roles && npm test` runs the Worker's Vitest suite; `npm run t
 the scripts' `node:test` files (Vitest is kept off them). Also `npm run typecheck`.
 
 ## Deploy order and rollout checklist
+
+For a new deployment. Production here went `on` 2026-11-24 before any role was confirmed (see Status).
 
 Each step needs the user's go-ahead. The Worker ships with the write switch **off** (an unset
 `contact-roles:writes` key reads as `off`), and it stays `off` until the dry-run counts look right

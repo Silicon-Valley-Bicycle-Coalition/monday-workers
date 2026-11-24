@@ -2,7 +2,7 @@
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
-`all writes on`: `donation-rollups` (during the load), `contact-roles`, `impact-attribution`, `quickbooks-sync`,
+`all writes on`: `donation-rollups` (during the load), `impact-attribution`, `quickbooks-sync`,
 `dtd-sync` and `nearby-search` must stay `off` (below), and `all` would turn them on.
 
 The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in groups that this runbook treats differently:
@@ -14,9 +14,9 @@ The in-scope Workers (`IN_SCOPE` in `scripts/check-worker-flags.mjs`), in groups
   skip it, `off` dry-runs it, and the next `on` run writes whatever still differs.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
-- **`contact-roles`**: ships `off`; goes `on` only after its sandbox rollout: deployed while `off`,
-  its `run-complete` dry-run counts checked, the backfill run and staff roles confirmed, then
-  the smoke tests (its README); never part of a bulk flip. A stateless cron with no cursor: under `hold`/`unknown`
+- **`contact-roles`**: `on` in production since 2026-11-24, so it is held and released with the
+  writing-normally group. A new deployment ships `off` and follows the rollout checklist in its
+  README, so it is not in the first-deploy loop below. A stateless cron with no cursor: under `hold`/`unknown`
   it skips, and under `off` it dry-runs (computes and logs, writes nothing). Either way nothing
   needs catching up, because the next `on` run recomputes every `Contacts` column.
 - **`impact-attribution`**: ships `off`; goes `on` only after its production gate (its README,
@@ -111,13 +111,13 @@ node scripts/flags.mjs retention --env production
 node scripts/flags.mjs donation-rollups writes off --env production
 ```
 
-4. Hold the writing-normally group, one Worker at a time. Each Worker's KV key is set first, then
+4. Hold the writing-normally group and `contact-roles`, one Worker at a time. Each Worker's KV key is set first, then
    its main queues are paused (DLQs never are). Don't use `all writes hold`: it would also move
-   `contact-roles`, `impact-attribution`, `donation-rollups`, `quickbooks-sync`, `dtd-sync` and `nearby-search` from `off` to `hold`, and releasing them later
+   `impact-attribution`, `donation-rollups`, `quickbooks-sync`, `dtd-sync` and `nearby-search` from `off` to `hold`, and releasing them later
    with `on` would turn them on.
 
 ```sh
-for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
+for w in benevity-import bp-feedback-notify contact-roles eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
   node scripts/flags.mjs "$w" writes hold --env production || echo "FAILED: $w"
 done
 ```
@@ -126,7 +126,7 @@ done
    the hold" for what that costs.)
 
 5. Check the result. Every held Worker should read `writes=hold`, queues `paused`;
-   `contact-roles`, `impact-attribution`, `donation-rollups` and the stays-`off` group read `writes=off`; no `MISMATCH`, no `?`. A Worker
+   `impact-attribution`, `donation-rollups` and the stays-`off` group read `writes=off`; no `MISMATCH`, no `?`. A Worker
    with no production deploy yet reads its queues as `missing` (and a loop above prints `FAILED`
    for it), which makes `status` exit non-zero: expected for `quickbooks-sync` and
    `nearby-search`, and for any writing-normally Worker not yet deployed to production.
@@ -173,11 +173,11 @@ node scripts/flags.mjs status --env production
 
 ## After `validate`
 
-1. Release the hold with `on`, not `off`, one Worker at a time — the same writing-normally list,
+1. Release the hold with `on`, not `off`, one Worker at a time — the same list,
    never `all`. The CLI waits 60 s before resuming each Worker's queues.
 
 ```sh
-for w in benevity-import bp-feedback-notify eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
+for w in benevity-import bp-feedback-notify contact-roles eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup people-reclassification report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
