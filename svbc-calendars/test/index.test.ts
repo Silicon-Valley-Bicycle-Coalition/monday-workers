@@ -219,7 +219,7 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
   });
 
   it("GET /widget omits the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is empty", async () => {
-    // The sandbox env ships it empty; an empty string must not emit a broken beacon tag.
+    // Both environments ship it empty; an empty string must not emit a broken beacon tag.
     const original = env.CF_WEB_ANALYTICS_TOKEN;
     env.CF_WEB_ANALYTICS_TOKEN = "";
     try {

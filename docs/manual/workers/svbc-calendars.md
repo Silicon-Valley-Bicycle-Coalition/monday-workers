@@ -71,11 +71,10 @@ nine sources) and `config/eventbriteOrganizers.json` (Eventbrite organizer ids a
 This token is separate from `eventbrite-sync`'s `EVENTBRITE_PRIVATE_TOKEN`. Which Eventbrite login
 minted it, and which Slack channel the webhook posts to, are recorded in the private appendix.
 
-`CF_WEB_ANALYTICS_TOKEN` is a var, not a secret (it ships in the page HTML): the token of the Web
-Analytics site for `events.bikesiliconvalley.org`. The zone's automatic setup stopped injecting the
-beacon without notice (none on `/events` on 2026-11-19), so since 2026-11-20 the Worker emits it
-explicitly. Keep automatic setup off for the zone, or the beacon loads twice. The sandbox leaves
-the var empty.
+`CF_WEB_ANALYTICS_TOKEN` is a var, deliberately empty: Cloudflare's automatic Web Analytics injects
+the beacon into the HTML pages (`/widget`, `/calendars`) on both custom domains (checked
+2026-11-24, GitHub #47). `/events` returns JSON, so it never has one. Setting the var would load a
+second beacon; turn automatic setup off first.
 
 ## Write switch
 
