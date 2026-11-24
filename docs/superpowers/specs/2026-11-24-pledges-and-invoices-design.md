@@ -1,6 +1,6 @@
 # Pledges and invoices on the Donations board — design
 
-**Status:** approved by David, 2026-11-24. Built on the sandbox 2026-11-24; production not started. Sandbox first, then production.
+**Status:** approved by David, 2026-11-24. Live on the sandbox and production 2026-11-24. Sandbox first, then production.
 Extends `2026-11-11-manual-donation-entry-form-design.md`.
 
 ## Intent
@@ -184,7 +184,27 @@ Five test items (Pledged, invoiced, Received with no Date, Lost, no Donor) each 
 they should. Lost items still show in By gift size and By fiscal quarter, as Failed ones do. A
 Received gift with no Date also shows in Recent gifts until it is dated. All were deleted.
 
-**Production, measured but not changed (2026-11-24).** The Received rule would remove 318 items from
-Recent gifts and Revenue by funding stream (263 Failed, 40 Pending, 12 Refunded, 2 Lost, 1 blank
-Status), 20 from Major gifts to thank and 6 from Reconciliation: sponsorships. The blank-Status item
-is one Major gift, 13576783744; set its Status before the rule goes on.
+## Production (2026-11-24)
+
+Donations 18437909794, Organizations 18437909779. Status `color_mm8nspep`: Pledged id 7, every other
+label unchanged. Pledge Date `date_mm9ddbhr`, Invoice Date `date_mm9deh91`, Invoice Number
+`text_mm9drsq5`, Accounts Payable mirror `lookup_mm9dtyv3` (of Organizations `long_text_mm9dze8r`).
+Views: Pledges to invoice 293856484, Pledges awaiting payment 293856489. The state before the change
+is in `monday-migration/backup/pledges-production-before-2026-11-24/`.
+
+- The form editor must be loaded after the label exists to hide its option. Setting the payment
+  questions' rules at once closed the same gap (a Pledged submission could no longer carry a Date),
+  so the option was never hidden. No gift was submitted during the change.
+- `check-donation-form.mjs` passes on both forms; every question not named above read back unchanged.
+  In Chrome, choosing Pledged and Received swapped the questions. **Nothing was submitted on
+  production**, so the first real pledge is the first end-to-end run there.
+- No automation or Sequence on the board emails or notifies about a gift.
+
+| View | Before | After | Removed |
+|---|---|---|---|
+| Recent gifts, Revenue by funding stream | 4,284 | 3,966 | 318: 263 Failed, 40 Pending, 12 Refunded, 2 Lost, 1 blank |
+| Major gifts to thank | 424 | 404 | 20: 15 Pending, 3 Failed, 1 Lost, 1 blank |
+| Reconciliation: sponsorships | 57 | 51 | 6 |
+| Every other table view | | | none |
+
+The blank-Status item in Major gifts is 13576783744; it returns to that view once its Status is Received.
