@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSummary, fiscalYearBounds, fiscalYearOf } from './summary';
+import { computePromptSummary, computeSummary, fiscalYearBounds, fiscalYearOf } from './summary';
 import type { StoredRecord } from '../db/records';
 import type { DonationItem } from '../monday/client';
 
@@ -86,4 +86,20 @@ describe('computeSummary', () => {
     const m = [match(), match({ id: '51' }), match({ id: '52', donorItemId: '901' }), match({ id: '53', donorItemId: '902' }), match({ id: '54', donorItemId: null })];
     expect(sum([], m, new Map(), none, new Set(['902'])).firstTimeMatchedDonors).toBe(2);
   });
+});
+
+describe('computePromptSummary', () => {
+  it('counts prompted gifts, those matched, and the matched dollars', () => {
+    const matches = [match({ id: '50', matchesGiftItemId: '1', amount: 40 }), match({ id: '51', matchesGiftItemId: '9', amount: 500 })];
+    expect(computePromptSummary(['1', '2'], matches)).toEqual({ prompted: 2, promptedMatched: 1, promptedMatchDollars: 40 });
+  });
+  it('counts a gift matched twice once, and both its matches', () => {
+    const matches = [match({ id: '50', matchesGiftItemId: '1', amount: 10.1 }), match({ id: '51', matchesGiftItemId: '1', amount: 20.2 })];
+    expect(computePromptSummary(['1'], matches)).toEqual({ prompted: 1, promptedMatched: 1, promptedMatchDollars: 30.3 });
+  });
+  it('treats an unlinked match and a blank amount as nothing', () => {
+    const matches = [match({ matchesGiftItemId: null }), match({ id: '51', matchesGiftItemId: '1', amount: null })];
+    expect(computePromptSummary(['1'], matches)).toEqual({ prompted: 1, promptedMatched: 1, promptedMatchDollars: 0 });
+  });
+  it('is zeros for no prompts', () => expect(computePromptSummary([], [match()])).toEqual({ prompted: 0, promptedMatched: 0, promptedMatchDollars: 0 }));
 });

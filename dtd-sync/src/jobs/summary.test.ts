@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { runSummary } from './summary';
-import { validateConfig } from '../config';
+import { validateConfig, type DtdSyncConfig, type OutreachConfig } from '../config';
+import { claimPrompt, markPromptSent } from '../db/prompts';
+import { rawOutreach } from '../../test/outreach';
 import type { DonationItem, DtdMondayClient } from '../monday/client';
 import { upsertRecord } from '../db/records';
 import sandbox from '../../config/sandbox.json';
@@ -28,7 +30,7 @@ async function seed(id: string, datetime: string): Promise<void> {
   });
 }
 
-function setup(items: DonationItem[]) {
+function setup(items: DonationItem[], cfg: DtdSyncConfig = config) {
   const writes: { fy: string; values: Record<string, unknown> }[] = [];
   const monday: Partial<DtdMondayClient> = {
     listDonationsOfTypeDatedSince: async (type) => items.filter((i) => i.giftType === type),
@@ -36,11 +38,12 @@ function setup(items: DonationItem[]) {
     getDonation: async (id) => items.find((i) => i.id === id) ?? null,
     upsertProgramSummary: async (fy, values) => { writes.push({ fy, values }); },
   };
-  return { writes, deps: { monday: monday as DtdMondayClient, db: env.DB, config } };
+  return { writes, deps: { monday: monday as DtdMondayClient, db: env.DB, config: cfg } };
 }
 
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM dtd_records').run();
+  await env.DB.prepare('DELETE FROM prompts').run();
 });
 
 describe('runSummary', () => {
@@ -66,5 +69,32 @@ describe('runSummary', () => {
     await runSummary(deps, NOW);
     expect(writes[0]!.values[S.newMatchingCompanies]).toBe('0');
     expect(writes[0]!.values[S.firstTimeMatchedDonors]).toBe('0');
+  });
+
+  describe('prompt numbers', () => {
+    const outreach = rawOutreach() as OutreachConfig;
+    const O = outreach.programSummary;
+    async function prompted(itemId: string, giftDate: string, sent = true): Promise<void> {
+      await claimPrompt(env.DB, { itemId, donorItemId: '900', variant: 'known', giftDate, nowISO: NOW.toISOString(), maxAttempts: 3 });
+      if (sent) await markPromptSent(env.DB, itemId, NOW.toISOString());
+    }
+
+    it('go in the year of the gift, even when the match came in the next one', async () => {
+      await prompted('1', '2026-06-20');
+      await prompted('2', '2026-09-01');
+      await prompted('3', '2026-09-02', false);
+      const { deps, writes } = setup([matchItem({ date: '2026-08-01', matchesGiftItemId: '1', amount: 25 })], { ...config, outreach });
+      await runSummary(deps, NOW);
+      expect(writes.map((w) => w.fy)).toEqual(['FY2027', 'FY2026']);
+      expect(writes[0]!.values).toMatchObject({ [O.prompted]: '1', [O.promptedMatched]: '0', [O.promptedMatchDollars]: '0.00' });
+      expect(writes[1]!.values).toMatchObject({ [O.prompted]: '1', [O.promptedMatched]: '1', [O.promptedMatchDollars]: '25.00' });
+    });
+
+    it('are not written while outreach is null', async () => {
+      await prompted('1', '2026-09-01');
+      const { deps, writes } = setup([item()]);
+      await runSummary(deps, NOW);
+      expect(Object.keys(writes[0]!.values).sort()).toEqual(Object.entries(S).filter(([k]) => k !== 'fiscalYear').map(([, id]) => id).sort());
+    });
   });
 });
