@@ -66,13 +66,17 @@ jobs:
       # svbc-bike-lanes is plain JavaScript with no typecheck script.
       - run: npm run typecheck --if-present
 
-  # Fallback path for the sandbox deploy connection (see each Worker's README "Sandbox
-  # environment" section and docs/superpowers/specs/2026-09-18-sandbox-environment-design.md §8):
-  # the primary path is a second Cloudflare Workers Builds connection on the same repo/root
-  # directory. This job does the same deploy from CI, only on `main`, only for a Worker whose
-  # files changed, and only once the CLOUDFLARE_API_TOKEN secret exists, so enabling it never risks
-  # a double deploy alongside a working dashboard connection. account_id is baked into each
-  # Worker's wrangler.jsonc, so no other secret is needed.
+  # The sandbox deploy path (see each Worker's README "Sandbox environment" section and
+  # docs/superpowers/specs/2026-09-18-sandbox-environment-design.md §8). The design first meant
+  # this as a fallback for second Workers Builds connections, but no Worker with a sandbox entry
+  # has one, so this job is the only thing that keeps sandbox in step with `main`. It runs only on
+  # `main`, only for a Worker whose files changed. account_id is baked into each Worker's
+  # wrangler.jsonc, so no other secret is needed.
+  #
+  # A missing CLOUDFLARE_API_TOKEN fails the job (#89). It used to skip with a notice and
+  # finish green, so a sandbox that never got the change looked deployed. deploy-sandbox isn't a
+  # required check (ci-ok doesn't need it), so a red run here marks main's commit without
+  # blocking any pull request.
   #
   # The token is an environment secret scoped to the `sandbox` environment (restrict that
   # environment to `main`), and in Cloudflare to Workers deploys on this account only (GL#58).
@@ -97,33 +101,40 @@ jobs:
       cancel-in-progress: false
     strategy:
       max-parallel: 1
+      # Keep going past a failure so every changed Worker reports its own result; the default
+      # would cancel the rest and leave them looking skipped rather than undeployed.
+      fail-fast: false
       matrix:
         worker: ${{ fromJSON(needs.changes.outputs.deploy) }}
-    # No job-level working-directory: the gate step runs before checkout, when the directory
-    # doesn't exist yet. The token is exposed to the gate (as a boolean) and the deploy step only.
+    # No job-level working-directory: the token check runs before checkout, when the directory
+    # doesn't exist yet. The token is exposed to that check (as a boolean) and the deploy step only.
     steps:
-      - name: Skip when no token is configured
-        id: gate
+      - name: Require the deploy token
         env:
           HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          WORKER: ${{ matrix.worker.dir }}
+          CONFIG: ${{ matrix.worker.sandbox.config }}
         run: |
           if [ "$HAS_TOKEN" != true ]; then
-            echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the sandbox deploy."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::error::CLOUDFLARE_API_TOKEN is not set in the sandbox environment, so $WORKER${CONFIG:+ ($CONFIG)} was NOT deployed to sandbox."
+            {
+              echo "### $WORKER${CONFIG:+ ($CONFIG)} was not deployed to sandbox"
+              echo
+              echo "The \`sandbox\` GitHub environment has no \`CLOUDFLARE_API_TOKEN\` secret."
+              echo "Add one (Workers Scripts: Edit on SVBC's account only; see docs/manual/06-ci-and-deploy.md),"
+              echo "then re-run this job, or deploy by hand from \`$WORKER/\`: \`npx wrangler deploy ${CONFIG:+-c $CONFIG }--env sandbox\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
-      - if: ${{ steps.gate.outputs.skip != 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - if: ${{ steps.gate.outputs.skip != 'true' }}
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.23'
           cache: npm
           cache-dependency-path: ${{ matrix.worker.dir }}/package-lock.json
-      - if: ${{ steps.gate.outputs.skip != 'true' }}
-        working-directory: ${{ matrix.worker.dir }}
+      - working-directory: ${{ matrix.worker.dir }}
         run: npm ci
-      - if: ${{ steps.gate.outputs.skip != 'true' }}
-        working-directory: ${{ matrix.worker.dir }}
+      - working-directory: ${{ matrix.worker.dir }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CONFIG: ${{ matrix.worker.sandbox.config }}
