@@ -570,7 +570,8 @@ written to the Volunteers board (`monday.boards.volunteers`), not Event Registra
 listing's own Events item on create and is never written again), **Eventbrite Listing**,
 **Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Ticket Type** (the
 attendee's `ticket_class_name`, e.g. "Shift 2"; `ticketTypeColumn`, optional: the placeholder
-writes nothing), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
+writes nothing), **Attendee Phone** (same rules as on Event Registrations; `attendeePhoneColumn`,
+optional too), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
 Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
 Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
 never deleted, so a count of people must leave out Canceled and count attendee ids, not emails:
@@ -579,14 +580,25 @@ one order can hold two shifts, or several people under the buyer's email ([GL#11
 for these events read the Volunteers board and write No-Show and the People link back there.
 The board's "Recent events" view (last 90 days, newest first, ungrouped: Monday orders
 relation groups its own way, ignoring the sort) is made by
-`scripts/setup-volunteers-board.mjs --board <id> --events-board <id> [--apply]`, which also
-creates the missing columns and prints their ids for the config; `scripts/backfill-volunteers.mjs`
+`scripts/setup-volunteers-board.mjs --board <id> --events-board <id> --people-boards <id>,<id> [--apply]`,
+which also creates the missing columns and prints their ids for the config; `scripts/backfill-volunteers.mjs`
 moves earlier Role = Volunteer registrations over (`--apply`, `--remap-out`, `--archive`,
 `--env sandbox`, `--limit`, `--pause-ms`; dry run by default). `donation-rollups` counts the
 board as history. The Event column is a two-way connection (turned on in the column settings
 UI; the API can't): the Events board's **Volunteers** column is its other side, kept by Monday, and
 that board's **Volunteer events** view (Volunteers not empty, Date newest first) is where staff
 click an event to see who signed up. Production and sandbox v4 have both since 2026-11-17.
+
+**Upcoming by event** (same script) is the contact sheet staff email from before an event: Date today
+or later, Canceled hidden, one section per event with each person's shift, email, phone and the
+event's shift lead. Its heading, **Event and Date**, is a Monday formula over the linked event's name
+and date (`2026-11-28 · Cardinals vs Mustangs…`), so a renamed event or a re-pointed Event moves the
+row with nothing to sync; a row with no Event goes under "No event linked". It starts with the date
+because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift Lead** is a one-way
+link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
+through a mirror. Design:
+[`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
+
 Cutover order, rollback and open gaps:
 [`docs/runbooks/volunteers-board-cutover.md`](../docs/runbooks/volunteers-board-cutover.md).
 

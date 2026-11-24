@@ -40,7 +40,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    `eventbrite-sync/`, dry run first and read what it plans:
 
    ```sh
-   MONDAY_API_TOKEN=... node scripts/setup-volunteers-board.mjs --board 18437909797 --events-board 18437909790
+   MONDAY_API_TOKEN=... node scripts/setup-volunteers-board.mjs --board 18437909797 --events-board 18437909790 --people-boards 18437909781,18437909784
    ```
 
    `18437909790` is the production Events board (`monday.boards.events` in
@@ -283,6 +283,16 @@ step. Never delete the Volunteers items the backfill created.
 
 - **Recent events view.** On the Volunteers board, open the **Recent events** view: every shift in
   the last 90 days, newest first, with its **Event**.
+- **Upcoming by event view.** On the Volunteers board, **Upcoming by event** lists everyone signed up
+  for today onward, one section per event in date order, with shift, email and phone. Canceled
+  sign-ups are hidden, and an event with no sign-ups has no section. One row is one ticket, so someone
+  on two shifts is listed twice and two people can share an email.
+- **Shift lead.** Set **Shift Lead** on the event (Events board); it shows on every volunteer's row.
+  The lead must be on People first. **Send event email** goes to the volunteers, not the lead: email
+  the lead separately.
+- **What the lead gets is your call.** The view shows you everything. Some volunteers are probably
+  minors, and the sign-up forms checked on 2026-11-24 don't ask about sharing contact info with
+  another volunteer, so decide what each lead needs before sending the list.
 - **Who signed up for an event.** On the Events board, open the **Volunteer events** view (events
   with volunteers, newest first) and open an event: its **Volunteers** column lists everyone linked
   to it through the Volunteers board's **Event** column (a two-way connection, so re-pointing
