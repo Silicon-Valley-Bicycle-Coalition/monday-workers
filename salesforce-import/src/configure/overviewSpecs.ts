@@ -27,8 +27,8 @@ const within = (columnTitle: string, operator: 'within_the_next' | 'within_the_l
 const thisFY = is('Gift Fiscal Year', '@FY');
 const lastFY = is('Gift Fiscal Year', '@FY-1');
 
-// The existing worklist views' own filters (spec.ts), so a tile and its tab agree. Exception: on
-// Donations the Received rule is added (spec D8), and the worklist tab also shows Pending and Failed gifts.
+// The existing worklist views' own filters (spec.ts), so a tile and its tab agree. On Donations
+// the Received rule is added (spec D8); the Major gifts to thank tab has had it too since 2026-11-24.
 const NOT_DNS: FilterRule = { columnTitle: 'Do Not Solicit', operator: 'is_empty' };
 const LYBUNT: FilterRule[] = [gt0('Last Year Amount'), { columnTitle: 'This Year Count', operator: 'lower_than', compareValue: [1] }, NOT_DNS];
 const MAJOR_TO_THANK: FilterRule[] = [is('Acknowledgment Tier', 'Major'), empty('Thank You Sent')];

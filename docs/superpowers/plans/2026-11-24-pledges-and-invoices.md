@@ -195,8 +195,15 @@ it('pays a pledge Date first, then Status', () => {
 **Files:**
 - Modify: the new spec (a "Production" section: ids, counts, date; Status line)
 
-- [ ] **Step 1:** Save the production form JSON, the Status column settings, and every table view's JSON and count to `monday-migration/backup/` (gitignored there; check with `git check-ignore` first).
-- [ ] **Step 2:** Repeat Task 1 Steps 2–5 with production ids. Production already has Lost. Apply whatever default changes Task 1 needed.
+- [ ] **Step 1:** Save the production form JSON, the Status column settings, and every table view's JSON and count to `monday-migration/backup/` (gitignored there; check with `git check-ignore` first). Count the items each Received rule will remove, by Status. Tell David, because it also removes Received (Historical), Lost and blank-Status items.
+- [ ] **Step 2:** Configure in this order. It is a live form, so agree a time with Martha when nobody is entering gifts, and finish Steps 2–5 in one sitting. Read back after each:
+  1. List the board's automations and Sequences. None may email or notify about a gift on item created, Status or Tier. If one does, stop and ask David.
+  2. Create the columns as in Task 1 Step 3. They don't appear on the form by themselves.
+  3. Reorder with `update_form` `updateQuestionOrder` (every question id, each with its `page_block_id`) so Status is above Date received. Monday refuses a rule on a later question.
+  4. Add the **Pledged** label, resending every other label exactly as read back (2026-11-24: Received 0, Received (Historical) 1, Failed 2, Pending 3, Lost 4, Refunded 17). It must not get id 5. **At once**, hide its form option with the option's own Hide option menu.
+  5. Add Pledge Date to the form **not required**, set its rule (Pledged only), place it after Status with `updateQuestionOrder`, then make it required with today as default. Set Status's description.
+  6. Set the rules on Date received, Payment Method and Check/Reference Number to Received, Failed and Pending.
+  7. Read all four rules back, then unhide Pledged.
 - [ ] **Step 3:** Repeat Task 4 Steps 2–3 with production ids. Received rule: Recent gifts 289689143, Revenue by funding stream 289689146, Major gifts to thank 289689150, Reconciliation: sponsorships 291648183. Exclude Pledged: By gift size 289689147, By fiscal quarter 289689149, Matching gifts 289689153.
 - [ ] **Step 4:** Run `check-donation-form.mjs` on both form tokens with the matching environment's token. Expected: `OK` for each.
 - [ ] **Step 5:** Open the production form in Chrome **without submitting**. Expected: choosing Pledged swaps the questions; choosing Received swaps them back.
@@ -208,6 +215,6 @@ it('pays a pledge Date first, then Status', () => {
 - Modify: `docs/06-staff-process-guide.md`, `protocols/monday/entering-payments.md`, `protocols/monday/requesting-an-invoice.md`
 
 - [ ] **Step 1:** `docs/06`: in "Log a manual donation", add Pledged, the two pledge views, and the payment steps (Status **and** Date). Remove its "Thank you already sent?" sentence, which the form has hidden since 2026-11-12.
-- [ ] **Step 2:** `entering-payments.md`: a section "Steps: a pledge" with the four lifecycle steps, and a warning before "Steps: a sponsorship…" to look for an open pledge first and not add a second item.
-- [ ] **Step 3:** `requesting-an-invoice.md`: Martha invoices company pledges entered on Donations and records Invoice Date and Number there; everything else still goes through Invoicing Tasks.
+- [ ] **Step 2:** `entering-payments.md`: a section "Steps: a pledge" with the four lifecycle steps, and a warning before "Steps: a sponsorship…" to look for an open pledge first and not add a second item. Connect the gift on Sponsorships or Grants & Contracts only once it is Received: staff work out the balance from the connected items. To fix a gift entered as Received by mistake, delete it and enter it again as Pledged. Never put an expected payment date in Date.
+- [ ] **Step 3:** `requesting-an-invoice.md`: Martha invoices company pledges entered on Donations and records Invoice Date and Number there; everything else still goes through Invoicing Tasks. In "First, make sure the gift exists", say the item is entered as Pledged, with Date blank.
 - [ ] **Step 4:** Commit: `docs(donations): pledges and invoices for staff`. Ask David before pushing, opening a PR, or changing the Box copies.

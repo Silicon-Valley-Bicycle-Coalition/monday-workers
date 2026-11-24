@@ -1,6 +1,6 @@
 # Pledges and invoices on the Donations board — design
 
-**Status:** approved by David, 2026-11-24. Nothing built. Sandbox first, then production.
+**Status:** approved by David, 2026-11-24. Built on the sandbox 2026-11-24; production not started. Sandbox first, then production.
 Extends `2026-11-11-manual-donation-entry-form-design.md`.
 
 ## Intent
@@ -81,6 +81,15 @@ Read from the code, to be proved in the sandbox: `donation-rollups` counts only 
 year-end archive works from that ledger, so it shouldn't archive an unpaid pledge. Setting Date and
 Status fires the column-change webhook, which picks the gift up. `classify` still fills Funding
 Stream and Gift Size on a pledge, so those views need the filters below.
+
+### A gift entered as Received that was really a pledge
+
+**Delete the item and enter it again as Pledged.** Don't change Status and clear Date: an item with
+no Date is skipped before the ledger is refreshed, so the old Received row stays in the ledger and
+keeps counting in the gift history, membership, Organizational Giving and the roll call, though
+Lifetime Giving drops. Deleting the item removes the row. Likewise, don't put an expected payment
+date in Date. A Worker change (a cleared Date removes the ledger row) would lift this; it is not
+part of this work unless David asks for it. (Found in review, read from the code, not run.)
 
 ### Views on Donations
 
@@ -174,3 +183,8 @@ the four new columns hidden.
 Five test items (Pledged, invoiced, Received with no Date, Lost, no Donor) each showed only where
 they should. Lost items still show in By gift size and By fiscal quarter, as Failed ones do. A
 Received gift with no Date also shows in Recent gifts until it is dated. All were deleted.
+
+**Production, measured but not changed (2026-11-24).** The Received rule would remove 318 items from
+Recent gifts and Revenue by funding stream (263 Failed, 40 Pending, 12 Refunded, 2 Lost, 1 blank
+Status), 20 from Major gifts to thank and 6 from Reconciliation: sponsorships. The blank-Status item
+is one Major gift, 13576783744; set its Status before the rule goes on.

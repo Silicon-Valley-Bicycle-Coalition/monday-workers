@@ -245,8 +245,9 @@ columns, column descriptions, and saved table views with filters — against wha
 in `data/load/boards.json` (sandbox or production, whichever `load` last ran against). It's
 idempotent and non-destructive: an already-set description or column description is left alone
 rather than overwritten, a column already on the board (including Stakeholder Type, which `load`
-normally creates because `transform` seeds it — see "What the script must resolve") is skipped,
-and a view is only created if no view of that name exists yet. Run it
+normally creates because `transform` seeds it — see "What the script must resolve") is skipped.
+Views are the exception: a view in the spec is **re-applied** (filter, sort, columns) when one of
+that name exists, so change the spec with the board. Views the spec doesn't name are never touched. Run it
 after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
 specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (built
 by hand or through Monday's MCP `create_automation` tool, see "Possible Duplicate" below), the

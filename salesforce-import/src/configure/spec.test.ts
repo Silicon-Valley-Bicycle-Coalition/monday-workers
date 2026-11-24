@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BOARD_SPECS, PLUMBING, DASHBOARD_SPECS, withReceivedRule } from './spec.js';
 import type { WidgetSpec } from './widgets.js';
-import { STATUS_LABELS } from '../load/boards.js';
+import { DONATION_STATUS_LABELS, STATUS_LABELS } from '../load/boards.js';
 
 describe('BOARD_SPECS columns', () => {
   it('Stakeholder Type carries exactly the labels load seeds, so whichever step creates it agrees (#46)', () => {
@@ -332,5 +332,36 @@ describe('Windfall wealth screening', () => {
     expect(JSON.stringify(BOARD_SPECS)).not.toMatch(banned);
     expect(JSON.stringify(DASHBOARD_SPECS)).not.toMatch(banned);
     expect(PLUMBING).not.toContain('Windfall ID');
+  });
+});
+
+describe('pledges stay out of the gift views (2026-11-24)', () => {
+  const view = (name: string) => BOARD_SPECS['donations']!.views!.find((v) => v.name === name)!;
+  // A gift shows when it passes every Status rule the view has.
+  const showsStatus = (name: string, status: string) =>
+    (view(name).filter?.rules ?? []).filter((r) => r.columnTitle === 'Status').every((r) =>
+      r.operator === 'any_of' ? r.labelValues!.includes(status)
+        : r.operator === 'not_any_of' ? !r.labelValues!.includes(status) : false);
+
+  it.each(['Recent gifts', 'Revenue by funding stream', 'Major gifts to thank', 'Reconciliation: sponsorships'])(
+    '"%s" shows only Received gifts', (name) => {
+      expect(showsStatus(name, 'Received')).toBe(true);
+      for (const s of ['Pledged', 'Pending', 'Failed', 'Refunded']) expect(showsStatus(name, s), s).toBe(false);
+    });
+
+  it.each(['By gift size', 'By fiscal quarter', 'Matching gifts'])('"%s" leaves out only pledges', (name) => {
+    expect(showsStatus(name, 'Pledged')).toBe(false);
+    for (const s of ['Received', 'Pending', 'Failed']) expect(showsStatus(name, s), s).toBe(true);
+  });
+
+  it('keeps each view’s own filter', () => {
+    expect(view('Major gifts to thank').filter!.rules).toContainEqual({ columnTitle: 'Thank You Sent', operator: 'is_empty' });
+    expect(view('Matching gifts').filter!.rules).toContainEqual({ columnTitle: 'Gift Type', operator: 'any_of', labelValues: ['Matching Donation'] });
+    expect(view('Reconciliation: sponsorships').filter!.rules).toContainEqual({ columnTitle: 'Amount', operator: 'greater_than', compareValue: 0 });
+  });
+
+  it('describes Pledged, and the load seeds it so those views resolve', () => {
+    expect(BOARD_SPECS['donations']!.columnDescriptions!['Status']).toContain('Pledged');
+    expect(DONATION_STATUS_LABELS).toContain('Pledged');
   });
 });
