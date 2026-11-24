@@ -78,7 +78,7 @@ export const MARKED_COLUMNS = {
   'Donations': {
     locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Matched By Company', 'Funraise ID',
       'Eventbrite Order ID', 'Benevity Transaction ID', 'Match Status', 'DTD Status (raw)', 'Match Company',
-      'Sent to DTD', 'Contacts'],
+      'Sent to DTD', 'Match Prompt Sent', 'Contacts'],
     history: [...SALESFORCE, 'Salesforce Owner', 'Finance Class', 'Revenue Code', 'Sponsorship Cycle',
       'Fee Covered', 'In-Kind Value', 'In-Kind Category', 'Soft Credit'],
   },

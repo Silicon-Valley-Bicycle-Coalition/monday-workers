@@ -74,6 +74,7 @@ jobs:
         run: |
           status=0
           cmp member-portal/src/changeRequests/employerName.ts impact-attribution/src/employerName.ts || { echo "impact-attribution/src/employerName.ts differs from member-portal/src/changeRequests/employerName.ts"; status=1; }
+          cmp member-portal/src/changeRequests/employerName.ts dtd-sync/src/employerName.ts || { echo "dtd-sync/src/employerName.ts differs from member-portal/src/changeRequests/employerName.ts"; status=1; }
           node --input-type=module -e "await import('./member-portal/src/changeRequests/employerName.ts')" || status=1
           exit $status
 

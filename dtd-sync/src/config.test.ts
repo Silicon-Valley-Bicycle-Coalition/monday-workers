@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
+import { rawOutreach } from '../test/outreach';
 
 const PLACEHOLDER = 'REPLACE_WITH_COLUMN_ID';
 
@@ -85,5 +86,109 @@ describe('validateConfig', () => {
     const raw = validRaw();
     raw.boards.people = 'x';
     expect(() => validateConfig(raw)).toThrow(/boards\.people/);
+  });
+});
+
+describe('outreach', () => {
+  const withOutreach = (change: (o: Record<string, any>) => void = () => {}) => {
+    const raw = validRaw();
+    raw.outreach = rawOutreach();
+    change(raw.outreach);
+    return raw;
+  };
+
+  it('absent or null is null: the post-gift email is off', () => {
+    expect(validateConfig(validRaw()).outreach).toBeNull();
+    expect(validateConfig({ ...validRaw(), outreach: null }).outreach).toBeNull();
+  });
+
+  it('accepts a complete block', () => {
+    expect(validateConfig(withOutreach()).outreach).toEqual(rawOutreach());
+  });
+
+  it('accepts null employerFormUrl, requestUrl and deadlineNote', () => {
+    const cfg = validateConfig(withOutreach((o) => { o.employerFormUrl = null; })).outreach!;
+    expect(cfg.employerFormUrl).toBeNull();
+    expect(cfg.matchingEmployers[1]).toMatchObject({ requestUrl: null, deadlineNote: null });
+  });
+
+  it.each(['wordingApprovedOn', 'ein', 'fromAddress', 'fromName', 'replyTo', 'postalAddress', 'logoUrl', 'employerFormUrl'])('rejects %s awaiting sign-off', (key) => {
+    expect(() => validateConfig(withOutreach((o) => { o[key] = 'REPLACE_AFTER_SIGNOFF'; }))).toThrow(new RegExp(`outreach\\.${key}`));
+  });
+
+  it('rejects sign-off placeholders inside an employer', () => {
+    for (const key of ['name', 'platform', 'requestUrl', 'deadlineNote']) {
+      expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0][key] = 'REPLACE_AFTER_SIGNOFF'; })), key).toThrow(/REPLACE_AFTER_SIGNOFF/);
+    }
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].aliases = ['REPLACE_AFTER_SIGNOFF']; }))).toThrow(/REPLACE_AFTER_SIGNOFF/);
+  });
+
+  it('rejects an unfilled column id', () => {
+    for (const [group, keys] of Object.entries({
+      donations: ['matchPromptSent'], people: ['employerName', 'doNotSolicit'],
+      programSummary: ['prompted', 'promptedMatched', 'promptedMatchDollars'],
+    })) {
+      for (const key of keys) {
+        expect(() => validateConfig(withOutreach((o) => { o[group][key] = PLACEHOLDER; })), `${group}.${key}`).toThrow(/REPLACE_WITH_COLUMN_ID/);
+      }
+    }
+  });
+
+  it('rejects an unknown mode and an unknown steps template', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.mode = 'sms'; }))).toThrow(/outreach\.mode/);
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].steps = 'carrier-pigeon'; }))).toThrow(/steps/);
+  });
+
+  it('rejects an approval date that is not a date', () => {
+    for (const value of ['soon', '2026-13-45', '2026-02-30']) {
+      expect(() => validateConfig(withOutreach((o) => { o.wordingApprovedOn = value; })), value).toThrow(/wordingApprovedOn/);
+    }
+  });
+
+  it('takes https links only', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.employerFormUrl = 'http://member.example.org/'; }))).toThrow(/employerFormUrl/);
+    expect(() => validateConfig(withOutreach((o) => { o.logoUrl = 'http://member.example.org/logo.png'; }))).toThrow(/logoUrl/);
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].requestUrl = 'javascript:alert(1)'; }))).toThrow(/requestUrl/);
+  });
+
+  it('rejects two employers that share a normalised name or alias', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[1].name = 'GOOGLE, LLC'; }))).toThrow(/Google|GOOGLE/);
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[1].aliases = ['alphabet inc']; }))).toThrow(/alphabet/i);
+  });
+
+  it('allows one employer to list spellings that normalise to its own name', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].aliases = ['Google LLC', 'Google, Inc.']; }))).not.toThrow();
+  });
+
+  it('rejects a name or alias that normalises to nothing', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].aliases = ['Inc.']; }))).toThrow(/Inc\./);
+  });
+
+  it('rejects either placeholder anywhere in the block', () => {
+    for (const placeholder of ['REPLACE_AFTER_SIGNOFF', PLACEHOLDER]) {
+      const places: ((o: Record<string, any>) => void)[] = [
+        (o) => { o.ein = placeholder; }, (o) => { o.matchingEmployers[0].aliases = [placeholder]; }, (o) => { o.excludeGiftTypes = [placeholder]; },
+        (o) => { o.donations.matchPromptSent = placeholder; },
+      ];
+      for (const place of places) expect(() => validateConfig(withOutreach(place))).toThrow(new RegExp(placeholder));
+    }
+  });
+
+  it('rejects one column id used for both Employer Name and Do Not Solicit', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.people.doNotSolicit = o.people.employerName; }))).toThrow(/doNotSolicit/);
+  });
+
+  it('takes one plain address for fromAddress and replyTo', () => {
+    for (const key of ['fromAddress', 'replyTo']) {
+      for (const value of ['SVBC', 'SVBC <a@example.org>', 'a@example.org, b@example.org', 'a@localhost']) {
+        expect(() => validateConfig(withOutreach((o) => { o[key] = value; })), `${key} ${value}`).toThrow(new RegExp(key));
+      }
+    }
+  });
+
+  it('rejects a zero or negative delay, cooldown or attempt limit', () => {
+    for (const key of ['delayDays', 'donorCooldownDays', 'maxAttempts']) {
+      expect(() => validateConfig(withOutreach((o) => { o[key] = 0; })), key).toThrow(new RegExp(key));
+    }
   });
 });

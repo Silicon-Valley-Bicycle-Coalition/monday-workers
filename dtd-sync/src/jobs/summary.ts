@@ -1,8 +1,9 @@
 import type { DtdSyncConfig } from '../config';
 import type { DtdMondayClient } from '../monday/client';
+import { sentPromptsForGiftDates } from '../db/prompts';
 import { recordsForFiscalYear } from '../db/records';
 import { MATCHING_GIFT_TYPE } from '../pairing/pair';
-import { computeSummary, fiscalYearBounds, fiscalYearOf } from '../reporting/summary';
+import { computePromptSummary, computeSummary, fiscalYearBounds, fiscalYearOf } from '../reporting/summary';
 
 export interface SummaryDeps { monday: DtdMondayClient; db: D1Database; config: DtdSyncConfig }
 
@@ -33,6 +34,14 @@ export async function runSummary(deps: SummaryDeps, now: Date): Promise<void> {
 
     const records = await recordsForFiscalYear(db, startISO, endISO);
     const s = computeSummary(records, matches, giftAmountById, priorCompanies, priorDonors);
+    const prompts: Record<string, string> = {};
+    if (config.outreach !== null) {
+      const o = config.outreach.programSummary;
+      const p = computePromptSummary(await sentPromptsForGiftDates(db, startDate, endDate), matchingDonations);
+      prompts[o.prompted] = String(p.prompted);
+      prompts[o.promptedMatched] = String(p.promptedMatched);
+      prompts[o.promptedMatchDollars] = p.promptedMatchDollars.toFixed(2);
+    }
     // Numbers columns take decimal strings (same as donation-rollups).
     await monday.upsertProgramSummary(fy, {
       [c.screened]: String(s.screened),
@@ -44,6 +53,7 @@ export async function runSummary(deps: SummaryDeps, now: Date): Promise<void> {
       [c.matchedGiftDollars]: s.matchedGiftDollars.toFixed(2),
       [c.newMatchingCompanies]: String(s.newMatchingCompanies),
       [c.firstTimeMatchedDonors]: String(s.firstTimeMatchedDonors),
+      ...prompts,
       [c.asOf]: { date: today },
     });
     console.log(JSON.stringify({ job: 'summary', fiscalYear: fy, screened: s.screened, matchesPaid: s.matchesPaid }));

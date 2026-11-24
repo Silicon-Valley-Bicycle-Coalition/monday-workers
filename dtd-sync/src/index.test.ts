@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
-import { runCron, HOURLY_CRON, NIGHTLY_CRON, type Jobs, type Clients } from './index';
+import { emailFor, runCron, HOURLY_CRON, NIGHTLY_CRON, type Jobs, type Clients } from './index';
 import worker from './index';
 import { DtdAuthError } from './dtd/client';
 import type { DtdMondayClient } from './monday/client';
-import { validateConfig } from './config';
+import { validateConfig, type OutreachConfig } from './config';
+import { rawOutreach } from '../test/outreach';
 import { DEFAULT_PII_KEYS, type SkipContext } from './flags';
 import sandbox from '../config/sandbox.json';
 
@@ -20,7 +21,7 @@ function fakeMonday(calls: string[]): DtdMondayClient {
   const none = async () => null;
   return {
     findDonationByFunraiseId: none, findDonationBySalesforceId: none, getDonation: none,
-    listDonationsDatedSince: async () => [], listDonationsOfTypeDatedSince: async () => [], getDonations: async () => [], listGiftsForDonor: async () => [], getPeople: async () => [],
+    listDonationsDatedSince: async () => [], listDonationsOfTypeDatedSince: async () => [], getDonations: async () => [], listGiftsForDonor: async () => [], getPeople: async () => [], getPromptDonors: async () => [],
     getOrganizationName: none,
     updateDonation: rec('updateDonation'), updatePerson: rec('updatePerson'), upsertProgramSummary: rec('upsertProgramSummary'),
   };
@@ -34,8 +35,13 @@ function clients(calls: string[]): Clients {
     },
     monday: fakeMonday(calls),
     db: env.DB,
+    email: { send: async () => { calls.push('email.send'); return { messageId: 'm' }; } } as unknown as SendEmail,
   };
 }
+
+const outreach = rawOutreach() as OutreachConfig;
+const emailMode = { ...config, outreach };
+const dtdMode = { ...config, outreach: { ...outreach, mode: 'dtd' as const } };
 
 let order: string[];
 function jobs(over: Partial<Jobs> = {}): Jobs {
@@ -43,6 +49,7 @@ function jobs(over: Partial<Jobs> = {}): Jobs {
     pull: async () => { order.push('pull'); },
     push: async () => { order.push('push'); },
     pairing: async () => { order.push('pairing'); },
+    prompt: async () => { order.push('prompt'); },
     summary: async () => { order.push('summary'); },
     ...over,
   };
@@ -61,6 +68,63 @@ describe('runCron', () => {
   it('hourly cron runs pull, push, pairing in order', async () => {
     await runCron(HOURLY_CRON, clients([]), config, 'run', ctx('on'), NOW, jobs());
     expect(order).toEqual(['pull', 'push', 'pairing']);
+  });
+
+  it('ships with the post-gift email off, so prompt never runs', async () => {
+    expect(config.outreach).toBeNull();
+    await runCron(HOURLY_CRON, clients([]), config, 'run', ctx('on'), NOW, jobs());
+    expect(order).not.toContain('prompt');
+  });
+
+  it('dtd mode is the same as off', async () => {
+    await runCron(HOURLY_CRON, clients([]), dtdMode, 'run', ctx('on'), NOW, jobs());
+    expect(order).toEqual(['pull', 'push', 'pairing']);
+  });
+
+  it('email mode runs pairing then prompt, and never pull or push', async () => {
+    await runCron(HOURLY_CRON, clients([]), emailMode, 'run', ctx('on'), NOW, jobs());
+    expect(order).toEqual(['pairing', 'prompt']);
+    order = [];
+    await runCron(HOURLY_CRON, { ...clients([]), dtd: null }, emailMode, 'run', ctx('on'), NOW, jobs());
+    expect(order).toEqual(['pairing', 'prompt']);
+    expect(logs.join('\n')).not.toContain('DTD_PRIVATE_KEY');
+  });
+
+  it('skips prompt when pairing failed: a gift may already be matched', async () => {
+    await runCron(HOURLY_CRON, clients([]), emailMode, 'run', ctx('on'), NOW, jobs({ pairing: async () => { throw new Error('boom'); } }));
+    expect(order).toEqual([]);
+    expect(logs).toContain('dtd-sync: prompt skipped, pairing failed');
+  });
+
+  it('logs a prompt failure without throwing', async () => {
+    await runCron(HOURLY_CRON, clients([]), emailMode, 'run', ctx('on'), NOW, jobs({ prompt: async () => { throw new Error('boom'); } }));
+    expect(logs.join('\n')).toContain('dtd-sync: prompt failed boom');
+  });
+
+  it('says so when email mode has no email binding', async () => {
+    await runCron(HOURLY_CRON, { ...clients([]), email: null }, emailMode, 'run', ctx('on'), NOW, jobs());
+    expect(order).toEqual(['pairing']);
+    expect(logs).toContain('dtd-sync: no EMAIL binding, prompt skipped');
+  });
+
+  it('a dry run tells prompt so, and an email it sends anyway is only a skip line', async () => {
+    const calls: string[] = [];
+    let dryRun: boolean | undefined;
+    const j = jobs({ prompt: async (deps) => { dryRun = deps.dryRun; await deps.email.send({ to: 'pat@example.org' } as never); } });
+    await runCron(HOURLY_CRON, clients(calls), emailMode, 'dry-run', ctx('off'), NOW, j);
+    expect(dryRun).toBe(true);
+    expect(calls).toEqual([]);
+    expect(logs.join('\n')).toContain('"sink":"Email"');
+    expect(logs.join('\n')).not.toContain('pat@example.org');
+  });
+
+  it('a live run reaches the email binding', async () => {
+    const calls: string[] = [];
+    let dryRun: boolean | undefined;
+    const j = jobs({ prompt: async (deps) => { dryRun = deps.dryRun; await deps.email.send({} as never); } });
+    await runCron(HOURLY_CRON, clients(calls), emailMode, 'run', ctx('on'), NOW, j);
+    expect(dryRun).toBe(false);
+    expect(calls).toEqual(['email.send']);
   });
 
   it('nightly cron runs summary only', async () => {
@@ -149,5 +213,27 @@ describe('scheduled', () => {
     await worker.scheduled(controller(HOURLY_CRON), e(flags), {} as ExecutionContext);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(logs.join('\n')).not.toContain('"writeSwitch":"skipped"');
+  });
+});
+
+describe('emailFor', () => {
+  const sent: { to: unknown }[] = [];
+  const EMAIL = { send: async (m: { to: unknown }) => { sent.push(m); return { messageId: 'm' }; } } as unknown as SendEmail;
+  beforeEach(() => { sent.length = 0; });
+
+  it('is null unless the mode is email, whatever is bound', () => {
+    expect(emailFor({ EMAIL }, config)).toBeNull();
+    expect(emailFor({ EMAIL }, dtdMode)).toBeNull();
+    expect(emailFor({ EMAIL, ENVIRONMENT: 'sandbox' }, config)).toBeNull();
+  });
+  it('is null with no binding', () => expect(emailFor({}, emailMode)).toBeNull());
+  it('is the binding itself in production', () => expect(emailFor({ EMAIL }, emailMode)).toBe(EMAIL));
+  it('sends only to the sink in the sandbox', async () => {
+    const email = emailFor({ EMAIL, ENVIRONMENT: 'sandbox', SANDBOX_EMAIL_SINK: 'sandbox@example.org' }, emailMode)!;
+    await email.send({ to: 'pat@example.org', from: 'a@example.org', subject: 's', text: 't' });
+    expect(sent.map((m) => m.to)).toEqual(['sandbox@example.org']);
+  });
+  it('refuses the sandbox without a sink', () => {
+    expect(() => emailFor({ EMAIL, ENVIRONMENT: 'sandbox' }, emailMode)).toThrow(/SANDBOX_EMAIL_SINK/);
   });
 });

@@ -14,6 +14,7 @@
 // Usage:
 //   MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --people-historical <id> --workspace <id>
 //     [--config dtd-sync/config/sandbox.json]   # statusLabels / programSummary keys come from here
+//     [--outreach yes]   # also the post-gift email's columns (README, "Post-gift email")
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -28,9 +29,10 @@ export const RESERVED_LABEL_ID = 5;
 
 const WRITTEN_BY = 'Written by dtd-sync';
 
-// Distinct Match Status labels, in first-seen order: the statusLabels values, then Matched, Other.
+// Distinct Match Status labels, in first-seen order: the statusLabels values, then Matched, Other, and
+// Prompted (the post-gift email's; last, so no earlier label's id moves).
 export function matchStatusLabels(statusLabels) {
-  return [...new Set([...Object.values(statusLabels), 'Matched', 'Other'])];
+  return [...new Set([...Object.values(statusLabels), 'Matched', 'Other', 'Prompted'])];
 }
 
 // {"0":"A","1":"B",...} skipping RESERVED_LABEL_ID.
@@ -88,6 +90,26 @@ export function programSummarySpecs(programSummaryKeys) {
     const [title, type, defaults] = entry;
     return { key, title, type, description: WRITTEN_BY, defaults };
   });
+}
+
+// The post-gift email's own columns, created only with --outreach yes and printed under `outreach`.
+export const OUTREACH_DONATION_SPECS = [
+  { key: 'matchPromptSent', title: 'Match Prompt Sent', type: 'date', description: WRITTEN_BY },
+];
+export const OUTREACH_PROGRAM_SPECS = [
+  { key: 'prompted', title: 'Prompted', type: 'numbers', description: WRITTEN_BY },
+  { key: 'promptedMatched', title: 'Prompted and matched', type: 'numbers', description: WRITTEN_BY },
+  { key: 'promptedMatchDollars', title: 'Prompted match dollars', type: 'numbers', description: WRITTEN_BY, defaults: CURRENCY },
+];
+
+// People columns the email reads. Other Workers and the import own them, so they are found, never created.
+export function outreachPeopleIds(peopleColumns) {
+  const byTitle = indexByTitle(peopleColumns);
+  return Object.fromEntries([['employerName', 'Employer Name'], ['doNotSolicit', 'Do Not Solicit']].map(([key, title]) => {
+    const hit = byTitle.get(title);
+    if (!hit) throw new Error(`setup-columns: People has no "${title}" column`);
+    return [key, hit.id];
+  }));
 }
 
 // Index existing columns by bare title.
@@ -161,6 +183,7 @@ export function parseArgs(argv) {
   for (const k of ['donations', 'people', 'people-historical', 'workspace']) {
     if (!/^\d+$/.test(out[k] ?? '')) throw new Error(`setup-columns: --${k} <numeric id> is required`);
   }
+  if (out.outreach !== undefined && out.outreach !== 'yes') throw new Error('setup-columns: --outreach takes only "yes"; leave it out otherwise');
   if (out.people === out['people-historical']) throw new Error('setup-columns: --people and --people-historical must be different boards');
   return out;
 }
@@ -219,6 +242,15 @@ async function main() {
   const summaryBoard = await readBoard(summary.id);
   const programSummary = await ensureColumns(summaryBoard, programSummarySpecs(Object.keys(config.programSummary)));
 
+  let outreach;
+  if (args.outreach) {
+    outreach = {
+      donations: await ensureColumns(donationsBoard, OUTREACH_DONATION_SPECS),
+      people: outreachPeopleIds((await readBoard(args.people)).columns),
+      programSummary: await ensureColumns(summaryBoard, OUTREACH_PROGRAM_SPECS),
+    };
+  }
+
   // View: re-read Match Status for its label index, then create unless a view of that name exists.
   const fresh = await readBoard(args.donations);
   const statusCol = fresh.columns.find((c) => c.id === donations.matchStatus);
@@ -239,7 +271,7 @@ async function main() {
     log(`created view "${VIEW_NAME}" → ${viewId}`);
   }
 
-  console.log(JSON.stringify({ boards: { programSummary: Number(summary.id) }, donations, people, programSummary, viewId }, null, 2));
+  console.log(JSON.stringify({ boards: { programSummary: Number(summary.id) }, donations, people, programSummary, ...(outreach ? { outreach } : {}), viewId }, null, 2));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

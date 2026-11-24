@@ -1,7 +1,8 @@
 # Post-gift matching-gift email — Design
 
-**Status:** Draft design, pre-implementation (2026-11-16). Not approved; see "Decision this
-replaces" and "Open questions".
+**Status:** Built 2026-11-24, **off** in both environments (`outreach: null`); never sent. Whether to
+use it is still open: see "Decision this replaces" and "Open questions". Where the build differs from
+this text is listed in `docs/superpowers/plans/2026-11-24-dtd-sync-post-gift-email.md`.
 **Worker:** `dtd-sync/` (a new `prompt` job, alongside `push`). No new Worker.
 
 ## Why

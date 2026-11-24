@@ -1,5 +1,7 @@
-import type { DtdSyncConfig } from '../config';
-import type { DonationItem, PersonItem } from '../monday/client';
+import type { DtdSyncConfig, OutreachConfig } from '../config';
+import { daysBefore, todayLosAngeles } from '../dates';
+import type { DonationItem, PersonItem, PromptDonor } from '../monday/client';
+import { promptVariant, type PromptVariant } from '../outreach/employers';
 
 export type PushConfig = DtdSyncConfig['push'];
 export type PushDecision = { send: true } | { send: false; reason: string };
@@ -42,4 +44,45 @@ export function pushDecision(item: DonationItem, donor: PersonItem | null, cfg: 
   if (!email) return no('no-email');
   if (!allowed(email, cfg.allowEmails)) return no('not-allow-listed');
   return { send: true };
+}
+
+export type PromptDecision = { send: true; variant: PromptVariant } | { send: false; reason: string };
+
+/** What the prompt job looks up about a gift before deciding. */
+export interface PromptFacts { pairedGiftIds: ReadonlySet<string>; knownToDtd: boolean; inCooldown: boolean }
+
+/** Match Status once pairing has linked a Matching Donation to the gift. */
+export const MATCHED_LABEL = 'Matched';
+/** Match Status prompt gives a gift that had none. */
+export const PROMPTED_LABEL = 'Prompted';
+
+// pushDecision's reasons that depend on the donor. Every other reason, and the gift rules below, can
+// be judged before the donor is read.
+const DONOR_REASONS = new Set(['no-email', 'not-allow-listed']);
+
+/**
+ * Whether a gift gets the post-gift matching email, and which one: everything pushDecision requires,
+ * plus the email's own rules. Pure; like pushDecision, every "no" carries its reason.
+ */
+export function promptDecision(
+  item: DonationItem, donor: PromptDonor | null, push: PushConfig, outreach: OutreachConfig, facts: PromptFacts, now: Date,
+): PromptDecision {
+  const no = (reason: string): PromptDecision => ({ send: false, reason });
+
+  const base = pushDecision(item, donor, push, now);
+  if (!base.send && !DONOR_REASONS.has(base.reason)) return base;
+  // The prompts ledger is the primary guard; what the board shows covers a ledger that was lost, and
+  // lets staff hold one gift back by dating it. The counterpart of pushDecision's already-sent.
+  if (item.matchPromptSent || item.matchStatus === PROMPTED_LABEL) return no('already-prompted');
+  if (item.giftType === null || outreach.excludeGiftTypes.includes(item.giftType)) return no('gift-type');
+  if (item.date === null || item.date > daysBefore(todayLosAngeles(now), outreach.delayDays)) return no('too-recent');
+  if (item.matchStatus === MATCHED_LABEL || facts.pairedGiftIds.has(item.id)) return no('paired');
+  if (facts.knownToDtd) return no('known-to-dtd');
+
+  if (!base.send) return base;
+  if (donor === null) return no('no-email');
+  if (donor.doNotSolicit) return no('do-not-solicit');
+  if (facts.inCooldown) return no('cooldown');
+  const variant = promptVariant(donor.employerName, outreach);
+  return variant === null ? no('employer-not-known') : { send: true, variant };
 }

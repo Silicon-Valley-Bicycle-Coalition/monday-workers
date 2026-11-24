@@ -73,6 +73,7 @@
     "windowMonths": 18,
     "amountTolerance": 0.01
   },
+  "outreach": null,
   "statusLabels": {
     ":identification-in-progress": "Identifying employer",
     ":waiting-for-donor-action": "Waiting for donor",

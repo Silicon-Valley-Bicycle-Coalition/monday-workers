@@ -7,8 +7,16 @@ export interface DonationItem {
   anonymous: boolean; donorItemId: string | null; matchedByItemId: string | null;
   matchesGiftItemId: string | null; matchPairing: string | null; matchStatus: string | null;
   sentToDtd: string | null; updatedAt: string;
+  /** Match Prompt Sent; null while config.outreach is null (the column isn't read). */
+  matchPromptSent?: string | null;
 }
 export interface PersonItem { id: string; email: string | null; householdEmail: string | null; firstName: string; lastName: string; phone: string | null; dtdCompanyId: string | null }
+
+/**
+ * A People donor with what the post-gift email needs. `greetingName` is the stored First Name or null:
+ * PersonItem's firstName may be a guess from the item name, which DTD can take but a letter can't.
+ */
+export interface PromptDonor extends PersonItem { employerName: string | null; doNotSolicit: boolean; greetingName: string | null }
 
 export interface DtdMondayClient {
   findDonationByFunraiseId(id: string): Promise<DonationItem | null>;
@@ -21,6 +29,8 @@ export interface DtdMondayClient {
   listDonationsOfTypeDatedSince(giftType: string, dateISO: string): Promise<DonationItem[]>;
   listGiftsForDonor(donorItemId: string, fromISO: string): Promise<DonationItem[]>;
   getPeople(ids: string[]): Promise<PersonItem[]>;
+  /** getPeople plus what the post-gift email needs. Throws while config.outreach is null. */
+  getPromptDonors(ids: string[]): Promise<PromptDonor[]>;
   getOrganizationName(itemId: string): Promise<string | null>;
   updateDonation(itemId: string, values: Record<string, unknown>): Promise<void>;
   updatePerson(itemId: string, values: Record<string, unknown>): Promise<void>;
@@ -30,7 +40,7 @@ export interface DtdMondayClient {
 // Same tuning as the other queue/cron Workers: a few quick in-process retries.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
-interface ColumnValue { id: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
+interface ColumnValue { id: string; type?: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
 interface RawItem { id: string; name?: string; state?: string | null; updated_at?: string | null; board?: { id: string } | null; column_values: ColumnValue[] }
 interface ItemsPage { cursor: string | null; items: RawItem[] }
 
@@ -113,9 +123,10 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   }
 
   private get donationColumnIds(): string[] {
-    const { donations: d } = this.config;
+    const { donations: d, outreach } = this.config;
     return [d.amount, d.date, d.status, d.giftType, d.funraiseId, d.salesforceId, d.benevityTransactionId,
-      d.anonymousDonor, d.donor, d.matchedBy, d.matchStatus, d.matchesGift, d.matchPairing, d.sentToDtd];
+      d.anonymousDonor, d.donor, d.matchedBy, d.matchStatus, d.matchesGift, d.matchPairing, d.sentToDtd,
+      ...(outreach === null ? [] : [outreach.donations.matchPromptSent])];
   }
 
   // Interpolated into queries only as config-supplied column ids / JSON-encoded id lists — never
@@ -145,6 +156,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
       matchStatus: statusLabel(byId.get(d.matchStatus)),
       sentToDtd: text(byId.get(d.sentToDtd)),
       updatedAt: item.updated_at ?? '',
+      matchPromptSent: this.config.outreach === null ? null : text(byId.get(this.config.outreach.donations.matchPromptSent)),
     };
   }
 
@@ -255,27 +267,53 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   }
 
   async getPeople(ids: string[]): Promise<PersonItem[]> {
+    return (await this.readPeople(ids, [])).map(({ person }) => person);
+  }
+
+  async getPromptDonors(ids: string[]): Promise<PromptDonor[]> {
+    const { outreach } = this.config;
+    if (outreach === null) throw new Error('getPromptDonors: config.outreach is null');
+    const { employerName, doNotSolicit } = outreach.people;
+    return (await this.readPeople(ids, [employerName, doNotSolicit])).map(({ person, byId }) => {
+      // A wrong id comes back as no value, or as some other column's. Reading either as "not checked"
+      // would email donors who asked not to be.
+      for (const [key, id, type] of [['employerName', employerName, 'text'], ['doNotSolicit', doNotSolicit, 'checkbox']] as const) {
+        const cv = byId.get(id);
+        if (cv === undefined) throw new Error(`getPromptDonors: People has no ${key} column "${id}"`);
+        if (cv.type !== type) throw new Error(`getPromptDonors: ${key} column "${id}" is ${cv.type ?? 'of unknown type'}, needs ${type}`);
+      }
+      return {
+        ...person,
+        employerName: text(byId.get(employerName)),
+        doNotSolicit: checked(byId.get(doNotSolicit)),
+        greetingName: text(byId.get(this.config.people.firstName)),
+      };
+    });
+  }
+
+  private async readPeople(ids: string[], extraColumns: string[]): Promise<{ person: PersonItem; byId: Map<string, ColumnValue> }[]> {
     const p = this.config.people;
     const peopleBoard = this.config.boards.people;
-    const out: PersonItem[] = [];
+    const out: { person: PersonItem; byId: Map<string, ColumnValue> }[] = [];
     for (const chunk of chunksOf(ids, 100)) {
       const data = await this.transport.request<{ items: RawItem[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id name state board { id } column_values(ids: $columnIds) { id text value } }
+          items(ids: $ids, limit: 100) { id name state board { id } column_values(ids: $columnIds) { id${extraColumns.length > 0 ? ' type' : ''} text value } }
         }`,
-        { ids: chunk, columnIds: [p.email, p.householdEmail, p.firstName, p.lastName, p.phone, p.dtdCompanyId] },
+        { ids: chunk, columnIds: [p.email, p.householdEmail, p.firstName, p.lastName, p.phone, p.dtdCompanyId, ...extraColumns] },
       );
       // Only People-board donors: an Organizations or People (Historical) donor has no DTD columns.
       for (const item of data.items.filter((i) => live(i) && onBoard(i, peopleBoard))) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
-        out.push({
+        const person = {
           id: item.id,
           email: text(byId.get(p.email)) ?? text(byId.get(p.householdEmail)),
           householdEmail: text(byId.get(p.householdEmail)),
           ...personName(text(byId.get(p.firstName)), text(byId.get(p.lastName)), item.name ?? ''),
           phone: text(byId.get(p.phone)),
           dtdCompanyId: text(byId.get(p.dtdCompanyId)),
-        });
+        };
+        out.push({ person, byId });
       }
     }
     return out;

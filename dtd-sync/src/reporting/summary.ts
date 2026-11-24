@@ -56,3 +56,17 @@ export function computeSummary(
     firstTimeMatchedDonors: distinct(matches.map((m) => m.donorItemId), priorMatchedDonorIds),
   };
 }
+
+/** One number per outreach.programSummary column. */
+export interface PromptSummary { prompted: number; promptedMatched: number; promptedMatchDollars: number }
+
+/** `promptedGiftIds` are one fiscal year's emailed gifts; `allMatches` any year's, since a match can land in the next one. */
+export function computePromptSummary(promptedGiftIds: string[], allMatches: DonationItem[]): PromptSummary {
+  const prompted = new Set(promptedGiftIds);
+  const matches = allMatches.filter((m) => m.matchesGiftItemId !== null && prompted.has(m.matchesGiftItemId));
+  return {
+    prompted: prompted.size,
+    promptedMatched: new Set(matches.map((m) => m.matchesGiftItemId)).size,
+    promptedMatchDollars: cents(matches.reduce((t, m) => t + (m.amount ?? 0), 0)),
+  };
+}

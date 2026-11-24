@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   matchStatusLabels, labelIds, donationColumnSpecs, PEOPLE_COLUMN_SPECS, programSummarySpecs,
   planColumns, createColumnDefaults, labelIndex, viewFilter, parseArgs, RESERVED_LABEL_ID,
-  typeConflicts, ensurePeopleColumns,
+  typeConflicts, ensurePeopleColumns, OUTREACH_DONATION_SPECS, OUTREACH_PROGRAM_SPECS, outreachPeopleIds,
 } from './setup-columns.mjs';
 
 const STATUS_LABELS = {
@@ -13,8 +13,8 @@ const STATUS_LABELS = {
   ':closed-program-eligibility': 'Not eligible',
 };
 
-test('match status labels are distinct values plus Matched and Other', () => {
-  assert.deepEqual(matchStatusLabels(STATUS_LABELS), ['Identifying employer', 'Waiting for donor', 'Not eligible', 'Matched', 'Other']);
+test('match status labels are distinct values plus Matched, Other and Prompted', () => {
+  assert.deepEqual(matchStatusLabels(STATUS_LABELS), ['Identifying employer', 'Waiting for donor', 'Not eligible', 'Matched', 'Other', 'Prompted']);
 });
 
 test('label ids never put a real label on the reserved empty-cell id', () => {
@@ -136,3 +136,20 @@ for (const [label, peopleColumns, historicalColumns, named] of [
     assert.deepEqual(monday.ensured, []);
   });
 }
+
+test('the post-gift email columns are opt-in, keyed as outreach config expects', () => {
+  assert.deepEqual(OUTREACH_DONATION_SPECS.map((s) => [s.key, s.title, s.type]), [['matchPromptSent', 'Match Prompt Sent', 'date']]);
+  assert.deepEqual(OUTREACH_PROGRAM_SPECS.map((s) => [s.key, s.title, s.type]), [
+    ['prompted', 'Prompted', 'numbers'], ['promptedMatched', 'Prompted and matched', 'numbers'], ['promptedMatchDollars', 'Prompted match dollars', 'numbers'],
+  ]);
+  const base = ['--donations', '1', '--people', '2', '--people-historical', '3', '--workspace', '4'];
+  assert.equal(parseArgs(base).outreach, undefined);
+  assert.equal(parseArgs([...base, '--outreach', 'yes']).outreach, 'yes');
+  assert.throws(() => parseArgs([...base, '--outreach', 'no']), /--outreach/);
+});
+
+test('outreachPeopleIds finds the existing People columns, marked or not, and names a missing one', () => {
+  const columns = [{ id: 'text_1', title: 'Employer Name' }, { id: 'boolean_1', title: '🔒 Do Not Solicit' }];
+  assert.deepEqual(outreachPeopleIds(columns), { employerName: 'text_1', doNotSolicit: 'boolean_1' });
+  assert.throws(() => outreachPeopleIds(columns.slice(0, 1)), /Do Not Solicit/);
+});

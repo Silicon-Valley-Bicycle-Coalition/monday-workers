@@ -1,4 +1,5 @@
 import type { DtdSyncConfig } from '../config';
+import { TIME_ZONE, todayLosAngeles } from '../dates';
 import { DtdApiError, type DtdClient } from '../dtd/client';
 import type { DtdMondayClient, PersonItem } from '../monday/client';
 import { getPush, recordPush, recordPushFailure } from '../db/pushes';
@@ -13,13 +14,6 @@ export interface PushDeps {
 }
 
 export interface PushResult { considered: number; sent: number; failed: number }
-
-const TIME_ZONE = 'America/Los_Angeles';
-
-/** Today's date (YYYY-MM-DD) in Los Angeles. */
-function todayLosAngeles(now: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-}
 
 /** `date` (YYYY-MM-DD) at 12:00 Los Angeles time, as ISO 8601 with that date's UTC offset. */
 export function noonLosAngeles(date: string): string {

@@ -4,6 +4,7 @@
 //
 //   Monday  - updateDonation / updatePerson / upsertProgramSummary (recordingProxy)
 //   DTD     - registerDonation (recordingProxy)
+//   Email   - send (dryRunEmail; prompt doesn't reach it in a dry run, this is the second lock)
 //   D1      - every statement that isn't a SELECT (dryRunDb)
 //
 // A dry run never advances the watermark or records pushes, so each dry-run hour re-reads the same window.
@@ -21,6 +22,16 @@ export function dryRunMonday(monday: DtdMondayClient, ctx: SkipContext): DtdMond
 
 export function dryRunDtd(dtd: DryRunnableDtd, ctx: SkipContext): DryRunnableDtd {
   return recordingProxy(dtd, 'DTD', { registerDonation: noop }, ctx);
+}
+
+/** Sends nothing and logs no argument: the message is a donor's address and a letter to them. */
+export function dryRunEmail(ctx: SkipContext): SendEmail {
+  return {
+    send: async () => {
+      logSkip(ctx, 'Email', 'send', []);
+      return { messageId: 'dry-run' };
+    },
+  };
 }
 
 const SELECT = /^\s*select\b/i;

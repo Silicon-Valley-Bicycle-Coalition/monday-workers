@@ -26,6 +26,7 @@ This Worker:
   donor (DTD sends the emails);
 * **pulls** each record's match status and employer back onto the Donations and People boards, so
   staff can follow up and the member portal can show the result;
+* can instead **email** those donors itself, with no DTD API (built, off; see "Post-gift email");
 * **pairs** each Matching Donation (written by `benevity-import` or by staff) to the gift it
   matched, so the program's effectiveness can be reported;
 * **summarizes** the program per fiscal year on a Matching Gift Program board.
@@ -256,6 +257,110 @@ Gifts made outside Funraise since 2026-10-23 (when DTD's Salesforce feed stopped
 For the first production runs set `push.backfillFromISO` to `2026-10-23` so those donors are
 prompted late, then set it back to `null` so the rolling 30-day window applies. The send rules are
 the same, and the ledger prevents any resend.
+
+## Post-gift email (off)
+
+Design: [`docs/superpowers/specs/2026-11-16-post-gift-match-email-design.md`](../docs/superpowers/specs/2026-11-16-post-gift-match-email-design.md)
+(issue #7). **Built, off in both environments, and it has never sent an email.** It is the alternative
+to paying for DTD's API: this Worker sends one email itself for each gift that push would have sent to
+DTD, 2 to 30 days after the gift. An employer SVBC has seen match gets that employer's steps; a donor
+with no employer on file is asked "Where do you work?"; anyone else gets nothing.
+
+**The switch is `outreach` in `config/*.json`.** `null`, as shipped, is off. `mode: "email"` runs
+pairing and then `prompt`, and never pull or push. `mode: "dtd"` is the same as off apart from the
+summary numbers. A block holding a `REPLACE_…` placeholder fails validation, and a Worker whose config
+fails validation runs no job at all, so deploy only a finished block.
+
+**Never twice.** A row in D1 `prompts` is claimed before the send, in one statement that also enforces
+the donor cooldown, so overlapping runs can't email a donor twice. The item's own Match Prompt Sent
+date (or a Match Status of `Prompted`) also blocks a send, which covers a lost database and lets staff
+hold one gift back by dating it. Monday is written after the send and repaired on the next run if that
+write fails. **Sent to DTD** is left alone, so a later switch to `dtd` still pushes these gifts.
+
+**When a send fails** (`src/outreach/sendErrors.ts`): a rejection of that email (bad or suppressed
+address, say) is retried up to 3 times, then logged `gave up`. A sender, quota or account error stops
+the run and costs no gift an attempt. Anything unclear may have been sent: the row stays `pending`,
+the run stops, and it is logged `prompt item <id> stuck` every run and never retried. Check the sending
+log, and delete that row only if the email did not go out. At most 100 emails go out per run.
+
+**Skip reasons**, logged per gift in a dry run: push's own (`gift-type`, `funraise`, `benevity`,
+`anonymous`, `status`, `amount`, `window`, `no-email`, `not-allow-listed`, `already-sent`), then
+`already-prompted`, `too-recent`, `paired`, `known-to-dtd`, `do-not-solicit`, `cooldown` (another prompt to this donor in
+90 days), `employer-not-known`. Event Tickets are excluded: their Amount is the whole order. Nothing
+is sent in a run where pairing failed.
+
+**Opting out** is a reply; staff then tick Do Not Solicit on People. There is no unsubscribe link. The
+development team should confirm that is acceptable before the first send.
+
+**Pairing can't measure this by itself.** In email mode nothing links a match to a prompted gift
+automatically: pairing needs either a Benevity id on the gift (those gifts are never prompted) or DTD's
+company for it (read by pull, which doesn't run). Staff link such matches by hand (Matches gift, Match
+pairing `Staff`). Until they do, Prompted and matched and Prompted match dollars read about 0, and the
+`paired` skip rarely fires. Don't judge the email by those numbers without that work, or extend pairing
+to use the donor's Employer Name first.
+
+### Turning it on
+
+1. **Sign-off** from the development team on the copy in `src/outreach/email.ts`, the EIN, the from and
+   reply-to addresses, the postal address, and reply-to-stop. The from address must be on the onboarded
+   sending domain, `mail.bikesiliconvalley.org`, and somebody must read the reply-to mailbox. Changing a sentence later needs a new
+   approval and a new `wordingApprovedOn`.
+2. `setup-columns.mjs … --outreach yes` adds Match Prompt Sent and three summary columns and prints
+   their ids with the two People columns. If Match Status already existed, add its **Prompted** label
+   by hand: Monday refuses a write with an unknown label.
+3. Hide Match Prompt Sent on the staff gift-entry form, then run `mark-read-only-columns.mjs`.
+4. *(dtd-sync/)* `MONDAY_API_TOKEN=... node scripts/seed-matching-employers.mjs` lists the employers
+   that have matched gifts. Staff pick which to include and fill in each URL and deadline.
+5. *(dtd-sync/)* Apply migration `0004_create_prompts.sql`.
+6. Set `outreach`, sandbox first, with one staff address in `push.allowEmails`, and
+   `push.backfillFromISO` `null` (otherwise it widens the 30 days for this email too):
+
+   ```json
+   "outreach": {
+     "mode": "email",
+     "delayDays": 2,
+     "donorCooldownDays": 90,
+     "maxAttempts": 3,
+     "excludeGiftTypes": ["Event Ticket"],
+     "employerFormUrl": "https://member.sandbox.bikesiliconvalley.org/en/portal/info?field=employer",
+     "wordingApprovedOn": "REPLACE_AFTER_SIGNOFF",
+     "ein": "REPLACE_AFTER_SIGNOFF",
+     "fromAddress": "REPLACE_AFTER_SIGNOFF",
+     "fromName": "REPLACE_AFTER_SIGNOFF",
+     "replyTo": "REPLACE_AFTER_SIGNOFF",
+     "postalAddress": "REPLACE_AFTER_SIGNOFF",
+     "logoUrl": "https://member.sandbox.bikesiliconvalley.org/email/logo.png",
+     "donations": { "matchPromptSent": "REPLACE_WITH_COLUMN_ID" },
+     "people": { "employerName": "REPLACE_WITH_COLUMN_ID", "doNotSolicit": "REPLACE_WITH_COLUMN_ID" },
+     "programSummary": {
+       "prompted": "REPLACE_WITH_COLUMN_ID",
+       "promptedMatched": "REPLACE_WITH_COLUMN_ID",
+       "promptedMatchDollars": "REPLACE_WITH_COLUMN_ID"
+     },
+     "matchingEmployers": [
+       {
+         "name": "Google",
+         "aliases": ["Alphabet"],
+         "platform": "Benevity",
+         "requestUrl": null,
+         "steps": "benevity-off-platform",
+         "deadlineNote": null
+       }
+     ]
+   }
+   ```
+
+   `employerFormUrl: null` stops the "Where do you work?" email. Set it only while the portal's
+   Employer field is on. The two environments must use different hosts (`config/split.test.ts`, which
+   also asserts both ship `null` today: change that test in the same pull request).
+7. **Rehearse in the sandbox.** It has no cron and the Worker has no route, so nothing runs there until
+   you give it one: set `env.sandbox.triggers.crons` to `["15 * * * *"]` in your working copy only, and
+   `npm run deploy:sandbox`. With writes `off`, `npx wrangler tail --env sandbox` shows a run's
+   `would-send` and `skip` lines. With writes `on`, one email reaches the sandbox inbox and the next
+   run sends nothing. Then restore `[]` and deploy again; don't commit the cron (`config/split.test.ts`
+   fails on it). `wrangler dev` can't rehearse this: it has no broker and simulates email.
+8. **Production**, writes `off` first. The first live run covers the whole 30-day window, so read how
+   many it would send before turning it `on`.
 
 ## Member portal
 
