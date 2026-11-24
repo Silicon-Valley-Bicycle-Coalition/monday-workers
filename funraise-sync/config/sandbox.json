@@ -70,5 +70,5 @@
     "funraiseLinkBase": "https://platform.funraise.io/transaction/",
     "maxPagesPerRun": 20
   },
-  "employerAnswers": { "enabled": false }
+  "employerAnswers": { "enabled": true }
 }
