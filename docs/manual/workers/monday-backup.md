@@ -96,7 +96,7 @@ Subscribing the integration user to a board also opens it to `member-portal`'s r
 | `MONDAY_API_TOKEN` | Optional fallback only; normal access is the broker. The restore CLI reads one from the operator's shell | Monday | Do not add new uses |
 
 Keep each `BACKUP_ENCRYPTION_KEY` in Secret Manager
-([chapter 3](../03-accounts-and-access.md#where-secret-values-live-secret-manager)), with the key
+(not set up yet: [chapter 3](../03-accounts-and-access.md#where-secret-values-live-secret-manager)), with the key
 id of each version recorded in the secret's annotations, **and** a second copy outside Cloudflare and Google: Secret Manager
 and the backup Shared Drive are both Google, and one Google account problem must not take the
 snapshots and their key together. Where the second copy lives is in the private appendix.
