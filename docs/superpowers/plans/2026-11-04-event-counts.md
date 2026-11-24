@@ -1,5 +1,7 @@
 # Event counts Implementation Plan
 
+> **Out of date since 2026-11-24:** the design was rewritten (class totals on the tracker, no Events counts, no answers board). Don't build from this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `eventbrite-sync` keeps Registered, Checked in and No-shows on each CRM Events item, and fills the Lifecycle Tracker's three count cells without overwriting a person's correction.

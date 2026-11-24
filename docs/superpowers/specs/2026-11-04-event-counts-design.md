@@ -1,300 +1,239 @@
-# Event counts on the Events board and the Lifecycle Tracker
+# Class totals on the Education Tracker, and the grant report
 
-**Status:** design, 2026-11-04; custom-question answers added 2026-11-05. Waiting on staff approval (see
-"Questions for staff"). Nothing built.
+**Status:** design, rewritten 2026-11-24 after Cherie Barnett's request; David chose class totals, written by
+the Worker. Waiting on David's approval of this version. The 2026-11-04 version (git history) also had count columns on Events
+and a restricted SMCTA answers board. Both are dropped; see "Approaches". Release 1's zip code was designed in
+[`2026-11-04-eventbrite-grant-report-design.md`](2026-11-04-eventbrite-grant-report-design.md) and is built; where
+the two differ, this document wins.
 
 ## Why
 
-Cherie Barnett asked whether Eventbrite could fill in Monday automatically. Registrations already
-reach the CRM **Events** and **Event Registrations** boards (`eventbrite-sync`, live since
-2026-11-03). What staff still do by hand, after each class, is look up the numbers and type
-**Registered**, **Checked in Attendees** and **No-shows** into the staff-built
-[Bike Education Lifecycle Tracker](https://bikesiliconvalley.monday.com/boards/18433254640). The
-activity log shows Cherie doing this for the 2026-10-10 repair clinic. The tracker calculates
-student-hours and canceled-or-refunded from those three cells.
+Cherie asked for Eventbrite's Custom Questions reports to reach Monday on their own, so funder reports come
+from data held in one place. Today staff export one report per class (Deanna's protocol: every attendee status,
+name, email, ticket type, date attending, order and fee columns, all custom answers) and paste it into two
+workbooks, one for VTA and one for SMCTA. They look up a county per zip and build the quarter's charts. They
+also type Registered, Checked in and No-shows into the
+[Bike Education Lifecycle Tracker](https://bikesiliconvalley.monday.com/boards/18433254640).
 
-Other events have one-off boards, each with its own shape. So the counts should live in one place,
-not be synced to each board.
+What the workbooks chart from registrations is attendance (checked in, no show, canceled), registrations per class and home
+county. Staff said on 2026-11-04 that funders need, per person: name, email, date attending, zip, checked in,
+no show, canceled. Event Registrations already holds all of that except zip.
 
-The numbers mostly feed **funder reports** (David, 2026-11-04). So a wrong number costs more than a
-blank one, and that decides most of what follows.
+The numbers feed funder reports, so **a wrong number costs more than a blank one**. That decides most of what follows.
 
 ## Goals
 
-* `eventbrite-sync` keeps three counts on each CRM Events item, for events from a start date onward.
-* A tracker row linked to its CRM event gets those numbers in its existing three columns, so its
-  formulas keep working and nobody retypes them.
-* A person can correct a tracker number, and the Worker leaves that correction alone.
-* A one-off board can show the counts with no code, using a connect column and a mirror.
-* Home zip and county reach Event Registrations, and the answers SMCTA reports use reach a separate
-  restricted board with no names. See "Custom-question answers".
+* Each tracker row linked to an Eventbrite class gets its three totals after the class, with no typing.
+* A person can correct them, and the Worker then leaves that row's totals alone.
+* A funder's per-person list, with zip and county, is one filtered view on Event Registrations, and the charts read the same rows.
+* Nobody enters the grant twice: the tracker's Funder is the source.
 
 ## Non-goals
 
-* Backfilling past classes. Numbers already on the tracker stay, because past reports may have used
-  them, and classes before the start date stay manual.
-* Linking tracker rows to CRM events automatically. A person picks **CRM Event**, as today (18 of 26
-  rows are linked).
-* Writing to one-off boards.
-* Counting Funraise events (no attendee feed; they load once a year by CSV).
-* Ticket type, phone numbers, or any custom-question answer outside the allowlist below. Health,
-  emergency-contact, height and waiver answers stay in Eventbrite.
+* Person rows, or any name, email or zip, on the tracker: it is a Main board, and its subitems are the task checklist.
+* Any custom answer other than zip. Fees, ticket types and order numbers stay in Eventbrite too. (Phone and
+  employer answers are separate features with their own designs.)
+* The post-class survey, already a Monday form.
+* Classes before November 2026. Staff's data is complete through October.
+* Linking a tracker row to its class. A person picks **CRM Event**, as today (19 of 27 rows on 2026-11-24).
+* Count columns on Events, and one-off boards.
 
-## Anti-goals: this has failed if
+## Failed if
 
-* A health, emergency-contact or waiver answer reaches Monday, D1 or a log.
-* A survey row on the restricted board carries a name, email, phone or attendee id.
+* A health, emergency-contact or waiver answer, or free text typed into a zip question, reaches Monday, D1 or a log.
+* A Worker number replaces a person's.
+* A row shows another class's numbers because of a wrong link.
+* Everyone reads as a no-show before the class has happened, or when nobody took attendance.
+* A failure here blocks or delays a registration write.
 
-* A funder report carries a number the Worker wrote over a person's correction.
-* A tracker row shows another class's numbers because of a wrong link.
-* Everyone reads as a no-show before the class has happened.
-* A failed count blocks or delays a registration write.
+## Approaches
 
-## The rule for the numbers
+**What goes on the tracker.** Class totals (David, 2026-11-24), over a row per registrant, which would put
+personal data on a board all staff read and mix it into the checklists.
 
-Counted over the event's active items on Event Registrations (by the **Event** column, not the
-Registrants link, which leaves out very large events). All roles are counted, because an event's Role
-comes from its organizer account, so an event doesn't mix them.
+**How totals get there.**
 
-| Count | Is | When |
-|---|---|---|
-| Registered | every registration, canceled ones included | always |
-| Checked in | Attendance = Attended | once the event has ended, and at least one person is Attended |
-| No-shows | Attendance = Registered, No Show, or blank | same as Checked in |
+| | Trade-off |
+|---|---|
+| **The Worker writes the existing columns** (David's choice, 2026-11-24) | Most code; corrections stay, formulas keep working |
+| Mirrors of counts on Events | Less code; nobody can correct a mirror, and formulas and typed history would need rebuilding |
+| Fill each blank cell once | Simplest; a late check-in never reaches the report |
 
-Registered includes cancellations because the tracker's `Canceled or Refunded` formula is
-Registered − Checked in − No-shows.
+**Dropped.** The restricted SMCTA answers board, because staff moved those questions to the post-class survey
+(2026-11-04). Counts on Events, which only served one-off boards nobody has asked for since.
 
-**Zero check-ins reads as "not done", not "nobody came".** When nobody is Attended, Checked in and
-No-shows stay blank, on the Events item and the tracker alike, because one-off boards mirror Events. The
-class emails treat "nobody checked in" the same way. A class where truly nobody came stays blank for a
-person to fill in. Partial check-in can't be detected, so someone not checked in counts as a no-show; the
-parallel run is how that gets noticed. There's no grace period: a late check-in corrects itself on the
-next hourly run, because the cell still holds the Worker's value.
+## Evidence (2026-11-24, read from the live boards)
 
-**An undone check-in stays counted.** `mergeAttendance` never moves Attended backward, and this design
-leaves attendee processing alone, since that rule also decides who gets class emails. To fix a mistaken
-check-in, edit Attendance on Event Registrations; the count follows within the hour.
+Six classes and rides since 2026-11-09 have a linked Eventbrite event and totals typed on the tracker.
+Numbers are registered / checked in / no-shows; "feed" uses the rule below.
 
-**Evidence.** Compared on 2026-11-04 against the 8 finished classes with both tracker counts and a
-CRM Event link, all from before the feed: 3 match exactly; 3 are off by one check-in; 1 looks like
-check-ins and no-shows were swapped on the tracker (14/11/2 against 14/2/11); and the 2026-10-10
-repair clinic is far apart (26/26/0 against 14/8/5), possibly walk-ins. Registered matches on 6 of
-the 8. It isn't known which side is right in the mismatches.
+| Class | Tracker | Feed | |
+|---|---|---|---|
+| 11-09 Lyft Bike Basics | 16 / 6 / 10 | 17 / 7 / 9 | one late cancellation and one check-in apart; which side is right is unknown |
+| 11-12 Active 101 ride | 10 / 8 / 2 | 10 / 8 / 1 | tracker counted the cancellation as a no-show |
+| 11-14 E-Bike Basics | 11 / 7 / 4 | same | |
+| 11-16 Smart Cycling 1 | 11 / 7 / 4 | same | |
+| 11-18 Winter Biking | 6 / 4 / 2 | same | |
+| 11-21 Smart Cycling 2 | 4 / 2 / 2 | same | |
 
-## How it works
+So check-ins do reach Attendance, which was the 11-04 design's prerequisite. The 11-14 Sunnyvale repair clinic
+(36 checked in, typed) is linked to its *volunteer* listing, whose sign-ups go to the Volunteers board; walk-ins
+aren't in Eventbrite.
+
+## Release 1: zip and the grant report
+
+1. **Spanish wording.** `homeZip.ts` also accepts a `text` question containing `código postal` (accented or
+   not), any case. Every zip wording on the 2026 sheets already matches except SMCTA's 2026-09-20
+   `¿Cuál es el código postal de tu domicilio?`. The value rule is unchanged: five digits or ZIP+4, else discarded.
+2. **Production Monday setup**, as the grant report design lists it:
+   * **Home Zip**, text, on Event Registrations; its id goes in `homeZipColumn` (still the placeholder); lock it.
+   * **Grant**, a dropdown on Events, labels VTA and SMCTA, with a mirror on Event Registrations through **Event**.
+   * The **Grant report** view, to the sandbox copy's settings (291176794).
+3. **Backfill** every November 2026 VTA and SMCTA class with `scripts/backfill-attendees.mjs`. Until release 2, a
+   person sets Grant on those.
+4. **Dashboard** on Event Registrations: Attendance, registrations per Event, and Home Zip, filterable by Grant
+   and Class Date. Built by hand in Monday: connector-made private dashboards lock out their owner and drop widget filters.
+   Grant there is a mirror, proven as a table-view filter but not a dashboard one. If it doesn't filter, use chart views on the
+   board, which take the board's own filters. If neither works, stop and come back: the Worker would have to copy Grant onto registrations.
+
+A past class's `Registered` row is a no-show in these reports, as Eventbrite's `Attending` is in the workbooks today.
+Staff may still set No Show. The view's description says so.
+
+## Release 2: totals and grant, from the tracker
+
+An hourly job in the existing cron, shaped like the send-link sweep (`src/sendLinks/sweep.ts`): it reads and writes Monday
+directly, needs no queue message, and has no cursor, so a failed run is redone the next hour.
 
 ```
-Hourly cron (already exists)
-  │  sweepEventCounts: one { kind: 'counts', eventId } queue message per event in the window
-  ▼
-Same write queue → consumer, processCounts
-  │  1. read the event's registrations from Monday (Attendance only), paging
-  │  2. compute the three counts
-  │  3. Events item: write the counts if they differ from what's there
-  │  4. tracker rows whose CRM Event is this item: apply the correction rule, write what changed
-  ▼
-Events board → one-off boards, by mirror
-Lifecycle Tracker
+hourly cron → read tracker rows (Date, Status, Funder, CRM Event, three counts)
+            → read the linked Events items (Date, End, Event Status, Program, Eventbrite ID, Grant)
+            → guards → Grant onto Events → count registrations → write or clear the tracker's Worker-owned rows
 ```
 
-**Hourly, not per registration.** Staff edit Attendance on the board (No Show, and the send page sets
-it too), and no webhook tells the Worker. Recounting from Monday on a timer catches those edits and
-makes the count match the board staff look at. An hour's delay doesn't matter for a report written
-after the class. It also keeps registration writes untouched, so a count failure can't affect them.
+**Guards, for both Grant and totals.** A row *qualifies* when all hold:
 
-**The window.** Ledger events (`events` table) with a Monday item and status `written`, whose end (else
-start) is on or after `eventCounts.startDate`, and not more than 30 days past. So upcoming events and
-the last 30 days of ended ones are recounted. Later edits aren't picked up after 30 days, which also
-stops the Worker touching a closed quarter's numbers. A canceled event (ledger `eventbrite_status`
-`canceled`) is skipped.
+* its Status is not in `skipStatusLabels` (`Cancelled`), and its Date is on or after the start date (`grantStartDate` for Grant,
+  `startDate` for totals);
+* it links to exactly one Events item, which is active and has an Eventbrite ID;
+* that event's Program is not in `attendeeSync.volunteerPrograms`;
+* the row's Date falls on the event's Pacific days, start through end.
 
-**Failures.** A failed counts message is logged with `console.error` (Workers Issues raises it) and
-acked, not retried. The next hourly run does the same work, so a retry only adds load. It changes no
-ledger status, because the `events` row's status belongs to the event write and the ended-event sweep
-reads it. Under `hold` it retries like any message, as the switch requires. It never reaches the
-dead-letter consumer in normal use; if it does, that consumer logs it and touches no row.
+A row fails a guard only on data that was read. A failed or partial Monday read fails the run, and changes nothing.
 
-### The Events board
+**Totals** also need Event Status `Completed` (the ended-event sweep keeps that current) and at least one Attended. All three
+are then written together:
 
-Three new number columns: `🔒 Registered`, `🔒 Checked In`, `🔒 No-shows`, added to `MARKED_COLUMNS`
-in `scripts/mark-read-only-columns.mjs` under `Events`. Ids in `attendeeSync.events` config.
-`📜 Tickets Sold` stays as the history it is. Its board description says it isn't maintained until the
-integration runs, so update that to point at the new columns.
+| Total | Is |
+|---|---|
+| Registered | every active registration linked by **Event**, canceled included |
+| Checked in | Attendance = Attended |
+| No-shows | Attendance = Registered, No Show or blank |
 
-### The Lifecycle Tracker
+Canceled registrations count only in Registered, so the tracker's `Canceled or Refunded` formula (Registered − Checked in −
+No-shows) comes out right. With **nobody Attended** no total is written, Registered included: attendance probably wasn't taken,
+and the formula treats blanks as 0 (checked 2026-11-24), so Registered alone would show everyone as canceled. Attendance is
+read with `statusText`, never `text`.
 
-Config `attendeeSync.tracker`, `null` to turn the whole step off: board id, `crmEventColumn`
-(`board_relation_mm8r7g27`), `registeredColumn` (`numeric_mm7p1y4p`), `checkedInColumn`
-(`numeric_mm7na1kk`), `noShowColumn` (`numeric_mm7p9znq`), `dateColumn` (`date_mm7q7jqv`), `statusColumn`
-(`status`), `skipStatusLabels` (`["Cancelled"]`).
+**Feed not settled.** If any D1 `attendees` row for the event isn't `written`, its totals are *held*: nothing written, nothing
+cleared. A blank sends staff to look; a short count doesn't. D1 can't show a delivery that never came, which the parallel run is for.
 
-**Tracker rows are written only once the event has ended.** Before that, Registered alone would make the
-tracker's `Canceled or Refunded` formula show everyone as canceled, and rewrite a staff board every hour.
-The Events item is written throughout, so live numbers are on the event.
+**Whose row it is.** D1 table `tracker_counts` (migration `0004`): tracker item id, event item id, the last three values written,
+written at. Ids and numbers only.
 
-**Built last, off by default.** The tracker step ships behind `attendeeSync.tracker: null` and is turned
-on only after staff answer questions 2, 3 and 4 below. If reports come from the Google Sheet instead, the
-tracker step may never turn on, and the Events counts still stand on their own.
+* A row is **a person's** when any of its three cells holds a number that isn't what the Worker last wrote there. The Worker leaves all
+  three alone, because the formula mixes them: correcting one while the others moved would make it wrong. Clearing that cell hands the row back.
+* Otherwise the Worker writes the totals where they differ. A number on a row it never wrote is a person's, so today's typed totals stay.
+* **A row that stops having totals** (unlinked, relinked, Cancelled, date moved, event reopened, nobody Attended any more) has its
+  Worker-written cells cleared and its record deleted, unless it's a person's. A relinked row then gets the new event's totals if it
+  qualifies. This is the only clearing the job does, and it's what stops one class's numbers staying on another's row.
+* **30 days after its Date, a row is frozen**: neither written nor cleared, so a closed quarter's numbers don't move. A Date
+  edited to fall outside the window freezes it too.
 
-**Why write the numbers rather than mirror them.** A mirror can't be corrected by hand, and corrections
-are a goal. Writing also leaves the existing formulas alone.
+Monday is written before D1. If the D1 write is lost, the row reads as a person's until cleared, which is the safe side.
 
-**Correction rule, per cell.** D1 remembers what the Worker last wrote to each tracker row (new table,
-migration `0004`: `tracker_counts`: tracker item id, event id, last registered, last checked in, last
-no-shows, written at; ids and numbers only). The Worker writes a cell only when it's blank or still
-holds the value the Worker last wrote. Anything else is a person's number and stays. Clearing a cell
-hands it back to the Worker. A hand-entered number on a row the Worker has never written counts as a
-person's number. A blank count (no-shows before the end) is never written, so it can't clear a cell.
+Walk-ins: staff type all three numbers, and the row is theirs from then on.
 
-**Wrong-link guard.** The row's Date must fall on the event's Pacific start date, or between its start
-and end for a multi-day event. Otherwise nothing is written to that row and one warning is logged with
-the item ids. A blank cell is visible; a wrong number isn't. A row whose status is in `skipStatusLabels`
-is skipped too. If two rows link to one event, each is checked on its own. A row linked to more than one
-event is skipped with a warning (the column allows only one, so this shouldn't arise).
+**A mistaken check-in stays counted.** `mergeAttendance` never moves Attended back (it also decides who gets class emails), and this
+design leaves it alone. Staff fix Attendance on Event Registrations, and the total follows within the hour. The same goes for a reinstated order.
 
-**Relinks.** `tracker_counts` is keyed on the row alone, so a relinked row's old value still reads as the
-Worker's and gets replaced. A row that is unlinked, or relinked to an event outside the window, keeps its
-numbers: the Worker no longer visits it, and it never clears a cell. Clearing or correcting it is a
-person's job.
+**Grant.** Funder `VTA` → `VTA`, `SMC` → `SMCTA`, any other Funder → no grant (`grantByFunder` in config). Per event, over its qualifying rows:
 
-**The tracker is staff's board.** Its columns can be renamed or removed, so a Monday rejection there
-(`not retried`-class errors) is logged by column and must not stop the Events write, which comes first.
+* A blank Funder doesn't vote. If the rest agree, that's the event's Grant; if they disagree, nothing is written and it warns.
+* The Worker writes a Grant that differs, including one a person set. Finding the same value already there, it records it as its own.
+* D1 table `event_grants` (event item id, Grant) is what the Worker wrote or adopted. When an event ends up with no grant, or no qualifying
+  row, its Grant is cleared only if it still equals that record. So a mis-link, once fixed, doesn't leave a class in VTA's
+  report. A Grant on an event no row ever linked is never touched.
+* There is no 30-day limit: a Funder correction reaches old registrations too.
 
-### One-off boards
+The column becomes `🔒 Grant` at this release (`MARKED_COLUMNS`). `grantStartDate` is 2026-11-01; `startDate` is the day release 2 goes live.
+Two rows may link to one event, and then both show its totals.
 
-No code. A how-to in the staff guide: add a connect column to the CRM Events board, pick the event, add
-a mirror of the three count columns. Events is a private board in the CRM workspace; every staff member
-has a CRM seat (decided 2026-11-03), and the tracker's CRM Event column already connects to it.
+**How staff see a gap.** Worker warnings (date mismatch, double link, Grant conflict, feed not settled) go to the log once a day, at
+the check hour, with item ids only. Staff don't read logs, so the tracker gets a **Totals missing** view: Date before today, Registered empty, Status not Cancelled.
 
-### Write switch and sandbox
+**Config** `attendeeSync.tracker`, `null` turns the whole job off (how it ships): board id 18433254640, `crmEventColumn` `board_relation_mm8r7g27`,
+`registeredColumn` `numeric_mm7p1y4p`, `checkedInColumn` `numeric_mm7na1kk`, `noShowColumn` `numeric_mm7p9znq`,
+`dateColumn` `date_mm7q7jqv`, `statusColumn` `status`, `funderColumn` `color_mm7nbsn0`, plus the values above and
+`attendeeSync.events.grantColumn`.
 
-`eventbrite-sync:writes` covers all of it. The sweep follows the ended-event sweep (`off`: each send a
-`Write queue` skip line; `hold`/`unknown`: skipped). The consumer runs through `dryRunConsumerDeps`, with
-a dry-run `tracker_counts` store and the tracker board added to `dryRunMondayClient`'s board labels. A
-message stamped `dropped` stays a dry run.
+**Failures.** The tracker is staff's board and its columns can change. A refusal is logged with the item and column ids,
+the next row goes on, and the job stops after three failures in a row. It shares nothing with registration writes.
 
-Sandbox: a small scratch tracker board in the sandbox workspace with the same column types, its id in
-`config/sandbox.json`. `config/split.test.ts` gains the new keys. The `Staff Boards (sandbox)` workspace
-is empty, so there's no copy to use.
+**Write switch.** As the send-link sweep: `off` counts what it would write and writes neither Monday nor D1; `hold`/`unknown` skips.
 
-## Custom-question answers
+**Sandbox.** A scratch tracker board in the sandbox workspace, its ids in `config/sandbox.json`, the new keys in
+`split.test.ts`. Sandbox crons are off, so the handler is run by hand.
 
-**Why.** Funder reports are built from Eventbrite exports. David confirmed on 2026-11-05 that the waiver
-sign-off isn't a funder requirement, and chose to bring over home zip and the SMCTA answers. The same
-exports hold health and emergency-contact answers that no funder report reads, so this is an allowlist:
-a question not named in config is never read past matching, wherever it appears.
+## Release 3: county
 
-| Answers | Used for | Goes to |
-|---|---|---|
-| Home zip, and county worked out from it | VTA home county | Event Registrations, `🔒 Home Zip` and `🔒 Home County` |
-| How heard, why signed up, riding frequency, street and everyday comfort, live or work in San Mateo County, city, gender, age, ethnicity | SMCTA | New restricted board, one row per registration, no names |
-| Mental or physical conditions, "please describe", emergency contact, height, release of liability, order and fee columns | No funder report | Nowhere: stay in Eventbrite |
+`🔒 Home County`, text, on Event Registrations, written with Home Zip (`registrations.homeCountyColumn`, placeholder = off).
 
-**Reading them.** The consumer already fetches the attendee on every update; from memory, not yet verified,
-that object carries `answers` (`question_id`, `question`, `type`, `answer`). One real read confirms the
-field and whether it needs an `expand`, before anything is built on it. A pure function picks the allowed
-answers, so it can't make a registration write fail.
-
-**Matching on wording.** From memory, question ids are per event, so a list of ids wouldn't carry to the next
-class; the real read confirms this. Config lists each allowed question's exact wordings, compared after
-trimming and lowercasing. The 2026 VTA report uses three for zip: `What is your home zip code?` (22 sheets),
-`Home zip code` (7) and `¿Cuál es el código postal de su domicilio?/What is your home zip code?` (1). A new
-wording stays blank until someone adds it, which fails safe: a reworded question can't let the wrong answer
-through. Substring matching isn't allowed, because "please describe" style follow-ups can sit beside any
-question. An attendee with answers but no zip match logs its event and question ids at info level, never the
-wording or the answer.
-
-**Zip and county.** The zip is written only if the answer starts with five digits, keeping those five, so free
-text can't land in the column. County comes from a config table seeded from the report's `Zip Codes - Counties`
-sheet; an unlisted zip leaves county blank. That sheet needs staff review first (question 7): it has 39 zips,
-none for most of San Jose; it lists 94022 (Los Altos) as San Mateo County, which looks wrong; and it lists
-94303 as Santa Clara County while the Q3 report treats it as either. A blank is visible, and a report can count them.
-
-**The restricted board.** A private board in the CRM workspace, with Cherie and whoever she names as
-subscribers, plus the integration user, which has to write to it. One row per registration, from the
-answers start date onward, only when at least one SMCTA answer is present. Each row holds the event name, class date,
-the answers, and `🔒 Canceled` (Eventbrite's cancelled or refunded state). The item name is the fixed word `Response`.
-No name, email, phone, zip, attendee id, or link to People or Event Registrations. City stays because SMCTA uses it.
-
-D1 keeps `answer_rows` (attendee id, Monday item id, written at) so an updated answer changes the same row.
-This table holds no answers, but it does make the rows **pseudonymous, not anonymous**, and:
-
-* **The privacy here is limited, so say so to staff.** Anyone who can read this Worker's D1 can re-link a row
-  to a person, and a small class's age, gender and city can identify someone without it. Free-text answers can
-  name people. Rows created in order can line up with registration times.
-* **A private board isn't a wall against the Workers.** One integration user backs all three OAuth apps, so the
-  internet-facing `member-portal`'s read-only token can read this board too ([GL#18](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/18), accepted; see the root README).
-  Having no names on the board is what limits the damage, so that rule is the real control.
-* **Backups.** `monday-backup` snapshots every board the integration user can see, so this board goes in its
-  `excludeBoardIds`. The answers can be rebuilt from Eventbrite, so nothing is lost for good.
-* **Ages.** The SMCTA report's age question includes under 13. Eventbrite already holds this, but the board is a second copy.
-
-**Failures.** Zip and county are part of the registration write, as ordinary columns, and written only when
-non-blank so they can't clear a cell. The survey row is its own later write, like the registrants link: a failure
-logs and never fails the registration, and a small backfill script re-runs an event. A new row only ever comes from
-the attendee's own webhook, so the script is how a missed one is recovered. Under the write switch both follow
-`eventbrite-sync:writes`, and logs carry ids only, never question text or answers.
-
-**Start and order.** Separate from the counts, with its own `answers.startDate`, and it doesn't wait for a real check-in.
-Past classes stay as exports. `surveyBoard: null` keeps the board step off if staff say SMCTA no longer needs it.
-The parallel run covers these too: compare one quarter's Monday numbers against the export before retiring it.
+The Worker already has a zip table: `pledge.zipCounty`, with San Mateo and Santa Clara zips (it puts 94022, Los Altos, in Santa Clara, where the VTA
+sheet says San Mateo). Use it, and don't change it, because Pledge to Ride's results depend on it. On top, a new
+`attendeeSync.zipCounty` holds (a) lists for Alameda, San Francisco, Contra Costa, Marin, Napa, Solano, Sonoma, San Benito, Monterey and Santa Cruz,
+from Census data, and (b) overrides, which win: `94303` → `SMC or SCC`, as the Q3 VTA report has it. Any other zip that crosses a county line
+takes the county holding most of its people. A zip in no list leaves county blank; when a person's zip changes to one, county is
+cleared, so the pair never disagrees. **Staff approve the added lists and 94303 first.** Then re-drive the November classes and
+add county to the view and dashboard.
 
 ## Rollout
 
-1. **Prerequisite:** see a real check-in reach Attendance. None has yet; the first events in the feed run
-   2026-11-08 and 09. Don't turn counts on before this, because a funder number would rest on it.
-2. Check the integration user can write to the tracker
-   (`node scripts/check-monday-token-scope.mjs --workspace 12570563`).
-3. Sandbox rehearsal, then production with `eventCounts.startDate` set to the first class with a proven
-   check-in.
-4. **Parallel run:** for the first three classes or a month, whichever is longer, staff keep pulling the
-   Eventbrite numbers and compare. Any difference gets explained before the manual step stops.
-5. Update the staff guide (§4), the README, the UAT script and the root status table.
+1. Release 1. Staff compare one November class's export against the view.
+2. Before release 2, prove the integration user can write the tracker. The scope script only reads, so it can't show this. With David's
+   go-ahead, set and clear Registered on a Cancelled row with the integration's token. Staff link the 12-03 and 12-08 rows, whose events already exist on Events.
+3. Release 2, then a parallel run: for the first three classes staff pull Eventbrite's numbers, and any difference is
+   explained before they stop. Include a class with a cancellation.
+4. Release 3 after the table review.
+5. Each release updates `eventbrite-sync/README.md`, `docs/uat/eventbrite-sync.md`, the staff guide and the root status table.
 
-## Questions for staff
+## Testing
 
-These change what gets built. They go to Cherie with the plan.
+Unit: the count rule (cancellations, nobody attended, none registered); each guard; row ownership (blank, Worker's,
+person's in one cell, handed back, unlinked, relinked, frozen, held); Grant mapping, blank and conflicting Funder, adopted, cleared after a mis-link; zip wordings, English, bilingual and Spanish-only; county
+lookup, unknown and changed zip; `off` writes nothing. No-leak: an attendee with health and emergency answers leaves
+no trace in a write or log. A failed read clears nothing. Sandbox: one class through all three releases.
 
-1. **Is the Registered / Checked in / No-shows count the information being pulled,** along with the answers
-   listed under "Custom-question answers"? Or is there more?
-2. **Walk-ins.** There's a `Walk-in registration.docx` in the same folder. Do walk-ins get added to
-   Eventbrite? If not, the count will be low for those events and someone corrects it by hand. Does that
-   explain the repair clinic's 26?
-3. **Which tracker is live?** A Google Sheet named `Bike Education Lifecycle Tracker` in that folder was
-   modified 2026-11-02. Are reports built from the Monday board or the Sheet?
-4. **Is check-in always done in Eventbrite?** If some classes take attendance on paper, or check in only
-   some people, the numbers will be blank or low for those.
-5. **Which one-off boards take these numbers,** and is a mirror enough there?
-6. **Does SMCTA still need these answers in 2026, for which classes, and from registrants or only attendees?**
-   The file we have is from 2025. Rows cover registrations, with canceled ones marked; if reports count only
-   attendees, the board needs Attendance, which brings it closer to a person's record.
-7. **Is the zip-to-county table right?** See "Zip and county". Which county should 94303 count as?
-8. **Who should see the restricted board?** And how do instructors get health and accommodation answers now?
-   Those stay in Eventbrite, so whatever they use today has to keep working.
-9. **The Q3 report shows two sets of numbers:** the attendance chart has 66 / 138 / 44 and the class table
-   49 / 105 / 41, and the 56% sent to VTA comes from the chart. Which is right? The parallel run needs to know.
+## For staff (none blocks release 1)
+
+1. Are the added county lists right, and is `SMC or SCC` right for 94303? Pledge to Ride counts it as San Mateo. (Blocks release 3.)
+2. Who adds walk-ins, and where?
+3. When is the next report due?
 
 ## Left to the builder
 
-Query shape and paging for reading registrations; how the tracker rows are found (per event, or one read
-per sweep); column creation (API or UI); batching the sweep's sends; message and log wording. Watch the
-Worker's 100 ms CPU limit on a large event such as Pledge to Ride's 2,557 registrations; if a window ever
-includes one, exclude it by config, as `registrantsLinkExcludedEventIds` does.
+Query shape and paging; where the county table file lives; log wording; how the Worker tells a column refusal from an outage.
 
-## Calls made in this design (David to check)
+## My calls, for David to check
 
-* Hourly recount from Monday, not event-driven or from the D1 ledger.
-* Failed counts are logged and left for the next hour, not retried.
-* The 30-day window, and leaving canceled events and Cancelled tracker rows alone.
-* The date check that leaves a row blank on a mismatch.
-* Blank Checked in and No-shows when nobody is Attended, and tracker writes only after the event ends.
-* Leaving undone check-ins counted until someone edits Attendance.
-* Building the tracker step last, off until staff answer.
-* Column names, and writing tracker numbers instead of mirroring them.
-* The parallel run's length.
-* Exact-wording matching, and leaving a new wording blank instead of guessing.
-* Keeping zip off the restricted board, and city on it.
-* Rows for all registrations with a Canceled mark, until staff answer question 6.
-* Leaving the restricted board out of Monday backups.
-* Text event name and date on the restricted board, not a connect column to Events.
+* The job runs in the cron rather than through the queue, unlike the 11-04 design.
+* Counts on Events are dropped.
+* A person's number in one cell makes the whole row theirs, not only that cell.
+* The Worker clears its own totals and Grant when a link turns out wrong. It overwrites a Grant set by hand on an event the tracker knows.
+* The 30-day freeze on totals but not on Grant; the 2026-11-01 Grant start.
+* A class with any unfinished registration in D1 gets no new totals.
+* Mistaken check-ins stay counted until staff fix Attendance.
+* Volunteer-program events are skipped, so the repair clinic stays typed.
+* A class with nobody checked in gets no totals at all, Registered included.
+* County builds on Pledge to Ride's table and leaves that table as it is.
+* Skipped rows show up in a view, with no message to staff.
+* Three classes of parallel run.
