@@ -78,7 +78,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-nearby-search-sandbox",
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "database_id": "128cf99f-03d0-4b80-b229-4e2a09fd7629",
           "migrations_dir": "migrations"
         }
       ],
