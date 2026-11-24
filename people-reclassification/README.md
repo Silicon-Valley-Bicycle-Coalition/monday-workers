@@ -358,6 +358,9 @@ board limit Monday reports for SVBC; also the move headroom cap,
 `liveTriggerPct: 85`, `historicalWarnPct: 80`), `run` (`maxMovesPerRun: 400` — with the
 ~60 page reads a pass makes, well inside Workers Paid's 1,000 subrequests per invocation;
 `quarterlyMonths`), `perpetual`. `groupId: null` on a board means its first group.
+Both configs pin the `People` group (`topics`) on all four boards, because a new
+group can land above it: an "Emailed items" group did on People from 2026-11-09 to 2026-11-24.
+Deleting a pinned group aborts the run instead of moving people somewhere else.
 
 ## Sandbox environment — inbound only, no outbound data
 
