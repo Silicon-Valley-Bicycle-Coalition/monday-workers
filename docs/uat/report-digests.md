@@ -1,9 +1,9 @@
 # UAT script: Scheduled report emails (report digests)
 
-**Status 2026-11-02: the board views are testable now; the emails are blocked.** The sandbox
-copy has been running since 2026-10-26 and builds all five emails correctly, but every send so
-far has bounced at the shared `sandbox@bikesiliconvalley.org` inbox. Until that inbox takes mail
-again, try step 1 below and skip step 2.
+**Status 2026-11-24: the board views are testable now; the emails wait on one check.** The sandbox
+copy builds all five emails correctly. Its sends bounced at the shared
+`sandbox@bikesiliconvalley.org` inbox on 2026-10-26, but that inbox took a test email on 2026-11-24.
+Until a digest has arrived there too, try step 1 below and skip step 2.
 
 ## What it does
 
