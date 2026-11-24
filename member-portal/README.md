@@ -1069,11 +1069,11 @@ deductible gifts. The volunteering line counts people affiliated with the organi
 (Current Affiliations), not whoever was affiliated when they volunteered.
 
 **Employee matching needs `monday.columns.donationMatchedBy`.** The org page and statement find an
-organization's employee matches through the Donations **Matched By** column. Sandbox has it
-(`board_relation_mm8hs607`); **production doesn't yet** (still `REPLACE_WITH_COLUMN_ID` in
-`config/svbc.json`), so there an organization's matches read as none, and an organization whose
-only activity is matching gets no statement or January email. Setting it alone does not turn on the
-person-side Double the Donation match lines, which still need all four DTD columns.
+organization's employee matches through the Donations **Matched By** column: production
+`board_relation_mm8nkc1g`, sandbox `board_relation_mm8hs607`. Left as `REPLACE_WITH_COLUMN_ID`, an
+organization's matches read as none, and an organization whose only activity is matching gets no
+statement or January email. Setting it alone does not turn on the person-side Double the Donation
+match lines, which still need all four DTD columns.
 
 **Config.** Each `config/*.json` has an `organizations` block:
 
