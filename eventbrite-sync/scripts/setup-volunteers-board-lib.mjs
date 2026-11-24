@@ -118,16 +118,20 @@ export function canceledLabelId(statusSettingsStr) {
   return Number(entry[0]);
 }
 
-/** Upcoming sign-ups, one section per event: who staff email before it, and the lead's contact list. */
-export function upcomingViewVariables(boardId, { filterDateColumn, statusColumn, canceledId, headingColumn, ticketTypeColumn, columnOrder, hidden }) {
+/**
+ * Upcoming sign-ups, one section per event: who staff email before it, and the lead's contact list.
+ * Either date keeps a row. Date is the listing's, so it misses a change to the event staff re-pointed
+ * the row to; Event Date is empty on a row with no event.
+ */
+export function upcomingViewVariables(boardId, { dateColumn, eventDateColumn, statusColumn, canceledId, headingColumn, ticketTypeColumn, columnOrder, hidden }) {
   return {
     board: boardId,
     name: UPCOMING_VIEW_NAME,
     filter: {
       operator: 'and',
-      rules: [
-        { column_id: filterDateColumn, operator: 'greater_than_or_equals', compare_value: ['TODAY'] },
-        { column_id: statusColumn, operator: 'not_any_of', compare_value: [canceledId] },
+      groups: [
+        { operator: 'or', rules: [dateColumn, eventDateColumn].map((column_id) => ({ column_id, operator: 'greater_than_or_equals', compare_value: ['TODAY'] })) },
+        { operator: 'and', rules: [{ column_id: statusColumn, operator: 'not_any_of', compare_value: [canceledId] }] },
       ],
     },
     sort: [{ column_id: ticketTypeColumn, direction: 'asc' }],

@@ -106,7 +106,8 @@ async function main() {
       find(volunteers, 'Shift Lead', 'mirror').id, find(volunteers, 'Shift Lead Email', 'mirror').id,
     ];
     await graphql(CREATE_VIEW, upcomingViewVariables(args.board, {
-      filterDateColumn: find(volunteers, 'Date', 'date').id,
+      dateColumn: find(volunteers, 'Date', 'date').id,
+      eventDateColumn: find(volunteers, 'Event Date', 'mirror').id,
       statusColumn: status.id,
       canceledId: canceledLabelId(status.settings_str),
       headingColumn: find(volunteers, 'Event and Date', 'formula').id,

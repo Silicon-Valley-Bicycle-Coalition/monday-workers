@@ -65,14 +65,15 @@ Throwaway columns and views, all deleted; the one re-pointed row was put back.
   `Event and Date` (formula).
 - Heading: `2026-11-28 · Cardinals vs Mustangs: …`, so sections are in date order. Owner's choice over
   `[EventName] [Date]`, which lists events alphabetically.
-- View `Upcoming by event`: Date today or later; Status not Canceled; grouped by `Event and Date` A→Z;
+- View `Upcoming by event`: Date or Event Date today or later; Status not Canceled; grouped by `Event and Date` A→Z;
   empty groups hidden; sorted by Ticket Type. Columns: Name, Ticket Type, Attendee Email, Attendee
   Phone (stage 2), Status, Shift Lead.
 - `setup-volunteers-board.mjs` gains the columns and the view, so a rebuilt board gets them. Idempotent
   through `bareTitle`, dry run by default. `Shift Lead` goes on Events, which the script already takes.
 - `Shift Lead Email`: a mirror on Events (the lead's Personal Email) and a mirror of that on Volunteers.
-- The filter stays on the row's own `Date`: when Eventbrite moves an event, the sync re-queues its
-  attendees, so `Date` follows. Filtering on `Event Date` would drop rows with no event.
+- Either date keeps a row. The row's `Date` is its listing's (the sync refreshes it when Eventbrite moves
+  that listing), so it misses a change to the event staff re-pointed the row to. `Event Date` alone would
+  drop rows with no event. Found in review; checked in sandbox 2026-11-24.
 
 **Stage 2, phone and shift (`eventbrite-sync`).**
 

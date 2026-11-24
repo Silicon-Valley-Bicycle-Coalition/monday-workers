@@ -589,14 +589,16 @@ UI; the API can't): the Events board's **Volunteers** column is its other side, 
 that board's **Volunteer events** view (Volunteers not empty, Date newest first) is where staff
 click an event to see who signed up. Production and sandbox v4 have both since 2026-11-17.
 
-**Upcoming by event** (same script) is the contact sheet staff email from before an event: Date today
-or later, Canceled hidden, one section per event with each person's shift, email, phone and the
+**Upcoming by event** (same script) is the contact sheet staff email from before an event: Date or
+Event Date today or later, Canceled hidden, one section per event with each person's shift, email, phone and the
 event's shift lead. Its heading, **Event and Date**, is a Monday formula over the linked event's name
-and date (`2026-11-28 · Cardinals vs Mustangs…`), so a renamed event or a re-pointed Event moves the
-row with nothing to sync; a row with no Event goes under "No event linked". It starts with the date
+and date (`2026-11-28 · Cardinals vs Mustangs…`), so a renamed event or a re-pointed Event changes
+the heading with nothing to sync; a row with no Event goes under "No event linked". It starts with the date
 because Monday sorts formula and text groups only A to Z (2026-11-24). **Shift Lead** is a one-way
 link on Events to either People board, because the lead usually isn't a sign-up; Volunteers shows it
-and **Shift Lead Email** (the lead's Personal Email) through mirrors. Design:
+and **Shift Lead Email** (the lead's Personal Email) through mirrors. Either date keeps a row because Date is the listing's: it
+doesn't follow the event staff re-pointed the row to. Production has the columns and the view since
+2026-11-24; `attendeePhoneColumn` is still the placeholder there, so Attendee Phone is blank. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
 Cutover order, rollback and open gaps:

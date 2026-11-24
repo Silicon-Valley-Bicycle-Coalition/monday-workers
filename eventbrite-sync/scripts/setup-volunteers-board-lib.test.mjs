@@ -115,13 +115,15 @@ describe('canceledLabelId', () => {
 });
 
 describe('upcomingViewVariables', () => {
-  const v = upcomingViewVariables('7', { filterDateColumn: 'date_d', statusColumn: 's', canceledId: 4, headingColumn: 'f', ticketTypeColumn: 't', columnOrder: ['name', 't'], hidden: ['h'] });
+  const v = upcomingViewVariables('7', { dateColumn: 'date_d', eventDateColumn: 'mir', statusColumn: 's', canceledId: 4, headingColumn: 'f', ticketTypeColumn: 't', columnOrder: ['name', 't'], hidden: ['h'] });
 
-  it('keeps today onward, without Canceled rows', () => {
+  it('keeps a row while its own date or its event’s date is today or later, without Canceled rows', () => {
     expect(v).toMatchObject({ board: '7', name: 'Upcoming by event' });
-    expect(v.filter).toEqual({ operator: 'and', rules: [
-      { column_id: 'date_d', operator: 'greater_than_or_equals', compare_value: ['TODAY'] },
-      { column_id: 's', operator: 'not_any_of', compare_value: [4] }] });
+    expect(v.filter).toEqual({ operator: 'and', groups: [
+      { operator: 'or', rules: [
+        { column_id: 'date_d', operator: 'greater_than_or_equals', compare_value: ['TODAY'] },
+        { column_id: 'mir', operator: 'greater_than_or_equals', compare_value: ['TODAY'] }] },
+      { operator: 'and', rules: [{ column_id: 's', operator: 'not_any_of', compare_value: [4] }] }] });
   });
 
   it('groups by the heading A to Z, which is date order, and sorts by shift inside', () => {

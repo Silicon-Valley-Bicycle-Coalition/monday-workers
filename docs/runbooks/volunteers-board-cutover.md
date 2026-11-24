@@ -36,7 +36,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
 ## Order (do not reorder)
 
-1. **Create the production Volunteers columns and the "Recent events" view.** From
+1. **Create the production Volunteers columns and views.** From
    `eventbrite-sync/`, dry run first and read what it plans:
 
    ```sh
@@ -45,8 +45,10 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name, Attendee Email and Ticket Type (each only if missing) and the view (Date within the
-   last 90 days, newest first, ungrouped), and prints the column ids. Then, from the repo root, add the 🔒
+   Attendee Name, Attendee Email, Ticket Type and Attendee Phone (each only if missing) and the
+   Recent events view (Date within the last 90 days, newest first, ungrouped), and prints the column
+   ids. Since 2026-11-24 it also creates Shift Lead and Shift Lead Email on Events; Event Date, Shift
+   Lead, Shift Lead Email and Event and Date on Volunteers; and the Upcoming by event view. Then, from the repo root, add the 🔒
    markers (dry run, then `--apply`; the Volunteers entry is already in `MARKED_COLUMNS`;
    `18201685` is the production Donors & Contacts workspace, per
    `docs/production-deploy-checklist.md`):
@@ -68,7 +70,8 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    exactly as before; so a deploy from `main` before this step is safe. Fill all five or none: a
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
    splitting volunteers across two boards. `ticketTypeColumn` is not one of the five: left as the
-   placeholder it only means Ticket Type stays blank.
+   placeholder it only means Ticket Type stays blank. The same goes for `attendeePhoneColumn` and
+   Attendee Phone.
 
 3. **Hold `eventbrite-sync`** (repo root).
 
@@ -288,8 +291,8 @@ step. Never delete the Volunteers items the backfill created.
   sign-ups are hidden, and an event with no sign-ups has no section. One row is one ticket, so someone
   on two shifts is listed twice and two people can share an email.
 - **Shift lead.** Set **Shift Lead** on the event (Events board); it shows, with their
-  Personal Email, on every volunteer's row. The lead must be on People first. **Send event email** goes to the volunteers, not the lead: email
-  the lead separately.
+  Personal Email, on every volunteer's row. The lead must be on People first. **Send event email**
+  goes to the volunteers, not the lead: email the lead separately.
 - **What the lead gets is your call.** The view shows you everything. Some volunteers are probably
   minors, and the sign-up forms checked on 2026-11-24 don't ask about sharing contact info with
   another volunteer, so decide what each lead needs before sending the list.
@@ -305,7 +308,7 @@ step. Never delete the Volunteers items the backfill created.
   again after creating the item, so your choice sticks. **Eventbrite Listing** keeps the listing
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
-  Attendee Email, Ticket Type). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+  Attendee Email, Ticket Type, Attendee Phone). Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
 - **Rows that look like duplicates usually aren't ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)).** One row is one Eventbrite ticket.
   One order can hold several: two shifts (different **Ticket Type**), or several people bought
   under one buyer's email (same Ticket Type, different Attendee Name). A cancel or refund keeps
