@@ -24,6 +24,7 @@ import { dropInside, lineMiles, milesByPolygon, weightedMiles } from '../src/ref
 import { classify } from '../src/score.ts';
 import { parseAcsRows, summaryFileTable } from './acs.mjs';
 import { sanJoseClass } from './bike-classes.mjs';
+import { restoreCollapsed } from './simplify.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = join(ROOT, '.cache', 'reference');
@@ -282,12 +283,9 @@ const epcOut = await mapshaper.applyCommands(
   '-i bg.json -filter "epc === true" -each "tract = GEOID.slice(0, 11)" -dissolve tract -o epc.json format=geojson precision=0.000001',
   { 'bg.json': bgOut },
 ).then((o) => o['epc.json'].toString());
-const bikeSimplified = JSON.parse(await simplify(
-  featureCollection(CLASSES.flatMap((c) => bikeLines[c].map((f) => ({ ...f, properties: { class: Number(c) } })))),
-  '-simplify 30% planar',
-));
-// Simplifying and rounding can collapse a tiny split piece to nothing; drop those.
-const bikeOut = JSON.stringify(featureCollection(bikeSimplified.features.filter((f) => f.geometry)));
+const bikeFeatures = CLASSES.flatMap((c) => bikeLines[c].map((f) => ({ ...f, properties: { class: Number(c) } })));
+const bikeSimplified = JSON.parse(await simplify(featureCollection(bikeFeatures), '-simplify 30% planar'));
+const bikeOut = JSON.stringify(featureCollection(restoreCollapsed(bikeSimplified.features, bikeFeatures)));
 const meta = {
   builtAt: new Date().toISOString(),
   sources: [
