@@ -538,7 +538,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: [{ title: 'Send event email', type: 'link' }],
     columnDescriptions: {
       'Send event email': 'Opens the page that emails everyone registered for this event. Filled in by ' +
-        'the Eventbrite integration for every Eventbrite event.',
+        "the Eventbrite integration for every Eventbrite event; don't edit it.",
       'Source': 'Which platform the event ran on. Eventbrite events keep their Eventbrite ID / ' +
         'URL; Funraise events keep Funraise Event ID.',
       'Program': 'From which Eventbrite organizer account ran the event (volunteering, bike ' +
