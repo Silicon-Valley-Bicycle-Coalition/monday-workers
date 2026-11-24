@@ -164,6 +164,28 @@ describe('outreach', () => {
     expect(() => validateConfig(withOutreach((o) => { o.matchingEmployers[0].aliases = ['Inc.']; }))).toThrow(/Inc\./);
   });
 
+  it('rejects either placeholder anywhere in the block', () => {
+    for (const placeholder of ['REPLACE_AFTER_SIGNOFF', PLACEHOLDER]) {
+      const places: ((o: Record<string, any>) => void)[] = [
+        (o) => { o.ein = placeholder; }, (o) => { o.matchingEmployers[0].aliases = [placeholder]; }, (o) => { o.excludeGiftTypes = [placeholder]; },
+        (o) => { o.donations.matchPromptSent = placeholder; },
+      ];
+      for (const place of places) expect(() => validateConfig(withOutreach(place))).toThrow(new RegExp(placeholder));
+    }
+  });
+
+  it('rejects one column id used for both Employer Name and Do Not Solicit', () => {
+    expect(() => validateConfig(withOutreach((o) => { o.people.doNotSolicit = o.people.employerName; }))).toThrow(/doNotSolicit/);
+  });
+
+  it('takes one plain address for fromAddress and replyTo', () => {
+    for (const key of ['fromAddress', 'replyTo']) {
+      for (const value of ['SVBC', 'SVBC <a@example.org>', 'a@example.org, b@example.org', 'a@localhost']) {
+        expect(() => validateConfig(withOutreach((o) => { o[key] = value; })), `${key} ${value}`).toThrow(new RegExp(key));
+      }
+    }
+  });
+
   it('rejects a zero or negative delay, cooldown or attempt limit', () => {
     for (const key of ['delayDays', 'donorCooldownDays', 'maxAttempts']) {
       expect(() => validateConfig(withOutreach((o) => { o[key] = 0; })), key).toThrow(new RegExp(key));

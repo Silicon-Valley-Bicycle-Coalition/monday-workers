@@ -1,23 +1,24 @@
 import type { DtdSyncConfig, OutreachConfig } from '../config';
 import { todayLosAngeles } from '../dates';
-import { claimPrompt, donorPromptedSince, getPrompt, markPromptFailed, markPromptSent, markPromptWritten, stuckPrompts, unwrittenPrompts } from '../db/prompts';
-import { getPush } from '../db/pushes';
-import { hasDtdRecordForItem } from '../db/records';
+import {
+  claimPrompt, itemsKnownToDtd, markPromptFailed, markPromptSent, markPromptWritten, promptedDonors, promptRows, releasePrompt,
+  stuckPrompts, unwrittenPrompts,
+} from '../db/prompts';
 import { logItemFailure } from '../logSafe';
-import { promptDecision, windowFloor, type PromptFacts } from '../mapping/eligibility';
+import { PROMPTED_LABEL, promptDecision, windowFloor, type PromptFacts } from '../mapping/eligibility';
 import type { DonationItem, DtdMondayClient, PromptDonor } from '../monday/client';
 import { renderPromptEmail } from '../outreach/email';
+import { classifySendError, sendErrorCode } from '../outreach/sendErrors';
 import { MATCHING_GIFT_TYPE } from '../pairing/pair';
 
 export interface PromptDeps { monday: DtdMondayClient; db: D1Database; config: DtdSyncConfig; email: SendEmail; dryRun: boolean }
 export interface PromptResult { considered: number; sent: number; failed: number; repaired: number }
 
-/** The Match Status a prompted gift gets while it has none. */
-export const PROMPTED_LABEL = 'Prompted';
-
 const DAY_MS = 86_400_000;
 // A pending row this old belongs to a run that died, not one still sending.
 const STUCK_AFTER_MS = 30 * 60_000;
+// Each send is about five subrequests (three D1, the email, Monday); Cloudflare allows 1,000 a run.
+const MAX_SENDS_PER_RUN = 100;
 
 /** Match Prompt Sent, plus Prompted when Match Status is empty: never over Matched or a DTD status. */
 function promptValues(item: DonationItem, sentAt: Date, config: DtdSyncConfig, outreach: OutreachConfig): Record<string, unknown> {
@@ -47,6 +48,24 @@ async function repair(deps: PromptDeps, outreach: OutreachConfig, now: Date): Pr
     }
   }
   return repaired;
+}
+
+/** Records a failed send. True when the run must stop: nothing can send, or this email's fate is unknown. */
+async function handleSendFailure(db: D1Database, itemId: string, err: unknown): Promise<boolean> {
+  const kind = classifySendError(err);
+  logItemFailure('prompt', itemId, err);
+  if (kind === 'rejected') {
+    await markPromptFailed(db, itemId, err instanceof Error ? err.message : 'unknown error');
+    return false;
+  }
+  if (kind === 'stop') {
+    await releasePrompt(db, itemId);
+    console.log(`dtd-sync: prompt stopped ${sendErrorCode(err)}`);
+    return true;
+  }
+  // Left pending: never retried, and it counts toward the donor's cooldown.
+  console.log(`dtd-sync: prompt item ${itemId} may have been sent`);
+  return true;
 }
 
 /**
@@ -87,38 +106,64 @@ export async function runPrompt(deps: PromptDeps, now: Date): Promise<PromptResu
   const donors = new Map<string, PromptDonor>();
   if (donorIds.length > 0) for (const p of await monday.getPromptDonors(donorIds)) donors.set(p.id, p);
 
-  const cooldownSince = new Date(now.getTime() - outreach.donorCooldownDays * DAY_MS).toISOString();
-  const wouldSendTo = new Set<string>(); // a dry run writes no rows, so it keeps its own cooldown
+  // Everything above needed no D1. Only gifts that could still send are looked up, in batches.
+  const sendable: { item: DonationItem; donor: PromptDonor }[] = [];
+  const skip = (item: DonationItem, reason: string): void => {
+    if (dryRun) console.log(`dtd-sync: prompt item ${item.id} skip ${reason}`);
+  };
+  for (const item of items) {
+    const donor = item.donorItemId === null ? null : (donors.get(item.donorItemId) ?? null);
+    const decision = promptDecision(item, donor, cfg, outreach, open, now);
+    if (!decision.send) skip(item, decision.reason);
+    else if (donor !== null) sendable.push({ item, donor });
+  }
+  const itemIds = sendable.map(({ item }) => item.id);
+  const cooldownSinceISO = new Date(now.getTime() - outreach.donorCooldownDays * DAY_MS).toISOString();
+  const rows = await promptRows(db, itemIds);
+  const known = await itemsKnownToDtd(db, itemIds);
+  const prompted = await promptedDonors(db, sendable.map(({ donor }) => donor.id), cooldownSinceISO);
+  const promptedThisRun = new Set<string>();
+
   let sent = 0;
   let failed = 0;
+  let deferred = 0;
 
-  for (const item of items) {
+  for (const { item, donor } of sendable) {
+    const row = rows.get(item.id);
+    if (row !== undefined && row.state !== 'failed') continue;
+    if (row !== undefined && row.attempts >= outreach.maxAttempts) {
+      console.log(`dtd-sync: prompt item ${item.id} gave up after ${row.attempts} attempts`);
+      continue;
+    }
+    const facts: PromptFacts = {
+      pairedGiftIds,
+      knownToDtd: known.has(item.id),
+      inCooldown: promptedThisRun.has(donor.id) || prompted.some((p) => p.donorItemId === donor.id && p.itemId !== item.id),
+    };
+    const decision = promptDecision(item, donor, cfg, outreach, facts, now);
+    if (!decision.send) {
+      skip(item, decision.reason);
+      continue;
+    }
+    if (donor.email === null || item.date === null || item.amount === null) continue;
+    const variant = decision.variant.kind;
+    if (dryRun) {
+      promptedThisRun.add(donor.id);
+      console.log(`dtd-sync: prompt item ${item.id} would-send ${variant}`);
+      continue;
+    }
+    if (sent >= MAX_SENDS_PER_RUN) {
+      deferred++;
+      continue;
+    }
+
     try {
-      const donor = item.donorItemId === null ? null : (donors.get(item.donorItemId) ?? null);
-      const row = await getPrompt(db, item.id);
-      if (row !== null && (row.state !== 'failed' || row.attempts >= outreach.maxAttempts)) continue;
-      // Looked up per gift, after any earlier send this run.
-      const facts: PromptFacts = {
-        pairedGiftIds,
-        knownToDtd: (await hasDtdRecordForItem(db, item.id)) || (await getPush(db, item.id))?.state === 'sent',
-        inCooldown: donor !== null && (wouldSendTo.has(donor.id) || (await donorPromptedSince(db, donor.id, item.id, cooldownSince))),
+      const mail = renderPromptEmail({ variant: decision.variant, firstName: donor.greetingName ?? '', amount: item.amount, giftDate: item.date }, outreach);
+      const claim = {
+        itemId: item.id, donorItemId: donor.id, variant, giftDate: item.date, nowISO, maxAttempts: outreach.maxAttempts, cooldownSinceISO,
       };
-      const decision = promptDecision(item, donor, cfg, outreach, facts, now);
-      if (!decision.send) {
-        if (dryRun) console.log(`dtd-sync: prompt item ${item.id} skip ${decision.reason}`);
-        continue;
-      }
-      if (donor === null || donor.email === null || item.date === null || item.amount === null) continue;
-      const variant = decision.variant.kind;
-      if (dryRun) {
-        wouldSendTo.add(donor.id);
-        console.log(`dtd-sync: prompt item ${item.id} would-send ${variant}`);
-        continue;
-      }
-
-      const mail = renderPromptEmail({ variant: decision.variant, firstName: donor.firstName, amount: item.amount, giftDate: item.date }, outreach);
-      const claim = { itemId: item.id, donorItemId: donor.id, variant, giftDate: item.date, nowISO, maxAttempts: outreach.maxAttempts };
-      if (!(await claimPrompt(db, claim))) continue; // another run has it
+      if (!(await claimPrompt(db, claim))) continue; // another run has this gift, or emailed this donor
+      promptedThisRun.add(donor.id);
       try {
         await email.send({
           to: donor.email.trim(),
@@ -130,19 +175,24 @@ export async function runPrompt(deps: PromptDeps, now: Date): Promise<PromptResu
         });
       } catch (err) {
         failed++;
-        logItemFailure('prompt', item.id, err);
-        await markPromptFailed(db, item.id, err instanceof Error ? err.message : 'unknown error');
+        if (await handleSendFailure(db, item.id, err)) break;
+        promptedThisRun.delete(donor.id); // certainly not sent: the donor's other gift may be
         continue;
       }
       await markPromptSent(db, item.id, nowISO);
       sent++;
+    } catch (err) {
+      logItemFailure('prompt', item.id, err);
+      continue;
+    }
+    try {
       await monday.updateDonation(item.id, promptValues(item, now, config, outreach));
       await markPromptWritten(db, item.id, nowISO);
     } catch (err) {
-      logItemFailure('prompt', item.id, err);
+      logItemFailure('prompt write', item.id, err); // emailed; the next run repairs the columns
     }
   }
 
-  console.log(JSON.stringify({ job: 'prompt', dryRun, considered: items.length, sent, failed, repaired }));
+  console.log(JSON.stringify({ job: 'prompt', dryRun, considered: items.length, sent, failed, repaired, deferred }));
   return { considered: items.length, sent, failed, repaired };
 }

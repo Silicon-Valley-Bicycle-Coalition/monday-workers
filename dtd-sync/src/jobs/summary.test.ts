@@ -75,7 +75,7 @@ describe('runSummary', () => {
     const outreach = rawOutreach() as OutreachConfig;
     const O = outreach.programSummary;
     async function prompted(itemId: string, giftDate: string, sent = true): Promise<void> {
-      await claimPrompt(env.DB, { itemId, donorItemId: '900', variant: 'known', giftDate, nowISO: NOW.toISOString(), maxAttempts: 3 });
+      await claimPrompt(env.DB, { itemId, donorItemId: '900', variant: 'known', giftDate, nowISO: NOW.toISOString(), maxAttempts: 3, cooldownSinceISO: '2099-01-01T00:00:00.000Z' });
       if (sent) await markPromptSent(env.DB, itemId, NOW.toISOString());
     }
 

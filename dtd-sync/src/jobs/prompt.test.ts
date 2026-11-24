@@ -26,7 +26,7 @@ function item(over: Partial<DonationItem> = {}): DonationItem {
 function person(over: Partial<PromptDonor> = {}): PromptDonor {
   return {
     id: '900', email: 'pat@example.org', householdEmail: null, firstName: 'Pat', lastName: 'Okafor', phone: null, dtdCompanyId: null,
-    employerName: 'Google', doNotSolicit: false, ...over,
+    employerName: 'Google', doNotSolicit: false, greetingName: 'Pat', ...over,
   };
 }
 
@@ -65,6 +65,9 @@ function harness(over: { outreach?: OutreachConfig | null; dryRun?: boolean; all
   h.deps = { monday: monday as DtdMondayClient, db: env.DB, config, email, dryRun: over.dryRun ?? false };
   return h;
 }
+
+const coded = (code: string, message = 'send failed') => Object.assign(new Error(message), { code });
+const rejected = (message?: string) => coded('E_DELIVERY_FAILED', message);
 
 let lines: string[];
 beforeEach(async () => {
@@ -126,10 +129,118 @@ describe('runPrompt', () => {
     expect(h.writes).toEqual([{ id: '500', values: { [SENT_COL]: { date: '2026-11-03' } } }]);
   });
 
+  it('does not email again when the ledger is lost: the item shows the prompt', async () => {
+    const h = harness();
+    h.items = [item({ matchPromptSent: '2026-11-02' }), item({ id: '2', donorItemId: '901', matchStatus: 'Prompted' })];
+    h.people.set('901', person({ id: '901' }));
+    expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 0 });
+    expect(h.mail).toHaveLength(0);
+  });
+
+  it('greets a donor with no stored First Name as there', async () => {
+    const h = harness();
+    h.items = [item()];
+    h.people.set('900', person({ firstName: 'The Smith', greetingName: null }));
+    await runPrompt(h.deps, NOW);
+    expect(h.mail[0]!.text).toMatch(/^Hi there,/);
+  });
+
+  it('two overlapping runs that meet a donor’s gifts in a different order send one email', async () => {
+    const a = harness();
+    const b = harness();
+    a.items = [item({ id: '1' }), item({ id: '2' })];
+    b.items = [item({ id: '2' }), item({ id: '1' })];
+    await Promise.all([runPrompt(a.deps, NOW), runPrompt(b.deps, NOW)]);
+    expect(a.mail.length + b.mail.length).toBe(1);
+  });
+
+  it('asks D1 nothing about gifts that cannot send', async () => {
+    const h = harness();
+    h.items = Array.from({ length: 400 }, (_, i) => item({ id: String(i), funraiseId: `f${i}` }));
+    const prepare = vi.spyOn(env.DB, 'prepare');
+    await runPrompt(h.deps, NOW);
+    expect(prepare.mock.calls.length).toBeLessThan(10);
+  });
+
+  it('looks up a large batch in few queries', async () => {
+    const h = harness({ dryRun: true });
+    h.items = Array.from({ length: 300 }, (_, i) => item({ id: String(i), donorItemId: `d${i}` }));
+    for (let i = 0; i < 300; i++) h.people.set(`d${i}`, person({ id: `d${i}` }));
+    const prepare = vi.spyOn(env.DB, 'prepare');
+    await runPrompt(h.deps, NOW);
+    expect(prepare.mock.calls.length).toBeLessThan(40);
+    expect(lines.filter((l) => l.includes('would-send'))).toHaveLength(300);
+  });
+
+  it('sends at most 100 a run and leaves the rest for the next', async () => {
+    const h = harness();
+    h.items = Array.from({ length: 103 }, (_, i) => item({ id: String(i), donorItemId: `d${i}` }));
+    for (let i = 0; i < 103; i++) h.people.set(`d${i}`, person({ id: `d${i}` }));
+    expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 100 });
+    expect(await runPrompt(h.deps, LATER)).toMatchObject({ sent: 3 });
+    expect(new Set(h.mail.map((m) => m.to)).size).toBe(1); // same test address; what matters is the count
+    expect(h.mail).toHaveLength(103);
+  });
+
+  it.each(['E_RECIPIENT_SUPPRESSED', 'E_RECIPIENT_NOT_ALLOWED', 'E_VALIDATION_ERROR', 'E_CONTENT_TOO_LARGE', 'E_DELIVERY_FAILED'])('%s is a rejection of that email: the next gift still sends', async (code) => {
+    const h = harness();
+    h.items = [item({ id: '1' }), item({ id: '2', donorItemId: '901' })];
+    h.people.set('901', person({ id: '901' }));
+    let n = 0;
+    (h.deps as { email: unknown }).email = { send: async () => { if (n++ === 0) throw coded(code); return { messageId: 'm' }; } };
+    expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 1, failed: 1 });
+    expect(await getPrompt(env.DB, '1')).toMatchObject({ state: 'failed', attempts: 1 });
+  });
+
+  it.each(['E_SENDER_NOT_VERIFIED', 'E_SENDER_DOMAIN_NOT_AVAILABLE', 'E_SENDER_DOMAIN_NOT_CONFIGURED', 'E_EMAIL_SENDING_NOT_READY', 'E_RATE_LIMIT_EXCEEDED',
+    'E_DAILY_LIMIT_EXCEEDED', 'E_ACCOUNT_SUSPENDED', 'E_RECIPIENT_PLAN_RESTRICTED'])('%s stops the run and costs no gift an attempt', async (code) => {
+    const h = harness();
+    h.items = [item({ id: '1' }), item({ id: '2', donorItemId: '901' })];
+    h.people.set('901', person({ id: '901' }));
+    h.fail.send = coded(code);
+    for (let i = 0; i < 4; i++) await runPrompt(h.deps, NOW);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM prompts').first()).toEqual({ n: 0 });
+    expect(lines).toContain(`dtd-sync: prompt stopped ${code}`);
+    h.fail.send = null;
+    expect(await runPrompt(h.deps, LATER)).toMatchObject({ sent: 2 });
+  });
+
+  it.each([coded('E_INTERNAL_SERVER_ERROR'), new Error('network connection lost')])('an unclear outcome is never retried, and stops the run', async (err) => {
+    const h = harness();
+    h.items = [item({ id: '1' }), item({ id: '2', donorItemId: '901' }), item({ id: '3' })];
+    h.people.set('901', person({ id: '901' }));
+    h.fail.send = err;
+    expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 0, failed: 1 });
+    expect(await getPrompt(env.DB, '1')).toMatchObject({ state: 'pending' });
+    expect(await getPrompt(env.DB, '2')).toBeNull();
+    expect(lines).toContain('dtd-sync: prompt item 1 may have been sent');
+    h.fail.send = null;
+    await runPrompt(h.deps, LATER);
+    expect(await getPrompt(env.DB, '1')).toMatchObject({ state: 'pending' });
+    expect(await getPrompt(env.DB, '2')).toMatchObject({ state: 'sent' });
+    expect(await getPrompt(env.DB, '3')).toBeNull(); // the same donor as 1, who may have had an email
+  });
+
+  it('says when a gift has used its attempts', async () => {
+    const h = harness();
+    h.items = [item()];
+    h.fail.send = rejected();
+    for (let i = 0; i < 4; i++) await runPrompt(h.deps, NOW);
+    expect(lines).toContain('dtd-sync: prompt item 500 gave up after 3 attempts');
+  });
+
+  it('a Monday failure after a send reads differently from a send failure', async () => {
+    const h = harness();
+    h.items = [item()];
+    h.fail.write = true;
+    await runPrompt(h.deps, NOW);
+    expect(lines.some((l) => l.startsWith('dtd-sync: prompt write item 500 failed'))).toBe(true);
+  });
+
   it('retries a failed send and stops after three attempts', async () => {
     const h = harness();
     h.items = [item()];
-    h.fail.send = new Error('refused pat@example.org');
+    h.fail.send = rejected('refused pat@example.org');
     for (let i = 0; i < 5; i++) await runPrompt(h.deps, NOW);
     expect(await getPrompt(env.DB, '500')).toMatchObject({ state: 'failed', attempts: 3 });
     h.fail.send = null;
@@ -140,7 +251,7 @@ describe('runPrompt', () => {
   it('a retry that works sends once', async () => {
     const h = harness();
     h.items = [item()];
-    h.fail.send = new Error('refused');
+    h.fail.send = rejected();
     expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 0, failed: 1 });
     h.fail.send = null;
     expect(await runPrompt(h.deps, LATER)).toMatchObject({ sent: 1 });
@@ -154,7 +265,7 @@ describe('runPrompt', () => {
     h.people.set('901', person({ id: '901', email: 'sam@example.org' }));
     const send = h.deps.email.send.bind(h.deps.email);
     let n = 0;
-    (h.deps as { email: unknown }).email = { send: async (m: EmailMessageBuilder) => { if (n++ === 0) throw new Error('no'); return send(m as never); } };
+    (h.deps as { email: unknown }).email = { send: async (m: EmailMessageBuilder) => { if (n++ === 0) throw rejected(); return send(m as never); } };
     expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 1, failed: 1 });
   });
 
@@ -276,7 +387,7 @@ describe('runPrompt', () => {
   it('reports a pending row from a run that died, and never sends it', async () => {
     const h = harness();
     h.items = [item()];
-    await claimPrompt(env.DB, { itemId: '500', donorItemId: '900', variant: 'known', giftDate: '2026-10-30', nowISO: '2026-11-03T11:00:00.000Z', maxAttempts: 3 });
+    await claimPrompt(env.DB, { itemId: '500', donorItemId: '900', variant: 'known', giftDate: '2026-10-30', nowISO: '2026-11-03T11:00:00.000Z', maxAttempts: 3, cooldownSinceISO: '2026-08-05T00:00:00.000Z' });
     expect(await runPrompt(h.deps, NOW)).toMatchObject({ sent: 0 });
     expect(h.mail).toHaveLength(0);
     expect(lines).toContain('dtd-sync: prompt item 500 stuck');

@@ -53,6 +53,8 @@ export interface PromptFacts { pairedGiftIds: ReadonlySet<string>; knownToDtd: b
 
 /** Match Status once pairing has linked a Matching Donation to the gift. */
 export const MATCHED_LABEL = 'Matched';
+/** Match Status prompt gives a gift that had none. */
+export const PROMPTED_LABEL = 'Prompted';
 
 // pushDecision's reasons that depend on the donor. Every other reason, and the gift rules below, can
 // be judged before the donor is read.
@@ -69,6 +71,9 @@ export function promptDecision(
 
   const base = pushDecision(item, donor, push, now);
   if (!base.send && !DONOR_REASONS.has(base.reason)) return base;
+  // The prompts ledger is the primary guard; what the board shows covers a ledger that was lost, and
+  // lets staff hold one gift back by dating it. The counterpart of pushDecision's already-sent.
+  if (item.matchPromptSent || item.matchStatus === PROMPTED_LABEL) return no('already-prompted');
   if (item.giftType === null || outreach.excludeGiftTypes.includes(item.giftType)) return no('gift-type');
   if (item.date === null || item.date > daysBefore(todayLosAngeles(now), outreach.delayDays)) return no('too-recent');
   if (item.matchStatus === MATCHED_LABEL || facts.pairedGiftIds.has(item.id)) return no('paired');

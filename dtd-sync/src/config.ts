@@ -100,15 +100,8 @@ function allowEmails(o: Record<string, unknown>): string[] | '*' | null {
   throw new Error('config: push.allowEmails must be "*", an array of email strings, or null (send nothing)');
 }
 
-// A string donors see, or that decides who does: never the sign-off placeholder.
-function signedOff(o: Record<string, unknown>, key: string, path: string): string {
-  const v = string(o, key, path);
-  if (v === SIGNOFF_PLACEHOLDER) throw new Error(`config: ${path}.${key} is ${SIGNOFF_PLACEHOLDER}; it needs the development team's sign-off`);
-  return v;
-}
-
 function httpsUrl(o: Record<string, unknown>, key: string, path: string): string {
-  const v = signedOff(o, key, path);
+  const v = string(o, key, path);
   if (!URL.canParse(v) || new URL(v).protocol !== 'https:') throw new Error(`config: ${path}.${key} must be an https URL`);
   return v;
 }
@@ -119,7 +112,7 @@ function orNull<T>(o: Record<string, unknown>, key: string, read: () => T): T | 
 
 // YYYY-MM-DD and a real day: `new Date('2026-02-30')` would roll over or be invalid.
 function day(o: Record<string, unknown>, key: string, path: string): string {
-  const v = signedOff(o, key, path);
+  const v = string(o, key, path);
   const at = /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00Z`) : null;
   if (at === null || Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== v) throw new Error(`config: ${path}.${key} must be a date (YYYY-MM-DD)`);
   return v;
@@ -133,9 +126,8 @@ function matchingEmployers(raw: unknown): MatchingEmployer[] {
     const at = `${path}[${i}]`;
     const o = object(entry, at);
     const aliases = stringArray(o, 'aliases', at);
-    if (aliases.includes(SIGNOFF_PLACEHOLDER)) throw new Error(`config: ${at}.aliases holds ${SIGNOFF_PLACEHOLDER}`);
     if (o.steps !== 'benevity-off-platform') throw new Error(`config: ${at}.steps must be "benevity-off-platform"`);
-    const name = signedOff(o, 'name', at);
+    const name = string(o, 'name', at);
     for (const spelling of [name, ...aliases]) {
       const key = normalizeEmployerName(spelling);
       if (key === '') throw new Error(`config: ${at} spelling "${spelling}" has nothing left to match on`);
@@ -146,18 +138,40 @@ function matchingEmployers(raw: unknown): MatchingEmployer[] {
     return {
       name,
       aliases,
-      platform: signedOff(o, 'platform', at),
+      platform: string(o, 'platform', at),
       requestUrl: orNull(o, 'requestUrl', () => httpsUrl(o, 'requestUrl', at)),
       steps: o.steps,
-      deadlineNote: orNull(o, 'deadlineNote', () => signedOff(o, 'deadlineNote', at)),
+      deadlineNote: orNull(o, 'deadlineNote', () => string(o, 'deadlineNote', at)),
     };
   });
+}
+
+// One bare address: no display name, list or dotless domain.
+function address(o: Record<string, unknown>, key: string, path: string): string {
+  const v = string(o, key, path);
+  if (!/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(v)) throw new Error(`config: ${path}.${key} must be one email address`);
+  return v;
+}
+
+// The path of the first placeholder left anywhere in `value`, and which one.
+function findPlaceholder(value: unknown, path: string): string | null {
+  if (value === SIGNOFF_PLACEHOLDER || value === PLACEHOLDER) return `${path} is ${value}`;
+  if (typeof value !== 'object' || value === null) return null;
+  for (const [key, inner] of Object.entries(value)) {
+    const hit = findPlaceholder(inner, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`);
+    if (hit !== null) return hit;
+  }
+  return null;
 }
 
 function outreach(raw: unknown): OutreachConfig | null {
   if (raw === undefined || raw === null) return null;
   const path = 'outreach';
   const o = object(raw, path);
+  const placeholder = findPlaceholder(o, path);
+  if (placeholder !== null) throw new Error(`config: ${placeholder}; fill in every column id and get the wording signed off first`);
+  const people = columns(o.people, 'outreach.people', ['employerName', 'doNotSolicit'] as const);
+  if (people.employerName === people.doNotSolicit) throw new Error('config: outreach.people.doNotSolicit and employerName are the same column');
   if (o.mode !== 'email' && o.mode !== 'dtd') throw new Error('config: outreach.mode must be "email" or "dtd"');
   return {
     mode: o.mode,
@@ -167,14 +181,14 @@ function outreach(raw: unknown): OutreachConfig | null {
     excludeGiftTypes: stringArray(o, 'excludeGiftTypes', path),
     employerFormUrl: orNull(o, 'employerFormUrl', () => httpsUrl(o, 'employerFormUrl', path)),
     wordingApprovedOn: day(o, 'wordingApprovedOn', path),
-    ein: signedOff(o, 'ein', path),
-    fromAddress: signedOff(o, 'fromAddress', path),
-    fromName: signedOff(o, 'fromName', path),
-    replyTo: signedOff(o, 'replyTo', path),
-    postalAddress: signedOff(o, 'postalAddress', path),
+    ein: string(o, 'ein', path),
+    fromAddress: address(o, 'fromAddress', path),
+    fromName: string(o, 'fromName', path),
+    replyTo: address(o, 'replyTo', path),
+    postalAddress: string(o, 'postalAddress', path),
     logoUrl: httpsUrl(o, 'logoUrl', path),
     donations: columns(o.donations, 'outreach.donations', ['matchPromptSent'] as const),
-    people: columns(o.people, 'outreach.people', ['employerName', 'doNotSolicit'] as const),
+    people,
     programSummary: columns(o.programSummary, 'outreach.programSummary', ['prompted', 'promptedMatched', 'promptedMatchDollars'] as const),
     matchingEmployers: matchingEmployers(o.matchingEmployers),
   };

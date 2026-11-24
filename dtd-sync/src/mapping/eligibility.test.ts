@@ -96,7 +96,7 @@ describe('pushDecision allow-list', () => {
 describe('promptDecision', () => {
   const outreach = rawOutreach() as OutreachConfig;
   const facts: PromptFacts = { pairedGiftIds: new Set(), knownToDtd: false, inCooldown: false };
-  const person = (over: Partial<PromptDonor> = {}): PromptDonor => ({ ...donor(), employerName: 'Google', doNotSolicit: false, ...over });
+  const person = (over: Partial<PromptDonor> = {}): PromptDonor => ({ ...donor(), employerName: 'Google', doNotSolicit: false, greetingName: 'Pat', ...over });
   const decide = (i: Partial<DonationItem> = {}, d: PromptDonor | null = person(), f: Partial<PromptFacts> = {}, now = NOW) =>
     promptDecision(item(i), d, cfg, outreach, { ...facts, ...f }, now);
 
@@ -115,6 +115,10 @@ describe('promptDecision', () => {
     expect(decide({}, null)).toEqual(no('no-email'));
     expect(decide({}, person({ email: null }))).toEqual(no('no-email'));
     expect(promptDecision(item(), person(), { ...cfg, allowEmails: null }, outreach, facts, NOW)).toEqual(no('not-allow-listed'));
+  });
+  it('skips a gift the board already shows as prompted, whatever the ledger says', () => {
+    expect(decide({ matchPromptSent: '2026-11-01' })).toEqual(no('already-prompted'));
+    expect(decide({ matchStatus: 'Prompted' })).toEqual(no('already-prompted'));
   });
   it('excludes Event Tickets, which push does send', () => expect(decide({ giftType: 'Event Ticket' })).toEqual(no('gift-type')));
   it('waits until the gift is delayDays old, by the Los Angeles date', () => {

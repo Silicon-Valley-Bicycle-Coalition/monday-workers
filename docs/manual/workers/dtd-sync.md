@@ -138,9 +138,12 @@ See [Operations](../07-operations.md).
 | Push sends nothing in sandbox; logs "not-allow-listed" | `push.allowEmails` is `null` | Add staff test addresses |
 | Match Status stops changing on a gift | Gift is paired (`Matched`); pull no longer overwrites it | Expected |
 | Matching Donation left at Needs review | No single candidate, or match has no Amount | Staff set Matches gift by hand and Match pairing to `Staff` |
-| Log `dtd-sync: prompt item <id> stuck` | A run died between claiming a gift and recording the send, so the email may have gone out | Never retried. If the sending log shows it didn't go, delete that row from `prompts` |
+| Log `dtd-sync: prompt item <id> may have been sent`, then `stuck` each run | The send's outcome is unknown, or a run died between the claim and the result | Never retried. If the sending log shows it didn't go, delete that row from `prompts` |
+| Log `dtd-sync: prompt stopped E_…` | A sender, quota or account error: nothing can send | Fix it in Cloudflare Email Sending. No gift lost an attempt; the next run continues |
+| Log `dtd-sync: prompt item <id> gave up after 3 attempts` | That address was rejected three times | Fix the donor's email on People and delete the row from `prompts` |
+| Prompted and matched stays near 0 | In email mode pairing can't link matches to prompted gifts by itself | Staff link them by hand (README, "Post-gift email") |
 | Log `dtd-sync: prompt skipped, pairing failed` | Pairing threw, so a gift might already be matched | Fix pairing; the next run sends |
-| `People has no doNotSolicit column` | Wrong column id in `outreach.people` | Correct the id. Nothing is sent meanwhile, by design |
+| `People has no doNotSolicit column`, or `doNotSolicit column … is …, needs checkbox` | Wrong column id in `outreach.people` | Correct the id. Nothing is sent meanwhile, by design |
 | `people-reclassification` stops moving people after setup | DTD columns landed on People but not People (Historical) | Re-run `setup-columns.mjs` until it finishes (idempotent) |
 | Worker throws at load | Config placeholder left in `config/svbc.json` | Fill every id from `setup-columns.mjs` output |
 

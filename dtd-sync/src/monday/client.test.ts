@@ -291,7 +291,7 @@ describe('getPromptDonors', () => {
   const withOutreach = { ...config, outreach };
   const person = (id: string, employer: string | null, dns: string | null) => ({
     id, name: 'Pat Example', board: { id: String(config.boards.people) }, column_values: [
-      cv(P.email, 'pat@example.org'), cv(O.employerName, employer), cv(O.doNotSolicit, '', { value: dns }),
+      cv(P.email, 'pat@example.org'), cv(O.employerName, employer, { type: 'text' }), cv(O.doNotSolicit, '', { value: dns, type: 'checkbox' }),
     ],
   });
 
@@ -315,6 +315,20 @@ describe('getPromptDonors', () => {
     await expect(client.getPromptDonors(['1'])).rejects.toThrow(new RegExp(`${key}.*${O[key]}`));
   });
 
+  it.each([['doNotSolicit', 'status'], ['doNotSolicit', 'text'], ['employerName', 'checkbox']] as const)('throws when the %s id is a %s column', async (key, type) => {
+    const p = person('1', 'Google', null);
+    (p.column_values.find((c) => c.id === O[key]) as Record<string, unknown>).type = type;
+    const { client } = mondayFetch([{ items: [p] }], withOutreach);
+    await expect(client.getPromptDonors(['1'])).rejects.toThrow(new RegExp(`${key}.*${type}`));
+  });
+
+  it('greets with the stored First Name only, never a guess from the item name', async () => {
+    const named = person('1', 'Google', null);
+    named.column_values.push(cv(P.firstName, ' Mary '));
+    const { client } = mondayFetch([{ items: [named, { ...person('2', 'Google', null), name: 'The Smith Family' }] }], withOutreach);
+    expect((await client.getPromptDonors(['1', '2'])).map((d) => d.greetingName)).toEqual(['Mary', null]);
+  });
+
   it('throws while the email is off', async () => {
     const { client, calls } = mondayFetch([]);
     await expect(client.getPromptDonors(['1'])).rejects.toThrow(/outreach/);
@@ -325,6 +339,22 @@ describe('getPromptDonors', () => {
     const { client, calls } = mondayFetch([{ items: [] }], withOutreach);
     await client.getPeople(['1']);
     expect(calls[0]!.variables.columnIds).toEqual([P.email, P.householdEmail, P.firstName, P.lastName, P.phone, P.dtdCompanyId]);
+  });
+});
+
+describe('Match Prompt Sent', () => {
+  const withOutreach = { ...config, outreach: rawOutreach() as OutreachConfig };
+  const column = withOutreach.outreach.donations.matchPromptSent;
+
+  it('is read only while outreach is set', async () => {
+    const off = mondayFetch([{ items: [donationItem('1')] }]);
+    expect((await off.client.getDonations(['1']))[0]!.matchPromptSent).toBeNull();
+    expect(off.calls[0]!.query).not.toContain(column);
+    const raw = donationItem('1');
+    raw.column_values.push(cv(column, '2026-11-03') as never);
+    const on = mondayFetch([{ items: [raw] }], withOutreach);
+    expect((await on.client.getDonations(['1']))[0]!.matchPromptSent).toBe('2026-11-03');
+    expect(on.calls[0]!.query).toContain(column);
   });
 });
 

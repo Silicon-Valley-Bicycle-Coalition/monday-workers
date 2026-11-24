@@ -34,6 +34,8 @@
 | Crash between send and `sent` | A `pending` row is never retried; it's logged once per run as `stuck` with its id. Losing one email beats sending two. |
 | Pairing failed this run | `prompt` is skipped, since a gift may already be matched. |
 | Prompt numbers on the summary board | By the gift's date, like the board's other columns. |
+| *Found in review:* the spec says pairing works with no DTD key | Not for these gifts: in email mode pairing can't link a match to a prompted gift automatically, so the prompted-and-matched numbers need staff pairing. Disclosed in the README; not fixed here. |
+| *Found in review:* a thrown send is not always "not sent" | Errors are classified by code; unknown outcomes stay `pending`. The cooldown moved into the claim, and Match Prompt Sent is read back as a second guard. |
 
 ## Review Focus
 

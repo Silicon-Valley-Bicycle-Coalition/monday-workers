@@ -36,24 +36,35 @@ export async function getPrompt(db: D1Database, itemId: string): Promise<PromptR
 }
 
 /**
- * True when this call owns the send: a new row, or a failed one with attempts left. One statement,
- * so two overlapping runs can't both get it. A pending or sent row is never reclaimed.
+ * True when this call owns the send: a new row, or a failed one with attempts left, and no other gift
+ * of this donor's pending or sent since `cooldownSinceISO`. One statement, so overlapping runs can't
+ * both get a gift, or one donor's two gifts. A pending or sent row is never reclaimed.
  */
 export async function claimPrompt(
   db: D1Database,
-  p: { itemId: string; donorItemId: string; variant: 'known' | 'ask'; giftDate: string; nowISO: string; maxAttempts: number },
+  p: { itemId: string; donorItemId: string; variant: 'known' | 'ask'; giftDate: string; nowISO: string; maxAttempts: number; cooldownSinceISO: string },
 ): Promise<boolean> {
   const result = await db
     .prepare(
       `INSERT INTO prompts (monday_item_id, donor_item_id, variant, state, attempts, gift_date, claimed_at)
-       VALUES (?1, ?2, ?3, 'pending', 1, ?4, ?5)
+       SELECT ?1, ?2, ?3, 'pending', 1, ?4, ?5
+       WHERE NOT EXISTS (
+         SELECT 1 FROM prompts WHERE donor_item_id = ?2 AND monday_item_id <> ?1 AND state IN ('pending','sent') AND claimed_at >= ?7)
        ON CONFLICT(monday_item_id) DO UPDATE SET donor_item_id = excluded.donor_item_id, variant = excluded.variant,
          state = 'pending', attempts = prompts.attempts + 1, gift_date = excluded.gift_date, claimed_at = excluded.claimed_at
        WHERE prompts.state = 'failed' AND prompts.attempts < ?6`,
     )
-    .bind(p.itemId, p.donorItemId, p.variant, p.giftDate, p.nowISO, p.maxAttempts)
+    .bind(p.itemId, p.donorItemId, p.variant, p.giftDate, p.nowISO, p.maxAttempts, p.cooldownSinceISO)
     .run();
   return (result.meta.changes ?? 0) > 0;
+}
+
+/** Undoes a claim whose email certainly didn't go and wasn't at fault: no row, or one attempt fewer. */
+export async function releasePrompt(db: D1Database, itemId: string): Promise<void> {
+  await db.batch([
+    db.prepare("DELETE FROM prompts WHERE monday_item_id = ? AND state = 'pending' AND attempts = 1").bind(itemId),
+    db.prepare("UPDATE prompts SET state = 'failed', attempts = attempts - 1 WHERE monday_item_id = ? AND state = 'pending'").bind(itemId),
+  ]);
 }
 
 export async function markPromptSent(db: D1Database, itemId: string, nowISO: string): Promise<void> {
@@ -76,13 +87,43 @@ export async function markPromptWritten(db: D1Database, itemId: string, nowISO: 
   await db.prepare('UPDATE prompts SET monday_written_at = ? WHERE monday_item_id = ?').bind(nowISO, itemId).run();
 }
 
-/** Whether this donor was emailed (or may have been: pending) about another gift at or after `sinceISO`. */
-export async function donorPromptedSince(db: D1Database, donorItemId: string, exceptItemId: string, sinceISO: string): Promise<boolean> {
-  const r = await db
-    .prepare("SELECT 1 AS hit FROM prompts WHERE donor_item_id = ? AND monday_item_id <> ? AND state IN ('pending','sent') AND claimed_at >= ? LIMIT 1")
-    .bind(donorItemId, exceptItemId, sinceISO)
-    .first();
-  return r !== null;
+// D1 binds at most 100 parameters to a statement.
+const CHUNK = 90;
+
+async function inChunks<T>(ids: string[], read: (chunk: string[], marks: string) => Promise<T[]>): Promise<T[]> {
+  const out: T[] = [];
+  const distinct = [...new Set(ids)];
+  for (let i = 0; i < distinct.length; i += CHUNK) {
+    const chunk = distinct.slice(i, i + CHUNK);
+    out.push(...(await read(chunk, chunk.map(() => '?').join(','))));
+  }
+  return out;
+}
+
+/** The prompts rows there are for these items, by item id. */
+export async function promptRows(db: D1Database, itemIds: string[]): Promise<Map<string, PromptRow>> {
+  const rows = await inChunks(itemIds, async (chunk, marks) =>
+    (await db.prepare(`SELECT * FROM prompts WHERE monday_item_id IN (${marks})`).bind(...chunk).all<Row>()).results);
+  return new Map(rows.map((r) => [r.monday_item_id, fromRow(r)]));
+}
+
+/** Which of these donors were emailed (or may have been: pending) at or after `sinceISO`, and about which gift. */
+export async function promptedDonors(db: D1Database, donorIds: string[], sinceISO: string): Promise<{ donorItemId: string; itemId: string }[]> {
+  const rows = await inChunks(donorIds, async (chunk, marks) =>
+    (await db
+      .prepare(`SELECT donor_item_id, monday_item_id FROM prompts WHERE donor_item_id IN (${marks}) AND state IN ('pending','sent') AND claimed_at >= ?`)
+      .bind(...chunk, sinceISO)
+      .all<Pick<Row, 'donor_item_id' | 'monday_item_id'>>()).results);
+  return rows.map((r) => ({ donorItemId: r.donor_item_id, itemId: r.monday_item_id }));
+}
+
+/** Items DTD already has: a record pulled from it, or a push that went through. */
+export async function itemsKnownToDtd(db: D1Database, itemIds: string[]): Promise<Set<string>> {
+  const read = (sql: (marks: string) => string) =>
+    inChunks(itemIds, async (chunk, marks) => (await db.prepare(sql(marks)).bind(...chunk).all<{ id: string }>()).results);
+  const records = await read((marks) => `SELECT DISTINCT monday_item_id AS id FROM dtd_records WHERE monday_item_id IN (${marks})`);
+  const pushes = await read((marks) => `SELECT monday_item_id AS id FROM pushes WHERE state = 'sent' AND monday_item_id IN (${marks})`);
+  return new Set([...records, ...pushes].map((r) => r.id));
 }
 
 /** Sent prompts whose Donations write hasn't been confirmed. */
