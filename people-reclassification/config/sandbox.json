@@ -6,8 +6,8 @@
   },
   "window": { "years": 7, "timeZone": "America/Los_Angeles" },
   "boards": {
-    "live": { "boardId": 18437342592, "groupId": null },
-    "historical": { "boardId": 18437342607, "groupId": null }
+    "live": { "boardId": 18437342592, "groupId": "topics" },
+    "historical": { "boardId": 18437342607, "groupId": "topics" }
   },
   "peopleColumns": {
     "lastGift": "Last Gift Date",
