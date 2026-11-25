@@ -39,7 +39,11 @@ and forbids force-pushes.
    summary naming each Worker that wasn't deployed and the command to deploy it by hand. It used
    to skip and finish green, which made an undeployed sandbox look deployed (#89). It isn't a
    required check, so a red deploy-sandbox marks `main`'s commit without blocking pull requests.
-   It deploys code only, never D1 migrations.
+   It deploys code only, never D1 migrations. An entry **skips itself, with a notice**, when `main`
+   already has a newer change to the same Worker: that change's own run deploys it. Otherwise a
+   slow or re-run older run could put old code back (`scripts/ci-superseded.mjs`). If the newer
+   run's tests or deploy failed, the sandbox keeps its previous code until that run is fixed or
+   re-run.
 4. **ci-ok:** the single required result.
 
 ## What deploys when
@@ -79,14 +83,14 @@ repository secret, or code in a pull request could read it.
 - **`nearby-search` is left out on purpose.** A deploy would publish its sandbox hostname, and its
   Access application doesn't exist yet. Until it does, a merge touching `nearby-search` shows a
   failed `deploy-sandbox` entry. Afterwards, do its first deploy by hand and add it.
-- **Verified:** ten of the 15 Workers deployed with this token on 2026-11-24. `benevity-import`,
-  `bp-feedback-notify`, `funraise-sync`, `mailchimp-sync` and `monday-backup` hadn't yet;
-  `monday-backup` also updates a Workflow, which this token may or may not be allowed to do.
+- **Verified:** all 15 Workers, `monday-backup` and its Workflow included, deployed with this token
+  on 2026-11-24.
 - **Renewing:** it expires a year after creation (November 2026). Create or roll it in Manage
   account → Account API tokens, then `gh secret set CLOUDFLARE_API_TOKEN --env sandbox`, which
   prompts for the value.
-- **Re-running a failed deploy deploys that run's commit**, not the tip of `main`. Re-run only the
-  newest run that touched the Worker, or an older run rolls the sandbox back.
+- **Re-running a failed deploy uses that run's commit and workflow**, not the tip of `main`. Runs
+  from before the skip check existed don't have it, so re-running one can roll the sandbox back.
+  Re-run the newest run that touched the Worker.
 
 ## Deploying a Worker by hand
 
