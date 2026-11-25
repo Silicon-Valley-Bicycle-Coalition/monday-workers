@@ -5,6 +5,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // How long after its Date a row's totals can still move. Past it, the quarter may be reported.
 const FREEZE_DAYS = 30;
 
+// The reasons a person has to fix, so the job warns about them.
+export const DATE_MISMATCH = 'date does not match the event';
+export const MANY_EVENTS = 'more than one event linked';
+
 const no = (reason: string): Verdict => ({ kind: 'no', reason });
 
 /**
@@ -20,7 +24,7 @@ export function qualify(
 ): Verdict {
   if (cfg.skipStatusLabels.includes(row.status)) return no('skipped status');
   if (row.date === '' || row.date < startDate) return no('no date, or before the start date');
-  if (row.eventItemIds.length !== 1) return no(row.eventItemIds.length === 0 ? 'no event linked' : 'more than one event linked');
+  if (row.eventItemIds.length !== 1) return no(row.eventItemIds.length === 0 ? 'no event linked' : MANY_EVENTS);
 
   const event = events.get(row.eventItemIds[0]!);
   if (event === undefined) return { kind: 'unknown' };
@@ -29,7 +33,7 @@ export function qualify(
   // Their sign-ups are on the Volunteers board, so there are no registrations to count.
   if (cfg.volunteerPrograms.includes(event.program)) return no('volunteer event');
   const lastDay = event.end === '' ? event.date : event.end;
-  if (event.date === '' || row.date < event.date || row.date > lastDay) return no('date does not match the event');
+  if (event.date === '' || row.date < event.date || row.date > lastDay) return no(DATE_MISMATCH);
   return { kind: 'ok', event };
 }
 

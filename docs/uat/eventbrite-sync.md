@@ -129,7 +129,26 @@ below wait until the sandbox gets them.
   sends no webhook and doesn't change the attendee's `changed` time (tested 2026-11-09). It arrives with
   the attendee's next change, such as check-in, or a backfill of the event.
 - Events on the volunteering, bike parking and private Eventbrite accounts get no zip.
-- A class needs Grant set by hand. Until then it won't appear under any grant.
+- A class needs Grant set by hand, until the tracker job below is on. Until then it won't appear under any grant.
+
+## Class totals on the tracker: try it (sandbox)
+
+Wait for the next hourly run after each step (in the sandbox someone runs it by hand).
+
+1. Link a tracker row to a finished class with **CRM Event**, with the row's Date on the class day. Registered, Checked in
+   and No-shows should fill in, and Grant on the event should match the row's Funder.
+2. Type over one of the three numbers. None of them should change again.
+3. Clear the number you typed. The row should go back to the Worker's numbers.
+4. Unlink the row. The Worker's numbers should clear, and so should Grant.
+5. Change the row's Date to another day. Nothing should be written.
+
+## Class totals on the tracker: don't report these
+
+- A class where nobody was checked in has no totals. Type them in.
+- A row linked to a volunteer listing, like the Sunnyvale repair clinic, has no totals.
+- Walk-ins aren't in Eventbrite. Type all three numbers; the row is then yours.
+- Numbers on a class more than 30 days old don't change.
+- Someone checked in by mistake stays counted until you change their Attendance on Event Registrations.
 
 ## Sandbox rehearsal, 2026-10-26
 

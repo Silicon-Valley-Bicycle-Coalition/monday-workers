@@ -5,6 +5,9 @@ import type { Env } from './types';
 import type { checkMissedOrders } from './missedOrders/check';
 import type { sweepEndedEvents } from './endedEvents/sweep';
 import type { sweepSendLinks } from './sendLinks/sweep';
+import type { sweepTracker } from './tracker/sweep';
+import productionConfig from '../config/svbc.json';
+import { testConfig, withTracker } from './test/testConfig';
 
 describe('isDeadLetterBatch', () => {
   it('recognizes the production and sandbox dead-letter queues', () => {
@@ -99,6 +102,61 @@ describe('scheduled (daily missed-order check)', () => {
     expect(links).not.toHaveBeenCalled();
   });
 
+  describe('the tracker job', () => {
+    const attendeeSync = productionConfig.attendeeSync as unknown as Record<string, unknown> & { events: Record<string, unknown> };
+    const shipped = { tracker: attendeeSync.tracker, grantColumn: attendeeSync.events.grantColumn };
+    const idleTracker = () => vi.fn<typeof sweepTracker>().mockResolvedValue({ grants: 0, rows: 0, cleared: 0, failed: [], warnings: [], dryRun: false });
+    const runWith = (mode: () => Promise<string | null>, tracker: typeof sweepTracker, sweep = idleSweep()): Promise<void> =>
+      runScheduled(offHour, flags(mode), quietCheck(), sweep, undefined, undefined, tracker);
+
+    // The config selector hands out this same object, so this turns the job on for one test.
+    const turnOn = () => {
+      attendeeSync.tracker = withTracker(testConfig()).attendeeSync.tracker;
+      attendeeSync.events.grantColumn = 'ev_grant_col';
+    };
+    afterEach(() => {
+      attendeeSync.tracker = shipped.tracker;
+      attendeeSync.events.grantColumn = shipped.grantColumn;
+    });
+
+    it('runs hourly with writes on, and as a dry run under off', async () => {
+      turnOn();
+      const tracker = idleTracker();
+      await runWith(async () => 'on', tracker);
+      expect(tracker.mock.calls[0]![1].dryRun).toBe(false);
+      await runWith(async () => 'off', tracker);
+      expect(tracker.mock.calls[1]![1].dryRun).toBe(true);
+    });
+
+    it.each<[string, () => Promise<string | null>]>([
+      ['hold', async () => 'hold'],
+      ['unknown', async () => { throw new Error('KV down'); }],
+    ])('is skipped under %s', async (_mode, get) => {
+      turnOn();
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const tracker = idleTracker();
+      await runWith(get, tracker);
+      expect(tracker).not.toHaveBeenCalled();
+    });
+
+    it('is skipped when the config turns it off', async () => {
+      attendeeSync.tracker = null;
+      const tracker = idleTracker();
+      await runWith(async () => 'on', tracker);
+      expect(tracker).not.toHaveBeenCalled();
+    });
+
+    it('never stops the other jobs', async () => {
+      turnOn();
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const sweep = idleSweep();
+      await expect(runWith(async () => 'on', vi.fn<typeof sweepTracker>().mockRejectedValue(new Error('boom')), sweep)).resolves.toBeUndefined();
+      expect(sweep).toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('tracker'));
+    });
+  });
+
   it('runs the check only at the check hour', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const check = quietCheck();
@@ -150,7 +208,7 @@ describe('scheduled (daily missed-order check)', () => {
   it('names only the sweep when it skips outside the check hour', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await runScheduled(offHour, flags(async () => 'hold'), quietCheck(), idleSweep());
-    expect(warn).toHaveBeenCalledWith('eventbrite-sync scheduled: write mode is "hold"; skipping the ended-event sweep');
+    expect(warn).toHaveBeenCalledWith('eventbrite-sync scheduled: write mode is "hold"; skipping the ended-event and tracker sweeps');
   });
 
   it('logs missed orders as an error', async () => {
@@ -244,7 +302,7 @@ describe('scheduled (daily missed-order check)', () => {
       expect(sweep).not.toHaveBeenCalled();
       expect(check).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event sweep and the daily checks`);
+      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the ended-event and tracker sweeps and the daily checks`);
     });
   });
 });

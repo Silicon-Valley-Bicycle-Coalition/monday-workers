@@ -6,6 +6,7 @@ import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
+import { D1TrackerStore } from './db/tracker';
 import { D1ClassEmailStore } from './db/classEmails';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
@@ -15,6 +16,7 @@ import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/
 import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/sweep';
 import { checkPledgeCounts, logPledgeCounts } from './pledgeCounts/check';
 import { logSendLinkSummary, sweepSendLinks } from './sendLinks/sweep';
+import { logTrackerSummary, sweepTracker } from './tracker/sweep';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit, isVerifiedWebhook } from './rateLimit';
@@ -124,7 +126,7 @@ export default {
   },
 
   // Hourly (wrangler.jsonc triggers): the ended-event status sweep (src/endedEvents/sweep.ts), cheap
-  // when idle at one D1 read, and once a day the missed-order check (src/missedOrders/check.ts) and
+  // when idle at one D1 read, the Education Tracker's totals and Grant (src/tracker/sweep.ts), and once a day the missed-order check (src/missedOrders/check.ts) and
   // the send-link sweep (src/sendLinks/sweep.ts).
   scheduled(controller: ScheduledController, env: Env): Promise<void> {
     return runScheduled(controller, env);
@@ -138,19 +140,20 @@ export async function runScheduled(
   check: typeof checkMissedOrders = checkMissedOrders,
   sweep: typeof sweepEndedEvents = sweepEndedEvents,
   pledgeCounts: typeof checkPledgeCounts = checkPledgeCounts,
-  sendLinks: typeof sweepSendLinks = sweepSendLinks
+  sendLinks: typeof sweepSendLinks = sweepSendLinks,
+  tracker: typeof sweepTracker = sweepTracker
 ): Promise<void> {
   const config = configFor(env);
   const now = new Date(controller.scheduledTime);
-  // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them;
-  // `off` dry-runs the sweeps (each queue send logged, none made; stale send links counted, none
-  // written) and runs the checks, which only read Eventbrite and the ledgers and log, so their dry
+  // The write switch, read once for this cron run. The jobs follow runDisposition: `on` runs them;
+  // `off` dry-runs the sweeps (each queue send logged, none made; stale send links and tracker
+  // changes counted, none written) and runs the checks, which only read Eventbrite and the ledgers and log, so their dry
   // run is the live run; `hold` or an unreadable switch skips them with one line.
   const gate = await skipContext(env);
   const disposition = runDisposition(gate.mode);
   const isCheck = isCheckHour(now);
   if (disposition === 'skip') {
-    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping ${isCheck ? 'the ended-event sweep and the daily checks' : 'the ended-event sweep'}`);
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the ended-event and tracker sweeps${isCheck ? ' and the daily checks' : ''}`);
     return;
   }
 
@@ -168,6 +171,20 @@ export async function runScheduled(
       .then(logEndedEventSummary)
       .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`)),
   ];
+
+  if (config.attendeeSync.tracker !== null) {
+    jobs.push(
+      tracker(now, {
+        monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+        store: new D1TrackerStore(env.DB),
+        attendees: new D1AttendeeStore(env.DB),
+        config,
+        dryRun: disposition !== 'run',
+      })
+        .then((result) => logTrackerSummary(result, isCheck))
+        .catch((err) => console.error(`eventbrite-sync tracker: sweep failed: ${errorMessage(err)}`))
+    );
+  }
 
   const pageUrl = config.attendeeSync.classEmails.pageUrl;
   const eventsBoard = config.monday.boards.events;
@@ -188,7 +205,7 @@ export async function runScheduled(
 
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
   if (!isCheck) {
-    // Only the sweep runs outside the check hour.
+    // Only the sweeps run outside the check hour.
   } else if (eventbriteToken === undefined || eventbriteToken === '') {
     // Logged, not thrown, so Workers Issues shows it once a day until it's fixed.
     console.error('eventbrite-sync missed orders: EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); check skipped');
