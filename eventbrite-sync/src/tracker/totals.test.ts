@@ -16,7 +16,7 @@ const t = (registered: number, checkedIn: number, noShows: number): Totals => ({
 const cells = (registered: number | null, checkedIn: number | null, noShows: number | null): TrackerRow['cells'] => ({ registered, checkedIn, noShows });
 const BLANK = cells(null, null, null);
 const OURS = cells(5, 1, 3);
-const recordA: TrackerRecord = { trackerItemId: '1', eventItemId: 'A', totals: t(5, 1, 3) };
+const recordA: TrackerRecord = { trackerItemId: '1', eventItemId: 'A', date: '2026-11-14', totals: t(5, 1, 3) };
 const totals = (eventItemId: string, value: Totals): Desired => ({ kind: 'totals', eventItemId, totals: value });
 const write = (eventItemId: string, value: Totals): RowAction => ({ kind: 'write', eventItemId, totals: value });
 const NONE: Desired = { kind: 'none' };
@@ -35,7 +35,7 @@ describe('planRow', () => {
     ['leaves typed totals, even matching ones', OURS, null, totals('A', t(5, 1, 3)), NOTHING],
     ['clears its own when the row stops having totals', OURS, recordA, NONE, CLEAR],
     ['leaves a person’s row that stops having totals', cells(5, 2, 3), recordA, NONE, NOTHING],
-    ['drops the record of a row someone emptied', BLANK, recordA, NONE, CLEAR],
+    ['drops the record of a row someone emptied', BLANK, recordA, NONE, { kind: 'forget' }],
     ['leaves a blank row with no totals', BLANK, null, NONE, NOTHING],
     ['holds its own while the feed settles', OURS, recordA, { kind: 'hold', eventItemId: 'A' }, NOTHING],
     ['clears the old class’s totals while the new class’s feed settles', OURS, recordA, { kind: 'hold', eventItemId: 'B' }, CLEAR],

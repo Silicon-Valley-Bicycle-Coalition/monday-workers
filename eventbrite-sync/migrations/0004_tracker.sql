@@ -4,6 +4,7 @@
 CREATE TABLE tracker_counts (
   tracker_item_id TEXT PRIMARY KEY,
   event_item_id TEXT NOT NULL,
+  row_date TEXT NOT NULL,
   registered INTEGER NOT NULL,
   checked_in INTEGER NOT NULL,
   no_shows INTEGER NOT NULL,
@@ -13,5 +14,6 @@ CREATE TABLE tracker_counts (
 CREATE TABLE event_grants (
   event_item_id TEXT PRIMARY KEY,
   grant_label TEXT NOT NULL,
+  tracker_item_id TEXT NOT NULL,
   written_at TEXT NOT NULL
 );

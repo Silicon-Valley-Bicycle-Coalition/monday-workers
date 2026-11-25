@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { TrackerStore } from '../db/tracker';
 import type { MondayItemColumns } from '../monday/client';
+import { MondayApiError } from '../monday/graphql';
 import { mondayItem } from '../test/mondayItem';
 import { testConfig, withTracker } from '../test/testConfig';
 import type { AttendeeRow, EventbriteSyncConfig } from '../types';
@@ -37,7 +38,10 @@ interface World {
   registrations?: Record<string, MondayItemColumns[]>;
   ledger?: Record<string, AttendeeRow[]>;
   counts?: TrackerRecord[];
-  grants?: [string, string][];
+  // Event id, Grant, and the row it was written from.
+  grants?: [string, string, string?][];
+  // What the row's cells read as just before a write, when they changed since.
+  reread?: MondayItemColumns[];
   dryRun?: boolean;
 }
 
@@ -51,11 +55,11 @@ function setup(world: World = {}) {
     saveCounts: vi.fn<TrackerStore['saveCounts']>(async (r) => { calls.push(`saveCounts ${r.trackerItemId}`); }),
     deleteCounts: vi.fn<TrackerStore['deleteCounts']>(async (id) => { calls.push(`deleteCounts ${id}`); }),
     // Grant is settled unless a test says otherwise, so a totals test sees only totals.
-    listGrants: async () => new Map(world.grants ?? [['900', 'VTA']]),
-    saveGrant: vi.fn<TrackerStore['saveGrant']>(async (id, grant) => { calls.push(`saveGrant ${id} ${grant}`); }),
+    listGrants: async () => new Map((world.grants ?? [['900', 'VTA']]).map(([id, grant, trackerItemId = '1']) => [id, { grant, trackerItemId }])),
+    saveGrant: vi.fn<TrackerStore['saveGrant']>(async (id, { grant }) => { calls.push(`saveGrant ${id} ${grant}`); }),
     deleteGrant: vi.fn<TrackerStore['deleteGrant']>(async (id) => { calls.push(`deleteGrant ${id}`); }),
   };
-  const getItems = vi.fn<TrackerSweepDeps['monday']['getItems']>(async (_board, ids) => (world.events ?? [event()]).filter((e) => ids.includes(e.id)));
+  const getItems = vi.fn<TrackerSweepDeps['monday']['getItems']>(async (board, ids) => (board === TRACKER_BOARD ? world.reread ?? world.rows ?? [row()] : world.events ?? [event()]).filter((e) => ids.includes(e.id)));
   const deps: TrackerSweepDeps = {
     monday: { listBoardItems: async () => world.rows ?? [row()], getItems, listItemsLinkedTo, changeColumnValues },
     store,
@@ -66,7 +70,7 @@ function setup(world: World = {}) {
   return { deps, store, calls, changeColumnValues, listItemsLinkedTo };
 }
 
-const ours: TrackerRecord = { trackerItemId: '1', eventItemId: '900', totals: { registered: 3, checkedIn: 1, noShows: 1 } };
+const ours: TrackerRecord = { trackerItemId: '1', eventItemId: '900', date: '2026-11-14', totals: { registered: 3, checkedIn: 1, noShows: 1 } };
 const TOTALS = { tr_reg_col: '3', tr_in_col: '1', tr_no_col: '1' };
 const CLEARED = { tr_reg_col: '', tr_in_col: '', tr_no_col: '' };
 
@@ -77,7 +81,7 @@ describe('sweepTracker totals', () => {
     expect(changeColumnValues.mock.calls).toEqual([[TRACKER_BOARD, '1', TOTALS]]);
     expect(store.saveCounts).toHaveBeenCalledWith(ours, NOW.toISOString());
     expect(calls).toEqual(['monday 1', 'saveCounts 1']);
-    expect(result).toEqual({ grants: 0, rows: 1, cleared: 0, failed: [], warnings: [], dryRun: false });
+    expect(result).toEqual({ grants: 0, rows: 1, cleared: 0, failed: [], warnings: [], braked: 0, unattempted: 0, dryRun: false });
   });
 
   it('writes nothing again while nothing changed', async () => {
@@ -178,7 +182,8 @@ describe('sweepTracker grants', () => {
 
   it('clears the Grant of an event that lost its row', async () => {
     const { deps, changeColumnValues, calls } = setup({ ...settled, events: [event(), event({ id: '905' })], grants: [['900', 'VTA'], ['905', 'VTA']] });
-    await sweepTracker(NOW, deps);
+    const result = await sweepTracker(NOW, deps);
+    expect(result.cleared).toBe(1);
     expect(changeColumnValues.mock.calls).toEqual([[EVENTS_BOARD, '905', { ev_grant_col: null }]]);
     expect(calls).toEqual(['monday 905', 'deleteGrant 905']);
   });
@@ -263,14 +268,141 @@ describe('sweepTracker failures', () => {
     const { deps, calls } = setup({ dryRun: true, rows: [row(), row({ id: '2', link: '', cells: ['3', '1', '1'] })], counts: [{ ...ours, trackerItemId: '2' }], events: [event({ grant: '' })], grants: [] });
     const result = await sweepTracker(NOW, deps);
     expect(calls).toEqual([]);
-    expect(result).toEqual({ grants: 1, rows: 1, cleared: 1, failed: [], warnings: [], dryRun: true });
+    expect(result).toEqual({ grants: 1, rows: 1, cleared: 1, failed: [], warnings: [], braked: 0, unattempted: 0, dryRun: true });
+  });
+});
+
+describe('sweepTracker protections', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const without = (item: MondayItemColumns, column: string): MondayItemColumns => {
+    const drop = <T>(cells: Record<string, T>) => Object.fromEntries(Object.entries(cells).filter(([id]) => id !== column));
+    return { ...item, columns: drop(item.columns), values: drop(item.values) };
+  };
+  const settledRow = () => row({ cells: ['3', '1', '1'] });
+
+  // Monday leaves out a column that was deleted or whose type changed, rather than refusing.
+  it.each(['tr_event_col', 'tr_date_col', 'tr_status_col', 'tr_funder_col', 'tr_reg_col'])('changes nothing when the tracker has lost %s', async (column) => {
+    const { deps, calls } = setup({ rows: [without(settledRow(), column)], counts: [ours] });
+    await expect(sweepTracker(NOW, deps)).rejects.toThrow(column);
+    expect(calls).toEqual([]);
+  });
+
+  it.each(['ev_status_col', 'ev_program_col', 'ev_date_col', 'ev_grant_col', 'ev_id_col', 'ev_end_col'])('changes nothing when Events has lost %s', async (column) => {
+    const { deps, calls } = setup({ rows: [settledRow()], counts: [ours], events: [without(event(), column)] });
+    await expect(sweepTracker(NOW, deps)).rejects.toThrow(column);
+    expect(calls).toEqual([]);
+  });
+
+  it('changes nothing when Event Registrations has lost Attendance', async () => {
+    const { deps, calls } = setup({ rows: [settledRow()], counts: [ours], registrations: { 900: [without(ATTENDED[0]!, 'att_attendance_col')] } });
+    await expect(sweepTracker(NOW, deps)).rejects.toThrow('att_attendance_col');
+    expect(calls).toEqual([]);
+  });
+
+  it('keeps a closed class’s totals when its Date is blanked or moved', async () => {
+    for (const date of ['', '2026-12-10']) {
+      const { deps, calls } = setup({ rows: [row({ cells: ['3', '1', '1'], date })], counts: [ours], grants: [] });
+      await sweepTracker(new Date('2026-12-20T16:00:00Z'), deps);
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('fills a reused row again once someone empties it, however old its record', async () => {
+    const { deps, calls } = setup({
+      rows: [row({ date: '2026-12-10', link: '901' })], counts: [ours], grants: [['901', 'VTA']],
+      events: [event({ id: '901', date: '2026-12-10' })], registrations: { 901: ATTENDED },
+    });
+    await sweepTracker(new Date('2026-12-20T16:00:00Z'), deps);
+    expect(calls).toEqual(['monday 1', 'saveCounts 1']);
+  });
+
+  it('drops the record of an emptied row without writing Monday', async () => {
+    const { deps, calls } = setup({ rows: [row({ link: '' })], counts: [ours], grants: [] });
+    const result = await sweepTracker(NOW, deps);
+    expect(calls).toEqual(['deleteCounts 1']);
+    expect(result.cleared).toBe(0);
+  });
+
+  it('keeps the Grant of a class whose tracker row is gone', async () => {
+    const { deps, calls } = setup({ rows: [settledRow()], counts: [ours], events: [event(), event({ id: '905' })], grants: [['900', 'VTA'], ['905', 'VTA', '77']] });
+    await sweepTracker(NOW, deps);
+    expect(calls).toEqual([]);
+  });
+
+  it('clears nothing in a run that would clear more than five things, and says so', async () => {
+    const ids = ['1', '2', '3', '4', '5', '6'];
+    const { deps, calls } = setup({
+      rows: [...ids.map((id) => row({ id, link: '', cells: ['3', '1', '1'] })), row({ id: '9' })],
+      counts: ids.map((id) => ({ ...ours, trackerItemId: id })), grants: [['900', 'VTA', '9']],
+    });
+    const result = await sweepTracker(NOW, deps);
+    expect(calls).toEqual(['monday 9', 'saveCounts 9']);
+    expect(result.braked).toBe(6);
+    expect(result.cleared).toBe(0);
+  });
+
+  it('counts Grant clears toward that limit: a renamed Funder label empties nothing', async () => {
+    const ids = ['1', '2', '3', '4', '5', '6'];
+    const { deps, calls } = setup({
+      rows: ids.map((id) => row({ id, link: `90${id}`, funder: 'VTA FY27' })),
+      events: ids.map((id) => event({ id: `90${id}`, status: 'Upcoming' })),
+      grants: ids.map((id) => [`90${id}`, 'VTA', id]),
+    });
+    const result = await sweepTracker(NOW, deps);
+    expect(calls).toEqual([]);
+    expect(result.braked).toBe(6);
+  });
+
+  it.each<[string, RowInput]>([
+    ['typed a number', { cells: ['36', '', ''] }],
+    ['relinked the row', { link: '901' }],
+  ])('leaves a row alone when someone %s after it was read', async (_what, change) => {
+    const { deps, calls } = setup({ reread: [row(change)] });
+    const result = await sweepTracker(NOW, deps);
+    expect(calls).toEqual([]);
+    expect(result.rows).toBe(0);
+  });
+
+  it('doesn’t clear a row someone typed in after it was read', async () => {
+    const { deps, calls } = setup({ rows: [row({ link: '', cells: ['3', '1', '1'] })], reread: [row({ link: '', cells: ['3', '2', '1'] })], counts: [ours], grants: [] });
+    await sweepTracker(NOW, deps);
+    expect(calls).toEqual([]);
+  });
+
+  it('leaves a row alone when it’s gone by the time of the write', async () => {
+    const { deps, calls } = setup({ reread: [] });
+    await sweepTracker(NOW, deps);
+    expect(calls).toEqual([]);
+  });
+
+  it('goes on to the totals when Monday refuses every Grant', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ids = ['1', '2', '3'];
+    const { deps, changeColumnValues, calls } = setup({
+      rows: ids.map((id) => row({ id, link: `90${id}` })), events: ids.map((id) => event({ id: `90${id}`, grant: '' })), grants: [],
+      registrations: Object.fromEntries(ids.map((id) => [`90${id}`, ATTENDED])),
+    });
+    for (const _ of ids) changeColumnValues.mockRejectedValueOnce(new MondayApiError('no such label', { httpStatus: 200, code: 'ColumnValueException' }));
+    const result = await sweepTracker(NOW, deps);
+    expect(result.failed).toEqual(['901', '902', '903']);
+    expect(calls).toEqual(ids.flatMap((id) => [`monday ${id}`, `saveCounts ${id}`]));
+  });
+
+  it('says how much it left undone when it stops early', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { deps, changeColumnValues } = setup({ rows: ['1', '2', '3', '4', '5'].map((id) => row({ id })) });
+    changeColumnValues.mockRejectedValue(new Error('Monday down'));
+    const result = await sweepTracker(NOW, deps);
+    expect(result.failed).toEqual(['1', '2', '3']);
+    expect(result.unattempted).toBe(2);
   });
 });
 
 describe('logTrackerSummary', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const result = (over: Partial<TrackerSweepResult> = {}): TrackerSweepResult => ({ grants: 0, rows: 0, cleared: 0, failed: [], warnings: [], dryRun: false, ...over });
+  const result = (over: Partial<TrackerSweepResult> = {}): TrackerSweepResult => ({ grants: 0, rows: 0, cleared: 0, failed: [], warnings: [], braked: 0, unattempted: 0, dryRun: false, ...over });
   function logged(r: TrackerSweepResult, logWarnings = false) {
     const spies = { log: vi.spyOn(console, 'log'), warn: vi.spyOn(console, 'warn'), error: vi.spyOn(console, 'error') };
     for (const spy of Object.values(spies)) spy.mockImplementation(() => {});
@@ -286,6 +418,12 @@ describe('logTrackerSummary', () => {
     expect(logged(result({ rows: 2, grants: 1 })).log).toHaveLength(1);
     vi.restoreAllMocks();
     expect(logged(result({ rows: 1, failed: ['1'] })).error).toEqual([expect.stringContaining('1')]);
+  });
+
+  it('errors, every run, when the brake held clears back or the job stopped early', () => {
+    expect(logged(result({ braked: 6 })).error).toEqual([expect.stringContaining('6')]);
+    vi.restoreAllMocks();
+    expect(logged(result({ failed: ['1', '2', '3'], unattempted: 2 })).error).toEqual([expect.stringContaining('2 not tried')]);
   });
 
   it('logs warnings only when asked', () => {

@@ -4,6 +4,8 @@ import type { Totals, TrackerRow } from './types';
 export interface TrackerRecord {
   trackerItemId: string;
   eventItemId: string;
+  // The row's Date when they were written: what it freezes by, whatever the Date says later.
+  date: string;
   totals: Totals;
 }
 
@@ -15,14 +17,23 @@ export type Desired =
   | { kind: 'hold'; eventItemId: string }
   | { kind: 'unknown' };
 
-// `clear` also drops the record; `remember` only updates it.
+// `clear` also drops the record. `remember` and `forget` change only the record.
 export type RowAction =
   | { kind: 'nothing' }
   | { kind: 'write'; eventItemId: string; totals: Totals }
   | { kind: 'remember'; eventItemId: string; totals: Totals }
-  | { kind: 'clear' };
+  | { kind: 'clear' }
+  | { kind: 'forget' };
 
 const KEYS = ['registered', 'checkedIn', 'noShows'] as const;
+
+export function hasNumbers(cells: TrackerRow['cells']): boolean {
+  return KEYS.some((key) => cells[key] !== null);
+}
+
+export function sameNumbers(a: TrackerRow['cells'], b: TrackerRow['cells']): boolean {
+  return KEYS.every((key) => a[key] === b[key]);
+}
 
 /**
  * An event's totals from its registrations' Attendance, or null when nobody attended: attendance
@@ -46,11 +57,11 @@ export function planRow(cells: TrackerRow['cells'], record: TrackerRecord | null
 
   if (desired.kind === 'totals') {
     const { eventItemId, totals } = desired;
-    if (KEYS.some((key) => cells[key] !== totals[key])) return { kind: 'write', eventItemId, totals };
+    if (!sameNumbers(cells, totals)) return { kind: 'write', eventItemId, totals };
     return record?.eventItemId === eventItemId ? { kind: 'nothing' } : { kind: 'remember', eventItemId, totals };
   }
   if (record === null) return { kind: 'nothing' };
   // Another class's numbers never wait for this one's feed.
   if (desired.kind === 'hold' && record.eventItemId === desired.eventItemId) return { kind: 'nothing' };
-  return { kind: 'clear' };
+  return hasNumbers(cells) ? { kind: 'clear' } : { kind: 'forget' };
 }

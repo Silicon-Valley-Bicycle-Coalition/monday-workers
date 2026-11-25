@@ -485,7 +485,12 @@ Date is one of the event's days.
 **Whose numbers.** D1 `tracker_counts` and `event_grants` (migration 0004) hold what the Worker last wrote. A row with any
 number it didn't write is a person's, and all three cells are left alone, because the tracker's Canceled or Refunded formula mixes them.
 Clearing that cell hands the row back. The Worker clears its own numbers when a row stops qualifying (unlinked, relinked, Cancelled), and
-its own Grant when no row backs it. 30 days after its Date a row is frozen; Grant isn't.
+its own Grant when no row backs it. 30 days after its Date a row is frozen; Grant isn't. Archiving a finished row keeps its event's Grant; deleting a *mis-linked* row does too,
+so unlink it first, or clear Grant by hand.
+
+**What stops a mistake spreading.** A column missing from any read fails the run. A run that would clear more than five things clears
+none and logs `held back N clears`: fix the links or Funder labels, or clear them by hand if they're meant. Each row is
+read again just before its write. Never move `startDate` or `grantStartDate` later once live: rows before it stop qualifying and clear.
 
 **When totals wait.** Any of the event's D1 `attendees` rows not `written` holds its totals (a `failed` one needs a person;
 see "Failures and the dead-letter queue"). Date mismatches, double links, conflicting Funders and held events are warned about once

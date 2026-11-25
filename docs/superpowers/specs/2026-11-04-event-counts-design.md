@@ -119,6 +119,7 @@ hourly cron → read tracker rows (Date, Status, Funder, CRM Event, three counts
 * the row's Date falls on the event's Pacific days, start through end.
 
 A row fails a guard only on data that was read. A failed or partial Monday read fails the run, and changes nothing.
+That includes a column missing from what Monday returned, which is how a deleted or retyped column reads (checked 2026-11-24).
 
 **Totals** also need Event Status `Completed` (the ended-event sweep keeps that current) and at least one Attended. All three
 are then written together:
@@ -137,8 +138,8 @@ read with `statusText`, never `text`.
 **Feed not settled.** If any D1 `attendees` row for the event isn't `written`, its totals are *held*: nothing written, nothing
 cleared. A blank sends staff to look; a short count doesn't. D1 can't show a delivery that never came, which the parallel run is for.
 
-**Whose row it is.** D1 table `tracker_counts` (migration `0004`): tracker item id, event item id, the last three values written,
-written at. Ids and numbers only.
+**Whose row it is.** D1 table `tracker_counts` (migration `0004`): tracker item id, event item id, the row's Date, the last three values written,
+written at. Ids, dates and numbers only.
 
 * A row is **a person's** when any of its three cells holds a number that isn't what the Worker last wrote there. The Worker leaves all
   three alone, because the formula mixes them: correcting one while the others moved would make it wrong. Clearing that cell hands the row back.
@@ -147,7 +148,8 @@ written at. Ids and numbers only.
   Worker-written cells cleared and its record deleted, unless it's a person's. A relinked row then gets the new event's totals if it
   qualifies. This is the only clearing the job does, and it's what stops one class's numbers staying on another's row.
 * **30 days after its Date, a row is frozen**: neither written nor cleared, so a closed quarter's numbers don't move. A Date
-  edited to fall outside the window freezes it too.
+  edited to fall outside the window freezes it too, and so does the Date the numbers were written under, so blanking or moving Date
+  can't reopen a closed class. Once someone empties the row it starts over.
 
 Monday is written before D1. If the D1 write is lost, the row reads as a person's until cleared, which is the safe side.
 
@@ -160,15 +162,19 @@ design leaves it alone. Staff fix Attendance on Event Registrations, and the tot
 
 * A blank Funder doesn't vote. If the rest agree, that's the event's Grant; if they disagree, nothing is written and it warns.
 * The Worker writes a Grant that differs, including one a person set. Finding the same value already there, it records it as its own.
-* D1 table `event_grants` (event item id, Grant) is what the Worker wrote or adopted. When an event ends up with no grant, or no qualifying
-  row, its Grant is cleared only if it still equals that record. So a mis-link, once fixed, doesn't leave a class in VTA's
+* D1 table `event_grants` (event item id, Grant, tracker item id) is what the Worker wrote or adopted, and the row behind it. When an event ends up with no grant, or no qualifying
+  row, its Grant is cleared only if it still equals that record and that row is still on the board (archiving finished rows clears nothing). So a mis-link, once fixed, doesn't leave a class in VTA's
   report. A Grant on an event no row ever linked is never touched.
 * There is no 30-day limit: a Funder correction reaches old registrations too.
 
 The column becomes `🔒 Grant` at this release (`MARKED_COLUMNS`). `grantStartDate` is 2026-11-01; `startDate` is the day release 2 goes live.
 Two rows may link to one event, and then both show its totals.
 
-**How staff see a gap.** Worker warnings (date mismatch, double link, Grant conflict, feed not settled) go to the log once a day, at
+**Added after the code review (2026-11-24).** A run that would clear more than five things (rows and Grants) clears none of them and
+logs an error, so a renamed Funder label or a mass edit can't empty a funder's report. Each row is read again just before it's
+written, and left alone if its numbers or link changed. A write Monday refuses on its content doesn't count toward the three-failure stop.
+
+**How staff see a gap. Worker warnings (date mismatch, double link, Grant conflict, feed not settled) go to the log once a day, at
 the check hour, with item ids only. Staff don't read logs, so the tracker gets a **Totals missing** view: Date before today, Registered empty, Status not Cancelled.
 
 **Config** `attendeeSync.tracker`, `null` turns the whole job off (how it ships): board id 18433254640, `crmEventColumn` `board_relation_mm8r7g27`,

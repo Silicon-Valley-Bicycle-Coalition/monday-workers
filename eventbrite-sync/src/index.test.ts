@@ -105,7 +105,7 @@ describe('scheduled (daily missed-order check)', () => {
   describe('the tracker job', () => {
     const attendeeSync = productionConfig.attendeeSync as unknown as Record<string, unknown> & { events: Record<string, unknown> };
     const shipped = { tracker: attendeeSync.tracker, grantColumn: attendeeSync.events.grantColumn };
-    const idleTracker = () => vi.fn<typeof sweepTracker>().mockResolvedValue({ grants: 0, rows: 0, cleared: 0, failed: [], warnings: [], dryRun: false });
+    const idleTracker = () => vi.fn<typeof sweepTracker>().mockResolvedValue({ grants: 0, rows: 0, cleared: 0, failed: [], warnings: [], braked: 0, unattempted: 0, dryRun: false });
     const runWith = (mode: () => Promise<string | null>, tracker: typeof sweepTracker, sweep = idleSweep()): Promise<void> =>
       runScheduled(offHour, flags(mode), quietCheck(), sweep, undefined, undefined, tracker);
 

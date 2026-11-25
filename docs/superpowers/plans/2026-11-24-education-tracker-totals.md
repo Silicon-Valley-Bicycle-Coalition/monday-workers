@@ -22,6 +22,9 @@
 - **Operator steps (Tasks 2, 8 and 10) change production. Ask David before each one, and never run them as part of a code task.**
 - Each release is its own PR. Open one, or merge, only on David's say-so.
 
+> **After the code review (2026-11-24):** `event_grants` also keeps the tracker item id, `tracker_counts` the row's Date, and
+> `planGrants`, `TrackerRecord`, `RowAction` and `TrackerSweepResult` changed to match. The code and the spec are current; Tasks 4–7 below are as first planned.
+
 ## Review Focus
 
 1. A blank Funder, which Monday shows as the text `Other` (label id 5): it doesn't vote on Grant (Task 4).
