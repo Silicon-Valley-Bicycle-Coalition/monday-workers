@@ -38,6 +38,8 @@ import {
 } from './backfill-volunteers-lib.mjs';
 
 const PLACEHOLDER_COLUMN_ID = 'REPLACE_WITH_COLUMN_ID';
+// Optional columns only the Worker writes: their placeholder is no reason to refuse.
+const UNWRITTEN_COLUMN_KEYS = new Set(['ticketTypeColumn', 'attendeePhoneColumn', 'shiftTimeColumn']);
 const SKIP_REASONS = ['no-attendee-id', 'not-a-volunteering-event', 'already-moved'];
 
 // Paginates a board's items with the given column fields.
@@ -141,7 +143,7 @@ export async function run({ argv, config, client, io }) {
     log('backfill-volunteers: monday.boards.volunteers and "event-registrations" must both be configured');
     return 1;
   }
-  const placeholders = Object.entries(vc).filter(([, id]) => id === PLACEHOLDER_COLUMN_ID).map(([key]) => key);
+  const placeholders = Object.entries(vc).filter(([key, id]) => id === PLACEHOLDER_COLUMN_ID && !UNWRITTEN_COLUMN_KEYS.has(key)).map(([key]) => key);
   if (placeholders.length > 0) {
     log(`backfill-volunteers: attendeeSync.volunteers has placeholder column ids (${placeholders.join(', ')}); run setup-volunteers-board.mjs first`);
     return 1;

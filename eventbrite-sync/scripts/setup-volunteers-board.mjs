@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 import {
   SEND_LINK, UPCOMING_VIEW_NAME, VIEW_NAME, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, leadEmailVariables, parseArgs,
-  planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
+  planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingColumnOrder, upcomingViewVariables,
 } from './setup-volunteers-board-lib.mjs';
 
 const CREATE_COLUMN = `mutation ($board: ID!, $title: String!, $type: ColumnType!, $defaults: JSON, $description: String) {
@@ -101,19 +101,14 @@ async function main() {
   }
   if (views.includes(UPCOMING_VIEW_NAME)) {
     const status = find(volunteers, 'Status', 'status');
-    const ticketType = find(volunteers, 'Shift', 'text');
-    const sendLink = volunteers.columns.find((c) => bareTitle(c.title) === SEND_LINK && c.type === 'mirror');
-    const shown = [
-      'name', ...(sendLink ? [sendLink.id] : []), ticketType.id, find(volunteers, 'Attendee Email', 'email').id, find(volunteers, 'Phone Number', 'text').id, status.id,
-      find(volunteers, 'Shift Lead', 'mirror').id, find(volunteers, 'Shift Lead Email', 'mirror').id,
-    ];
+    const shown = upcomingColumnOrder(volunteers.columns);
     await graphql(CREATE_VIEW, upcomingViewVariables(args.board, {
       dateColumn: find(volunteers, 'Date', 'date').id,
       eventDateColumn: find(volunteers, 'Event Date', 'mirror').id,
       statusColumn: status.id,
       canceledId: canceledLabelId(status.settings_str),
       headingColumn: find(volunteers, 'Event and Date', 'formula').id,
-      ticketTypeColumn: ticketType.id,
+      ticketTypeColumn: find(volunteers, 'Shift', 'text').id,
       columnOrder: shown,
       hidden: volunteers.columns.map((c) => c.id).filter((id) => !shown.includes(id)),
     }));

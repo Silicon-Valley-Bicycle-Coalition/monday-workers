@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { run } from './backfill-volunteers.mjs';
 import source from './backfill-volunteers.mjs?raw';
 import { testConfig } from '../src/test/testConfig';
+import production from '../config/svbc.json';
+import sandbox from '../config/sandbox.json';
 
 const config = testConfig();
 const rc = config.attendeeSync.registrations;
@@ -204,6 +206,24 @@ describe('backfill-volunteers CLI', () => {
     const placeholder = testConfig();
     placeholder.attendeeSync.volunteers.attendeeIdColumn = 'REPLACE_WITH_COLUMN_ID';
     expect(await run({ argv: [], config: placeholder, client: fakeMonday([]).client, io: o.io })).toBe(1);
+  });
+});
+
+describe('optional columns', () => {
+  it.each(['ticketTypeColumn', 'attendeePhoneColumn', 'shiftTimeColumn'])('runs while %s is the placeholder: it never writes that column', async (key) => {
+    const cfg = testConfig();
+    cfg.attendeeSync.volunteers[key] = 'REPLACE_WITH_COLUMN_ID';
+    const m = fakeMonday([registration('1')]);
+    expect(await run({ argv: ['--apply'], config: cfg, client: m.client, io: io().io })).toBe(0);
+    expect(m.created).toHaveLength(1);
+    expect(Object.keys(m.created[0].values)).not.toContain('REPLACE_WITH_COLUMN_ID');
+  });
+
+  it.each([['production', production], ['sandbox', sandbox]])('the shipped %s config passes the column check', async (_name, cfg) => {
+    const o = io();
+    // The fake board holds other column ids, so only the refusal is judged.
+    await run({ argv: [], config: cfg, client: fakeMonday([]).client, io: o.io }).catch(() => {});
+    expect(o.text()).not.toContain('placeholder column ids');
   });
 });
 
