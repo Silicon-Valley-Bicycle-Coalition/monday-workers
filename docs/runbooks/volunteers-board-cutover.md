@@ -45,7 +45,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
 
    `18437909790` is the production Events board (`monday.boards.events` in
    `eventbrite-sync/config/svbc.json`; check it there). Then the same with `--apply`. It creates Event, Eventbrite Listing, Eventbrite Attendee ID,
-   Attendee Name, Attendee Email, Shift and Phone Number (each only if missing) and the
+   Attendee Name, Attendee Email, Shift, Phone Number and Shift Time (each only if missing) and the
    Recent events view (Date within the last 90 days, newest first, ungrouped), and prints the column
    ids. Since 2026-11-24 it also creates Shift Lead and Shift Lead Email on Events; Event Date, Shift
    Lead, Shift Lead Email, Event and Date and Send event email on Volunteers; and the Upcoming by event view. Then, from the repo root, add the 🔒
@@ -71,7 +71,7 @@ Volunteers, Events and Event Registrations boards; the backfill's data lives und
    half-filled set fails config validation (`npm test`, and the Worker at load) rather than
    splitting volunteers across two boards. `ticketTypeColumn` is not one of the five: left as the
    placeholder it only means Shift stays blank. The same goes for `attendeePhoneColumn` and
-   Phone Number.
+   Phone Number, and `shiftTimeColumn` and Shift Time.
 
 3. **Hold `eventbrite-sync`** (repo root).
 
@@ -315,8 +315,12 @@ step. Never delete the Volunteers items the backfill created.
   again after creating the item, so your choice sticks. **Eventbrite Listing** keeps the listing
   they signed up for.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
-  Attendee Email, Shift, Phone Number): the sync overwrites an edit. Don't rename columns either
+  Attendee Email, Shift, Phone Number, Shift Time): the sync overwrites an edit. Don't rename columns either
   without asking IT; the setup script finds them by name. Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
+- **Shift Time** is when the Eventbrite listing the person signed up for runs. Two listings with the same
+  name and date are two shifts of one event and share a section, so use it to see who is on which. It
+  stays the listing's time if you re-point **Event**. A listing with several shifts as ticket types
+  shows the whole listing's time; **Shift** names the part.
 - **Rows that look like duplicates usually aren't ([GL#115](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/115)).** One row is one Eventbrite ticket.
   One order can hold several: two shifts (different **Shift**), or several people bought
   under one buyer's email (same Shift, different Attendee Name). A cancel or refund keeps
