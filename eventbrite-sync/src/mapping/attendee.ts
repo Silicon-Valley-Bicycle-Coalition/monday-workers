@@ -2,6 +2,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
+import { fallbackItemName } from './fallbackName';
 import { homeCounty } from './homeCounty';
 import { homeZipFromAnswers } from './homeZip';
 
@@ -95,5 +96,5 @@ export function mapAttendee(
     }
   }
 
-  return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
+  return { itemName: name ?? fallbackItemName(a.id), columnValues };
 }
