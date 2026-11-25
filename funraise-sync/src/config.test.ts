@@ -269,9 +269,9 @@ describe('validateConfig employerAnswers', () => {
     expect(validateConfig({ ...validConfig, employerAnswers: { enabled: true } }).employerAnswers).toEqual({ enabled: true });
   });
 
-  it('ships switched off in both environments', async () => {
+  it('is on in the sandbox and off in production', async () => {
     const [svbc, sandbox] = await Promise.all([import('../config/svbc.json'), import('../config/sandbox.json')]);
     expect(validateConfig(svbc.default).employerAnswers).toEqual({ enabled: false });
-    expect(validateConfig(sandbox.default).employerAnswers).toEqual({ enabled: false });
+    expect(validateConfig(sandbox.default).employerAnswers).toEqual({ enabled: true });
   });
 });

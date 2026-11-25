@@ -1,6 +1,6 @@
 # SVBC branded email template
 
-Two versions of the same visual design, for two different sending paths:
+Three versions of the same visual design, for three different sending paths:
 
 - **Worker-sent emails** (member-portal, bp-feedback-notify, report-digests) use
   `src/email/layout.ts`'s `renderEmailLayout()` directly — see the root README's "Branded email
@@ -9,6 +9,9 @@ Two versions of the same visual design, for two different sending paths:
   entirely in Monday's UI — use [`monday-automation-template.html`](monday-automation-template.html),
   copied by hand into Monday's automation composer. Monday's automations aren't deployed code, so
   there's no way for the Worker-sent path's code to reach them.
+- **Monday Sequence emails** (the five stewardship emails) are in [`stewardship/`](stewardship/), built by
+  `scripts/build-stewardship-emails.mjs` and pasted into each Sequence's HTML editor. Runbook:
+  `docs/runbooks/stewardship-sequences.md`.
 
 ## Using the Monday.com template
 

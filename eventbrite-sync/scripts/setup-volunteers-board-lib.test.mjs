@@ -2,16 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { MARKED_COLUMNS } from '../../scripts/mark-read-only-columns.mjs';
 import {
   UPCOMING_VIEW_NAME, VIEW_NAME, VOLUNTEER_COLUMN_SPECS, canceledLabelId, columnConfig, createColumnVariables, derivedColumnVariables, parseArgs,
-  leadEmailVariables, planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingViewVariables,
+  leadEmailVariables, planDerivedColumns, planEventsColumns, planViews, planVolunteersBoard, recentEventsViewVariables, shiftLeadVariables, upcomingColumnOrder, upcomingViewVariables,
 } from './setup-volunteers-board-lib.mjs';
 
 const col = (id, title, type = 'text') => ({ id, title, type });
 
 describe('planVolunteersBoard', () => {
-  it('plans all seven columns on a board that has none of them', () => {
+  it('plans all eight columns on a board that has none of them', () => {
     const { toCreate } = planVolunteersBoard([col('text_1', '📜 Job'), col('date_1', '📜 Date', 'date')]);
-    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number']);
-    expect(toCreate.map((s) => s.type)).toEqual(['board_relation', 'board_relation', 'text', 'text', 'email', 'text', 'text']);
+    expect(toCreate.map((s) => s.title)).toEqual(['Event', 'Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number', 'Shift Time']);
+    expect(toCreate.map((s) => s.type)).toEqual(['board_relation', 'board_relation', 'text', 'text', 'email', 'text', 'text', 'text']);
   });
 
   it('plans only Shift on a board set up before #115', () => {
@@ -22,7 +22,7 @@ describe('planVolunteersBoard', () => {
   it('does not plan a column that exists under a 🔒 marker', () => {
     const { toCreate } = planVolunteersBoard([col('text_9', '🔒 Eventbrite Attendee ID')]);
     expect(toCreate.map((s) => s.title)).not.toContain('Eventbrite Attendee ID');
-    expect(toCreate).toHaveLength(6);
+    expect(toCreate).toHaveLength(7);
   });
 
   it('plans nothing on a complete board', () => {
@@ -169,10 +169,24 @@ describe('columnConfig', () => {
   it('maps marked titles to config keys', () => {
     const cols = VOLUNTEER_COLUMN_SPECS.map((s, i) => col(`c_${i}`, `🔒 ${s.title}`, s.type));
     expect(columnConfig(cols).eventColumn).toBe('c_0');
-    expect(Object.keys(columnConfig(cols)).sort()).toEqual(['attendeeEmailColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'attendeePhoneColumn', 'eventColumn', 'listingColumn', 'ticketTypeColumn']);
+    expect(Object.keys(columnConfig(cols)).sort()).toEqual(['attendeeEmailColumn', 'attendeeIdColumn', 'attendeeNameColumn', 'attendeePhoneColumn', 'eventColumn', 'listingColumn', 'shiftTimeColumn', 'ticketTypeColumn']);
   });
 
   it('names a missing column', () => expect(() => columnConfig([])).toThrow('Event'));
+});
+
+describe('upcomingColumnOrder', () => {
+  const columns = [
+    col('t_shift', '🔒 Shift'), col('t_time', '🔒 Shift Time'), col('e_mail', 'Attendee Email', 'email'), col('t_phone', 'Phone Number'),
+    col('c_status', '📜 Status', 'status'), col('m_lead', 'Shift Lead', 'mirror'), col('m_lead_email', 'Shift Lead Email', 'mirror'),
+  ];
+  it('puts Shift Time right after Shift', () => {
+    expect(upcomingColumnOrder(columns)).toEqual(['name', 't_shift', 't_time', 'e_mail', 't_phone', 'c_status', 'm_lead', 'm_lead_email']);
+  });
+  it('puts the send link after Name where there is one', () => {
+    expect(upcomingColumnOrder([...columns, col('m_send', 'Send event email', 'mirror')]).slice(0, 3)).toEqual(['name', 'm_send', 't_shift']);
+  });
+  it('names a missing column', () => expect(() => upcomingColumnOrder(columns.slice(1))).toThrow('Shift'));
 });
 
 describe('parseArgs', () => {
@@ -192,7 +206,7 @@ describe('parseArgs', () => {
 
 describe('read-only markers', () => {
   it('locks the Worker-written Volunteers columns', () => {
-    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number']);
+    expect(MARKED_COLUMNS['Volunteers'].locked).toEqual(['Eventbrite Listing', 'Eventbrite Attendee ID', 'Attendee Name', 'Attendee Email', 'Shift', 'Phone Number', 'Shift Time']);
   });
   it('leaves Event editable', () => {
     const { locked, history } = MARKED_COLUMNS['Volunteers'];

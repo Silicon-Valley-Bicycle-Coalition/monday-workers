@@ -80,7 +80,7 @@ Ids live in `config/svbc.json` (production) and `config/sandbox.json`.
 | People | Personal Email (match), First Name, Last Name (new people only) | Read; create |
 | Events | Eventbrite ID, Date, End, Venue, Address, City, Program, Event Status, Source, URL, Send event email link (`attendeeSync.events`) | Write |
 | Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Home County, Registrants link (`attendeeSync.registrations`) | Write |
-| Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Shift, Phone Number, Job, Date, Status, Historical, Volunteer | Write |
+| Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Shift, Phone Number, Shift Time, Job, Date, Status, Historical, Volunteer | Write |
 | Bike Education Lifecycle Tracker | CRM Event, Date, Status, Funder; Registered, Checked in Attendees, No-shows (`attendeeSync.tracker`) | Read; write the last three |
 | Pledge to Ride | The columns in `pledge.columns`: attendee id, year, status, date, email, Details, zip, County, consent, Other Answers and the pledge's own answers | Write (creates missing labels) |
 
@@ -93,7 +93,8 @@ Labels and types that must be right:
 
 Config placeholders that switch features off: `homeZipColumn` (`REPLACE_WITH_COLUMN_ID` in
 production, so Home Zip isn't written there), `homeCountyColumn` (both), `events.grantColumn` (production; needed before
-`attendeeSync.tracker` can be set), and in the sandbox `orderIdColumn` and
+`attendeeSync.tracker` can be set), `volunteers.shiftTimeColumn` in both (Shift Time, until its
+column is created), and in the sandbox `orderIdColumn` and
 `events.sendLinkColumn`. While `orderIdColumn` is a placeholder the route stores deliveries but
 the consumer refuses to write, and messages dead-letter. The Volunteers path turns on only when all
 five of its new column ids are real; a half-filled set fails config validation.

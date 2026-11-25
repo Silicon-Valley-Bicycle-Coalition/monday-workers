@@ -727,7 +727,7 @@ constants in `custodian.ts` can grow — not yet done.
 so the custodian's `classify` duty writes four status columns on each Donations board that has
 `donationBoards[].columns.classification` configured: **Funding Stream** (Individual Giving,
 Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue, Donor
-Advised Funds, Event Tickets),
+Advised Funds, Event Tickets, Foundation & Corporate Gifts),
 **Gift Size** (`< $100`, `$100–199`, `$200–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
 **Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
 gift's amount, date and type. It runs nightly and on demand

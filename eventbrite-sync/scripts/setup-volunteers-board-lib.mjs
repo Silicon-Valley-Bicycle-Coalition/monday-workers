@@ -21,6 +21,8 @@ export const VOLUNTEER_COLUMN_SPECS = [
   { key: 'ticketTypeColumn', title: 'Shift', type: 'text' },
   // Text, as entered: Monday's phone column refuses what it can't parse.
   { key: 'attendeePhoneColumn', title: 'Phone Number', type: 'text' },
+  // When the listing runs: two same-named listings on one date are two shifts of an event (#5).
+  { key: 'shiftTimeColumn', title: 'Shift Time', type: 'text' },
 ];
 
 // Columns Monday works out from the linked event, in the order they must be created. No Worker
@@ -129,6 +131,20 @@ export function canceledLabelId(statusSettingsStr) {
   const entry = Object.entries(JSON.parse(statusSettingsStr).labels ?? {}).find(([, label]) => label === 'Canceled');
   if (!entry) throw new Error('setup-volunteers-board: the Status column has no Canceled label');
   return Number(entry[0]);
+}
+
+/** The columns a new Upcoming by event shows, in order. Throws naming one the board lacks. */
+export function upcomingColumnOrder(volunteersColumns) {
+  const id = (title, type) => {
+    const column = volunteersColumns.find((c) => bareTitle(c.title) === title && c.type === type);
+    if (!column) throw new Error(`setup-volunteers-board: the Volunteers board has no ${type} column "${title}"`);
+    return column.id;
+  };
+  const sendLink = volunteersColumns.find((c) => bareTitle(c.title) === SEND_LINK && c.type === 'mirror');
+  return [
+    'name', ...(sendLink ? [sendLink.id] : []), id('Shift', 'text'), id('Shift Time', 'text'), id('Attendee Email', 'email'), id('Phone Number', 'text'),
+    id('Status', 'status'), id(SHIFT_LEAD, 'mirror'), id(SHIFT_LEAD_EMAIL, 'mirror'),
+  ];
 }
 
 /**

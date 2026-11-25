@@ -105,7 +105,8 @@
       "eventColumn": "board_relation_mm90etzt",
       "listingColumn": "board_relation_mm90cgd7",
       "ticketTypeColumn": "text_mm919w2k",
-      "attendeePhoneColumn": "text_mm9dchcy"
+      "attendeePhoneColumn": "text_mm9dchcy",
+      "shiftTimeColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrantsLinkExcludedEventIds": [
       "1977741403778"

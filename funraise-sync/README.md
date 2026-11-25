@@ -304,7 +304,8 @@ an Organization and, only if the donor has no **Current** Affiliation, proposes 
 to confirm (its README, "Employer answers in the matching-gift job"). Installments are left out:
 their company goes to Recurring Gifts → Match Employer.
 
-* **Switch:** `employerAnswers.enabled` in `config/*.json`, shipped `false` in both environments.
+* **Switch:** `employerAnswers.enabled` in `config/*.json`: `true` in the sandbox (2026-11-24), `false`
+  in production until a sandbox gift has been checked end to end.
   Removing the `EMPLOYER_ANSWERS` service binding (`wrangler.jsonc`, both environments) also turns
   it off.
 * **Best effort:** it runs once the donor is matched, before the Donations write. A thrown RPC is

@@ -6,7 +6,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 
 const config = testConfig();
-const facts = { eventName: 'Trail Work Day', classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Volunteering' as string | null };
+const facts = { eventName: 'Trail Work Day', classDate: '2026-10-30', classDay: 'Friday', classLocation: 'online', program: 'Volunteering' as string | null, startsAt: null as string | null, endsAt: null as string | null };
 
 function attendee(overrides: Partial<EventbriteAttendee> = {}): EventbriteAttendee {
   return { id: 'a1', profile: { name: 'Jane Rider', first_name: 'Jane', email: 'jane@example.com' }, ...overrides };
@@ -105,6 +105,24 @@ describe('mapVolunteer', () => {
   ])('omits the phone for %s, so a stored one stays', (_label, overrides) => {
     const m = mapVolunteer(attendee(overrides as Partial<EventbriteAttendee>), facts, config, 'Registered');
     expect(m.columnValues).not.toHaveProperty('vol_phone_col');
+  });
+
+  const shift = { ...facts, startsAt: '2026-06-13T15:00:00Z', endsAt: '2026-06-13T19:00:00Z' };
+
+  it("writes the listing's shift time", () => {
+    expect(mapVolunteer(attendee(), shift, config, 'Registered').columnValues.vol_time_col).toBe('8:00 AM–12:00 PM');
+  });
+
+  it('omits the shift time without a start, so a stored one stays', () => {
+    expect(mapVolunteer(attendee(), { ...shift, startsAt: null }, config, 'Registered').columnValues).not.toHaveProperty('vol_time_col');
+  });
+
+  it('writes no shift time while the column is the placeholder', () => {
+    const cfg = testConfig();
+    cfg.attendeeSync.volunteers.shiftTimeColumn = PLACEHOLDER_COLUMN_ID;
+    const m = mapVolunteer(attendee(), shift, cfg, 'Registered');
+    expect(Object.keys(m.columnValues)).not.toContain(PLACEHOLDER_COLUMN_ID);
+    expect(Object.values(m.columnValues)).not.toContain('8:00 AM–12:00 PM');
   });
 
   it('writes no phone while the column is the placeholder', () => {

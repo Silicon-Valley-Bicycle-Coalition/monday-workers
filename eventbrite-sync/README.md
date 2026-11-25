@@ -301,7 +301,7 @@ creates what landed after the extract.
 **Owner and deadline (issue [GL#44](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/44)).** Run it on or after **2026-10-23**, once Summit sales have
 closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
-has no `REPLACE_WITH_COLUMN_ID` left, apart from `homeZipColumn` (see "Grant report"); the Worker is deployed and the webhook registered; then
+has no `REPLACE_WITH_COLUMN_ID` left, apart from `homeZipColumn` (see "Grant report") and `shiftTimeColumn`; the Worker is deployed and the webhook registered; then
 `--dry-run`, compare its order count with the Eventbrite attendee/orders report, then the real
 run. If the Worker cannot be in production by then, `--dry-run` still needs only the read-only
 token and lists the paid orders (ids and statuses, no PII) — use it as the checklist for a
@@ -382,7 +382,7 @@ people who registered before this column, one event at a time.
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
   `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
-  since 2026-11-04, except `homeZipColumn`, which stays off until set (see "Grant report"); the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  since 2026-11-04, except `homeZipColumn` (see "Grant report") and `volunteers.shiftTimeColumn`, which stay off until set; the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -608,7 +608,7 @@ listing's own Events item on create and is never written again), **Eventbrite Li
 **Eventbrite Attendee ID**, **Attendee Name**, **Attendee Email**, **Shift** (the
 attendee's `ticket_class_name`, e.g. "Shift 2"; `ticketTypeColumn`, optional: the placeholder
 writes nothing), **Phone Number** (same rules as Attendee Phone on Event Registrations; `attendeePhoneColumn`,
-optional too), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
+optional too), **Shift Time** (`shiftTimeColumn`, optional too; see below), plus the existing Job, Date, Status, Historical and Volunteer (People) link.
 Status maps Registered to RSVP, Attended to Completed and Canceled (canceled or refunded in
 Eventbrite) to Canceled; staff No-Show, Prospect and Confirmed are kept. A canceled row is kept,
 never deleted, so a count of people must leave out Canceled and count attendee ids, not emails:
@@ -645,6 +645,14 @@ doesn't follow the event staff re-pointed the row to. Production has the columns
 until staff renamed them on 2026-11-24 (config keys keep the old words); the setup script matches by title, so a
 rename in Monday needs one there too. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
+
+**Shift Time** (not set up as of 2026-11-24: `shiftTimeColumn` is the placeholder in both configs) is when the row's own listing runs, in Pacific time ("8:00 AM–12:00 PM"; `src/mapping/shiftTime.ts`),
+whatever Event staff point the row at. Bike Parking lists each shift of an event as its own listing with the
+same name and date, which the by-event views show as one section, so this is what tells the shifts apart
+([#5](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/5)). It is text, so `12:00 PM` sorts before
+`8:00 AM`. A time changed in Eventbrite reaches a row on that attendee's next delivery; `scripts/backfill-attendees.mjs`
+fills older rows. The setup script doesn't edit an existing view: add the column by hand. Design:
+[`docs/superpowers/specs/2026-11-24-volunteer-shift-time-design.md`](../docs/superpowers/specs/2026-11-24-volunteer-shift-time-design.md).
 
 **Completed by event** is production's first tab, the same layout for past events: Completed with an Event,
 newest first. It was Completed hours until 2026-11-24, changed by hand on that board only; the setup script

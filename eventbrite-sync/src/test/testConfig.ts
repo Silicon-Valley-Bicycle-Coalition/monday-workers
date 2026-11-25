@@ -60,6 +60,7 @@ export function testConfig(
         dateColumn: 'vol_date_col', statusColumn: 'vol_status_col', historicalColumn: 'vol_hist_col', volunteerLinkColumn: 'vol_person_col',
         eventColumn: 'vol_event_col', listingColumn: 'vol_listing_col', ticketTypeColumn: 'vol_ticket_col',
         attendeePhoneColumn: 'vol_phone_col',
+        shiftTimeColumn: 'vol_time_col',
       },
       registrantsLinkExcludedEventIds: ['8888'],
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },

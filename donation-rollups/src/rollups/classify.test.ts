@@ -21,6 +21,8 @@ describe('classifyGift — funding stream', () => {
     ['  donor-advised fund ', 'Donor Advised Funds'],
     ['Event Ticket', 'Event Tickets'],
     ['  event_ticket ', 'Event Tickets'],
+    ['Foundation & Corporate Gifts', 'Foundation & Corporate Gifts'],
+    [' foundation & corporate gifts ', 'Foundation & Corporate Gifts'],
     ['Donation', 'Individual Giving'],
     ['Major Gift', 'Individual Giving'],
     ['Funraise Online', 'Individual Giving'],
@@ -32,7 +34,7 @@ describe('classifyGift — funding stream', () => {
   });
 
   it('only ever returns a label from FUNDING_STREAMS', () => {
-    for (const t of ['Membership', 'x', 'Grants', 'Sponsorship', 'Donor Advised Fund', 'Event Ticket']) {
+    for (const t of ['Membership', 'x', 'Grants', 'Sponsorship', 'Donor Advised Fund', 'Event Ticket', 'Foundation & Corporate Gifts']) {
       expect(FUNDING_STREAMS).toContain(g({ giftType: t }).fundingStream);
     }
   });
