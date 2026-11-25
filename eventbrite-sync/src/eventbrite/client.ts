@@ -78,7 +78,7 @@ export interface EventbriteAttendee {
   refunded?: boolean | null;
   status?: string | null;
   // The phones are present only when the event's order form collects them.
-  profile?: { name?: string | null; first_name?: string | null; email?: string | null; cell_phone?: string | null; work_phone?: string | null } | null;
+  profile?: { name?: string | null; first_name?: string | null; last_name?: string | null; email?: string | null; cell_phone?: string | null; work_phone?: string | null } | null;
   ticket_class_name?: string | null;
   created?: string | null;
   order_id?: string | null;

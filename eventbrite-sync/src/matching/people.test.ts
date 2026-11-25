@@ -14,9 +14,10 @@ function fakeClient(overrides: Partial<MondayClient> = {}): MondayClient {
   };
 }
 
+const nameColumns = { first: 'first_col', last: 'last_col' };
+
 describe('matchPerson names', () => {
   const who = { email: 'a@example.com', name: 'Ada Lovelace', firstName: 'Ada', lastName: 'Lovelace' };
-  const nameColumns = { first: 'first_col', last: 'last_col' };
 
   it('writes both names after the create, leaving the create and item name as they were', async () => {
     const client = fakeClient();
@@ -34,12 +35,6 @@ describe('matchPerson names', () => {
   it('makes no name write when the source has neither part', async () => {
     const client = fakeClient();
     await matchPerson(client, 42, 'email_col', { email: 'a@example.com', name: 'Ada' }, nameColumns);
-    expect(client.changeColumnValues).not.toHaveBeenCalled();
-  });
-
-  it('makes no name write without nameColumns, as for the attendee path', async () => {
-    const client = fakeClient();
-    await matchPerson(client, 42, 'email_col', who);
     expect(client.changeColumnValues).not.toHaveBeenCalled();
   });
 
@@ -67,19 +62,19 @@ describe('matchPerson names', () => {
 describe('matchPerson', () => {
   it('returns no match, without a Monday call, when there is no email', async () => {
     const client = fakeClient();
-    expect(await matchPerson(client, 42, 'email_col', { email: '  ', name: 'Jane' })).toEqual({ donorItemId: null, reason: 'no email' });
+    expect(await matchPerson(client, 42, 'email_col', { email: '  ', name: 'Jane' }, nameColumns)).toEqual({ donorItemId: null, reason: 'no email' });
     expect(client.findItemByColumnValue).not.toHaveBeenCalled();
   });
 
   it('matches an existing item by the trimmed email', async () => {
     const client = fakeClient({ findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'p1' }) });
-    expect(await matchPerson(client, 42, 'email_col', { email: ' a@example.com ', name: 'A' })).toEqual({ donorItemId: 'p1', created: false });
+    expect(await matchPerson(client, 42, 'email_col', { email: ' a@example.com ', name: 'A' }, nameColumns)).toEqual({ donorItemId: 'p1', created: false });
     expect(client.findItemByColumnValue).toHaveBeenCalledWith(42, 'email_col', 'a@example.com');
   });
 
   it('creates the person with the { email, text } shape when nothing matches', async () => {
     const client = fakeClient();
-    expect(await matchPerson(client, 42, 'email_col', { email: 'a@example.com', name: ' Ann ' })).toEqual({ donorItemId: 'new', created: true });
+    expect(await matchPerson(client, 42, 'email_col', { email: 'a@example.com', name: ' Ann ' }, nameColumns)).toEqual({ donorItemId: 'new', created: true });
     expect(client.createItem).toHaveBeenCalledWith(42, 'Ann', { email_col: { email: 'a@example.com', text: 'a@example.com' } });
   });
 });

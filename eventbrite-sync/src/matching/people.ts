@@ -1,5 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import { MondayApiError } from '../monday/graphql';
+import type { EventbriteSyncConfig } from '../types';
 
 export type DonorMatchResult = { donorItemId: string; created: boolean } | { donorItemId: null; reason: string };
 
@@ -15,16 +16,22 @@ export interface NameColumns {
   last: string;
 }
 
+// People's First and Last Name columns, the same for every path that can create a person.
+export function peopleNameColumns(config: EventbriteSyncConfig): NameColumns {
+  return { first: config.eventbriteSync.donorFirstNameColumn, last: config.eventbriteSync.donorLastNameColumn };
+}
+
 // Match-or-create on the People board by the bare email address (verified live for funraise-sync
 // 2026-09-17: a bare address matches an email column); create with the { email, text } shape
 // Monday requires. People (Historical) and Organizations are not match targets. Shared by the
-// order consumer (the buyer) and the attendee consumer (the registrant).
+// order consumer (the buyer), the attendee and volunteer consumers and a thank-you's follow-up.
+// `nameColumns` is required so a new caller can't create people with blank names.
 export async function matchPerson(
   mondayClient: MondayClient,
   peopleBoardId: number,
   emailColumn: string,
   who: PersonKey,
-  nameColumns?: NameColumns
+  nameColumns: NameColumns
 ): Promise<DonorMatchResult> {
   const email = typeof who.email === 'string' ? who.email.trim() : '';
   if (email === '') {
@@ -38,7 +45,7 @@ export async function matchPerson(
   const created = await mondayClient.createItem(peopleBoardId, name, {
     [emailColumn]: { email, text: email },
   });
-  if (nameColumns) await writeNames(mondayClient, peopleBoardId, created.id, who, nameColumns);
+  await writeNames(mondayClient, peopleBoardId, created.id, who, nameColumns);
   return { donorItemId: created.id, created: true };
 }
 

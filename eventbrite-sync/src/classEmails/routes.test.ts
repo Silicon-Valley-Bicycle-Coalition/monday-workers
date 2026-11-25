@@ -456,6 +456,21 @@ describe('POST result', () => {
       expect(h.client.changeColumnValues).toHaveBeenCalledWith(666, '10', { [vc.volunteerLinkColumn]: { item_ids: [50] } });
     });
 
+    it('a thank-you that creates the person splits the volunteer name into First and Last Name', async () => {
+      const h = volHarness([vol('10', { [vc.statusColumn]: 'Completed' })], [row('thank-you', '10')], { peopleLookup: async () => null });
+      await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
+      expect(h.client.createItem).toHaveBeenCalledWith(42, 'Al One', expect.anything());
+      expect(h.client.changeColumnValues).toHaveBeenCalledWith(42, '51', { first_col: 'Al', last_col: 'One' });
+    });
+
+    it('writes no names from the item name when the volunteer name column is blank', async () => {
+      const blank = mondayItem('10', 'Eventbrite attendee 123', { [vc.statusColumn]: 'Completed', [vc.attendeeEmailColumn]: 'v10@real.org', [vc.volunteerLinkColumn]: '' });
+      const h = volHarness([blank], [row('thank-you', '10')], { peopleLookup: async () => null });
+      await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
+      expect(h.client.createItem).toHaveBeenCalledTimes(1);
+      expect(h.client.changeColumnValues).not.toHaveBeenCalledWith(42, expect.anything(), expect.anything());
+    });
+
     it('timeline entries read the Volunteers board for the address and first name', async () => {
       const h = volHarness([vol('10', { [vc.statusColumn]: 'Completed' })], [row('thank-you', '10')], { timelineActivityId: 'act-1' });
       await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }], { subject: 'Thanks {{First Name}}' }));
@@ -477,6 +492,17 @@ describe('POST result', () => {
       const body = (h.client.postUpdate.mock.calls[0] as unknown as [string, string])[1];
       expect(body).toContain('Failed: v10@real.org (bounced)');
     });
+  });
+
+  it('a thank-you that creates the person writes First Name from its column and Last Name from the rest of the name', async () => {
+    const h = harness({
+      event: PAST, ledger: [row('thank-you', '10')], peopleLookup: async () => null,
+      items: [reg('10', { [rc.attendanceColumn]: 'Attended', [rc.attendeeNameColumn]: 'Al Bo One', [rc.firstNameColumn]: 'Al Bo' })],
+    });
+    await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
+    expect(h.client.getItems).toHaveBeenCalledWith(333, ['10'], [rc.attendeeEmailColumn, rc.attendeeLinkColumn, rc.attendeeNameColumn, rc.firstNameColumn]);
+    expect(h.client.createItem).toHaveBeenCalledWith(42, 'Al One', expect.anything());
+    expect(h.client.changeColumnValues).toHaveBeenCalledWith(42, '51', { first_col: 'Al Bo', last_col: 'One' });
   });
 
   it('does not link People for a failed thank-you', async () => {

@@ -114,6 +114,16 @@ describe('processAttendee on a volunteer event', () => {
     expect(values).toMatchObject({ vol_status_col: 'Completed', vol_person_col: { item_ids: [777] } });
   });
 
+  it('writes First and Last Name on the person it creates', async () => {
+    const { deps, mondayClient } = setup({
+      att: attendee({ checked_in: true, profile: { name: 'Pat Ann Rider', first_name: 'Pat Ann', last_name: 'Rider', email: 'pat@example.com' } }),
+      monday: { createItem: vi.fn().mockImplementation(async (b: number) => ({ id: b === 42 ? '778' : '901' })) },
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledWith(42, 'Pat Ann Rider', { people_email_col: { email: 'pat@example.com', text: 'pat@example.com' } });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(42, '778', { first_col: 'Pat Ann', last_col: 'Rider' });
+  });
+
   it('does not touch an existing Volunteer link', async () => {
     const { deps, mondayClient } = setup({
       ...existing,
