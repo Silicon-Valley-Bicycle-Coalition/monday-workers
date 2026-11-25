@@ -69,7 +69,7 @@
       "sourceColumn": "color_mm8nbh4t",
       "urlColumn": "link_mm8njbkh",
       "sendLinkColumn": "link_mm8sk30a",
-      "grantColumn": "REPLACE_WITH_COLUMN_ID"
+      "grantColumn": "dropdown_mm9eedjy"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8ng6d5",
@@ -85,7 +85,7 @@
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
       "classLocationColumn": "text_mm8rpb9h",
-      "homeZipColumn": "REPLACE_WITH_COLUMN_ID",
+      "homeZipColumn": "text_mm9es0wk",
       "homeCountyColumn": "REPLACE_WITH_COLUMN_ID",
       "registrantsLinkColumn": "board_relation_mm8svmgy"
     },
@@ -117,7 +117,25 @@
         "94303": "SMC or SCC"
       }
     },
-    "tracker": null
+    "tracker": {
+      "boardId": 18433254640,
+      "crmEventColumn": "board_relation_mm8r7g27",
+      "registeredColumn": "numeric_mm7p1y4p",
+      "checkedInColumn": "numeric_mm7na1kk",
+      "noShowColumn": "numeric_mm7p9znq",
+      "dateColumn": "date_mm7q7jqv",
+      "statusColumn": "status",
+      "funderColumn": "color_mm7nbsn0",
+      "skipStatusLabels": [
+        "Cancelled"
+      ],
+      "grantByFunder": {
+        "VTA": "VTA",
+        "SMC": "SMCTA"
+      },
+      "startDate": "2026-11-24",
+      "grantStartDate": "2026-11-01"
+    }
   },
   "employerAnswers": { "enabled": true },
   "pledge": {
