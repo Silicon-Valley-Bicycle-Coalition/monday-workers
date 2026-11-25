@@ -1,0 +1,23 @@
+{
+  "apiUrl": "https://api.monday.com/v2",
+  "tracker": {
+    "boardId": 18433254640,
+    "date": "date_mm7q7jqv", "status": "status", "funder": "color_mm7nbsn0", "eventType": "color_mm7qgyrm", "event": "color_mm7n9qdc",
+    "registered": "numeric_mm7p1y4p", "checkedIn": "numeric_mm7na1kk", "noShows": "numeric_mm7p9znq", "studentHours": "formula_mm7pahfj", "crmEvent": "board_relation_mm8r7g27"
+  },
+  "registrations": { "boardId": 18437909792, "event": "board_relation_mm8n8a86", "attendance": "color_mm8nkvhy", "zip": "text_mm9es0wk" },
+  "survey": {
+    "boardId": 18424530692,
+    "funder": "dropdown_mm64gemc", "date": "date5fcn5oti", "gender": "single_selecth7obo56", "age": "single_selectbcn2qj4", "ethnicity": "single_selectgsqxali",
+    "income": "single_select7nv4ypf", "language": "single_selectmuxkpt9", "frequencyBefore": "single_selectrhbj2ns", "frequencyAfter": "single_selectlii5ed2",
+    "comfortBefore": "single_selectnq0dbjp", "comfortAfter": "single_selectzre2jep", "classRating": "ratings9mfy5wr", "instructorRating": "rating3an7meud",
+    "permission": "single_select5amfpeq", "liked": "long_textffnwbr2k", "wish": "long_textksxnh0uz", "difference": "long_texthst9sotj"
+  },
+  "spanishSurvey": { "boardId": 18425150420, "date": "date5fcn5oti" },
+  "report": { "boardId": 18441458989, "doc": "doc_mm9e6m8b" },
+  "funders": [
+    { "label": "VTA", "tracker": "VTA", "survey": "VTA" },
+    { "label": "SMCTA", "tracker": "SMC", "survey": "SMC" }
+  ],
+  "options": { "clinicEvents": ["Sunnyvale Bike Repair Clinic"], "skipStatuses": ["Cancelled"], "homeCounties": ["Santa Clara", "San Mateo", "SMC or SCC"] }
+}
