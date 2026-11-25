@@ -88,7 +88,8 @@ Labels and types that must be right:
 - Volunteers Status: RSVP, Completed, Canceled (staff-set No-Show, Prospect and Confirmed are kept).
 
 Config placeholders that switch features off: `homeZipColumn` (`REPLACE_WITH_COLUMN_ID` in
-production, so Home Zip isn't written there), and in the sandbox `orderIdColumn` and
+production, so Home Zip isn't written there), `volunteers.shiftTimeColumn` in both (Shift Time, until its
+column is created), and in the sandbox `orderIdColumn` and
 `events.sendLinkColumn`. While `orderIdColumn` is a placeholder the route stores deliveries but
 the consumer refuses to write, and messages dead-letter. The Volunteers path turns on only when all
 five of its new column ids are real; a half-filled set fails config validation.

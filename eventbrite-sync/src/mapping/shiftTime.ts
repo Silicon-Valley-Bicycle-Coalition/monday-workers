@@ -6,8 +6,8 @@ const day = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, month: 'shor
 
 const DAY_MS = 86_400_000;
 
-// Some ICU versions put a narrow no-break space before AM/PM, which staff can't type into a search.
-const plain = (text: string): string => text.replace(/[   ]/g, ' ');
+// Some runtimes put a narrow no-break space before AM/PM, which staff can't type into a search.
+export const plainSpaces = (text: string): string => text.replace(/[\u202f\u00a0\u2009]/g, ' ');
 
 /**
  * Null without a usable start. Times only up to 24 hours (a shift may pass midnight); longer shows
@@ -18,7 +18,7 @@ export function shiftTime(startsAt: string | null, endsAt: string | null): strin
   if (Number.isNaN(start)) return null;
   const end = endsAt === null ? Number.NaN : Date.parse(endsAt);
   const from = time.format(start);
-  if (!(end > start)) return plain(from);
-  if (end - start <= DAY_MS) return plain(`${from}–${time.format(end)}`);
-  return plain(`${day.format(start)}, ${from}–${day.format(end)}, ${time.format(end)}`);
+  if (!(end > start)) return plainSpaces(from);
+  if (end - start <= DAY_MS) return plainSpaces(`${from}–${time.format(end)}`);
+  return plainSpaces(`${day.format(start)}, ${from}–${day.format(end)}, ${time.format(end)}`);
 }

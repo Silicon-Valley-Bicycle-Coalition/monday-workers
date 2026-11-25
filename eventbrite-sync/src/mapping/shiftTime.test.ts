@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shiftTime } from './shiftTime';
+import { plainSpaces, shiftTime } from './shiftTime';
 
 describe('shiftTime', () => {
   it.each([
@@ -18,7 +18,11 @@ describe('shiftTime', () => {
   it.each([null, 'soon', ''])('no usable start (%j) is null', (start) => expect(shiftTime(start, '2026-06-13T19:00:00Z')).toBeNull());
 
   it('uses ordinary spaces, so staff can search for the text', () => {
-    expect(shiftTime('2026-06-13T15:00:00Z', '2026-06-13T19:00:00Z')).not.toMatch(/[   ]/);
-    expect(shiftTime('2026-10-03T15:00:00Z', '2026-10-04T19:00:00Z')).not.toMatch(/[   ]/);
+    for (const end of ['2026-06-13T19:00:00Z', '2026-06-15T19:00:00Z']) expect(shiftTime('2026-06-13T15:00:00Z', end)).not.toMatch(/[\u202f\u00a0\u2009]/);
+  });
+
+  // This runtime already formats with ordinary spaces; others put U+202F before AM/PM.
+  it('replaces the special spaces some runtimes format with', () => {
+    expect(plainSpaces('8:00\u202fAM\u20091\u00a0x')).toBe('8:00 AM 1 x');
   });
 });

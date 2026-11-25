@@ -133,11 +133,6 @@ export function canceledLabelId(statusSettingsStr) {
   return Number(entry[0]);
 }
 
-/**
- * Upcoming sign-ups, one section per event: who staff email before it, and the lead's contact list.
- * Either date keeps a row. Date is the listing's, so it misses a change to the event staff re-pointed
- * the row to; Event Date is empty on a row with no event.
- */
 /** The columns a new Upcoming by event shows, in order. Throws naming one the board lacks. */
 export function upcomingColumnOrder(volunteersColumns) {
   const id = (title, type) => {
@@ -152,6 +147,11 @@ export function upcomingColumnOrder(volunteersColumns) {
   ];
 }
 
+/**
+ * Upcoming sign-ups, one section per event: who staff email before it, and the lead's contact list.
+ * Either date keeps a row. Date is the listing's, so it misses a change to the event staff re-pointed
+ * the row to; Event Date is empty on a row with no event.
+ */
 export function upcomingViewVariables(boardId, { dateColumn, eventDateColumn, statusColumn, canceledId, headingColumn, ticketTypeColumn, columnOrder, hidden }) {
   return {
     board: boardId,
