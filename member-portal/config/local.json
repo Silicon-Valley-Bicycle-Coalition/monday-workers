@@ -70,6 +70,7 @@
     "plainStatement": "No goods or services were provided in exchange for this contribution.",
     "benefitStatement": "In exchange for this contribution, you received membership benefits.",
     "benefitTiers": ["Gold"],
+    "acknowledgedGiftTypes": ["Donation", "Membership", "Foundation & Corporate Gifts"],
     "excludedGiftTypes": [
       "Event Ticket",
       "Sponsorship",

@@ -7,7 +7,7 @@ import type { TaxLetterConfig } from '../types';
 const taxLetter = {
   orgLegalName: 'Silicon Valley Bicycle Coalition', ein: '00-0000000', officeAddress: '123 Example St',
   signatureName: 'Alex Example', signatureTitle: 'Executive Director', plainStatement: 'No goods or services.',
-  benefitStatement: 'b', benefitTiers: [], excludedGiftTypes: [], separateGiftTypes: [], separateGiftsStatement: 'Separate <gifts>.',
+  benefitStatement: 'b', benefitTiers: [], acknowledgedGiftTypes: ['Donation'], excludedGiftTypes: [], separateGiftTypes: [], separateGiftsStatement: 'Separate <gifts>.',
 } as TaxLetterConfig;
 
 const org = { id: 'o1', name: 'Acme <Bikes>', address: '1 Main St' };

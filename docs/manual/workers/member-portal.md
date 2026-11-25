@@ -92,8 +92,9 @@ Rules that matter:
   (`donations.countableStatuses`).
 - Donation history shows gifts from `donations.historyStartISO` (2026-01-01) and appears only
   from `donations.historyVisibleFromISO` (2027-01-01).
-- Tax letters omit Gift Types in `taxLetter.excludedGiftTypes` and list Donor Advised Fund gifts
-  separately.
+- Tax letters and organization statements acknowledge only Gift Types in
+  `taxLetter.acknowledgedGiftTypes` and list Donor Advised Fund gifts separately. A blank or new
+  Gift Type is left off until it's added to a list.
 
 ## Secrets
 

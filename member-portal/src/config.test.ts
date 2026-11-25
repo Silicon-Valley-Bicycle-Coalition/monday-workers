@@ -77,6 +77,7 @@ const validConfig = {
     plainStatement: 'No goods or services were provided in exchange for these contributions.',
     benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -345,6 +346,7 @@ const v2Sections = {
     plainStatement: 'No goods or services were provided in exchange for these contributions.',
     benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -426,7 +428,7 @@ describe('taxLetter Gift Type lists', () => {
     return raw;
   };
 
-  it.each(['excludedGiftTypes', 'separateGiftTypes', 'separateGiftsStatement'])('requires %s', (key) => {
+  it.each(['acknowledgedGiftTypes', 'excludedGiftTypes', 'separateGiftTypes', 'separateGiftsStatement'])('requires %s', (key) => {
     const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as unknown as Record<string, unknown>;
     delete (raw.taxLetter as Record<string, unknown>)[key];
     expect(() => validateConfig(raw)).toThrow(key);
@@ -435,6 +437,14 @@ describe('taxLetter Gift Type lists', () => {
   it('rejects a list that is not an array of non-empty strings', () => {
     expect(() => validateConfig(withTaxLetter({ excludedGiftTypes: 'Event Ticket' }))).toThrow('excludedGiftTypes');
     expect(() => validateConfig(withTaxLetter({ separateGiftTypes: [''] }))).toThrow('separateGiftTypes');
+  });
+
+  it('rejects an empty acknowledged list, which would leave every gift off', () => {
+    expect(() => validateConfig(withTaxLetter({ acknowledgedGiftTypes: [] }))).toThrow('acknowledgedGiftTypes');
+  });
+
+  it.each(['excludedGiftTypes', 'separateGiftTypes'])('rejects an acknowledged label that is also in %s', (key) => {
+    expect(() => validateConfig(withTaxLetter({ acknowledgedGiftTypes: ['Donation'], [key]: [' donation'] }))).toThrow('in both');
   });
 
   it('rejects a label in both lists, however it is spelled', () => {

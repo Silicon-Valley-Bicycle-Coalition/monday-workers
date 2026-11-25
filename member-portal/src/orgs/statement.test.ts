@@ -8,6 +8,7 @@ const taxLetter: TaxLetterConfig = {
   signatureName: 'Alex', signatureTitle: 'ED',
   plainStatement: 'PLAIN-STATEMENT', benefitStatement: 'BENEFIT-STATEMENT',
   benefitTiers: [],
+  acknowledgedGiftTypes: ['Donation', 'Foundation & Corporate Gifts'],
   excludedGiftTypes: ['Event Ticket', 'Sponsorship', 'Matching Donation', 'Grants', 'Contracts'],
   separateGiftTypes: ['Donor Advised Fund'],
   separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -137,11 +138,20 @@ describe('statementYears', () => {
 
 describe('hasDeductibleGifts', () => {
   const base = { year: 2026, matches: [], volunteerHoursByPerson: null, employeeIds: [], volunteerFloor: 3, org: { id: 'o', name: 'O', address: '' } };
-  const taxLetter = { excludedGiftTypes: ['Sponsorship'], separateGiftTypes: [], plainStatement: 'P', separateGiftsStatement: 'S' } as never;
+  const taxLetter = { acknowledgedGiftTypes: ['Donation'], excludedGiftTypes: ['Sponsorship'], separateGiftTypes: [], plainStatement: 'P', separateGiftsStatement: 'S' } as never;
   it.each([false, true])('is false for sponsor-only gifts and true with a Donation (switch %s)', (acknowledgmentOn) => {
     const sponsor = buildStatement({ ...base, taxLetter, acknowledgmentOn, gifts: [gift('a', '2026-02-01', '$500.00', 'Sponsorship')] })!;
     expect(sponsor.hasDeductibleGifts).toBe(false);
     const donation = buildStatement({ ...base, taxLetter, acknowledgmentOn, gifts: [gift('b', '2026-02-01', '$5.00', 'Donation')] })!;
     expect(donation.hasDeductibleGifts).toBe(true);
+  });
+
+  it.each(['Commute Workshop', ''])('never acknowledges a Gift Type no list names: %j', (type) => {
+    const statement = buildStatement({
+      ...base, taxLetter, acknowledgmentOn: true,
+      gifts: [gift('a', '2026-02-01', '$500.00', type), gift('b', '2026-03-01', '$5.00', 'Donation')],
+    })!;
+    expect(statement.acknowledgment!.gifts.map((g) => g.itemId)).toEqual(['b']);
+    expect(statement.totalSupport).toBe('$505.00');
   });
 });

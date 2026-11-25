@@ -131,6 +131,7 @@ const REQUIRED_TAX_LETTER_KEYS = [
   'plainStatement',
   'benefitStatement',
   'benefitTiers',
+  'acknowledgedGiftTypes',
   'excludedGiftTypes',
   'separateGiftTypes',
   'separateGiftsStatement',
@@ -256,18 +257,25 @@ export function validateConfig(raw: unknown): Config {
   const taxLetter = requireObject(cfg, 'taxLetter');
   requireKeys(taxLetter, 'taxLetter', REQUIRED_TAX_LETTER_KEYS);
   // A mistyped shape here would silently print the wrong gifts on a tax document, so fail at
-  // startup. A label in both lists has no single right treatment, so that fails too.
-  for (const key of ['excludedGiftTypes', 'separateGiftTypes'] as const) {
+  // startup. A label in two lists has no single right treatment, so that fails too.
+  const GIFT_TYPE_LISTS = ['acknowledgedGiftTypes', 'excludedGiftTypes', 'separateGiftTypes'] as const;
+  for (const key of GIFT_TYPE_LISTS) {
     const labels = taxLetter[key];
     if (!Array.isArray(labels) || labels.some((label) => typeof label !== 'string' || label.trim().length === 0)) {
       throw new Error(`config: "taxLetter.${key}" must be an array of non-empty strings`);
     }
   }
-  const separateLabels = taxLetter.separateGiftTypes as string[];
-  const overlap = (taxLetter.excludedGiftTypes as string[]).find((label) => giftTypeIn(separateLabels, label));
-  if (overlap !== undefined) {
-    throw new Error(`config: "${overlap}" is in both taxLetter.excludedGiftTypes and taxLetter.separateGiftTypes`);
+  if ((taxLetter.acknowledgedGiftTypes as string[]).length === 0) {
+    throw new Error('config: "taxLetter.acknowledgedGiftTypes" must name at least one Gift Type');
   }
+  GIFT_TYPE_LISTS.forEach((key, i) => {
+    for (const other of GIFT_TYPE_LISTS.slice(i + 1)) {
+      const overlap = (taxLetter[key] as string[]).find((label) => giftTypeIn(taxLetter[other] as string[], label));
+      if (overlap !== undefined) {
+        throw new Error(`config: "${overlap}" is in both taxLetter.${key} and taxLetter.${other}`);
+      }
+    }
+  });
   if (taxLetter.letterhead !== undefined) validateLetterhead(taxLetter.letterhead);
 
   const changeRequests = requireObject(cfg, 'changeRequests');

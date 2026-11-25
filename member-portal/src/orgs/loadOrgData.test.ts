@@ -8,7 +8,7 @@ const config = {
   changeRequests: { employer: { currentStatusLabel: 'Current' } },
   organizations: { portalAccessColumn: 'c', workEmailColumn: 'w', addressColumns: [], acknowledgmentSignedOff: false, volunteerFloor: 2 },
   taxLetter: {
-    excludedGiftTypes: ['Grants'], separateGiftTypes: [], plainStatement: 'PLAIN', benefitStatement: 'B', benefitTiers: [], separateGiftsStatement: 'S',
+    acknowledgedGiftTypes: ['Donation'], excludedGiftTypes: ['Grants'], separateGiftTypes: [], plainStatement: 'PLAIN', benefitStatement: 'B', benefitTiers: [], separateGiftsStatement: 'S',
   },
 } as unknown as Config;
 const now = () => new Date('2027-01-10T18:00:00Z');

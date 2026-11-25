@@ -15,7 +15,7 @@ const config = {
   auth: { letterLinkTtlHours: 168, portalBaseUrl: 'https://portal.example.org' },
   changeRequests: { employer: { currentStatusLabel: 'Current' } },
   organizations: { portalAccessColumn: 'portal_col', workEmailColumn: 'work_col', addressColumns: [], acknowledgmentSignedOff: false, volunteerFloor: 3 },
-  taxLetter: { excludedGiftTypes: [], separateGiftTypes: [] },
+  taxLetter: { acknowledgedGiftTypes: ['Donation'], excludedGiftTypes: [], separateGiftTypes: [] },
 } as unknown as Config;
 const now = () => new Date('2027-01-15T10:00:00.000Z');
 

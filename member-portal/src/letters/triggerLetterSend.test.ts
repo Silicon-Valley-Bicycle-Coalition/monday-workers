@@ -35,8 +35,8 @@ function fakeMonday(donations: { date: string; amount: string; description: stri
 function makeDeps(overrides: { store?: LetterSendStore; monday?: MondayClient } = {}) {
   return {
     store: overrides.store ?? fakeStore(),
-    monday: overrides.monday ?? fakeMonday([{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }]),
-    taxLetter: { excludedGiftTypes: ['Event Ticket'], separateGiftTypes: ['Donor Advised Fund'] } as TaxLetterConfig,
+    monday: overrides.monday ?? fakeMonday([{ date: '2025-03-01', amount: '$50.00', description: 'Donation' }]),
+    taxLetter: { acknowledgedGiftTypes: ['Donation'], excludedGiftTypes: ['Event Ticket'], separateGiftTypes: ['Donor Advised Fund'] } as TaxLetterConfig,
     queue: { send: vi.fn().mockResolvedValue(undefined) },
     now: () => new Date('2026-08-24T10:00:00.000Z'),
   };

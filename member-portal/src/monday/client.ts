@@ -24,7 +24,7 @@ import type { OrganizationCandidate } from '../changeRequests/employerName';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { MondayGraphQL, type TokenProvider } from './graphql';
-import { giftTypeIn } from '../letters/giftTypes';
+import { letterTreatment, type LetterGiftTypes } from '../letters/giftTypes';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
@@ -216,9 +216,9 @@ export interface MondayClient {
   getOrganizationMatches(orgItemId: string): Promise<OrgGift[]>;
   // personItemId -> completed volunteer hours in the year, from one Volunteers-board sweep.
   getCompletedVolunteerHoursInYear(year: number): Promise<Map<string, number>>;
-  // One sweep of the year's countable gifts, split by the board of the linked Donor: people (minus
-  // excludedGiftTypes, the tax-letter rule) and organizations (any gift type, plus Matched By).
-  listYearActivity(year: number, excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }>;
+  // One sweep of the year's countable gifts, split by the board of the linked Donor: people (only
+  // Gift Types a tax letter lists) and organizations (any gift type, plus Matched By).
+  listYearActivity(year: number, giftTypes: LetterGiftTypes): Promise<{ personIds: string[]; organizationIds: string[] }>;
 }
 
 export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'historyStartISO'>;
@@ -1297,7 +1297,7 @@ export class HttpMondayClient implements MondayClient {
     return hours;
   }
 
-  async listYearActivity(year: number, excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }> {
+  async listYearActivity(year: number, giftTypes: LetterGiftTypes): Promise<{ personIds: string[]; organizationIds: string[] }> {
     // Backs the January letter cron: one sweep of the Donations board bounded to the target year,
     // instead of a getMemberPortalData call per Donors-board item. The Donor link also reads each
     // linked item's board, so organizations (which the letter run must not treat as people) split
@@ -1326,6 +1326,7 @@ export class HttpMondayClient implements MondayClient {
     const orgBoardId = String(this.organizationsBoardId);
     const donorsBoardId = String(this.donorsBoardId);
     let dropped = 0;
+    let unlisted = 0;
     for (const item of allItems) {
       const date = columnText(item, this.columns.donationDate);
       if (!date.startsWith(`${year}-`)) continue;
@@ -1336,7 +1337,9 @@ export class HttpMondayClient implements MondayClient {
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
       // Same Gift Type rule as loadLetterData (donationDescription is the Gift Type column), for
       // people only: an organization's excluded-type gift (a sponsorship) still counts as activity.
-      const excluded = giftTypeIn(excludedGiftTypes, columnText(item, this.columns.donationDescription));
+      const treatment = letterTreatment(giftTypes, columnText(item, this.columns.donationDescription));
+      const onLetter = treatment === 'acknowledged' || treatment === 'separate';
+      if (treatment === 'unlisted') unlisted++;
       // Classified by the linked item's own board, from linked_items (a link whose item is
       // deleted or inaccessible has an id but no board entry). Only the Donors board counts as
       // people, so an organization id can never enter the person letter run; anything else
@@ -1346,7 +1349,7 @@ export class HttpMondayClient implements MondayClient {
         if (linked.id === undefined || boardId === null) dropped++;
         else if (boardId === orgBoardId) organizationIds.add(linked.id);
         else if (boardId === donorsBoardId) {
-          if (!excluded) personIds.add(linked.id);
+          if (onLetter) personIds.add(linked.id);
         } else dropped++;
       }
       if (matchedBy !== null) {
@@ -1355,6 +1358,7 @@ export class HttpMondayClient implements MondayClient {
       }
     }
     if (dropped > 0) console.warn(`member-portal year sweep skipped ${dropped} linked donor(s) not on the Donors or Organizations board`);
+    if (unlisted > 0) console.warn(`member-portal year sweep: ${unlisted} gift(s) have a Gift Type no taxLetter list names, so no letter shows them`);
     return { personIds: [...personIds], organizationIds: [...organizationIds] };
   }
 }

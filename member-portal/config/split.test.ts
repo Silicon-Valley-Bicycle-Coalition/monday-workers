@@ -86,7 +86,8 @@ describe('config split: board and column ids', () => {
 });
 
 describe('tax letter Gift Types', () => {
-  it.each(['taxLetter.excludedGiftTypes', 'taxLetter.separateGiftTypes'])('%s is the same in both environments', (path) => {
+  it.each(['taxLetter.acknowledgedGiftTypes', 'taxLetter.excludedGiftTypes', 'taxLetter.separateGiftTypes'])('%s is the same in both environments', (path) => {
+    expect(get(production, path)).toBeInstanceOf(Array);
     expect(get(sandbox, path)).toEqual(get(production, path));
   });
 

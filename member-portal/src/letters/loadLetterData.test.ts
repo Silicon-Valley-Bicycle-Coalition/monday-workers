@@ -9,6 +9,7 @@ const taxLetter: TaxLetterConfig = {
   signatureName: 'Alex', signatureTitle: 'ED',
   plainStatement: 'PLAIN-STATEMENT', benefitStatement: 'BENEFIT-STATEMENT',
   benefitTiers: ['Champion'],
+  acknowledgedGiftTypes: ['Donation', 'Membership'],
   excludedGiftTypes: ['Event Ticket', 'Sponsorship', 'In Kind Donation / Sponsorship', 'Matching Donation', 'Grants', 'Contracts'],
   separateGiftTypes: ['Donor Advised Fund'],
   separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -55,10 +56,10 @@ describe('giftYear', () => {
 describe('loadLetterData', () => {
   const d = donor({
     donations: [
-      { date: '2025-06-01', amount: '$50.00', description: 'gift' },
-      { date: '2025-01-15', amount: '$25.00', description: 'gift' },
-      { date: '2024-12-31', amount: '$999.00', description: 'prior year' },
-      { date: '2026-02-01', amount: '$10.00', description: 'current year' },
+      { date: '2025-06-01', amount: '$50.00', description: 'Donation' },
+      { date: '2025-01-15', amount: '$25.00', description: 'Donation' },
+      { date: '2024-12-31', amount: '$999.00', description: 'Donation' },
+      { date: '2026-02-01', amount: '$10.00', description: 'Donation' },
     ],
   });
 
@@ -139,11 +140,21 @@ describe('loadLetterData by Gift Type', () => {
     expect(result!.gifts).toEqual([]);
   });
 
-  it('keeps a blank or unknown Gift Type as an ordinary gift', async () => {
-    const d = donor({ donations: [gift('2025-02-01', '$10.00', ''), gift('2025-03-01', '$20.00', 'Membership')] });
-    const result = await loadLetterData('donor-1', 2025, fakeMonday({ 'donor-1': d }), taxLetter, NOW);
-    expect(result!.gifts).toHaveLength(2);
-    expect(result!.totalFormatted).toBe('$30.00');
+  it.each(['Driver Training', 'Commute Workshop', 'Some Brand New Type', ''])(
+    'leaves a Gift Type no list names off the letter: %j',
+    async (type) => {
+      const d = donor({ donations: [gift('2025-02-01', '$10.00', type), gift('2025-03-01', '$20.00', 'Membership')] });
+      const result = await loadLetterData('donor-1', 2025, fakeMonday({ 'donor-1': d }), taxLetter, NOW);
+      expect(result!.gifts).toEqual([{ date: '2025-03-01', amount: '$20.00' }]);
+      expect(result!.totalFormatted).toBe('$20.00');
+    }
+  );
+
+  it('earns no letter from gifts no list names', async () => {
+    const d = donor({ donations: [gift('2025-02-01', '$10.00', '')] });
+    expect(await loadLetterData('donor-1', 2025, fakeMonday({ 'donor-1': d }), taxLetter, NOW)).toBeNull();
+    const [listing] = await listLetterYears(['donor-1'], fakeMonday({ 'donor-1': d }), taxLetter, NOW);
+    expect(listing!.years).toEqual([]);
   });
 });
 
@@ -191,7 +202,7 @@ describe('loadLetterData with the real client (status filtering)', () => {
     column_values: [
       { id: 'amount_col', text: amount },
       { id: 'date_col', text: '2025-03-01' },
-      { id: 'desc_col', text: 'gift' },
+      { id: 'desc_col', text: 'Donation' },
       { id: 'donation_status_col', text: status },
     ],
   });
@@ -266,9 +277,9 @@ describe('listLetterYears', () => {
     const a = donor({
       id: 'donor-1', name: 'Jane Example',
       donations: [
-        { date: '2024-05-01', amount: '$5', description: '' },
-        { date: '2025-05-01', amount: '$5', description: '' },
-        { date: '2026-01-01', amount: '$5', description: '' }, // current year: excluded
+        { date: '2024-05-01', amount: '$5', description: 'Donation' },
+        { date: '2025-05-01', amount: '$5', description: 'Donation' },
+        { date: '2026-01-01', amount: '$5', description: 'Donation' }, // current year: excluded
       ],
     });
     const b = donor({ id: 'donor-2', name: 'Sam Example', donations: [] });
