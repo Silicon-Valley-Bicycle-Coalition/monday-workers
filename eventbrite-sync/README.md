@@ -922,9 +922,10 @@ the sandbox is `npm run dev:sandbox`. The sandbox D1 now exists (created
 2026-10-26; migrations 0001–0002 applied, `svbc-eventbrite-sync-sandbox` deployed). Production's
 D1 `svbc-eventbrite-sync` was created 2026-11-02 and its id wired into `wrangler.jsonc` (c579d0d).
 
-**Workers Builds:** connect `svbc-eventbrite-sync-sandbox` to this repo with root directory
-`/eventbrite-sync` and deploy command `npx wrangler deploy --env sandbox`, as for the other
-Workers; `.github/workflows/workers.yml`'s `deploy-sandbox` job is the gated fallback.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` runs
+`npx wrangler deploy --env sandbox` on each merge to `main` that touches this Worker. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 ## Deploy
 

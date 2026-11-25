@@ -148,7 +148,7 @@ For a new deployment. Production here went `on` 2026-11-24 before any role was c
 Each step needs the user's go-ahead. The Worker ships with the write switch **off** (an unset
 `contact-roles:writes` key reads as `off`), and it stays `off` until the dry-run counts look right
 and staff have confirmed roles: see "Write modes". CI deploys the sandbox Worker from `main`
-(`deploy-sandbox:contact-roles`), which is a harmless dry run for the same reason. Never use
+(the `deploy-sandbox` job), which is a harmless dry run for the same reason. Never use
 `all writes on` (root `README.md`, [`docs/runbooks/migration-hold.md`](../docs/runbooks/migration-hold.md)).
 For the order of namespaces, keys and first deploy, see the runbook's "Merging / first deploy sequencing".
 

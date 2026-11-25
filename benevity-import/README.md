@@ -484,8 +484,8 @@ Two things the 2026-09-30 rebuild did not carry over:
   `salesforce-import` creates it, so it was added to the board by hand (`date_mm90rrgv`). Every
   rebuild, and production at cutover, needs it before the first upload: this Worker writes it on
   every gift, and Monday rejects a create that names a column the board doesn't have.
-* **The deployed Worker.** Merging does not deploy the sandbox; `npm run deploy:sandbox` was run
-  by hand after the remap.
+* **The deployed Worker.** Merging didn't deploy the sandbox then, so `npm run deploy:sandbox` was
+  run by hand after the remap.
 
 Then the same check as 2026-09-19: a synthetic one-row CSV (company `Google, LLC`, donor
 withheld, a $25 gift plus a $25 match, donation date 2026-09-20, period ending 2026-09-30)
@@ -505,12 +505,10 @@ writes the bare year too (see the column table above).
 
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
-**Workers Builds:** connect a second Worker, `svbc-benevity-import-sandbox`, to this repo with
-root directory `/benevity-import`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` runs
+`npx wrangler deploy --env sandbox` on each merge to `main` that touches this directory. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 ## Deploying: the write switch
 

@@ -210,12 +210,10 @@ Monday access comes from the `MONDAY_AUTH` binding, so no Monday secret is neede
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
-**Workers Builds:** connect a second Worker, `svbc-monday-backup-sandbox`, to this repo with
-root directory `/monday-backup`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` runs
+`npx wrangler deploy --env sandbox` on each merge to `main` that touches this directory. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 `workspaceIds: ["18210301"]` in `config/backup.sandbox.json` is the guard against a sandbox run
 copying production boards or docs: `runSnapshot` skips any board or doc whose `workspaceId` isn't in

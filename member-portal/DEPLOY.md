@@ -194,8 +194,8 @@ npm run deploy:writer:sandbox   # then: svbc-member-portal-writer-sandbox consum
 **Portal first, then the writer.** Cloudflare Queues allows one consumer Worker per queue, and
 `svbc-member-portal-sandbox` consumed `member-portal-change-requests-sandbox` until the consumer
 moved to the writer, so the writer can't attach while the portal still does. Change requests the
-portal enqueues in between simply wait in the queue. CI's `deploy-sandbox:member-portal-writer`
-job `needs` the portal's for the same reason.
+portal enqueues in between simply wait in the queue. CI's `deploy-sandbox` job runs its entries
+one at a time, portal first, for the same reason.
 
 **One-time fallback, first deploy after the split:** `wrangler deploy` attaches the consumers a
 config lists, but (as of wrangler 4.156) it doesn't detach one the config dropped, so the old
@@ -244,14 +244,10 @@ Use `dev:sandbox` to debug a code change against real sandbox data before runnin
    `wrangler versions upload --env sandbox` of the scratch edit and test the uploaded version's
    URL instead, then upload the reverted code.
 
-**Workers Builds:** connect a second Worker, `svbc-member-portal-sandbox`, to this repo with root
-directory `/member-portal`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set. Every other
-`env.sandbox` Worker in this repo follows the same two-connection-or-CI-fallback pattern; see
-its own README's "Sandbox environment" section.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` deploys
+the portal, then the writer (`-c wrangler.writer.jsonc`), on each merge to `main` that touches this directory. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 ## Phase 5 — Pre-launch verification (staff-only, before announcing)
 
@@ -279,7 +275,7 @@ its own README's "Sandbox environment" section.
 ## Schema migrations (existing deployments)
 
 CI never applies D1 migrations: the `deploy-sandbox` job in `.github/workflows/workers.yml`
-deploys the sandbox Worker on every push to `main`, and production deploys run `npm run deploy`
+deploys the sandbox Worker on each push to `main` that touches it, and production deploys run `npm run deploy`
 alone. Apply a new migration to **both** databases before the pull request that reads it merges,
 or the deployed code queries columns that don't exist yet. From `member-portal/`:
 

@@ -165,9 +165,8 @@ output out of tickets and chat).
 **Deploying the DLQ consumers (ops — not yet done).** Queue retention is not a `wrangler.jsonc`
 setting; donation-rollups raised its DLQ to 14 days with `wrangler queues update` (its README,
 "Queue retention, corrected 2026-09-18"), and so does this Worker. **Timing matters at the deploy.**
-Merging does not deploy the sandbox Worker (no Workers Builds connection or CI token as of
-2026-09-28 — root README, "Deploys"); it ships when someone runs `npm run deploy:sandbox` from
-`main`, so do these steps before that deploy (and, if a connection is ever added, before merging). A deploy that declares a consumer for a missing queue fails, and the new
+Merging deploys the sandbox Worker (CI's `deploy-sandbox` job, since 2026-11-24), so do these
+steps before merging, or before `npm run deploy:sandbox` if you deploy by hand. A deploy that declares a consumer for a missing queue fails, and the new
 consumer drains whatever a DLQ already holds within a minute of attaching.
 
 *Before the sandbox deploy* — sandbox (`--env sandbox`, `-sandbox` / `-sandbox-dlq` queue names):
@@ -810,12 +809,10 @@ sandbox Worker. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
-**Workers Builds:** connect a second Worker, `svbc-mailchimp-sync-sandbox`, to this repo with
-root directory `/mailchimp-sync`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` runs
+`npx wrangler deploy --env sandbox` on each merge to `main` that touches this directory. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 ## Deploying: the write switch
 

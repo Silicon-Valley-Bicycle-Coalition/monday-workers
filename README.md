@@ -502,24 +502,16 @@ first-time provisioning or emergencies, but routine changes should ship by mergi
 previously drifted from production for months when a Worker was deployed by hand and its CI
 connection silently broke.
 
-**Sandbox deploys double that connection, per Worker.** Every Worker with a `sandbox` Wrangler
-environment (`member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
-`quickbooks-sync`, `monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`,
-`report-digests`, `member-map`)
-gets a *second*
-Workers Builds connection to the same repo and root directory, deploy command
-`npx wrangler deploy --env sandbox`, also tracking `main` — see each Worker's README "Sandbox
-environment" section for its specific Worker name. **Verify in the dashboard before relying on
-it:** if Cloudflare refuses two connections on one root directory, `.github/workflows/workers.yml`'s
-`deploy-sandbox` job is the fallback — same deploy command, run on pushes to `main`. No Worker
-with a sandbox entry has that second connection today, so the job is the only sandbox deploy path,
-and it **fails** while its `CLOUDFLARE_API_TOKEN` secret is missing rather than skipping green
-(#89). If a Worker ever gets a dashboard sandbox connection, take it out of the job's
-roster first so the two don't double-deploy. When adding
-it ([GL#58](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/58)): store it as a secret of the GitHub `sandbox` environment, which is restricted to the
-`main` branch, never as a repository secret; pull requests (forks included) never see it. Mint it
-in Cloudflare with only *Workers Scripts: Edit* (plus D1/Queues/KV edit only if a deploy needs
-them) on SVBC's account, never a broad account token. The ruleset on `main` (PR required, `ci-ok`
+**Sandbox deploys come from GitHub Actions.** `.github/workflows/workers.yml`'s `deploy-sandbox`
+job runs `npx wrangler deploy --env sandbox` on pushes to `main`, for each changed Worker with a
+`sandbox` entry in `.github/workers.json`. Cloudflare Workers Builds isn't used for the sandbox: if
+a Worker ever gets a dashboard sandbox connection, take it out of the job's roster first so the two
+don't double-deploy. The job's `CLOUDFLARE_API_TOKEN` ([GL#58](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/issues/58)) is a secret of the GitHub `sandbox`
+environment, which is restricted to the `main` branch; pull requests (forks included) never see it,
+and it must never be a repository secret. In Cloudflare it is limited to editing the named sandbox
+Workers, plus queue and route writes, because the sandbox shares production's account
+([permissions, adding a Worker, renewing](docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token)).
+If the secret is missing the job fails rather than skipping green (#89). The ruleset on `main` (PR required, `ci-ok`
 and `checks` required, no force push) and Actions' approval requirement for first-time fork
 contributors are the rest of the boundary.
 
@@ -530,8 +522,8 @@ and fork settings don't apply to it. Cloudflare's docs don't say whether fork PR
 builds, so answer that before turning them on in a public repo. `svbc-calendars` builds `main` only;
 its "Deploy non-production branches" trigger was removed on 2026-11-03.
 
-**Current state (verified 2026-11-17) — merging deploys `svbc-calendars` and `svbc-monday-backup`.**
-These two production Workers are the only Workers Builds connections on SVBC's account (34 Workers
+**Current state (Workers Builds verified 2026-11-17) — merging deploys `svbc-calendars` and
+`svbc-monday-backup` to production.** These two production Workers are the only Workers Builds connections on SVBC's account (34 Workers
 checked). Both track GitHub `Silicon-Valley-Bicycle-Coalition/monday-workers` (moved from GitLab
 on 2026-11-17), branch `main` only, non-production branch builds off, deploy command
 `npx wrangler deploy`, build token "svbc-events-widgets build token":
@@ -541,11 +533,12 @@ on 2026-11-17), branch `main` only, non-production branch builds off, deploy com
 | `svbc-calendars` | `/svbc-calendars` | `*` |
 | `svbc-monday-backup` | `/monday-backup` | `monday-backup/*` |
 
-Every other Worker, production and sandbox, is deployed by hand. No sandbox connection exists and
-the `CLOUDFLARE_API_TOKEN` secret is not set, so the `deploy-sandbox` job never runs: a merge to
-`main` does **not** redeploy any sandbox Worker. After merging, deploy the sandbox by hand from an
-up-to-date `main` checkout — `cd <worker> && npm ci && npm run deploy:sandbox` — applying any new
-D1 migrations first. Update this paragraph when a connection or the secret is added.
+Every other production Worker is deployed by hand, except `svbc-bike-lanes`, which its own workflow
+deploys. **Sandbox Workers deploy on merge since 2026-11-24**, when the `deploy-sandbox` token was
+set. The exceptions are `nearby-search`, which the token leaves out until its Access application
+exists, and Workers with no `sandbox` entry in `.github/workers.json`. CI never applies D1
+migrations, so apply a new one to the sandbox **before merging** the code that reads it. To deploy
+by hand, from an up-to-date `main` checkout: `cd <worker> && npm ci && npm run deploy:sandbox`.
 Design: [`docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md)
 §8.
 
