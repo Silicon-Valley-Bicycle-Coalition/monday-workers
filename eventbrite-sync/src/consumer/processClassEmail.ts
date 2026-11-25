@@ -1,7 +1,8 @@
 import { audienceSource } from '../classEmails/audienceSource';
 import { classFields } from '../classEmails/fields';
 import { KIND_LABEL, MAX_TIMELINE_TEXT, escapeHtml, fillPlaceholders, oneLine } from '../classEmails/text';
-import { matchPerson } from '../matching/people';
+import { nameParts } from '../matching/names';
+import { matchPerson, peopleNameColumns } from '../matching/people';
 import { isActive, statusText } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import { linkedItemId } from '../util/itemId';
@@ -94,10 +95,15 @@ async function followUp(message: Extract<ClassEmailQueueMessage, { step: 'follow
 
   const peopleBoard = config.monday.boards['people-live'];
   if (peopleBoard === null) return;
-  const [item] = await client.getItems(regBoard, [registrationId], [source.emailColumn, source.linkColumn]);
+  // A volunteer has only the name column; its first name is split out of it.
+  const splitName = source.firstNameColumn === source.nameColumn;
+  const [item] = await client.getItems(regBoard, [registrationId], [source.emailColumn, source.linkColumn, source.nameColumn, ...(splitName ? [] : [source.firstNameColumn])]);
   if (!isActive(item)) return;
   if ((item.columns[source.linkColumn] ?? '').trim() !== '') return; // never overwrite a link
-  const match = await matchPerson(client, peopleBoard, config.attendeeSync.peopleEmailColumn, { email: item.columns[source.emailColumn], name: item.name });
+  // Names from the name columns, never the item name, which can be the "Eventbrite attendee <id>" fallback.
+  const names = nameParts({ firstName: splitName ? null : item.columns[source.firstNameColumn], name: item.columns[source.nameColumn] });
+  const who = { email: item.columns[source.emailColumn], name: item.name, ...names };
+  const match = await matchPerson(client, peopleBoard, config.attendeeSync.peopleEmailColumn, who, peopleNameColumns(config));
   if (match.donorItemId === null) return;
   await write({ [source.linkColumn]: { item_ids: [linkedItemId(match.donorItemId)] } });
 }

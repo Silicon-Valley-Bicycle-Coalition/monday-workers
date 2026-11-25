@@ -125,6 +125,26 @@ describe('processAttendee', () => {
     expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.objectContaining({ matchedPersonItemId: '777' }));
   });
 
+  it('writes First and Last Name on the person it creates', async () => {
+    const { deps, mondayClient } = setup({
+      att: attendee({ checked_in: true, profile: { name: 'Pat Ann Rider', first_name: 'Pat Ann', last_name: 'Rider', email: 'pat@example.com' } }),
+      monday: { createItem: vi.fn().mockImplementation(async (b: number) => ({ id: b === 42 ? '778' : '901' })) },
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledWith(42, 'Pat Ann Rider', { people_email_col: { email: 'pat@example.com', text: 'pat@example.com' } });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(42, '778', { first_col: 'Pat Ann', last_col: 'Rider' });
+  });
+
+  it('writes no placeholder First or Last Name on a person created from a real email', async () => {
+    const { deps, mondayClient } = setup({
+      att: attendee({ checked_in: true, profile: { name: 'Info Requested Info Requested', first_name: 'Info Requested', last_name: 'Info Requested', email: 'pat@example.com' } }),
+      monday: { createItem: vi.fn().mockImplementation(async (b: number) => ({ id: b === 42 ? '778' : '901' })) },
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.createItem).toHaveBeenCalledWith(42, 'Unknown', expect.anything());
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(42, expect.anything(), expect.anything());
+  });
+
   it('current No Show + incoming checked in becomes Attended and linked', async () => {
     const { deps, mondayClient } = setup({
       ...existing, att: attendee({ checked_in: true }), current: 'No Show',
@@ -548,13 +568,16 @@ describe('attendee messages under the write switch', () => {
     const m = msg();
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await consumeWriteBatch([m], full(deps), { ...gate('off'), logLevel: 'debug' });
+      await consumeWriteBatch([m], full(deps), { ...gate('off'), logLevel: 'debug', piiKeys: piiKeysFor(config) });
       expect(mondayClient.createItem).not.toHaveBeenCalled();
       // No placeholder person id reaches the ledger.
       expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
       const lines = skipLines(log);
-      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations', 'Event Registrations']);
-      expect(JSON.stringify(lines[1]!.payload)).toContain('"item_ids":["dry-run-1"]');
+      // The create, then its First and Last Name, whose values are redacted.
+      expect(lines.map((l) => l.sink)).toEqual(['People', 'People', 'Event Registrations', 'Event Registrations']);
+      expect(JSON.stringify(lines[1]!.payload)).toContain('first_col');
+      expect(JSON.stringify(lines[1]!.payload)).not.toContain('Pat');
+      expect(JSON.stringify(lines[2]!.payload)).toContain('"item_ids":["dry-run-1"]');
       expect(JSON.stringify(lines)).not.toContain('pat@example.com');
     } finally {
       log.mockRestore();

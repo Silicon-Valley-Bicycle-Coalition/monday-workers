@@ -188,7 +188,7 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 | `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (status; text before 2026-11-20) | `color_mm9arcwx` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
 | `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm8hpk76` | first write only, derived from the same date as the Date column |
 | `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm8h4kkb` | lookup by bare address; create writes `{ email, text }` |
-| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
+| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8sz56r` / `text_mm8s4jbf` | written after creating a person on any path (order, attendee, volunteer, thank-you follow-up), best effort; a failure leaves them blank and doesn't retry. Never written on a matched person. See "First and Last Name" under "Donor matching" |
 | `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm8hhdk7` | `{ item_ids: [n] }` |
 
 ## Field mapping
@@ -228,6 +228,20 @@ migrated person. The match is cached on the ledger row, so a retry or a later `o
 doesn't re-run it. An order with no email is written **without** a Donor link and a warning (order
 id only); a later update with an email picks the link up. A Monday failure during the match
 throws — retry, then DLQ — a gift without a donor is worse than a late one.
+
+**First and Last Name.** Emails greet people by First Name, so every path that creates a person
+writes both columns. An order uses its `first_name` / `last_name`. The other paths go through
+`src/matching/names.ts`:
+
+* An attendee or volunteer uses the profile's `first_name` / `last_name`, with Eventbrite's
+  "Info Requested" dropped.
+* A thank-you's follow-up uses a participant's First Name column and takes the last name from the
+  rest of the Attendee Name; a volunteer has only the Attendee Name, which is split. Never the item
+  name, which can be "Eventbrite attendee <id>".
+* With only a full name, two plain words are First and Last. Of three or more only the first word is
+  taken, because the last name could start at any of them. If the first word isn't plainly a first
+  name (an initial, a title, "Rider, Pat", a non-Latin script, which may put the family name first),
+  both stay blank for staff.
 
 ## Failures and the dead-letter queue
 
