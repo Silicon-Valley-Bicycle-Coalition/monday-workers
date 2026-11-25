@@ -7,7 +7,8 @@
 //   MONDAY_API_TOKEN=... node scripts/funder-report.mjs --quarter 2026-Q4 --apply     # writes both funders' pages
 //   ... --funder VTA                                                                  # only one
 //
-// The console never gets a comment someone typed, and no name or email is read at all.
+// The console never gets a comment someone typed. No email is read, and an item's name only from the
+// tracker: on Event Registrations and the survey it can be a person's.
 // Exit 0: done. Exit 2: usage or API error; nothing is written until every read has succeeded.
 
 import { readFileSync } from 'node:fs';
@@ -33,11 +34,11 @@ const CELLS = 'id text value ... on BoardRelationValue { linked_item_ids } ... o
 
 // Every item on a board as { field: cell }. A column missing from the answer (deleted or retyped) fails
 // the run, because every cell would otherwise read as blank.
-async function readBoard(monday, board, { rules = null } = {}) {
+async function readBoard(monday, board, { rules = null, names = false } = {}) {
   const { boardId, ...fields } = board;
   const columnIds = Object.values(fields);
   const params = rules === null ? null : { rules };
-  const page = `cursor items { id name column_values(ids: $columnIds) { ${CELLS} } }`;
+  const page = `cursor items { id ${names ? 'name ' : ''}column_values(ids: $columnIds) { ${CELLS} } }`;
   const first = await monday.request(`query ($boardId: ID!, $columnIds: [String!], $params: ItemsQuery) { boards(ids: [$boardId]) { items_page(limit: 500, query_params: $params) { ${page} } } }`, { boardId, columnIds, params });
   if (first.boards[0] === undefined) throw new Error(`Monday returned no board ${boardId}`);
   const items = [];
@@ -48,7 +49,7 @@ async function readBoard(monday, board, { rules = null } = {}) {
   }
   return items.map((item) => {
     const cells = new Map(item.column_values.map((c) => [c.id, c]));
-    const row = { id: item.id, name: item.name };
+    const row = names ? { id: item.id, name: item.name } : { id: item.id };
     for (const [field, id] of Object.entries(fields)) {
       const cell = cells.get(id);
       if (cell === undefined) throw new Error(`board ${boardId} item ${item.id} came back without column ${id}`);
@@ -66,7 +67,7 @@ const number = (value) => (value === null || value === undefined || value === ''
 
 async function readEverything(monday, config) {
   const { tracker, registrations, survey, spanishSurvey } = config;
-  const rows = (await readBoard(monday, tracker)).map((r) => ({
+  const rows = (await readBoard(monday, tracker, { names: true })).map((r) => ({
     id: r.id, name: r.name, date: day(r.date), status: status(r.status), funder: status(r.funder), eventType: status(r.eventType), event: status(r.event),
     registered: number(text(r.registered)), checkedIn: number(text(r.checkedIn)), noShows: number(text(r.noShows)), studentHours: number(r.studentHours.display_value),
     eventItemIds: r.crmEvent.linked_item_ids ?? [],
@@ -74,7 +75,7 @@ async function readEverything(monday, config) {
   const eventIds = [...new Set(rows.flatMap((r) => r.eventItemIds))].map(Number);
   const people = eventIds.length === 0 ? [] : await readBoard(monday, registrations, { rules: [{ column_id: registrations.event, compare_value: eventIds, operator: 'any_of' }] });
   const statusFields = new Set(['gender', 'age', 'ethnicity', 'income', 'language', 'frequencyBefore', 'frequencyAfter', 'comfortBefore', 'comfortAfter', 'permission']);
-  const answers = (await readBoard(monday, survey)).map(({ id, name, ...cells }) => Object.fromEntries(
+  const answers = (await readBoard(monday, survey)).map(({ id, ...cells }) => Object.fromEntries(
     Object.entries(cells).map(([field, cell]) => [field, field === 'date' ? day(cell) : statusFields.has(field) ? status(cell) : text(cell)])));
   return {
     rows,
