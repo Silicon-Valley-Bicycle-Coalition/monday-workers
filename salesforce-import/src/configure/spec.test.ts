@@ -308,7 +308,7 @@ describe('Martha\'s reconciliation views', () => {
   });
 
   it('the individual view leaves out every other revenue stream', () => {
-    for (const t of ['Sponsorship', 'Matching Donation', 'In Kind Donation / Sponsorship', 'Grants', 'Contracts', 'Event Ticket', 'Foundation & Corp Contributions']) {
+    for (const t of ['Sponsorship', 'Matching Donation', 'In Kind Donation / Sponsorship', 'Grants', 'Contracts', 'Event Ticket', 'Foundation & Corporate Gifts']) {
       expect(showsGiftType(views[0]!, t), t).toBe(false);
     }
     for (const t of ['Donation', 'Membership', 'Donor Advised Fund']) expect(showsGiftType(views[0]!, t), t).toBe(true);

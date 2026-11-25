@@ -179,7 +179,7 @@ size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching
-Donations, Other Program Revenue, Donor Advised Funds, Event Tickets, Foundation & Corp Contributions), **Gift Size**,
+Donations, Other Program Revenue, Donor Advised Funds, Event Tickets, Foundation & Corporate Gifts), **Gift Size**,
 **Fiscal Quarter** (`FY26 Q1` is July to September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank until tomorrow.
 
 **Try it:**
