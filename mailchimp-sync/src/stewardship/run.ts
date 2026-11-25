@@ -41,6 +41,8 @@ export interface StewardshipSummary {
   mode: WriteMode;
   people: number;
   planned: number;
+  // Due an email but with no gift on record, so left out of `planned`.
+  skippedNoGift: number;
   welcome: number;
   renewal: number;
   cleared: number;
@@ -67,7 +69,7 @@ const errName = (err: unknown): string => (err instanceof Error ? err.name : 'Un
 export async function runStewardship(gate: BatchSkipContext, deps: StewardshipDeps): Promise<StewardshipSummary> {
   const { settings } = deps;
   const summary: StewardshipSummary = {
-    outcome: 'done', mode: gate.mode, people: 0, planned: 0, welcome: 0, renewal: 0, cleared: 0, optedOut: 0, failed: 0, deferred: 0, dryRun: false,
+    outcome: 'done', mode: gate.mode, people: 0, planned: 0, skippedNoGift: 0, welcome: 0, renewal: 0, cleared: 0, optedOut: 0, failed: 0, deferred: 0, dryRun: false,
   };
   const log = (event: string, extra: Record<string, unknown> = {}) =>
     console.log(JSON.stringify({ worker: 'mailchimp-sync', event, environment: gate.environment, ...extra }));
@@ -86,9 +88,10 @@ export async function runStewardship(gate: BatchSkipContext, deps: StewardshipDe
     return { ...summary, outcome: 'read-failed' };
   }
   const today = todayIn(TIME_ZONE, (deps.now ?? (() => new Date()))());
-  const { writes } = planStewardship(people, { today, ...settings.plan });
+  const { writes, skippedNoGift } = planStewardship(people, { today, ...settings.plan });
   summary.people = people.length;
   summary.planned = writes.length;
+  summary.skippedNoGift = skippedNoGift;
   summary.dryRun = disposition === 'dry-run';
 
   const work = writes.slice(0, settings.maxWritesPerRun);
@@ -151,7 +154,7 @@ export function createStewardshipMonday(request: GraphQLRequest): StewardshipMon
   return {
     async readPeople(settings) {
       const c = settings.columns;
-      const columnIds = [c.email, c.label, c.membershipStatus, c.membershipTier, c.memberType, c.memberSince, c.memberUntil, c.hasActiveRecurringGift, c.doNotSolicit];
+      const columnIds = [c.email, c.label, c.membershipStatus, c.membershipTier, c.memberType, c.memberSince, c.memberUntil, c.hasActiveRecurringGift, c.doNotSolicit, c.lastGiftAmount];
       const first = await request<{ boards: { items_page: ItemsPage }[] }>(
         `query ($boardId: ID!, $columnIds: [String!]) { boards(ids: [$boardId]) { items_page(limit: ${PAGE}) { ${ITEM_FIELDS} } } }`,
         { boardId: settings.boardId, columnIds },
@@ -177,6 +180,7 @@ export function createStewardshipMonday(request: GraphQLRequest): StewardshipMon
             memberUntil: text(c.memberUntil),
             hasActiveRecurringGift: text(c.hasActiveRecurringGift) !== '',
             doNotSolicit: text(c.doNotSolicit) !== '',
+            lastGiftAmount: text(c.lastGiftAmount),
           });
         }
         if (page.cursor === null) break;

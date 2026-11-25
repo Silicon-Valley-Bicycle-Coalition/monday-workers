@@ -65,7 +65,8 @@ run so Cloudflare's 15-minute limit never cancels it silently; the next hour con
 When `stewardship` is configured, the daily cron sets the Stewardship Email status on People
 (`Welcome: day after`, `Welcome: 3 weeks`, `Renewal: 3 weeks before`, `Renewal: 1 week before`,
 `Renewal: day of`). A Monday automation per label enrolls the person in a monday CRM Sequence,
-which sends the email. It checks Mailchimp first: only `subscribed`, and for renewals the
+which sends the email. Someone with a blank or zero Last Gift Amount gets no welcome or renewal
+label (volunteering also earns a membership). It checks Mailchimp first: only `subscribed`, and for renewals the
 Renewal Reminders interest and no `renewal-opt-out`. Production has no `stewardship` block yet;
 do not add one until the Sequences and automations exist, or people will miss emails. Setup:
 [stewardship sequences runbook](../../runbooks/stewardship-sequences.md).

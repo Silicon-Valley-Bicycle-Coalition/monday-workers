@@ -440,6 +440,12 @@ months after the last gift or volunteer shift, and Salesforce counted 12; Felici
 to keep Salesforce's timing. Someone still carrying a migrated 12-month Member Until is reminded a
 month early. The emails themselves print Member Until.
 
+Nobody without a gift: volunteering earns a membership too, and these emails thank the person for a
+gift or ask them to renew one, so a blank or zero **Last Gift Amount** (`columns.lastGiftAmount`,
+required) gets no welcome or renewal label. The label is still cleared after a renewal. On 2026-11-24,
+222 active members on production had no gift. The `stewardship-run` log counts the people due an email
+and left out that way as `skippedNoGift`. Felicia may later want separate copy for them.
+
 Nobody with Do Not Solicit or without a Personal Email. Before setting a send label it reads the
 person's Mailchimp member (`GET /lists/{id}/members/{hash}`): only `subscribed`, and for renewals not
 tagged `renewal-opt-out` and with the Renewal Reminders interest ticked (`stewardship.renewalInterest`;

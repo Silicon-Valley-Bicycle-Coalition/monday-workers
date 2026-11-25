@@ -364,7 +364,7 @@ describe('validateConfig: consent', () => {
     boardId: 1,
     columns: {
       email: 'e', label: 'l', membershipStatus: 'ms', membershipTier: 't', memberType: 'mt',
-      memberSince: 's', memberUntil: 'u', hasActiveRecurringGift: 'r', doNotSolicit: 'd',
+      memberSince: 's', memberUntil: 'u', hasActiveRecurringGift: 'r', doNotSolicit: 'd', lastGiftAmount: 'g',
     },
     plan: {
       labels: { welcomeDayAfter: 'W1', welcome3Weeks: 'W2', renewal3Weeks: 'R1', renewal1Week: 'R2', renewalDayOf: 'R3' },
@@ -384,6 +384,7 @@ describe('validateConfig: consent', () => {
     const s = stewardship();
     for (const bad of [
       { ...s, columns: { ...s.columns, label: '' } },
+      { ...s, columns: { ...s.columns, lastGiftAmount: undefined } },
       { ...s, plan: { ...s.plan, labels: { ...s.plan.labels, renewalDayOf: 'R1' } } },
       { ...s, plan: { ...s.plan, catchUpDays: 7 } },
       { ...s, plan: { ...s.plan, renewalMonthsEarly: undefined } },

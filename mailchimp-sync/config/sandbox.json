@@ -151,7 +151,8 @@
       "memberSince": "date_mm8h79b2",
       "memberUntil": "date_mm8hx0b7",
       "hasActiveRecurringGift": "boolean_mm8hzx4e",
-      "doNotSolicit": "boolean_mm8h1x0b"
+      "doNotSolicit": "boolean_mm8h1x0b",
+      "lastGiftAmount": "numeric_mm8j2c4e"
     },
     "plan": {
       "labels": {

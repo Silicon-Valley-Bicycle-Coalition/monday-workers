@@ -10,7 +10,7 @@ const settings: StewardshipConfig = {
   boardId: 100,
   columns: {
     email: 'email', label: 'label', membershipStatus: 'ms', membershipTier: 'tier', memberType: 'type',
-    memberSince: 'since', memberUntil: 'until', hasActiveRecurringGift: 'recurring', doNotSolicit: 'dns',
+    memberSince: 'since', memberUntil: 'until', hasActiveRecurringGift: 'recurring', doNotSolicit: 'dns', lastGiftAmount: 'gift',
   },
   plan: {
     labels: {
@@ -30,7 +30,7 @@ const now = () => new Date('2026-12-01T17:00:00Z');
 
 const base: StewardshipPerson = {
   itemId: '1', email: 'due@x.org', label: '', membershipStatus: 'Active', membershipTier: 'Member', memberType: 'Continuing',
-  memberSince: '2025-12-22', memberUntil: '2026-12-22', hasActiveRecurringGift: false, doNotSolicit: false,
+  memberSince: '2025-12-22', memberUntil: '2026-12-22', hasActiveRecurringGift: false, doNotSolicit: false, lastGiftAmount: '50',
 };
 const people: StewardshipPerson[] = [
   base,                                                                                      // renewal, 3 weeks
@@ -79,6 +79,25 @@ describe('runStewardship', () => {
       ['3', ''],
       ['4', 'Welcome: day after'],
     ]);
+  });
+
+  it('skips people with no gift, and logs how many without saying who', async () => {
+    const m = monday();
+    m.readPeople = vi.fn(async () => people.map((p) => ({ ...p, lastGiftAmount: '' })));
+    const readMember = vi.fn(async () => subscribed);
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const summary = await runStewardship(gate('on'), deps(m, { readMember }));
+      expect(summary).toMatchObject({ people: 5, planned: 1, renewal: 0, welcome: 0, cleared: 1, skippedNoGift: 3 });
+      expect(m.writeLabel.mock.calls.map(([, w]) => [w.itemId, w.label])).toEqual([['3', '']]);
+      expect(readMember).not.toHaveBeenCalled();
+      const lines = logged.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+      expect(lines.find((l) => l.event === 'stewardship-run')).toMatchObject({ skippedNoGift: 3 });
+      expect(JSON.stringify(lines)).not.toContain('@');
+      expect(lines.filter((l) => 'itemId' in l).map((l) => l.itemId)).toEqual(['3']);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('writes nothing under off, and skips the day under hold', async () => {
@@ -135,12 +154,12 @@ describe('createStewardshipMonday', () => {
 
   it('reads every page into people', async () => {
     const request = vi.fn()
-      .mockResolvedValueOnce({ boards: [{ items_page: { cursor: 'c1', items: [row('1', { email: 'a@x.org', ms: 'Active', recurring: 'v', until: '2026-12-22' })] } }] })
+      .mockResolvedValueOnce({ boards: [{ items_page: { cursor: 'c1', items: [row('1', { email: 'a@x.org', ms: 'Active', recurring: 'v', until: '2026-12-22', gift: '50' })] } }] })
       .mockResolvedValueOnce({ next_items_page: { cursor: null, items: [row('2', { dns: 'v', label: 'Renewal: day of' })] } });
     const out = await createStewardshipMonday(request as unknown as GraphQLRequest).readPeople(settings);
     expect(out).toEqual([
       { ...base, itemId: '1', email: 'a@x.org', membershipTier: '', memberType: '', memberSince: '', hasActiveRecurringGift: true },
-      { ...base, itemId: '2', email: '', label: 'Renewal: day of', membershipStatus: '', membershipTier: '', memberType: '', memberSince: '', memberUntil: '', doNotSolicit: true },
+      { ...base, itemId: '2', email: '', label: 'Renewal: day of', membershipStatus: '', membershipTier: '', memberType: '', memberSince: '', memberUntil: '', doNotSolicit: true, lastGiftAmount: '' },
     ]);
   });
 

@@ -220,7 +220,7 @@ function employerAnswersConfig(value: unknown): EmployerAnswersConfig | null {
   return { mergeField: obj.mergeField, boardId: obj.boardId, emailColumns: obj.emailColumns as string[], maxAnswersPerRun: obj.maxAnswersPerRun };
 }
 
-const STEWARDSHIP_COLUMNS = ['email', 'label', 'membershipStatus', 'membershipTier', 'memberType', 'memberSince', 'memberUntil', 'hasActiveRecurringGift', 'doNotSolicit'] as const;
+const STEWARDSHIP_COLUMNS = ['email', 'label', 'membershipStatus', 'membershipTier', 'memberType', 'memberSince', 'memberUntil', 'hasActiveRecurringGift', 'doNotSolicit', 'lastGiftAmount'] as const;
 const STEWARDSHIP_LABELS = ['welcomeDayAfter', 'welcome3Weeks', 'renewal3Weeks', 'renewal1Week', 'renewalDayOf'] as const;
 
 // Optional: absent or null turns the stewardship labels off.
