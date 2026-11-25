@@ -1,6 +1,6 @@
 # Shift time on volunteer sign-ups (Volunteers board)
 
-Status: draft, awaiting approval. Date: 2026-11-24. Size: small change. Issue #5, answer 2.
+Status: approved 2026-11-24. Date: 2026-11-24. Size: small change. Issue #5, answer 2.
 
 ## Why
 
