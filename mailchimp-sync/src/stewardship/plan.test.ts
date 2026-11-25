@@ -28,6 +28,7 @@ const person = (over: Partial<StewardshipPerson> = {}): StewardshipPerson => ({
   memberUntil: '2026-12-22',
   hasActiveRecurringGift: false,
   doNotSolicit: false,
+  lastGiftAmount: '50',
   ...over,
 });
 const plan = (people: StewardshipPerson[], o: Partial<StewardshipPlanOptions> = {}) => planStewardship(people, { ...opts, ...o });
@@ -140,5 +141,41 @@ describe('welcome emails', () => {
   it('welcomes a lifetime or recurring new member too', () => {
     expect(plan([person({ ...fresh, membershipTier: 'Lifetime', memberUntil: '' })]).writes[0]?.label).toBe(LABELS.welcomeDayAfter);
     expect(plan([person({ ...fresh, hasActiveRecurringGift: true })]).writes[0]?.label).toBe(LABELS.welcomeDayAfter);
+  });
+});
+
+describe('people who never gave', () => {
+  const welcome1 = { memberType: 'New', memberSince: '2026-11-30', memberUntil: '2027-12-30' };
+  const welcome2 = { ...welcome1, memberSince: '2026-11-10', label: LABELS.welcomeDayAfter };
+  const renewal1 = { memberUntil: '2026-12-22' };
+  const renewal2 = { memberUntil: '2026-12-08', label: LABELS.renewal3Weeks };
+  const renewal3 = { memberUntil: '2026-12-01', label: LABELS.renewal1Week };
+
+  for (const [name, due] of Object.entries({ welcome1, welcome2, renewal1, renewal2, renewal3 })) {
+    it(`sets no ${name} label without a gift, and counts the person once`, () => {
+      expect(plan([person(due)])).toMatchObject({ writes: [{ itemId: '1' }], skippedNoGift: 0 });
+      // Unreadable text counts as no gift too: not emailing is the safe side.
+      for (const lastGiftAmount of ['', '0', '0.00', '$0', '-5', 'n/a']) {
+        expect(plan([person({ ...due, lastGiftAmount })])).toEqual({ writes: [], skippedNoGift: 1 });
+      }
+    });
+  }
+
+  it('reads a formatted amount as a gift', () => {
+    for (const lastGiftAmount of ['0.5', '1250', '1,250.00', '$1,250']) {
+      expect(plan([person({ ...renewal1, lastGiftAmount })])).toMatchObject({ writes: [{ itemId: '1' }], skippedNoGift: 0 });
+    }
+  });
+
+  it('still clears a renewal label after a renewal', () => {
+    const renewed = person({ memberUntil: '2027-12-01', label: LABELS.renewalDayOf, lastGiftAmount: '' });
+    expect(plan([renewed])).toEqual({ writes: [{ itemId: '1', email: 'a@x.org', label: '', kind: 'clear' }], skippedNoGift: 0 });
+  });
+
+  it('counts only people who were due an email', () => {
+    expect(plan([
+      person({ memberUntil: '2027-06-01', lastGiftAmount: '' }),
+      person({ ...renewal1, doNotSolicit: true, lastGiftAmount: '' }),
+    ])).toEqual({ writes: [], skippedNoGift: 0 });
   });
 });

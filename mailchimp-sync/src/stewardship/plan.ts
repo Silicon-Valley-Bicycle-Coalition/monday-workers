@@ -8,6 +8,7 @@
 // label is cleared once the person renews, so next year's reminders start fresh.
 //
 // Pure: no I/O. Mailchimp's opt-outs are checked by the run, only for the people planned here.
+import { formatGiftAmount } from '../consumer/mapDonor';
 import { daysUntil } from '../renewalDue/plan';
 
 export interface StewardshipLabels {
@@ -30,6 +31,8 @@ export interface StewardshipPerson {
   memberUntil: string; // YYYY-MM-DD or ''
   hasActiveRecurringGift: boolean;
   doNotSolicit: boolean;
+  // The number column's text, '' when blank.
+  lastGiftAmount: string;
 }
 
 export interface StewardshipPlanOptions {
@@ -57,6 +60,8 @@ export interface StewardshipWrite {
 
 export interface StewardshipPlan {
   writes: StewardshipWrite[];
+  // People due a welcome or renewal email but left out because no gift is on record.
+  skippedNoGift: number;
 }
 
 // Days before the reminder date (Member Until less renewalMonthsEarly) each renewal reminder goes,
@@ -107,11 +112,21 @@ function planWelcome(p: StewardshipPerson, o: StewardshipPlanOptions): Stewardsh
   return null;
 }
 
+// Volunteering earns a membership too, and every email thanks the person for a gift or asks them to
+// renew one. Unreadable text counts as no gift.
+function hasGift(p: StewardshipPerson): boolean {
+  return formatGiftAmount(p.lastGiftAmount) !== '';
+}
+
 export function planStewardship(people: readonly StewardshipPerson[], o: StewardshipPlanOptions): StewardshipPlan {
   const writes: StewardshipWrite[] = [];
+  let skippedNoGift = 0;
   for (const p of people) {
     const write = planRenewal(p, o) ?? planWelcome(p, o);
-    if (write !== null) writes.push(write);
+    if (write === null) continue;
+    // A clear sends nothing, so it needs no gift.
+    if (write.kind !== 'clear' && !hasGift(p)) skippedNoGift += 1;
+    else writes.push(write);
   }
-  return { writes };
+  return { writes, skippedNoGift };
 }

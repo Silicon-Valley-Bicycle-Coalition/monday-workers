@@ -152,7 +152,10 @@ no label or automation needed), wait for the run to show completed, and turn the
 - [x] The HTML emails went to one staff record and then to Felicia, Clarrissa and Martha on 2026-11-24. In
       Monday's copies the photos, links, campaign tags and unsubscribe link were right. Only Felicia's record
       and the first had a gift and a Member Until; without them the email reads "gift of $" and "active
-      through .", which the Worker's rules should never select.
+      through .". The Worker never selects someone without a Member Until for a renewal, but its
+      rules would have selected people who had never given, because volunteering also earns a membership.
+      On 2026-11-24 that was 222 active members, 193 of them Member Type New.
+      Now a blank or zero Last Gift Amount gets no welcome or renewal label.
 - [ ] Look at all five in an inbox, on a phone as well.
 - [ ] Set the label by hand on a staff item once the automations exist (step 3), to test the enrollment.
       Then clear the label and pause the Sequences again.
@@ -169,7 +172,8 @@ Don't click the unsubscribe link in a test: it's live.
      "columns": { "email": "email_mm8nx6qg", "label": "color_mm98qe1j",
        "membershipStatus": "color_mm8ng6nw", "membershipTier": "color_mm8n5hh8",
        "memberType": "color_mm8pz9ry", "memberSince": "date_mm8nemca", "memberUntil": "date_mm8n6xgb",
-       "hasActiveRecurringGift": "boolean_mm8nmjs9", "doNotSolicit": "boolean_mm8nf0wq" },
+       "hasActiveRecurringGift": "boolean_mm8nmjs9", "doNotSolicit": "boolean_mm8nf0wq",
+       "lastGiftAmount": "numeric_mm8pd89h" },
      "plan": { "labels": { "welcomeDayAfter": "Welcome: day after", "welcome3Weeks": "Welcome: 3 weeks",
          "renewal3Weeks": "Renewal: 3 weeks before", "renewal1Week": "Renewal: 1 week before",
          "renewalDayOf": "Renewal: day of" },
@@ -179,6 +183,8 @@ Don't click the unsubscribe link in a test: it's live.
      "maxWritesPerRun": 200
    }
    ```
+   `columns.lastGiftAmount` is required: a `stewardship` block without it fails validation, which fails
+   the tests and would stop the whole Worker. Update a branch drafted earlier from `main` so CI checks it.
    `welcomeInterest` stays `null`. On 2026-11-19 no active member had Welcome Drip ticked, so
    requiring it would welcome nobody. **Before merging, decide `renewalInterest` and `renewalOptOutTag`:**
    they are renewal-only opt-outs, and the emails now offer one opt-out for everything. Count who has used
@@ -186,10 +192,11 @@ Don't click the unsubscribe link in a test: it's live.
 3. The first run only picks up people inside a window that day (within `catchUpDays`). Nobody whose
    membership already lapsed is emailed. Days count to the reminder date, a month before Member
    Until: someone 10 days out at launch gets 1-week and day-of only, and someone already past it gets
-   no reminder this cycle (98 eligible members if launched 2026-11-24, before Mailchimp opt-outs).
+   no reminder this cycle (98 eligible members if launched 2026-11-24, before Mailchimp opt-outs;
+   counted before people without a gift were left out).
    Someone who joined before launch gets no welcome email.
-4. The next morning, check the Worker log line `stewardship-run` (counts) and the Sequences' enrolled
-   counts.
+4. The next morning, check the Worker log line `stewardship-run` (counts; `skippedNoGift` is the people due
+   an email but with no gift) and the Sequences' enrolled counts.
 
 **Turning it off:** pause the Sequences, which stops sends immediately. Then set `stewardship` back to
 `null` and deploy, which stops labels being set. The write switch (`scripts/flags.mjs mailchimp-sync

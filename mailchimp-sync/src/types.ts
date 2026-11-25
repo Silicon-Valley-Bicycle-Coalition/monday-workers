@@ -196,6 +196,8 @@ export interface StewardshipConfig {
     memberUntil: string;
     hasActiveRecurringGift: string;
     doNotSolicit: string;
+    // Blank or zero means the person never gave (a volunteer's membership): no email.
+    lastGiftAmount: string;
   };
   plan: {
     labels: {
