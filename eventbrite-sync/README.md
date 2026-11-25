@@ -646,7 +646,7 @@ until staff renamed them on 2026-11-24 (config keys keep the old words); the set
 rename in Monday needs one there too. Design:
 [`docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md`](../docs/superpowers/specs/2026-11-24-upcoming-volunteers-by-event-design.md).
 
-**Shift Time** (not set up as of 2026-11-24: `shiftTimeColumn` is the placeholder in both configs) is when the row's own listing runs, in Pacific time ("8:00 AM–12:00 PM"; `src/mapping/shiftTime.ts`),
+**Shift Time** (sandbox since 2026-11-24; not set up in production, where `shiftTimeColumn` is the placeholder) is when the row's own listing runs, in Pacific time ("8:00 AM–12:00 PM"; `src/mapping/shiftTime.ts`),
 whatever Event staff point the row at. Bike Parking lists each shift of an event as its own listing with the
 same name and date, which the by-event views show as one section, so this is what tells the shifts apart
 ([#5](https://github.com/Silicon-Valley-Bicycle-Coalition/monday-workers/issues/5)). It is text, so `12:00 PM` sorts before
