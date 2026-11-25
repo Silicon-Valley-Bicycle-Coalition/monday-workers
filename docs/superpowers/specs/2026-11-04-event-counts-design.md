@@ -174,7 +174,7 @@ Two rows may link to one event, and then both show its totals.
 logs an error, so a renamed Funder label or a mass edit can't empty a funder's report. Each row is read again just before it's
 written, and left alone if its numbers or link changed. A write Monday refuses on its content doesn't count toward the three-failure stop.
 
-**How staff see a gap. Worker warnings (date mismatch, double link, Grant conflict, feed not settled) go to the log once a day, at
+**How staff see a gap.** Worker warnings (date mismatch, double link, Grant conflict, feed not settled) go to the log once a day, at
 the check hour, with item ids only. Staff don't read logs, so the tracker gets a **Totals missing** view: Date before today, Registered empty, Status not Cancelled.
 
 **Config** `attendeeSync.tracker`, `null` turns the whole job off (how it ships): board id 18433254640, `crmEventColumn` `board_relation_mm8r7g27`,
