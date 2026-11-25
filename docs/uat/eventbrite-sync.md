@@ -112,7 +112,7 @@ below wait until the sandbox gets them.
    `scripts/backfill-attendees.mjs --event-id <id>`. Home Zip should keep the good value, and `call me`
    should appear nowhere in Monday. Editing an answer doesn't send a webhook (below), so the backfill is
    what picks the edit up.
-4. Set **Grant** on the class in Events. Every registration for that class should show it straight away.
+4. Link a tracker row with Funder VTA or SMC to the class. Within about an hour every registration should show its Grant.
 5. Open the **Grant report** view, filter to that Grant and date, and export it to Excel.
 
 ## Grant report: look at
@@ -130,7 +130,7 @@ below wait until the sandbox gets them.
   sends no webhook and doesn't change the attendee's `changed` time (tested 2026-11-09). It arrives with
   the attendee's next change, such as check-in, or a backfill of the event.
 - Events on the volunteering, bike parking and private Eventbrite accounts get no zip.
-- A class needs Grant set by hand, until the tracker job below is on. Until then it won't appear under any grant.
+- A class gets Grant from its tracker row's Funder, within about an hour. With no linked row it won't appear under any grant.
 
 ## Class totals on the tracker: try it (sandbox)
 
@@ -141,7 +141,7 @@ Wait for the next hourly run after each step (in the sandbox someone runs it by 
 2. Type over one of the three numbers. None of them should change again.
 3. Clear the number you typed. The row should go back to the Worker's numbers.
 4. Unlink the row. The Worker's numbers should clear, and so should Grant.
-5. Change the row's Date to another day. Nothing should be written.
+5. Link the row again and wait for its numbers, then change its Date to another day. The numbers and Grant should clear.
 
 ## Class totals on the tracker: don't report these
 

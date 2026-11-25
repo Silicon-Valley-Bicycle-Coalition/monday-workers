@@ -61,7 +61,7 @@ a missed-you, the People link for a thank-you. A claimed recipient is never hand
 
 - **Ended-event sweep:** re-queues events from the last 30 days that ended while last seen `live`
   or `started`, so their Event Status becomes Completed (or canceled).
-- **Education Tracker sweep:** off while `attendeeSync.tracker` is `null`. Writes each linked class's
+- **Education Tracker sweep:** on in production since 2026-11-25 UTC; `attendeeSync.tracker: null` turns it off. Writes each linked class's
   Registered, Checked in and No-shows to the staff tracker, and the event's Grant from the row's
   Funder. It never changes a row holding a number a person typed (its README "Class totals on the tracker").
 - **Missed-order check:** lists orders Eventbrite changed in the last 26 hours and logs a
@@ -91,9 +91,8 @@ Labels and types that must be right:
 - **Attendee Email** must be an Email column, not text.
 - Volunteers Status: RSVP, Completed, Canceled (staff-set No-Show, Prospect and Confirmed are kept).
 
-Config placeholders that switch features off: `homeZipColumn` (`REPLACE_WITH_COLUMN_ID` in
-production, so Home Zip isn't written there), `homeCountyColumn` (both), `events.grantColumn` (production; needed before
-`attendeeSync.tracker` can be set), and in the sandbox `orderIdColumn` and
+Config placeholders that switch features off: `homeCountyColumn` (`REPLACE_WITH_COLUMN_ID` in
+both, so Home County isn't written), and in the sandbox `orderIdColumn` and
 `events.sendLinkColumn`. While `orderIdColumn` is a placeholder the route stores deliveries but
 the consumer refuses to write, and messages dead-letter. The Volunteers path turns on only when all
 five of its new column ids are real; a half-filled set fails config validation.

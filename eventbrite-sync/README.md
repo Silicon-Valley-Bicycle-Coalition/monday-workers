@@ -396,7 +396,7 @@ people who registered before this column, one event at a time.
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns (including
   `events.sendLinkColumn` and `classEmails.pageUrl`), and `peopleEmailColumn`. Production has them
-  since 2026-11-04, except `homeZipColumn`, which stays off until set (see "Grant report"); the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
+  since 2026-11-04, except `homeCountyColumn`, which stays off until set (see "Grant report"); the sandbox ships `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
   converted.
@@ -435,6 +435,10 @@ In production the view and columns were created directly on the board on 2026-11
 with `configure`, which would also have re-applied the board's five existing views.
 
 ### Grant report
+
+**Live in production since 2026-11-25 UTC:** Home Zip (`text_mm9es0wk`), Grant (`dropdown_mm9eedjy`), its mirror (`lookup_mm9escp6`) and
+the view (293907309). The four November VTA and SMCTA classes were backfilled: 32 of 32 zips valid, no other column changed.
+Monday can't group a view by a mirror, so it isn't grouped. No dashboard yet.
 
 Funders ask for name, email, class date, zip, checked in, canceled and no show, per person. Staff
 pull that from a **Grant report** view on Event Registrations, filtered by Grant and date and
@@ -482,7 +486,9 @@ attendee. The report runs from November 2026 forward; earlier data is already ca
 
 ### Class totals on the tracker
 
-Built 2026-11-24, not yet turned on (`attendeeSync.tracker` is `null` in both configs). Design:
+Live in production: deployed 2026-11-25 04:01 UTC (version `10629c82`, migration 0004). Its first run, at 05:00 on version `eeb21a8e`, wrote four
+Grants and no totals, as predicted, in 28 ms of CPU. Rehearsed in the sandbox first (14 of 14 checks; the board is "Education Tracker
+rehearsal (sandbox)", 18441450135). To stop it, set `attendeeSync.tracker` to `null` and deploy. Design:
 [`docs/superpowers/specs/2026-11-04-event-counts-design.md`](../docs/superpowers/specs/2026-11-04-event-counts-design.md).
 
 Staff run classes from the Bike Education Lifecycle Tracker (board 18433254640, not a CRM board). Once an hour
