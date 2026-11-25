@@ -122,6 +122,68 @@ describe('last-week', () => {
   });
 });
 
+describe('receipt-review', () => {
+  const ticket = (id: string, amount: string, date: string, extra: Record<string, string> = {}) =>
+    gift(id, amount, date, { gift_type: 'Event Ticket', ...extra });
+
+  it('reads the longer of its two windows, with the columns it needs', async () => {
+    const monday = new FakeMonday();
+    await buildDigest('receipt-review', monday, config, monday8);
+    expect(monday.queries[0]!.rules).toEqual([
+      { column_id: 'date', operator: 'greater_than_or_equals', compare_value: ['EXACT', '2026-08-27'] },
+      { column_id: 'date', operator: 'lower_than_or_equal', compare_value: ['EXACT', '2026-10-26'] },
+    ]);
+    expect([...monday.queries[0]!.columnIds].sort()).toEqual(['amount', 'date', 'donor', 'gift_type', 'status', 'thanked']);
+  });
+
+  it('lists tickets over $75 from the ticket window, ticked or not, with cents so $75.48 reads as over $75', async () => {
+    const d = await buildDigest('receipt-review', new FakeMonday([
+      ticket('1', '75.48', '2026-10-20', { thanked: 'v' }),
+      ticket('2', '75', '2026-10-20'),
+      ticket('3', '90', '2026-10-18'), // one day before the 7-day window
+      ticket('4', '90', '2026-10-21', { status: 'Refunded' }),
+      gift('5', '90', '2026-10-21'),
+      ticket('6', '126.99', '2026-10-25'),
+    ]), config, monday8);
+    expect(d.sections[0]!.table!.rows).toEqual([
+      ['2026-10-25', 'Gift 6', 'Donor 6', '$126.99'],
+      ['2026-10-20', 'Gift 1', 'Donor 1', '$75.48'],
+    ]);
+  });
+
+  it('lists received gifts of $250 and up with Thank You Sent unticked, oldest first', async () => {
+    const d = await buildDigest('receipt-review', new FakeMonday([
+      gift('1', '250', '2026-10-20'),
+      gift('2', '249.99', '2026-10-20'),
+      gift('3', '900', '2026-10-20', { thanked: 'v' }),
+      gift('4', '900', '2026-10-20', { status: 'Pledged' }),
+      gift('5', '300', '2026-09-01', { gift_type: 'Sponsorship' }),
+    ]), config, monday8);
+    expect(d.sections[1]!.table!.rows).toEqual([
+      ['2026-09-01', 'Donor 5', '$300.00', 'Sponsorship'],
+      ['2026-10-20', 'Donor 1', '$250.00', 'Donation'],
+    ]);
+  });
+
+  it('counts a gift in both sections once', async () => {
+    const d = await buildDigest('receipt-review', new FakeMonday([ticket('1', '447.93', '2026-10-20')]), config, monday8);
+    expect(d.sections.map((s) => s.table!.rows.length)).toEqual([1, 1]);
+    expect(d.count).toBe(1);
+  });
+
+  it('is empty when nothing needs a look', async () => {
+    const d = await buildDigest('receipt-review', new FakeMonday([gift('1', '20', '2026-10-20')]), config, monday8);
+    expect(d.count).toBe(0);
+    expect(d.sections.map((s) => s.table)).toEqual([null, null]);
+  });
+
+  it('fails loudly when it is not configured', async () => {
+    const { 'receipt-review': _off, ...digests } = sandbox.digests;
+    const off = validateConfig({ ...sandbox, digests });
+    await expect(buildDigest('receipt-review', new FakeMonday(), off, monday8)).rejects.toThrow('not configured');
+  });
+});
+
 describe('missing board or column', () => {
   it('fails loudly on a placeholder board and on a renamed column', async () => {
     const prod = validateConfig({ ...sandbox, boards: { donations: 0, people: 0 } });

@@ -80,6 +80,21 @@
       ],
       "view": "Gifts, last 7 days",
       "days": 7
+    },
+    "receipt-review": {
+      "schedule": {
+        "weekdays": [
+          1
+        ],
+        "hour": 10
+      },
+      "recipients": [
+        68302747
+      ],
+      "view": "Unacknowledged",
+      "skipWhenEmpty": true,
+      "days": 7,
+      "unthankedDays": 60
     }
   }
 }

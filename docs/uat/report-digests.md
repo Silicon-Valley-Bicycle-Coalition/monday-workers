@@ -55,6 +55,10 @@ is addressed to, with the intended recipient noted in it.
    next month, so someone who lapsed earlier this month is still on it. Is that the window you
    want?
 5. **Gifts with no donor:** on a Monday with nothing to list, no email should come at all.
+6. **Gifts to check for a receipt** (new, not in production until staff decide who gets it): ask for
+   it on IT Requests. It lists event tickets over $75 from the last 7 days, and gifts of $250 and up
+   from the last 60 days with Thank You Sent unticked. Is anything on it that doesn't belong, or
+   missing that should be there? Who should get it?
 
 ## Don't report these
 

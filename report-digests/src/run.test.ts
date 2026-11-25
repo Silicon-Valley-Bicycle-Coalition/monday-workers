@@ -22,6 +22,13 @@ describe('dueDigests', () => {
     expect(dueDigests(config, at('2026-12-01T17:00:00Z'))).toEqual(['renewals']);
     expect(dueDigests(config, at('2026-10-27T15:00:00Z'))).toEqual([]);
   });
+
+  it('sends receipt-review on Monday at 10:00 Pacific where it is configured, and never where it is not', () => {
+    const monday10 = at('2026-10-26T17:00:00Z');
+    expect(dueDigests(config, monday10)).toEqual(['receipt-review']);
+    const { 'receipt-review': _off, ...digests } = sandbox.digests;
+    expect(dueDigests(validateConfig({ ...sandbox, digests }), monday10)).toEqual([]);
+  });
 });
 
 describe('runDigest', () => {
