@@ -227,6 +227,7 @@ comment describing its usage. Load your Monday token first (`source .env.product
 | When a Donations column is added | Hide it on the "Enter a gift" form, then run `check-donation-form.mjs` | [`CLAUDE.md`](../../CLAUDE.md), "The staff 'Enter a gift' form" |
 | When a Worker starts writing a column | Add it to `MARKED_COLUMNS` and run `mark-read-only-columns.mjs` | [Chapter 2](02-architecture.md#read-only-column-markers) |
 | Before trusting a token's reach | `check-monday-token-scope.mjs` | [Chapter 2](02-architecture.md#monday-access-the-token-broker) |
+| Within 30 days of an AI agent querying Google Cloud | Delete its transcript, notes and memory of the results, and check they are gone | [Chapter 3](03-accounts-and-access.md#google-cloud-tools-and-ai-agents) |
 | Yearly | Renew vendor contracts and check that API keys haven't expired | Private appendix has renewal dates |
 | After a Worker change ships | Rebuild this manual's PDF and upload it as a new Box version | [`docs/manual/README.md`](README.md) |
 

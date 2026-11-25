@@ -195,6 +195,49 @@ long as its snapshots are kept, and never destroy one that a kept snapshot needs
 Forks: substitute your own secret store; what matters is one shared place, group-based access,
 and a second copy of the backup key outside the backup's own provider.
 
+## Google Cloud: tools and AI agents
+
+From January 1, 2027, Google's [Service Specific Terms](https://cloud.google.com/terms/service-terms)
+(General Service Terms, section 17, "Google Cloud Platform Access Tools") limit what tools may do
+with what they learn from Google Cloud. Continuing to use Google Cloud accepts them. What follows is
+IT's reading (2026-11-24), not legal advice; the terms themselves decide.
+
+**What counts.** An *access tool* is any software that gets data from Google Cloud through an API,
+the `gcloud` command line, an MCP server or a connector. That covers scripts as well as AI agents.
+*Google Technical Information* is what such a tool learns about the services: IAM, architecture,
+costs, tool schemas, and summaries or findings about them. SVBC's own data (Customer Data) is not
+included.
+
+**The terms don't allow:**
+
+- storing Google Technical Information for more than 30 days, or keeping it after the tool is
+  disconnected or its access revoked;
+- using it for anything but the active task you authorized;
+- scraping or systematically probing beyond what that task needs;
+- using it to train, fine-tune, evaluate or distill a model, or to build a service similar to
+  Google's.
+
+Google may restrict a tool or suspend access if it reasonably believes one of these happened. It
+takes no responsibility for what a third-party tool does, including training on SVBC's data,
+leaking it, or exposing credentials.
+
+**SVBC's rules:**
+
+1. Run `gcloud` yourself. Don't have an AI agent run it, or connect an agent to a Google Cloud MCP
+   server, unless IT has agreed to it for a specific task.
+2. Never let an agent read, create or copy a Secret Manager value. Whatever it sees can stay in its
+   transcript.
+3. If an agent did query Google Cloud, delete its transcript, notes and memory of the results
+   within 30 days, and at once when you disconnect it. Check that they are gone; don't assume the
+   tool expires them.
+4. Don't paste Google Cloud output (IAM policies, architecture, costs) into tickets, chat, agent
+   memory or this manual.
+5. Before connecting a new tool to Google Cloud, give it the least access that works, and know who
+   will remove it.
+
+No Worker needs a change. `monday-backup` (Drive) and `salesforce-import` (Maps) handle SVBC's own
+data, and Drive and Maps appear to be covered by their own terms.
+
 ## Listing and rotating secrets
 
 ```sh
