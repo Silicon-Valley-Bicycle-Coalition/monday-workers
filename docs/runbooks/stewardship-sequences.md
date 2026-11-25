@@ -5,8 +5,9 @@ The two welcome emails and three renewal reminders, sent by monday CRM Sequences
 label enrolls the person in the Sequence of the same name. Which label goes to whom and when:
 `mailchimp-sync/README.md`, "Stewardship emails (Monday Sequences)".
 
-Copy: Felicia's Google Doc "2026 Donor Stewardship Email Sequences" (approved 2026-11-19). Photos:
-Felicia's 2026-11-19 email (below). Neither is in this repo.
+Copy: Felicia's Google Doc "2026 Donor Stewardship Email Sequences" (approved 2026-11-19). The emails
+as built are `docs/email-branding/stewardship/*.html`, written by `scripts/build-stewardship-emails.mjs`.
+Photos: Felicia's 2026-11-19 email (below), cropped and hosted; the files aren't in this repo.
 
 ## Done
 
@@ -43,7 +44,8 @@ Felicia's 2026-11-19 email (below). Neither is in this repo.
 - [x] **People board can take a Sequence.** Checked 2026-11-19: the "Connect a board" picker offers
       production People (Donors & Contacts, `18201685`) and sandbox People.
 - [x] Welcome #2 stays (Felicia, 2026-11-19).
-- [ ] The accountant's word on a deductibility line for the renewal emails, which mention Donor Perks.
+- [x] Donor Perks are discounts at retailers with a $0 value (David, 2026-11-24), so the renewal emails
+      wait on no deductibility answer. Receipts for event tickets are a separate question.
 - [x] **🔒 Email Preferences on production People** (2026-11-20): `link_mm99tvcv`, with 🔒 Mailchimp
       Profile `link_mm99hxpv`, both marked read-only; `profileLinks` turned on in
       `mailchimp-sync/config/svbc.json`. The hourly run fills them over the first day (500 writes a
@@ -60,9 +62,17 @@ How the editor behaves, for the next edit or rebuild:
 
 - The monday MCP's `create-sequence` makes the Sequence, its subject and its body (bold, links and
   lists survive). It leaves the **time zone blank** and **removal on reply, bounce and auto-reply off**,
-  and drops paragraph spacing: sent paragraphs have no margin, so each gap is an empty line.
-- **Photos** go in by pasting an image into the body. There is no image button, and the **`<>`** HTML
-  editor replaces the whole email and turns off the column picker.
+  and drops paragraph spacing: sent paragraphs have no margin. A blank time zone is read as **UTC**, so
+  set Pacific or nothing sends in SVBC's afternoon.
+- **The `<>` HTML editor** replaces the whole email. It opens empty the first time and with the saved HTML
+  after that. It strips `<head>` and `<style>` (so no dark mode) and turns off the column picker, but a typed
+  `{pulse.<column id>}` still merges. An image must be hosted: there is no upload.
+- **The unsubscribe link** works in HTML as `<a class="crm-composer-unsubscribe-link-anchor-element" href="#"
+  data-unsubscribe="true" data-read-only-link="true">`, with any text; Monday fills in the address when it
+  sends. The insert menu doesn't recognise it and still offers **Add unsubscribe link**: don't add a second.
+- **Outside the send window** an enrollment waits for the next one. **Deactivating a Sequence ends the runs
+  still waiting**, so deactivate only once they show completed. Change the window under Rules &
+  notifications, and put it back.
 - **Email tracking** is a tick box on each email step, off in all five. The links in a delivered email
   still go through `trackingservice.monday.com` (checked in a received message's source, 2026-11-24);
   the UTM tags are inside, so the redirect should still carry them. No mailbox setting turns it off.
@@ -84,22 +94,33 @@ The Worker does the timing.
 
 Felicia named the kids-safety and bike-lanes photos for the renewals but didn't say which goes
 where. The table is a suggestion she can change, and which kids photo went to which of the first two
-renewals on 2026-11-24 was a guess. Each photo is 940×788, at the top of the body, full width. None has
-alt text.
+renewals was a guess. The photos come from events where people signed waivers (David, 2026-11-24).
+
+Since 2026-11-24 the emails are HTML in the `docs/design-system` email layout: black header, photo, gold
+band, white card, centered footer. The photos' own gold panels (with a second logo) are cropped off and
+their words are text in the band. The crops are only 548–616 px wide; larger originals would look sharper.
+They are served from `https://images.bikesiliconvalley.org/email/`, the R2 bucket `svbc-email-images` in
+SVBC's Cloudflare account (`r2.dev` off). Names end in a hash of the file and are cached for a year, so a new
+photo gets a new name; a name already in a sent email must keep working.
+
+To change an email: edit `scripts/build-stewardship-emails.mjs`, run it, open the Sequence, choose **Edit
+sequence**, open the step, and replace the HTML with the file's under **`<>`**. Save both the HTML and the
+Sequence, then test it (step 4).
 
 For each:
-- [x] Subject and body from the doc, with columns from the **`{ } Columns`** picker: Welcome #1 "your
-      generous gift of **XX**" is **Last Gift Amount**.
+- [x] Subject and body from the doc. Merged: **First Name** (`text_mm8scaqj`) in the greeting, **Last Gift
+      Amount** (`numeric_mm8pd89h`) in Welcome #1, **Member Until** (`date_mm8n6xgb`) in the renewals.
+- [ ] **No blank First Name.** The greeting is "Hi {First Name},". On 2026-11-24, 84 of 8,412 people on
+      People had none and would read "Hi ,".
 - [x] Copy fixes: the "Why Your Gift Matters" link's `utm_source=chatgpt.com`, and "Sillicon".
 - [x] **Renewal date wording** (option chosen 2026-11-24; Felicia's approval pending). Reminders go out a
       month before Member Until (`renewalMonthsEarly`), so they no longer say support is set to expire.
       They say: "Your annual support of SVBC is due for renewal. Your membership stays active through
       {Member Until}."
-- [x] Second-to-last line: "Choose which emails you get from us, or unsubscribe from all of them: {Email
-      Preferences}". That page is Mailchimp's, so an opt-out there stops newsletters and these emails
-      alike, and its **Renewal Reminders** box stops the renewals alone. The sentence ends at "all of
-      them:" for anyone whose Email Preferences cell is empty.
-- [x] Last line: SVBC's postal address, then Monday's unsubscribe link.
+- [x] **One opt-out, in the footer** (David, 2026-11-24): "Unsubscribe from member emails", Monday's own link,
+      under SVBC's name and address. There is no choice of emails, so the "Choose which emails you get from us"
+      line and its Email Preferences link are gone. Monday's list doesn't reach Mailchimp, so this link doesn't
+      stop the newsletter.
 - [x] **Unsubscribe link and global unsubscribe list stay on.** These are fundraising emails, not receipts:
       they carry no gift date or goods-or-services statement, and the Worker skips anyone Mailchimp lists
       as unsubscribed, so a receipt could never depend on them.
@@ -108,8 +129,10 @@ For each:
       `membership-renewal-dayof`. They point at final pages, since a redirect can drop the tags.
 - [x] Sender `membership@`; Pacific, 7:00 AM–5:00 PM, every day. Removal on reply and bounce on; auto-reply
       was turned on but not read back.
-- [x] "Renew Your Gift Today" and the welcome links are bold links.
-- [ ] Felicia approves the date wording and the photos.
+- [x] "Renew Your Gift Today" is the gold button, before the perks box. The welcome emails have no button.
+- [x] Welcome #1's "sign up for our biweekly volunteer newsletter" links to the Volunteer with SVBC page, which
+      has the mailing list form.
+- [ ] Felicia approves the date wording, photos, greeting, layout and footer (asked 2026-11-24).
 - [ ] Each Sequence stays **inactive** until step 5.
 
 ## 3. Five automations (UI)
@@ -123,19 +146,18 @@ On People, one per label:
 
 ## 4. Test on production with a staff address
 
-Two rounds of all five were sent to one staff record on 2026-11-24 by turning each Sequence on, enrolling
-that one item (the MCP's `enroll-item-in-sequence`, no label or automation needed) and turning it off.
-Merge fields, photos, links and the address were right. That record had no Email Preferences
-link, so the check below is still needed. The photos are
-embedded in the message (`cid:`, about 900 KB each), so they don't expire.
+To test, turn the Sequence on, enroll the staff member's People item (the MCP's `enroll-item-in-sequence`,
+no label or automation needed), wait for the run to show completed, and turn the Sequence off.
 
-- [ ] Use a staff-only People item with a staff Personal Email that is **subscribed** in Mailchimp.
-      Set its label by hand to each value in turn, with that Sequence briefly active. Confirm the
-      delivered email: photo, bold, links, Last Gift Amount and Member Until filled, unsubscribe link,
-      and the Email Preferences link **clickable and opening the staff address's Mailchimp page**.
-      If Monday prints the link's text without the link, or the raw URL, change the column's text
-      in `LINK_TEXT` (`mailchimp-sync/src/profileLinks/run.ts`) or move the sentence; tell David.
+- [x] The HTML emails went to one staff record and then to Felicia, Clarrissa and Martha on 2026-11-24. In
+      Monday's copies the photos, links, campaign tags and unsubscribe link were right. Only Felicia's record
+      and the first had a gift and a Member Until; without them the email reads "gift of $" and "active
+      through .", which the Worker's rules should never select.
+- [ ] Look at all five in an inbox, on a phone as well.
+- [ ] Set the label by hand on a staff item once the automations exist (step 3), to test the enrollment.
       Then clear the label and pause the Sequences again.
+
+Don't click the unsubscribe link in a test: it's live.
 
 ## 5. Go live
 
@@ -158,7 +180,9 @@ embedded in the message (`cid:`, about 900 KB each), so they don't expire.
    }
    ```
    `welcomeInterest` stays `null`. On 2026-11-19 no active member had Welcome Drip ticked, so
-   requiring it would welcome nobody.
+   requiring it would welcome nobody. **Before merging, decide `renewalInterest` and `renewalOptOutTag`:**
+   they are renewal-only opt-outs, and the emails now offer one opt-out for everything. Count who has used
+   either first, since dropping them would send those people renewals.
 3. The first run only picks up people inside a window that day (within `catchUpDays`). Nobody whose
    membership already lapsed is emailed. Days count to the reminder date, a month before Member
    Until: someone 10 days out at launch gets 1-week and day-of only, and someone already past it gets
@@ -174,8 +198,8 @@ writes hold`) also stops labels, but it holds every other part of mailchimp-sync
 ## Mailchimp Journeys
 
 The Journey plan is dropped. The renewal-due tag and the Welcome Drip / Renewal Reminders interests
-keep being maintained, so renewals keep using the interest as the opt-out preference. Monday's
-unsubscribe list doesn't reach Mailchimp, and Monday has no API or automation for it (checked
+keep being maintained, and the config above still reads the interest as a renewal opt-out (see step 5).
+Monday's unsubscribe list doesn't reach Mailchimp, and Monday has no API or automation for it (checked
 2026-11-20), so someone who uses Monday's unsubscribe link still gets the Mailchimp newsletter
-until they unsubscribe there too. The Email Preferences link in each email is the way around that:
-it opts out in Mailchimp. Mailchimp unsubscribes are honoured before every Monday send.
+until they unsubscribe there too. Mailchimp unsubscribes are honoured before every Monday send. The
+🔒 Email Preferences column (`profileLinks`) is still filled, but no email links to it now.
