@@ -489,9 +489,9 @@ link is cleared when the address leaves the audience, and nothing is planned on 
 
 **Email Preferences (`profileLinks.preferences`, same run).** A second 🔒 link: the person's page on
 Mailchimp's hosted preferences form, `<pageUrl>&e=<unique_email_id>`, where they can unsubscribe or
-untick Renewal Reminders. The Monday stewardship Sequences link to it
-(`docs/runbooks/stewardship-sequences.md`), because Monday's own unsubscribe list never reaches
-Mailchimp; a change made on the page comes back to Monday's consent columns through the audience
+untick Renewal Reminders. It was made for the Monday stewardship Sequences
+(`docs/runbooks/stewardship-sequences.md`), which no longer link to it (2026-11-24);
+a change made on the page comes back to Monday's consent columns through the audience
 webhook like any other. Only non-archived members get one (an archived member has no page). `pageUrl`
 is the audience's form with no person in it, `https://<org>.<dc>.list-manage.com/profile?u=<account>&id=<audienceId>`
 (the `u` and host are in the audience's `subscribe_url_long`); config validation refuses another
