@@ -33,7 +33,7 @@ when a Worker directory isn't listed). `ci-ok` and `checks` are the required che
   `check-donation-form.mjs`, `check-monday-token-scope.mjs` (which workspaces a Monday token can
   really reach, GL#18), `make-boards-private.mjs`, `windfall-board.mjs` (runbook:
   `docs/runbooks/windfall-private-board.md`), `funding-leads-board.mjs` (sandbox-only Funding
-  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `propose-partner-types.mjs`, `build-stewardship-emails.mjs` (writes the stewardship Sequences' HTML to `docs/email-branding/stewardship/`, pasted into Monday by hand) and `build-font-modules.mjs` (regenerates the self-hosted Nunito Sans `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, GL#123).
+  Leads board build, Pledged→Deal conversion and seed; runbook: `docs/runbooks/funding-leads-board.md`), `funder-report.mjs` (writes the VTA and SMCTA quarterly numbers to Monday docs on the private Funder Reports board; ids in `funder-report.config.json`), `propose-partner-types.mjs`, `build-stewardship-emails.mjs` (writes the stewardship Sequences' HTML to `docs/email-branding/stewardship/`, pasted into Monday by hand) and `build-font-modules.mjs` (regenerates the self-hosted Nunito Sans `fontData.ts` in `member-portal` and `svbc-calendars` from pinned Fontsource packages, GL#123).
 
 `svbc-calendars` (Eventbrite widget + committee/event ICS calendar feeds) is outside the migration
 scope: it predates this repo and serves the public bikesiliconvalley.org website directly. It has
