@@ -30,7 +30,7 @@ where something does.
 | # | Do this | Enforced by |
 |---|---|---|
 | 1 | Create `<worker>/` with `package.json`, lockfile, `wrangler.jsonc`, `tsconfig.json`, `src/`, `test/`, `README.md` (the spec) | — |
-| 2 | Add it to **`.github/workers.json`**, with `extraPaths` if it imports `scripts/lib/**`, and `sandbox: {}` if CI should deploy its sandbox | `ci-changed-workers.mjs` fails on an unlisted directory |
+| 2 | Add it to **`.github/workers.json`**, with `extraPaths` if it imports `scripts/lib/**`, and `sandbox: {}` if CI should deploy its sandbox (then also add it to the [deploy token](06-ci-and-deploy.md#the-sandbox-deploy-token) once its sandbox Worker exists) | `ci-changed-workers.mjs` fails on an unlisted directory |
 | 3 | Name it `svbc-<worker>`, set `preview_urls: false` at the top level and in `env.sandbox` | `preview-urls` check |
 | 4 | Add an **`env.sandbox`** block with its own D1, queues (names suffixed `-sandbox`), KV, vars `{ "ENVIRONMENT": "sandbox" }`, and `routes: []` unless it has its own sandbox domain | Review; Appendix A shows the result |
 | 5 | Add `config/svbc.json`, `config/sandbox.json`, `src/environment.ts` and **`config/split.test.ts`**, copied from `member-portal` | The split test |

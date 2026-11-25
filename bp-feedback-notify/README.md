@@ -225,12 +225,10 @@ run (not just a direct curl call) was then confirmed landing via `wrangler tail`
 account-level prerequisite, not per-Worker config — it also unblocks `member-portal`'s own sandbox
 email testing, which hadn't hit it yet.
 
-**Workers Builds:** connect a second Worker, `svbc-bp-feedback-notify-sandbox`, to this repo with
-root directory `/bp-feedback-notify`, production branch `main`, and deploy command
-`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to the
-`deploy-sandbox` job in `../.github/workflows/workers.yml` — same command, gated on a
-`CLOUDFLARE_API_TOKEN` `sandbox` environment secret so it stays inert until that secret is set.
+**CI deploys the sandbox.** The `deploy-sandbox` job in `../.github/workflows/workers.yml` runs
+`npx wrangler deploy --env sandbox` on each merge to `main` that touches this directory. It never
+applies D1 migrations, so apply a new one to the sandbox D1 before merging. Token and re-runs:
+[manual chapter 6](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token).
 
 ## Commands
 

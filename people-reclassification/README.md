@@ -434,8 +434,8 @@ checks it (see "Move mechanics").
    moved. Verify that item's links and updates on its new board — see "Move mechanics". Then
    raise the cap and run the rest.
 6. Only then leave `writes` at `on` so the quarterly cron runs live. Production: the same steps against the top-level block once cutover fills
-   `config/svbc.json`'s board ids; Workers Builds / the `deploy-sandbox:people-reclassification`
-   CI job follow the repo's usual pattern (root README "Deploys").
+   `config/svbc.json`'s board ids; CI's `deploy-sandbox` job deploys the sandbox on merge;
+   production is deployed by hand.
 
 ## Open
 

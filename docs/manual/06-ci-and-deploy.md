@@ -34,11 +34,12 @@ and forbids force-pushes.
 2. **test:** for each affected Worker, `npm ci`, `npm test`, any `extraTest`, then
    `npm run typecheck`.
 3. **deploy-sandbox:** only on pushes to `main`, for each changed Worker that has a sandbox
-   environment. It needs a `CLOUDFLARE_API_TOKEN` secret in the `sandbox` GitHub environment.
-   **That secret isn't set yet, so this job fails** with a job summary naming each Worker that
-   wasn't deployed and the command to deploy it by hand. It used to skip and finish green, which
-   made an undeployed sandbox look deployed (#89). It isn't a required check, so a red
-   deploy-sandbox marks `main`'s commit without blocking pull requests.
+   environment. It uses the `CLOUDFLARE_API_TOKEN` secret of the `sandbox` GitHub environment
+   ([below](#the-sandbox-deploy-token)). If that secret is missing the job **fails**, with a job
+   summary naming each Worker that wasn't deployed and the command to deploy it by hand. It used
+   to skip and finish green, which made an undeployed sandbox look deployed (#89). It isn't a
+   required check, so a red deploy-sandbox marks `main`'s commit without blocking pull requests.
+   It deploys code only, never D1 migrations.
 4. **ci-ok:** the single required result.
 
 ## What deploys when
@@ -46,13 +47,46 @@ and forbids force-pushes.
 | Worker | Production | Sandbox |
 |---|---|---|
 | `svbc-calendars` | **Automatically**, by Cloudflare Workers Builds on every merge to `main` | n/a |
-| `monday-backup` | **Automatically**, by Workers Builds on merges that touch `monday-backup/` | By hand |
-| Every other Worker | **By hand**: `npm run deploy` | **By hand**: `npm run deploy:sandbox` |
+| `monday-backup` | **Automatically**, by Workers Builds on merges that touch `monday-backup/` | **Automatically**, by `deploy-sandbox` |
+| `svbc-bike-lanes` | **Automatically**, by its own workflow (`svbc-bike-lanes.yml`) | n/a |
+| `nearby-search` | **By hand**: `npm run deploy` | **By hand**, until the deploy token covers it ([below](#the-sandbox-deploy-token)) |
+| Workers with no `sandbox` entry in `.github/workers.json` (`monday-auth`, `dtd-sync`, `sync-watchdog`, `quickbooks-sync`, `zoom-phone-sync`) | **By hand**: `npm run deploy` | **By hand**: `npm run deploy:sandbox` |
+| Every other Worker | **By hand**: `npm run deploy` | **Automatically**, by `deploy-sandbox` on merges that touch it |
 
-So merging a pull request doesn't, by itself, change most running Workers. After merging,
-whoever owns the change deploys it. Workers Builds connections are in the Cloudflare dashboard,
+So merging a pull request changes most sandbox Workers but few production ones. After merging,
+whoever owns the change deploys production. Workers Builds connections are in the Cloudflare dashboard,
 under the Worker's Settings → Builds, with "non-production branch builds" **off**. Keep branch
 builds off: a branch build runs that branch's code with the production build token.
+
+### The sandbox deploy token
+
+Sandbox and production Workers share one Cloudflare account, so an account-wide *Workers
+Scripts: Edit* token could overwrite production. The sandbox token is an **account API token**
+(`github-sandbox-deploy`) limited to named Workers instead:
+
+| Policy | Permission | Why |
+|---|---|---|
+| Workers → Specified Workers | **Individual Workers Editor** on each `svbc-<worker>-sandbox` Worker in the `deploy-sandbox` roster, except `nearby-search` (15 Workers) | Uploads the script. Bindings (D1, KV, queues, services) need no permission of their own. |
+| Entire account | **Queues: Write** | `wrangler deploy` updates queue consumers. There is no per-queue scope, so this reaches production queues too. |
+| Zone `bikesiliconvalley.org` | **Workers Routes: Write** | `wrangler deploy` re-checks the sandbox custom domains. This reaches production routes too. |
+
+Don't start from the dashboard's "Edit Cloudflare Workers" template, which is account-wide. Keep
+the secret in the `sandbox` GitHub environment, which is restricted to `main`. Never make it a
+repository secret, or code in a pull request could read it.
+
+- **Adding a Worker to the roster:** the token can't create a Worker or cover one that doesn't
+  exist yet. Deploy the new sandbox Worker by hand once, then add it to the token's Workers policy.
+- **`nearby-search` is left out on purpose.** A deploy would publish its sandbox hostname, and its
+  Access application doesn't exist yet. Until it does, a merge touching `nearby-search` shows a
+  failed `deploy-sandbox` entry. Afterwards, do its first deploy by hand and add it.
+- **Verified:** ten of the 15 Workers deployed with this token on 2026-11-24. `benevity-import`,
+  `bp-feedback-notify`, `funraise-sync`, `mailchimp-sync` and `monday-backup` hadn't yet;
+  `monday-backup` also updates a Workflow, which this token may or may not be allowed to do.
+- **Renewing:** it expires a year after creation (November 2026). Create or roll it in Manage
+  account → Account API tokens, then `gh secret set CLOUDFLARE_API_TOKEN --env sandbox`, which
+  prompts for the value.
+- **Re-running a failed deploy deploys that run's commit**, not the tip of `main`. Re-run only the
+  newest run that touched the Worker, or an older run rolls the sandbox back.
 
 ## Deploying a Worker by hand
 

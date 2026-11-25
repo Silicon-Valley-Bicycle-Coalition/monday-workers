@@ -68,17 +68,19 @@ Sandbox Mailchimp traffic goes to the "SVBC Sandbox" audience.
 
 ## Testing a change in the sandbox
 
-1. Merge the change to `main` through a pull request. You can also test from a branch, but then
-   the sandbox runs unmerged code.
-2. Deploy the sandbox by hand. Merging doesn't deploy sandbox Workers
-   ([chapter 6](06-ci-and-deploy.md#what-deploys-when)):
+1. If the change adds a D1 migration, apply it to the sandbox **before merging**. CI deploys the
+   code but never applies migrations:
 
    ```sh
    cd <worker>
    npm ci
-   npx wrangler d1 migrations apply svbc-<worker>-sandbox --env sandbox --remote   # if migrations changed
-   npm run deploy:sandbox
+   npx wrangler d1 migrations apply svbc-<worker>-sandbox --env sandbox --remote
    ```
+
+2. Merge the change to `main` through a pull request. CI deploys the sandbox Workers it touches
+   ([chapter 6](06-ci-and-deploy.md#what-deploys-when) lists the exceptions). Check that the
+   `deploy-sandbox` job passed. To test an unmerged branch, run `npm run deploy:sandbox` from it,
+   but then the sandbox runs unmerged code until the next deploy.
 
 3. Make sure the Worker's sandbox write switch is `on`:
    `node scripts/flags.mjs status --env sandbox`.

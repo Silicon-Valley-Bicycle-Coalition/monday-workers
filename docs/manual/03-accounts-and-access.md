@@ -47,9 +47,10 @@ Things to know:
     is an account token with only Account Analytics Read and Queues Read.
   - The two Workers Builds connections (`svbc-calendars`, `monday-backup`) use a build token
     Cloudflare created, named "svbc-events-widgets build token".
-  - GitHub's `CLOUDFLARE_API_TOKEN` for sandbox deploys is **not set yet**, so the
-    `deploy-sandbox` job fails on every merge that touches a sandbox Worker (see
-    [chapter 6](06-ci-and-deploy.md)).
+  - The GitHub `sandbox` environment holds the `CLOUDFLARE_API_TOKEN` the `deploy-sandbox` job
+    uses: an account token named `github-sandbox-deploy`, set 2026-11-24 with a one-year
+    expiration. It can edit only the sandbox Workers it lists. Its permissions, and how to add
+    a Worker or renew it, are in [chapter 6](06-ci-and-deploy.md#the-sandbox-deploy-token).
   - The GitHub `svbc-bike-lanes` environment holds its own `CLOUDFLARE_API_TOKEN` for the bike
     lanes site's weekly production deploy: Workers Editor scoped to that Worker and
     Workers Routes: Write on the zone (see [its chapter](workers/svbc-bike-lanes.md)).
@@ -76,7 +77,7 @@ Things to know:
 | Private repo | `Silicon-Valley-Bicycle-Coalition/monday-migration` (migration plan, private appendix) |
 | Admin role | **GitHub organization owner** |
 | Branch protection | A ruleset on `main` requires a pull request and the `ci-ok` and `checks` status checks, and forbids force-pushes |
-| Actions secrets | `sandbox` environment (restricted to `main`): `CLOUDFLARE_API_TOKEN`, currently unset |
+| Actions secrets | `sandbox` environment (restricted to `main`): `CLOUDFLARE_API_TOKEN`, set 2026-11-24. `svbc-bike-lanes` environment: its own `CLOUDFLARE_API_TOKEN` |
 | History | GitLab (`gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers`) is the read-only record before 2026-11-17. `GL#NN` in files means a GitLab issue. |
 
 ## Monday.com

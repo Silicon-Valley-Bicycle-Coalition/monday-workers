@@ -79,7 +79,9 @@ jobs:
   # blocking any pull request.
   #
   # The token is an environment secret scoped to the `sandbox` environment (restrict that
-  # environment to `main`), and in Cloudflare to Workers deploys on this account only (GL#58).
+  # environment to `main`), and in Cloudflare to the named sandbox Workers, plus queue and route
+  # writes (GL#58; docs/manual/06-ci-and-deploy.md, "The sandbox deploy token"). Re-running an old
+  # run deploys that run's commit, so re-run only the newest one for a Worker.
   # Matrix entries run one at a time in roster order. The concurrency group stops two main runs
   # deploying the same Worker at once. member-portal appears twice, portal first, then the writer:
   # Cloudflare Queues allows one consumer Worker per queue, and the sandbox portal consumed
@@ -121,7 +123,7 @@ jobs:
               echo "### $WORKER${CONFIG:+ ($CONFIG)} was not deployed to sandbox"
               echo
               echo "The \`sandbox\` GitHub environment has no \`CLOUDFLARE_API_TOKEN\` secret."
-              echo "Add one (Workers Scripts: Edit on SVBC's account only; see docs/manual/06-ci-and-deploy.md),"
+              echo "Add one (permissions: docs/manual/06-ci-and-deploy.md, The sandbox deploy token),"
               echo "then re-run this job, or deploy by hand from \`$WORKER/\`: \`npx wrangler deploy ${CONFIG:+-c $CONFIG }--env sandbox\`"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
