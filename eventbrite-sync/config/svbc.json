@@ -102,7 +102,7 @@
       "listingColumn": "board_relation_mm92t0g4",
       "ticketTypeColumn": "text_mm92pfac",
       "attendeePhoneColumn": "text_mm9dxy1r",
-      "shiftTimeColumn": "REPLACE_WITH_COLUMN_ID"
+      "shiftTimeColumn": "text_mm9ez1ka"
     },
     "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {

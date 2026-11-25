@@ -317,7 +317,7 @@ step. Never delete the Volunteers items the backfill created.
 - **Do not edit** the 🔒 columns (Eventbrite Listing, Eventbrite Attendee ID, Attendee Name,
   Attendee Email, Shift, Phone Number, Shift Time): the sync overwrites an edit. Don't rename columns either
   without asking IT; the setup script finds them by name. Staff statuses No-Show, Prospect and Confirmed are kept by the sync.
-- **Shift Time** (coming; not on the board as of 2026-11-24) is when the Eventbrite listing the person signed up for runs. Two listings with the same
+- **Shift Time** (created 2026-11-24; rows fill as the sync next writes or replays them) is when the Eventbrite listing the person signed up for runs. Two listings with the same
   name and date are two shifts of one event and share a section, so use it to see who is on which. It
   stays the listing's time if you re-point **Event**. A listing with several shifts as ticket types
   shows the whole listing's time; **Shift** names the part.
