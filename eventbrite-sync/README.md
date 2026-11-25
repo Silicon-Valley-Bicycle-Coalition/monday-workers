@@ -442,6 +442,11 @@ Anything else counts as no answer and its text is discarded. With no valid answe
 out of the write, so a later bad edit can't erase a good zip. It also means a zip someone deletes in
 Eventbrite stays in Monday. The zip goes in neither D1 nor the logs.
 
+**Home County** (built 2026-11-24, off while `homeCountyColumn` is the placeholder). Written with Home Zip, from
+`attendeeSync.zipCounty` on top of `pledge.zipCounty`: overrides first (94303 is `SMC or SCC`), then Pledge to Ride's two counties,
+then `lists`. A zip on no list blanks it. `lists` is empty until staff approve the output of
+`scripts/build-zip-counties.mjs --census <file>` (the Census **2010** ZCTA-to-county relationship file). Both configs must agree.
+
 **Set up in Monday, with no Worker code:**
 
 1. **Home Zip**, a text column on Event Registrations. Put its id in `homeZipColumn`, then run

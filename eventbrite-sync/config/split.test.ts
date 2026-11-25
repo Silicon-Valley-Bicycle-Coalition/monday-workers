@@ -62,6 +62,7 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.classDayColumn',
   'attendeeSync.registrations.classLocationColumn',
   'attendeeSync.registrations.homeZipColumn',
+  'attendeeSync.registrations.homeCountyColumn',
   'attendeeSync.registrations.registrantsLinkColumn',
   'attendeeSync.peopleEmailColumn',
   ...PLEDGE_COLUMN_KEYS,
@@ -112,6 +113,10 @@ describe('config split: board and column ids', () => {
     if (prodZips !== undefined) expect(prodZips).toEqual(get(sandbox, 'pledge.zipCounty'));
   });
 
+  it('both configs work out the same counties', () => {
+    expect(production.attendeeSync.zipCounty).toEqual(sandbox.attendeeSync.zipCounty);
+  });
+
   it('both shipped configs validate', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
@@ -125,8 +130,8 @@ describe('config split: board and column ids', () => {
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {
     expect(production.monday.boards['events']).toBe(18437909790);
     expect(production.monday.boards['event-registrations']).toBe(18437909792);
-    // Home Zip and Grant are columns staff create after this ships; each stays the placeholder until then.
-    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && !/(homeZip|grant)Column$/.test(k))) {
+    // Home Zip, Home County and Grant are columns staff create after this ships; each stays the placeholder until then.
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && !/(homeZip|homeCounty|grant)Column$/.test(k))) {
       expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
   });

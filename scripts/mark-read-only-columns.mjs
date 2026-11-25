@@ -117,7 +117,7 @@ export const MARKED_COLUMNS = {
   },
   'Events': { locked: ['Eventbrite ID', 'Send event email', 'Registrants', 'Grant'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID', 'Attendee Phone', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Registrants link', 'Home Zip'],
+    locked: ['Eventbrite Attendee ID', 'Attendee Phone', 'First Name', 'Class Date', 'Class Day', 'Class Location', 'Registrants link', 'Home Zip', 'Home County'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (GL#82).

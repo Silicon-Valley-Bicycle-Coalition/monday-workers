@@ -53,7 +53,7 @@ export function testConfig(
         attendanceColumn: 'att_attendance_col', sourceColumn: 'att_source_col', roleColumn: 'att_role_col', eventLinkColumn: 'att_event_col',
         attendeeLinkColumn: 'att_person_col', classDateColumn: 'att_class_date_col', classDayColumn: 'att_class_day_col',
         classLocationColumn: 'att_class_loc_col', registrantsLinkColumn: 'att_registrants_col',
-        homeZipColumn: 'att_zip_col',
+        homeZipColumn: 'att_zip_col', homeCountyColumn: 'att_county_col',
       },
       volunteers: {
         attendeeIdColumn: 'vol_att_col', attendeeNameColumn: 'vol_name_col', attendeeEmailColumn: 'vol_email_col', jobColumn: 'vol_job_col',
@@ -65,6 +65,7 @@ export function testConfig(
       classEmails: { pageUrl: null, sandboxRecipient: null, timelineActivityId: null },
       peopleEmailColumn: 'people_email_col',
       tracker: null,
+      zipCounty: { lists: {}, overrides: {} },
     },
     employerAnswers: { enabled: true },
   };

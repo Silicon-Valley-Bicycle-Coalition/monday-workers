@@ -90,6 +90,7 @@
       "classDayColumn": "text_mm907jg2",
       "classLocationColumn": "text_mm909ah1",
       "homeZipColumn": "text_mm904ywn",
+      "homeCountyColumn": "REPLACE_WITH_COLUMN_ID",
       "registrantsLinkColumn": "board_relation_mm90prfq"
     },
     "volunteers": {
@@ -115,6 +116,12 @@
       "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
     "peopleEmailColumn": "email_mm8h4kkb",
+    "zipCounty": {
+      "lists": {},
+      "overrides": {
+        "94303": "SMC or SCC"
+      }
+    },
     "tracker": null
   },
   "employerAnswers": { "enabled": true },

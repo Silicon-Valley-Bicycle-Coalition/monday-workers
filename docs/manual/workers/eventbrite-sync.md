@@ -79,7 +79,7 @@ Ids live in `config/svbc.json` (production) and `config/sandbox.json`.
 | Donations | Eventbrite Order ID, Amount, Status, Date, Thank You Sent, Gift Type, Fiscal Year Ending, Donor | Write |
 | People | Personal Email (match), First Name, Last Name (new people only) | Read; create |
 | Events | Eventbrite ID, Date, End, Venue, Address, City, Program, Event Status, Source, URL, Send event email link (`attendeeSync.events`) | Write |
-| Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Registrants link (`attendeeSync.registrations`) | Write |
+| Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Home County, Registrants link (`attendeeSync.registrations`) | Write |
 | Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Shift, Phone Number, Job, Date, Status, Historical, Volunteer | Write |
 | Bike Education Lifecycle Tracker | CRM Event, Date, Status, Funder; Registered, Checked in Attendees, No-shows (`attendeeSync.tracker`) | Read; write the last three |
 | Pledge to Ride | The columns in `pledge.columns`: attendee id, year, status, date, email, Details, zip, County, consent, Other Answers and the pledge's own answers | Write (creates missing labels) |
@@ -92,7 +92,7 @@ Labels and types that must be right:
 - Volunteers Status: RSVP, Completed, Canceled (staff-set No-Show, Prospect and Confirmed are kept).
 
 Config placeholders that switch features off: `homeZipColumn` (`REPLACE_WITH_COLUMN_ID` in
-production, so Home Zip isn't written there), `events.grantColumn` (production; needed before
+production, so Home Zip isn't written there), `homeCountyColumn` (both), `events.grantColumn` (production; needed before
 `attendeeSync.tracker` can be set), and in the sandbox `orderIdColumn` and
 `events.sendLinkColumn`. While `orderIdColumn` is a placeholder the route stores deliveries but
 the consumer refuses to write, and messages dead-letter. The Volunteers path turns on only when all

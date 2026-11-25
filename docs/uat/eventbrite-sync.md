@@ -124,6 +124,7 @@ below wait until the sandbox gets them.
 ## Grant report: don't report these
 
 - No Show stays blank until staff or the class email page mark it. It isn't automatic.
+- Home County stays empty until it's turned on, and for a zip outside the listed counties.
 - Zip is empty when someone left it blank or typed something that isn't a zip.
 - A zip corrected in Eventbrite after registering doesn't reach Monday on its own: editing an answer
   sends no webhook and doesn't change the attendee's `changed` time (tested 2026-11-09). It arrives with

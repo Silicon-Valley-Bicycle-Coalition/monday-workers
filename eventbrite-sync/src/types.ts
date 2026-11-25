@@ -227,6 +227,8 @@ export interface EventbriteSyncConfig {
       classDayColumn: string;
       classLocationColumn: string;
       homeZipColumn: string;
+      // Text, written with Home Zip. The placeholder writes no county.
+      homeCountyColumn: string;
       // Second link to the event, two-way, so its registrants show on the event's card.
       registrantsLinkColumn: string;
     };
@@ -261,6 +263,9 @@ export interface EventbriteSyncConfig {
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;
+    // Home ZIP to county, on top of pledge.zipCounty (mapping/homeCounty.ts). Overrides win: a ZIP
+    // to the label it's counted under. Lists are like pledge.zipCounty's.
+    zipCounty: { lists: Record<string, string[]>; overrides: Record<string, string> };
     // The Education Tracker's totals and Grant (src/tracker/sweep.ts); null turns the job off.
     tracker: TrackerConfig | null;
   };

@@ -2,6 +2,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
+import { homeCounty } from './homeCounty';
 import { homeZipFromAnswers } from './homeZip';
 
 export type Incoming = 'Registered' | 'Attended' | 'Canceled';
@@ -87,7 +88,11 @@ export function mapAttendee(
   // Only a validated ZIP is written; an invalid answer leaves the key out, so a good value stays.
   if (eventFacts.program !== null && config.attendeeSync.zipPrograms.includes(eventFacts.program) && cols.homeZipColumn !== PLACEHOLDER_COLUMN_ID) {
     const zip = homeZipFromAnswers(a.answers);
-    if (zip !== null) columnValues[cols.homeZipColumn] = zip;
+    if (zip !== null) {
+      columnValues[cols.homeZipColumn] = zip;
+      // Blanked for a ZIP on no list, so it never shows an earlier ZIP's county.
+      if (cols.homeCountyColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.homeCountyColumn] = homeCounty(zip, config) ?? '';
+    }
   }
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };

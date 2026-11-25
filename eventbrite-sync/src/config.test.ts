@@ -380,3 +380,25 @@ describe('attendeeSync.tracker', () => {
   it('rejects a bad skipStatusLabels', () => rejects((c) => { c.attendeeSync.tracker.skipStatusLabels = 'Cancelled'; }, 'attendeeSync.tracker.skipStatusLabels'));
   it('rejects a bad grantByFunder', () => rejects((c) => { c.attendeeSync.tracker.grantByFunder = { VTA: '' }; }, 'attendeeSync.tracker.grantByFunder'));
 });
+
+describe('attendeeSync.zipCounty', () => {
+  const rejects = (zipCounty: unknown, message: string) => {
+    const cfg = valid();
+    cfg.attendeeSync.zipCounty = zipCounty;
+    expect(() => validateConfig(cfg)).toThrow(message);
+  };
+
+  it('accepts lists and overrides', () => {
+    const cfg = valid();
+    cfg.attendeeSync.zipCounty = { lists: { Alameda: ['94601'] }, overrides: { 94303: 'SMC or SCC' } };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a missing block', () => rejects(undefined, 'attendeeSync.zipCounty'));
+  it('rejects a zip under two counties', () => rejects({ lists: { Alameda: ['94601'], Marin: ['94601'] }, overrides: {} }, '94601'));
+  it('rejects a list zip that is not 5 digits', () => rejects({ lists: { Alameda: ['9460'] }, overrides: {} }, 'attendeeSync.zipCounty.lists.Alameda'));
+  it('rejects an override that is not a zip to a label', () => {
+    rejects({ lists: {}, overrides: { 943: 'SMC' } }, 'attendeeSync.zipCounty.overrides');
+    rejects({ lists: {}, overrides: { 94303: '' } }, 'attendeeSync.zipCounty.overrides');
+  });
+});

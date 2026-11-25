@@ -197,6 +197,31 @@ describe('mapAttendee', () => {
       expect(m.columnValues).not.toHaveProperty('att_zip_col');
     });
 
+    describe('Home County', () => {
+      const county = (answer: string, change: (c: ReturnType<typeof testConfig>) => void = () => {}) => {
+        const cfg = testConfig();
+        cfg.attendeeSync.zipCounty = { lists: { 'Santa Clara': ['95112'] }, overrides: {} };
+        change(cfg);
+        return mapAttendee(attendee({ answers: answers(answer) }), facts, cfg, 'Registered').columnValues;
+      };
+
+      it('is written with the zip', () => {
+        expect(county('95112')).toMatchObject({ att_zip_col: '95112', att_county_col: 'Santa Clara' });
+      });
+
+      it('is cleared when the zip is on no list, so the pair never disagrees', () => {
+        expect(county('10001')).toMatchObject({ att_zip_col: '10001', att_county_col: '' });
+      });
+
+      it('is left alone when there is no zip', () => {
+        expect(county('call me')).not.toHaveProperty('att_county_col');
+      });
+
+      it('is not written while its column is the placeholder', () => {
+        expect(county('95112', (c) => { c.attendeeSync.registrations.homeCountyColumn = PLACEHOLDER_COLUMN_ID; })).not.toHaveProperty(PLACEHOLDER_COLUMN_ID);
+      });
+    });
+
     it('does not read a question that only contains zip inside a word', () => {
       const a = attendee({ answers: [{ question: 'Do you use Zipcar?', type: 'text', answer: '95112' }] });
       expect(JSON.stringify(mapAttendee(a, facts, config, 'Registered'))).not.toContain('95112');
