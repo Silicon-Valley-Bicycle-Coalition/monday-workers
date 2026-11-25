@@ -166,6 +166,14 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).not.toThrow();
     });
 
+    it('requires attendeeSync.volunteers.shiftTimeColumn (the placeholder opts out)', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.volunteers.shiftTimeColumn;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.volunteers.shiftTimeColumn" must be a Monday column id string');
+      cfg.attendeeSync.volunteers.shiftTimeColumn = PLACEHOLDER_COLUMN_ID;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+
     it('accepts the placeholder in all five new columns (the pre-cutover production config)', () => {
       const cfg = valid();
       for (const key of NEW_VOLUNTEER_COLUMN_KEYS) cfg.attendeeSync.volunteers[key] = PLACEHOLDER_COLUMN_ID;
@@ -220,6 +228,13 @@ describe('validateConfig', () => {
     it('ignores Attendee Phone: its placeholder only means the phone is not written', () => {
       const cfg = testConfig();
       cfg.attendeeSync.volunteers.attendeePhoneColumn = PLACEHOLDER_COLUMN_ID;
+      expect(volunteerBoardMode(cfg)).toBe('ready');
+      expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
+    });
+
+    it('ignores Shift Time: its placeholder only means the time is not written', () => {
+      const cfg = testConfig();
+      cfg.attendeeSync.volunteers.shiftTimeColumn = PLACEHOLDER_COLUMN_ID;
       expect(volunteerBoardMode(cfg)).toBe('ready');
       expect(volunteerBoardMode(withPlaceholders(NEW_VOLUNTEER_COLUMN_KEYS))).toBe('legacy');
     });

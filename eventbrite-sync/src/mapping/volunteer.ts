@@ -3,6 +3,7 @@ import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
 import { attendeePhone, type EventFacts } from './attendee';
+import { shiftTime } from './shiftTime';
 import { toVolunteerStatus } from './volunteerStatus';
 
 export { toAttendance, toVolunteerStatus, type VolunteerStatus } from './volunteerStatus';
@@ -10,7 +11,7 @@ export { toAttendance, toVolunteerStatus, type VolunteerStatus } from './volunte
 // Event, Eventbrite Listing and Volunteer are links the consumer sets, so they are never written here.
 export function mapVolunteer(
   a: EventbriteAttendee,
-  facts: EventFacts,
+  facts: EventFacts & { startsAt: string | null; endsAt: string | null },
   config: EventbriteSyncConfig,
   attendance: string
 ): { itemName: string; columnValues: Record<string, unknown> } {
@@ -33,6 +34,9 @@ export function mapVolunteer(
   // delivery, so a backfill-attendees.mjs replay fills it on items created before the column.
   const ticketType = a.ticket_class_name?.trim() ?? '';
   if (ticketType !== '' && cols.ticketTypeColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.ticketTypeColumn] = ticketType;
+  // The listing's own time, whatever Event staff point the row at.
+  const time = shiftTime(facts.startsAt, facts.endsAt);
+  if (time !== null && cols.shiftTimeColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.shiftTimeColumn] = time;
 
   return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
 }

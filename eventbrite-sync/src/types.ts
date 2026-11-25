@@ -225,6 +225,9 @@ export interface EventbriteSyncConfig {
       // For the shift lead's contact list ("Upcoming by event" view). Text, like the registrations' phone;
       // the placeholder writes nothing.
       attendeePhoneColumn: string;
+      // When the listing runs ("8:00 AM–12:00 PM"), which tells two same-named shift listings apart
+      // (#5). The placeholder writes nothing, and doesn't count toward volunteerBoardMode.
+      shiftTimeColumn: string;
     };
     // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
     registrantsLinkExcludedEventIds: string[];
