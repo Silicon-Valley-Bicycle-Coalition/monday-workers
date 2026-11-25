@@ -26,7 +26,7 @@ sends email.
 | `GET /health` | Liveness check |
 | Queue `eventbrite-sync-writes` | Orders, events, attendees and class-email follow-ups; one message at a time |
 | Queue `eventbrite-sync-writes-dlq` | Consumed by this Worker; marks rows and logs |
-| Cron `0 * * * *` (production only) | Hourly ended-event sweep; at 15:00 UTC also the missed-order check and the pledge count check |
+| Cron `0 * * * *` (production only) | Hourly ended-event sweep and Education Tracker sweep; at 15:00 UTC also the missed-order check and the pledge count check |
 
 Webhook routes accept the secret as `?secret=` or as an `X-Webhook-Secret` header (used by the
 backfill scripts).
@@ -61,6 +61,9 @@ a missed-you, the People link for a thank-you. A claimed recipient is never hand
 
 - **Ended-event sweep:** re-queues events from the last 30 days that ended while last seen `live`
   or `started`, so their Event Status becomes Completed (or canceled).
+- **Education Tracker sweep:** off while `attendeeSync.tracker` is `null`. Writes each linked class's
+  Registered, Checked in and No-shows to the staff tracker, and the event's Grant from the row's
+  Funder. It never changes a row holding a number a person typed (its README "Class totals on the tracker").
 - **Missed-order check:** lists orders Eventbrite changed in the last 26 hours and logs a
   `console.error` (raised by Workers Issues) for any the ledger doesn't have. This catches a
   deleted or disabled webhook.
@@ -76,8 +79,9 @@ Ids live in `config/svbc.json` (production) and `config/sandbox.json`.
 | Donations | Eventbrite Order ID, Amount, Status, Date, Thank You Sent, Gift Type, Fiscal Year Ending, Donor | Write |
 | People | Personal Email (match), First Name, Last Name (new people only) | Read; create |
 | Events | Eventbrite ID, Date, End, Venue, Address, City, Program, Event Status, Source, URL, Send event email link (`attendeeSync.events`) | Write |
-| Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Registrants link (`attendeeSync.registrations`) | Write |
+| Event Registrations | Eventbrite Attendee ID, Attendee Name, Attendee Email, Attendee Phone, First Name, Attendance, Source, Role, Event, Attendee (People link), Class Date, Class Day, Class Location, Home Zip, Home County, Registrants link (`attendeeSync.registrations`) | Write |
 | Volunteers | Event, Eventbrite Listing, Eventbrite Attendee ID, Attendee Name, Attendee Email, Shift, Phone Number, Shift Time, Job, Date, Status, Historical, Volunteer | Write |
+| Bike Education Lifecycle Tracker | CRM Event, Date, Status, Funder; Registered, Checked in Attendees, No-shows (`attendeeSync.tracker`) | Read; write the last three |
 | Pledge to Ride | The columns in `pledge.columns`: attendee id, year, status, date, email, Details, zip, County, consent, Other Answers and the pledge's own answers | Write (creates missing labels) |
 
 Labels and types that must be right:
@@ -88,7 +92,8 @@ Labels and types that must be right:
 - Volunteers Status: RSVP, Completed, Canceled (staff-set No-Show, Prospect and Confirmed are kept).
 
 Config placeholders that switch features off: `homeZipColumn` (`REPLACE_WITH_COLUMN_ID` in
-production, so Home Zip isn't written there), `volunteers.shiftTimeColumn` in both (Shift Time, until its
+production, so Home Zip isn't written there), `homeCountyColumn` (both), `events.grantColumn` (production; needed before
+`attendeeSync.tracker` can be set), `volunteers.shiftTimeColumn` in both (Shift Time, until its
 column is created), and in the sandbox `orderIdColumn` and
 `events.sendLinkColumn`. While `orderIdColumn` is a placeholder the route stores deliveries but
 the consumer refuses to write, and messages dead-letter. The Volunteers path turns on only when all
@@ -123,7 +128,7 @@ resume the queue.
 |---|---|
 | `on` | Normal. |
 | `hold` / `unknown` | Webhooks still record deliveries. Queue messages retry. The cron run is skipped with one `write mode is …` line. Class email `claim` and `release` return 503. |
-| `off` | Webhooks record deliveries, stamped `dropped`; they are never written later, even after `on`. The consumer dry-runs every write and queue send. The sweep dry-runs; the read-only checks still run. Class email `claim` and `release` return 503. |
+| `off` | Webhooks record deliveries, stamped `dropped`; they are never written later, even after `on`. The consumer dry-runs every write and queue send. The sweeps dry-run; the read-only checks still run. Class email `claim` and `release` return 503. |
 
 `GET /class-emails/:eventId` works in every mode and reports `writesOn`. `result` always records
 the D1 ledger (the emails already went), but posts the Events update and follow-ups only under

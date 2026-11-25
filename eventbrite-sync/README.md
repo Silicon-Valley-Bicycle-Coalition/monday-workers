@@ -435,12 +435,17 @@ answers of their own (see their sections).
   Eventbrite organizer account, and the main account is `Public`, so a ticketed event there, like the
   Bike Summit, gets a zip if its form asks;
 * `attendeeSync.registrations.homeZipColumn` isn't the placeholder, so a deploy can precede the column;
-* a `text` question whose wording has the whole word `zip` or `zipcode` holds a value that matches
+* a `text` question whose wording has the whole word `zip` or `zipcode`, or `código postal`, holds a value that matches
   `^\d{5}(-\d{4})?$` after trimming. The first valid answer wins, and only its first 5 digits are kept.
 
 Anything else counts as no answer and its text is discarded. With no valid answer the column is left
 out of the write, so a later bad edit can't erase a good zip. It also means a zip someone deletes in
 Eventbrite stays in Monday. The zip goes in neither D1 nor the logs.
+
+**Home County** (built 2026-11-24, off while `homeCountyColumn` is the placeholder). Written with Home Zip, from
+`attendeeSync.zipCounty` on top of `pledge.zipCounty`: overrides first (94303 is `SMC or SCC`), then Pledge to Ride's two counties,
+then `lists`. A zip on no list blanks it. `lists` is empty until staff approve the output of
+`scripts/build-zip-counties.mjs --census <file>` (the Census **2010** ZCTA-to-county relationship file). Both configs must agree.
 
 **Set up in Monday, with no Worker code:**
 
@@ -460,6 +465,38 @@ where nobody took attendance.
 
 **Classes already written** get their zips from `scripts/backfill-attendees.mjs`, which re-drives each
 attendee. The report runs from November 2026 forward; earlier data is already captured.
+
+### Class totals on the tracker
+
+Built 2026-11-24, not yet turned on (`attendeeSync.tracker` is `null` in both configs). Design:
+[`docs/superpowers/specs/2026-11-04-event-counts-design.md`](../docs/superpowers/specs/2026-11-04-event-counts-design.md).
+
+Staff run classes from the Bike Education Lifecycle Tracker (board 18433254640, not a CRM board). Once an hour
+`src/tracker/sweep.ts` reads every row, the Events item in its **CRM Event** and that event's registrations, then writes:
+
+* **Registered, Checked in and No-shows** on the row, once the event is Completed and somebody is Attended. A class with
+  nobody checked in gets nothing: attendance probably wasn't taken. A cancellation counts only in Registered.
+* **Grant** on the Events item, from the row's Funder (`grantByFunder`: VTA → VTA, SMC → SMCTA). From then on Grant isn't
+  set by hand: a different value is overwritten while a tracker row with a mapped Funder links to the event.
+
+A row gets nothing unless it isn't Cancelled, links to exactly one Eventbrite event that isn't a volunteer event, and its
+Date is one of the event's days.
+
+**Whose numbers.** D1 `tracker_counts` and `event_grants` (migration 0004) hold what the Worker last wrote. A row with any
+number it didn't write is a person's, and all three cells are left alone, because the tracker's Canceled or Refunded formula mixes them.
+Clearing that cell hands the row back. The Worker clears its own numbers when a row stops qualifying (unlinked, relinked, Cancelled), and
+its own Grant when no row backs it. 30 days after its Date a row is frozen; Grant isn't. Archiving a finished row keeps its event's Grant; deleting a *mis-linked* row does too,
+so unlink it first, or clear Grant by hand.
+
+**What stops a mistake spreading.** A column missing from any read fails the run. A run that would clear more than five things clears
+none and logs `held back N clears`: fix the links or Funder labels, or clear them by hand if they're meant. Each row is
+read again just before its write. Never move `startDate` or `grantStartDate` later once live: rows before it stop qualifying and clear.
+
+**When totals wait.** Any of the event's D1 `attendees` rows not `written` holds its totals (a `failed` one needs a person;
+see "Failures and the dead-letter queue"). Date mismatches, double links, conflicting Funders and held events are warned about once
+a day, at the check hour. Staff see a gap in the tracker's **Totals missing** view.
+
+A mistaken check-in stays counted until staff change Attendance on Event Registrations.
 
 ### Registering it
 
@@ -947,6 +984,9 @@ beyond the table above:
 - **The daily send-link sweep** (`sweepSendLinks`). `on` writes; `off` reads the board and logs how
   many links are stale, writing none; `hold` or an unreadable switch skips it with the other jobs.
   It recomputes from the board each day, so nothing is skipped for good.
+- **The hourly tracker sweep** (`sweepTracker`). `on` writes; `off` reads and logs how many Grants and rows
+  it would write or clear, and changes neither Monday nor D1; `hold` or an unreadable switch skips it. It recomputes
+  from the boards each hour, but a row frozen (30 days old) by the time writes come back on stays as it was.
 - **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
   runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with one
   `eventbrite-sync scheduled: write mode is …` line. Its 26-hour lookback does not reach back over a long hold, so after a

@@ -35,4 +35,16 @@ describe('homeZipFromAnswers', () => {
   it('skips entries with no question', () => {
     expect(homeZipFromAnswers([{ answer: '95112', type: 'text' }, { question: null, answer: '95112', type: 'text' }])).toBeNull();
   });
+
+  it.each([
+    '¿Cuál es el código postal de tu domicilio?',
+    'CODIGO POSTAL',
+    '¿Cuál es el código postal de tu domicilio?'.normalize('NFD'),
+  ])('reads the Spanish question "%s"', (w) => {
+    expect(homeZipFromAnswers([zip(w, '95112')])).toBe('95112');
+  });
+
+  it('still rejects a typed note under the Spanish question', () => {
+    expect(homeZipFromAnswers([zip('código postal', '95112 llámame')])).toBeNull();
+  });
 });

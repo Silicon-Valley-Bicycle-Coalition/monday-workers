@@ -18,9 +18,9 @@ import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 // Debug skip lines key Monday values by column id, which DEFAULT_PII_KEYS can't recognize as names.
 export function piiKeysFor(config: EventbriteSyncConfig): readonly string[] {
   const { donorFirstNameColumn, donorLastNameColumn } = config.eventbriteSync;
-  const { homeZipColumn } = config.attendeeSync.registrations;
-  const zip = homeZipColumn === PLACEHOLDER_COLUMN_ID ? [] : [homeZipColumn.toLowerCase()];
-  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase(), ...zip];
+  const { homeZipColumn, homeCountyColumn } = config.attendeeSync.registrations;
+  const home = [homeZipColumn, homeCountyColumn].filter((id) => id !== PLACEHOLDER_COLUMN_ID).map((id) => id.toLowerCase());
+  return [...DEFAULT_PII_KEYS, donorFirstNameColumn.toLowerCase(), donorLastNameColumn.toLowerCase(), ...home];
 }
 
 // Everything a skip line needs except the delivery, which is per message.

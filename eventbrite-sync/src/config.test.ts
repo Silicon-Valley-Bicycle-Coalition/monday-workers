@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig, volunteerBoardMode, NEW_VOLUNTEER_COLUMN_KEYS, PLACEHOLDER_COLUMN_ID } from './config';
-import { testConfig, withPledge } from './test/testConfig';
+import { testConfig, withPledge, withTracker } from './test/testConfig';
 
 const valid = () => JSON.parse(JSON.stringify(testConfig())) as Record<string, any>;
 
@@ -364,4 +364,56 @@ describe('validateConfig: pledge', () => {
   it('rejects a zip that is not 5 digits', () => rejects((c) => { c.pledge.zipCounty['San Mateo'].push('9401'); }, 'pledge.zipCounty.San Mateo'));
   it('rejects a zip under two counties', () => rejects((c) => { c.pledge.zipCounty['San Mateo'].push('95014'); }, '95014'));
   it('rejects a county named like a fallback', () => rejects((c) => { c.pledge.zipCounty.Outside = ['10001']; }, 'pledge.zipCounty.Outside'));
+});
+
+describe('attendeeSync.tracker', () => {
+  const withRows = () => JSON.parse(JSON.stringify(withTracker(testConfig()))) as Record<string, any>;
+  const rejects = (change: (c: Record<string, any>) => void, message: string) => {
+    const cfg = withRows();
+    change(cfg);
+    expect(() => validateConfig(cfg)).toThrow(message);
+  };
+
+  it('accepts null and a complete tracker', () => {
+    expect(() => validateConfig(valid())).not.toThrow();
+    expect(() => validateConfig(withRows())).not.toThrow();
+  });
+
+  it('accepts a placeholder Grant column while the tracker is off', () => {
+    const cfg = valid();
+    cfg.attendeeSync.events.grantColumn = PLACEHOLDER_COLUMN_ID;
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a missing tracker key', () => rejects((c) => { delete c.attendeeSync.tracker; }, 'attendeeSync.tracker'));
+  it('rejects a placeholder Grant column when the tracker is on', () => rejects((c) => { c.attendeeSync.events.grantColumn = PLACEHOLDER_COLUMN_ID; }, 'attendeeSync.events.grantColumn'));
+  it('rejects a missing column', () => rejects((c) => { delete c.attendeeSync.tracker.funderColumn; }, 'attendeeSync.tracker.funderColumn'));
+  it('rejects a placeholder column', () => rejects((c) => { c.attendeeSync.tracker.dateColumn = PLACEHOLDER_COLUMN_ID; }, 'attendeeSync.tracker.dateColumn'));
+  it('rejects a board id that is not an integer', () => rejects((c) => { c.attendeeSync.tracker.boardId = '777'; }, 'attendeeSync.tracker.boardId'));
+  it('rejects a start date that is not a date', () => rejects((c) => { c.attendeeSync.tracker.startDate = 'soon'; }, 'attendeeSync.tracker.startDate'));
+  it('rejects a Grant start date that is not a date', () => rejects((c) => { c.attendeeSync.tracker.grantStartDate = '2026-11'; }, 'attendeeSync.tracker.grantStartDate'));
+  it('rejects a bad skipStatusLabels', () => rejects((c) => { c.attendeeSync.tracker.skipStatusLabels = 'Cancelled'; }, 'attendeeSync.tracker.skipStatusLabels'));
+  it('rejects a bad grantByFunder', () => rejects((c) => { c.attendeeSync.tracker.grantByFunder = { VTA: '' }; }, 'attendeeSync.tracker.grantByFunder'));
+});
+
+describe('attendeeSync.zipCounty', () => {
+  const rejects = (zipCounty: unknown, message: string) => {
+    const cfg = valid();
+    cfg.attendeeSync.zipCounty = zipCounty;
+    expect(() => validateConfig(cfg)).toThrow(message);
+  };
+
+  it('accepts lists and overrides', () => {
+    const cfg = valid();
+    cfg.attendeeSync.zipCounty = { lists: { Alameda: ['94601'] }, overrides: { 94303: 'SMC or SCC' } };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a missing block', () => rejects(undefined, 'attendeeSync.zipCounty'));
+  it('rejects a zip under two counties', () => rejects({ lists: { Alameda: ['94601'], Marin: ['94601'] }, overrides: {} }, '94601'));
+  it('rejects a list zip that is not 5 digits', () => rejects({ lists: { Alameda: ['9460'] }, overrides: {} }, 'attendeeSync.zipCounty.lists.Alameda'));
+  it('rejects an override that is not a zip to a label', () => {
+    rejects({ lists: {}, overrides: { 943: 'SMC' } }, 'attendeeSync.zipCounty.overrides');
+    rejects({ lists: {}, overrides: { 94303: '' } }, 'attendeeSync.zipCounty.overrides');
+  });
 });

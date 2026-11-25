@@ -9,6 +9,8 @@ describe('piiKeysFor', () => {
     const cfg = testConfig();
     cfg.attendeeSync.registrations.homeZipColumn = 'Text_ZIP_1';
     expect(piiKeysFor(cfg)).toContain('text_zip_1');
+    cfg.attendeeSync.registrations.homeCountyColumn = 'Text_COUNTY_1';
+    expect(piiKeysFor(cfg)).toContain('text_county_1');
     cfg.attendeeSync.registrations.homeZipColumn = PLACEHOLDER_COLUMN_ID;
     expect(piiKeysFor(cfg)).not.toContain(PLACEHOLDER_COLUMN_ID.toLowerCase());
   });

@@ -89,6 +89,14 @@ describe('MARKED_COLUMNS', () => {
     assert.ok(MARKED_COLUMNS.Events.locked.includes('Send event email'));
   });
 
+  it('locks Home County beside Home Zip', () => {
+    for (const title of ['Home Zip', 'Home County']) assert.ok(MARKED_COLUMNS['Event Registrations'].locked.includes(title), title);
+  });
+
+  it('locks Grant on Events, which eventbrite-sync writes from the Education Tracker', () => {
+    assert.ok(MARKED_COLUMNS.Events.locked.includes('Grant'));
+  });
+
   it('locks the Email Consent columns mailchimp-sync keeps current', () => {
     for (const board of ['People', 'People (Historical)']) {
       for (const title of ['Personal Email Consent', 'Household Email Consent']) assert.ok(MARKED_COLUMNS[board].locked.includes(title), `${board}: ${title}`);

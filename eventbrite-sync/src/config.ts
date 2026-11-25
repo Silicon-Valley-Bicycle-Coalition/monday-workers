@@ -19,12 +19,15 @@ const NULLABLE_COLUMN_KEYS = {
 
 const ATTENDEE_EVENT_COLUMN_KEYS = [
   'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
-  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn', 'grantColumn',
+] as const;
+const TRACKER_COLUMN_KEYS = [
+  'crmEventColumn', 'registeredColumn', 'checkedInColumn', 'noShowColumn', 'dateColumn', 'statusColumn', 'funderColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'attendeePhoneColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
-  'classLocationColumn', 'homeZipColumn', 'registrantsLinkColumn',
+  'classLocationColumn', 'homeZipColumn', 'homeCountyColumn', 'registrantsLinkColumn',
 ] as const;
 
 const VOLUNTEER_COLUMN_KEYS = [
@@ -210,6 +213,63 @@ function validateAttendeeSync(raw: unknown): void {
   if (pageUrl !== null && (a.events as Record<string, unknown>).sendLinkColumn === PLACEHOLDER_COLUMN_ID) {
     throw new Error('config: "attendeeSync.events.sendLinkColumn" must be a real Monday column id when "attendeeSync.classEmails.pageUrl" is set');
   }
+  validateTracker(a.tracker, a.events as Record<string, unknown>);
+  if (!isObject(a.zipCounty)) {
+    throw new Error('config: missing required key "attendeeSync.zipCounty"');
+  }
+  validateZipLists(a.zipCounty.lists, 'attendeeSync.zipCounty.lists');
+  const { overrides } = a.zipCounty;
+  if (!isObject(overrides) || Object.entries(overrides).some(([zip, label]) => !/^\d{5}$/.test(zip) || !isNonEmptyString(label))) {
+    throw new Error('config: "attendeeSync.zipCounty.overrides" must map 5-digit zips to county labels');
+  }
+}
+
+// County label to 5-digit zips, no zip under two counties.
+function validateZipLists(raw: unknown, path: string): void {
+  if (!isObject(raw)) {
+    throw new Error(`config: "${path}" must map county labels to arrays of 5-digit zips`);
+  }
+  const seen = new Set<string>();
+  for (const [county, zips] of Object.entries(raw)) {
+    if (!Array.isArray(zips) || zips.some((z) => typeof z !== 'string' || !/^\d{5}$/.test(z))) {
+      throw new Error(`config: "${path}.${county}" must be an array of 5-digit zips`);
+    }
+    for (const zip of zips as string[]) {
+      if (seen.has(zip)) throw new Error(`config: zip ${zip} is under more than one county in "${path}"`);
+      seen.add(zip);
+    }
+  }
+}
+
+function validateTracker(raw: unknown, events: Record<string, unknown>): void {
+  if (raw === null) return;
+  if (!isObject(raw)) {
+    throw new Error('config: "attendeeSync.tracker" must be an object, or null to turn the tracker job off');
+  }
+  if (!Number.isInteger(raw.boardId)) {
+    throw new Error('config: "attendeeSync.tracker.boardId" must be a Monday board id number');
+  }
+  requireColumns(raw, 'attendeeSync.tracker', TRACKER_COLUMN_KEYS);
+  // Unlike the other columns, there is no half-on: the job reads and writes all of these.
+  for (const key of TRACKER_COLUMN_KEYS) {
+    if (raw[key] === PLACEHOLDER_COLUMN_ID) {
+      throw new Error(`config: "attendeeSync.tracker.${key}" must be a real Monday column id`);
+    }
+  }
+  if (events.grantColumn === PLACEHOLDER_COLUMN_ID) {
+    throw new Error('config: "attendeeSync.events.grantColumn" must be a real Monday column id when "attendeeSync.tracker" is set');
+  }
+  if (!Array.isArray(raw.skipStatusLabels) || raw.skipStatusLabels.some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.tracker.skipStatusLabels" must be an array of Status labels');
+  }
+  if (!isObject(raw.grantByFunder) || Object.values(raw.grantByFunder).some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.tracker.grantByFunder" must map Funder labels to Grant labels');
+  }
+  for (const key of ['startDate', 'grantStartDate']) {
+    if (typeof raw[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw[key])) {
+      throw new Error(`config: "attendeeSync.tracker.${key}" must be a YYYY-MM-DD date`);
+    }
+  }
 }
 
 function validatePledge(raw: unknown, boards: Record<string, unknown>): void {
@@ -224,20 +284,10 @@ function validatePledge(raw: unknown, boards: Record<string, unknown>): void {
     throw new Error('config: "pledge.nameMatch" must be a non-empty string');
   }
   requireColumns(raw.columns, 'pledge.columns', PLEDGE_COLUMN_KEYS);
-  if (!isObject(raw.zipCounty)) {
-    throw new Error('config: "pledge.zipCounty" must map county labels to arrays of 5-digit zips');
-  }
-  const seen = new Set<string>();
-  for (const [county, zips] of Object.entries(raw.zipCounty)) {
-    if (PLEDGE_FALLBACK_COUNTIES.includes(county)) {
+  validateZipLists(raw.zipCounty, 'pledge.zipCounty');
+  for (const county of PLEDGE_FALLBACK_COUNTIES) {
+    if (Object.hasOwn(raw.zipCounty as object, county)) {
       throw new Error(`config: "pledge.zipCounty.${county}" can't be listed: it means a zip on no list`);
-    }
-    if (!Array.isArray(zips) || zips.some((zip) => typeof zip !== 'string' || !/^\d{5}$/.test(zip))) {
-      throw new Error(`config: "pledge.zipCounty.${county}" must be an array of 5-digit zips`);
-    }
-    for (const zip of zips as string[]) {
-      if (seen.has(zip)) throw new Error(`config: zip ${zip} is under more than one county in "pledge.zipCounty"`);
-      seen.add(zip);
     }
   }
   if (!isObject(raw.events)) {

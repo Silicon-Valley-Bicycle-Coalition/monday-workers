@@ -72,7 +72,8 @@
       "eventStatusColumn": "color_mm8hzm9d",
       "sourceColumn": "color_mm8hkfvx",
       "urlColumn": "link_mm8hs8v8",
-      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID",
+      "grantColumn": "dropdown_mm90h7vg"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8hb9t7",
@@ -89,6 +90,7 @@
       "classDayColumn": "text_mm907jg2",
       "classLocationColumn": "text_mm909ah1",
       "homeZipColumn": "text_mm904ywn",
+      "homeCountyColumn": "REPLACE_WITH_COLUMN_ID",
       "registrantsLinkColumn": "board_relation_mm90prfq"
     },
     "volunteers": {
@@ -114,7 +116,32 @@
       "sandboxRecipient": "sandbox@bikesiliconvalley.org",
       "timelineActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
     },
-    "peopleEmailColumn": "email_mm8h4kkb"
+    "peopleEmailColumn": "email_mm8h4kkb",
+    "zipCounty": {
+      "lists": {},
+      "overrides": {
+        "94303": "SMC or SCC"
+      }
+    },
+    "tracker": {
+      "boardId": 18441450135,
+      "crmEventColumn": "board_relation_mm9efrpk",
+      "registeredColumn": "numeric_mm9edwwg",
+      "checkedInColumn": "numeric_mm9eap6k",
+      "noShowColumn": "numeric_mm9e4fdg",
+      "dateColumn": "date_mm9et8km",
+      "statusColumn": "color_mm9esdak",
+      "funderColumn": "color_mm9eatgc",
+      "skipStatusLabels": [
+        "Cancelled"
+      ],
+      "grantByFunder": {
+        "VTA": "VTA",
+        "SMC": "SMCTA"
+      },
+      "startDate": "2026-11-01",
+      "grantStartDate": "2026-11-01"
+    }
   },
   "employerAnswers": { "enabled": true },
   "pledge": {

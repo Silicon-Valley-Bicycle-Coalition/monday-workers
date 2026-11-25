@@ -38,6 +38,9 @@ Eventbrite's v3 API blueprint.
 
 ## Overlap with the event counts design
 
+> **2026-11-24:** the event counts design was rewritten. It no longer adds columns to Events apart from Grant, and it uses no
+> queue message: it runs in the hourly cron and writes the Education Tracker. Read the table below with that in mind.
+
 [`2026-11-04-event-counts-design.md`](2026-11-04-event-counts-design.md) is also unbuilt and touches the same Events
 items and the same hourly cron. They are different data and must not be merged:
 
