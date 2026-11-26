@@ -47,6 +47,9 @@ export interface MondayBoards {
 export interface QuickbooksSyncConfig {
   monday: {
     apiUrl: string;
+    // The Monday account a webhook JWT must name (src/mondayJwt.ts). Unset with a signing secret
+    // set = every delivery refused.
+    accountId?: number;
     boards: MondayBoards;
   };
   quickbooks: {
@@ -112,6 +115,10 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   // Optional here so a missing secret is a clear refusal from TokenCipher.load rather than a type lie.
   QB_TOKEN_ENCRYPTION_KEY?: string;
   MONDAY_WEBHOOK_SECRET: string;
+  // The app's Signing Secret (src/mondayJwt.ts): set = verify any webhook JWT present;
+  // MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }

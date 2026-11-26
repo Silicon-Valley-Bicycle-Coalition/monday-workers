@@ -44,6 +44,9 @@ export function validateConfig(raw: unknown): BenevityImportConfig {
 
   const monday = requireObject(cfg.monday, 'monday');
   requireNonEmptyString(monday.apiUrl, 'monday.apiUrl');
+  if (monday.accountId !== undefined && (typeof monday.accountId !== 'number' || !Number.isInteger(monday.accountId) || monday.accountId < 1)) {
+    throw new Error('config: "monday.accountId" must be a positive integer when set (the account webhook JWTs must name)');
+  }
   const boards = requireObject(monday.boards, 'monday.boards');
   for (const key of REQUIRED_BOARD_KEYS) {
     if (!(key in boards)) {

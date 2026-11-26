@@ -10,6 +10,7 @@ import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
 import { logSkip, stampFor } from '../flags';
+import { checkMondayWebhookJwt, type MondayJwtPolicy } from '../mondayJwt';
 import type { BatchSkipContext } from '../writeSwitch';
 
 // Queue producer surface the routes need. Messages are sent with sendBatch (chunked to Queues' 100
@@ -49,6 +50,11 @@ export interface AppDeps {
   // Shared secret required as `?secret=...` on the registered Monday webhook URL
   // (`wrangler secret put BENEVITY_WEBHOOK_SECRET`). Fails closed when unset.
   webhookSecret: string | undefined;
+  // Second factor: a webhook created by an app (through monday-auth's Staff sync app) carries
+  // `Authorization: <JWT>` signed with the app's Signing Secret; one created with a personal token
+  // carries none. See src/mondayJwt.ts for the rollout policy. Absent = the URL secret alone
+  // decides, as before.
+  jwtPolicy?: MondayJwtPolicy;
   now: () => string;
 }
 
@@ -189,7 +195,7 @@ function writesHeld(c: Context): Response {
 }
 
 // Shared front half of every Monday webhook route: shared-secret check (fails closed when
-// unset), JSON parse, and the subscribe handshake. Returns the parsed body, or the Response to
+// unset), JSON parse, the subscribe handshake, and the app JWT when one is configured. Returns the parsed body, or the Response to
 // send instead.
 async function readMondayWebhook(c: Context, deps: AppDeps): Promise<unknown> {
   if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
@@ -203,6 +209,15 @@ async function readMondayWebhook(c: Context, deps: AppDeps): Promise<unknown> {
   }
   if (isChallenge(body)) {
     return c.json(body, 200);
+  }
+  // After the handshake: the echo has no side effect and the URL secret already gated it.
+  const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {});
+  if (!jwt.accept) {
+    console.error(`benevity webhook: rejected delivery: JWT ${jwt.reason}`);
+    return c.json({ ok: false }, 401);
+  }
+  if (!jwt.verified && jwt.note === 'missing') {
+    console.warn('benevity webhook: delivery carried no Authorization JWT; accepted on the URL secret alone (MONDAY_WEBHOOK_JWT_REQUIRED is not true). Re-register the subscription with the Staff sync app token.');
   }
   return body;
 }

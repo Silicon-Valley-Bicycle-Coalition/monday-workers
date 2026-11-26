@@ -16,6 +16,7 @@ import { readReportText } from './consumer/ingestUpload';
 import { processDeadLetters, sweepDeadLetteredRows } from './consumer/deadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
+import { jwtRequired } from './mondayJwt';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts.
@@ -72,6 +73,10 @@ export default {
         gate: () => skipContext(env),
         queue: writeQueue(env),
         webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(config.monday.accountId !== undefined ? { accountId: String(config.monday.accountId) } : {}),
+        },
         now: () => new Date().toISOString(),
       });
       return app.fetch(request, env, ctx);

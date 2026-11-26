@@ -60,6 +60,9 @@ export interface UploadsBoardConfig {
 export interface BenevityImportConfig {
   monday: {
     apiUrl: string;
+    // The Monday account a webhook JWT must name (src/mondayJwt.ts). Unset with a signing secret
+    // set = every delivery refused.
+    accountId?: number;
     boards: MondayBoards;
   };
   benevityImport: {
@@ -112,6 +115,10 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   // aren't declared in wrangler.jsonc — the webhook route fails closed (401 on every
   // delivery) until it is set, same convention as funraise-sync.
   BENEVITY_WEBHOOK_SECRET?: string;
+  // The app's Signing Secret (src/mondayJwt.ts): set = verify any webhook JWT present;
+  // MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   // Which deployment this isolate is — unset (production) or "sandbox". See src/environment.ts.
   ENVIRONMENT?: string;
 }

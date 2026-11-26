@@ -59,6 +59,26 @@ jobs:
           done
           exit $status
 
+      # donation-rollups/src/mondayJwt.ts is the canonical verifier for the JWT Monday signs an app
+      # webhook delivery with (GL#110); every Worker with a Monday webhook carries a byte-identical
+      # copy. Edit donation-rollups', then copy it to every path listed.
+      - name: monday-jwt-copies
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          roster="benevity-import/src/mondayJwt.ts mailchimp-sync/src/mondayJwt.ts people-reclassification/src/mondayJwt.ts quickbooks-sync/src/mondayJwt.ts"
+          for copy in $roster; do
+            cmp donation-rollups/src/mondayJwt.ts "$copy" || { echo "$copy differs from donation-rollups/src/mondayJwt.ts"; status=1; }
+          done
+          # A new copy that isn't in the roster would drift unchecked.
+          for f in */src/mondayJwt.ts; do
+            case " donation-rollups/src/mondayJwt.ts $roster " in
+              *" $f "*) ;;
+              *) echo "$f is not in the monday-jwt-copies roster"; status=1 ;;
+            esac
+          done
+          exit $status
+
       # geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search
       # carries a byte-identical copy (the Worker stays self-contained). Edit geo-filter's, then
       # copy it over.

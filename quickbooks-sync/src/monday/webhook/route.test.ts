@@ -381,3 +381,40 @@ describe('createMondayWebhookApp — write switch', () => {
     expect(queue.send).toHaveBeenCalledWith({ direction: 'monday-to-qb', eventId: '1' });
   });
 });
+
+describe('createMondayWebhookApp — app JWT (src/mondayJwt.ts)', () => {
+  const build = (jwtPolicy: { signingSecret: string; accountId: string; required?: boolean }) => {
+    const mondayEventStore = fakeMondayEventStore();
+    const send = vi.fn();
+    const app = createMondayWebhookApp({
+      mondayEventStore, mapStore: fakeMapStore(), queue: { send }, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on', jwtPolicy,
+    });
+    const post = (body: unknown, authorization?: string) => app.request(WEBHOOK_URL, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+    });
+    return { post, send, mondayEventStore };
+  };
+  const EVENT = { event: { boardId: 1, pulseId: 2, columnValues: {} } };
+
+  it('rejects a delivery with no JWT once one is required, and enqueues nothing', async () => {
+    const { post, send, mondayEventStore } = build({ signingSecret: 'sign', accountId: '1', required: true });
+    expect((await post(EVENT)).status).toBe(401);
+    expect(send).not.toHaveBeenCalled();
+    expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a JWT that does not verify even while a missing one is still tolerated', async () => {
+    const { post, send } = build({ signingSecret: 'sign', accountId: '1' });
+    expect((await post(EVENT, 'aaa.bbb.ccc')).status).toBe(401);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('still answers the subscription handshake', async () => {
+    const { post } = build({ signingSecret: 'sign', accountId: '1', required: true });
+    const res = await post({ challenge: 'abc123' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc123' });
+  });
+});

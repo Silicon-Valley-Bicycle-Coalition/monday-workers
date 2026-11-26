@@ -40,6 +40,7 @@ import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import { sendAlert } from './alert';
 import { redactEmails } from './logSafe';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
+import { jwtRequired } from './mondayJwt';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts. In the sandbox, mailchimp.audienceId
@@ -95,6 +96,10 @@ export default {
         pendingStore: new D1PendingOutboundStore(env.DB),
         queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
         webhookSecret: env.MONDAY_WEBHOOK_SECRET,
+        jwtPolicy: {
+          signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+          ...(config.monday.accountId !== undefined ? { accountId: String(config.monday.accountId) } : {}),
+        },
         config,
         writeMode: () => readWriteMode(env, WORKER),
       }));

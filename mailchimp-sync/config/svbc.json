@@ -1,6 +1,7 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
+    "accountId": 26331880,
     "donorsBoardId": 18437909781,
     "campaignsBoardId": null,
     "columns": {
