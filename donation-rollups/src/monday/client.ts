@@ -15,6 +15,12 @@ function chunksOf<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+export interface DonorLinkWithBoard {
+  ownerItemId: string;
+  ownerBoardId: string | null;
+  donationBoardId: string | null;
+}
+
 export interface DonationRecord {
   id: string;
   amountCents: number; // integer cents — see money.ts
@@ -129,7 +135,9 @@ export interface DonationRollupsMondayClient {
   // The same link plus the owner's board in ONE query (issue GL#89), replacing the
   // getDonorLinkForDonation + getItemBoardId pair on the hot path. ownerBoardId is null when the
   // owner is deleted or no longer returned — what getItemBoardId reads as gone.
-  getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null>;
+  // donationBoardId is the board the gift itself is on, so the consumer can refuse a webhook
+  // whose boardId names a configured Donations board the item isn't on.
+  getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<DonorLinkWithBoard | null>;
   // Why a Donation's Donor link read back empty (issue GL#26): 'archived' (board_relation reads
   // empty on archived items — the gift still counts), 'deleted' (gone, or no longer returned),
   // or 'active' (staff genuinely cleared the link — it no longer counts for anyone).
@@ -345,14 +353,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return linked.length > 0 ? linked[0]! : null;
   }
 
-  async getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<{ ownerItemId: string; ownerBoardId: string | null } | null> {
+  async getDonorLinkWithBoard(donationItemId: string, donorLinkColumnId: string): Promise<DonorLinkWithBoard | null> {
     const data = await this.graphql<{
-      items: { state?: string | null; column_values: { id: string; linked_item_ids?: string[];
+      items: { state?: string | null; board?: { id: string } | null; column_values: { id: string; linked_item_ids?: string[];
         linked_items?: { id: string; state?: string | null; board?: { id: string } | null }[] }[] }[];
     }>(
       `query ($itemId: ID!, $columnId: [String!]) {
         items(ids: [$itemId]) {
           state
+          board { id }
           column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids linked_items { id state board { id } } } }
         }
       }`,
@@ -366,7 +375,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     // linked_items doesn't return at all, as gone — the caller detaches rather than writing to it.
     const owner = column?.linked_items?.find((i) => i.id === ownerItemId);
     const ownerBoardId = owner === undefined || owner.state === 'deleted' ? null : owner.board?.id ?? null;
-    return { ownerItemId, ownerBoardId };
+    const board = data.items[0]?.board;
+    return { ownerItemId, ownerBoardId, donationBoardId: board ? String(board.id) : null };
   }
 
   async getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'> {
