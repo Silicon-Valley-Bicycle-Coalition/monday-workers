@@ -87,6 +87,7 @@ function mondayItem(overrides: Partial<MondayItemSnapshot> = {}): MondayItemSnap
     id: '42',
     name: 'New Co',
     state: 'active',
+    boardId: '111', // the Customers board in config
     columnValues: { text_col: { text: 'New Co', value: '"New Co"' }, qb_id_col: { text: '', value: null } },
     ...overrides,
   };
@@ -904,6 +905,29 @@ describe('create-loop guard', () => {
     await processSyncQueueBatch([message], deps({ mondayEventStore, mondayClient: fakeMondayClient({ getItem: vi.fn().mockResolvedValue(null) }) }));
 
     expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no longer exists/), bumpCreateAttempt: true });
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['another board', '999'],
+    ['no board at all', null],
+  ])('refuses (terminally) an item on %s, whatever the webhook said, and creates no Customer', async (_name, boardId) => {
+    const mondayEventStore = fakeMondayEventStore();
+    const createCustomer = vi.fn();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch(
+      [message],
+      deps({ mondayEventStore, mondayClient: fakeMondayClient({ getItem: vi.fn().mockResolvedValue(mondayItem({ boardId })) }), quickBooksClient: fakeQuickBooksClient({ createCustomer }) })
+    );
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', {
+      error: expect.stringMatching(/not the Customers board \(111\)/),
+      bumpCreateAttempt: true,
+    });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });

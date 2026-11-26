@@ -73,18 +73,18 @@ let nextMondayItemId = 1;
  * changed with, so getItem and the column-value search see what create_item/changes wrote —
  * which is what the create-loop guard relies on. `seed` pre-creates items (e.g. staff-typed).
  */
-function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<string, { name: string; state?: string; columns: Record<string, unknown> }> = {}) {
-  const items = new Map(Object.entries(seed).map(([id, item]) => [id, { ...item, columns: { ...item.columns } }]));
+function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<string, { name: string; state?: string; boardId?: string; columns: Record<string, unknown> }> = {}) {
+  const items = new Map<string, { name: string; state?: string; boardId?: string; columns: Record<string, unknown> }>(Object.entries(seed).map(([id, item]) => [id, { ...item, columns: { ...item.columns } }]));
   const cell = (value: unknown) => ({
     text: typeof value === 'string' ? value : value === undefined ? null : JSON.stringify(value),
     value: value === undefined ? null : JSON.stringify(value),
   });
   const client = {
     items,
-    createItem: vi.fn(async (_boardId: number, itemName: string, columnValues: Record<string, unknown>) => {
+    createItem: vi.fn(async (boardId: number, itemName: string, columnValues: Record<string, unknown>) => {
       // Unique across the file: D1 (and so every mapping and monday_events row) is shared by all tests.
       const id = `monday-item-${nextMondayItemId++}`;
-      items.set(id, { name: itemName, columns: { ...columnValues } });
+      items.set(id, { name: itemName, boardId: String(boardId), columns: { ...columnValues } });
       return { id };
     }),
     changeColumnValues: vi.fn(async (_boardId: number, itemId: string, columnValues: Record<string, unknown>) => {
@@ -94,7 +94,8 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<st
     getItem: vi.fn(async (itemId: string) => {
       const item = items.get(itemId);
       if (!item) return null;
-      return { id: itemId, name: item.name, state: item.state ?? 'active', columnValues: Object.fromEntries(Object.entries(item.columns).map(([k, v]) => [k, cell(v)])) };
+      // Items staff add by hand (seeded, or set below) are on the Customers board.
+      return { id: itemId, name: item.name, state: item.state ?? 'active', boardId: item.boardId ?? String(config.monday.boards.customers), columnValues: Object.fromEntries(Object.entries(item.columns).map(([k, v]) => [k, cell(v)])) };
     }),
     findItemIdsByColumnValue: vi.fn(async (_boardId: number, columnId: string, value: string) =>
       [...items].filter(([, item]) => item.columns[columnId] === value).map(([id]) => id)

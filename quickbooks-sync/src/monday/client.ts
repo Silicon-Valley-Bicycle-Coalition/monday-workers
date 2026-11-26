@@ -11,6 +11,9 @@ export interface MondayItemSnapshot {
   id: string;
   name: string;
   state: 'active' | 'archived' | 'deleted' | string;
+  // The board the item is on (null if Monday returns none). A webhook's boardId is only as
+  // trustworthy as its URL secret; this is what Monday itself says.
+  boardId: string | null;
   columnValues: Record<string, { text: string | null; value: string | null }>;
 }
 
@@ -55,13 +58,14 @@ export class HttpMondayClient implements MondayClient {
 
   async getItem(itemId: string): Promise<MondayItemSnapshot | null> {
     const data = await this.transport.request<{
-      items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[];
+      items: { id: string; name: string; state: string; board?: { id: string } | null; column_values: { id: string; text: string | null; value: string | null }[] }[];
     }>(
       `query ($ids: [ID!]) {
         items(ids: $ids) {
           id
           name
           state
+          board { id }
           column_values { id text value }
         }
       }`,
@@ -73,6 +77,7 @@ export class HttpMondayClient implements MondayClient {
       id: item.id,
       name: item.name,
       state: item.state,
+      boardId: item.board ? String(item.board.id) : null,
       columnValues: Object.fromEntries(item.column_values.map((c) => [c.id, { text: c.text, value: c.value }])),
     };
   }
