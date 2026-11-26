@@ -68,7 +68,8 @@ Routes (every one sits behind Access **and** a Worker-side check of the Access J
   the first snapshot exists.
 * `POST /api/refresh`: queues a refresh now. 202 when queued; 429 if the snapshot is under 10
   minutes old or a refresh is already queued or running (an R2 `refresh-pending.json` marker under
-  20 minutes old). See [Refresh](#refresh).
+  20 minutes old). It must be `application/json` (else 415) and, when the browser sends
+  `Sec-Fetch-Site`, `same-origin` (else 403), as in `nearby-search`. See [Refresh](#refresh).
 * Everything else: the static page and reference data in `public/`.
 
 The cron is `0 13 * * 2` (Mondays 13:00 UTC; Cloudflare counts 1 as Sunday). Monday access goes through the `monday-auth`
@@ -157,7 +158,7 @@ deploy job.
 Then, signed in through Access in a browser on `map.sandbox.bikesiliconvalley.org`, trigger the
 first snapshot with the **Refresh now** button on the page's "No data yet" screen, or with
 `POST /api/refresh` (for example from the browser console:
-`fetch('/api/refresh', { method: 'POST' })`). Without it the page shows no data until the weekly
+`fetch('/api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })`). Without it the page shows no data until the weekly
 cron fires (Mondays). Production's resources exist too (2026-11-03): `svbc-member-map` D1, R2 bucket and the
 `svbc-member-map-refresh` queue.
 

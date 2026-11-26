@@ -37,7 +37,7 @@ export const CONFIG: Config = validateConfig({
   },
   osm: { nominatimUrl: 'https://nominatim.example', overpassUrl: 'https://overpass.example', userAgent: 'test' },
   serviceArea: [36.89, -122.53, 37.71, -121.2],
-  access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-tag' },
+  access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-tag', allowedEmailDomain: 'bikesiliconvalley.org' },
   geocode: { censusUrl: 'https://census.example', perRun: 200 },
 });
 
@@ -82,6 +82,10 @@ export class FakeD1 {
   beforeTakeover?: () => void;
   failRelease = false;
   misses = new Map<string, { address_hash: string; attempted_at: string }>();
+  // Row layout: the INSERT's eight values; [5] queued, [6] confirmed_by, [7] created_at.
+  queuedSince(email: string, since: string): number {
+    return this.searches.filter((r) => r[6] === email && (r[7] as string) >= since).reduce((sum, r) => sum + (r[5] as number), 0);
+  }
   private row(board: unknown, contact: unknown) {
     return this.resultRows.find((r) => r.board_id === board && r.contact_id === contact);
   }
@@ -97,6 +101,9 @@ export class FakeD1 {
           return { results: this.resultRows.filter((r) => r.board_id === args[0]) };
         },
         first: async () => {
+          if (sql === 'SELECT COALESCE(SUM(queued), 0) AS total FROM searches WHERE confirmed_by = ? AND created_at >= ?') {
+            return { total: this.queuedSince(args[0] as string, args[1] as string) };
+          }
           if (!sql.startsWith('SELECT result_item_id, created_at FROM result_rows WHERE board_id = ? AND contact_id = ?')) {
             throw new Error(`unexpected SQL: ${sql}`);
           }
@@ -107,8 +114,10 @@ export class FakeD1 {
             this.misses.set(args[0] as string, { address_hash: args[1] as string, attempted_at: args[2] as string });
             return { success: true, meta: { changes: 1 } };
           }
-          if (sql.startsWith('INSERT INTO searches')) {
-            this.searches.push(args);
+          if (sql.startsWith('INSERT INTO searches (board_id, label, query, miles, matched, queued, confirmed_by, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COALESCE(SUM(queued), 0) FROM searches WHERE confirmed_by = ? AND created_at >= ?) + ? <= ?')) {
+            const [email, since, planned, cap] = args.slice(8) as [string, string, number, number];
+            if (this.queuedSince(email, since) + planned > cap) return { success: true, meta: { changes: 0, last_row_id: 0 } };
+            this.searches.push(args.slice(0, 8));
             return { success: true, meta: { changes: 1, last_row_id: this.searches.length } };
           }
           if (sql.startsWith('UPDATE searches SET queued = ? WHERE id = ?')) {

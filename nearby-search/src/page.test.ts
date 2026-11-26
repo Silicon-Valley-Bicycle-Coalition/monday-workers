@@ -114,6 +114,34 @@ describe('preview state', () => {
   });
 });
 
+describe('security headers', () => {
+  it('sends a nonce CSP whose nonce is on every script and style, and no inline handlers', async () => {
+    const res = await get('/');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    const nonce = /script-src 'nonce-([A-Za-z0-9+/=]+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).not.toContain('unsafe-inline');
+    const html = await res.text();
+    const tags = html.match(/<(?:script|style|link)\b[^>]*>/g) ?? [];
+    expect(tags.length).toBe(7);
+    for (const tag of tags) expect(tag).toContain(`nonce="${nonce}"`);
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+  });
+
+  it('uses a fresh nonce per response', async () => {
+    const a = (await get('/')).headers.get('content-security-policy');
+    const b = (await get('/')).headers.get('content-security-policy');
+    expect(a).not.toBe(b);
+  });
+
+  it.each([['/', STAFF], ['/', {}], ['/health', {}]] as const)('sends nosniff on %s', async (path, headers) => {
+    const res = await get(path, null, headers as Record<string, string>);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+});
+
 describe('renderPage', () => {
   it('cannot be broken out of by data in the embedded JSON', () => {
     const html = renderPage({ event: { eventItemId: '1', eventName: '</script><script>alert(1)</script>', address: 'a', miles: 2 } });

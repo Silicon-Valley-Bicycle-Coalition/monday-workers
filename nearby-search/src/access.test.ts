@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { Hono } from 'hono';
 
 vi.mock('./config', () => ({
-  configFor: () => ({ access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123' } }),
+  configFor: () => ({ access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123', allowedEmailDomain: 'example.org' } }),
 }));
 
 import { verifyAccessJwt, requireAccess, resetCertCacheForTests, type AccessVariables } from './access';
 import type { Env } from './types';
 
-const cfg = { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123' };
+const cfg = { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123', allowedEmailDomain: 'example.org' };
 const NOW = 1_800_000_000;
 
 let publicJwk: JsonWebKey;
@@ -54,6 +54,14 @@ beforeAll(async () => {
 describe('verifyAccessJwt', () => {
   it('returns the email for a valid token', async () => {
     expect(await verifyAccessJwt(await sign(claims()), cfg, certs, NOW)).toEqual({ email: 'staff@example.org' });
+  });
+  it('refuses an email outside allowedEmailDomain, including look-alike suffixes', async () => {
+    for (const email of ['guest@gmail.com', 'staff@notexample.org', 'staff@example.org.evil.com', 'example.org']) {
+      expect(await verifyAccessJwt(await sign(claims({ email })), cfg, certs, NOW)).toBeNull();
+    }
+  });
+  it('matches allowedEmailDomain case-insensitively', async () => {
+    expect(await verifyAccessJwt(await sign(claims({ email: 'Staff@Example.ORG' })), cfg, certs, NOW)).toEqual({ email: 'Staff@Example.ORG' });
   });
   it('accepts aud as a plain string', async () => {
     expect(await verifyAccessJwt(await sign(claims({ aud: cfg.aud })), cfg, certs, NOW)).toEqual({ email: 'staff@example.org' });

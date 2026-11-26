@@ -29,11 +29,16 @@ export interface Config {
   osm: { nominatimUrl: string; overpassUrl: string; userAgent: string };
   // [south, west, north, east] — Overpass bbox order.
   serviceArea: [number, number, number, number];
-  access: { teamDomain: string; aud: string };
+  // teamDomain is the bare host (no scheme); allowedEmailDomain is lowercase, without the @.
+  access: { teamDomain: string; aud: string; allowedEmailDomain: string };
   geocode: { censusUrl: string; perRun: number };
 }
 
 const PLACEHOLDER = /^REPLACE_/;
+// An Access team domain is always <team>.cloudflareaccess.com; anything else would make the Worker
+// fetch signing keys from (and trust tokens issued by) a host Cloudflare doesn't run.
+const TEAM_DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/;
+const EMAIL_DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
 type Obj = Record<string, unknown>;
 
 function obj(value: unknown, path: string): Obj {
@@ -111,6 +116,10 @@ export function validateConfig(raw: unknown): Config {
   if (west >= east) throw new Error('config serviceArea west must be less than east');
 
   const access = obj(root.access, 'access');
+  const teamDomain = str(access.teamDomain, 'access.teamDomain');
+  if (!TEAM_DOMAIN.test(teamDomain)) throw new Error('config access.teamDomain must be a bare <team>.cloudflareaccess.com host');
+  const allowedEmailDomain = str(access.allowedEmailDomain, 'access.allowedEmailDomain');
+  if (!EMAIL_DOMAIN.test(allowedEmailDomain)) throw new Error('config access.allowedEmailDomain must be a lowercase domain, without @');
   const geocode = obj(root.geocode, 'geocode');
   const perRun = geocode.perRun;
   if (typeof perRun !== 'number' || !Number.isInteger(perRun) || perRun <= 0) throw new Error('config geocode.perRun must be a positive integer');
@@ -129,7 +138,7 @@ export function validateConfig(raw: unknown): Config {
       userAgent: str(osm.userAgent, 'osm.userAgent'),
     },
     serviceArea: [south, west, north, east],
-    access: { teamDomain: str(access.teamDomain, 'access.teamDomain'), aud: str(access.aud, 'access.aud') },
+    access: { teamDomain, aud: str(access.aud, 'access.aud'), allowedEmailDomain },
     geocode: { censusUrl: str(geocode.censusUrl, 'geocode.censusUrl'), perRun },
   };
 }

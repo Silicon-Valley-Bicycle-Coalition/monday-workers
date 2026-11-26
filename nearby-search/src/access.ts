@@ -83,6 +83,9 @@ export async function verifyAccessJwt(
     if (typeof claims.exp !== 'number' || claims.exp <= now) return null;
     if (typeof claims.nbf === 'number' && claims.nbf > now) return null;
     if (typeof claims.email !== 'string' || claims.email === '') return null;
+    // Second layer behind the Access policy: a token for any other domain (a misconfigured
+    // policy, a one-time-PIN guest) is refused here too.
+    if (!claims.email.toLowerCase().endsWith('@' + cfg.allowedEmailDomain)) return null;
     return { email: claims.email };
   } catch {
     return null;

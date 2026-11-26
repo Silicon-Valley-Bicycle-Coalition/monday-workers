@@ -127,6 +127,20 @@ export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
     return new Response(object.body, { headers: { 'Content-Type': 'application/json', 'Cache-Control': NO_STORE } });
   });
 
+  // CSRF guard (the same as nearby-search's). The Access cookie rides along on a cross-site
+  // request, so the POST must prove it came from this page: a JSON body (a plain HTML form can't
+  // send one without a CORS preflight, which this Worker never answers) and, where the browser
+  // says, a same-origin fetch.
+  app.use('/api/*', async (c, next) => {
+    if (c.req.method === 'POST') {
+      const type = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+      if (type !== 'application/json') return c.json({ error: 'requests must be sent as application/json' }, 415, { 'Cache-Control': NO_STORE });
+      const site = c.req.header('sec-fetch-site');
+      if (site !== undefined && site !== 'same-origin') return c.json({ error: 'cross-site requests are not allowed' }, 403, { 'Cache-Control': NO_STORE });
+    }
+    await next();
+  });
+
   // A refresh reads every board and geocodes, far past the ~30 s an HTTP waitUntil gets, so it
   // runs in this Worker's queue consumer (15 minutes). The marker keeps repeat clicks from
   // stacking refreshes.
