@@ -463,6 +463,23 @@ describe('POST result', () => {
       expect(h.client.changeColumnValues).toHaveBeenCalledWith(42, '51', { first_col: 'Al', last_col: 'One' });
     });
 
+    it.each([
+      ['Eventbrite attendee 123', 'Unknown'],
+      ['Casey Staff', 'Casey Staff'],
+    ])('names a person created from item "%s", with no name column, "%s"', async (itemName, personName) => {
+      const item = mondayItem('10', itemName, { [vc.statusColumn]: 'Completed', [vc.attendeeEmailColumn]: 'v10@real.org', [vc.volunteerLinkColumn]: '' });
+      const h = volHarness([item], [row('thank-you', '10')], { peopleLookup: async () => null });
+      await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
+      expect(h.client.createItem).toHaveBeenCalledWith(42, personName, expect.anything());
+    });
+
+    it('names a person from the name column when the item still has the fallback name', async () => {
+      const item = mondayItem('10', 'Eventbrite attendee 123', { [vc.statusColumn]: 'Completed', [vc.attendeeEmailColumn]: 'v10@real.org', [vc.attendeeNameColumn]: 'Al One', [vc.volunteerLinkColumn]: '' });
+      const h = volHarness([item], [row('thank-you', '10')], { peopleLookup: async () => null });
+      await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
+      expect(h.client.createItem).toHaveBeenCalledWith(42, 'Al One', expect.anything());
+    });
+
     it('writes no names from the item name when the volunteer name column is blank', async () => {
       const blank = mondayItem('10', 'Eventbrite attendee 123', { [vc.statusColumn]: 'Completed', [vc.attendeeEmailColumn]: 'v10@real.org', [vc.volunteerLinkColumn]: '' });
       const h = volHarness([blank], [row('thank-you', '10')], { peopleLookup: async () => null });

@@ -3,6 +3,7 @@ import type { EventbriteAttendee } from '../eventbrite/client';
 import { realEmail, realName } from '../eventbrite/placeholder';
 import type { EventbriteSyncConfig } from '../types';
 import { attendeePhone, type EventFacts } from './attendee';
+import { fallbackItemName } from './fallbackName';
 import { shiftTime } from './shiftTime';
 import { toVolunteerStatus } from './volunteerStatus';
 
@@ -38,5 +39,5 @@ export function mapVolunteer(
   const time = shiftTime(facts.startsAt, facts.endsAt);
   if (time !== null && cols.shiftTimeColumn !== PLACEHOLDER_COLUMN_ID) columnValues[cols.shiftTimeColumn] = time;
 
-  return { itemName: name ?? `Eventbrite attendee ${a.id}`, columnValues };
+  return { itemName: name ?? fallbackItemName(a.id), columnValues };
 }

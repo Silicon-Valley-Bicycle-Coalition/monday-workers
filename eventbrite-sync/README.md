@@ -237,7 +237,8 @@ writes both columns. An order uses its `first_name` / `last_name`. The other pat
   "Info Requested" dropped.
 * A thank-you's follow-up uses a participant's First Name column and takes the last name from the
   rest of the Attendee Name; a volunteer has only the Attendee Name, which is split. Never the item
-  name, which can be "Eventbrite attendee <id>".
+  name, which can be "Eventbrite attendee <id>"; nor is that ever the new person's item name
+  ("Unknown" when there is no real one).
 * With only a full name, two plain words are First and Last. Of three or more only the first word is
   taken, because the last name could start at any of them. If the first word isn't plainly a first
   name (an initial, a title, "Rider, Pat", a non-Latin script, which may put the family name first),
