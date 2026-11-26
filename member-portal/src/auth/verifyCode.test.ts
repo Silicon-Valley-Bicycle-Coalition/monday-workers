@@ -8,7 +8,7 @@ import type { SessionStore } from '../db/sessions';
 
 const now = () => new Date('2026-08-22T12:00:00.000Z');
 const REQUEST_ID = 'req-1';
-const CODE = '123456';
+const CODE = '12345678';
 const EMAIL_HASH = 'e'.repeat(64);
 
 // attempt: false = no usable row; failures >= 10 = the address's budget is spent (no slot).
@@ -55,8 +55,8 @@ describe('verifyCode', () => {
     for (const attempt of [true, false]) {
       const s = await setup({ attempt });
       const spy = vi.spyOn(hash, 'sha256Hex');
-      await verifyCode(REQUEST_ID, '000000', s.deps);
-      expect(spy).toHaveBeenCalledWith(`${REQUEST_ID}:000000`);
+      await verifyCode(REQUEST_ID, '00000000', s.deps);
+      expect(spy).toHaveBeenCalledWith(`${REQUEST_ID}:00000000`);
       expect(s.tokenStore.takeCodeAttempt).toHaveBeenCalledTimes(1);
       spy.mockRestore();
     }
@@ -72,7 +72,7 @@ describe('verifyCode', () => {
 
   it('keeps its reserved slot for a wrong code', async () => {
     const s = await setup();
-    expect(await verifyCode(REQUEST_ID, '000000', s.deps)).toBeNull();
+    expect(await verifyCode(REQUEST_ID, '00000000', s.deps)).toBeNull();
     expect(s.codeFailureStore.releaseFailure).not.toHaveBeenCalled();
     expect(s.tokenStore.claimByRequest).not.toHaveBeenCalled();
   });

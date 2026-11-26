@@ -1,5 +1,6 @@
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
+import { CODE_LENGTH } from './crypto/code';
 import { LOGO_SVG_ASSET, PORTAL_CSS_ASSET } from './assets/static';
 
 // Brand chrome constants — same values as config/svbc.json's taxLetter.orgLegalName /
@@ -170,7 +171,7 @@ export function checkEmailView(locale: Locale, next: string | null = null, codeE
     <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>${error}
     <form action="/auth/code" method="post">
       <label for="sign-in-code">${escapeHtml(t(locale, 'checkEmail.codeLabel'))}</label>
-      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />${nextField}${emailField}
+      <input id="sign-in-code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="${CODE_LENGTH + 1}" required />${nextField}${emailField}
       <button type="submit">${escapeHtml(t(locale, 'checkEmail.codeSubmit'))}</button>
     </form>${resendForm}
   `;

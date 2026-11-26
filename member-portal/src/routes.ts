@@ -22,6 +22,8 @@ import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { verifyCode } from './auth/verifyCode';
 import type { CodeFailureStore } from './db/codeFailures';
+import { clientIpKey } from './clientIp';
+import { CODE_LENGTH } from './crypto/code';
 import type { VerifiedEmailStore } from './db/verifiedEmails';
 import { CONFIRM_LOGIN_SCRIPT, ORG_DONATE_URL, checkEmailView, confirmLoginView, errorView, loginFormView, page, unavailableView } from './views';
 import { loadHomeData, type HomeData, type TabKey } from './home/loadHomeData';
@@ -424,7 +426,7 @@ export function createApp(deps: AppDeps) {
     // response as a well-formed but non-matching email, preserving the enumeration guard.
     const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
     const next = portalReturnPath(body.next);
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ip = clientIpKey(c.req.header('cf-connecting-ip'));
     const requestId = generateToken();
     // Set on every answer but a rate-limit denial (per IP or per address), so whether an address
     // matched (or was even well-formed) never shows in the headers. A denied request sent no code,
@@ -506,7 +508,7 @@ export function createApp(deps: AppDeps) {
       return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale, next, true, resend), locale));
     };
 
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ip = clientIpKey(c.req.header('cf-connecting-ip'));
     try {
       if (!(await deps.ipLimiter.limit(`code:${ip}`)).success) return codeError();
     } catch (err) {
@@ -517,7 +519,7 @@ export function createApp(deps: AppDeps) {
 
     const code = typeof body.code === 'string' ? body.code.replace(/\s+/g, '') : '';
     const requestId = getCookie(c, LOGIN_REQUEST_COOKIE);
-    if (!/^\d{6}$/.test(code) || !requestId) return codeError();
+    if (code.length !== CODE_LENGTH || !/^\d+$/.test(code) || !requestId) return codeError();
 
     let sessionToken: string | null;
     try {
@@ -862,7 +864,7 @@ export function createApp(deps: AppDeps) {
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
     // interfere. No enumeration concern here (the caller is already authenticated), so a plain
     // 429 is fine.
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ip = clientIpKey(c.req.header('cf-connecting-ip'));
     const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
     if (!ipResult.success) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
@@ -918,7 +920,7 @@ export function createApp(deps: AppDeps) {
 
     // Same limiter keys as the free-text change-request POST above — the two forms share one
     // abuse budget since they feed the same staff queue.
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ip = clientIpKey(c.req.header('cf-connecting-ip'));
     const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
     if (!ipResult.success) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
@@ -1103,7 +1105,7 @@ export function createApp(deps: AppDeps) {
     // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
     // feature (config revert, incident response) also disables rate limiting on this endpoint,
     // turning the exact moment someone flips the kill switch into an unlimited request sink.
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ip = clientIpKey(c.req.header('cf-connecting-ip'));
     const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
     if (!ipResult.success) {
       return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);

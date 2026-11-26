@@ -14,19 +14,19 @@ describe('generateCode', () => {
     vi.restoreAllMocks();
   });
 
-  it('returns six digits', () => {
+  it('returns eight digits', () => {
     for (let i = 0; i < 1000; i++) {
-      expect(generateCode()).toMatch(/^\d{6}$/);
+      expect(generateCode()).toMatch(/^\d{8}$/);
     }
   });
 
   it('keeps leading zeros', () => {
     stubRandom(0x00000007);
-    expect(generateCode()).toBe('000007');
+    expect(generateCode()).toBe('00000007');
   });
 
-  it('rejects values above the last full million', () => {
+  it('rejects values above the last full hundred million', () => {
     stubRandom(0xffffffff, 42);
-    expect(generateCode()).toBe('000042');
+    expect(generateCode()).toBe('00000042');
   });
 });
