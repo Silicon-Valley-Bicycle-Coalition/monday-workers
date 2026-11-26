@@ -54,7 +54,9 @@ and forbids force-pushes.
    (`scripts/ci-pending-migrations.mjs`, a read-only check of the database's `d1_migrations`
    table): apply them by hand, then re-run the job. It never applies migrations or changes a write
    switch.
-5. **ci-ok:** the single required result. Neither deploy job is required.
+5. **deploy-sandbox-pr / restore-sandbox-pr:** opt-in sandbox deploys from a pull request
+   ([below](#deploying-a-pull-request-to-the-sandbox)).
+6. **ci-ok:** the single required result. No deploy job is required.
 
 ## What deploys when
 
@@ -126,6 +128,43 @@ Environments → `production`, deployment branches limited to `main`
 Never make it a repository secret. To make every production deploy wait for a person, add
 required reviewers to that environment; the workflow needs no change. Adding a Worker to
 `deploy-production` means adding it to this token too.
+
+## Deploying a pull request to the sandbox
+
+Add the **`deploy-sandbox`** label to a pull request from a branch in this repo. From then on,
+each push to the PR deploys its changed sandbox Workers (the same `deploy` list as
+`deploy-sandbox`) once `test` passes, as the PR merged with `main` (`refs/pull/N/merge`). Remove
+the label, or close the PR without merging, and `restore-sandbox-pr` deploys `main` back to those
+Workers. A merged PR needs no restore: its push to `main` deploys it in the usual way.
+
+- **One sandbox per Worker.** A PR deploy replaces main's code there, and two labelled PRs
+  touching the same Worker replace each other, last push wins. Tell whoever else is testing in
+  the sandbox. A merge to `main` touching that Worker also replaces the PR's code; push to the PR
+  again to put it back. Each job's summary says which PR the sandbox is running.
+- **Fork PRs never deploy.** The jobs check that the head branch is in this repo, and GitHub
+  doesn't give secrets to runs triggered from forks.
+- **Code only**, like `deploy-sandbox`: apply a PR's new sandbox D1 migrations, secrets or flags
+  by hand first.
+
+**Setup.** The token lives in a separate GitHub environment, **`sandbox-pr`**, so `sandbox` stays
+restricted to `main`:
+
+1. Create an account API token `github-sandbox-pr-deploy` with the same policies as
+   [the sandbox deploy token](#the-sandbox-deploy-token). Keeping it separate means it can be
+   rolled without touching main's.
+2. Settings → Environments → **New environment** `sandbox-pr`. Under deployment branches and tags,
+   choose selected branches and add the rule `refs/pull/*/merge`. GitHub matches the rule against
+   the run's `GITHUB_REF`, which is that ref for a pull request
+   ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#deployment-branches-and-tags)).
+3. Add **required reviewers** to `sandbox-pr`
+   ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers)).
+   The PR's own `package.json` and `wrangler` run with the token, and the token reaches production
+   queues and routes, so someone should look at the diff before each deploy.
+4. Add the token as the environment secret `CLOUDFLARE_API_TOKEN`
+   (`gh secret set CLOUDFLARE_API_TOKEN --env sandbox-pr`).
+5. Create the `deploy-sandbox` label (Issues → Labels).
+
+Until step 4 is done, a labelled PR's deploy job fails red. Nothing happens without the label.
 
 ## Deploying a Worker by hand
 
