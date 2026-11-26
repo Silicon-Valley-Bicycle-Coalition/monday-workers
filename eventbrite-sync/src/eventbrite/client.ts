@@ -53,6 +53,8 @@ export interface EventbriteEvent {
   event_sales_status?: { sales_status?: string | null; message_code?: string | null } | null;
   url?: string | null;
   organizer_id?: string | null;
+  // The Eventbrite organization that owns the event (processEvent checks it is ours).
+  organization_id?: string | null;
   organizer?: { name?: string | null } | null;
   online_event?: boolean | null;
   venue?: {

@@ -163,6 +163,22 @@ describe('processEvent', () => {
     expect(mondayClient.createItem).not.toHaveBeenCalled();
   });
 
+  it('refuses an event another Eventbrite organization owns, with a terminal error', async () => {
+    const { deps, eventStore, mondayClient } = setup({ event: { ...event(), organization_id: '999' }, row: eventRow({ mondayItemId: 'item-9' }) });
+    await processEvent(message, { ...deps, ownOrganizationIds: async () => ['111'] });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'failed', { error: 'not retried: event belongs to Eventbrite organization 999, not ours; nothing written' });
+  });
+
+  it('writes an event one of our organizations owns, and one with no organization_id', async () => {
+    for (const organization_id of ['111', undefined]) {
+      const { deps, mondayClient } = setup({ event: { ...event(), organization_id } });
+      await processEvent(message, { ...deps, ownOrganizationIds: async () => ['111'] });
+      expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('marks a deleted item failed and does not recreate it', async () => {
     const gone = new MondayApiError('Item not found', { code: 'ItemNotFound' });
     const { deps, eventStore, mondayClient } = setup({ row: eventRow({ mondayItemId: 'item-9' }), monday: { changeColumnValues: vi.fn().mockRejectedValue(gone) } });
