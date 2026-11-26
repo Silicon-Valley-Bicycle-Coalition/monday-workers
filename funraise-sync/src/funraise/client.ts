@@ -42,6 +42,8 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 // changes nothing except that the first poll can run.
 export const MIN_QUERYABLE_UPDTIME_MS = 1000000000000;
 
+export const REQUEST_TIMEOUT_MS = 15_000;
+
 export class HttpFunraiseClient implements FunraiseClient {
   constructor(
     private baseUrl: string,
@@ -55,6 +57,9 @@ export class HttpFunraiseClient implements FunraiseClient {
     return this.fetchImpl(url.toString(), {
       method: 'GET',
       headers: { 'X-Api-Key': this.apiKey, Accept: 'application/json' },
+      // A hung Funraise call would otherwise hold the poll or the queue batch until the runtime
+      // kills it. A timeout throws, and both callers already retry a thrown read.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   }
 

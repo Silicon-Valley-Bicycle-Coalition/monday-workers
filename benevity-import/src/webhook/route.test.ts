@@ -490,3 +490,32 @@ describe('write switch', () => {
     log.mockRestore();
   });
 });
+
+describe('webhook route — app JWT (src/mondayJwt.ts)', () => {
+  const RETRY_URL = `/webhooks/monday/benevity-retry?secret=${SECRET}`;
+  const send = (app: ReturnType<typeof createApp>, url: string, body: unknown, authorization?: string) => app.request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+    body: JSON.stringify(body),
+  });
+
+  it('rejects upload and retry deliveries with no JWT once one is required', async () => {
+    const deps = fakeDeps({ jwtPolicy: { signingSecret: 'sign', accountId: '1', required: true } });
+    const app = createApp(deps);
+    expect((await post(app, UPLOAD_EVENT)).status).toBe(401);
+    expect((await send(app, RETRY_URL, { event: { pulseId: 1 } })).status).toBe(401);
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalled();
+  });
+
+  it('rejects a JWT that does not verify even while a missing one is still tolerated', async () => {
+    const app = createApp(fakeDeps({ jwtPolicy: { signingSecret: 'sign', accountId: '1' } }));
+    expect((await send(app, RETRY_URL, { event: { pulseId: 1 } }, 'aaa.bbb.ccc')).status).toBe(401);
+  });
+
+  it('still answers the subscription handshake', async () => {
+    const app = createApp(fakeDeps({ jwtPolicy: { signingSecret: 'sign', accountId: '1', required: true } }));
+    const res = await post(app, { challenge: 'abc123' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc123' });
+  });
+});

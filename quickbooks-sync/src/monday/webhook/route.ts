@@ -6,6 +6,7 @@ import type { QuickbooksSyncConfig } from '../../types';
 import { hasReachedQueue, type QueueLike } from '../../quickbooks/webhook/route';
 import { MONDAY_WEBHOOK_PATH } from '../../rateLimit';
 import { secretsMatch } from '../../secret';
+import { checkMondayWebhookJwt, type MondayJwtPolicy } from '../../mondayJwt';
 import { isChallengeRequest, validateMondayEvent } from './validate';
 
 export interface MondayWebhookDeps {
@@ -18,6 +19,11 @@ export interface MondayWebhookDeps {
   // mailchimp-sync's Monday webhook, but fail-closed: an unset or empty binding rejects every
   // delivery rather than disabling the check.
   mondayWebhookSecret: string;
+  // Second factor: a webhook created by an app (through monday-auth's Staff sync app) carries
+  // `Authorization: <JWT>` signed with the app's Signing Secret; one created with a personal token
+  // carries none. See src/mondayJwt.ts for the rollout policy. Absent = the URL secret alone
+  // decides, as before.
+  jwtPolicy?: MondayJwtPolicy;
   // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
   // in every mode; under `off` the message is stamped so the consumer dry-runs it.
   writeMode: () => Promise<WriteMode>;
@@ -39,12 +45,28 @@ export function createMondayWebhookApp(deps: MondayWebhookDeps) {
     // rather than crashing the request with an unhandled 500.
     const rawBody = await c.req.text();
 
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 200);
+    }
+    if (isChallengeRequest(body)) {
+      return c.json({ challenge: body.challenge }, 200);
+    }
+
+    // After the handshake: the echo has no side effect and the URL secret already gated it.
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {});
+    if (!jwt.accept) {
+      console.error(`quickbooks-sync monday webhook: rejected delivery: JWT ${jwt.reason}`);
+      return c.json({ ok: false }, 401);
+    }
+    if (!jwt.verified && jwt.note === 'missing') {
+      console.warn('quickbooks-sync monday webhook: delivery carried no Authorization JWT; accepted on the URL secret alone (MONDAY_WEBHOOK_JWT_REQUIRED is not true). Re-register the subscription with the Staff sync app token.');
+    }
+
     let event;
     try {
-      const body = JSON.parse(rawBody);
-      if (isChallengeRequest(body)) {
-        return c.json({ challenge: body.challenge }, 200);
-      }
       event = validateMondayEvent(body);
     } catch (err) {
       return c.json({ ok: false, error: (err as Error).message }, 200);

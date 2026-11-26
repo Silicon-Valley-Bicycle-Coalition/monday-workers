@@ -279,6 +279,9 @@ export function validateConfig(raw: unknown): Config {
   if (typeof monday.apiUrl !== 'string' || monday.apiUrl === '') {
     throw new Error('config: missing required key "monday.apiUrl"');
   }
+  if (monday.accountId !== undefined && (typeof monday.accountId !== 'number' || !Number.isInteger(monday.accountId) || monday.accountId < 1)) {
+    throw new Error('config: "monday.accountId" must be a positive integer when set (the account webhook JWTs must name)');
+  }
   const columns = requireObject(monday.columns, 'monday.columns');
   requireStringKeys(columns, REQUIRED_MONDAY_COLUMNS, 'monday.columns');
   requireNullableColumns(columns, 'monday.columns');
@@ -321,6 +324,7 @@ export function validateConfig(raw: unknown): Config {
   return {
     monday: {
       apiUrl: monday.apiUrl,
+      ...(monday.accountId !== undefined ? { accountId: monday.accountId as number } : {}),
       donorsBoardId,
       campaignsBoardId: numberOrNull(monday.campaignsBoardId, 'monday.campaignsBoardId'),
       columns: columns as unknown as MondayColumnsConfig,

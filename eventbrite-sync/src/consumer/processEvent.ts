@@ -3,7 +3,7 @@ import { effectiveEventStatus, mapEvent } from '../mapping/event';
 import { isItemGone } from '../monday/itemGone';
 import type { EventbriteEvent } from '../eventbrite/client';
 import type { EventbriteSyncConfig } from '../types';
-import type { AttendeeQueueMessage, EventQueueMessage, ProcessBatchDeps } from './processBatch';
+import { TERMINAL_PREFIX, type AttendeeQueueMessage, type EventQueueMessage, type ProcessBatchDeps } from './processBatch';
 import { stampOf } from './messages';
 import { sendInBatches } from '../util/sendBatch';
 
@@ -37,6 +37,20 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking failed without retry`);
     await eventStore.updateStatus(eventId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
+  }
+  // The token reads any public Eventbrite event, and the event id came from a webhook delivery
+  // that only the URL secret vouches for. Without this, a delivery naming someone else's event
+  // would put it on the Events board under SVBC's name. An event with no organization_id (not
+  // seen from Eventbrite) is let through rather than dropping a real class.
+  const owner = event.organization_id ?? null;
+  if (owner !== null && deps.ownOrganizationIds) {
+    const ours = await deps.ownOrganizationIds();
+    if (!ours.includes(String(owner))) {
+      const reason = `${TERMINAL_PREFIX}event belongs to Eventbrite organization ${owner}, not ours; nothing written`;
+      console.warn(`eventbrite-sync consumer: event "${eventId}": ${reason}`);
+      await eventStore.updateStatus(eventId, 'failed', { error: reason });
+      return;
+    }
   }
   warnIfUnconfiguredPledge(event, config);
 

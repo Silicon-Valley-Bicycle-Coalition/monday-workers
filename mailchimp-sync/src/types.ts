@@ -91,6 +91,9 @@ export interface JourneyInterestsConfig {
 export interface Config {
   monday: {
     apiUrl: string;
+    // The Monday account a webhook JWT must name (src/mondayJwt.ts). Unset with a signing secret
+    // set = every delivery refused.
+    accountId?: number;
     donorsBoardId: number | null;
     campaignsBoardId: number | null;
     columns: MondayColumnsConfig;
@@ -234,6 +237,10 @@ export interface Env {
   MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET: string;
+  // The app's Signing Secret (src/mondayJwt.ts): set = verify any webhook JWT present;
+  // MONDAY_WEBHOOK_JWT_REQUIRED = "true" (a var) also rejects deliveries without one.
+  MONDAY_SIGNING_SECRET?: string;
+  MONDAY_WEBHOOK_JWT_REQUIRED?: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;
   // Optional Slack incoming-webhook URL for dead-letter alerts (GL#37, src/alert.ts). Unset = the

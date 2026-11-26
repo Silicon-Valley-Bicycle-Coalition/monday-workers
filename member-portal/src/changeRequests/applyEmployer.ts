@@ -9,6 +9,7 @@ export const EMPLOYER_LABELS = {
   applied: 'Employer (applied)',
   noChange: 'Employer (no change)',
   needsOrganization: 'Employer (needs an Organization)',
+  needsStaff: 'Employer (needs staff review)',
 } as const;
 
 // A donor's employer answer, applied by the writer (spec 2026-11-16-donor-employer-answer-design.md).
@@ -41,6 +42,12 @@ export async function applyEmployerAnswer(
   const affiliations = await deps.monday.getPersonAffiliations({ donorItemId: row.donorItemId, employer });
   const plan = planAffiliationChange(affiliations, organization.id, employer.currentStatusLabel);
   if (plan.kind === 'noChange') return { fieldLabel: EMPLOYER_LABELS.noChange, newValue: organization.name };
+  if (plan.kind === 'needsStaff') {
+    return {
+      fieldLabel: EMPLOYER_LABELS.needsStaff,
+      newValue: `${organization.name} — their affiliation is ${plan.affiliation.statusLabel ?? 'without a Status'} with Portal access ticked, so it was not made Current. Untick Portal access or set Status by hand.`,
+    };
+  }
 
   // The matched affiliation first: a crash before the clears leaves two Primaries for a moment,
   // never none, and the retry clears the old one.

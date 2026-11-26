@@ -110,6 +110,8 @@ export default {
       throw new Error('EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); cannot fetch from Eventbrite');
     }
     const gate = await skipContext(env);
+    const eventbriteClient = new HttpEventbriteClient(config.eventbrite.apiUrl, token);
+    let ownOrganizations: Promise<string[]> | undefined;
     await consumeWriteBatch([...batch.messages], {
       orderStore,
       eventStore,
@@ -118,7 +120,11 @@ export default {
         send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
         sendBatch: (messages: WriteQueueMessage[]) => env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
       },
-      eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
+      eventbriteClient,
+      // Asked at most once per batch, and only when an event is processed.
+      ownOrganizationIds: () => (ownOrganizations ??= config.eventbrite.organizationId !== null
+        ? Promise.resolve([config.eventbrite.organizationId])
+        : eventbriteClient.listMyOrganizationIds()),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
       employerAnswers: env.EMPLOYER_ANSWERS ?? null,

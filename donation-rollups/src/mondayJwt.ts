@@ -3,8 +3,9 @@
 // Center → the app → Basic Information). Webhooks created with a personal API token arrive
 // unsigned, so this is a second factor next to the URL secret, not a replacement for it.
 //
-// Copied, not shared: donation-rollups and people-reclassification each hold a byte-identical
-// src/mondayJwt.ts. Edit one, copy it to the other.
+// Copied, not shared: donation-rollups' src/mondayJwt.ts is canonical, and every Worker with a
+// Monday webhook holds a byte-identical copy (the monday-jwt-copies step of checks.yml is the
+// roster). Edit donation-rollups', then copy it over the rest.
 //
 // A valid signature alone isn't enough: every app webhook and integration call is signed with the
 // same secret, so the token is also bound to this use.

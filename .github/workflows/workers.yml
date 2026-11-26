@@ -159,9 +159,11 @@ jobs:
               echo "\`main\` (\`$newest\`) has a newer change to this Worker. Check that change's own \`deploy-sandbox\` run."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      # No install scripts in the job that holds the deploy token: a dependency's postinstall has
+      # no business running beside it, and wrangler bundles and deploys without them.
       - if: steps.order.outputs.superseded == 'false'
         working-directory: ${{ matrix.worker.dir }}
-        run: npm ci
+        run: npm ci --ignore-scripts
       - if: steps.order.outputs.superseded == 'false'
         working-directory: ${{ matrix.worker.dir }}
         env:

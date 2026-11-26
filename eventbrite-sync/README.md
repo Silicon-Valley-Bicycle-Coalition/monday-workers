@@ -111,6 +111,11 @@ standard across every webhook-driven Worker here.
   own authenticated fetch, so a forged delivery can at most make the Worker re-read a real order.
   When `eventbrite.organizationId` is set in config, a delivery whose `config.user_id` names
   another organization is acknowledged and ignored — a sanity filter, not an auth control.
+  The event consumer also checks ownership after its refetch: an event whose `organization_id`
+  is not `eventbrite.organizationId` (or, with that null, one of the token's own organizations)
+  is marked failed with a `not retried:` error and nothing is written. The token can read any
+  public Eventbrite event, so without this a delivery naming someone else's event would land on
+  the Events board.
 * **Registering it** (production done 2026-11-03): Eventbrite → Account Settings → Developer Links → Webhooks
   → Add Webhook: Payload URL = the full URL above, Event = *All events* (no `event_id` filter:
   every paid order anywhere is giving), Actions = `order.placed`, `order.updated`,

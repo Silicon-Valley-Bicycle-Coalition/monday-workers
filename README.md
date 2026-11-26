@@ -251,8 +251,11 @@ deliveries. Mitigations, in every such Worker:
 A Monday webhook created **by an app** (with that app's OAuth token) carries
 `Authorization: <JWT>`, HS256-signed with the app's **Signing Secret**; one created with a
 personal API token carries none. `donation-rollups` and `people-reclassification` verify it
-after the URL secret (`src/mondayJwt.ts`, byte-identical in both: WebCrypto HMAC verify, HS256
-only). Every app request is signed with the same secret, so the token is also bound to its use:
+after the URL secret and require it. `quickbooks-sync`, `mailchimp-sync` and `benevity-import`
+carry the same check (since 2026-11-25) but sit on the first row of the table below until each
+gets its `MONDAY_SIGNING_SECRET`: until then a leaked URL secret alone can forge their
+deliveries. (`src/mondayJwt.ts`, donation-rollups' copy canonical and the rest byte-identical,
+held by the `monday-jwt-copies` step of `checks.yml`: WebCrypto HMAC verify, HS256 only.) Every app request is signed with the same secret, so the token is also bound to its use:
 `accountId` (or `dat.account_id`) must equal config `monday.accountId` (26331880, the
 `bikesiliconvalley` account, which holds both the production and sandbox boards; read with
 `query { account { id } }`), `aud` must name the request's origin and path, and `exp` must be

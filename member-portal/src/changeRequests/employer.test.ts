@@ -89,6 +89,22 @@ describe('planAffiliationChange', () => {
     expect(planAffiliationChange([a], 'O1', 'Current')).toEqual({ kind: 'apply', reuseAffiliationId: 'a', clearPrimaryOn: [] });
   });
 
+  it('sends a Former affiliation with Portal access to staff instead of reviving it', () => {
+    const a = aff({ id: 'a', organizationId: 'O1', statusLabel: 'Former', portalAccess: true });
+    expect(planAffiliationChange([a], 'O1', 'Current')).toEqual({ kind: 'needsStaff', affiliation: a });
+  });
+
+  it('reuses a Former affiliation without Portal access ahead of one with it', () => {
+    const access = aff({ id: 'a', organizationId: 'O1', statusLabel: 'Former', portalAccess: true });
+    const plain = aff({ id: 'b', organizationId: 'O1', statusLabel: 'Former' });
+    expect(planAffiliationChange([access, plain], 'O1', 'Current')).toMatchObject({ kind: 'apply', reuseAffiliationId: 'b' });
+  });
+
+  it('still reuses a Current affiliation that has Portal access', () => {
+    const a = aff({ id: 'a', organizationId: 'O1', portalAccess: true });
+    expect(planAffiliationChange([a], 'O1', 'Current')).toEqual({ kind: 'apply', reuseAffiliationId: 'a', clearPrimaryOn: [] });
+  });
+
   it('prefers the Current one of several affiliations to the same Organization', () => {
     const former = aff({ id: 'f', organizationId: 'O1', statusLabel: 'Former' });
     const current = aff({ id: 'c', organizationId: 'O1' });

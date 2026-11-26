@@ -246,3 +246,41 @@ describe('the People (Historical) board', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('createOutboundApp — app JWT (src/mondayJwt.ts)', () => {
+  const build = (jwtPolicy: { signingSecret: string; accountId: string; required?: boolean }) => {
+    const pendingStore = fakePendingStore();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on', jwtPolicy });
+    const deliver = (body: unknown, authorization?: string) => app.request(`/webhooks/monday/donors?secret=${SECRET}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+    });
+    return { deliver, send };
+  };
+  const EVENT = { event: { pulseId: 42, boardId: 111 } };
+
+  it('rejects a delivery with no JWT once one is required, and enqueues nothing', async () => {
+    const { deliver, send } = build({ signingSecret: 'sign', accountId: '1', required: true });
+    expect((await deliver(EVENT)).status).toBe(401);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('rejects a JWT that does not verify even while a missing one is still tolerated', async () => {
+    const { deliver, send } = build({ signingSecret: 'sign', accountId: '1' });
+    expect((await deliver(EVENT, 'aaa.bbb.ccc')).status).toBe(401);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('accepts a delivery with no JWT while it is not required', async () => {
+    const { deliver, send } = build({ signingSecret: 'sign', accountId: '1' });
+    expect((await deliver(EVENT)).status).toBe(200);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers the subscription handshake', async () => {
+    const { deliver } = build({ signingSecret: 'sign', accountId: '1', required: true });
+    expect(await (await deliver({ challenge: 'abc123' })).json()).toEqual({ challenge: 'abc123' });
+  });
+});

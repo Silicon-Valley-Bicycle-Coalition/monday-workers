@@ -19,6 +19,7 @@ import { D1TokenStore } from './quickbooks/tokenStore';
 import { createQbWebhookApp, type BatchQueueLike, type QueueLike } from './quickbooks/webhook/route';
 import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import type { Env, QueueMessage } from './types';
+import { jwtRequired } from './mondayJwt';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts.
@@ -97,6 +98,10 @@ export default {
           queue,
           config,
           mondayWebhookSecret: env.MONDAY_WEBHOOK_SECRET,
+          jwtPolicy: {
+            signingSecret: env.MONDAY_SIGNING_SECRET, required: jwtRequired(env.MONDAY_WEBHOOK_JWT_REQUIRED),
+            ...(config.monday.accountId !== undefined ? { accountId: String(config.monday.accountId) } : {}),
+          },
           writeMode: () => readWriteMode(env, WORKER),
         })
       );

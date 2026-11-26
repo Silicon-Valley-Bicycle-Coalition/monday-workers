@@ -225,13 +225,13 @@ email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSe
 IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
 stretch a lockout by retrying.
 
-**Sign-in code.** The same email carries a 6-digit code beside the link, for a donor who reads
+**Sign-in code.** The same email carries an 8-digit code beside the link, for a donor who reads
 mail on one device and signs in on another (or whose mail app opens links in a browser without
 their portal session). Each `POST /` makes a request id, sends it to the browser in the
 `__Host-login-request` cookie (HttpOnly, Secure, SameSite=Lax, Path=/, 15 minutes) and binds the
 code to it: the stored hash is of `<request id>:<code>`, so the code is useless without that
 browser's cookie. The check-email page posts the code to `POST /auth/code`, which strips spaces,
-requires six digits and signs the donor in exactly as the link does (same session cookie, same
+requires eight digits and signs the donor in exactly as the link does (same session cookie, same
 `next` redirect), then clears the request cookie. The link and the code are one row in
 `magic_link_tokens` and share `used_at`: whichever is used first spends both. The cookie is set
 whether or not the address matched, or was even well-formed, so the response reveals nothing; it
@@ -241,7 +241,11 @@ wrong, and each address gets `rateLimit.codeFailuresPerAddressDaily` (10) wrong 
 rolling 24 hours across all its requests (`code_failures`). One D1 batch counts the try and
 reserves the failure slot before the comparison, and a request that matched no donor runs the
 same batch and hashes the code too, so response time doesn't tell whether an address is on file.
-The IP limiter also covers `POST /auth/code` (`code:<ip>` keys). Every refusal is one generic
+The IP limiter also covers `POST /auth/code` (`code:<ip>` keys); every per-IP key counts an IPv6
+client by its /64 (`src/clientIp.ts`), so one subscriber's prefix is one key. The code is eight
+digits because nothing but that limiter caps guesses across addresses: at 10 wrong guesses per
+address per day, six digits gave a guesser with a donor list and a pool of IPs a few percent a
+day of opening someone's portal. Every refusal is one generic
 page.
 
 **AutoFill and Send again.** The email's subject leads with the code, and the last line of its
@@ -825,8 +829,11 @@ employer affiliation without a staff step.
 * **Staff see every answer** on the Change Requests board, as an item named
   `Employer change — <donor> (#<id>)` whose Field is one of `Employer (applied)` (New Value names
   the Organization and any `(previous Primary: <org> (<its Status>))` for staff to mark Former if the
-  donor left), `Employer (no change)`, or `Employer (needs an Organization)` (the typed name, or
-  the matching Organizations when there are several). The log item is the last write, so a
+  donor left), `Employer (no change)`, `Employer (needs an Organization)` (the typed name, or
+  the matching Organizations when there are several), or `Employer (needs staff review)`: the
+  person's only affiliation to that Organization is not Current but still has Portal access
+  ticked. Making it Current would give them the organization's gifts and statements again on
+  their own say-so, so nothing is written and staff decide. The log item is the last write, so a
   retry after a partial run re-reads Monday and finishes rather than repeats.
 * **Write switch:** under `off` the Organization and affiliation reads still run and the
   affiliation and log writes are skip lines; `hold` waits on the queue like any change request.

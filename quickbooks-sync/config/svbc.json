@@ -1,6 +1,7 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
+    "accountId": 26331880,
     "boards": {
       "customers": null,
       "invoices": null,

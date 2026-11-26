@@ -5,6 +5,7 @@ import type { Config, OutboundSyncMessage } from '../types';
 import { stampFor, type WriteMode } from '../flags';
 import { MONDAY_WEBHOOK_PATH } from '../rateLimit';
 import { secretsMatch } from '../secret';
+import { checkMondayWebhookJwt, type MondayJwtPolicy } from '../mondayJwt';
 import { columnsForBoard, donorColumnIds } from '../monday/client';
 
 export interface OutboundQueueLike {
@@ -18,6 +19,11 @@ export interface OutboundAppDeps {
   // in the webhook URL at subscription time, checked here. Fails closed: an unset or
   // empty binding 401s every delivery rather than disabling the check.
   webhookSecret: string;
+  // Second factor: a webhook created by an app (through monday-auth's Staff sync app) carries
+  // `Authorization: <JWT>` signed with the app's Signing Secret; one created with a personal token
+  // carries none. See src/mondayJwt.ts for the rollout policy. Absent = the URL secret alone
+  // decides, as before.
+  jwtPolicy?: MondayJwtPolicy;
   // Needed to recognize and skip this Worker's own self-inflicted events: the inbound
   // consumer writes to config.monday.columns.mailchimpCampaigns on this same Donors board,
   // which would otherwise re-trigger this webhook and risk a feedback loop with Mailchimp.
@@ -53,6 +59,16 @@ export function createOutboundApp(deps: OutboundAppDeps) {
     // verbatim, sent once at subscription-creation time.
     if (typeof body === 'object' && body !== null && 'challenge' in body) {
       return c.json({ challenge: (body as { challenge: unknown }).challenge }, 200);
+    }
+
+    // After the handshake: the echo has no side effect and the URL secret already gated it.
+    const jwt = await checkMondayWebhookJwt(c.req.header('Authorization'), c.req.url, deps.jwtPolicy ?? {});
+    if (!jwt.accept) {
+      console.error(`mailchimp-sync outbound webhook: rejected delivery: JWT ${jwt.reason}`);
+      return c.json({ ok: false }, 401);
+    }
+    if (!jwt.verified && jwt.note === 'missing') {
+      console.warn('mailchimp-sync outbound webhook: delivery carried no Authorization JWT; accepted on the URL secret alone (MONDAY_WEBHOOK_JWT_REQUIRED is not true). Re-register the subscription with the Staff sync app token.');
     }
 
     let donorEvent;

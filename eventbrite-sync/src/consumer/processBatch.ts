@@ -89,6 +89,9 @@ export interface ProcessBatchDeps {
   // send: an attendee asking for its event. sendBatch: an event fanning out to its attendees.
   queue: ConsumerQueue;
   eventbriteClient: EventbriteClient;
+  // The Eventbrite organizations whose events may be written: config eventbrite.organizationId, or
+  // the token's own when that is null. Absent (tests) = no ownership check. See processEvent.
+  ownOrganizationIds?: () => Promise<string[]>;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
   // impact-attribution's EmployerAnswers RPC (GL#127); null when the binding is absent (feature off).

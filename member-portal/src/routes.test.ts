@@ -1151,7 +1151,7 @@ describe('sign in with the emailed code', () => {
     expect(html).toContain('inputmode="numeric"');
     expect(html).toContain('autocomplete="one-time-code"');
     // Room for a pasted "123 456"; the server strips the space.
-    expect(html).toContain('maxlength="7"');
+    expect(html).toContain('maxlength="9"');
     expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
     expect(html).not.toContain(escapeHtml(t('en', 'checkEmail.codeError')));
   });
@@ -1202,7 +1202,7 @@ describe('sign in with the emailed code', () => {
     const { app, emailSender } = setup();
     const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
     const { code } = lastEmail(emailSender);
-    const wrong = code === '000000' ? '111111' : '000000';
+    const wrong = code === '00000000' ? '11111111' : '00000000';
 
     const res = await submitCode(app, wrong, cookie);
 
@@ -1216,7 +1216,7 @@ describe('sign in with the emailed code', () => {
   it('keeps next on the code-error page', async () => {
     const { app } = setup();
     const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
-    const html = await (await submitCode(app, '000000', cookie, { next: '/en/portal/letters' })).text();
+    const html = await (await submitCode(app, '00000000', cookie, { next: '/en/portal/letters' })).text();
     expect(html).toContain('<input type="hidden" name="next" value="/en/portal/letters" />');
   });
 
@@ -1304,7 +1304,7 @@ describe('sign in with the emailed code', () => {
     const app = createApp({ ...deps, config: { ...config, rateLimit: { ...config.rateLimit, codeFailuresPerAddressDaily: 1 } } });
     const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
     const { code } = lastEmail(emailSender);
-    const wrong = code === '000000' ? '111111' : '000000';
+    const wrong = code === '00000000' ? '11111111' : '00000000';
 
     await submitCode(app, wrong, cookie);
     const res = await submitCode(app, code, cookie);
@@ -1356,7 +1356,7 @@ describe('sign in with the emailed code', () => {
     const { app, emailSender } = setup();
     const cookie = requestCookieOf(await requestSignIn(app, 'donor@example.org'));
     const { code } = lastEmail(emailSender);
-    const wrong = code === '000000' ? '111111' : '000000';
+    const wrong = code === '00000000' ? '11111111' : '00000000';
 
     for (let i = 0; i < 5; i++) {
       expect(await (await submitCode(app, wrong, cookie)).text()).toContain(escapeHtml(t('en', 'checkEmail.codeError')));
