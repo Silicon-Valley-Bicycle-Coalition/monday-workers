@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import { changedFiles, changedWorkers, optionValue } from './ci-changed-workers.mjs';
 
 const workers = [
-  { dir: 'alpha', sandbox: {} },
+  { dir: 'alpha', sandbox: {}, production: {} },
   { dir: 'donation-rollups', extraPaths: ['scripts/lib/**'], sandbox: {} },
   { dir: 'dtd-sync', extraPaths: ['scripts/lib/**'], extraTest: 'test:scripts' },
   { dir: 'eventbrite-sync', extraPaths: ['scripts/lib/**', 'scripts/mark-read-only-columns.mjs'] },
   { dir: 'member-portal', extraPaths: ['scripts/lib/**'], sandbox: {} },
-  { dir: 'member-portal', extraPaths: ['scripts/lib/**'], sandbox: { config: 'wrangler.writer.jsonc' } },
+  { dir: 'member-portal', extraPaths: ['scripts/lib/**'], sandbox: { config: 'wrangler.writer.jsonc' }, production: { config: 'wrangler.writer.jsonc' } },
+  { dir: 'prod-only', production: {} },
 ];
-const allDirs = ['alpha', 'donation-rollups', 'dtd-sync', 'eventbrite-sync', 'member-portal'];
+const allDirs = ['alpha', 'donation-rollups', 'dtd-sync', 'eventbrite-sync', 'member-portal', 'prod-only'];
 const run = (files, dirs = allDirs) => changedWorkers(files, workers, dirs);
 const dirs = (list) => list.map((w) => w.dir);
 
@@ -41,17 +42,25 @@ describe('changedWorkers', () => {
     assert.deepEqual(dirs(run(['dtd-sync/src/a.ts']).deploy), []);
     assert.deepEqual(dirs(run(['scripts/lib/x.mjs']).deploy), ['donation-rollups', 'member-portal', 'member-portal']);
   });
+  it('deploys to production only the entries that opt in, in roster order', () => {
+    assert.deepEqual(dirs(run(['scripts/lib/x.mjs']).production), ['member-portal']);
+    assert.equal(run(['scripts/lib/x.mjs']).production[0].production.config, 'wrangler.writer.jsonc');
+    assert.deepEqual(dirs(run(['prod-only/src/a.ts']).production), ['prod-only']);
+    assert.deepEqual(run(['prod-only/src/a.ts']).deploy, []);
+    assert.deepEqual(run(['donation-rollups/src/a.ts']).production, []);
+  });
   it('returns nothing for a change outside every Worker', () => {
     const r = run(['README.md']);
-    assert.deepEqual(r, { test: [], deploy: [], unlisted: [] });
+    assert.deepEqual(r, { test: [], deploy: [], production: [], unlisted: [] });
   });
   it('reports directories with a package.json that are not listed', () => {
     assert.deepEqual(run(['README.md'], [...allDirs, 'new-worker']).unlisted, ['new-worker']);
   });
   it('treats null files as everything changed', () => {
     const r = run(null);
-    assert.deepEqual(dirs(r.test), ['alpha', 'donation-rollups', 'dtd-sync', 'eventbrite-sync', 'member-portal']);
+    assert.deepEqual(dirs(r.test), ['alpha', 'donation-rollups', 'dtd-sync', 'eventbrite-sync', 'member-portal', 'prod-only']);
     assert.equal(r.deploy.length, 4);
+    assert.deepEqual(dirs(r.production), ['alpha', 'member-portal', 'prod-only']);
   });
 });
 

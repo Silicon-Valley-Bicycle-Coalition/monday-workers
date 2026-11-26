@@ -1,16 +1,24 @@
 [
   {
+    "dir": "monday-auth",
+    "extraPaths": ["scripts/lib/**"],
+    "production": {}
+  },
+  {
     "dir": "benevity-import",
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "bp-feedback-notify",
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "donation-rollups",
     "extraPaths": ["scripts/lib/**"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "dtd-sync",
@@ -19,27 +27,30 @@
   },
   {
     "dir": "eventbrite-sync",
-    "extraPaths": [
-      "scripts/lib/**",
-      "scripts/mark-read-only-columns.mjs"
-    ],
-    "sandbox": {}
+    "extraPaths": ["scripts/lib/**", "scripts/mark-read-only-columns.mjs"],
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "member-portal",
     "extraPaths": ["scripts/lib/**"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "member-portal",
     "extraPaths": ["scripts/lib/**"],
     "sandbox": {
       "config": "wrangler.writer.jsonc"
+    },
+    "production": {
+      "config": "wrangler.writer.jsonc"
     }
   },
   {
     "dir": "funraise-sync",
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "geo-filter",
@@ -47,11 +58,8 @@
   },
   {
     "dir": "mailchimp-sync",
-    "sandbox": {}
-  },
-  {
-    "dir": "monday-auth",
-    "extraPaths": ["scripts/lib/**"]
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "monday-backup",
@@ -64,30 +72,35 @@
   {
     "dir": "people-reclassification",
     "extraPaths": ["scripts/lib/**"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "contact-roles",
     "extraPaths": ["scripts/lib/**"],
     "extraTest": "test:scripts",
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "impact-attribution",
     "extraPaths": ["scripts/lib/**"],
     "extraTest": "test:scripts",
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "member-map",
     "extraPaths": ["scripts/lib/**"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   { "dir": "quickbooks-sync" },
   {
     "dir": "report-digests",
     "extraPaths": ["scripts/lib/**"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   },
   {
     "dir": "salesforce-import",
@@ -118,12 +131,14 @@
       "report-digests/wrangler.jsonc",
       "svbc-calendars/wrangler.jsonc",
       "zoom-phone-sync/wrangler.jsonc"
-    ]
+    ],
+    "production": {}
   },
   { "dir": "zoom-phone-sync" },
   {
     "dir": "status-page",
     "extraPaths": ["sync-watchdog/config/**", "scripts/build-font-modules.mjs"],
-    "sandbox": {}
+    "sandbox": {},
+    "production": {}
   }
 ]

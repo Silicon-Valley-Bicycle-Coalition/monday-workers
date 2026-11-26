@@ -82,7 +82,7 @@ No write switch. The Worker never writes to Monday. Its only writes are to its o
   ```
   `npm run dev` passes `--infer-origin-from-routes=false` so the URL host stays `localhost` and the bypass applies.
 - Tests: `npm test` (Vitest plus the reference-build script tests), `npm run typecheck`.
-- Deploy: production is **by hand only**, `npm run deploy`. CI redeploys the sandbox (`npm run deploy:sandbox`) on merges to `main` that touch `member-map/`.
+- Deploy: CI deploys the sandbox, then production, on merges to `main` that touch `member-map/` ([chapter 6](../06-ci-and-deploy.md#what-deploys-when)). By hand: `npm run deploy:sandbox`, `npm run deploy`.
 - D1 migrations: `npx wrangler d1 migrations apply svbc-member-map --remote` (sandbox: `svbc-member-map-sandbox --remote --env sandbox`).
 - Privacy: the map shows exact home addresses on purpose. The protections are Access, no `workers.dev` route, the Worker-side JWT check, and `no-store` on the snapshot. Keep all four. Logs must carry counts and error names only.
 

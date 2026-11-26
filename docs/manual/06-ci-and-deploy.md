@@ -44,7 +44,17 @@ and forbids force-pushes.
    slow or re-run older run could put old code back (`scripts/ci-superseded.mjs`). If the newer
    run's tests or deploy failed, the sandbox keeps its previous code until that run is fixed or
    re-run.
-4. **ci-ok:** the single required result.
+4. **deploy-production:** only on pushes to `main`, after `deploy-sandbox`, for each changed
+   Worker with a `production` entry in `.github/workers.json`, in roster order (`monday-auth`
+   first). It uses the `CLOUDFLARE_API_TOKEN` secret of the `production` GitHub environment
+   ([below](#the-production-deploy-token)) and has the same missing-token failure and
+   skip-when-superseded rule as the sandbox job. It runs only when every `test` passed and no
+   `deploy-sandbox` entry failed, so one failed sandbox deploy holds every production deploy in
+   that run. **Pending D1 migrations stop an entry before it deploys**
+   (`scripts/ci-pending-migrations.mjs`, a read-only check of the database's `d1_migrations`
+   table): apply them by hand, then re-run the job. It never applies migrations or changes a write
+   switch.
+5. **ci-ok:** the single required result. Neither deploy job is required.
 
 ## What deploys when
 
@@ -53,14 +63,20 @@ and forbids force-pushes.
 | `svbc-calendars` | **Automatically**, by Cloudflare Workers Builds on every merge to `main` | n/a |
 | `monday-backup` | **Automatically**, by Workers Builds on merges that touch `monday-backup/` | **Automatically**, by `deploy-sandbox` |
 | `svbc-bike-lanes` | **Automatically**, by its own workflow (`svbc-bike-lanes.yml`) | n/a |
+| `monday-auth`, `sync-watchdog` | **Automatically**, by `deploy-production` | **By hand**: `npm run deploy:sandbox` |
+| Every Worker with a `production` entry in `.github/workers.json` (`benevity-import`, `bp-feedback-notify`, `contact-roles`, `donation-rollups`, `eventbrite-sync`, `funraise-sync`, `impact-attribution`, `mailchimp-sync`, `member-map`, `member-portal` and its writer, `people-reclassification`, `report-digests`, `status-page`) | **Automatically**, by `deploy-production` on merges that touch it | **Automatically**, by `deploy-sandbox` |
 | `nearby-search` | **By hand**: `npm run deploy` | **By hand**, until the deploy token covers it ([below](#the-sandbox-deploy-token)) |
-| Workers with no `sandbox` entry in `.github/workers.json` (`monday-auth`, `dtd-sync`, `sync-watchdog`, `quickbooks-sync`, `zoom-phone-sync`) | **By hand**: `npm run deploy` | **By hand**: `npm run deploy:sandbox` |
-| Every other Worker | **By hand**: `npm run deploy` | **Automatically**, by `deploy-sandbox` on merges that touch it |
+| Not live yet (`dtd-sync`, `quickbooks-sync`, `zoom-phone-sync`) | **By hand**: `npm run deploy` | **By hand**: `npm run deploy:sandbox` |
 
-So merging a pull request changes most sandbox Workers but few production ones. After merging,
-whoever owns the change deploys production. Workers Builds connections are in the Cloudflare dashboard,
-under the Worker's Settings → Builds, with "non-production branch builds" **off**. Keep branch
-builds off: a branch build runs that branch's code with the production build token.
+So merging a pull request deploys what it touched, sandbox first, then production. Before
+merging a change that needs a new secret, queue, D1 migration, custom domain or write-switch
+change, do that step first (see [Order matters](#order-matters-for-a-few-workers)), or the
+production deploy fails or runs code against the old setup. A Worker joins `deploy-production`
+when it goes live: add `"production": {}` to its roster entry and the Worker to the production
+token. Workers Builds connections are in the Cloudflare dashboard, under the Worker's Settings →
+Builds, with "non-production branch builds" **off**. Keep branch builds off: a branch build runs
+that branch's code with the production build token. Never give a Worker both a Workers Builds
+connection and a `production` entry, or each merge deploys it twice.
 
 ### The sandbox deploy token
 
@@ -92,6 +108,25 @@ repository secret, or code in a pull request could read it.
   from before the skip check existed don't have it, so re-running one can roll the sandbox back.
   Re-run the newest run that touched the Worker.
 
+### The production deploy token
+
+A second account API token (`github-production-deploy`), built like the sandbox one but for the
+production Workers:
+
+| Policy | Permission | Why |
+|---|---|---|
+| Workers → Specified Workers | **Individual Workers Editor** on each `svbc-<worker>` Worker with a `production` entry (15 Workers, `svbc-member-portal-writer` included) | Uploads the script. |
+| Entire account | **Queues: Write** | `wrangler deploy` updates queue consumers. |
+| Zone `bikesiliconvalley.org` | **Workers Routes: Write** | `wrangler deploy` re-checks custom domains. |
+| Entire account | **D1: Read** | The pending-migrations check reads each database's `d1_migrations` table. Read is enough: D1 refuses writes without Edit ([release notes, 2025-02-04 and 2025-05-02](https://developers.cloudflare.com/d1/platform/release-notes/)). |
+
+Store it as `CLOUDFLARE_API_TOKEN` in a GitHub environment named `production`: Settings →
+Environments → `production`, deployment branches limited to `main`
+([GitHub docs](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment)).
+Never make it a repository secret. To make every production deploy wait for a person, add
+required reviewers to that environment; the workflow needs no change. Adding a Worker to
+`deploy-production` means adding it to this token too.
+
 ## Deploying a Worker by hand
 
 From an up-to-date `main`:
@@ -108,7 +143,9 @@ npm run deploy                                                # or: npm run depl
 npx wrangler tail svbc-<worker>                               # watch the first requests
 ```
 
-Sandbox first, then production, is the habit. Each Worker's README has a "Deploy" section with
+Sandbox first, then production, is the habit. For a Worker in `deploy-production`, a hand
+deploy is for first deploys and emergencies; the next merge that touches it deploys `main` over
+it. Each Worker's README has a "Deploy" section with
 its specific steps (secrets, webhooks, one-time setup). Its chapter here summarizes them.
 
 ### Order matters for a few Workers

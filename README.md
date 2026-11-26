@@ -497,13 +497,17 @@ composer can't run this repo's code.
 [`docs/production-deploy-checklist.md`](docs/production-deploy-checklist.md) — the ordered,
 cross-Worker checklist around the `salesforce-import` production load.
 
-Workers are meant to deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
-a merge to `main` builds and deploys each *connected* Worker from its subdirectory (root directory
-set per Worker in the Cloudflare dashboard, e.g. `/svbc-calendars`), and non-production branches
-upload preview versions. Manual `npm run deploy` still works for
-first-time provisioning or emergencies, but routine changes should ship by merging — this repo
+**Production deploys come from GitHub Actions too.** `workers.yml`'s `deploy-production` job runs
+`npx wrangler deploy` on pushes to `main`, after the sandbox deploy, for each changed Worker with a
+`production` entry in `.github/workers.json`. It stops before deploying while the Worker's D1 has
+unapplied migrations, and never changes a write switch, so a merge that needs a migration, secret
+or flag still needs that step done by hand first. `svbc-calendars` and `monday-backup` keep their
+[Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) connections
+(so no `production` entry), and `svbc-bike-lanes` its own workflow. Manual `npm run deploy` still
+works for first-time provisioning or emergencies, but routine changes ship by merging — this repo
 previously drifted from production for months when a Worker was deployed by hand and its CI
-connection silently broke.
+connection silently broke. Its token is the `production` environment's own, limited to the named
+production Workers ([permissions](docs/manual/06-ci-and-deploy.md#the-production-deploy-token)).
 
 **Sandbox deploys come from GitHub Actions.** `.github/workflows/workers.yml`'s `deploy-sandbox`
 job runs `npx wrangler deploy --env sandbox` on pushes to `main`, for each changed Worker with a
