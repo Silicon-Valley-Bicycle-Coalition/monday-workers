@@ -10,6 +10,7 @@ const taxLetter: TaxLetterConfig = {
   signatureName: 'Alex Example', signatureTitle: 'Executive Director',
   plainStatement: 'No goods or services were provided.', benefitStatement: 'FMV statement.',
   benefitTiers: ['Champion'],
+  acknowledgedGiftTypes: ['Donation'],
   excludedGiftTypes: [],
   separateGiftTypes: ['Donor Advised Fund'],
   separateGiftsStatement: 'Listed <for> your records only.',

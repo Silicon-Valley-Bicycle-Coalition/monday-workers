@@ -33,6 +33,7 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -129,7 +130,7 @@ function fakeMonday(): MondayClient {
       membershipStatus: 'Active',
       membershipTier: 'Champion',
       totalDonated: '$50.00',
-      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Donation' }],
     }),
     getDonorContactInfo: vi.fn().mockResolvedValue({
       id: 'donor-1', name: 'Jane Example', email: 'jane@example.org', address: '1 Old St', phone: '555-0100',

@@ -1,5 +1,6 @@
 import type { MondayClient, OrgAffiliation, OrgGift } from './client';
 import type { AffiliationRecord } from '../changeRequests/employer';
+import type { LetterGiftTypes } from '../letters/giftTypes';
 import type { OrganizationCandidate } from '../changeRequests/employerName';
 import type {
   ChangeRequestColumns,
@@ -54,19 +55,19 @@ const DONORS: FakeDonor[] = [
     phone: '408-555-0142',
     preferredLanguage: 'English',
     donations: [
-      { date: '2024-03-14', amount: '75.00', description: 'Annual membership' },
-      { date: '2024-09-02', amount: '150.00', description: 'Bike to Work Day sponsorship' },
+      { date: '2024-03-14', amount: '75.00', description: 'Membership' },
+      { date: '2024-09-02', amount: '150.00', description: 'Sponsorship' },
       {
         date: '2025-01-20',
         amount: '75.00',
-        description: 'Annual membership renewal',
+        description: 'Membership',
         match: { date: '2025-02-10', amount: '75.00', company: 'Example Corp' },
       },
-      { date: '2025-02-10', amount: '75.00', description: 'Matching gift' },
+      { date: '2025-02-10', amount: '75.00', description: 'Matching Donation' },
       {
         date: '2025-06-11',
         amount: '40.00',
-        description: 'General donation',
+        description: 'Donation',
         matchHintUrl: 'https://example.com/match-lookup',
       },
       // Previews a letter's separately listed and left-off gifts (taxLetter in config/local.json).
@@ -84,7 +85,7 @@ const DONORS: FakeDonor[] = [
     address: '789 Oak Ave, Sunnyvale, CA 94086',
     phone: '408-555-0187',
     preferredLanguage: 'Spanish',
-    donations: [{ date: '2024-11-05', amount: '100.00', description: 'Household membership' }],
+    donations: [{ date: '2024-11-05', amount: '100.00', description: 'Membership' }],
   },
   {
     id: '1003',
@@ -96,7 +97,7 @@ const DONORS: FakeDonor[] = [
     address: '789 Oak Ave, Sunnyvale, CA 94086',
     phone: '408-555-0187',
     preferredLanguage: 'English',
-    donations: [{ date: '2025-02-18', amount: '25.00', description: 'Trail maintenance day match' }],
+    donations: [{ date: '2025-02-18', amount: '25.00', description: 'Matching Donation' }],
   },
   {
     id: '1004',
@@ -237,7 +238,7 @@ export class FakeMondayClient implements MondayClient {
     return null;
   }
 
-  async listYearActivity(_year: number, _excludedGiftTypes: string[]): Promise<{ personIds: string[]; organizationIds: string[] }> {
+  async listYearActivity(_year: number, _giftTypes: LetterGiftTypes): Promise<{ personIds: string[]; organizationIds: string[] }> {
     return { personIds: [], organizationIds: [] };
   }
 

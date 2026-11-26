@@ -118,7 +118,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   }
 
   const year = targetYear;
-  const activity = await deps.monday.listYearActivity(year, config.taxLetter.excludedGiftTypes);
+  const activity = await deps.monday.listYearActivity(year, config.taxLetter);
   const eligibleDonorIds = peopleOn ? activity.personIds : [];
   const handled = peopleOn ? await deps.letterStore.listDonorItemIdsForYear(year) : new Set<string>();
   const pending = eligibleDonorIds.filter((id) => !handled.has(id));

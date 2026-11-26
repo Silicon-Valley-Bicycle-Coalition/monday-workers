@@ -1824,6 +1824,12 @@ describe('HttpMondayClient.getLetterSettings', () => {
   });
 });
 
+const letterLists = (excludedGiftTypes: string[] = []) => ({
+  acknowledgedGiftTypes: ['Donation'],
+  separateGiftTypes: ['Donor Advised Fund'],
+  excludedGiftTypes,
+});
+
 describe('HttpMondayClient.listYearActivity (personIds)', () => {
   it('collects unique donor ids from the year’s donations across pages', async () => {
     const pages = [
@@ -1839,6 +1845,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-03-01' },
                       { id: 'donation_status_col', text: 'Received' },
+                      { id: 'desc_col', text: 'Donation' },
                       { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
@@ -1847,6 +1854,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                     column_values: [
                       { id: 'date_col', text: '2026-11-12' },
                       { id: 'donation_status_col', text: 'Received' },
+                      { id: 'desc_col', text: 'Donation' },
                       { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                     ],
                   },
@@ -1866,6 +1874,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                 column_values: [
                   { id: 'date_col', text: '2026-06-30' },
                   { id: 'donation_status_col', text: 'Received' },
+                  { id: 'desc_col', text: 'Donation' },
                   { id: 'link_col', text: 'Sam', linked_item_ids: ['88'], linked_items: [{ id: '88', board: { id: '999' } }] },
                 ],
               },
@@ -1882,7 +1891,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
     }));
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77', '88']);
+    expect((await client.listYearActivity(2026, letterLists())).personIds).toEqual(['77', '88']);
   });
 
   it('skips gifts dated before historyStartISO so a mid-year floor never earns a letter for the earlier part', async () => {
@@ -1891,6 +1900,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       column_values: [
         { id: 'date_col', text: date },
         { id: 'donation_status_col', text: 'Received' },
+        { id: 'desc_col', text: 'Donation' },
         { id: 'link_col', text: 'x', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
@@ -1904,7 +1914,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
     const flooredCfg = { countableStatuses, historyStartISO: '2026-06-01' };
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, flooredCfg, null, null, fetchMock);
 
-    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['88']);
+    expect((await client.listYearActivity(2026, letterLists())).personIds).toEqual(['88']);
   });
 
   it('skips gifts of an excluded Gift Type, so they never earn a letter on their own', async () => {
@@ -1944,7 +1954,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect((await client.listYearActivity(2026, ['Event Ticket'])).personIds).toEqual(['88', '99']);
+    expect((await client.listYearActivity(2026, letterLists(['Event Ticket']))).personIds).toEqual(['88', '99']);
     expect(query).toContain('desc_col');
   });
 
@@ -1969,6 +1979,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                       column_values: [
                         { id: 'date_col', text: '2026-03-01' },
                         { id: 'donation_status_col', text: 'Received' },
+                        { id: 'desc_col', text: 'Donation' },
                         { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                       ],
                     },
@@ -1982,7 +1993,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77']);
+    expect((await client.listYearActivity(2026, letterLists())).personIds).toEqual(['77']);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1999,6 +2010,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                   column_values: [
                     { id: 'date_col', text: '2025-12-31' },
                     { id: 'donation_status_col', text: 'Received' },
+                    { id: 'desc_col', text: 'Donation' },
                     { id: 'link_col', text: 'Old', linked_item_ids: ['66'], linked_items: [{ id: '66', board: { id: '999' } }] },
                   ],
                 },
@@ -2007,6 +2019,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
                   column_values: [
                     { id: 'date_col', text: '2026-01-01' },
                     { id: 'donation_status_col', text: 'Received' },
+                    { id: 'desc_col', text: 'Donation' },
                     { id: 'link_col', text: 'Jane', linked_item_ids: ['77'], linked_items: [{ id: '77', board: { id: '999' } }] },
                   ],
                 },
@@ -2017,7 +2030,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       },
     });
 
-    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77']);
+    expect((await client.listYearActivity(2026, letterLists())).personIds).toEqual(['77']);
   });
 
   it('skips donations with non-countable statuses so donors with only Failed/Pending gifts get no letter', async () => {
@@ -2026,6 +2039,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       column_values: [
         { id: 'date_col', text: '2026-04-01' },
         { id: 'donation_status_col', text: status },
+        { id: 'desc_col', text: 'Donation' },
         { id: 'link_col', text: 'Donor', linked_item_ids: [donorId], linked_items: [{ id: donorId, board: { id: '999' } }] },
       ],
     });
@@ -2047,7 +2061,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
       },
     });
 
-    expect((await client.listYearActivity(2026, [])).personIds).toEqual(['77', '99']);
+    expect((await client.listYearActivity(2026, letterLists())).personIds).toEqual(['77', '99']);
   });
 
   it('requests the donation status column in the sweep query', async () => {
@@ -2062,7 +2076,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listYearActivity(2026, []);
+    await client.listYearActivity(2026, letterLists());
 
     expect(captured!.query).toContain('donation_status_col');
   });
@@ -2079,7 +2093,7 @@ describe('HttpMondayClient.listYearActivity (personIds)', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.listYearActivity(2026, []);
+    await client.listYearActivity(2026, letterLists());
 
     expect(captured).not.toBeNull();
     expect(captured!.variables.from).toBe('2026-01-01');
@@ -2742,7 +2756,7 @@ describe('HttpMondayClient.listYearActivity', () => {
       { columns: { donationMatchedBy: 'matched_by_col' } },
     );
 
-    const result = await client.listYearActivity(2026, ['Sponsorship']);
+    const result = await client.listYearActivity(2026, letterLists(['Sponsorship', 'Matching Donation']));
 
     expect(result.personIds.sort()).toEqual(['77']);
     expect(result.organizationIds.sort()).toEqual(['501', '502', '503']);
@@ -2762,16 +2776,35 @@ describe('HttpMondayClient.listYearActivity', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { client } = orgClient([page([orphan])]);
 
-    const result = await client.listYearActivity(2026, []);
+    const result = await client.listYearActivity(2026, letterLists());
 
     expect(result).toEqual({ personIds: ['77'], organizationIds: [] });
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
 
+  it('leaves a person whose gift has a Gift Type no list names out, keeps an organization in, and warns with a count only', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { client } = orgClient([
+      page([
+        linkedItem('1', 'Driver Training', [{ id: '77', board: '999' }]),
+        linkedItem('2', '', [{ id: '88', board: '999' }]),
+        linkedItem('3', 'Commute Workshop', [{ id: '503', board: '2' }]),
+        linkedItem('4', 'Donation', [{ id: '99', board: '999' }]),
+      ]),
+    ]);
+
+    const result = await client.listYearActivity(2026, letterLists());
+
+    expect(result).toEqual({ personIds: ['99'], organizationIds: ['503'] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('3 gift(s)');
+    warn.mockRestore();
+  });
+
   it('does not request Matched By when it is the placeholder', async () => {
     const { client, sent } = orgClient([page([linkedItem('1', 'Donation', [{ id: '77', board: '999' }])])]);
-    await client.listYearActivity(2026, []);
+    await client.listYearActivity(2026, letterLists());
     expect(sent[0]!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
   });
 });

@@ -239,7 +239,7 @@ function fakeMondayWithDonations(): MondayClient {
         membershipStatus: 'Active',
         membershipTier: 'Member',
         totalDonated: '$40.00',
-        donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
+        donations: [{ date: '2025-03-14', amount: '$40.00', description: 'Donation' }],
         membershipExpiry: '',
         memberSince: '',
         memberType: '',
@@ -295,6 +295,7 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -2032,7 +2033,7 @@ describe('POST /webhooks/monday/letters', () => {
     const monday = fakeMonday({});
     (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Champion', totalDonated: '$50.00',
-      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Donation' }],
     });
     const app = createApp(makeDeps({ letterSendStore, letterQueue, monday }));
 
@@ -3375,7 +3376,7 @@ describe('CSRF', () => {
     const monday = fakeMonday({});
     (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '$50.00',
-      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Donation' }],
     });
     const app = createApp(makeDeps({ letterQueue, monday }));
     const res = await app.request('/webhooks/monday/letters?secret=shh', {
@@ -3637,7 +3638,7 @@ describe('write switch', () => {
       const monday = fakeMonday({});
       (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Champion', totalDonated: '$50.00',
-        donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+        donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Donation' }],
       });
       return monday;
     }
@@ -4090,7 +4091,7 @@ describe('doors', () => {
       const res = await app.request('/en/portal/giving', { headers: { Cookie: cookie } });
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain('<td>gift</td>');
+      expect(html).toContain('<td>Donation</td>');
       expect(html).toContain('$40.00');
       expect(html).toContain(t('en', 'portal.totalLabel'));
       expect(html).toContain('<li>Taught bike safety to 4,200 students</li>');
@@ -4109,7 +4110,7 @@ describe('doors', () => {
       const before = await signedIn({ monday, config: gated });
       const hidden = await (await before.app.request('/en/portal/giving', { headers: { Cookie: before.cookie } })).text();
       expect(hidden).not.toContain('$40.00');
-      expect(hidden).not.toContain('<td>gift</td>');
+      expect(hidden).not.toContain('<td>Donation</td>');
       expect(hidden).not.toContain('Taught bike safety to 4,200 students');
       expect(hidden).toContain('href="/en/portal/matching-gifts"');
       expect(monday.getMemberPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
@@ -4117,7 +4118,7 @@ describe('doors', () => {
       const after = await signedIn({ monday, config: gated, now: () => new Date('2027-01-01T00:00:00.000Z') });
       const shown = await (await after.app.request('/en/portal/giving', { headers: { Cookie: after.cookie } })).text();
       expect(shown).toContain('$40.00');
-      expect(shown).toContain('<td>gift</td>');
+      expect(shown).toContain('<td>Donation</td>');
       expect(shown).toContain('<li>Taught bike safety to 4,200 students</li>');
     });
 

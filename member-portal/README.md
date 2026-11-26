@@ -449,13 +449,17 @@ config-gated features:
   there when the Box template changes; without that block the band shows the logo and
   `officeAddress`. Print relies on a fixed element repeating on every page and on `@page` margin
   boxes; checked in Chrome's Save as PDF, not yet in Safari or Firefox.
-  **Gift Types treated differently** (`monday.columns.donationDescription` is the board's Gift Type
-  column; labels compare without case or punctuation): `taxLetter.excludedGiftTypes` (Event Ticket,
+  **Gift Types** (`monday.columns.donationDescription` is the board's Gift Type
+  column; labels compare without case or punctuation): `taxLetter.acknowledgedGiftTypes` (Donation,
+  Membership, Foundation & Corporate Gifts) are the letter's contributions. `taxLetter.excludedGiftTypes` (Event Ticket,
   Sponsorship, In Kind Donation / Sponsorship, Matching Donation, Grants, Contracts) are left off and
   never earn a letter or a January email on their own. `taxLetter.separateGiftTypes` (Donor Advised Fund) are listed after the total under
   `taxLetter.separateGiftsStatement`, outside the total and away from the no-goods sentence; a donor
   with only those gets a letter with no contributions table, total, statement or tax-records line.
-  Any other label, or a blank, is an ordinary contribution. A DAF gift only counts as one once its
+  A blank, or a label no list names (Driver Training, Commute Workshop, one staff add later), is left
+  off like an excluded one, so a sale is never printed under the no-goods sentence; the January run
+  warns with a count. After adding a Gift Type label on the board, add it to one of the lists. The
+  organization statement acknowledges gifts by the same rule. A DAF gift only counts as one once its
   Gift Type says so: one entered as Donation is an ordinary contribution. The portal's giving
   history still shows every gift.
   **Gated on `taxLetter` config:** every string in it ships as `REPLACE_AFTER_SIGNOFF` and the

@@ -72,6 +72,7 @@ const baseConfig = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: [],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'separate',
@@ -93,9 +94,9 @@ function withGifts(d: MemberPortalData): MemberPortalData {
   return {
     ...d,
     donations: [
-      { date: '2026-02-01', amount: '$100.00', description: 'gift' },
-      { date: '2026-06-01', amount: '$100.00', description: 'gift' },
-      { date: '2026-09-01', amount: '$50.00', description: 'gift' },
+      { date: '2026-02-01', amount: '$100.00', description: 'Donation' },
+      { date: '2026-06-01', amount: '$100.00', description: 'Donation' },
+      { date: '2026-09-01', amount: '$50.00', description: 'Donation' },
     ],
   };
 }

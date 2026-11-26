@@ -32,6 +32,7 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',

@@ -2,7 +2,7 @@ import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { formatUsd } from '../money';
-import { giftTypeIn } from './giftTypes';
+import { letterTreatment, type LetterTreatment } from './giftTypes';
 
 export interface LetterGift {
   date: string;
@@ -42,19 +42,19 @@ export function giftYear(date: string): number | null {
 // holds its id). The filter lives here rather than in the client because the portal's giving
 // history still shows every gift; only the letter treats them differently.
 function onLetter(donation: { description: string }, taxLetter: TaxLetterConfig): boolean {
-  return !giftTypeIn(taxLetter.excludedGiftTypes, donation.description);
+  const treatment = letterTreatment(taxLetter, donation.description);
+  return treatment === 'acknowledged' || treatment === 'separate';
 }
 
-// The one rule for what a letter or statement acknowledges: drop the excluded Gift Types, then
-// split off the types listed separately. `description` is the Gift Type text. Input order is kept
+// The one rule for what a letter or statement acknowledges: only Gift Types the config names, with
+// the types listed separately split off. `description` is the Gift Type text. Input order is kept
 // (callers sort), so this stays a pure partition.
 export function splitForLetter<T extends { description: string }>(
   gifts: T[],
   taxLetter: TaxLetterConfig
 ): { acknowledged: T[]; separate: T[] } {
-  const onThisLetter = gifts.filter((gift) => onLetter(gift, taxLetter));
-  const isSeparate = (gift: T) => giftTypeIn(taxLetter.separateGiftTypes, gift.description);
-  return { acknowledged: onThisLetter.filter((g) => !isSeparate(g)), separate: onThisLetter.filter(isSeparate) };
+  const treated = (as: LetterTreatment) => gifts.filter((gift) => letterTreatment(taxLetter, gift.description) === as);
+  return { acknowledged: treated('acknowledged'), separate: treated('separate') };
 }
 
 function completedYearsWithGifts(donations: DonationRecord[], taxLetter: TaxLetterConfig, now: Date): number[] {

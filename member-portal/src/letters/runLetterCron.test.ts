@@ -20,6 +20,7 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    acknowledgedGiftTypes: ['Donation'],
     excludedGiftTypes: [],
     separateGiftTypes: [],
     separateGiftsStatement: 'SEPARATE-STATEMENT',
@@ -84,7 +85,7 @@ function fakeMonday(overrides: Partial<Record<keyof MondayClient, unknown>> = {}
       membershipStatus: 'Active',
       membershipTier: 'Champion',
       totalDonated: '$50.00',
-      donations: [{ date: '2026-03-01', amount: '$50.00', description: 'Gift' }],
+      donations: [{ date: '2026-03-01', amount: '$50.00', description: 'Donation' }],
       membershipExpiry: '',
     })),
     ...overrides,
@@ -197,7 +198,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: fakeStore(), orgStore: fakeOrgStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
 
-    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
+    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, expect.objectContaining({ acknowledgedGiftTypes: ['Donation'] }));
     expect(result).toMatchObject({ kind: 'ran', year: 2026 });
   });
 
@@ -210,7 +211,7 @@ describe('runLetterCron', () => {
 
     const result = await runLetterCron({ monday, letterStore: store, orgStore: fakeOrgStore(), queue, config, now, mode: 'on' });
 
-    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, []);
+    expect(monday.listYearActivity).toHaveBeenCalledWith(2026, expect.objectContaining({ acknowledgedGiftTypes: ['Donation'] }));
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 });
     expect(queue.send).toHaveBeenCalledTimes(2);
   });
@@ -248,7 +249,7 @@ describe('runLetterCron', () => {
         membershipStatus: 'Active',
         membershipTier: 'Champion',
         totalDonated: '$50.00',
-        donations: [{ date: '2026-03-01', amount: '$50.00', description: 'Gift' }],
+        donations: [{ date: '2026-03-01', amount: '$50.00', description: 'Donation' }],
         membershipExpiry: '',
       };
     });

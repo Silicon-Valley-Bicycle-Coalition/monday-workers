@@ -70,6 +70,7 @@
     "plainStatement": "SANDBOX TEST LETTER — NOT A VALID TAX RECEIPT. No goods or services were provided in exchange for these contributions.",
     "benefitStatement": "SANDBOX TEST LETTER — NOT A VALID TAX RECEIPT. The estimated value of goods and services provided in exchange for these contributions is shown below.",
     "benefitTiers": [],
+    "acknowledgedGiftTypes": ["Donation", "Membership", "Foundation & Corporate Gifts"],
     "excludedGiftTypes": [
       "Event Ticket",
       "Sponsorship",

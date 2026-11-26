@@ -263,8 +263,8 @@ drafts, so wording problems there are expected until a native speaker checks the
 The portal's year-end giving letters double as IRS donation acknowledgments, so they stay
 switched off until SVBC approves the exact wording. That is gated in code, not just a process
 step. **Raised 2026-08-24; owner: Executive Director plus SVBC's accountant.** Sign off directly
-in this document: check each box and add your initials and the date beside it. All six are
-needed before letters go live. Four are already drafted and just need review as written; two are
+in this document: check each box and add your initials and the date beside it. All seven are
+needed before letters go live. Five are already drafted and just need review as written; two are
 genuinely blank and need real input.
 
 **Already drafted, review and approve as written or send back changes:**
@@ -285,6 +285,9 @@ genuinely blank and need real input.
       statement of what the ticket's value was, and for in-kind gifts, which may need their own
       acknowledgment. An employer's matching gift no longer appears on the employee's letter, and
       this feature sends the company no letter for it.
+- [ ] **Gifts on the letter.** Only Donation, Membership and Foundation & Corporate Gifts count as
+      contributions (plus the donor-advised fund table above). A blank Gift Type, or any other, is
+      left off until it's added to the portal's configuration. Confirm the list.
 
 **Still blank, need real answers:**
 
@@ -296,7 +299,7 @@ genuinely blank and need real input.
       plain one. Monday has two tier values today, **Member** and **Lifetime**; decide whether
       both get it (both have the same bike-shop discount access today) or just one.
 
-Donors won't see any letters until all six boxes are checked, the approved wording is entered
+Donors won't see any letters until all seven boxes are checked, the approved wording is entered
 into the portal's configuration (`member-portal/config/svbc.json`, the `taxLetter` block), and
 the portal is redeployed. Once that lands, "resend my tax receipt" requests become "log into the
 portal."
