@@ -509,6 +509,11 @@ previously drifted from production for months when a Worker was deployed by hand
 connection silently broke. Its token is the `production` environment's own, limited to the named
 production Workers ([permissions](docs/manual/06-ci-and-deploy.md#the-production-deploy-token)).
 
+**A pull request can deploy to the sandbox too:** label it `deploy-sandbox`. Same-repo branches
+only, through its own `sandbox-pr` environment with required reviewers; `main` goes back on when
+the label comes off or the PR closes unmerged
+([setup and caveats](docs/manual/06-ci-and-deploy.md#deploying-a-pull-request-to-the-sandbox)).
+
 **Sandbox deploys come from GitHub Actions.** `.github/workflows/workers.yml`'s `deploy-sandbox`
 job runs `npx wrangler deploy --env sandbox` on pushes to `main`, for each changed Worker with a
 `sandbox` entry in `.github/workers.json`. Cloudflare Workers Builds isn't used for the sandbox: if
