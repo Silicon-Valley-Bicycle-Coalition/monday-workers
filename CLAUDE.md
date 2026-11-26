@@ -298,3 +298,11 @@ issues and merge requests) with history rewritten to drop personal data, so comm
 from GitLab's. Work goes through pull requests: a ruleset on `main` requires a PR and the `ci-ok`
 and `checks` status checks. `GL#NN` / `GL!NN` in tracked files are GitLab issue and MR numbers;
 bare `#NN` / `!NN` in commit messages before 2026-11-17 are GitLab numbers too, not GitHub's.
+
+**PR descriptions: short opener, details folded.** Open with one to three plain sentences a
+reviewer can read in seconds: what the PR changes, why, and whether it needs a careful look
+(deploys, production data, a behavior staff will notice). Put everything else — design notes,
+file-by-file changes, test counts, verification — inside a `<details>` block whose `<summary>`
+names the model that wrote it, with a blank line after `<summary>` so GitHub renders the Markdown
+inside. `.github/pull_request_template.md` has the shape. Keep anything a reviewer must act on
+(a manual step, a flag to flip, a migration) in the opener, never only in the folded part.
