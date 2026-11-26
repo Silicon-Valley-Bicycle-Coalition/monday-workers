@@ -34,6 +34,10 @@ export interface MondayClient {
   // the item doesn't exist. Lets the upload webhook refuse an asset id that isn't in the Uploads
   // board's file column (GL#106).
   fetchItemAssets(itemId: string, fileColumnId: string): Promise<{ boardId: string; assetIds: string[] } | null>;
+  // The board an item lives on and its label in one status column (null when unset); null when
+  // the item doesn't exist. Lets the retry webhook confirm the item really is a worklist item at
+  // Retry before replaying it, rather than trusting the payload's label and item id.
+  fetchItemStatus(itemId: string, columnId: string): Promise<{ boardId: string; label: string | null } | null>;
 }
 
 // API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, GL#39).
@@ -194,5 +198,24 @@ export class HttpMondayClient implements MondayClient {
       .flatMap((value) => value.files ?? [])
       .flatMap((file) => (file.asset_id === undefined ? [] : [String(file.asset_id)]));
     return { boardId: String(item.board.id), assetIds };
+  }
+
+  async fetchItemStatus(itemId: string, columnId: string): Promise<{ boardId: string; label: string | null } | null> {
+    const data = await this.transport.request<{
+      items: { board: { id: string } | null; column_values: { label?: string | null }[] | null }[];
+    }>(
+      `query ($itemIds: [ID!]!, $columnIds: [String!]) {
+        items(ids: $itemIds) {
+          board { id }
+          column_values(ids: $columnIds) {
+            ... on StatusValue { label }
+          }
+        }
+      }`,
+      { itemIds: [itemId], columnIds: [columnId] }
+    );
+    const item = data.items[0];
+    if (!item?.board) return null;
+    return { boardId: String(item.board.id), label: item.column_values?.[0]?.label ?? null };
   }
 }

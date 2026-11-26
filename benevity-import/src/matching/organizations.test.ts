@@ -33,6 +33,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
     fetchItemAssets: vi.fn(),
+    fetchItemStatus: vi.fn(),
     ...overrides,
   };
 }

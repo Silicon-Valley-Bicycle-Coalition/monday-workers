@@ -89,6 +89,7 @@ function fakeDeps(overrides: Partial<DeadLetterDeps> = {}) {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
     fetchItemAssets: vi.fn(),
+    fetchItemStatus: vi.fn(),
   };
   const uploadStore = {
     createUpload: vi.fn(),
