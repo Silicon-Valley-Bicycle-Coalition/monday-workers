@@ -62,17 +62,17 @@ describe('items in the trash read as gone', () => {
   });
 
   it('getDonorLinkWithBoard: returns the owner and its board from one query', async () => {
-    const client = clientReturning({ data: { items: [{ state: 'active', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'],
+    const client = clientReturning({ data: { items: [{ state: 'active', board: { id: '1' }, column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'],
       linked_items: [{ id: 'donor-1', state: 'active', board: { id: '2' } }] }] }] } });
-    expect(await client.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: '2' });
+    expect(await client.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: '2', donationBoardId: '1' });
   });
 
   it('getDonorLinkWithBoard: a trashed or unreturned owner has a null board; a deleted gift has no link', async () => {
     const trashed = clientReturning({ data: { items: [{ state: 'active', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'],
       linked_items: [{ id: 'donor-1', state: 'deleted', board: { id: '2' } }] }] }] } });
-    expect(await trashed.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: null });
+    expect(await trashed.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: null, donationBoardId: null });
     const missing = clientReturning({ data: { items: [{ state: 'active', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'], linked_items: [] }] }] } });
-    expect(await missing.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: null });
+    expect(await missing.getDonorLinkWithBoard('dn1', 'donor_link')).toEqual({ ownerItemId: 'donor-1', ownerBoardId: null, donationBoardId: null });
     const gift = clientReturning({ data: { items: [{ state: 'deleted', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'] }] }] } });
     expect(await gift.getDonorLinkWithBoard('dn1', 'donor_link')).toBeNull();
   });

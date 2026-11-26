@@ -174,6 +174,27 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: true, skipped: true }, 200);
     }
 
+    // The payload is only as trustworthy as the URL secret: a forged delivery naming a real
+    // worklist item would release rows held for review (a totals mismatch, the Salesforce cutoff).
+    // Ask Monday whether the item is on the Uploads board and its Retry column really says Retry.
+    const uploadsBoardId = deps.config.monday.boards.benevityUploads;
+    let current;
+    try {
+      current = await deps.mondayClient.fetchItemStatus(event.itemId, retry.column);
+    } catch (err) {
+      console.error(`benevity retry webhook: failed to verify worklist item "${event.itemId}": ${errorMessage(err)}`);
+      return c.json({ ok: false }, 500); // Monday redelivers
+    }
+    if (uploadsBoardId === null || current === null || current.boardId !== String(uploadsBoardId)) {
+      console.error(`benevity retry webhook: refused item "${event.itemId}": not an item on the Uploads board`);
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+    if (current.label !== retry.labels.retry) {
+      // Also what a stale redelivery looks like once the item has moved on to Queued or Done.
+      console.error(`benevity retry webhook: refused item "${event.itemId}": its Retry column is not at Retry`);
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+
     let result: ReplayResult;
     try {
       result = await replayWorklistItem(event.itemId, deps);

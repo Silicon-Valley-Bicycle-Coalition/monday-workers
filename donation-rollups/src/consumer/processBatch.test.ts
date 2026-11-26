@@ -174,7 +174,9 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     // stub getDonorLinkForDonation / getItemBoardId keep steering (and asserting on) the consumer.
     getDonorLinkWithBoard: vi.fn(async (donationItemId: string, columnId: string) => {
       const ownerItemId = await client.getDonorLinkForDonation(donationItemId, columnId);
-      return ownerItemId === null ? null : { ownerItemId, ownerBoardId: await client.getItemBoardId(ownerItemId) };
+      // The gift is on the board whose Donor link column was asked for (donor_link_9 -> board 9).
+      const donationBoardId = columnId.startsWith('donor_link_') ? columnId.slice('donor_link_'.length) : '1';
+      return ownerItemId === null ? null : { ownerItemId, ownerBoardId: await client.getItemBoardId(ownerItemId), donationBoardId };
     }),
     ...overrides,
   };
@@ -637,6 +639,28 @@ describe('processRecomputeBatch', () => {
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn5', 'failed', expect.objectContaining({
       error: expect.stringContaining('77'),
+    }));
+  });
+
+  it('acks and writes nothing when the item is not on the board its webhook named', async () => {
+    // A forged (or stale) delivery: the item lives on a board that shares the Donations column
+    // ids, but the payload says board 1. Counting it would put a stranger's gift in the rollups.
+    const mondayClient = fakeMondayClient({
+      getDonorLinkWithBoard: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2', donationBoardId: '555' }),
+    });
+    const pendingStore = fakePendingStore();
+    const upsertLink = vi.fn();
+    const message = fakeMessage('dn6', '1');
+
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore({ upsertLink }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(upsertLink).not.toHaveBeenCalled();
+    expect(mondayClient.getDonationsByIds).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn6', 'failed', expect.objectContaining({
+      error: expect.stringContaining('board "555"'),
     }));
   });
 
@@ -1932,7 +1956,7 @@ describe('fewer Monday calls per gift (issue #89)', () => {
 
   it('treats an owner whose board reads back null as deleted: detaches the gift and writes nothing', async () => {
     const pendingStore = fakePendingStore();
-    const mondayClient = fakeMondayClient({ getDonorLinkWithBoard: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: null }) });
+    const mondayClient = fakeMondayClient({ getDonorLinkWithBoard: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: null, donationBoardId: '1' }) });
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message],
       { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config });

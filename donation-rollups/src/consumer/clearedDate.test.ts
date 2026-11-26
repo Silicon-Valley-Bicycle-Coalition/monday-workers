@@ -61,7 +61,7 @@ describe('an active gift whose Date is cleared', () => {
       return new Response(JSON.stringify({ data: { items } }));
     }));
     client = new HttpMondayClient('https://api.monday.test/v2', 'token', { sleepFn: async () => {} });
-    vi.spyOn(client, 'getDonorLinkWithBoard').mockResolvedValue({ ownerItemId: 'donor', ownerBoardId: '2' });
+    vi.spyOn(client, 'getDonorLinkWithBoard').mockResolvedValue({ ownerItemId: 'donor', ownerBoardId: '2', donationBoardId: '1' });
     vi.spyOn(client, 'getAffiliationSummary').mockResolvedValue({ name: 'A @ B', personItemId: 'person', personBoardId: '2', state: 'active' });
     vi.spyOn(client, 'setItemDescription').mockResolvedValue(undefined);
     changeColumnValues = vi.spyOn(client, 'changeColumnValues').mockResolvedValue(undefined);

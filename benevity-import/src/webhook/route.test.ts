@@ -72,6 +72,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     archiveItem: vi.fn().mockResolvedValue(undefined),
     fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
     fetchItemAssets: vi.fn().mockResolvedValue({ boardId: '777', assetIds: ['a1', 'a2'] }),
+    fetchItemStatus: vi.fn(),
   };
   return {
     mondayClient,
@@ -234,6 +235,7 @@ describe('retry webhook (#34)', () => {
   function retryDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     const deps = fakeDeps(overrides);
     deps.config.benevityImport.uploadsBoard.retry = RETRY;
+    (deps.mondayClient.fetchItemStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ boardId: '777', label: 'Retry' });
     return deps;
   }
 
@@ -279,6 +281,35 @@ describe('retry webhook (#34)', () => {
     expect(await res.json()).toEqual({ ok: true, ignored: true });
     expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
     expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an item on another board', { boardId: '888', label: 'Retry' }],
+    ['an item that does not exist', null],
+    ['an item whose Retry column is not at Retry in Monday', { boardId: '777', label: 'Needs review' }],
+    ['an item whose Retry column is empty in Monday', { boardId: '777', label: null }],
+  ])('refuses a delivery naming %s, and replays nothing', async (_name, found) => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = retryDeps();
+    (deps.mondayClient.fetchItemStatus as ReturnType<typeof vi.fn>).mockResolvedValue(found);
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    const res = await postRetry(createApp(deps), retryEvent(4242));
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.mondayClient.fetchItemStatus).toHaveBeenCalledWith('4242', 'retry_col');
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    expect(deps.rowStore.requeueRow).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('returns 500 so Monday redelivers when the item cannot be checked', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = retryDeps();
+    (deps.mondayClient.fetchItemStatus as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    expect((await postRetry(createApp(deps), retryEvent(4242))).status).toBe(500);
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it('moves a needs-review row back to ingested, enqueues it, and marks the item Queued', async () => {

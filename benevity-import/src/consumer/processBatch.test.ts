@@ -102,6 +102,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
     fetchItemAssets: vi.fn(),
+    fetchItemStatus: vi.fn(),
   };
   const uploadStore: UploadStore = {
     createUpload: vi.fn(),
@@ -171,6 +172,7 @@ describe('processBenevityQueueBatch', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -229,6 +231,7 @@ describe('processBenevityQueueBatch', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -254,6 +257,7 @@ describe('processBenevityQueueBatch', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -276,6 +280,7 @@ describe('processBenevityQueueBatch', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -301,6 +306,7 @@ describe('processBenevityQueueBatch', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
@@ -337,6 +343,7 @@ describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
         archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
         fetchItemAssets: vi.fn(),
+        fetchItemStatus: vi.fn(),
       } as never,
     });
   }

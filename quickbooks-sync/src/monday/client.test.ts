@@ -57,6 +57,7 @@ describe('HttpMondayClient', () => {
             id: '456',
             name: 'Acme Co',
             state: 'active',
+            board: { id: '789' },
             column_values: [
               { id: 'email_col', text: 'ap@acme.test', value: '{"email":"ap@acme.test","text":"AP"}' },
               { id: 'qb_id_col', text: '', value: null },
@@ -73,6 +74,7 @@ describe('HttpMondayClient', () => {
       id: '456',
       name: 'Acme Co',
       state: 'active',
+      boardId: '789',
       columnValues: {
         email_col: { text: 'ap@acme.test', value: '{"email":"ap@acme.test","text":"AP"}' },
         qb_id_col: { text: '', value: null },

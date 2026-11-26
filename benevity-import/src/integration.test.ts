@@ -81,6 +81,8 @@ describe('benevity-import integration', () => {
       archiveItem: vi.fn().mockResolvedValue(undefined),
       fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
       fetchItemAssets: vi.fn().mockResolvedValue({ boardId: '777', assetIds: ['a1', 'a2'] }),
+      // Staff have set the worklist item to Retry (the label each retry() delivery below claims).
+      fetchItemStatus: vi.fn().mockResolvedValue({ boardId: '777', label: 'Retry' }),
     };
   });
 

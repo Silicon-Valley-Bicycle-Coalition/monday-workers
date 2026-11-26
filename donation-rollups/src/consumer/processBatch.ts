@@ -230,6 +230,14 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   }
 
   const donorLink = await mondayClient.getDonorLinkWithBoard(donationItemId, sourceBoard.columns.donorLink);
+  // The webhook's boardId is only as trustworthy as its URL secret and JWT. An item on another
+  // board that shares the Donations column ids (a duplicated board keeps them) would otherwise be
+  // counted in a donor's rollups, and later archived by the custodian. Monday says where it is.
+  if (donorLink !== null && donorLink.donationBoardId !== donationBoardId) {
+    throw new NonRetryableError(
+      `donation "${donationItemId}" is on board "${donorLink.donationBoardId ?? 'unknown'}", not board "${donationBoardId}" as its webhook said`,
+    );
+  }
   let ownerItemId = donorLink?.ownerItemId ?? null;
   let ownerBoardId = donorLink?.ownerBoardId ?? null;
   if (ownerItemId === null) {

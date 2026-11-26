@@ -311,6 +311,13 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
       // items(ids:) returns archived and deleted items too — never create a Customer from one.
       throw new TerminalError(`monday item "${event.mondayItemId}" no longer exists (${item === null ? 'not found' : item.state})`);
     }
+    // The webhook route checked the payload's boardId, but the payload can claim any board. A
+    // delivery naming an item from elsewhere must not become a Customer in the books.
+    if (item.boardId !== String(customersBoardId)) {
+      throw new TerminalError(
+        `monday item "${event.mondayItemId}" is on board "${item.boardId ?? 'unknown'}", not the Customers board (${customersBoardId})`
+      );
+    }
     const carried = mondayCellScalar(item.columnValues[qbIdColumn]);
     if (carried !== undefined) {
       const carriedQbId = String(carried);

@@ -160,6 +160,20 @@ describe('HttpMondayClient', () => {
     expect(await newClient().fetchItemAssets('5', 'file_col')).toBeNull();
   });
 
+  it('fetchItemStatus returns the item\'s board and its label in one status column', async () => {
+    const fetchMock = mockFetchOnce({ data: { items: [{ board: { id: '777' }, column_values: [{ label: 'Retry' }] }] } });
+    expect(await newClient().fetchItemStatus('5', 'retry_col')).toEqual({ boardId: '777', label: 'Retry' });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables).toEqual({ itemIds: ['5'], columnIds: ['retry_col'] });
+  });
+
+  it('fetchItemStatus returns a null label for an unset column, and null for a missing item', async () => {
+    mockFetchOnce({ data: { items: [{ board: { id: '777' }, column_values: [{ label: null }] }] } });
+    expect(await newClient().fetchItemStatus('5', 'retry_col')).toEqual({ boardId: '777', label: null });
+    mockFetchOnce({ data: { items: [] } });
+    expect(await newClient().fetchItemStatus('5', 'retry_col')).toBeNull();
+  });
+
   it('throws with the server message when the API returns GraphQL errors', async () => {
     mockFetchOnce({ errors: [{ message: 'Invalid board id' }] });
     const client = newClient();
