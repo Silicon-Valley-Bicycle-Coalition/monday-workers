@@ -146,7 +146,7 @@ function showNoData() {
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
-      const res = await fetch('api/refresh', { method: 'POST' });
+      const res = await fetch('api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       if (res.status === 202) showStatus('Refresh started. Reload this page in a few minutes.');
       else if (res.status === 429) showStatus('A refresh is already running or ran in the last 10 minutes. Reload this page in a few minutes.');
       else { showStatus(`Refresh failed (HTTP ${res.status}).`); }

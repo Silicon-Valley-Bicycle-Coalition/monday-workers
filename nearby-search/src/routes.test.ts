@@ -291,6 +291,42 @@ describe('POST /api/confirm', () => {
     expect(((await (await post('/api/confirm', valid)).json()) as any).queued).toBe(9000);
   });
 
+  describe('daily cap per staff member', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    // A prior audit row: [board_id, label, query, miles, matched, queued, confirmed_by, created_at].
+    const prior = (queued: number, email: string, ageMs: number) => ['900', 'x', 'q', 1, queued, queued, email, new Date(Date.now() - ageMs).toISOString()];
+
+    it('refuses (429) a confirm that would take the staff member past 18,000 in 24 hours, and queues nothing', async () => {
+      const { post, queue, db } = setup();
+      db.searches.push(prior(9000, 'staff@example.org', 60_000), prior(8998, 'staff@example.org', DAY - 60_000));
+      const res = await post('/api/confirm', valid);
+      expect(res.status).toBe(429);
+      expect(((await res.json()) as any).message).toMatch(/3 contacts.*2 more today.*18,000/);
+      expect(queue.sent).toEqual([]);
+      expect(db.searches).toHaveLength(2);
+    });
+
+    it('allows reaching the cap exactly', async () => {
+      const { post, db } = setup();
+      db.searches.push(prior(17_997, 'staff@example.org', 60_000));
+      expect(((await (await post('/api/confirm', valid)).json()) as any).queued).toBe(3);
+    });
+
+    it('ignores rows older than 24 hours and other staff members', async () => {
+      const { post, db } = setup();
+      db.searches.push(prior(18_000, 'staff@example.org', DAY + 60_000), prior(18_000, 'other@example.org', 60_000));
+      expect(((await (await post('/api/confirm', valid)).json()) as any).queued).toBe(3);
+    });
+
+    it('counts a confirm as soon as it is recorded, so back-to-back confirms share the cap', async () => {
+      const { post, deps, db } = setup();
+      const many = Array.from({ length: 9000 }, (_, i) => ({ id: `m${i}`, name: 'N', lat: 37.3382, lng: -121.8863, zip: null, kind: 'person' as const }));
+      deps.monday.listContacts = async (src: { kind: string }) => (src.kind === 'person' ? many : []);
+      db.searches.push(prior(9001, 'staff@example.org', 60_000));
+      expect((await post('/api/confirm', { ...valid, boardId: 900 })).status).toBe(429);
+    });
+  });
+
   it('answers 422 for not-found and records nothing', async () => {
     const { post, queue, db } = setup('on', fakeDeps({ hits: [] }));
     expect((await post('/api/confirm', valid)).status).toBe(422);

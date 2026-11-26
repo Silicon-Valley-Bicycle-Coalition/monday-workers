@@ -40,6 +40,6 @@
     "userAgent": "svbc-nearby-search-sandbox (sandbox@bikesiliconvalley.org)"
   },
   "serviceArea": [36.89, -122.53, 37.71, -121.20],
-  "access": { "teamDomain": "bikesiliconvalley.cloudflareaccess.com", "aud": "REPLACE_WITH_SANDBOX_ACCESS_AUD" },
+  "access": { "teamDomain": "bikesiliconvalley.cloudflareaccess.com", "aud": "REPLACE_WITH_SANDBOX_ACCESS_AUD", "allowedEmailDomain": "bikesiliconvalley.org" },
   "geocode": { "censusUrl": "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress", "perRun": 200 }
 }

@@ -44,7 +44,9 @@ under [Verify during sandbox rollout](#verify-during-sandbox-rollout).
    commas, since commas separate dropdown labels and tags). The Worker re-runs the search itself
    (the preview in the browser is only a picture), drops contacts already linked on that board or
    already recorded in D1, and queues one message per remaining contact. A search that would queue
-   more than 9,000 is refused with a request to narrow the distance. Each confirm is recorded in
+   more than 9,000 is refused with a request to narrow the distance, and one that would take the
+   staff member past 18,000 queued in the last 24 hours is refused with 429 (summed from
+   `searches`, checked in the same statement that records the confirm). Each confirm is recorded in
    the D1 `searches` table (who, what, how many matched and how many were actually sent).
 3. **Queue consumer** writes, one message at a time:
    * for a person (People or People (Historical)), adds the label to the contact's Nearby
@@ -163,10 +165,15 @@ directly (`https://<host>/`) and type the event's address, or put the item id in
 ## Access and security
 
 * Every route except `GET /health` sits behind Cloudflare Access; the Worker also verifies the
-  Access JWT itself (`access.teamDomain`, `access.aud`). Requests are rate-limited (60 a minute).
+  Access JWT itself (`access.teamDomain`, `access.aud`) and refuses an email outside
+  `access.allowedEmailDomain`. `validateConfig` accepts only a bare `<team>.cloudflareaccess.com`
+  team domain. Requests are rate-limited (60 a minute).
 * `POST /api/*` must be `application/json` (else 415) and, when the browser sends
   `Sec-Fetch-Site`, `same-origin` (else 403).
 * Leaflet and turf load from pinned CDN URLs with SRI (sha384) hashes.
+* The page is sent with a nonce-based `Content-Security-Policy` (`contentSecurityPolicy` in
+  `src/page.ts`; no inline handlers, `frame-ancestors 'none'`), and every response with
+  `X-Content-Type-Options: nosniff`.
 * Monday access is the `monday-auth` broker's `SyncToken` entrypoint (`MONDAY_AUTH` service
   binding); the Worker holds no Monday token.
 * Point and corridor matching is `src/geometry.ts`, a byte-identical copy of
@@ -178,7 +185,8 @@ directly (`https://<host>/`) and type the event's address, or put the item id in
 1. In Cloudflare One, add a self-hosted Access application for the Worker's hostname with a policy
    that allows only SVBC staff.
 2. Copy the team domain (`<team>.cloudflareaccess.com`, no `https://`) into `access.teamDomain`, and the
-   application's **AUD tag** into `access.aud`. Each environment is its own Access application
+   application's **AUD tag** into `access.aud`, and the staff email domain (no `@`) into
+   `access.allowedEmailDomain`. Each environment is its own Access application
    with its own AUD tag.
 3. Exclude `/health` from the application (a Bypass policy for that path) if an uptime check needs it.
 4. Under the application's cookie settings, set **SameSite** to **Lax** or **Strict**, so a

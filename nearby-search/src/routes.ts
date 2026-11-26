@@ -1,7 +1,7 @@
 // Staff API: preview a search on the map, then confirm it to queue the matches onto a results
 // board. Everything is behind Cloudflare Access; preview never writes anything.
 import { Hono, type MiddlewareHandler } from 'hono';
-import { renderPage } from './page';
+import { contentSecurityPolicy, newNonce, renderPage } from './page';
 import { requireAccess, type AccessVariables } from './access';
 import type { Config } from './config';
 import { readWriteMode, stampFor } from './flags';
@@ -22,6 +22,16 @@ const SEND_BATCH = 100;
 // One confirm queues at most this many writes: past it a search is too broad to be one outreach
 // list, and the queue backlog (and Monday's daily budget) is better spent on narrower searches.
 export const MAX_QUEUED = 9_000;
+// And one staff member queues at most this many across their confirms in any 24 hours, so a
+// hijacked session can't spend Monday's shared daily API budget on a string of maximal searches.
+export const DAILY_QUEUED_CAP = 18_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Counted from the searches audit rows. The check and the insert are one statement, so two
+// confirms racing each other can't both squeeze under the cap.
+const INSERT_SEARCH_SQL =
+  'INSERT INTO searches (board_id, label, query, miles, matched, queued, confirmed_by, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? ' +
+  'WHERE (SELECT COALESCE(SUM(queued), 0) FROM searches WHERE confirmed_by = ? AND created_at >= ?) + ? <= ?';
+const QUEUED_SINCE_SQL = 'SELECT COALESCE(SUM(queued), 0) AS total FROM searches WHERE confirmed_by = ? AND created_at >= ?';
 const MAX_LABEL = 60;
 const EVENT_MILES = 2;
 
@@ -48,15 +58,23 @@ async function resultsBoards({ monday, config }: Deps): Promise<{ id: string; na
 export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler<AppEnv> = requireAccess()): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
+  // On every response, the 403s and JSON included.
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('Referrer-Policy', 'no-referrer');
+  });
+
   // Unauthenticated liveness probe; every other route sits behind Cloudflare Access.
   app.get('/health', (c) => c.text('ok'));
 
   // The search page. Behind Access like the API; ?event=<item id> prefills it from an Events row.
   app.get('/', access, async (c) => {
     const eventId = c.req.query('event');
+    const nonce = newNonce();
     let html: string;
     if (!eventId) {
-      html = renderPage();
+      html = renderPage({}, nonce);
     } else {
       const { monday, config } = makeDeps(c.env);
       // A failed lookup shows the same notice as an unknown event rather than a JSON 500.
@@ -64,10 +82,10 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
         .getEventAddress(config.monday.eventsBoardId, eventId, config.monday.eventsAddressColumn)
         .catch(() => null);
       html = event
-        ? renderPage({ event: { eventItemId: eventId, eventName: event.name, address: event.address, miles: EVENT_MILES } })
-        : renderPage({ notice: 'Event not found or it has no address. Type an address below instead.' });
+        ? renderPage({ event: { eventItemId: eventId, eventName: event.name, address: event.address, miles: EVENT_MILES } }, nonce)
+        : renderPage({ notice: 'Event not found or it has no address. Type an address below instead.' }, nonce);
     }
-    return c.html(html);
+    return c.html(html, 200, { 'Content-Security-Policy': contentSecurityPolicy(nonce), 'Cache-Control': 'private, no-store' });
   });
 
   app.use('/api/*', async (c, next) => {
@@ -153,13 +171,24 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     const writeMode = await readWriteMode(c.env, WORKER);
     const stamp = stampFor(writeMode);
     const messages: WriteMessage[] = fresh.map((m) => ({ boardId, label, contactId: m.id, kind: m.kind, name: m.name, stamp }));
-    // The audit row goes in first (queued 0) and is updated as batches are sent, so a send that
-    // fails partway still records who confirmed what and how many messages actually went out.
-    const inserted = await c.env.DB.prepare(
-      'INSERT INTO searches (board_id, label, query, miles, matched, queued, confirmed_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    )
-      .bind(String(boardId), label, request.query ?? `event:${request.eventItemId}`, request.miles, preview.matches.length, 0, c.get('staffEmail'), new Date().toISOString())
+    // The audit row goes in first, holding the planned count (which is what the daily cap sums), and
+    // is corrected once the batches are sent, so a send that fails partway still records who
+    // confirmed what and how many messages actually went out.
+    const staffEmail = c.get('staffEmail');
+    const now = new Date();
+    const since = new Date(now.getTime() - DAY_MS).toISOString();
+    const inserted = await c.env.DB.prepare(INSERT_SEARCH_SQL)
+      .bind(
+        String(boardId), label, request.query ?? `event:${request.eventItemId}`, request.miles, preview.matches.length, messages.length, staffEmail, now.toISOString(),
+        staffEmail, since, messages.length, DAILY_QUEUED_CAP,
+      )
       .run();
+    if (!inserted.meta.changes) {
+      const used = (await c.env.DB.prepare(QUEUED_SINCE_SQL).bind(staffEmail, since).first<{ total: number }>())?.total ?? 0;
+      const n = (x: number) => x.toLocaleString('en-US');
+      const left = Math.max(0, DAILY_QUEUED_CAP - used);
+      return c.json({ message: `This search would add ${n(messages.length)} contacts, but you can add ${n(left)} more today (${n(DAILY_QUEUED_CAP)} in any 24 hours). Narrow the distance or try again tomorrow.` }, 429);
+    }
     const searchId = inserted.meta.last_row_id;
     let queued = 0;
     try {
@@ -174,7 +203,7 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
       const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failed) throw failed.reason;
     } finally {
-      if (queued > 0) await c.env.DB.prepare('UPDATE searches SET queued = ? WHERE id = ?').bind(queued, searchId).run();
+      if (queued !== messages.length) await c.env.DB.prepare('UPDATE searches SET queued = ? WHERE id = ?').bind(queued, searchId).run();
     }
 
     return c.json({

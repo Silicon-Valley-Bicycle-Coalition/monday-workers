@@ -273,6 +273,8 @@ ${PREVIEW_STATE_SRC}
     updateConfirm();
   });
   els.label.addEventListener('input', function () { labelTouched = true; updateConfirm(); });
+  // Enter in a field must not submit the form (a page reload); the CSP forbids an inline onsubmit.
+  document.getElementById('searchForm').addEventListener('submit', function (e) { e.preventDefault(); });
   els.preview.addEventListener('click', runPreview);
   els.confirm.addEventListener('click', runConfirm);
   if (els.query) els.query.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runPreview(); } });
@@ -282,7 +284,29 @@ ${PREVIEW_STATE_SRC}
 })();
 `;
 
-export function renderPage(init: PageInit = {}): string {
+// Sent with the page (routes.ts). Every <script> and <style> carries the per-response nonce, so an
+// injected tag or inline handler won't run. Leaflet and turf come from unpkg and jsDelivr (also
+// pinned by SRI), Leaflet's marker images from unpkg, tiles from OpenStreetMap; the page's own
+// fetches go only to this origin.
+export function contentSecurityPolicy(nonce: string): string {
+  return [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    `style-src 'nonce-${nonce}' https://unpkg.com`,
+    'img-src data: https://unpkg.com https://tile.openstreetmap.org',
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ');
+}
+
+// 128 random bits, base64.
+export function newNonce(): string {
+  return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+}
+
+export function renderPage(init: PageInit = {}, nonce: string = newNonce()): string {
   const event = init.event;
   const notice = init.notice ? `<p class="notice" id="notice"></p>` : '';
   const where = event
@@ -302,14 +326,14 @@ export function renderPage(init: PageInit = {}): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Find nearby</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
-<style>${STYLE}</style>
+<link rel="stylesheet" nonce="${nonce}" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<style nonce="${nonce}">${STYLE}</style>
 </head>
 <body>
 <main>
 <h1>Find people and organizations nearby</h1>
 ${notice}
-<form onsubmit="return false">
+<form id="searchForm">
   ${where}
   <label>Miles <input id="miles" type="number" min="0.05" max="10" step="0.05" value="0.5"></label>
   <label>Results board <select id="board"><option value="">Choose a board</option></select></label>
@@ -330,11 +354,11 @@ ${notice}
 </section>
 <p id="done" role="status"></p>
 </main>
-<script>window.__INIT__ = ${embedJson(init)};</script>
-<script>${fill}${noticeFill}</script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js" integrity="sha384-ll8qH0IE3im19Dtlr1jtv5fdy+gm+0bx8T4+OYxPeJpc6PO1XLNFnyvdzaKJ78bU" crossorigin="anonymous"></script>
-<script>${SCRIPT}</script>
+<script nonce="${nonce}">window.__INIT__ = ${embedJson(init)};</script>
+<script nonce="${nonce}">${fill}${noticeFill}</script>
+<script nonce="${nonce}" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script nonce="${nonce}" src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js" integrity="sha384-ll8qH0IE3im19Dtlr1jtv5fdy+gm+0bx8T4+OYxPeJpc6PO1XLNFnyvdzaKJ78bU" crossorigin="anonymous"></script>
+<script nonce="${nonce}">${SCRIPT}</script>
 </body>
 </html>`;
 }

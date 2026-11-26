@@ -18,7 +18,7 @@ function fixture() {
     },
     osm: { nominatimUrl: 'https://nominatim.example', overpassUrl: 'https://overpass.example', userAgent: 'svbc-nearby-search (test)' },
     serviceArea: [36.89, -122.53, 37.71, -121.2],
-    access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-tag' },
+    access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-tag', allowedEmailDomain: 'bikesiliconvalley.org' },
     geocode: { censusUrl: 'https://census.example', perRun: 200 },
   };
 }
@@ -77,5 +77,20 @@ describe('validateConfig', () => {
     raw.monday.sources[0].nearbyColumn = 'nearby';
     raw.monday.sources[1].nearbyColumn = null;
     expect(() => validateConfig(raw)).toThrow('only for organization');
+  });
+
+  it.each(['https://svbc.cloudflareaccess.com', 'svbc.cloudflareaccess.com/', 'evil.example', 'svbc.cloudflareaccess.com.evil.example', 'cloudflareaccess.com', 'SVBC.cloudflareaccess.com'])(
+    'rejects access.teamDomain %s',
+    (teamDomain) => {
+      const raw = fixture();
+      raw.access.teamDomain = teamDomain;
+      expect(() => validateConfig(raw)).toThrow('access.teamDomain');
+    },
+  );
+
+  it.each(['@bikesiliconvalley.org', 'BikeSiliconValley.org', 'localhost', ''])('rejects access.allowedEmailDomain %j', (domain) => {
+    const raw = fixture();
+    raw.access.allowedEmailDomain = domain;
+    expect(() => validateConfig(raw)).toThrow('access.allowedEmailDomain');
   });
 });

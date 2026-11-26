@@ -62,8 +62,12 @@ function setup(opts: Parameters<typeof fakeEnv>[0] = {}) {
   const app = createApp({ keys, refresh, accessOverride: { teamDomain: 'https://svbc.cloudflareaccess.com', aud: 'aud123', allowedEmailDomain: 'bikesiliconvalley.org' } });
   const env = fakeEnv(opts);
   const ctx = { waitUntil: vi.fn(), passThroughOnException: () => {} } as unknown as ExecutionContext;
-  const call = (path: string, token?: string, method = 'GET') =>
-    app.fetch(new Request(`https://map.bikesiliconvalley.org${path}`, { method, headers: token ? { 'Cf-Access-Jwt-Assertion': token } : {} }), env, ctx);
+  // A POST carries what the page's fetch sends (a JSON body, same-origin) unless `headers` replaces it.
+  const call = (path: string, token?: string, method = 'GET', headers?: Record<string, string>) => {
+    const sent: Record<string, string> = headers ?? (method === 'POST' ? { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin' } : {});
+    if (token) sent['Cf-Access-Jwt-Assertion'] = token;
+    return app.fetch(new Request(`https://map.bikesiliconvalley.org${path}`, { method, headers: sent, body: method === 'POST' ? '{}' : undefined }), env, ctx);
+  };
   return { call, refresh, ctx, env };
 }
 
@@ -174,6 +178,25 @@ describe('POST /api/refresh', () => {
     const s = setup();
     expect((await s.call('/api/refresh', undefined, 'POST')).status).toBe(403);
     expect(s.env.send).not.toHaveBeenCalled();
+  });
+  it.each(['text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x', ''])('415s Content-Type %j and enqueues nothing', async (type) => {
+    const s = setup({ snapshotUploadedAt: null });
+    const res = await s.call('/api/refresh', valid, 'POST', type ? { 'Content-Type': type } : {});
+    expect(res.status).toBe(415);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(s.env.send).not.toHaveBeenCalled();
+    expect(s.env.bucket.objects.has('refresh-pending.json')).toBe(false);
+  });
+  it.each(['cross-site', 'same-site', 'none'])('403s Sec-Fetch-Site: %s and enqueues nothing', async (site) => {
+    const s = setup({ snapshotUploadedAt: null });
+    const res = await s.call('/api/refresh', valid, 'POST', { 'Content-Type': 'application/json', 'Sec-Fetch-Site': site });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cross-site requests are not allowed' });
+    expect(s.env.send).not.toHaveBeenCalled();
+  });
+  it('accepts an absent Sec-Fetch-Site and a charset parameter', async () => {
+    const s = setup({ snapshotUploadedAt: null });
+    expect((await s.call('/api/refresh', valid, 'POST', { 'Content-Type': 'Application/JSON; charset=utf-8' })).status).toBe(202);
   });
 });
 
