@@ -2,6 +2,10 @@
 node_modules/
 .wrangler/
 .dev.vars
+# `wrangler dev --env sandbox` reads .dev.vars.sandbox, so the per-environment files hold real
+# secrets too
+.dev.vars.*
+!.dev.vars.example
 .env
 # .env.production, .env.sandbox, etc. hold real tokens; only the blank template is tracked
 .env.*
