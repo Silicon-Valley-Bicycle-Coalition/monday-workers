@@ -4,7 +4,7 @@ export const DONATIONS: Board = {
   id: '18437342657', name: 'Donations',
   columns: [
     ['amount', 'Amount'], ['date', 'Date'], ['status', 'Status'], ['gift_type', 'Gift Type'], ['donor', 'Donor'],
-    ['anon', 'Anonymous Donor'], ['stream', 'Funding Stream'], ['size', 'Gift Size'],
+    ['anon', 'Anonymous Donor'], ['stream', 'Funding Stream'], ['size', 'Gift Size'], ['thanked', 'Thank You Sent'],
   ].map(([id, title]) => ({ id: id!, title: title!, type: 'text' })),
   views: [{ id: '901', name: 'Needs a donor' }, { id: '902', name: 'Gifts, last 7 days' }],
 };

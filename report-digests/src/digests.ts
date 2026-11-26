@@ -3,8 +3,8 @@ import type { Board, DigestsMondayClient, Item, Rule } from './monday/client';
 import { addDays, fiscalYear, thisAndNextMonth, type LocalTime } from './schedule';
 import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
-// The five digests that replace SVBC's seven Salesforce report subscriptions (monday-migration
-// docs/35 §3.6). Each queries the same rules as the board view it links to, so the email and the
+// The digests. All but receipt-review replace SVBC's seven Salesforce report subscriptions
+// (monday-migration docs/35 §3.6). Each of those queries the same rules as the board view it links to, so the email and the
 // view agree; the view is where staff work the list.
 
 export interface Table { headers: string[]; rows: string[][]; more: number }
@@ -217,12 +217,76 @@ async function lastWeek(ctx: Context): Promise<Digest> {
   };
 }
 
+// IRS amounts, fixed by statute rather than set per organization: a payment *over* $75 that is part
+// contribution and part purchase needs a disclosure (IRC 6115), and a single gift of $250 *or more*
+// needs a written acknowledgment (IRC 170(f)(8)).
+const DISCLOSURE_OVER = 75;
+const ACKNOWLEDGE_FROM = 250;
+const EVENT_TICKET = 'Event Ticket';
+const THANKED = 'Thank You Sent';
+
+// Whole dollars would print $75.48 as $75, which reads as not over the line.
+const cents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+// What may still need a receipt or a disclosure. Tickets are listed whether or not Thank You Sent is
+// ticked, because the Funraise and Eventbrite syncs tick it on every ticket they create. Nothing on
+// the board says a disclosure went out, so a ticket is listed while it is in its window (about one
+// send interval) for a person to check.
+async function receiptReview(ctx: Context): Promise<Digest> {
+  const cfg = ctx.config.digests['receipt-review'];
+  if (cfg === undefined) throw new Error('digest receipt-review: not configured in this environment');
+  const board = await loadBoard(ctx, 'donations');
+  const ids = columnIds(board, [D.donor, D.amount, D.date, D.giftType, D.status, THANKED]);
+  const text = (i: Item, title: string) => i.text.get(ids.get(title)!) ?? '';
+  const amount = (i: Item) => amountOf(text(i, D.amount));
+  const ticketsSince = addDays(ctx.now.date, -cfg.days!);
+  const unthankedSince = addDays(ctx.now.date, -cfg.unthankedDays!);
+  const since = ticketsSince < unthankedSince ? ticketsSince : unthankedSince;
+  const received = (await ctx.monday.queryItems(Number(board.id), dateRange(ids, since, ctx.now.date), [...ids.values()]))
+    .filter((i) => text(i, D.status).startsWith('Received'));
+
+  const tickets = received
+    .filter((i) => text(i, D.date) >= ticketsSince && text(i, D.giftType) === EVENT_TICKET && amount(i) > DISCLOSURE_OVER)
+    .sort(byDateDesc(ids));
+  const unthanked = received
+    .filter((i) => text(i, D.date) >= unthankedSince && text(i, THANKED) === '' && amount(i) >= ACKNOWLEDGE_FROM)
+    .sort((a, b) => text(a, D.date).localeCompare(text(b, D.date)));
+  const count = new Set([...tickets, ...unthanked].map((i) => i.id)).size;
+
+  return {
+    subject: `Gifts to check for a receipt: ${count}`,
+    intro: 'Received gifts that may still need a receipt or a tax disclosure. Being listed doesn’t mean one is missing.',
+    sections: [
+      {
+        heading: `Event tickets over ${formatMoney(DISCLOSURE_OVER)}, last ${cfg.days} days`,
+        note: 'A payment that is part contribution and part purchase needs a statement of the value received. ' +
+          'Thank You Sent doesn’t show that: it is ticked automatically for these. One order can hold several tickets.',
+        table: tickets.length
+          ? table(['Date', 'Gift', 'Donor', 'Amount'], tickets.map((i) => [text(i, D.date), i.name, text(i, D.donor), cents.format(amount(i))]))
+          : null,
+        empty: 'None.',
+      },
+      {
+        heading: `${formatMoney(ACKNOWLEDGE_FROM)} and up with ${THANKED} unticked, last ${cfg.unthankedDays} days`,
+        note: 'A contribution this size needs a written acknowledgment. Tick Thank You Sent once it has gone out.',
+        table: unthanked.length
+          ? table(['Date', 'Donor', 'Amount', 'Gift Type'], unthanked.map((i) => [text(i, D.date), text(i, D.donor), cents.format(amount(i)), text(i, D.giftType)]))
+          : null,
+        empty: 'None.',
+      },
+    ],
+    count,
+    viewUrl: viewUrl(ctx, board, cfg.view),
+  };
+}
+
 export const BUILDERS: Record<DigestKey, (ctx: Context) => Promise<Digest>> = {
   'unmatched-gifts': unmatchedGifts,
   renewals,
   'recent-gifts': recentGifts,
   'fiscal-year-by-size': fiscalYearBySize,
   'last-week': lastWeek,
+  'receipt-review': receiptReview,
 };
 
 export function buildDigest(key: DigestKey, monday: DigestsMondayClient, config: DigestsConfig, now: LocalTime): Promise<Digest> {

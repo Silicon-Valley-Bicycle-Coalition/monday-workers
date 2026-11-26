@@ -43,6 +43,17 @@ The views are created by `salesforce-import`'s `configure` step (`src/configure/
   It totals page by page, so it has no item cap. The list digests refuse a filter that matches
   more than 5,000 items.
 * `last-week`: every gift dated in the last 7 days, newest first, with its Status.
+* `receipt-review`: gifts that may still need a receipt or a tax disclosure. It replaces no
+  Salesforce report. **Sandbox only**: production's config leaves it out until staff decide who
+  gets it, so it's never due there and the operator route refuses it. Two lists:
+  * Event Ticket gifts **over $75** from the last `days` days, whether or not Thank You Sent is
+    ticked, because `funraise-sync` and `eventbrite-sync` tick it on every ticket. A ticket whose
+    order date is already outside the window when it reaches the board (a backfill) isn't listed.
+  * Any Received gift of **$250 or more** from the last `unthankedDays` days with Thank You Sent
+    unticked, oldest first.
+
+  It can't tell whether a disclosure went out, or what a ticket was worth: the board records
+  neither.
 
 Date windows end today, so a pledge dated in the future isn't listed yet. Tables stop at 150 rows
 and link to the view for the rest. The two `SVBC Integration` recipients of the Salesforce
@@ -111,7 +122,8 @@ picks one, and `src/config.ts` validates it.
   `{ "monthDays": [1, 15], "hour": 9 }`.
 * `digests.<key>.recipients`: Monday user ids. `view`: the board view name. `skipWhenEmpty`:
   skips the email when the digest is empty. `days`: the look-back window. `minAmount`: the
-  recent-gifts floor.
+  recent-gifts floor. `unthankedDays`: receipt-review's second window. `receipt-review` is the only
+  digest a config may leave out.
 
 ## Secrets
 
@@ -138,7 +150,7 @@ The `EMAIL` binding may only deliver to `sandbox@bikesiliconvalley.org` (Cloudfl
 and `src/email/sandboxBinding.ts` rewrites every recipient to that address, noting the original.
 `config/split.test.ts` keeps the two environments apart.
 
-Deployed and secrets set 2026-10-26. All five digests rendered correctly from live sandbox data
+Deployed and secrets set 2026-10-26. The five digests of that date rendered correctly from live sandbox data
 under `wrangler dev --env sandbox`. The deployed Worker built each digest, but Cloudflare
 reported **`permanent delivery failure for: sandbox@bikesiliconvalley.org`** on every send, even
 the smallest. A test email sent to the mailbox with `wrangler email sending send` on 2026-11-24 arrived,

@@ -15,7 +15,10 @@ export type RunResult =
   | { key: DigestKey; sent: false; reason: string };
 
 export function dueDigests(config: DigestsConfig, now: LocalTime): DigestKey[] {
-  return DIGEST_KEYS.filter((key) => isDue(config.digests[key].schedule, now));
+  return DIGEST_KEYS.filter((key) => {
+    const cfg = config.digests[key];
+    return cfg !== undefined && isDue(cfg.schedule, now);
+  });
 }
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1).toLowerCase();
@@ -24,6 +27,7 @@ const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1
 // route, for checking a digest by hand).
 export async function runDigest(deps: RunDeps, key: DigestKey, now: LocalTime, { force = false } = {}): Promise<RunResult> {
   const cfg = deps.config.digests[key];
+  if (cfg === undefined) throw new Error(`digest ${key}: not configured in this environment`);
   const digest = await buildDigest(key, deps.monday, deps.config, now);
   if (digest.count === 0 && cfg.skipWhenEmpty && !force) return { key, sent: false, reason: 'empty' };
 

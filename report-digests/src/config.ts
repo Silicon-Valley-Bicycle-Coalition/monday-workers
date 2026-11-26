@@ -2,8 +2,11 @@
 // silent Monday morning. Board ids of 0 are allowed (the production file until cutover) — a digest
 // against a 0 board fails loudly at the board read instead.
 
-export const DIGEST_KEYS = ['unmatched-gifts', 'renewals', 'recent-gifts', 'fiscal-year-by-size', 'last-week'] as const;
+export const DIGEST_KEYS = ['unmatched-gifts', 'renewals', 'recent-gifts', 'fiscal-year-by-size', 'last-week', 'receipt-review'] as const;
 export type DigestKey = (typeof DIGEST_KEYS)[number];
+// A digest an environment may leave out of its config: never due, and the operator route refuses it.
+const OPTIONAL_KEYS = ['receipt-review'] as const;
+type OptionalKey = (typeof OPTIONAL_KEYS)[number];
 
 // Pacific wall-clock schedule. weekdays: 0 = Sunday … 6 = Saturday. monthDays: 1–31. A digest
 // names one or the other; hour is 0–23.
@@ -16,6 +19,7 @@ export interface DigestConfig {
   skipWhenEmpty: boolean;
   days: number | null;      // look-back window, for the digests that have one
   minAmount: number | null; // the recent-gifts digest's "$400 and up" floor
+  unthankedDays: number | null; // receipt-review's look-back for gifts with Thank You Sent unticked
 }
 
 export interface DigestsConfig {
@@ -28,7 +32,7 @@ export interface DigestsConfig {
   // is dropped, since production's EMAIL binding has no allowed_destination_addresses.
   recipientDomains: string[];
   boards: { donations: number; people: number };
-  digests: Record<DigestKey, DigestConfig>;
+  digests: Record<Exclude<DigestKey, OptionalKey>, DigestConfig> & Partial<Record<OptionalKey, DigestConfig>>;
 }
 
 type Json = Record<string, unknown>;
@@ -93,6 +97,7 @@ function digest(raw: unknown, path: string): DigestConfig {
     skipWhenEmpty: o.skipWhenEmpty === true,
     days: optionalInt(o, 'days', path, 1),
     minAmount: optionalInt(o, 'minAmount', path, 0),
+    unthankedDays: optionalInt(o, 'unthankedDays', path, 1),
   };
 }
 
@@ -112,12 +117,21 @@ export function validateConfig(raw: unknown): DigestsConfig {
     logoUrl: str(root, 'logoUrl', 'root'),
     recipientDomains: domainList(root, 'recipientDomains', 'root'),
     boards: { donations: int(boards, 'donations', 'boards', 0), people: int(boards, 'people', 'boards', 0) },
-    digests: Object.fromEntries(DIGEST_KEYS.map((key) => [key, digest(digests[key], `digests.${key}`)])) as Record<DigestKey, DigestConfig>,
+    digests: Object.fromEntries(
+      DIGEST_KEYS.filter((key) => digests[key] !== undefined || !(OPTIONAL_KEYS as readonly string[]).includes(key))
+        .map((key) => [key, digest(digests[key], `digests.${key}`)])
+    ) as DigestsConfig['digests'],
   };
   for (const key of ['recent-gifts', 'last-week'] as const) {
     if (config.digests[key].days === null) throw new Error(`config: digests.${key}.days is required`);
   }
   if (config.digests['recent-gifts'].minAmount === null) throw new Error('config: digests.recent-gifts.minAmount is required');
+  const review = config.digests['receipt-review'];
+  if (review) {
+    for (const key of ['days', 'unthankedDays'] as const) {
+      if (review[key] === null) throw new Error(`config: digests.receipt-review.${key} is required`);
+    }
+  }
   // Throws on an unknown zone, here rather than at the first cron.
   new Intl.DateTimeFormat('en-US', { timeZone: config.timeZone });
   return config;

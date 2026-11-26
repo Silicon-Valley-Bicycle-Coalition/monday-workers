@@ -41,6 +41,23 @@ describe('validateConfig', () => {
     expect(() => validateConfig(c)).toThrow('minAmount');
   });
 
+  it('allows receipt-review to be left out, and requires both of its windows when present', () => {
+    let c = clone();
+    delete c.digests['receipt-review'];
+    expect(validateConfig(c).digests['receipt-review']).toBeUndefined();
+    for (const key of ['days', 'unthankedDays']) {
+      c = clone();
+      delete c.digests['receipt-review'][key];
+      expect(() => validateConfig(c)).toThrow(`receipt-review.${key}`);
+    }
+  });
+
+  it('still requires every other digest', () => {
+    const c = clone();
+    delete c.digests.renewals;
+    expect(() => validateConfig(c)).toThrow('digests.renewals');
+  });
+
   it('rejects an unknown time zone', () => {
     const c = clone();
     c.timeZone = 'America/Nowhere';

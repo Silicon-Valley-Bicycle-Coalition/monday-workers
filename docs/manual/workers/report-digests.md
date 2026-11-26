@@ -12,7 +12,8 @@ broker's `ReadOnlyToken` entrypoint (the Read-only OAuth app) and sends email th
 
 It emails staff scheduled digests of Monday board views: gifts with no donor, upcoming membership
 renewals, recent gifts of $400 and up, the fiscal year by gift size, and last week's gifts. They
-replace the Salesforce report subscriptions; Monday's own scheduled dashboard email needs the
+replace the Salesforce report subscriptions. A sixth, gifts to check for a receipt, is sandbox
+only until staff decide who gets it. Monday's own scheduled dashboard email needs the
 Enterprise plan. If it stops, staff stop getting these weekly and twice-monthly emails. The board
 views still work.
 
@@ -45,6 +46,7 @@ A missed hour is not caught up.
 | `recent-gifts` | Donations › Gifts, last 60 days | Mondays 08:00 | Received gifts of $400 and up, largest first; no wealth-screening data |
 | `fiscal-year-by-size` | Donations › By gift size | Mondays 08:00 | Counts and totals by Gift Size; no item cap |
 | `last-week` | Donations › Gifts, last 7 days | Mondays 08:00 | Every gift in the last 7 days, with Status |
+| `receipt-review` | Donations › Unacknowledged | Not in production's config. Mondays 10:00 in the sandbox's, only when not empty (sandbox crons are off) | Event tickets over $75 from the last 7 days; gifts of $250 and up from the last 60 days with Thank You Sent unticked |
 
 List digests refuse a filter that matches more than 5,000 items. Date windows end today.
 
@@ -56,7 +58,7 @@ are found by **title** (through `bareTitle`, so 🔒 markers don't matter), not 
 
 | Board | Columns read |
 |---|---|
-| Donations | Donor, Amount, Date, Gift Type, Funding Stream, Gift Size, Status, Anonymous Donor |
+| Donations | Donor, Amount, Date, Gift Type, Funding Stream, Gift Size, Status, Anonymous Donor; Thank You Sent (`receipt-review`) |
 | People | Personal Email, Phone, Membership Status, Membership Tier, Member Until; Lifetime Giving and Donor Level (from each gift's Donor) |
 | Users | Recipient email addresses, by user id |
 
