@@ -21,8 +21,10 @@ dependency-free `.mjs` files with `node:test` tests beside them (the `log-safety
 both the tests and the check below).
 
 CI is GitHub Actions: `.github/workflows/checks.yml` (one `checks` job: the copy rosters and the
-checks below) and `.github/workflows/workers.yml` (per-Worker test matrix and sandbox deploys, from
-the roster in `.github/workers.json`; `scripts/ci-changed-workers.mjs` picks what changed and fails
+checks below) and `.github/workflows/workers.yml` (per-Worker test matrix, then sandbox and production deploys from
+`main`, from the roster in `.github/workers.json`, where a `production` entry opts a Worker into
+production deploys and `scripts/ci-pending-migrations.mjs` holds one back while its D1 has
+unapplied migrations; `scripts/ci-changed-workers.mjs` picks what changed and fails
 when a Worker directory isn't listed). `ci-ok` and `checks` are the required checks on `main`.
 
 - CI checks: `check-log-safety.mjs` fails on `console.*()` calls that could log an email address
