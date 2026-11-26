@@ -829,8 +829,11 @@ employer affiliation without a staff step.
 * **Staff see every answer** on the Change Requests board, as an item named
   `Employer change — <donor> (#<id>)` whose Field is one of `Employer (applied)` (New Value names
   the Organization and any `(previous Primary: <org> (<its Status>))` for staff to mark Former if the
-  donor left), `Employer (no change)`, or `Employer (needs an Organization)` (the typed name, or
-  the matching Organizations when there are several). The log item is the last write, so a
+  donor left), `Employer (no change)`, `Employer (needs an Organization)` (the typed name, or
+  the matching Organizations when there are several), or `Employer (needs staff review)`: the
+  person's only affiliation to that Organization is not Current but still has Portal access
+  ticked. Making it Current would give them the organization's gifts and statements again on
+  their own say-so, so nothing is written and staff decide. The log item is the last write, so a
   retry after a partial run re-reads Monday and finishes rather than repeats.
 * **Write switch:** under `off` the Organization and affiliation reads still run and the
   affiliation and log writes are skip lines; `hold` waits on the queue like any change request.

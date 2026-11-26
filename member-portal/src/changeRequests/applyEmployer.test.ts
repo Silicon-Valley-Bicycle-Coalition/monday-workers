@@ -111,6 +111,14 @@ describe('applyEmployerAnswer', () => {
     expect(m.client.createAffiliation).not.toHaveBeenCalled();
   });
 
+  it('writes nothing and asks staff when the only affiliation is Former with Portal access', async () => {
+    const m = monday([GOOGLE], [aff({ id: 'a', organizationId: '501', statusLabel: 'Former', portalAccess: true })]);
+    const result = await applyEmployerAnswer(row('Google'), m.deps);
+    expect(result.fieldLabel).toBe(EMPLOYER_LABELS.needsStaff);
+    expect(result.newValue).toContain('Former with Portal access ticked');
+    expect(m.calls).toEqual([]);
+  });
+
   it('unmatchable name goes to staff without a lookup', async () => {
     const m = monday([GOOGLE]);
     const result = await applyEmployerAnswer(row('Inc.'), m.deps);
