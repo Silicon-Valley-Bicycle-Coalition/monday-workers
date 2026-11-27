@@ -318,6 +318,17 @@ their company goes to Recurring Gifts → Match Employer.
 Funraise custom form answers (the old employer question) don't arrive by webhook or API; that is
 steps 1 and 3 of #6, waiting on Funraise.
 
+## Webhook body vs. Funraise's own record (open)
+
+The consumer maps the webhook body as delivered; only the URL secret vouches for it. The planned
+fix is to treat a delivery as a pointer and map from `GET /api/v1/crm/donation/{id}`, held until
+that record is shown to carry the same id and shape. Check it with one read-only call (prints paths
+and verdicts, never values; exit 0 = every mapped path matches):
+
+```sh
+FUNRAISE_API_KEY=<production key> node scripts/compare-donation-shape.mjs [--id <transaction id>] [--env sandbox]
+```
+
 ## Acknowledgment / receipting
 
 **Decided (private planning repo, `migration-plan.md` Decisions Needed, 2026-08-24, Option 2):**
