@@ -1,4 +1,4 @@
-// The two Cloudflare reads the watchdog needs. Everything that goes wrong (HTTP, GraphQL errors,
+// The Cloudflare reads the watchdog needs. Everything that goes wrong (HTTP, GraphQL errors,
 // unexpected shapes) is a CloudflareApiError, which src/checks.ts turns into "check failed" for
 // that subject only. A check that couldn't run is never reported as healthy.
 
@@ -16,9 +16,25 @@ export interface CronRun {
   count: number;
 }
 
+// A Worker Custom Domain (GET /accounts/{id}/workers/domains) and a zone's Workers route
+// (GET /zones/{id}/workers/routes). `script` is null for a route that runs no Worker.
+export interface CustomDomain {
+  hostname: string;
+  service: string;
+  zoneId: string;
+}
+export interface ZoneRoute {
+  pattern: string;
+  script: string | null;
+}
+
 export interface CloudflareApi {
   cronRuns(scripts: string[], since: Date): Promise<CronRun[]>;
   queueBacklog(queueName: string): Promise<{ count: number; oldestAgeHours: number | null }>;
+  // Needs Workers Scripts Read (account).
+  customDomains(zoneName: string): Promise<CustomDomain[]>;
+  // Needs Workers Routes Read on the zone.
+  zoneRoutes(zoneId: string): Promise<ZoneRoute[]>;
 }
 
 // workersInvocationsAdaptive, not workersInvocationsScheduled: the latter has the cron expression
@@ -65,8 +81,8 @@ export function cloudflareApi(
     }
   }
 
-  async function rest(path: string): Promise<unknown> {
-    const body = await call(`${API}/accounts/${accountId}${path}`);
+  async function rest(path: string, base = `${API}/accounts/${accountId}`): Promise<unknown> {
+    const body = await call(`${base}${path}`);
     if (body.success !== true) throw new CloudflareApiError(`${path}: ${JSON.stringify(body.errors ?? 'unsuccessful')}`);
     return body.result;
   }
@@ -132,6 +148,28 @@ export function cloudflareApi(
         throw new CloudflareApiError(`queue "${queueName}": ${count} messages but no oldest_message_timestamp_ms`);
       }
       return { count, oldestAgeHours: (now().getTime() - oldest) / 3_600_000 };
+    },
+
+    async customDomains(zoneName) {
+      const path = `/workers/domains?zone_name=${encodeURIComponent(zoneName)}`;
+      const result = await rest(path);
+      if (!Array.isArray(result)) throw new CloudflareApiError(`${path}: result is not a list`);
+      return result.map((d: Json): CustomDomain => {
+        if (typeof d.hostname !== 'string' || typeof d.service !== 'string' || typeof d.zone_id !== 'string') {
+          throw new CloudflareApiError(`${path}: unexpected domain entry`);
+        }
+        return { hostname: d.hostname, service: d.service, zoneId: d.zone_id };
+      });
+    },
+
+    async zoneRoutes(zoneId) {
+      const path = `/zones/${encodeURIComponent(zoneId)}/workers/routes`;
+      const result = await rest(path, API);
+      if (!Array.isArray(result)) throw new CloudflareApiError(`${path}: result is not a list`);
+      return result.map((r: Json): ZoneRoute => {
+        if (typeof r.pattern !== 'string') throw new CloudflareApiError(`${path}: unexpected route entry`);
+        return { pattern: r.pattern, script: typeof r.script === 'string' && r.script !== '' ? r.script : null };
+      });
     },
   };
 }

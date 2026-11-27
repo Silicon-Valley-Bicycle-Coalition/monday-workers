@@ -18,7 +18,16 @@ export type Decision = {
 
 const REMINDER_MS = 24 * 60 * 60 * 1000;
 
-export function decide(subject: string, health: Health, prev: SubjectState | null, now: Date): Decision {
+// repostOnNewDetail: a subject whose detail is stable while nothing changes (domains:) posts again
+// as soon as the detail differs, not only after a day. Off for subjects whose detail drifts every
+// run (a queue's count and age).
+export function decide(
+  subject: string,
+  health: Health,
+  prev: SubjectState | null,
+  now: Date,
+  opts: { repostOnNewDetail?: boolean } = {},
+): Decision {
   const nowIso = now.toISOString();
   if (prev === null) {
     // First sight only arms the subject: its history isn't known yet.
@@ -34,7 +43,7 @@ export function decide(subject: string, health: Health, prev: SubjectState | nul
     };
   }
   const next: SubjectState = { ...prev, bad: true, detail: health.detail };
-  if (!prev.bad || prev.lastAlertAt === null) {
+  if (!prev.bad || prev.lastAlertAt === null || (opts.repostOnNewDetail && prev.detail !== health.detail)) {
     return { post: { kind: 'bad', text: `sync-watchdog: ${subject}: ${health.detail}` }, next };
   }
   if (now.getTime() - Date.parse(prev.lastAlertAt) >= REMINDER_MS) {

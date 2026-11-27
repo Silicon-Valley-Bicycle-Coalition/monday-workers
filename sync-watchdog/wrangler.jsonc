@@ -15,7 +15,8 @@
     // Per-subject alert state (src/state.ts): the sync-watchdog-state namespace.
     { "binding": "STATE", "id": "fd4cd11d203d4b7fbdf2dd1bbc0bce4a" }
   ],
-  // Secrets: CLOUDFLARE_API_TOKEN (Account Analytics Read + Queues Read), SLACK_WEBHOOK_URL
+  // Secrets: CLOUDFLARE_API_TOKEN (Account Analytics Read + Queues Read + Workers Scripts Read,
+  // and Workers Routes Read on the zone), SLACK_WEBHOOK_URL
   // (the private staff channel).
   "limits": { "cpu_ms": 1000 },
   "triggers": {

@@ -129,3 +129,34 @@ describe('transport', () => {
     expect(calls[0]!.init!.signal).toBeInstanceOf(AbortSignal);
   });
 });
+
+// Shapes per Cloudflare's API reference: Workers > Domains > List
+// (developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/) and
+// Workers > Routes > List (developers.cloudflare.com/api/resources/workers/subresources/routes/methods/list/).
+describe('customDomains and zoneRoutes', () => {
+  const ok = (result: unknown) => json({ success: true, errors: [], result });
+
+  it('lists the zone\'s Custom Domains', async () => {
+    const { fetcher, calls } = stub(() =>
+      ok([{ id: 'd1', hostname: 'member.example.org', service: 'svbc-member-portal', environment: 'production', zone_id: 'z1', zone_name: 'example.org' }]),
+    );
+    const domains = await cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW).customDomains('example.org');
+    expect(calls[0]!.url).toBe('https://api.cloudflare.com/client/v4/accounts/acct/workers/domains?zone_name=example.org');
+    expect(domains).toEqual([{ hostname: 'member.example.org', service: 'svbc-member-portal', zoneId: 'z1' }]);
+  });
+
+  it('lists the zone\'s routes; a route without a script runs no Worker', async () => {
+    const { fetcher, calls } = stub(() => ok([{ id: 'r1', pattern: 'example.org/a/*', script: 'svbc-a' }, { id: 'r2', pattern: 'example.org/b' }]));
+    const routes = await cloudflareApi(ACCOUNT, 'tok', fetcher, () => NOW).zoneRoutes('z1');
+    expect(calls[0]!.url).toBe('https://api.cloudflare.com/client/v4/zones/z1/workers/routes');
+    expect(routes).toEqual([{ pattern: 'example.org/a/*', script: 'svbc-a' }, { pattern: 'example.org/b', script: null }]);
+  });
+
+  it('a refused or malformed answer throws', async () => {
+    const refused = cloudflareApi(ACCOUNT, 'tok', stub(() => json({ success: false, errors: [{ code: 10000 }] }, 403)).fetcher);
+    await expect(refused.customDomains('example.org')).rejects.toBeInstanceOf(CloudflareApiError);
+    const odd = cloudflareApi(ACCOUNT, 'tok', stub(() => ok([{ hostname: 'x' }])).fetcher);
+    await expect(odd.customDomains('example.org')).rejects.toThrow('unexpected domain entry');
+    await expect(cloudflareApi(ACCOUNT, 'tok', stub(() => ok({})).fetcher).zoneRoutes('z1')).rejects.toThrow('not a list');
+  });
+});

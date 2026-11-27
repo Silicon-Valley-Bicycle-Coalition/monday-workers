@@ -59,3 +59,23 @@ describe('decide', () => {
     expect(markSent(d.next, T0).lastAlertAt).toBe(T0.toISOString());
   });
 });
+
+describe('decide with repostOnNewDetail', () => {
+  const sent = state({ bad: true, lastAlertAt: T0.toISOString(), detail: 'unexpected route a/*' });
+  const opts = { repostOnNewDetail: true };
+
+  it('a changed detail posts again at once', () => {
+    const d = decide('domains:example.org', { ok: false, detail: 'unexpected route a/*; unexpected route b/*' }, sent, hours(1), opts);
+    expect(d.post?.kind).toBe('bad');
+    expect(d.post?.text).toContain('b/*');
+  });
+
+  it('the same detail waits for the daily reminder', () => {
+    expect(decide('domains:example.org', { ok: false, detail: 'unexpected route a/*' }, sent, hours(1), opts).post).toBeNull();
+    expect(decide('domains:example.org', { ok: false, detail: 'unexpected route a/*' }, sent, hours(24), opts).post?.kind).toBe('reminder');
+  });
+
+  it('without the option a changed detail does not post', () => {
+    expect(decide('queue:q', { ok: false, detail: 'other' }, sent, hours(1)).post).toBeNull();
+  });
+});

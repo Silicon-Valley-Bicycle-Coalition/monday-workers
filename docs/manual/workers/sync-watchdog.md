@@ -9,7 +9,8 @@ reads only the Cloudflare API and the `FLAGS` KV namespace, and posts to Slack.
 ## What it does
 
 Once an hour it checks that every production Worker is still running its crons, is on the write
-switch it should be, and is draining its queue. It posts to the private staff Slack channel when
+switch it should be, and is draining its queue, and that no Custom Domain or route on the zone has
+changed. It posts to the private staff Slack channel when
 one of those goes wrong. If it stops, a Worker that goes quiet without logging an error (a
 dropped cron, a forgotten `hold`, a stuck queue) goes unnoticed. The Monday heartbeat is how you
 notice the watchdog itself has stopped.
@@ -18,19 +19,21 @@ notice the watchdog itself has stopped.
 
 ### Cron: `40 * * * *` (hourly, production only)
 
-Each run checks three kinds of subject:
+Each run checks four kinds of subject:
 
 | Subject | Healthy when | Source |
 |---|---|---|
 | `cron:<worker>:<cron>` | The Worker ran that cron within `maxGapHours` | Cloudflare GraphQL analytics (`workersInvocationsAdaptive`, cron events), matched to the expression by time |
 | `writes:<worker>` | `<worker>:writes` in production `FLAGS` equals `expectedWrites` | `FLAGS` KV, read only |
 | `queue:<queue>` | The oldest message is younger than `maxBacklogAgeHours` (6) | Cloudflare Queues REST API (metrics) |
+| `domains:<zone>` | Every Custom Domain and Workers route on the zone matches `domains` | Cloudflare REST API: Workers Domains list, then the zone's Workers routes |
 
 Then, per subject:
 
 1. Load the subject's previous state from the `STATE` KV namespace.
 2. Post when it goes bad, again once a day while it stays bad (`… still failing`), and once when
-   it recovers. Save the new state.
+   it recovers. `domains:` also posts again as soon as its list of differences changes, so a
+   second change while it is already bad isn't hidden. Save the new state.
 3. If a check itself fails (Cloudflare API error), log it with `console.error` and leave that
    subject's state unchanged. No Slack post.
 
@@ -62,15 +65,18 @@ What it watches is `config/svbc.json` (production) and `config/sandbox.json`:
 | `watched` | Each live Worker: production `script` name, `expectedWrites` (`on`, `off`, or `null` for Workers without a switch), and `crons` with `maxGapHours` |
 | `notLive` | Workers with production crons that are not live yet, each with a reason |
 | `queues` | Production main queues and `maxBacklogAgeHours` |
+| `domains` | The zone, its expected `customDomains` (hostname → script, production and sandbox), `routes` (pattern → script; none today) and `pending` hostnames (declared, not deployed yet: fine absent or on their script). Production config only |
 
 `config/coverage.test.ts` fails CI when any Worker's `wrangler.jsonc` gains, loses or changes a
 production cron that this config does not match, so every cron is either watched or explained.
+It also fails when `domains` doesn't list every Custom Domain in every `wrangler*.jsonc`, on the
+script that declares it.
 
 ## Secrets
 
 | Name | Purpose | Issued by | Rotate |
 |---|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | Reads cron invocations and queue metrics. Permissions: Account Analytics Read, Queues Read | Cloudflare dashboard → Account API Tokens | Create a new token with the same two permissions, `wrangler secret put`, delete the old one |
+| `CLOUDFLARE_API_TOKEN` | Reads cron invocations, queue metrics, Custom Domains and the zone's Workers routes. Permissions: Account Analytics Read, Queues Read, Workers Scripts Read (account); Workers Routes Read (zone `bikesiliconvalley.org`) | Cloudflare dashboard → Account API Tokens | Create a new token with the same permissions, `wrangler secret put`, delete the old one |
 | `SLACK_WEBHOOK_URL` | The private staff channel's incoming webhook | Slack app incoming webhook | Issue a new URL, `wrangler secret put` |
 
 Bindings (not secrets): `FLAGS` (production namespace in production, `sandbox-FLAGS` in the

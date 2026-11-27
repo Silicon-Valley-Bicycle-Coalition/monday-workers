@@ -145,7 +145,8 @@ Two sources post to the **private staff Slack channel**. The sandbox never alert
 2. **`sync-watchdog`** runs hourly at :40 and catches silence. It reports when:
    - a cron didn't run within its allowed gap;
    - a write switch isn't the expected value;
-   - a queue isn't draining.
+   - a queue isn't draining;
+   - a Custom Domain or Workers route on the zone changed.
 
    It repeats an unresolved problem after 24 hours, says when the problem recovers, and posts a
    heartbeat every Monday at 16:40 UTC. **If the heartbeat stops, the watchdog itself is down.**

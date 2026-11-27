@@ -17,6 +17,7 @@ const cfg = production as unknown as {
   watched: Record<string, Watched>;
   notLive: Record<string, string>;
   queues: { name: string; maxBacklogAgeHours: number }[];
+  domains: { zone: string; customDomains: Record<string, string>; routes: Record<string, string | null>; pending: Record<string, { script: string }> };
 };
 
 const raw = import.meta.glob('../../*/wrangler.jsonc', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -26,6 +27,25 @@ const workers = Object.fromEntries(
     // Vite resolves this Worker's own file as `../wrangler.jsonc`, so it shows up as `..`.
     .filter(([dir]) => dir !== 'sync-watchdog' && dir !== '..'),
 );
+// Every wrangler file, the member-portal writer's included, for the Custom Domains check.
+const allRaw = import.meta.glob('../../*/wrangler*.jsonc', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+type Route = { pattern: string; custom_domain?: boolean };
+// hostname -> script for every custom_domain route, per environment. An env block without its own
+// `routes` inherits the top level's, as Wrangler does.
+const declaredDomains = new Map<string, string>();
+const declaredRoutes: string[] = [];
+for (const text of Object.values(allRaw)) {
+  const w = parseJsonc(text) as Json & { routes?: Route[]; env?: Record<string, Json & { routes?: Route[] }> };
+  const add = (routes: Route[] | undefined, script: string) => {
+    for (const r of routes ?? []) {
+      if (r.custom_domain) declaredDomains.set(r.pattern, script);
+      else declaredRoutes.push(r.pattern);
+    }
+  };
+  add(w.routes, String(w.name));
+  for (const [env, e] of Object.entries(w.env ?? {})) add('routes' in e ? e.routes : w.routes, String(e.name ?? `${w.name}-${env}`));
+}
+
 const crons = (w: Json): string[] => ((w.triggers as Json | undefined)?.crons as string[] | undefined) ?? [];
 const producers = (w: Json): string[] =>
   (((w.queues as Json | undefined)?.producers as { queue: string }[] | undefined) ?? []).map((p) => p.queue);
@@ -95,5 +115,19 @@ describe('watchdog coverage', () => {
   it('every queue is a production producer queue of a watched Worker', () => {
     const known = Object.keys(cfg.watched).flatMap((dir) => producers(workers[dir] ?? {}));
     for (const q of cfg.queues) expect(known, q.name).toContain(q.name);
+  });
+
+  it('domains lists every Custom Domain in any wrangler file, on its script, and nothing else', () => {
+    const expected = new Map([
+      ...Object.entries(cfg.domains.customDomains),
+      ...Object.entries(cfg.domains.pending).map(([h, p]) => [h, p.script] as const),
+    ]);
+    expect(declaredDomains.size).toBeGreaterThan(5);
+    expect(Object.fromEntries([...expected].sort())).toEqual(Object.fromEntries([...declaredDomains].sort()));
+    for (const host of declaredDomains.keys()) expect(host.endsWith(`.${cfg.domains.zone}`), host).toBe(true);
+  });
+
+  it('domains.routes matches the plain routes in wrangler files (none today)', () => {
+    expect(Object.keys(cfg.domains.routes).sort()).toEqual([...declaredRoutes].sort());
   });
 });
