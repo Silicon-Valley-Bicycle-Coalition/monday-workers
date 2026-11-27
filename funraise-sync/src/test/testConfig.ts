@@ -24,6 +24,7 @@ export function testConfig(
       fiscalYearColumn: null,
       oldestActiveFiscalYear: null,
       recurringGiftLinkColumn: null,
+      rereadFromFunraise: false,
       rawPayloadRetentionDays: 90,
       unresolvedPayloadRetentionDays: 365,
       donorExternalIdField: 'donor.contactId',

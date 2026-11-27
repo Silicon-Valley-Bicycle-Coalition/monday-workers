@@ -2,8 +2,8 @@
 // X-Api-Key auth (reference: https://funraise.stoplight.io). Verified live 2026-09-18: the list
 // returns fixed pages of 10 selected by `page`, and honours a `q` expression for filtering and
 // ordering (`updtime >= <ms> order by updtime asc`); exact-id and impossible filters behave.
-// The webhook is the source for donations — the donation list ignores `q` — so nothing here
-// reads donations or supporters.
+// Donations are read one at a time by id (`getDonation`): the consumer re-reads each webhook
+// delivery's gift rather than trusting the body. The donation list ignores `q`, so it isn't used.
 
 // The fields the poller reads. Everything else on the row is passed through untouched to the
 // mapper, which only looks at these.
@@ -33,6 +33,9 @@ export interface FunraiseClient {
   // `updtime = updtimeMs and id > afterId order by id asc`
   listSubscriptionsAtUpdtime(updtimeMs: number, afterId: number): Promise<FunraiseSubscription[]>;
   getSubscription(id: string): Promise<FunraiseSubscription | null>;
+  // GET /api/v1/crm/donation/{id}, the same object the webhook sends as `data` (compared field by
+  // field on 2026-11-27 with scripts/compare-donation-shape.mjs). null on 404.
+  getDonation(id: string): Promise<Record<string, unknown> | null>;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -97,5 +100,19 @@ export class HttpFunraiseClient implements FunraiseClient {
       throw new Error(`funraise api: get subscription ${id} failed with HTTP ${res.status}`);
     }
     return (await res.json()) as FunraiseSubscription;
+  }
+
+  async getDonation(id: string): Promise<Record<string, unknown> | null> {
+    if (!/^\d+$/.test(id)) throw new Error('funraise api: donation id must be numeric');
+    const res = await this.request(`crm/donation/${encodeURIComponent(id)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`funraise api: get donation ${id} failed with HTTP ${res.status}`);
+    }
+    const body: unknown = await res.json();
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new Error(`funraise api: get donation ${id} expected an object`);
+    }
+    return body as Record<string, unknown>;
   }
 }

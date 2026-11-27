@@ -86,7 +86,7 @@ describe('dispatchScheduled under the write switch', () => {
       listSubscriptionsUpdatedAfter: vi.fn().mockResolvedValue([sub(1, 200), sub(2, 300)]),
       // Tie walk of T = 100 from id 0 (the missing id cursor): nothing tied.
       listSubscriptionsAtUpdtime: vi.fn().mockResolvedValue([]),
-      getSubscription: vi.fn(),
+      getSubscription: vi.fn(), getDonation: vi.fn(),
     };
     const monday: MondayClient = {
       findItemByColumnValue: vi.fn().mockResolvedValue(null),

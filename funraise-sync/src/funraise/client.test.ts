@@ -69,4 +69,16 @@ describe('HttpFunraiseClient', () => {
     const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(200, { content: [] }));
     await expect(client.listSubscriptionsUpdatedAfter(0)).rejects.toThrow(/expected an array/);
   });
+
+  it('gets one donation by id, returning null on 404 and refusing a non-numeric id', async () => {
+    const fetchImpl = fetchReturning(200, { id: 14580483, transaction: { amount: 25 } });
+    const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchImpl);
+    expect(await client.getDonation('14580483')).toEqual({ id: 14580483, transaction: { amount: 25 } });
+    expect((fetchImpl.mock.calls[0] as [string])[0]).toBe('https://api.funraise.io/api/v1/crm/donation/14580483');
+    await expect(client.getDonation('../x')).rejects.toThrow(/numeric/);
+    const missing = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(404, {}));
+    expect(await missing.getDonation('1')).toBeNull();
+    const down = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(503, {}));
+    await expect(down.getDonation('1')).rejects.toThrow(/503/);
+  });
 });

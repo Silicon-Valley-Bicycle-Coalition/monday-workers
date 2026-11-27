@@ -57,7 +57,7 @@ function simulatedFunraise(initial: FunraiseSubscription[], pageSize = 10) {
         .sort((a, b) => Number(a.id) - Number(b.id))
         .slice(0, pageSize);
     }),
-    getSubscription: vi.fn(),
+    getSubscription: vi.fn(), getDonation: vi.fn(),
   };
   return {
     client,
@@ -207,7 +207,7 @@ describe('pollSubscriptions (keyset on updtime, id — #25)', () => {
     const client: FunraiseClient = {
       listSubscriptionsUpdatedAfter: vi.fn(),
       listSubscriptionsAtUpdtime: vi.fn().mockResolvedValue(Array.from({ length: 10 }, () => ({ ...sub(1, 7000), id: 'x' }))),
-      getSubscription: vi.fn(),
+      getSubscription: vi.fn(), getDonation: vi.fn(),
     };
 
     await expect(pollSubscriptions({ funraiseClient: client, subscriptionStore: store, mondayClient: fakeMonday(), config })).rejects.toThrow(/numeric id/);

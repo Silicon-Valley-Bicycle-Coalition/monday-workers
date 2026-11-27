@@ -10,7 +10,8 @@ import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
 import { toISODate } from '../util/isoDate';
 import { errorMessage } from '../util/errorMessage';
-import { isTerminalError } from '../errors';
+import { isTerminalError, TerminalError } from '../errors';
+import { stripDenylistedFields } from '../util/stripFields';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
@@ -152,7 +153,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     throw new Error('config: monday.boards["donations:live"] is not configured');
   }
 
-  const rawPayload = JSON.parse(event.rawPayload) as Record<string, unknown>;
+  const rawPayload = await giftRecord(entityType, entityId, event.rawPayload, deps);
 
   // Matching runs here, not in the webhook handler, so a transient Monday failure
   // gets the queue's retries and lands in the DLQ instead of dying silently.
@@ -299,6 +300,53 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     mondayItemId: item.id,
     writtenAt: new Date().toISOString(),
   });
+}
+
+/**
+ * What the consumer maps. With `rereadFromFunraise` on, the delivery is only a pointer: the gift
+ * is fetched from Funraise by its id and stripped of `doNotMigrateFields` exactly as the route
+ * strips the body, so a delivery forged with the URL secret can't put its own amount, status or
+ * donor on the board. A gift Funraise doesn't have is terminal (a forged or Test-button id); a
+ * missing API key or a Funraise outage retries, since fixing either heals the backlog. Off, the
+ * stored body is mapped as it arrived.
+ */
+async function giftRecord(entityType: EntityType, entityId: string, storedPayload: string, deps: ProcessBatchDeps): Promise<Record<string, unknown>> {
+  const body = JSON.parse(storedPayload) as Record<string, unknown>;
+  if (!deps.config.funraiseSync.rereadFromFunraise || entityType !== 'transaction') return body;
+  if (!deps.funraiseClient) {
+    throw new Error('funraiseSync.rereadFromFunraise is on but FUNRAISE_API_KEY is not set; not writing from the webhook body');
+  }
+  if (!/^\d+$/.test(entityId)) {
+    throw new TerminalError(`transaction id "${entityId}" is not a Funraise donation id; nothing was written`);
+  }
+  const record = await deps.funraiseClient.getDonation(entityId);
+  if (record === null) {
+    throw new TerminalError(`Funraise has no donation ${entityId}; the delivery was not written`);
+  }
+  if (String(record.id) !== entityId) {
+    throw new TerminalError(`Funraise returned donation ${String(record.id)} for ${entityId}; nothing was written`);
+  }
+  const stripped = stripDenylistedFields(record, deps.config.funraiseSync.doNotMigrateFields);
+  // Paths only, never values: both sides are donor PII. A mismatch is a forged body or an edit
+  // that landed after this delivery was sent; either way Funraise's record is what gets written.
+  const differing = mappedPathsDiffering(body, stripped, deps.config);
+  if (differing.length > 0) {
+    console.warn(`funraise-sync consumer: transaction "${entityId}" webhook body differs from Funraise's record at ${differing.join(', ')}; writing Funraise's record`);
+  }
+  return stripped;
+}
+
+function mappedPathsDiffering(body: Record<string, unknown>, record: Record<string, unknown>, config: FunraiseSyncConfig): string[] {
+  const s = config.funraiseSync;
+  const paths = [
+    ...Object.keys(s.columnMap),
+    s.itemNameField,
+    s.donorExternalIdField,
+    ...s.emailFieldPrecedence,
+    TRANSACTION_DATE_FIELD,
+    SUBSCRIPTION_ID_FIELD,
+  ];
+  return [...new Set(paths)].filter((p) => JSON.stringify(getPath(body, p) ?? null) !== JSON.stringify(getPath(record, p) ?? null));
 }
 
 /**

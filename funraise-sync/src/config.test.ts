@@ -22,6 +22,7 @@ const validConfig = {
     fiscalYearColumn: null,
     oldestActiveFiscalYear: null,
     recurringGiftLinkColumn: null,
+    rereadFromFunraise: false,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'supporter.id',
@@ -135,6 +136,10 @@ describe('validateConfig new keys', () => {
 
   it('throws when itemNameField is not a non-empty string', () => {
     expect(() => validateConfig(withFunraiseSync({ itemNameField: {} }))).toThrow(/itemNameField/);
+  });
+
+  it('throws when rereadFromFunraise is not a boolean', () => {
+    expect(() => validateConfig(withFunraiseSync({ rereadFromFunraise: 'yes' }))).toThrow(/rereadFromFunraise/);
   });
 
   it('throws when rawPayloadRetentionDays is not a positive number', () => {
