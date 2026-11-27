@@ -23,6 +23,7 @@
     "oldestActiveFiscalYear": 2026,
     "fiscalYearColumn": "text_mm8ngcfh",
     "recurringGiftLinkColumn": "board_relation_mm8nn9n9",
+    "rereadFromFunraise": true,
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "supporter.id",

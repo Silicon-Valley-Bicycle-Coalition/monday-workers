@@ -26,6 +26,7 @@ const config: FunraiseSyncConfig = {
     fiscalYearColumn: 'fiscal_year_col',
     oldestActiveFiscalYear: null,
     recurringGiftLinkColumn: null,
+    rereadFromFunraise: false,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'supporter.id',

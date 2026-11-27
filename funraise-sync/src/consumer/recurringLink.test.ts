@@ -73,7 +73,7 @@ function fakeFunraise(subscription: Record<string, unknown> | null): FunraiseCli
   return {
     listSubscriptionsUpdatedAfter: vi.fn(),
     listSubscriptionsAtUpdtime: vi.fn(),
-    getSubscription: vi.fn().mockResolvedValue(subscription),
+    getSubscription: vi.fn().mockResolvedValue(subscription), getDonation: vi.fn(),
   };
 }
 
@@ -210,7 +210,7 @@ describe('Recurring Gift link never fails the donation', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const monday = fakeMonday();
-      const funraise: FunraiseClient = { listSubscriptionsUpdatedAfter: vi.fn(), listSubscriptionsAtUpdtime: vi.fn(), getSubscription: vi.fn().mockRejectedValue(new Error('funraise api: HTTP 503')) };
+      const funraise: FunraiseClient = { listSubscriptionsUpdatedAfter: vi.fn(), listSubscriptionsAtUpdtime: vi.fn(), getSubscription: vi.fn().mockRejectedValue(new Error('funraise api: HTTP 503')), getDonation: vi.fn() };
       const eventStore = fakeStore(eventRow(installment));
 
       await processFunraiseQueueBatch([message], { eventStore, mondayClient: monday, config, subscriptionStore: fakeSubscriptionStore(null), funraiseClient: funraise });

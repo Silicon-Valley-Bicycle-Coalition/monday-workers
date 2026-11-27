@@ -318,12 +318,20 @@ their company goes to Recurring Gifts → Match Employer.
 Funraise custom form answers (the old employer question) don't arrive by webhook or API; that is
 steps 1 and 3 of #6, waiting on Funraise.
 
-## Webhook body vs. Funraise's own record (open)
+## Webhook body vs. Funraise's own record
 
-The consumer maps the webhook body as delivered; only the URL secret vouches for it. The planned
-fix is to treat a delivery as a pointer and map from `GET /api/v1/crm/donation/{id}`, held until
-that record is shown to carry the same id and shape. Check it with one read-only call (prints paths
-and verdicts, never values; exit 0 = every mapped path matches):
+Only the URL secret vouches for a delivery, so with `funraiseSync.rereadFromFunraise` on (both
+SVBC configs) the consumer treats a delivery as a pointer: it fetches
+`GET /api/v1/crm/donation/{id}`, strips `doNotMigrateFields` exactly as the route strips the body,
+and maps that. A forged body's values never reach Monday. Funraise having no such donation, or
+answering with another id, is terminal (`failed`, not retried); Funraise's Test-button
+transaction (id `-1`) lands there too. A Funraise outage or a missing `FUNRAISE_API_KEY` retries
+like a Monday outage. A body that differs from the record on a mapped path is logged by path
+(never by value) and Funraise's record is written. Forks without an API key set it to `false`.
+
+The two shapes were compared field by field on 2026-11-27 (transaction 14580483: every mapped
+path the same; the API also returns the card fields the route strips). To re-check after a
+Funraise change (paths and verdicts only, never values; exit 0 = every mapped path matches):
 
 ```sh
 FUNRAISE_API_KEY=<production key> node scripts/compare-donation-shape.mjs [--id <transaction id>] [--env sandbox]
@@ -794,9 +802,11 @@ applies D1 migrations, so apply a new one to the sandbox D1 before merging. Toke
 
 Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
 at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
-that, sandbox testing uses Funraise's Test button or a replay of stored production deliveries
+that, sandbox testing uses a replay of stored production deliveries
 (`scripts/replay-window.mjs --source-env production` against the sandbox host, with the sandbox
-Worker's secret; see "Replaying one Worker's deliveries into another").
+Worker's secret; see "Replaying one Worker's deliveries into another"). Since the re-read from
+Funraise, the Test button's transaction `-1` reaches the Worker but is not written (Funraise has
+no such donation); a replayed real gift is.
 
 ## Recurring gifts and registrations — decided 2026-09-18
 

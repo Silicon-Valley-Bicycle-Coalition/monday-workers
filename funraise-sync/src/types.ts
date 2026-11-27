@@ -100,6 +100,10 @@ export interface FunraiseSyncConfig {
     // Connect column on the Donations board pointing at the Recurring Gifts board; set on every
     // write of an installment (a transaction carrying `subscription.id`). null disables it.
     recurringGiftLinkColumn: string | null;
+    // When true, the consumer maps each gift from Funraise's own record
+    // (GET /api/v1/crm/donation/{id}) instead of the webhook body, so a forged delivery can't put
+    // its values on the board. Needs FUNRAISE_API_KEY. false trusts the body (a fork without a key).
+    rereadFromFunraise: boolean;
     rawPayloadRetentionDays: number;
     unresolvedPayloadRetentionDays: number;
     donorExternalIdField: string;

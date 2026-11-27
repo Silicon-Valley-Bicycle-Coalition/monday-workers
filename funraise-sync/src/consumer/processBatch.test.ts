@@ -787,7 +787,7 @@ describe('write switch', () => {
     return {
       listSubscriptionsUpdatedAfter: vi.fn(),
       listSubscriptionsAtUpdtime: vi.fn(),
-      getSubscription: vi.fn().mockResolvedValue({ id: 26, name: 'Sub 26', status: 'Active', frequency: 'Monthly', sourceAmount: 25, updtime: 5, supporter: { id: 9, name: 'Ada', email: 'a@b.org' } }),
+      getSubscription: vi.fn().mockResolvedValue({ id: 26, name: 'Sub 26', status: 'Active', frequency: 'Monthly', sourceAmount: 25, updtime: 5, supporter: { id: 9, name: 'Ada', email: 'a@b.org' } }), getDonation: vi.fn(),
     };
   }
 
@@ -1039,5 +1039,86 @@ describe('outage breaker', () => {
     expect(findItemByColumnValue).toHaveBeenCalledTimes(1);
     expect(messages[1]!.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(eventStore.updateStatusByEntity).not.toHaveBeenCalled();
+  });
+});
+
+describe('re-reading each gift from Funraise (rereadFromFunraise)', () => {
+  const rereadConfig: FunraiseSyncConfig = testConfig({ entityIdColumn: 'entity_col', rereadFromFunraise: true, doNotMigrateFields: ['transaction.lastFour'] });
+  const forgedBody = { id: 42, amount: 1000000, donor: { contactId: 'fr-1', email: 'a@b.org', name: 'Ada' } };
+  const funraiseRecord = { id: 42, amount: 25, donor: { contactId: 'fr-1', email: 'a@b.org', name: 'Ada' }, transaction: { lastFour: '4242' } };
+
+  function funraise(getDonation: FunraiseClient['getDonation']): FunraiseClient {
+    return { listSubscriptionsUpdatedAfter: vi.fn(), listSubscriptionsAtUpdtime: vi.fn(), getSubscription: vi.fn(), getDonation };
+  }
+  function monday(): MondayClient & { createItem: any } {
+    return { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem: vi.fn().mockResolvedValue({ id: 'item-1' }), changeColumnValues: vi.fn() };
+  }
+  const row = () => eventRow({ entityId: '42', matchedDonorItemId: '7', rawPayload: JSON.stringify(forgedBody) });
+
+  it("writes Funraise's record, not the body, and strips doNotMigrateFields from it", async () => {
+    const getDonation = vi.fn().mockResolvedValue(funraiseRecord);
+    const mondayClient = monday();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const message = fakeMessage('transaction', '42');
+
+    await processFunraiseQueueBatch([message], { eventStore: fakeStore(row()), mondayClient, config: rereadConfig, funraiseClient: funraise(getDonation) });
+
+    expect(getDonation).toHaveBeenCalledWith('42');
+    const columns = mondayClient.createItem.mock.calls[0][2];
+    expect(columns.numeric_col).toBe(25);
+    expect(JSON.stringify(columns)).not.toContain('4242');
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/differs from Funraise's record at amount/);
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('1000000');
+    expect(message.ack).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('writes nothing for a gift Funraise does not have, and does not retry it', async () => {
+    const eventStore = fakeStore(row());
+    const mondayClient = monday();
+    const message = fakeMessage('transaction', '42');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config: rereadConfig, funraiseClient: funraise(vi.fn().mockResolvedValue(null)) });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', '42', 'failed', { error: expect.stringContaining(TERMINAL_PREFIX) });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('writes nothing when Funraise answers with a different donation id', async () => {
+    const mondayClient = monday();
+    const message = fakeMessage('transaction', '42');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await processFunraiseQueueBatch([message], { eventStore: fakeStore(row()), mondayClient, config: rereadConfig, funraiseClient: funraise(vi.fn().mockResolvedValue({ ...funraiseRecord, id: 43 })) });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('treats a non-numeric id (such as a forged one) as terminal without calling Funraise', async () => {
+    const getDonation = vi.fn();
+    const message = fakeMessage('transaction', 'txn-1');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await processFunraiseQueueBatch([message], { eventStore: fakeStore(eventRow()), mondayClient: monday(), config: rereadConfig, funraiseClient: funraise(getDonation) });
+    expect(getDonation).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('retries, writing nothing, on a Funraise outage or a missing API key', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const funraiseClient of [funraise(vi.fn().mockRejectedValue(new Error('funraise api: get donation 42 failed with HTTP 503'))), undefined]) {
+      const mondayClient = monday();
+      const message = fakeMessage('transaction', '42');
+      await processFunraiseQueueBatch([message], { eventStore: fakeStore(row()), mondayClient, config: rereadConfig, funraiseClient });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(message.retry).toHaveBeenCalled();
+      expect(message.ack).not.toHaveBeenCalled();
+    }
+    error.mockRestore();
   });
 });
