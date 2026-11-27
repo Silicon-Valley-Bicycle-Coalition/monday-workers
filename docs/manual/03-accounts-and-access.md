@@ -43,8 +43,9 @@ Things to know:
 - **Your own access from a terminal:** run `npx wrangler login`, which opens a browser to sign
   in, then `npx wrangler whoami`. Wrangler stores an OAuth token in your user profile.
 - **API tokens in use:**
-  - `sync-watchdog` holds a `CLOUDFLARE_API_TOKEN` to read queue backlogs and cron history. It
-    is an account token with only Account Analytics Read and Queues Read.
+  - `sync-watchdog` holds a `CLOUDFLARE_API_TOKEN` to read queue backlogs, cron history and the
+    zone's Custom Domains and routes. It is an account token with only Account Analytics Read,
+    Queues Read and Workers Scripts Read, plus Workers Routes Read on `bikesiliconvalley.org`.
   - The two Workers Builds connections (`svbc-calendars`, `monday-backup`) use a build token
     Cloudflare created, named "svbc-events-widgets build token".
   - The GitHub `sandbox` environment holds the `CLOUDFLARE_API_TOKEN` the `deploy-sandbox` job

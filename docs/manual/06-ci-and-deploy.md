@@ -96,6 +96,31 @@ Don't start from the dashboard's "Edit Cloudflare Workers" template, which is ac
 the secret in the `sandbox` GitHub environment, which is restricted to `main`. Never make it a
 repository secret, or code in a pull request could read it.
 
+**What it can still reach, and what watches it.** Queues: Write and Workers Routes Write have no
+narrower scope. Routes are granted per zone, and Custom Domains have no per-Worker role
+([Cloudflare docs](https://developers.cloudflare.com/workers/authorization/workers/#routes-and-custom-domains)). So code running in `deploy-sandbox` could repoint a production
+hostname at a sandbox Worker, or add a route in front of it, because a route runs before a Custom
+Domain on the same hostname ([Cloudflare docs](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/#interaction-with-routes)). Cloudflare has no notification for
+route changes, so `sync-watchdog` checks every hour: its `domains:bikesiliconvalley.org` subject
+compares every Custom Domain and route on the zone with `sync-watchdog/config/svbc.json` and posts
+any difference to the staff channel ([runbook](../runbooks/sync-alerting.md)).
+
+**No required reviewer on `sandbox` (decided 2026-11-27).** The environment runs only on `main`.
+A change gets there only through a pull request with `ci-ok` and `checks` green, and the deploy
+job installs with `--ignore-scripts`. A misused route alerts within the hour. An approval on
+every merge would hold every sandbox deploy for the one maintainer. Revisit if more people can
+merge, or if "require a review before merging to main" is declined. `sandbox-pr` is different:
+it runs a pull request's own code, so it gets a reviewer (step 3 of
+[Deploying a pull request to the sandbox](#deploying-a-pull-request-to-the-sandbox)).
+
+- **Possibly narrower:** Cloudflare says a deploy needs Workers Routes Write only when it adds,
+  changes or removes a route or Custom Domain ([Cloudflare docs](https://developers.cloudflare.com/workers/authorization/workers/#routes-and-custom-domains)). The sandbox domains
+  don't change between deploys, so the token may work without that permission. This is untested.
+  At the next roll, try it without Routes Write and deploy one Worker with a Custom Domain
+  (`member-portal`) by hand. If that works, keep it off and record it here.
+- **Longer term:** a separate Cloudflare account, or a separate zone, for the sandbox would keep
+  its token away from production queues and routes altogether.
+
 - **Adding a Worker to the roster:** the token can't create a Worker or cover one that doesn't
   exist yet. Deploy the new sandbox Worker by hand once, then add it to the token's Workers policy.
 - **`nearby-search` is left out on purpose.** A deploy would publish its sandbox hostname, and its

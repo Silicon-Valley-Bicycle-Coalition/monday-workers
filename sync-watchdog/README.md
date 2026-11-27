@@ -8,7 +8,12 @@ Worker:
 - **is not on its expected write switch**: `<worker>:writes` in the production `FLAGS` KV
   differs from `expectedWrites`;
 - **has a queue backlog that isn't draining**: a production main queue's oldest message is older
-  than `maxBacklogAgeHours`.
+  than `maxBacklogAgeHours`;
+- **has had its hostname moved**: a Custom Domain or Workers route on `bikesiliconvalley.org`
+  differs from `domains` (missing, on another Worker, or not listed). The sandbox deploy token can
+  change routes on the whole zone, and Cloudflare has no notification for that
+  ([docs/manual/06-ci-and-deploy.md](../docs/manual/06-ci-and-deploy.md#the-sandbox-deploy-token)).
+  This subject posts again whenever its list of differences changes.
 
 It posts when a check goes bad, once a day while it stays bad, and once when it recovers. Every
 Monday's 16:40 UTC run posts a one-line heartbeat; if that stops arriving, the watchdog itself is
@@ -23,6 +28,8 @@ Design: [`docs/superpowers/specs/2026-11-17-sync-failure-alerting-design.md`](..
 crons with their maximum gap) or `notLive` (with a reason). `config/coverage.test.ts` fails CI
 when any Worker's `wrangler.jsonc` gains, loses or changes a production cron that this file
 doesn't match. To take a Worker live, move it from `notLive` to `watched`.
+The same test fails until `domains` lists every Custom Domain in any `wrangler*.jsonc` on the
+script that declares it: in `customDomains` once deployed, in `pending` until then.
 
 Cron expressions must be ones `src/cron.ts` can read (numbers, `*`, `*/n`, ranges and lists; no
 names, `L`, `W` or `#`); config validation rejects the rest. Weekdays are Cloudflare's: 1 is Sunday.
@@ -46,7 +53,9 @@ last 2 h, every cron subject is "check failed" (logged, not posted) instead of "
 - `STATE`: this Worker's own KV namespace, holding per-subject alert state, and also
   `snapshot:latest`: every subject's result and the run time, written each run (both environments)
   and read by [`status-page`](../status-page/README.md).
-- `CLOUDFLARE_API_TOKEN` (secret): an account token with Account Analytics Read and Queues Read.
+- `CLOUDFLARE_API_TOKEN` (secret): an account token with Account Analytics Read, Queues Read and
+  Workers Scripts Read, plus Workers Routes Read on the `bikesiliconvalley.org` zone. Without
+  the last two, `domains:` is "check failed" (logged, not posted).
 - `SLACK_WEBHOOK_URL` (secret): the private staff channel's incoming webhook.
 
 No write switch: it writes nothing to Monday. The sandbox environment has no crons and never

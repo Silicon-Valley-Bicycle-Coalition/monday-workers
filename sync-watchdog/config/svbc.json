@@ -46,5 +46,26 @@
     { "name": "svbc-member-map-refresh", "maxBacklogAgeHours": 6 },
     { "name": "member-portal-change-requests", "maxBacklogAgeHours": 6 },
     { "name": "member-portal-letter-emails", "maxBacklogAgeHours": 6 }
-  ]
+  ],
+  "domains": {
+    "zone": "bikesiliconvalley.org",
+    "customDomains": {
+      "committees.bikesiliconvalley.org": "svbc-calendars",
+      "events.bikesiliconvalley.org": "svbc-calendars",
+      "lanes.bikesiliconvalley.org": "svbc-bike-lanes",
+      "map.bikesiliconvalley.org": "svbc-member-map",
+      "map.sandbox.bikesiliconvalley.org": "svbc-member-map-sandbox",
+      "member.bikesiliconvalley.org": "svbc-member-portal",
+      "member.sandbox.bikesiliconvalley.org": "svbc-member-portal-sandbox",
+      "status.bikesiliconvalley.org": "svbc-status-page",
+      "status.sandbox.bikesiliconvalley.org": "svbc-status-page-sandbox"
+    },
+    "routes": {},
+    "pending": {
+      "nearby.sandbox.bikesiliconvalley.org": {
+        "script": "svbc-nearby-search-sandbox",
+        "reason": "first deploy waits on its Access application"
+      }
+    }
+  }
 }

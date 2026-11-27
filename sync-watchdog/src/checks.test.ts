@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { env } from 'cloudflare:workers';
-import { cronSubjects, writeSwitchSubjects, queueSubjects } from './checks';
+import { cronSubjects, domainSubjects, writeSwitchSubjects, queueSubjects, type SubjectResult } from './checks';
 import { CloudflareApiError, type CloudflareApi, type CronRun } from './cloudflare';
 import recorded from '../test/fixtures/cronRuns.json';
 import { cloudflareApi } from './cloudflare';
@@ -42,6 +42,8 @@ function api(over: Partial<CloudflareApi>): CloudflareApi {
   return {
     cronRuns: async () => [own],
     queueBacklog: async () => ({ count: 0, oldestAgeHours: null }),
+    customDomains: async () => [],
+    zoneRoutes: async () => [],
     ...over,
   };
 }
@@ -171,5 +173,87 @@ describe('queueSubjects', () => {
     const results = await queueSubjects(cfg, api({ queueBacklog: async () => { throw new CloudflareApiError('down'); } }));
     expect(results[0]!.health).toBe('check-failed');
     expect(results[0]!.error).toContain('down');
+  });
+});
+
+describe('domainSubjects', () => {
+  const ZONE = 'z1';
+  const withDomains: WatchdogConfig = {
+    ...cfg,
+    domains: {
+      zone: 'example.org',
+      customDomains: { 'member.example.org': 'svbc-member-portal', 'member.sandbox.example.org': 'svbc-member-portal-sandbox' },
+      routes: {},
+      pending: { 'nearby.sandbox.example.org': { script: 'svbc-nearby-search-sandbox', reason: 'not yet' } },
+    },
+  };
+  const live = [
+    { hostname: 'member.example.org', service: 'svbc-member-portal', zoneId: ZONE },
+    { hostname: 'member.sandbox.example.org', service: 'svbc-member-portal-sandbox', zoneId: ZONE },
+  ];
+  const detailOf = (r: SubjectResult[]) => (r[0]!.health as { ok: false; detail: string }).detail;
+
+  it('no domains config, no subject', async () => {
+    expect(await domainSubjects(cfg, api({}))).toEqual([]);
+  });
+
+  it('matching domains and no routes is ok, and asks for the zone it found', async () => {
+    const asked: string[] = [];
+    const r = await domainSubjects(withDomains, api({ customDomains: async () => live, zoneRoutes: async (id) => { asked.push(id); return []; } }));
+    expect(r).toEqual([{ subject: 'domains:example.org', health: { ok: true } }]);
+    expect(asked).toEqual([ZONE]);
+  });
+
+  it('a pending hostname is fine absent or on its own Worker, not on another', async () => {
+    const pendingOn = (service: string) => [...live, { hostname: 'nearby.sandbox.example.org', service, zoneId: ZONE }];
+    expect((await domainSubjects(withDomains, api({ customDomains: async () => pendingOn('svbc-nearby-search-sandbox') })))[0]!.health).toEqual({ ok: true });
+    expect(detailOf(await domainSubjects(withDomains, api({ customDomains: async () => pendingOn('svbc-x-sandbox') })))).toBe(
+      'custom domain nearby.sandbox.example.org -> svbc-x-sandbox (expected svbc-nearby-search-sandbox)',
+    );
+  });
+
+  it('a production hostname moved to a sandbox Worker, an extra domain and a missing one are all listed, sorted', async () => {
+    const r = await domainSubjects(
+      withDomains,
+      api({
+        customDomains: async () => [
+          { hostname: 'member.example.org', service: 'svbc-member-portal-sandbox', zoneId: ZONE },
+          { hostname: 'donate.example.org', service: 'svbc-funraise-sync-sandbox', zoneId: ZONE },
+        ],
+      }),
+    );
+    expect(detailOf(r)).toBe(
+      'custom domain member.example.org -> svbc-member-portal-sandbox (expected svbc-member-portal); ' +
+        'custom domain member.sandbox.example.org missing (expected svbc-member-portal-sandbox); ' +
+        'unexpected custom domain donate.example.org -> svbc-funraise-sync-sandbox',
+    );
+  });
+
+  it('any route on the zone is unexpected: a route runs before the Custom Domain', async () => {
+    const r = await domainSubjects(
+      withDomains,
+      api({ customDomains: async () => live, zoneRoutes: async () => [{ pattern: 'member.example.org/*', script: 'svbc-member-portal-sandbox' }, { pattern: 'example.org/x', script: null }] }),
+    );
+    expect(detailOf(r)).toBe('unexpected route example.org/x -> no Worker; unexpected route member.example.org/* -> svbc-member-portal-sandbox');
+  });
+
+  it('an expected route must be there and on its Worker', async () => {
+    const c: WatchdogConfig = { ...withDomains, domains: { ...withDomains.domains!, routes: { 'example.org/api/*': 'svbc-api' } } };
+    expect(detailOf(await domainSubjects(c, api({ customDomains: async () => live })))).toBe('route example.org/api/* missing (expected svbc-api)');
+    expect(
+      detailOf(await domainSubjects(c, api({ customDomains: async () => live, zoneRoutes: async () => [{ pattern: 'example.org/api/*', script: 'svbc-api-sandbox' }] }))),
+    ).toBe('route example.org/api/* -> svbc-api-sandbox (expected svbc-api)');
+  });
+
+  it('no Custom Domains at all is bad, and says the routes went unchecked', async () => {
+    const r = await domainSubjects(withDomains, api({ zoneRoutes: async () => { throw new Error('should not be called'); } }));
+    expect(detailOf(r)).toContain('zone routes not checked');
+    expect(detailOf(r)).toContain('custom domain member.example.org missing');
+  });
+
+  it('an API error is check-failed, never ok', async () => {
+    const r = await domainSubjects(withDomains, api({ customDomains: async () => live, zoneRoutes: async () => { throw new CloudflareApiError('403'); } }));
+    expect(r[0]!.health).toBe('check-failed');
+    expect(r[0]!.error).toContain('403');
   });
 });

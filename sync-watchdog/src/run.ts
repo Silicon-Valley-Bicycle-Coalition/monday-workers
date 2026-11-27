@@ -1,5 +1,5 @@
 import { postToSlack } from './alert';
-import { cronSubjects, queueSubjects, writeSwitchSubjects, type SubjectResult } from './checks';
+import { cronSubjects, domainSubjects, queueSubjects, writeSwitchSubjects, type SubjectResult } from './checks';
 import type { CloudflareApi } from './cloudflare';
 import type { WatchdogConfig } from './config';
 import { decide, markSent, type SubjectState } from './state';
@@ -55,6 +55,7 @@ export async function runWatchdog(deps: RunDeps): Promise<void> {
     ...(await cronSubjects(cfg, api, cronStates, now)),
     ...(await writeSwitchSubjects(cfg, flags)),
     ...(await queueSubjects(cfg, api)),
+    ...(await domainSubjects(cfg, api)),
   ];
 
   const failed = results.filter((r) => r.health === 'check-failed');
@@ -65,7 +66,7 @@ export async function runWatchdog(deps: RunDeps): Promise<void> {
   for (const r of results) {
     if (r.health === 'check-failed') continue; // state left as it was
     const prev = r.subject.startsWith('cron:') ? (cronStates.get(r.subject) ?? null) : await loadState(state, r.subject);
-    let { post, next } = decide(r.subject, r.health, prev, now);
+    let { post, next } = decide(r.subject, r.health, prev, now, { repostOnNewDetail: r.subject.startsWith('domains:') });
     if (post && (await send(post.text)) && post.kind !== 'recovered') next = markSent(next, now);
     await state.put(key(r.subject), JSON.stringify(next));
   }

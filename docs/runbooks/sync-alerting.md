@@ -16,6 +16,7 @@ Sandbox Workers never alert. Design:
 | `sync-watchdog: cron:<worker>:<cron>: no run since <time>` | That schedule hasn't fired within its allowed gap. | Check the Worker in the dashboard (Settings → Trigger Events). A redeploy that dropped the cron, or a cron changed in `wrangler.jsonc` without updating `sync-watchdog/config/svbc.json`, are the usual causes. |
 | `sync-watchdog: writes:<worker>: writes are <value>, expected <value>` | The write switch differs from the value the watchdog expects. | `node scripts/flags.mjs status`, then `node scripts/flags.mjs <worker> writes on` if the hold is over ([migration-hold runbook](migration-hold.md)). If the new value is intended, update `expectedWrites`. |
 | `sync-watchdog: queue:<queue>: N messages waiting, oldest H h` | A production queue isn't draining. | Look at the consumer's Workers Issues and logs. If the Worker is on `hold`, that's expected until it's turned back `on`. |
+| `sync-watchdog: domains:<zone>: …` | A Custom Domain or Workers route on the zone differs from `domains` in `sync-watchdog/config/svbc.json`: missing, on another Worker, or not listed. It posts again as soon as the list of differences changes. | **Treat an unexpected route or a production hostname on a `-sandbox` Worker as a security incident.** Check the zone's audit log (Manage account → Audit logs) for who changed it, put it back (Worker → Settings → Domains & Routes), and roll the deploy token that did it ([chapter 6](../manual/06-ci-and-deploy.md#the-sandbox-deploy-token)). If the change was intended, update `domains` and redeploy `sync-watchdog`. |
 | `… still failing: …` | The same problem, 24 hours later. | As above. |
 | `… recovered` | The problem cleared. | Nothing. |
 | `sync-watchdog: running, N of M subjects healthy` | Monday 16:40 UTC heartbeat. | If it **stops arriving**, the watchdog itself is down: check `svbc-sync-watchdog` in the dashboard. |
@@ -28,6 +29,9 @@ either `watched` or `notLive` in `sync-watchdog/config/svbc.json`. When a Worker
 it from `notLive` to `watched` with its script name, expected write switch, and a `maxGapHours`
 for each cron (2× the interval; at least 3 h for hourly, 30 h for daily, 192 h for weekly), then
 redeploy `sync-watchdog`.
+
+A new Custom Domain in any `wrangler*.jsonc` fails the same test until it is in `domains`:
+`customDomains` once deployed, or `pending` (with its script and a reason) until it is.
 
 ## Workers Issues automations (dashboard)
 

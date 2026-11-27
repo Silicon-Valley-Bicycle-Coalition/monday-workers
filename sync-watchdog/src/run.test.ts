@@ -23,6 +23,8 @@ const healthyApi = (now: Date): CloudflareApi => ({
   // The latest top of the hour, which is when the watched `0 * * * *` fires.
   cronRuns: async () => [{ script: 'svbc-funraise-sync', at: new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000), count: 1 }],
   queueBacklog: async () => ({ count: 0, oldestAgeHours: null }),
+  customDomains: async () => [],
+  zoneRoutes: async () => [],
 });
 
 let slack: { status: number; posts: string[] };

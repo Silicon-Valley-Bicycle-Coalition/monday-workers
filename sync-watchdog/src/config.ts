@@ -20,12 +20,24 @@ export interface QueueWatch {
   maxBacklogAgeHours: number;
 }
 
+// Every Workers Custom Domain and route on one zone. Anything else on the zone, or a hostname
+// pointing at a different Worker, is an alert: the sandbox deploy token can change routes on the
+// whole zone (docs/manual/06-ci-and-deploy.md, "The sandbox deploy token").
+export interface DomainWatch {
+  zone: string;
+  customDomains: Record<string, string>; // hostname -> Worker script
+  routes: Record<string, string | null>; // route pattern -> Worker script (null: runs no Worker)
+  // Declared in a wrangler file but maybe not deployed yet: fine absent or on `script`.
+  pending: Record<string, { script: string; reason: string }>;
+}
+
 export interface WatchdogConfig {
   accountId: string;
   selfScript: string; // this Worker's own script: proves Cloudflare's run data is arriving
   watched: Record<string, WatchedWorker>; // key: Worker directory name
   notLive: Record<string, string>; // key: directory name, value: reason
   queues: QueueWatch[];
+  domains?: DomainWatch;
 }
 
 type Json = Record<string, unknown>;
@@ -68,6 +80,25 @@ export function validateConfig(raw: unknown): WatchdogConfig {
   for (const q of raw.queues as unknown[]) {
     if (!isObject(q) || typeof q.name !== 'string' || q.name === '') fail('each queue needs a name');
     if (!positive(q.maxBacklogAgeHours)) fail(`${q.name}: maxBacklogAgeHours must be a positive number`);
+  }
+  if (raw.domains !== undefined) {
+    const d = raw.domains;
+    if (!isObject(d) || typeof d.zone !== 'string' || d.zone === '') fail('domains.zone is required');
+    if (!isObject(d.customDomains) || !isObject(d.routes) || !isObject(d.pending)) {
+      fail('domains needs customDomains, routes and pending objects');
+    }
+    for (const [host, script] of Object.entries(d.customDomains)) {
+      if (typeof script !== 'string' || script === '') fail(`domains.customDomains ${host}: a script is required`);
+      if (host in d.pending) fail(`domains: ${host} is in both customDomains and pending`);
+    }
+    for (const [pattern, script] of Object.entries(d.routes)) {
+      if (!(script === null || (typeof script === 'string' && script !== ''))) fail(`domains.routes ${pattern}: script must be a name or null`);
+    }
+    for (const [host, p] of Object.entries(d.pending)) {
+      if (!isObject(p) || typeof p.script !== 'string' || p.script === '' || typeof p.reason !== 'string' || p.reason === '') {
+        fail(`domains.pending ${host}: a script and a reason are required`);
+      }
+    }
   }
   return raw as unknown as WatchdogConfig;
 }

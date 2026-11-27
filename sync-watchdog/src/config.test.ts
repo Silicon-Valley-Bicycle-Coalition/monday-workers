@@ -46,4 +46,25 @@ describe('validateConfig', () => {
     c.notLive['funraise-sync'] = 'x';
     expect(() => validateConfig(c)).toThrow(/both/);
   });
+
+  it('rejects a domains block without a zone, a script, or a pending reason', () => {
+    const noZone = base();
+    delete noZone.domains.zone;
+    expect(() => validateConfig(noZone)).toThrow(/domains.zone/);
+    const noScript = base();
+    noScript.domains.customDomains['member.bikesiliconvalley.org'] = '';
+    expect(() => validateConfig(noScript)).toThrow(/member.bikesiliconvalley.org/);
+    const noReason = base();
+    noReason.domains.pending['nearby.sandbox.bikesiliconvalley.org'].reason = '';
+    expect(() => validateConfig(noReason)).toThrow(/reason/);
+    const both = base();
+    both.domains.pending['member.bikesiliconvalley.org'] = { script: 'svbc-member-portal', reason: 'x' };
+    expect(() => validateConfig(both)).toThrow(/both customDomains and pending/);
+  });
+
+  it('a config without domains is valid (the sandbox has none)', () => {
+    const c = base();
+    delete c.domains;
+    expect(() => validateConfig(c)).not.toThrow();
+  });
 });

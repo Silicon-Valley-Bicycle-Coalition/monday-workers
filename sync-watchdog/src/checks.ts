@@ -1,4 +1,4 @@
-// The three checks. Each returns one result per subject; an error reading a subject's state makes
+// The four checks. Each returns one result per subject; an error reading a subject's state makes
 // that subject 'check-failed' (logged by src/run.ts, state left alone), never healthy.
 
 import type { CloudflareApi, CronRun } from './cloudflare';
@@ -94,4 +94,50 @@ export async function queueSubjects(cfg: WatchdogConfig, api: CloudflareApi): Pr
     }
   });
   return Promise.all(jobs);
+}
+
+// domains:<zone> — one subject for the zone, so a new route (which has no subject of its own yet)
+// still alerts. The detail lists every difference, sorted, so it only changes when the zone does;
+// src/run.ts re-posts when it changes. A route runs before a Custom Domain on the same hostname
+// (developers.cloudflare.com/workers/configuration/routing/custom-domains/#interaction-with-routes),
+// so an unexpected route can take over a production hostname without touching its domain.
+export async function domainSubjects(cfg: WatchdogConfig, api: CloudflareApi): Promise<SubjectResult[]> {
+  const d = cfg.domains;
+  if (!d) return [];
+  const subject = `domains:${d.zone}`;
+  try {
+    const domains = await api.customDomains(d.zone);
+    const diffs: string[] = [];
+    const seen = new Map(domains.map((x) => [x.hostname, x.service]));
+    for (const [host, script] of Object.entries(d.customDomains)) {
+      const actual = seen.get(host);
+      if (actual === undefined) diffs.push(`custom domain ${host} missing (expected ${script})`);
+      else if (actual !== script) diffs.push(`custom domain ${host} -> ${actual} (expected ${script})`);
+    }
+    for (const [host, service] of seen) {
+      if (host in d.customDomains) continue;
+      const pending = d.pending[host];
+      if (pending === undefined) diffs.push(`unexpected custom domain ${host} -> ${service}`);
+      else if (pending.script !== service) diffs.push(`custom domain ${host} -> ${service} (expected ${pending.script})`);
+    }
+    // The zone id comes from the listing, so the token needs no Zone Read.
+    const zoneId = domains[0]?.zoneId;
+    if (zoneId === undefined) {
+      diffs.push('zone routes not checked: no Custom Domains to take the zone id from');
+    } else {
+      const routes = await api.zoneRoutes(zoneId);
+      const actual = new Map(routes.map((r) => [r.pattern, r.script]));
+      const name = (s: string | null) => s ?? 'no Worker';
+      for (const [pattern, script] of Object.entries(d.routes)) {
+        if (!actual.has(pattern)) diffs.push(`route ${pattern} missing (expected ${name(script)})`);
+        else if (actual.get(pattern) !== script) diffs.push(`route ${pattern} -> ${name(actual.get(pattern)!)} (expected ${name(script)})`);
+      }
+      for (const [pattern, script] of actual) {
+        if (!(pattern in d.routes)) diffs.push(`unexpected route ${pattern} -> ${name(script)}`);
+      }
+    }
+    return [{ subject, health: diffs.length === 0 ? { ok: true } : { ok: false, detail: diffs.sort().join('; ') } }];
+  } catch (err) {
+    return [{ subject, health: 'check-failed', error: errorText(err) }];
+  }
 }
