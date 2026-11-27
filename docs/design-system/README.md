@@ -100,7 +100,7 @@ The template built this way is `SVBC Letter 2026` (`.dotx`, with a `.docx` copy)
 
 Block order, as every SVBC letter has it: date · blank line · recipient block · optional "Via email to:" / "CC:" · **Re:** line (bold) · salutation · body (no first-line indent, 9pt after each paragraph, 1.15 line spacing) · "Sincerely," · three lines or a signature · name / title / Silicon Valley Bicycle Coalition / phone.
 
-Donation receipts end with two bold postscripts: "P.S. Please retain this letter as your receipt for tax purposes. No goods or services were received in exchange for this donation." and "P.P.S. Consider asking your employer to match your donation…". Worker-sent receipts use the same wording.
+Donation receipts end with two bold postscripts: "P.S. Please retain this letter as your receipt for tax purposes. No goods or services were received in exchange for this donation." and "P.P.S. Consider asking your employer to match your donation…". Worker-sent receipts use the same wording, but the "no goods or services" sentence is true only when the donor got nothing back. A ticket, a jersey or other goods need a description and a good-faith value instead (IRS Publication 1771), and member benefits wait on the accountant's answer. Don't put it on a receipt for anything but a plain gift.
 
 ### Internal documents and policies
 
